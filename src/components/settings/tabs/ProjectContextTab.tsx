@@ -53,7 +53,7 @@ export function ProjectContextTab() {
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           rows={12}
-          placeholder="# 项目规则\n\n测试命令、目录约定、不可修改的文件……"
+          placeholder="# 项目规则 —— 测试命令、目录约定、不可修改的文件……"
           className="w-full resize-y rounded-sm border border-line-subtle bg-bg-raised px-2.5 py-2 font-mono text-xs text-fg-primary focus:border-line-focus focus:outline-none"
         />
       </Row>

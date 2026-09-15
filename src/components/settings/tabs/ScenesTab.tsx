@@ -69,7 +69,7 @@ export function ScenesTab() {
           return (
             <div
               key={scene.id}
-              className="flex flex-col rounded-base border border-line-hairline bg-bg-raised/30 p-3"
+              className="nested-panel flex flex-col rounded-base border border-line-hairline bg-bg-raised/30 p-3"
             >
               <div className="flex items-start gap-2">
                 <Icon size={14} className="mt-0.5 shrink-0 text-fg-tertiary" />
