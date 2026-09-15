@@ -1,19 +1,14 @@
 import type { ReactNode } from 'react'
 import {
-  BarChart3,
   BrainCircuit,
   Cpu,
   Database,
   Info,
-  FolderOpen,
-  Keyboard,
   Palette,
-  Plug,
   Puzzle,
   Settings2,
   Shield,
   SlidersHorizontal,
-  Lock,
 } from 'lucide-react'
 
 /* ══════════════════════════════════════════════════════════════
@@ -26,40 +21,54 @@ import {
 export type SettingsTabId =
   | 'general'
   | 'appearance'
-  | 'shortcuts'
-  | 'scenes'
+  | 'conversation'
   | 'models'
-  | 'tools'
-  | 'security'
-  | 'skills'
+  | 'access'
+  | 'datausage'
+  | 'extension'
   | 'memory'
-  | 'mcp'
-  | 'usage'
-  | 'data'
-  | 'project'
-  | 'thread'
   | 'about'
+
+/* ══════════════════════════════════════════════════════════════
+   设置的分组与顺序
+
+   原来是 15 个平铺的标签，扫不完也找不到东西。现在按两件事重排：
+
+     ① **按「用户想干什么」分组**，不按实现模块分。
+        最典型的：「权限三档」原来在「工具」、「文件访问范围」在「安全」——
+        同一件事劈成两半，用户得两边找。现在合成「权限与安全」。
+     ② **常用 / 高级分组**，用标题隔开。
+        90% 的时间在改前四个，后几个配置一次就不动了。
+        「关于」单独放最后（几乎所有软件都这样）。
+
+   15 → 9 个。合并的对应关系：
+     通用       ← 通用 + 快捷键
+     对话       ← 模型与提示词 + 项目上下文 + 本次会话
+     模型       ← 模型（供应商 + 助手参数）
+     权限与安全  ← 工具 + 安全
+     数据与用量  ← 用量 + 数据
+     扩展       ← 技能 + 扩展(MCP)
+     外观 / 记忆 / 关于  原样
+   ══════════════════════════════════════════════════════════════ */
 
 export const SETTINGS_TABS: readonly {
   id: SettingsTabId
   label: string
   icon: typeof Settings2
+  /** 分组标题（null = 不分组，直接列在最下面） */
+  group: string | null
 }[] = [
-  { id: 'general', label: '通用', icon: Settings2 },
-  { id: 'appearance', label: '外观', icon: Palette },
-  { id: 'shortcuts', label: '快捷键', icon: Keyboard },
-  { id: 'scenes', label: '模型与提示词', icon: SlidersHorizontal },
-  { id: 'models', label: '模型', icon: Cpu },
-  { id: 'tools', label: '工具', icon: Shield },
-  { id: 'security', label: '安全', icon: Lock },
-  { id: 'skills', label: '技能', icon: Puzzle },
-  { id: 'memory', label: '记忆', icon: BrainCircuit },
-  { id: 'mcp', label: '扩展', icon: Plug },
-  { id: 'usage', label: '用量', icon: BarChart3 },
-  { id: 'data', label: '数据', icon: Database },
-  { id: 'project', label: '项目上下文', icon: FolderOpen },
-  { id: 'thread', label: '本次会话', icon: SlidersHorizontal },
-  { id: 'about', label: '关于', icon: Info },
+  { id: 'general', label: '通用', icon: Settings2, group: '常用' },
+  { id: 'appearance', label: '外观', icon: Palette, group: '常用' },
+  { id: 'conversation', label: '对话', icon: SlidersHorizontal, group: '常用' },
+  { id: 'models', label: '模型', icon: Cpu, group: '常用' },
+
+  { id: 'access', label: '权限与安全', icon: Shield, group: '高级' },
+  { id: 'datausage', label: '数据与用量', icon: Database, group: '高级' },
+  { id: 'extension', label: '扩展', icon: Puzzle, group: '高级' },
+  { id: 'memory', label: '记忆', icon: BrainCircuit, group: '高级' },
+
+  { id: 'about', label: '关于', icon: Info, group: null },
 ] as const
 
 /** 一行设置：左边标签 + 说明，右边控件 */

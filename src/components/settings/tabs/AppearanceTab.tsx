@@ -2,6 +2,7 @@ import type { FontFamilyId, ThemePreference } from '@/types'
 import { FONT_OPTIONS, LAYOUT } from '@/constants'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { Field, Select, Switch } from '@/components/ui/Field'
+import { clamp } from '@/lib/utils'
 import { Row, SectionTitle } from '../parts'
 
 /* ══════════════════════════════════════════════════════════════
@@ -50,6 +51,19 @@ export function AppearanceTab() {
           The quick brown fox jumps over the lazy dog
         </p>
       </div>
+
+      <Row label="字号缩放" hint={`${settings.fontScale}%（80 - 150）`}>
+        <input
+          type="range"
+          min={80}
+          max={150}
+          step={5}
+          value={settings.fontScale}
+          onChange={(e) => updateSettings({ fontScale: clamp(Number(e.target.value), 80, 150) })}
+          aria-label="字号缩放"
+          className="w-full accent-[var(--accent-blue)]"
+        />
+      </Row>
 
       <SectionTitle>主题</SectionTitle>
 

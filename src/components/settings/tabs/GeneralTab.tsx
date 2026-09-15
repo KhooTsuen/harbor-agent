@@ -5,7 +5,6 @@ import { useConfigStore } from '@/stores/useConfigStore'
 import { quitApp } from '@/lib/appApi'
 import { useRealBackend } from '@/lib/backend'
 import { MODES } from '@/constants'
-import { clamp } from '@/lib/utils'
 import type { ThreadMode } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Select, Switch } from '@/components/ui/Field'
@@ -30,6 +29,7 @@ export function GeneralTab() {
 
   return (
     <>
+      <SectionTitle>输入与默认</SectionTitle>
       <>
         <Row label="回车发送" hint="关掉后 Enter 换行，用 Ctrl/Cmd+Enter 发送">
           <Switch
@@ -47,19 +47,6 @@ export function GeneralTab() {
             value={settings.defaultMode}
             onChange={(v) => updateSettings({ defaultMode: v as ThreadMode })}
             options={MODES.map((m) => ({ value: m.id, label: `${m.label} —— ${m.hint}` }))}
-          />
-        </Row>
-
-        <Row label="字号缩放" hint={`${settings.fontScale}%（80 - 150）`}>
-          <input
-            type="range"
-            min={80}
-            max={150}
-            step={5}
-            value={settings.fontScale}
-            onChange={(e) => updateSettings({ fontScale: clamp(Number(e.target.value), 80, 150) })}
-            aria-label="字号缩放"
-            className="w-full accent-[var(--accent-blue)]"
           />
         </Row>
 
