@@ -24,7 +24,9 @@ export const useRealBackend =
   isElectron && !(import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === '1')
 
 /** 版本号：优先取环境变量，没有就用 package.json 里的 0.1.0 */
-export const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? '0.1.0'
+/* 版本号由 vite.config.ts 从 package.json 注入。兜底写「未知」而不是某个
+ * 具体版本 —— 写 0.1.0 的话，注入失效时会静默显示一个看着合理但错的版本（踩过）。 */
+export const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? '未知'
 
 function require(): WorkbenchBridge {
   if (!bridge) throw new Error('当前不在 Electron 环境里')
