@@ -13,6 +13,7 @@
  */
 
 const mcp = require('../mcp.cjs')
+const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
 const registry = require('./registry.cjs')
 const { byName, isMcpTool, validateArgs, WRITE_TOOLS } = registry
@@ -76,6 +77,10 @@ async function execute(name, args, ctx = {}) {
       return `错误：${message}`
     }
   }
+
+  /* ── 本地插件：权限门 + 执行在 plugin-tool.cjs。不是插件会返回 null ── */
+  const pluginResult = await executePlugin(name, args, ctx, startedAt)
+  if (pluginResult !== null) return pluginResult
 
   const tool = byName(name)
   if (!tool) return `错误：没有名为 ${name} 的工具`

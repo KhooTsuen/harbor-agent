@@ -4,8 +4,18 @@
   "name_for_human": "时间查询",
   "description_for_model": "查询当前的日期和时间。当用户问「现在几点」「今天几号」「今天星期几」等时间相关问题时使用。",
   "description_for_human": "查当前的日期和时间",
-  "runtime": { "type": "node", "entry": "run.cjs" },
-  "permissions": { "network": false, "write": false, "paths": [] },
-  "parameters": { "type": "object", "properties": {} },
+  "runtime": {
+    "type": "node",
+    "entry": "run.cjs"
+  },
+  "permissions": {
+    "network": false,
+    "write": false,
+    "paths": []
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  },
   "enabled": true
 }

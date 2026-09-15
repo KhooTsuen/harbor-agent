@@ -192,6 +192,26 @@ function list() {
   return out
 }
 
+/** 按工具名查插件（execute 里判定权限用） */
+function getByName(name) {
+  return list().find((plugin) => plugin.name === name) ?? null
+}
+
+/**
+ * 把权限声明描述成人话（给确认弹窗和报错用）。
+ *
+ * @returns {string} 比如「（联网）」「（写文件）」「（联网 + 写文件）」「（无副作用）」
+ */
+function describePermissions(permissions) {
+  const perm = permissions ?? {}
+  const network = perm.network === true
+  const write = perm.write === true
+  if (network && write) return '（联网 + 写文件）'
+  if (network) return '（联网）'
+  if (write) return '（写文件）'
+  return '（无副作用）'
+}
+
 /** 把插件转成工具清单（给 registry 用，形状和其它工具一致） */
 function buildTools() {
   return list().map((plugin) => ({
@@ -250,6 +270,8 @@ module.exports = {
   list,
   loadPlugin,
   buildTools,
+  getByName,
+  describePermissions,
   toStrictSchema,
   runPlugin,
   BUILTIN_NAMES,
