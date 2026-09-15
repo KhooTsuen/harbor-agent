@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Globe, Plus, RotateCw, X } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useBrowseDriver } from './browser/useBrowseDriver'
+import { useBrowserStore } from '@/stores/useBrowserStore'
 import { IconButton } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils'
 
@@ -44,36 +46,44 @@ interface Tab {
 }
 
 export function BrowserTab() {
-  const [tabs, setTabs] = useState<Tab[]>([])
-  const [activeId, setActiveId] = useState('')
+  /*
+   * 标签状态放在 store 里，不是 useState —— Agent 的 browse 工具
+   * 要能自己开标签（见 useBrowserStore 的注释，那里写了踩过的坑）。
+   */
+  const tabs = useBrowserStore((s) => s.tabs)
+  const activeId = useBrowserStore((s) => s.activeId)
+  const reloadKey = useBrowserStore((s) => s.reloadKey)
+  const openTab = useBrowserStore((s) => s.open)
+  const selectTab = useBrowserStore((s) => s.select)
+  const closeTab = useBrowserStore((s) => s.close)
+
   const [draft, setDraft] = useState('')
-  /** 换一个值就是强制重建 webview（重载用） */
-  const [reloadKey, setReloadKey] = useState(0)
+  /** Agent 的 `browse` 工具要通过它操作当前这个 webview */
+  const webviewRef = useRef<HTMLElement | null>(null)
+
+  useBrowseDriver(webviewRef)
 
   const active = tabs.find((tab) => tab.id === activeId)
 
   function open(input: string): void {
     const url = normalizeUrl(input)
     if (!url) return
-    const id = `tab-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
-    setTabs((prev) => [...prev, { id, url }])
-    setActiveId(id)
+    openTab(url)
     setDraft(url)
   }
 
   function select(tab: Tab): void {
-    setActiveId(tab.id)
+    selectTab(tab.id)
     setDraft(tab.url)
   }
 
   function close(id: string): void {
-    const next = tabs.filter((tab) => tab.id !== id)
-    setTabs(next)
+    /* 关掉的是当前标签时，地址栏要跟着换到接替的那个 */
     if (id === activeId) {
-      const fallback = next[next.length - 1]
-      setActiveId(fallback?.id ?? '')
+      const fallback = tabs.filter((tab) => tab.id !== id).at(-1)
       setDraft(fallback?.url ?? '')
     }
+    closeTab(id)
   }
 
   return (
@@ -96,7 +106,11 @@ export function BrowserTab() {
           className="min-w-0 flex-1 bg-transparent font-mono text-xs text-fg-primary placeholder:text-fg-tertiary focus:outline-none"
         />
         {active ? (
-          <IconButton label="重新加载" size={28} onClick={() => setReloadKey((v) => v + 1)}>
+          <IconButton
+            label="重新加载"
+            size={28}
+            onClick={() => useBrowserStore.getState().reload()}
+          >
             <RotateCw size={12} />
           </IconButton>
         ) : null}
@@ -151,9 +165,19 @@ export function BrowserTab() {
       {active ? (
         /* webview 高度要由外面这层给死，不然它在 flex 里会塌成 0 */
         <div className="min-h-0 flex-1 bg-bg-base">
+          {/*
+            隔离说明（都是刻意写的，别删）：
+              · partition —— 独立会话，网页碰不到应用自己的存储
+              · webpreferences —— 明确写死沙箱，不靠默认值
+              · ref —— Agent 的 browse 工具靠它驱动这个 webview
+          */}
           <webview
             key={`${active.id}-${reloadKey}`}
+            ref={webviewRef as React.RefObject<never>}
             src={active.url}
+            partition="persist:agent-browser"
+            webpreferences="sandbox=yes,contextIsolation=yes,nodeIntegration=no"
+            allowpopups="false"
             style={{ width: '100%', height: '100%' }}
           />
         </div>

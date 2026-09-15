@@ -20,6 +20,7 @@ const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
 const { setupTray, showWindow, setQuitting, isQuitting } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
+const navigationPolicy = require('./navigation-policy.cjs')
 
 /* ══════════════════════════════════════════════════════════
    ① 锁路径 —— 必须早于 app.whenReady()
@@ -71,7 +72,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       spellcheck: false,
       webviewTag: true,
     },
@@ -85,6 +86,13 @@ function createWindow() {
   })
 
   /* 外链一律用系统浏览器打开，不在应用里跳走 */
+  /* 导航策略 + webview 加固：主窗口和每个 webview 都要挂，见 navigation-policy.cjs */
+  navigationPolicy.install({
+    app,
+    win,
+    getMode: () => config.get().general.browserNavigation ?? 'ask',
+  })
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
@@ -273,6 +281,8 @@ require('./handlers/chat.cjs').register({
 })
 require('./handlers/session.cjs').register({ ipcMain })
 require('./handlers/provider.cjs').register({ ipcMain })
+/* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
+require('./handlers/browser.cjs').register()
 require('./handlers/export.cjs').register({ ipcMain, getMainWindow: () => mainWindow })
 require('./handlers/skills.cjs').register({ ipcMain })
 require('./handlers/extras.cjs').register({ ipcMain })

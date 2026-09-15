@@ -10,7 +10,7 @@ const config = require('../config.cjs')
 module.exports = {
   name: 'search_web',
   description:
-    '联网搜索。当用户问到你的知识里没有、或者可能已经变了的东西（库的新版本、报错信息、别人的做法）时用。搜完把 URL 一起给出来，方便用户自己核对。',
+    '联网搜索（轻量 HTTP，快但拿不到 JavaScript 渲染出来的内容）。当用户问到你的知识里没有、或者可能已经变了的东西（库的新版本、报错信息、别人的做法、商品价格）时**先用它**。搜完把 URL 一起给出来，方便用户自己核对。如果某个结果看起来是关键但搜到的摘要不够，用 browse 打开那一页读正文。',
   parameters: {
     type: 'object',
     properties: {

@@ -26,6 +26,7 @@ const EXPECTED_CHANNELS = [
   'backup:open',
   'backup:remove',
   'backup:restore',
+  'browser:result',
   'capability:grant',
   'capability:list',
   'capability:revoke',
