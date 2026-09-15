@@ -197,11 +197,7 @@ function getByName(name) {
   return list().find((plugin) => plugin.name === name) ?? null
 }
 
-/**
- * 把权限声明描述成人话（给确认弹窗和报错用）。
- *
- * @returns {string} 比如「（联网）」「（写文件）」「（联网 + 写文件）」「（无副作用）」
- */
+/** 把权限声明描述成人话（给确认弹窗和报错用） */
 function describePermissions(permissions) {
   const perm = permissions ?? {}
   const network = perm.network === true

@@ -133,4 +133,5 @@ module.exports = {
   validateArgs,
   toApiSchema,
   catalog,
+  reloadPlugins,
 }

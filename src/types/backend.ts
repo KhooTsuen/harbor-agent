@@ -255,6 +255,11 @@ export interface WorkbenchBridge extends SafetyBridge {
 
   onEvent: (callback: (event: ChatEvent) => void) => () => void
 
+  /** 插件热插拔：新增/删除插件时主进程通知 */
+  onPluginsChanged: (
+    callback: (change: { added: string[]; removed: string[]; count: number }) => void,
+  ) => () => void
+
   /* ── 浏览器：主进程的 browse 工具请求渲染层操作 webview ── */
   onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
   browserResult: (

@@ -22,7 +22,7 @@ import { useConfigStore } from '@/stores/useConfigStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { LAYOUT } from '@/constants'
 import { matchCombo } from '@/lib/utils'
-import { getWorkdir, loadConfig, useRealBackend } from '@/lib/backend'
+import { getWorkdir, loadConfig, useRealBackend, subscribePluginChanges } from '@/lib/backend'
 import { configToSettings } from '@/lib/configMapping'
 import { useApplyAppearance } from '@/hooks/useApplyAppearance'
 
@@ -81,6 +81,20 @@ export default function App() {
       }
     })()
   }, [setWorkdir, loadFromDisk])
+
+  /* ①c 插件热插拔：主进程发现新增/删除插件时，弹个轻提示（不打断） */
+  useEffect(() => {
+    if (!useRealBackend) return
+    const off = subscribePluginChanges(({ added, removed }) => {
+      const showToast = useUIStore.getState().showToast
+      if (added.length > 0) {
+        showToast('success', `检测到新插件：${added.join('、')}`, '下一轮对话即可使用，不用重启')
+      } else if (removed.length > 0) {
+        showToast('info', `插件已移除：${removed.join('、')}`)
+      }
+    })
+    return off
+  }, [])
 
   /* ①b 首次启动引导：没配过 Key 就弹。?onboarding=1 是调试开关 */
   const config = useConfigStore((s) => s.config)

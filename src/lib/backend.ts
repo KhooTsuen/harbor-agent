@@ -1,6 +1,5 @@
 import type {
   AppConfig,
-  ChatEvent,
   ChatSendPayload,
   SessionDetail,
   SessionSummary,
@@ -80,10 +79,8 @@ export { listProviderModels, pingProvider } from './providerApi'
 
 /* ── 对话 ─────────────────────────────────────────────────── */
 
-export function subscribeChatEvents(callback: (event: ChatEvent) => void): () => void {
-  if (!bridge) return () => {}
-  return bridge.onEvent(callback)
-}
+/* 订阅类（subscribeChatEvents / subscribePluginChanges）在 lib/subscriptions.ts */
+export { subscribeChatEvents, subscribePluginChanges } from './subscriptions'
 
 export async function sendChat(
   payload: ChatSendPayload,
