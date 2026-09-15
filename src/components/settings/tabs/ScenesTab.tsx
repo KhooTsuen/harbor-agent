@@ -67,10 +67,7 @@ export function ScenesTab() {
             chosen.providerId && chosen.model ? `${chosen.providerId}|${chosen.model}` : ''
 
           return (
-            <div
-              key={scene.id}
-              className="nested-panel flex flex-col rounded-base border border-line-hairline bg-bg-raised/30 p-3"
-            >
+            <div key={scene.id} className="acrylic-card rounded-base flex flex-col p-3">
               <div className="flex items-start gap-2">
                 <Icon size={14} className="mt-0.5 shrink-0 text-fg-tertiary" />
                 <div className="min-w-0 flex-1">

@@ -59,7 +59,7 @@ export function BudgetLimit(): React.ReactElement | null {
       {limits.enabled ? (
         <div className="mt-2.5 flex flex-col gap-2.5 pl-5">
           <div className="grid grid-cols-2 gap-2">
-            <label className="block px-3.5 py-3">
+            <label className="acrylic-card rounded-base block px-3.5 py-3">
               <span className="mb-1 block text-2xs text-fg-tertiary">
                 每天上限（token，0 = 不限）
               </span>
@@ -72,7 +72,7 @@ export function BudgetLimit(): React.ReactElement | null {
                 spellCheck={false}
               />
             </label>
-            <label className="block px-3.5 py-3">
+            <label className="acrylic-card rounded-base block px-3.5 py-3">
               <span className="mb-1 block text-2xs text-fg-tertiary">
                 每月上限（token，0 = 不限）
               </span>

@@ -100,12 +100,8 @@ export function Row({
   return (
     <div
       className={cn(
-        /* 不带自己的板：所在的「节」是一整块，见 index.css 的 .settings-body。
-           行与行之间**不放分隔线** —— 要的是「一整块里排着几项」。 */
-        /* 每个子选项是**外块里的一个小块**：自己的边框+圆角、左右内缩。
-           底色不设 —— 由外层大块提供（见 index.css 的 .settings-body），
-           这样内块看起来是「嵌在外块里的卡片」，而不是又一层面板。 */
-        'mx-2 my-1.5 flex items-center gap-5 rounded-base border border-line-hairline px-3 py-2.5',
+        /* 每个子选项 = 一块独立的亚克力板（用户明确过粒度是子选项，不是节） */
+        'acrylic-card flex items-center gap-5 rounded-base px-3.5 py-3',
         danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
       )}
     >
@@ -125,14 +121,7 @@ export function Row({
   )
 }
 
-/** 区块标题 —— 贴在块的上方，不画分隔线（分隔线是「清单」的语言） */
-/**
- * 区块标题 —— 大块的**标题行**：粗体标题 +（可选）一行说明。
- *
- * 样式按用户给的参考改的：标题是正文级字号、粗体，
- * 不是之前那种全大写的小标签。说明写「这一块管什么」，
- * 比把同样的话塞进每个子选项的 hint 里更省地方也更清楚。
- */
+/** 区块标题 —— 只是标签，不包块（块是每个子选项自己的事） */
 export function SectionTitle({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <h3 className="settings-section-title">
@@ -159,7 +148,7 @@ export function SectionCard({
       {hint ? <p className="-mt-1 mb-1 text-2xs leading-relaxed text-fg-tertiary">{hint}</p> : null}
       <div
         className={cn(
-          'acrylic-card flex flex-col gap-1.5 rounded-large p-1.5',
+          'flex flex-col gap-1.5',
           danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
         )}
       >

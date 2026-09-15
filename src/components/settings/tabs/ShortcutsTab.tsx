@@ -59,16 +59,15 @@ export function ShortcutsTab() {
       <p className="mb-2 text-2xs leading-relaxed text-fg-tertiary">
         点击任意键位即可录制新的组合键；按 Esc 取消。冲突键位会被拒绝。
       </p>
-      {/* 快捷键列表也包成一块亚克力板 —— 不包的话它是一条悬空的长列表，
-          和上面那些「块」不是一套语言 */}
+      {/* 每组一条小标签，每个键位各自一块板 —— 和「每个子选项一块」同一套语言 */}
       {Array.from(new Set(SHORTCUTS.map((s) => s.group))).map((group) => (
-        <div key={group} className="px-3.5 py-2.5">
-          <p className="mb-1.5 text-2xs text-fg-tertiary">{group}</p>
-          <ul className="flex flex-col gap-0.5">
+        <div key={group}>
+          <p className="mb-1.5 mt-3 text-2xs text-fg-tertiary">{group}</p>
+          <ul className="flex flex-col gap-1.5">
             {SHORTCUTS.filter((s) => s.group === group).map((shortcut) => (
               <li
                 key={shortcut.id}
-                className="flex items-center justify-between rounded-sm px-2 py-1.5 text-sm text-fg-secondary hover:bg-bg-hover"
+                className="acrylic-card flex items-center justify-between rounded-base px-3.5 py-2.5 text-sm text-fg-secondary"
               >
                 <span>{shortcut.label}</span>
                 <button

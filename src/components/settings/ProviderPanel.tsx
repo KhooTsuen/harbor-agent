@@ -235,8 +235,8 @@ export function ToolsPanel() {
               onClick={() => void patchTools({ permission: p.id })}
               className={
                 config.tools.permission === p.id
-                  ? 'rounded-base border border-line-focus bg-bg-raised px-3 py-2 text-left'
-                  : 'nested-panel rounded-base border border-line-hairline px-3 py-2 text-left transition-colors hover:bg-bg-hover'
+                  ? 'acrylic-card rounded-base px-3 py-2 text-left'
+                  : 'acrylic-card rounded-base px-3 py-2 text-left transition-colors hover:bg-bg-hover'
               }
             >
               <span className="flex items-center gap-2 text-dense text-fg-primary">
@@ -253,7 +253,7 @@ export function ToolsPanel() {
         </div>
       </div>
 
-      <div className="px-3.5 py-3">
+      <div className="acrylic-card rounded-base px-3.5 py-3">
         <p className="mb-1 text-2xs text-fg-tertiary">
           工作目录（模型看到的「相对路径」是相对这里）
         </p>
@@ -279,7 +279,7 @@ export function ToolsPanel() {
         </div>
       </div>
 
-      <label className="block px-3.5 py-3">
+      <label className="acrylic-card rounded-base block px-3.5 py-3">
         <span className="mb-1 block text-2xs text-fg-tertiary">命令超时（秒）</span>
         <Field
           type="number"
