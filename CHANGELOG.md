@@ -1,5 +1,50 @@
 # 更新日志
 
+## [0.32.0] — 2026-09-16 · 本地插件系统（P0 最小闭环）
+
+用户要一个类似 ChatGPT 插件的「插件接口」，本地端、优先适配 DeepSeek。
+研究结论 + 方案见 `docs/改造任务/本地插件接口设计.md`。
+
+### 设计要点（研究自 DeepSeek 官方文档）
+
+1. **不用造新协议** —— DeepSeek 的 tool calls 就是标准 OpenAI `tools` 格式，
+   和项目已有的 `toApiSchema()` 完全一致
+2. **`strict` 模式是 DeepSeek 最值得用的特性**（服务端校验 schema、
+   保证参数严格符合），但要求受限 JSON Schema 子集（object 全部 required +
+   `additionalProperties:false`，不支持 minLength/maxLength/minItems/maxItems）
+3. **`description_for_model` 是灵魂** —— 插件作者写给模型看的一段说明，
+   决定调用准确率。这正是项目此前缺的（工具描述写死在 tools/*.cjs 里）
+
+### P0 做了什么（最小闭环，真机验证过）
+
+- `electron/core/plugins.cjs`：扫描 `data/plugins/`、读 manifest、
+  `toStrictSchema()`（校验+补齐 strict 子集）、`runPlugin()`（执行 + 注入标注）
+- 插件注册进 `tools/registry.cjs`（内置 + 插件合并），prompt 工具清单也带上
+- 示例插件 `examples/plugins/时间查询/`（plugin.json + run.cjs）
+- 测试 `10-plugins.mjs`（22 项，内核 421 → 443）
+
+**真机**：问「现在几点了」→ DeepSeek 调用 `get_current_time` 插件 → 回答正确时间。
+
+### ★ 踩到一个坑：插件体必须是 `.cjs`
+
+本项目 `package.json` 是 `"type": "module"`，`.js` 文件被当 ES 模块 ——
+里面写 `module.exports` 会**静默失效**（require 出来空对象 `{}`、不报错）。
+所以插件执行体用 `.cjs`（CommonJS）。这条写进设计文档和示例注释了。
+
+### 还没做（P1）
+
+权限强制（现在 `permissions` 字段只记录）、strict 的 `/beta` baseUrl、
+两段式注入（插件多了再上）、第三方插件。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 443（+22）
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.31.0] — 2026-09-16 · 设置改成两级块（外块装标题，内块是子选项）
 
 用户给了张参考图，我才明白 0.28.0 理解反了：他要的是**两级**结构 ——

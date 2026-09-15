@@ -23,6 +23,7 @@ const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
 const capability = require('../capability.cjs')
+const plugins = require('../plugins.cjs')
 
 const ALL = [readFile, writeFile, editFile, listDir, runShell, searchWeb, browse, remember]
 
@@ -37,8 +38,23 @@ const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'run_shell', 'browse', '
 /** 哪些工具会改文件（审计里记下来） */
 const FILE_WRITERS = new Set(['write_file', 'edit_file'])
 
+/* 内置工具 + 本地插件（插件是动态的，读一次合并缓存起来） */
+let _pluginTools = null
+function allTools() {
+  if (_pluginTools === null) {
+    _pluginTools = [...ALL, ...plugins.buildTools()]
+  }
+  return _pluginTools
+}
+
+/** 插件改动之后要重新扫（开发用；平时启动扫一次就够了） */
+function reloadPlugins() {
+  _pluginTools = null
+  return allTools().length
+}
+
 function byName(name) {
-  return ALL.find((tool) => tool.name === name) ?? null
+  return allTools().find((tool) => tool.name === name) ?? null
 }
 
 function isMcpTool(name) {
@@ -85,7 +101,7 @@ function validateArgs(tool, args) {
 
 /** 转成 OpenAI tools 格式（本地工具 + MCP 工具） */
 function toApiSchema() {
-  const local = ALL.map((tool) => ({
+  const local = allTools().map((tool) => ({
     type: 'function',
     function: { name: tool.name, description: tool.description, parameters: tool.parameters },
   }))
@@ -105,7 +121,7 @@ function toApiSchema() {
 
 /** 给界面展示用的清单（不含实现） */
 function catalog() {
-  return ALL.map(({ name, description, parameters }) => ({ name, description, parameters }))
+  return allTools().map(({ name, description, parameters }) => ({ name, description, parameters }))
 }
 
 module.exports = {
