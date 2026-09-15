@@ -81,6 +81,23 @@ export function AdvancedPanel({ provider }: { provider: ProviderConfig }): React
             </span>
           </label>
 
+          <label className="flex items-start gap-2 text-dense text-fg-primary">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={provider.strictTools === true}
+              onChange={(e) => void update(provider.id, { strictTools: e.target.checked })}
+            />
+            <span>
+              DeepSeek strict 模式
+              <span className="ml-1.5 text-2xs text-fg-tertiary">
+                （给工具参数加 strict 校验，仅 DeepSeek 官方
+                <code className="text-2xs">/beta</code> 端点有效：要把 Base URL 改成
+                .../beta；中转站别开）
+              </span>
+            </span>
+          </label>
+
           <label className="block">
             <span className="mb-1 block text-2xs text-fg-tertiary">不要发送的参数（逗号分隔）</span>
             <Field

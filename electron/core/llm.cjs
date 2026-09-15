@@ -13,6 +13,7 @@
 
 const log = require('./log.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
+const plugins = require('./plugins.cjs')
 
 /**
  * 把 baseUrl 和 chatPath 拼成完整地址。
@@ -80,6 +81,12 @@ async function chatStream(options) {
     temperature,
     topP,
     maxTokens,
+    /*
+     * strict 只给插件：内置工具有可选参数，开 strict 会 400。
+     * 插件 schema 已过 toStrictSchema，是唯一确定合规的一类。
+     */
+    strictToolNames:
+      options.provider?.strictTools === true ? plugins.list().map((p) => p.name) : undefined,
     provider: options.provider,
   })
 

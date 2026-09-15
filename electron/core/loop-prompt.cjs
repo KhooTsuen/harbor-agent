@@ -14,6 +14,7 @@
 
 const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
+const plugins = require('./plugins.cjs')
 const skills = require('./skills.cjs')
 const memory = require('./memory.cjs')
 const project = require('./project.cjs')
@@ -54,7 +55,18 @@ function environmentSection({ workdir, assistantName = 'Agent' }) {
  * 模型知道「有没有能读目录的工具」，就不会拿 shell 去凑。
  */
 function toolsSection() {
-  return tools.ALL.map((t) => `- \`${t.name}\`：${t.description.split('。')[0]}。`).join('\n')
+  const builtin = tools.ALL.map((t) => `- \`${t.name}\`：${t.description.split('。')[0]}。`)
+  /*
+   * 本地插件清单：单独一段，让模型在**文字层面**知道有哪些插件、何时用。
+   * 这是「两段式」的第一段（清单）；完整参数 schema 在 function calling 里。
+   * 插件多了以后，这里会变成「清单 → 按需注入 schema」的入口。
+   */
+  const pluginList = plugins.pluginList()
+  if (pluginList) {
+    builtin.push('\n【本地插件（装在 data/plugins/ 下，各自描述为准）】')
+    builtin.push(pluginList)
+  }
+  return builtin.join('\n')
 }
 
 /**
