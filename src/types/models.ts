@@ -6,6 +6,9 @@ import type {
   RouterConfig,
   ShellPolicy,
 } from './safety'
+import type { SearchConfig, McpServerConfig } from './models-extra'
+/* 搜索 / MCP 的类型在 models-extra.ts（这里再导出一次，调用方不用改） */
+export type { SearchConfig, McpServerConfig, McpServerStatus } from './models-extra'
 
 import type { SceneMap } from './scenes'
 /* ChatEvent 里用到；转发给外部看是下面那个 export type 块的事 */
@@ -111,6 +114,13 @@ export interface AppConfig {
   fallback: FallbackConfig
   /** 工具调用审计 */
   audit: AuditConfig
+  /** 用量闸：按 token 数设日/月上限（0 = 不限）。详见 electron/core/limits.cjs */
+  limits: {
+    enabled: boolean
+    dailyTokens: number
+    monthlyTokens: number
+    onExceed: 'block' | 'warn'
+  }
   updatedAt: number
   /** 凭证库状态（主进程附带的，只读） */
   credentials?: CredentialsStatus
@@ -190,6 +200,16 @@ export type ChatEvent =
     }
   | { requestId: string; type: 'aborted' }
   | { requestId: string; type: 'review'; status: 'started' | 'completed' }
+  | {
+      requestId: string
+      type: 'budget'
+      exceeded: boolean
+      blocked: boolean
+      level: 'day' | 'month' | null
+      used: number
+      limit: number
+      message: string
+    }
   | { requestId: string; type: 'error'; message: string }
 
 /** 发出去的消息：带图时 content 是数组（多模态），否则是字符串 */
@@ -226,55 +246,6 @@ export interface ConversationSearchHit {
   snippet: string
 }
 
-export interface SearchConfig {
-  provider: string
-  apiKey: string
-  endpoint: string
-  maxResults: number
-  hasKey?: boolean
-  credentialRef?: string
-  citations?: boolean
-}
-
-export interface McpServerConfig {
-  id: string
-  name: string
-  command: string
-  args: string[]
-  env: Record<string, string>
-  enabled: boolean
-  /* ── 隔离（默认最保守）── */
-  /** 是否继承主进程环境变量。默认否 —— 不然会把所有 API Key 递给第三方程序 */
-  inheritEnvironment: boolean
-  envAllowlist: string[]
-  cwd: string
-  network: 'deny' | 'ask' | 'allow'
-  timeoutMs: number
-  permission: 'full' | 'ask' | 'readonly'
-}
-
-export interface McpServerStatus {
-  id: string
-  name: string
-  alive: boolean
-  error: string
-  toolCount: number
-  tools: Array<{ name: string; description: string }>
-}
-
-/** 一个技能（SKILL.md）*/
-
-/** 存到 JSONL 里的一条消息 */
-
-/* ══════════════════════════════════════════════════════════════
-   文件系统与终端（右栏）
-   ══════════════════════════════════════════════════════════════ */
-
-/** 主进程返回的目录节点（相对工作目录的 path） */
-
-/** 终端流式输出的一块 */
-
-/* 配置里的安全 / 上下文子类型 */
 export type {
   RiskLevel,
   PolicyAction,

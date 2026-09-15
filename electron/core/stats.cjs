@@ -56,8 +56,20 @@ function save(data) {
   }
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
+/**
+ * 按**本地日期**分桶（YYYY-MM-DD）。
+ *
+ * ⚠️ 原来用的是 `toISOString()` —— 那是 **UTC**。对 UTC+8 的用户来说，
+ * 「今天」会在早上 8 点才切换，日用量和日限额的边界都是错的。
+ * 用户心里的「今天」是本地的那一天。
+ *
+ * 这个函数**必须只有一份**：用量闸要按同一口径算账，
+ * 两处各写一个日期函数就会悄悄错开（踩过：闸门永远算成 0，等于没有）。
+ * 所以 limits.cjs 直接 require 这个，不自己实现。
+ */
+function today(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
 function addInto(bucket, usage) {
@@ -137,4 +149,4 @@ function reset() {
   return result
 }
 
-module.exports = { record, summary, reset, load, statsFile, KEEP_DAYS }
+module.exports = { record, summary, reset, load, statsFile, today, KEEP_DAYS }

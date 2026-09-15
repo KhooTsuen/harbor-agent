@@ -27,6 +27,7 @@ const { callModel, selfReview, mergeUsage } = require('./loop-model.cjs')
 const { buildPromptContext } = require('./loop-prompt.cjs')
 const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute } = require('./loop-route.cjs')
+const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
 
 const MAX_TURNS = 25
@@ -158,6 +159,14 @@ async function runLoop(options) {
 
   for (; turn < MAX_TURNS; turn += 1) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
+
+    /*
+     * ── 用量闸 ──
+     * 调模型**之前**查一次账（这是唯一能真正省钱的位置）。超了会抛错，
+     * 细节在 limits.cjs —— 按 token 数算，不按金额（金额要维护会过期的价目表）。
+     */
+    limits.enforce(emit)
+
     emit({ type: 'turn_start', turn: turn + 1 })
 
     /* ── 调模型（带重试与降级）── */

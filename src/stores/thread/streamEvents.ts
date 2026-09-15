@@ -165,6 +165,14 @@ export function handleStreamEvent(
     }
 
     /* ── 提示类事件：不改消息，但要让用户看见 ── */
+    case 'budget': {
+      /* 拦住的情况不在这里提示 —— 那种会直接抛错，错误气泡里已经有原因了 */
+      if (event.blocked !== true && event.exceeded === true) {
+        useUIStore.getState().showToast('warning', '用量已到上限', String(event.message ?? ''))
+      }
+      return { handled: true }
+    }
+
     case 'retry': {
       useUIStore
         .getState()

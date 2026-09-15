@@ -16,6 +16,7 @@
  *   scripts/selftest/groups/05-…                 Agent 循环冒烟 + 会话目录分组
  *   scripts/selftest/groups/06-…                 系统提示内容回归 / 状态 / 预算 / 意图路由
  *   scripts/selftest/groups/07-…                 请求体适配（中转站兼容）/ 流内错误
+ *   scripts/selftest/groups/08-…                 用量闸（预算）
  *
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
  *
@@ -33,8 +34,18 @@ import { run as reliability } from './selftest/groups/04-reliability.mjs'
 import { run as agentLoop } from './selftest/groups/05-agent-loop.mjs'
 import { run as promptState } from './selftest/groups/06-prompt-state.mjs'
 import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
+import { run as limits } from './selftest/groups/08-limits.mjs'
 
-const GROUPS = [basics, skillsMemory, fsSafety, reliability, agentLoop, promptState, llmBody]
+const GROUPS = [
+  basics,
+  skillsMemory,
+  fsSafety,
+  reliability,
+  agentLoop,
+  promptState,
+  llmBody,
+  limits,
+]
 
 async function main() {
   setupSandbox()

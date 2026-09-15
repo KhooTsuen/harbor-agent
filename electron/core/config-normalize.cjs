@@ -112,6 +112,8 @@ function normalize(raw) {
   const audit = obj(g.audit)
   const changeset = obj(g.changeset)
 
+  const limits = obj(g.limits)
+
   const providers =
     Array.isArray(g.providers) && g.providers.length > 0
       ? g.providers.map(normalizeProvider)
@@ -237,6 +239,16 @@ function normalize(raw) {
       enabled: changeset.enabled !== false,
       maxFileBytes: clampNumber(changeset.maxFileBytes, 1024, 64 * 1024 * 1024, 4 * 1024 * 1024),
       maxFiles: clampNumber(changeset.maxFiles, 1, 2000, 200),
+    },
+
+    /*
+     * 用量闸。token 数用 clampNumber 兜底（负数、乱填都打回 0 = 不限）。
+     */
+    limits: {
+      enabled: bool(limits.enabled, false),
+      dailyTokens: Math.round(clampNumber(limits.dailyTokens, 0, 1_000_000_000, 0)),
+      monthlyTokens: Math.round(clampNumber(limits.monthlyTokens, 0, 1_000_000_000, 0)),
+      onExceed: pick(str(limits.onExceed, 'block'), ['block', 'warn'], 'block'),
     },
 
     shortcuts: obj(g.shortcuts),
