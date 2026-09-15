@@ -100,7 +100,9 @@ export function Row({
   return (
     <div
       className={cn(
-        'acrylic-card flex items-center gap-5 rounded-base px-3.5 py-3 transition-colors duration-normal',
+        /* 不带自己的板：所在的「节」是一整块，见 index.css 的 .settings-body。
+           行与行之间**不放分隔线** —— 要的是「一整块里排着几项」。 */
+        'flex items-center gap-5 px-3.5 py-2.5',
         danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
       )}
     >
@@ -123,8 +125,7 @@ export function Row({
 /** 区块标题 —— 贴在块的上方，不画分隔线（分隔线是「清单」的语言） */
 export function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <h3 className="mb-2 mt-5 flex items-center gap-2 text-2xs uppercase tracking-wide text-fg-tertiary first:mt-0">
-      {/* 一枚小方点做锚：比竖条更像"标签"，也不会被误看成光标 */}
+    <h3 className="settings-section-title">
       <span
         className="size-1 shrink-0 rounded-full"
         style={{ background: 'color-mix(in srgb, var(--accent-blue) 70%, transparent)' }}
@@ -135,7 +136,6 @@ export function SectionTitle({ children }: { children: ReactNode }) {
   )
 }
 
-/** 把一组设置包成一块更大的板（需要「一块里装多行」时用） */
 export function SectionCard({
   title,
   hint,

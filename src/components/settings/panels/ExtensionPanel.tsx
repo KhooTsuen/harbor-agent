@@ -14,7 +14,7 @@ export function ExtensionPanel(): React.ReactElement {
   return (
     <>
       <SkillsTab />
-      <div className="mt-4 border-t border-line-hairline pt-2">
+      <div>
         <McpTab />
       </div>
     </>

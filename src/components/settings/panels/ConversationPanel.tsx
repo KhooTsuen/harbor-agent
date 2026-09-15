@@ -18,13 +18,13 @@ export function ConversationPanel(): React.ReactElement {
     <>
       <ScenesTab />
 
-      <div className="mt-4 border-t border-line-hairline pt-2">
+      <div>
         <SectionTitle>项目上下文</SectionTitle>
         <p className="py-1 text-2xs leading-relaxed text-fg-tertiary">
           下面两项是**覆盖**：只在当前项目 / 当前这条对话里生效，不动上面的全局默认。
         </p>
         <ProjectContextTab />
-        <div className="mt-3 border-t border-line-hairline pt-2">
+        <div>
           <ThreadSettingsTab />
         </div>
       </div>

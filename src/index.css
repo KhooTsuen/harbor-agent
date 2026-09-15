@@ -417,6 +417,79 @@
       var(--glass-shadow);
   }
 
+  /*
+   * ══════════════════════════════════════════════════════════════
+   * 设置页：一节 = 一整块亚克力板
+   *
+   * 为什么用 CSS 拼、而不是给每一节包一个组件：
+   * 设置页有 35 节散在 16 个文件里，而且不少节的内容是**别的组件**渲染的
+   * （`<ToolsPanel/>` 之类）。用 CSS 按「标题的兄弟元素」拼，
+   * 35 节一次性全部生效，嵌套面板也自然落在同一块板里 —— 零 JSX 改动，
+   * 也不会漏掉某一节导致风格不统一。
+   *
+   * 拼法：`.settings-body` 的直接子元素里
+   *   · `h3`（SectionTitle）＝ 块的头（上边框 + 上圆角 + 背景）
+   *   · 它后面的兄弟 ＝ 块的身体（左右边框 + 背景）
+   *   · **下一个 h3 之前的那个**（`:has(+ h3)`）和最后一个 ＝ 块的底
+   * 这样「标题 + 紧随其后的内容」在视觉上是一整块，块内没有分隔线。
+   * ══════════════════════════════════════════════════════════════
+   */
+  .settings-body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .settings-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+    padding: 0.5rem 0.875rem 0.25rem;
+    font-size: var(--text-2xs, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    border-bottom: none;
+    border-radius: var(--radius-base) var(--radius-base) 0 0;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  }
+
+  /* 第一块不要顶部空隙 */
+  .settings-body > .settings-section-title:first-child {
+    margin-top: 0;
+  }
+
+  /* 块的身体：和头同底色、同左右边框，去掉内部所有分隔线 */
+  .settings-body > *:not(.settings-section-title) {
+    background: var(--bg-surface);
+    border-left: 1px solid var(--border-hairline);
+    border-right: 1px solid var(--border-hairline);
+  }
+
+  /* 块的底：下一个标题之前的那个、以及最后一个 */
+  .settings-body > *:has(+ .settings-section-title),
+  .settings-body > *:last-child {
+    border-bottom: 1px solid var(--border-hairline);
+    border-radius: 0 0 var(--radius-base) var(--radius-base);
+    /* 给块底留一点呼吸，接着是下一块 */
+    margin-bottom: 0.25rem;
+  }
+
+  /* 开着材质时整块磨砂 —— 和 .acrylic-card 同一套观感 */
+  [data-glass='on'] .settings-section-title,
+  [data-glass='on'] .settings-body > *:not(.settings-section-title) {
+    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+    border-color: var(--glass-border);
+    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+  }
+
+  [data-glass='on'] .settings-section-title {
+    box-shadow: inset 0 1px 0 var(--glass-inset);
+  }
+
   /* ── 玻璃表面的状态：只动透明度 / 边框 / 内高光，不做位移动画 ── */
   [data-glass='on'] .glass-strong:hover,
   [data-glass='on'] .glass-subtle:hover {
