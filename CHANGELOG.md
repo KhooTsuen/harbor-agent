@@ -1,5 +1,60 @@
 # 更新日志
 
+## [0.33.0] — 2026-09-16 · 插件权限接上了
+
+上一版（0.32.0）插件能跑，但 manifest 里的 `permissions` 字段**只记录不强制**。
+这一版真接上了，用的是和内置工具**同一套语义**：
+
+| 插件声明 | 行为 |
+|---|---|
+| `network: true` | 算「有副作用」→ `allowNetwork:false` 拦、readonly 拦、ask 确认、full 放行 |
+| `write: true` | 同上，另外 `allowWrite:false` 拦 |
+| 无副作用（都 false） | **readonly 下也能跑**（只读的插件不该被拦） |
+
+确认弹窗里写清「哪个插件 + 要什么权限」：
+`运行插件「联网探测」（联网）`
+
+审计里记下插件 id 和它的权限声明，便于事后追。
+
+### 拆出来一个模块
+
+`electron/core/tools/plugin-tool.cjs` —— 权限门 + 执行。
+放 `tools/index.cjs` 里会让它过 300 行，而且「插件怎么过闸」本来就该独立成一块
+（和 `permission.cjs` 管内置工具、`mcp` 分支管外部进程是并列的）。
+
+`tools/index.cjs` 里现在只有两行：
+```js
+const pluginResult = await executePlugin(name, args, ctx, startedAt)
+if (pluginResult !== null) return pluginResult
+```
+
+### 测试（443 → 452）
+
+`10-plugins.mjs` 新增「插件 / 权限闸」9 项，走的是**完整的 `tools.execute()`**（不是直接调 `runPlugin`）：
+联网被拦 / 只读被拦 / ask 拒绝 / ask 同意 / full 放行 / 写文件被拦 /
+无副作用插件只读下能跑 / 确认弹窗里带插件名和权限。
+
+**变异测试**：让联网检查失效（`if (false && needsNetwork)`）→ 那条断言立刻红；
+恢复 → 452 全绿。
+
+### 一段踩坑记录（同一个坑今天第三次）
+
+写测试时用 Python 往 `.mjs` 里写插件体字符串，`
+` 又变成了**真换行**，
+把 JS 字符串切成两行 —— 语法直接错。这已经是今天第三次（`session-read.cjs`
+的工具重放、`ProjectContextTab` 的 placeholder、这次）。
+**规律：跨语言写代码字符串时，`
+` 的层数一定要当场 `node --check` 验，别信眼睛。**
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 452（+9）
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.32.0] — 2026-09-16 · 本地插件系统（P0 最小闭环）
 
 用户要一个类似 ChatGPT 插件的「插件接口」，本地端、优先适配 DeepSeek。

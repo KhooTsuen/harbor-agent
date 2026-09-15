@@ -161,6 +161,103 @@ export async function run() {
     )
     const after = await plugins.runPlugin(good, {}, {})
     check('★ 改 run.cjs 不用重启宿主就生效', after.includes('改过了'), after.slice(0, 20))
+
+    /* ── 权限闸：走 tools.execute 的完整流程（不是直接调 runPlugin）── */
+
+    group('插件 / 权限闸')
+
+    const toolsIndex = require(join(ROOT, 'electron/core/tools/index.cjs'))
+    const pdir = plugins.pluginsDir()
+    mkdirSync(pdir, { recursive: true })
+
+    /* 造三种插件：联网 / 写文件 / 无副作用 */
+    const netDir = join(pdir, '_selftest_net')
+    const writeDir = join(pdir, '_selftest_write')
+    const safeDir = join(pdir, '_selftest_safe')
+    makePlugin(
+      netDir,
+      {
+        name_for_model: 'net_probe',
+        name_for_human: '联网探测',
+        permissions: { network: true, write: false },
+        runtime: {},
+      },
+      'module.exports = { async run() { return "ok" } }\n',
+    )
+    makePlugin(
+      writeDir,
+      {
+        name_for_model: 'write_probe',
+        name_for_human: '写探测',
+        permissions: { network: false, write: true },
+        runtime: {},
+      },
+      'module.exports = { async run() { return "wrote" } }\n',
+    )
+    makePlugin(
+      safeDir,
+      {
+        name_for_model: 'safe_probe',
+        name_for_human: '安全探测',
+        permissions: { network: false, write: false },
+        runtime: {},
+      },
+      'module.exports = { async run() { return "safe" } }\n',
+    )
+
+    const base = { workdir: ROOT, permission: 'full', sessionId: 'plugin-selftest' }
+
+    try {
+      const noNet = await toolsIndex.execute('net_probe', {}, { ...base, allowNetwork: false })
+      check('★ allowNetwork:false 拦联网插件', noNet.includes('禁止联网'), noNet)
+
+      const ro = await toolsIndex.execute('net_probe', {}, { ...base, permission: 'readonly' })
+      check('★ readonly 拦有副作用的插件', ro.includes('只读'), ro)
+
+      const denied = await toolsIndex.execute(
+        'net_probe',
+        {},
+        { ...base, permission: 'ask', confirm: async () => false },
+      )
+      check('★ ask 模式拒绝 → 用户拒绝', denied.includes('用户拒绝'), denied)
+
+      const granted = await toolsIndex.execute(
+        'net_probe',
+        {},
+        { ...base, permission: 'ask', confirm: async () => true },
+      )
+      check('★ ask 模式同意 → 执行成功', granted.includes('ok'), granted)
+
+      const full = await toolsIndex.execute('net_probe', {}, { ...base })
+      check('★ full 模式直接执行', full.includes('ok'), full)
+
+      const noWrite = await toolsIndex.execute('write_probe', {}, { ...base, allowWrite: false })
+      check('★ allowWrite:false 拦写文件插件', noWrite.includes('只分析'), noWrite)
+
+      const safeRo = await toolsIndex.execute('safe_probe', {}, { ...base, permission: 'readonly' })
+      check('★ 无副作用的插件 readonly 下也能跑', safeRo.includes('safe'), safeRo)
+
+      /* 确认弹窗的文案要写清「这是哪个插件、要什么权限」 */
+      let askedSummary = ''
+      await toolsIndex.execute(
+        'net_probe',
+        {},
+        {
+          ...base,
+          permission: 'ask',
+          confirm: async (req) => {
+            askedSummary = String(req?.summary ?? '')
+            return true
+          },
+        },
+      )
+      check('★ 确认弹窗里带插件名', askedSummary.includes('联网探测'), askedSummary)
+      check('★ 确认弹窗里写了要什么权限', askedSummary.includes('联网'), askedSummary)
+    } finally {
+      rmSync(netDir, { recursive: true, force: true })
+      rmSync(writeDir, { recursive: true, force: true })
+      rmSync(safeDir, { recursive: true, force: true })
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
