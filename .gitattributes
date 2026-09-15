@@ -1,0 +1,26 @@
+# 换行与二进制文件
+#
+# 不加这个文件的话，Windows 上每次 git 操作都会刷一大堆
+# 「LF will be replaced by CRLF」的警告（初始提交时就刷了两百多行），
+# 而且换行状态不固定，以后 diff 里会混进一堆跟内容无关的改动。
+#
+# 策略：仓库里一律 LF（`eol=lf` 让工作区也是 LF，和现在文件的实际状态一致）。
+# 二进制文件明确标出来，免得 git 去猜。
+
+* text=auto eol=lf
+
+# 图片 / 字体：不许做任何换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# 锁文件：自动合并会生成坏内容，冲突就让用户自己重装
+package-lock.json -diff merge=binary
+
+# 文档里的 diff 更适合按行看
+*.md text diff=markdown
