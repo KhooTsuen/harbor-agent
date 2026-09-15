@@ -236,7 +236,7 @@ export function ToolsPanel() {
               className={
                 config.tools.permission === p.id
                   ? 'rounded-base border border-line-focus bg-bg-raised px-3 py-2 text-left'
-                  : 'rounded-base border border-line-hairline px-3 py-2 text-left transition-colors hover:bg-bg-hover'
+                  : 'nested-panel rounded-base border border-line-hairline px-3 py-2 text-left transition-colors hover:bg-bg-hover'
               }
             >
               <span className="flex items-center gap-2 text-dense text-fg-primary">

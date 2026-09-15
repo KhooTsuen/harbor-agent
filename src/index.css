@@ -443,17 +443,22 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 1.25rem;
-    padding: 0.5rem 0.875rem 0.25rem;
+    /* 块间距要**明显**：只有 20px 的时候相邻两块会连成一片 */
+    margin-top: 1.75rem;
+    padding: 0.625rem 0.875rem;
     font-size: var(--text-2xs, 11px);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-tertiary);
-    background: var(--bg-surface);
+    /*
+     * 块头比块身**亮一档** —— 不画线也能一眼看出「这行是标题、下面归它管」。
+     * 用 color-mix 混一点点前景色，两种主题下都会往「更亮/更暗」的方向走。
+     */
+    background: color-mix(in srgb, var(--bg-surface) 92%, var(--text-primary));
     border: 1px solid var(--border-hairline);
     border-bottom: none;
     border-radius: var(--radius-base) var(--radius-base) 0 0;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
   }
 
   /* 第一块不要顶部空隙 */
@@ -473,8 +478,19 @@
   .settings-body > *:last-child {
     border-bottom: 1px solid var(--border-hairline);
     border-radius: 0 0 var(--radius-base) var(--radius-base);
-    /* 给块底留一点呼吸，接着是下一块 */
-    margin-bottom: 0.25rem;
+  }
+
+  /*
+   * 块里不要再套块。
+   *
+   * 有些块的内容是别的组件渲染的（场景卡片、权限选项、供应商卡片…），
+   * 它们自带边框和底色，嵌在块里就成了「块中块」，看着像层级错乱。
+   * 统一压平：去掉边框和底色，只留间距 —— 块本身负责分组。
+   */
+  .settings-body > *:not(.settings-section-title) .nested-panel {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
   }
 
   /* 开着材质时整块磨砂 —— 和 .acrylic-card 同一套观感 */
@@ -487,6 +503,7 @@
   }
 
   [data-glass='on'] .settings-section-title {
+    background: color-mix(in srgb, var(--glass-border) 30%, var(--bg-surface));
     box-shadow: inset 0 1px 0 var(--glass-inset);
   }
 
