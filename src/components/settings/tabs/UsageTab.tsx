@@ -4,6 +4,7 @@ import type { StatsSummary, UsageBucket } from '@/types/backend'
 import { statsReset, statsSummary } from '@/lib/extrasApi'
 import { formatCount, formatTokens } from '@/lib/format'
 import { useUIStore } from '@/stores/useUIStore'
+import { BudgetLimit } from './BudgetLimit'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Row, SectionTitle } from '../parts'
@@ -70,6 +71,9 @@ export function UsageTab() {
 
   return (
     <div className="py-1">
+      <SectionTitle>用量闸（预算）</SectionTitle>
+      <BudgetLimit />
+
       <SectionTitle>用量</SectionTitle>
 
       {isEmpty ? (

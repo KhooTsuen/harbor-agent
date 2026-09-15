@@ -242,6 +242,19 @@ const DEFAULTS = {
     maxFiles: 200,
   },
 
+  /*
+   * 用量闸：调模型之前查一次账，超了就拦。
+   * 按 **token 数** 而不是金额 —— 金额要维护价目表，中转站计价又各不相同。
+   */
+  limits: {
+    enabled: false,
+    /** 0 = 不限 */
+    dailyTokens: 0,
+    monthlyTokens: 0,
+    /** block = 拦住；warn = 只提示 */
+    onExceed: 'block',
+  },
+
   shortcuts: {},
   updatedAt: 0,
 }

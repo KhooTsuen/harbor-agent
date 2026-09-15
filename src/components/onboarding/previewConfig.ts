@@ -70,6 +70,7 @@ export const PREVIEW_CONFIG: AppConfig = {
   router: { enabled: false, roles: { fast: '', reasoning: '', coding: '', vision: '', cheap: '' } },
   fallback: { enabled: true, attempts: 2, retryOn: ['timeout', 'rate_limit', 'server', 'network'] },
   audit: { enabled: true, retentionDays: 30 },
+  limits: { enabled: false, dailyTokens: 0, monthlyTokens: 0, onExceed: 'block' },
   scenes: {
     chat: { providerId: '', model: '' },
     title: { providerId: '', model: '' },

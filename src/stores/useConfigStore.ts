@@ -33,6 +33,7 @@ interface ConfigState {
   patchTools: (patch: Partial<AppConfig['tools']>) => Promise<void>
   patchSearch: (patch: Partial<AppConfig['search']>) => Promise<void>
   patchAudit: (patch: Partial<AppConfig['audit']>) => Promise<void>
+  patchLimits: (patch: Partial<AppConfig['limits']>) => Promise<void>
   patchMemory: (patch: Partial<AppConfig['memory']>) => Promise<void>
   patchContext: (patch: Partial<AppConfig['context']>) => Promise<void>
   patchRouter: (patch: Partial<AppConfig['router']>) => Promise<void>
@@ -93,6 +94,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   patchAudit: async (patch) => {
     const config = await pushConfig({ audit: patch })
+    if (config) set({ config })
+  },
+
+  patchLimits: async (patch) => {
+    const config = await pushConfig({ limits: patch })
     if (config) set({ config })
   },
 
