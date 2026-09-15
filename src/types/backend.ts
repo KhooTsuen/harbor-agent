@@ -254,7 +254,29 @@ export interface WorkbenchBridge extends SafetyBridge {
   ) => () => void
 
   onEvent: (callback: (event: ChatEvent) => void) => () => void
+
+  /* ── 浏览器：主进程的 browse 工具请求渲染层操作 webview ── */
+  onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
+  browserResult: (
+    id: string,
+    result: {
+      ok: boolean
+      text?: string
+      html?: string
+      title?: string
+      url?: string
+      error?: string
+    },
+  ) => Promise<{ ok: boolean; error?: string }>
+
   isElectron: true
+}
+
+/** 主进程发来的一次浏览请求 */
+export interface BrowserRequestEvent {
+  id: string
+  action: string
+  url?: string
 }
 
 declare global {

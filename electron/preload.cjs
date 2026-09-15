@@ -195,6 +195,18 @@ const api = {
     }
   },
 
+  /* ── 浏览器：让主进程的 `browse` 工具能驱动这个 webview ── */
+
+  /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */
+  onBrowserRequest: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('browser:request', handler)
+    return () => ipcRenderer.removeListener('browser:request', handler)
+  },
+
+  /** 把浏览结果回给主进程（不回的话那边会一直等） */
+  browserResult: (id, result) => ipcRenderer.invoke('browser:result', { id, result }),
+
   /** 渲染层可以据此判断「我是不是跑在 Electron 里」 */
   isElectron: true,
 }

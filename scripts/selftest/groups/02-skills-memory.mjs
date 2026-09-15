@@ -218,7 +218,7 @@ export async function run() {
 
   group('工具清单（扩展后）')
   const schema2 = tools.toApiSchema()
-  check('共 7 个工具', schema2.length === 7, String(schema2.length))
+  check('共 8 个工具（含 browse）', schema2.length === 8, String(schema2.length))
   check(
     '含 search_web',
     schema2.some((t) => t.function.name === 'search_web'),

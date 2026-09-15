@@ -17,6 +17,7 @@ import { DiffViewer } from '@/components/chat/DiffViewer'
 import { FileTree } from './FileTree'
 import { FilePreview } from './FilePreview'
 import { BrowserTab } from './BrowserTab'
+import { useBrowseBridge } from './browser/useBrowseBridge'
 import { ArtifactsPanel } from '@/components/chat/ArtifactsPanel'
 import { StatePanel } from '@/components/chat/StatePanel'
 import { Terminal } from './Terminal'
@@ -59,6 +60,9 @@ const EMPTY_PROJECT: Project = {
 }
 
 export function RightPanel() {
+  /* 接住 Agent 的浏览请求（挂在这里而不是 BrowserTab：请求来时标签可能没开）*/
+  useBrowseBridge()
+
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
 
   /*
