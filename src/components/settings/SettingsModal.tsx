@@ -120,7 +120,7 @@ export function SettingsModal() {
         </nav>
 
         {/* 右侧内容 */}
-        <div className="min-w-0 flex-1 overflow-y-auto pr-1.5">
+        <div className="settings-body min-w-0 flex-1 overflow-y-auto pr-1.5">
           {tab === 'general' ? <GeneralPanel /> : null}
           {tab === 'appearance' ? <AppearanceTab /> : null}
           {tab === 'conversation' ? <ConversationPanel /> : null}

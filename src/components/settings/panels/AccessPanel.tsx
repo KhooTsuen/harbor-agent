@@ -26,7 +26,7 @@ export function AccessPanel(): React.ReactElement {
         <SearchPanel />
       </div>
 
-      <div className="mt-2 border-t border-line-hairline pt-2">
+      <div>
         <SecurityTab />
       </div>
     </>

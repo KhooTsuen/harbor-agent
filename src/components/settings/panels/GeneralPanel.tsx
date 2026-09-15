@@ -12,7 +12,7 @@ export function GeneralPanel(): React.ReactElement {
   return (
     <>
       <GeneralTab />
-      <div className="mt-4 border-t border-line-hairline pt-2">
+      <div>
         <ShortcutsTab />
       </div>
     </>

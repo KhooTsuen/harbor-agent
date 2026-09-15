@@ -13,7 +13,7 @@ export function DataUsagePanel(): React.ReactElement {
   return (
     <>
       <UsageTab />
-      <div className="mt-4 border-t border-line-hairline pt-2">
+      <div>
         <DataTab />
       </div>
     </>

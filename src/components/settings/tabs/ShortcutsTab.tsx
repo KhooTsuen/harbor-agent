@@ -62,7 +62,7 @@ export function ShortcutsTab() {
       {/* 快捷键列表也包成一块亚克力板 —— 不包的话它是一条悬空的长列表，
           和上面那些「块」不是一套语言 */}
       {Array.from(new Set(SHORTCUTS.map((s) => s.group))).map((group) => (
-        <div key={group} className="acrylic-card mb-2 rounded-base px-3 py-2.5 last:mb-0">
+        <div key={group} className="px-3.5 py-2.5">
           <p className="mb-1.5 text-2xs text-fg-tertiary">{group}</p>
           <ul className="flex flex-col gap-0.5">
             {SHORTCUTS.filter((s) => s.group === group).map((shortcut) => (
