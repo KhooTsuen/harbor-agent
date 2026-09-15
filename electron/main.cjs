@@ -21,6 +21,7 @@ const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
 const { setupTray, showWindow, setQuitting, isQuitting } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
 const navigationPolicy = require('./navigation-policy.cjs')
+const pluginWatcher = require('./core/plugin-watcher.cjs')
 
 /* ══════════════════════════════════════════════════════════
    ① 锁路径 —— 必须早于 app.whenReady()
@@ -228,6 +229,7 @@ if (!gotLock) {
     void require('./core/mcp.cjs')
       .boot(config)
       .then(() => log.info('MCP 初始化完成'))
+    pluginWatcher.install({ send }) // 插件热插拔：监听 data/plugins/，增删自动重扫 + 通知前端
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

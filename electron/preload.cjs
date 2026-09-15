@@ -195,6 +195,13 @@ const api = {
     }
   },
 
+  /** 订阅插件热插拔事件（新增/删除插件时主进程通知） */
+  onPluginsChanged: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('plugins:changed', handler)
+    return () => ipcRenderer.removeListener('plugins:changed', handler)
+  },
+
   /* ── 浏览器：让主进程的 `browse` 工具能驱动这个 webview ── */
 
   /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */

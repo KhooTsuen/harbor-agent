@@ -1,5 +1,58 @@
 # 更新日志
 
+## [0.35.0] — 2026-09-16 · 插件「即插即用」= 热插拔
+
+用户要的「即插即用」是字面意思：**把插件文件夹丢进 data/plugins/ 就生效，
+删掉就失效，不用重启**。对标 DeepSeek Harness 的「Everything is a Plugin」里
+Cordis 内核的 mount/unmount —— 只是用文件系统的增删来表达。
+
+### 热插拔（新增 electron/core/plugin-watcher.cjs）
+
+`fs.watch` 监听 data/plugins/，增/删/改 → **防抖 500ms** → 自动 `reloadPlugins()`。
+Windows 上 fs.watch 会连续触发多次（rename 尤其），不防抖会刷屏 + 不稳定。
+
+`pluginWatcher.install({ send })` 是 main.cjs 的便捷入口，变化时发
+`plugins:changed` 事件给前端。
+
+### UI 反馈
+
+前端订阅 `plugins:changed`，弹轻 toast：
+- 新增 → 「检测到新插件：随机数 · 下一轮对话即可使用，不用重启」
+- 删除 → 「插件已移除：随机数」
+
+（订阅走新的 `onPluginsChanged` 桥，和对话流 `onEvent` 分开，不互相污染）
+
+### 修的 bug：reloadPlugins 没导出
+
+registry.cjs 里 `reloadPlugins()` 定义着但**没写进 module.exports** ——
+热插拔的 onChange 里一调就 `TypeError`，静默失效（Electron 主进程只打 stderr，
+不写日志文件）。真机验证时抓出来的：日志里一片安静，插件放进去没反应。
+
+`.cjs` 不过 tsc、`node --check` 只查语法 —— 这种「定义了没导出」只能真跑抓。
+教训同前：改内核必须真机走一遍。
+
+### 拆文件
+
+- `src/lib/subscriptions.ts`：订阅类桥接（backend.ts 超 300 了）
+- `plugin-watcher.cjs`：热插拔监听（main.cjs 超 300 了）
+
+### 验证
+
+- 真机：启动后丢「随机数」插件 → 日志 `插件热插拔：+1 / -0`；
+  删掉 → `+0 / -1`
+- `reloadPlugins()` 后 `toApiSchema()`（模型下一轮看到的工具）含新插件，
+  删后不含 —— 模型能用的链路完整
+- 防抖时序：1.5 秒内快速增删会合并成最终状态（正常，实际用户不会秒插秒拔）
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 465
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.34.0] — 2026-09-16 · 插件 P1 清完
 
 上一版把权限接上了（0.33.0）。这版清掉剩下的 P1 三项，其中 strict 的实测
