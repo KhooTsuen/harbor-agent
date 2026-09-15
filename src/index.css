@@ -394,6 +394,29 @@
     border-color: var(--glass-border);
   }
 
+  /*
+   * 亚克力板 —— 设置页的每一个「块」用它
+   *
+   * 和 glass-* 的区别：**关掉玻璃时也要像个块**。
+   * glass-* 在关闭态是纯色，和背景几乎分不出边界；这里两种模式都给
+   * 「顶边内高光」——那是亚克力反光的边，视觉上才是"一块板"而不是"一块颜色"。
+   */
+  .acrylic-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  }
+
+  [data-glass='on'] .acrylic-card {
+    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    border-color: var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inset),
+      var(--glass-shadow);
+  }
+
   /* ── 玻璃表面的状态：只动透明度 / 边框 / 内高光，不做位移动画 ── */
   [data-glass='on'] .glass-strong:hover,
   [data-glass='on'] .glass-subtle:hover {

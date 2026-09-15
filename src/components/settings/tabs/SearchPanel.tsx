@@ -73,7 +73,7 @@ export function SearchPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="block">
+      <label className="acrylic-card block rounded-base px-3.5 py-3">
         <span className="mb-1 block text-2xs text-fg-tertiary">搜索服务</span>
         <select
           value={search.provider}
@@ -104,7 +104,7 @@ export function SearchPanel() {
       </label>
 
       {needKey ? (
-        <label className="block">
+        <label className="acrylic-card block rounded-base px-3.5 py-3">
           <span className="mb-1 block text-2xs text-fg-tertiary">搜索服务的 API Key</span>
           <Field
             type="password"
@@ -120,7 +120,7 @@ export function SearchPanel() {
       ) : null}
 
       {isCustom ? (
-        <label className="block">
+        <label className="acrylic-card block rounded-base px-3.5 py-3">
           <span className="mb-1 block text-2xs text-fg-tertiary">
             URL 模板（用 {'{query}'} 占位）
           </span>
@@ -133,7 +133,7 @@ export function SearchPanel() {
         </label>
       ) : null}
 
-      <label className="block">
+      <label className="acrylic-card block rounded-base px-3.5 py-3">
         <span className="mb-1 block text-2xs text-fg-tertiary">每次返回几条结果</span>
         <Field
           type="number"

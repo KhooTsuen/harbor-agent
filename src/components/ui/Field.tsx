@@ -26,7 +26,9 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded border border-line-subtle bg-bg-elevated px-2.5 py-1.5',
+        // w-full 是刻意的：设置页把它放在 justify-end 的容器里（开关靠右），
+        // 没有 w-full 的话输入框会被压成内容宽。要窄的传 className 覆盖。
+        'flex w-full items-center gap-2 rounded border border-line-subtle bg-bg-elevated px-2.5 py-1.5',
         'transition-colors duration-fast focus-within:border-line-focus',
         className,
       )}
