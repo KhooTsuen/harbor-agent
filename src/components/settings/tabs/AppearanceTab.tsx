@@ -42,15 +42,21 @@ export function AppearanceTab() {
         </Row>
       ) : null}
 
-      {/* 预览：改字体时当场看效果，不用退出去找段文字 */}
-      <div className="mt-1 rounded-base border border-line-hairline bg-bg-surface px-3 py-2">
-        <p className="text-dense text-fg-primary">
-          让 Agent 把这段解析逻辑重构一下 —— 汉字测试 0123456789
-        </p>
-        <p className="mt-0.5 text-2xs text-fg-tertiary">
-          The quick brown fox jumps over the lazy dog
-        </p>
-      </div>
+      {/*
+        预览：改字体时当场看效果，不用退出去找段文字。
+        用 Row 包起来是为了**左侧有标签列** —— 之前它俩都没有，
+        这一行就孤零零地顶到最左边，和上下几行对不齐。
+      */}
+      <Row label="预览" hint="立刻看到当前字体的效果">
+        <div className="w-full rounded-base border border-line-hairline bg-bg-surface px-3 py-2">
+          <p className="text-dense text-fg-primary">
+            让 Agent 把这段解析逻辑重构一下 —— 汉字测试 0123456789
+          </p>
+          <p className="mt-0.5 text-2xs text-fg-tertiary">
+            The quick brown fox jumps over the lazy dog
+          </p>
+        </div>
+      </Row>
 
       <Row label="字号缩放" hint={`${settings.fontScale}%（80 - 150）`}>
         <input

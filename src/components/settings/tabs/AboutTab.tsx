@@ -1,4 +1,5 @@
 import { APP_VERSION } from '@/lib/backend'
+import { SectionTitle } from '../parts'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 关于
@@ -31,7 +32,7 @@ export function AboutTab() {
         </p>
       </div>
 
-      <h4 className="mt-5 text-2xs uppercase tracking-wide text-fg-tertiary">数据放在哪</h4>
+      <SectionTitle>数据放在哪</SectionTitle>
       <p className="mt-2 text-2xs leading-relaxed text-fg-tertiary">
         全部在软件目录的 <span className="font-mono">data/</span> 下：
         <span className="font-mono">config.json</span> 是设置，
@@ -39,18 +40,16 @@ export function AboutTab() {
         <span className="font-mono">logs/</span> 是日志。删掉整个文件夹就等于卸载。
       </p>
 
-      <h4 className="mt-5 text-2xs uppercase tracking-wide text-fg-tertiary">更新日志</h4>
-      <ul className="mt-2 flex flex-col gap-1.5 text-2xs">
-        <li className="flex gap-2">
-          <span className="shrink-0 font-mono text-fg-tertiary">0.1.0</span>
-          <span>
-            首个版本：三栏布局、对话与 agent 循环、工具系统与权限三档、Diff 审查、终端、文件树、
-            多线程、命令面板、设置
-          </span>
-        </li>
-      </ul>
+      <SectionTitle>更新日志</SectionTitle>
+      <p className="text-2xs leading-relaxed text-fg-tertiary">
+        完整改动记录在仓库根目录的 <span className="font-mono">CHANGELOG.md</span> ——
+        每个版本「改了什么、为什么改」都写在那里。
+        <span className="mt-1 block text-fg-tertiary/70">
+          （这里不再列条目：之前那版只写了「0.1.0 首个版本」，改了三十个版本也没动过。）
+        </span>
+      </p>
 
-      <h4 className="mt-5 text-2xs uppercase tracking-wide text-fg-tertiary">开源许可</h4>
+      <SectionTitle>开源许可</SectionTitle>
       <ul className="mt-2 flex flex-col gap-1 font-mono text-2xs text-fg-tertiary">
         {DEPENDENCIES.map((item) => (
           <li key={item}>{item}</li>

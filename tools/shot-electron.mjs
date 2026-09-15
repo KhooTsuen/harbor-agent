@@ -48,6 +48,17 @@ const SCRIPT =
 
 /** 要往终端里敲的内容（不含回车，回车另外发） */
 const TYPE = process.argv.find((a) => a.startsWith('--type='))?.slice(7) ?? ''
+/*
+ * --tabs=通用,外观,对话
+ *
+ * 一次启动把设置里每个标签各拍一张。为什么加：逐个标签开一次应用
+ * 要半分钟，还要人守着 —— 而「检查所有标签的布局」本来就该是脚本干的活。
+ * 名字必须和左侧导航上显示的一模一样。
+ */
+const TABS = (process.argv.find((a) => a.startsWith('--tabs='))?.slice(7) ?? '')
+  .split(',')
+  .map((t) => t.trim())
+  .filter(Boolean)
 
 if (!existsSync(EXE)) {
   console.error(`找不到便携版：${EXE}\n先跑 npm run package`)
@@ -171,6 +182,46 @@ try {
       console.log(`已敲入：${segment}`)
       await sleep(1400)
     }
+  }
+
+  /*
+   * --tabs 模式：打开设置，逐个标签点一遍各拍一张。
+   * 拍完就返回，不再走下面那套「终端调试」的输出。
+   */
+  if (TABS.length > 0) {
+    const openSettings = `(function () {
+      var b = [...document.querySelectorAll('button')].find(function (x) {
+        return /设置/.test(x.getAttribute('aria-label') || '')
+      })
+      if (b) b.click()
+      return !!b
+    })()`
+    await cdp.send('Runtime.evaluate', { expression: openSettings, returnByValue: true })
+    await sleep(1500)
+
+    for (const tabName of TABS) {
+      const clicked = await cdp.send('Runtime.evaluate', {
+        returnByValue: true,
+        expression: `(function () {
+          var t = [...document.querySelectorAll('nav button')].find(function (x) {
+            return (x.textContent || '').trim() === ${JSON.stringify(tabName)}
+          })
+          if (!t) return 'missing'
+          t.click()
+          var body = document.querySelector('.settings-body')
+          if (body) body.scrollTop = 0
+          return 'ok'
+        })()`,
+      })
+      await sleep(1200)
+
+      const one = await cdp.send('Page.captureScreenshot', { format: 'png' })
+      const out = resolve(OUT_DIR, `tab-${tabName}.png`)
+      writeFileSync(out, Buffer.from(one.data, 'base64'))
+      console.log(`截图 → tab-${tabName}.png（${clicked?.result?.value ?? '?'}）`)
+    }
+    app.kill()
+    process.exit(0)
   }
 
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' })

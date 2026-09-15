@@ -39,7 +39,12 @@ function Bar({ bucket, max }: { bucket: UsageBucket; max: number }) {
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-bg-surface">
       <div
         className="h-full rounded-full"
-        style={{ width: `${ratio}%`, background: 'var(--border-focus)' }}
+        /* 用主题色而不是 --border-focus（那是个接近纯白的边框色，
+                     当条形图看着像一条高亮白条，太抢眼） */
+        style={{
+          width: `${ratio}%`,
+          background: 'color-mix(in srgb, var(--accent-blue) 65%, transparent)',
+        }}
       />
     </div>
   )
