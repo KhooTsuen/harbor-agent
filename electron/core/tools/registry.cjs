@@ -19,13 +19,24 @@ const runShell = require('./run_shell.cjs')
 const remember = require('./remember.cjs')
 const searchWeb = require('./search_web.cjs')
 const browse = require('./browse.cjs')
+const browseSnapshot = require('./browse-snapshot.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
 const capability = require('../capability.cjs')
 const plugins = require('../plugins.cjs')
 
-const ALL = [readFile, writeFile, editFile, listDir, runShell, searchWeb, browse, remember]
+const ALL = [
+  readFile,
+  writeFile,
+  editFile,
+  listDir,
+  runShell,
+  searchWeb,
+  browse,
+  browseSnapshot,
+  remember,
+]
 
 /** 哪些工具算「写操作」（只读模式下要拦，ask 模式下要确认） */
 /* remember 也算写操作：记忆会影响之后所有对话，记错比改错文件影响更久 */
@@ -33,7 +44,14 @@ const ALL = [readFile, writeFile, editFile, listDir, runShell, searchWeb, browse
  * browse 也算：它会联网，而且会占用用户正在看的浏览器标签（有副作用）。
  * 归到「写操作」里 —— readonly 档要拦、ask 档要确认。
  */
-const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'run_shell', 'browse', 'remember'])
+const WRITE_TOOLS = new Set([
+  'write_file',
+  'edit_file',
+  'run_shell',
+  'browse',
+  'browse_snapshot',
+  'remember',
+])
 
 /** 哪些工具会改文件（审计里记下来） */
 const FILE_WRITERS = new Set(['write_file', 'edit_file'])

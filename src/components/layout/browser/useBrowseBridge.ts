@@ -30,13 +30,32 @@ export function useBrowseBridge(): void {
     if (!bridge?.onBrowserRequest) return
 
     const off = bridge.onBrowserRequest((req: BrowserRequestEvent) => {
+      if (req.action === 'snapshot') {
+        /*
+         * 快照：读当前页面的可交互元素，不导航。
+         * 前提是浏览器里已经有打开的页面 —— 没有就直说，别让主进程干等 45 秒。
+         */
+        const { activeId } = useBrowserStore.getState()
+        if (!activeId) {
+          void window.workbench?.browserResult?.(req.id, {
+            ok: false,
+            error: '浏览器里还没有打开的页面，先 browse 打开一个网页',
+          })
+          return
+        }
+        useBrowserStore.getState().requestBrowse({ id: req.id, action: 'snapshot', url: '' })
+        useUIStore.getState().setActiveRightTab('browser')
+        return
+      }
       if (req.action !== 'navigate' || !req.url) return
 
       /*
        * 把请求放进 store —— BrowserTab 挂载后会消费它。
        * 同时把右侧切到「浏览器」：Agent 不该在用户看不见的地方偷偷开网页。
        */
-      useBrowserStore.getState().requestBrowse({ id: req.id, url: String(req.url) })
+      useBrowserStore
+        .getState()
+        .requestBrowse({ id: req.id, action: 'navigate', url: String(req.url) })
       useUIStore.getState().setActiveRightTab('browser')
       toastRef.current('info', '正在用浏览器读取网页', String(req.url))
     })

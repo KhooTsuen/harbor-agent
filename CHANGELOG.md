@@ -1,5 +1,51 @@
 # 更新日志
 
+## [0.36.0] — 2026-09-16 · browser_snapshot：computer use 的地基
+
+用户要「像 ChatGPT 一样模拟人类使用软件」，范围定在网页。先做了个 10 分钟
+验证实验，结论是 **deepseek-flash 能看图定位（x 差 1px、y 偏 88px）**，
+所以走**混合方案**：视觉判断「该点哪个」，DOM 拿「精确坐标」执行。
+
+### browse_snapshot（新增工具）
+
+读当前浏览器页面的**可交互元素**，每个带索引、标签、类型、文本、中心坐标、尺寸：
+
+```
+[0] <input type=text> 中心(232,207) 尺寸432×40
+[3] <input type=submit> "Sign in" 中心(232,344) 尺寸432×40
+```
+
+坐标从 getBoundingClientRect 拿，是**精确的**（视觉推理会漂 88px）；
+模型看「文本+角色」判断点哪个，用「索引」让后面的 browse_click 精确执行。
+
+### 链路改动
+
+- `useBrowserStore`：PendingBrowse 加 action（navigate / snapshot）
+- `useBrowseDriver`：SNAPSHOT_SCRIPT（webview 里跑，过滤不可见/零大小/视口外，
+  最多 80 个元素）
+- `useBrowseBridge`：snapshot 读当前页面、不导航；没开页面直接回错不干等
+- `handlers/browser.cjs`：snapshot 结果直接透传（不过正文清洗）
+- `formatSnapshot` 纯函数 + 单测（+6 项，内核 465→471）
+
+### 真机验证
+
+GitHub 登录页：browse 打开 → browse_snapshot 返回 10 个元素（用户名框、密码框、
+Sign in 按钮、Google/Apple 登录、passkey、Terms 等），坐标/文本/尺寸全对。
+
+### 下一步（还没做）
+
+browse_click（按索引点）/ browse_type（打字）—— snapshot 是地基，这两个是「手」。
+```
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 471（+6）
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.35.0] — 2026-09-16 · 插件「即插即用」= 热插拔
 
 用户要的「即插即用」是字面意思：**把插件文件夹丢进 data/plugins/ 就生效，
