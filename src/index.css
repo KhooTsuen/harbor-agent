@@ -419,41 +419,35 @@
 
   /*
    * ══════════════════════════════════════════════════════════════
-   * 设置页：一节 = 一整块亚克力板
+   * 设置页：每个子选项 = 一块独立的亚克力板
    *
-   * 为什么用 CSS 拼、而不是给每一节包一个组件：
-   * 设置页有 35 节散在 16 个文件里，而且不少节的内容是**别的组件**渲染的
-   * （`<ToolsPanel/>` 之类）。用 CSS 按「标题的兄弟元素」拼，
-   * 35 节一次性全部生效，嵌套面板也自然落在同一块板里 —— 零 JSX 改动，
-   * 也不会漏掉某一节导致风格不统一。
+   * 粒度是「子选项」不是「节」：一行设置、一张场景卡、一个权限选项、
+   * 一条快捷键，各自是一块板，贴在背景上。标题只当标签，不包块。
    *
-   * 拼法：`.settings-body` 的直接子元素里
-   *   · `h3`（SectionTitle）＝ 块的头（上边框 + 上圆角 + 背景）
-   *   · 它后面的兄弟 ＝ 块的身体（左右边框 + 背景）
-   *   · **下一个 h3 之前的那个**（`:has(+ h3)`）和最后一个 ＝ 块的底
-   * 这样「标题 + 紧随其后的内容」在视觉上是一整块，块内没有分隔线。
+   * 之前两版都理解错了：
+   *   v0.27 一行一块 → 用户圈了「输入与默认」整节说「一个选项做成一整块」，
+   *     我改成了「一节一整块」；
+   *   v0.30 用户明确「每个子选项都要按这样来」→ 粒度是子选项，不是节。
+   * 最终：标题（标签）+ 每个子选项（块），两块之间留空隙。
    * ══════════════════════════════════════════════════════════════
    */
   .settings-body {
     display: flex;
     flex-direction: column;
+    gap: 0.5rem;
   }
 
+  /* 标题 = 标签，不包块：正文级字号 + 粗体 +（可选）一句说明 */
   .settings-section-title {
     display: flex;
     flex-direction: column;
-    /*
-     * 块间距要**明显**：只有 20px 的时候相邻两块会连成一片。
-     * 标题是「正文级字号 + 粗体」（用户给的参考样式），
-     * 不是之前那种全大写小标签 —— 那是「标签」，不是「标题」。
-     */
-    margin-top: 1.75rem;
-    padding: 0.875rem 1rem 0.625rem;
-    background: color-mix(in srgb, var(--bg-surface) 92%, var(--text-primary));
-    border: 1px solid var(--border-hairline);
-    border-bottom: none;
-    border-radius: var(--radius-base) var(--radius-base) 0 0;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
+    gap: 0.125rem;
+    margin-top: 1.25rem;
+    padding: 0 0.25rem;
+  }
+
+  .settings-body > .settings-section-title:first-child {
+    margin-top: 0;
   }
 
   .settings-section-heading {
@@ -463,57 +457,9 @@
   }
 
   .settings-section-hint {
-    margin-top: 0.125rem;
     font-size: 11px;
-    font-weight: 400;
     line-height: 1.5;
     color: var(--text-tertiary);
-  }
-
-  /* 第一块不要顶部空隙 */
-  .settings-body > .settings-section-title:first-child {
-    margin-top: 0;
-  }
-
-  /* 块的身体：和头同底色、同左右边框，去掉内部所有分隔线 */
-  .settings-body > *:not(.settings-section-title) {
-    background: var(--bg-surface);
-    border-left: 1px solid var(--border-hairline);
-    border-right: 1px solid var(--border-hairline);
-  }
-
-  /* 块的底：下一个标题之前的那个、以及最后一个 */
-  .settings-body > *:has(+ .settings-section-title),
-  .settings-body > *:last-child {
-    border-bottom: 1px solid var(--border-hairline);
-    border-radius: 0 0 var(--radius-base) var(--radius-base);
-  }
-
-  /*
-   * 块里不要再套块。
-   *
-   * 有些块的内容是别的组件渲染的（场景卡片、权限选项、供应商卡片…），
-   * 它们自带边框和底色，嵌在块里就成了「块中块」，看着像层级错乱。
-   * 统一压平：去掉边框和底色，只留间距 —— 块本身负责分组。
-   */
-  .settings-body > *:not(.settings-section-title) .nested-panel {
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-  }
-
-  /* 开着材质时整块磨砂 —— 和 .acrylic-card 同一套观感 */
-  [data-glass='on'] .settings-section-title,
-  [data-glass='on'] .settings-body > *:not(.settings-section-title) {
-    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
-    border-color: var(--glass-border);
-    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
-    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
-  }
-
-  [data-glass='on'] .settings-section-title {
-    background: color-mix(in srgb, var(--glass-border) 30%, var(--bg-surface));
-    box-shadow: inset 0 1px 0 var(--glass-inset);
   }
 
   /* ── 玻璃表面的状态：只动透明度 / 边框 / 内高光，不做位移动画 ── */

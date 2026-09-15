@@ -78,7 +78,7 @@ export function ProviderCard({ provider }: ProviderCardProps) {
   }
 
   return (
-    <div className="nested-panel rounded-base border border-line-hairline bg-bg-raised/30 p-3">
+    <div className="acrylic-card rounded-base border border-line-hairline p-3">
       <div className="flex items-center gap-2">
         <Plug size={14} className="shrink-0 text-fg-tertiary" />
         <input
