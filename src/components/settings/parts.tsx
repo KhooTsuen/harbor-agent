@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 import {
   BrainCircuit,
   Cpu,
@@ -71,34 +72,94 @@ export const SETTINGS_TABS: readonly {
   { id: 'about', label: '关于', icon: Info, group: null },
 ] as const
 
-/** 一行设置：左边标签 + 说明，右边控件 */
+/**
+ * 一行设置 —— **一块独立的「亚克力板」**
+ *
+ * 视觉上刻意做成一块块的，而不是「一列带分隔线的清单」：
+ *   · 自己的背景 + 1px 边框 + 圆角 → 有独立的边界
+ *   · 玻璃模式下用 `glass` 类 → 磨砂 + 顶边内高光 + 投影，
+ *     就是「贴在亚克力玻璃上」的那种感觉（内高光是关键：
+ *     亚克力的边会反光，纯半透明看起来只是「变淡」）
+ *   · 块与块之间留空隙，不靠分隔线区分
+ *
+ * 用统一的类名而不是给每处写样式：9 个标签页、几十个设置项，
+ * 改一处全部生效 —— 这也是它值得单独一个组件的原因。
+ */
 export function Row({
   label,
   hint,
   children,
+  /** 整行变红（危险操作，比如退出、清空数据） */
+  danger,
 }: {
   label: string
   hint?: string
   children: ReactNode
+  danger?: boolean
 }) {
   return (
-    <div className="flex items-start gap-5 py-3">
-      <div className="w-52 shrink-0">
-        <p className="text-dense text-fg-primary">{label}</p>
+    <div
+      className={cn(
+        'acrylic-card flex items-center gap-5 rounded-base px-3.5 py-3 transition-colors duration-normal',
+        danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
+      )}
+    >
+      <div className="w-56 shrink-0">
+        <p className={cn('text-dense', danger ? 'text-[var(--error)]' : 'text-fg-primary')}>
+          {label}
+        </p>
         {hint ? <p className="mt-0.5 text-2xs leading-relaxed text-fg-tertiary">{hint}</p> : null}
       </div>
       {/* 限一个上限：设置弹窗很宽，不限的话输入框会被拉成一条横跨半屏的长条 */}
-      <div className="min-w-0 max-w-2xl flex-1">{children}</div>
+      {/*
+       * justify-end：开关、按钮这类「小控件」自然靠右（设置页的通行做法），
+       * 而输入框自己带 w-full，会照旧占满 —— 一个类同时满足两种。
+       */}
+      <div className="flex min-w-0 max-w-2xl flex-1 items-center justify-end gap-2">{children}</div>
     </div>
   )
 }
 
-/** 区块标题 */
+/** 区块标题 —— 贴在块的上方，不画分隔线（分隔线是「清单」的语言） */
 export function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <h3 className="mt-2 border-b border-line-hairline pb-1.5 text-2xs uppercase tracking-wide text-fg-tertiary">
+    <h3 className="mb-2 mt-5 flex items-center gap-2 text-2xs uppercase tracking-wide text-fg-tertiary first:mt-0">
+      {/* 一枚小方点做锚：比竖条更像"标签"，也不会被误看成光标 */}
+      <span
+        className="size-1 shrink-0 rounded-full"
+        style={{ background: 'color-mix(in srgb, var(--accent-blue) 70%, transparent)' }}
+        aria-hidden="true"
+      />
       {children}
     </h3>
+  )
+}
+
+/** 把一组设置包成一块更大的板（需要「一块里装多行」时用） */
+export function SectionCard({
+  title,
+  hint,
+  children,
+  danger,
+}: {
+  title: string
+  hint?: string
+  children: ReactNode
+  danger?: boolean
+}) {
+  return (
+    <section className="flex flex-col gap-1.5">
+      <SectionTitle>{title}</SectionTitle>
+      {hint ? <p className="-mt-1 mb-1 text-2xs leading-relaxed text-fg-tertiary">{hint}</p> : null}
+      <div
+        className={cn(
+          'acrylic-card flex flex-col gap-1.5 rounded-large p-1.5',
+          danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
+        )}
+      >
+        {children}
+      </div>
+    </section>
   )
 }
 

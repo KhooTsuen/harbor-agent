@@ -253,7 +253,7 @@ export function ToolsPanel() {
         </div>
       </div>
 
-      <div>
+      <div className="acrylic-card block rounded-base px-3.5 py-3">
         <p className="mb-1 text-2xs text-fg-tertiary">
           工作目录（模型看到的「相对路径」是相对这里）
         </p>
@@ -279,7 +279,7 @@ export function ToolsPanel() {
         </div>
       </div>
 
-      <label className="block">
+      <label className="acrylic-card block rounded-base px-3.5 py-3">
         <span className="mb-1 block text-2xs text-fg-tertiary">命令超时（秒）</span>
         <Field
           type="number"
