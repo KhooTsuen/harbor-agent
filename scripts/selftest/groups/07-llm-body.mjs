@@ -123,6 +123,41 @@ export async function run() {
     buildChatBody({ model: 'm', messages: [] }).tools === undefined,
   )
 
+  /* ── strict 模式：只给插件（名单里的）加 strict:true ── */
+  const strictOn = buildChatBody({
+    model: 'm',
+    messages: [],
+    tools: [
+      { type: 'function', function: { name: 'a', parameters: {} } },
+      { type: 'function', function: { name: 'b', parameters: {} } },
+      { type: 'function', function: { name: 'c', parameters: {} } },
+    ],
+    strictToolNames: ['a', 'b'],
+  })
+  check(
+    'strictToolNames 只给名单里的 function 加 strict:true',
+    strictOn.tools[0].function.strict === true &&
+      strictOn.tools[1].function.strict === true &&
+      strictOn.tools[2].function.strict === undefined,
+  )
+  check(
+    '不传 strictToolNames 时 function 没有 strict 字段',
+    buildChatBody({
+      model: 'm',
+      messages: [],
+      tools: [{ type: 'function', function: { name: 'a' } }],
+    }).tools[0].function.strict === undefined,
+  )
+  check(
+    'strictToolNames 空数组也不加 strict',
+    buildChatBody({
+      model: 'm',
+      messages: [],
+      tools: [{ type: 'function', function: { name: 'a' } }],
+      strictToolNames: [],
+    }).tools[0].function.strict === undefined,
+  )
+
   group('请求体 / URL 拼接')
 
   check(

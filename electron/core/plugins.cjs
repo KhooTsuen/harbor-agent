@@ -206,10 +206,31 @@ function describePermissions(permissions) {
   const perm = permissions ?? {}
   const network = perm.network === true
   const write = perm.write === true
-  if (network && write) return '（联网 + 写文件）'
-  if (network) return '（联网）'
-  if (write) return '（写文件）'
-  return '（无副作用）'
+  const paths = (Array.isArray(perm.paths) ? perm.paths : []).filter(
+    (p) => typeof p === 'string' && p,
+  )
+  const side = network && write ? '联网 + 写文件' : network ? '联网' : write ? '写文件' : '无副作用'
+  const pathPart = paths.length > 0 ? ` + 访问工作目录外 ${paths.length} 处` : ''
+  return `（${side}${pathPart}）`
+}
+
+/** 把 paths 列成人话（确认弹窗里给用户看具体路径，不全塞进 describePermissions） */
+function describePaths(permissions) {
+  const paths = (Array.isArray(permissions?.paths) ? permissions.paths : []).filter(
+    (p) => typeof p === 'string' && p,
+  )
+  if (paths.length === 0) return ''
+  if (paths.length <= 3) return paths.join('、')
+  return `${paths.slice(0, 3).join('、')} 等 ${paths.length} 处`
+}
+
+/** 插件清单（系统提示里给模型看的导航，不含参数 schema —— 两段式的第一段） */
+function pluginList() {
+  const plugins = list()
+  if (plugins.length === 0) return ''
+  return plugins
+    .map((p) => `- \`${p.name}\`（插件「${p.nameForHuman}」）：${p.descriptionForModel}`)
+    .join('\n')
 }
 
 /** 把插件转成工具清单（给 registry 用，形状和其它工具一致） */
@@ -272,6 +293,8 @@ module.exports = {
   buildTools,
   getByName,
   describePermissions,
+  describePaths,
+  pluginList,
   toStrictSchema,
   runPlugin,
   BUILTIN_NAMES,

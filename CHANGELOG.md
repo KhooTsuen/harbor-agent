@@ -1,5 +1,55 @@
 # 更新日志
 
+## [0.34.0] — 2026-09-16 · 插件 P1 清完
+
+上一版把权限接上了（0.33.0）。这版清掉剩下的 P1 三项，其中 strict 的实测
+推翻了一个假设。
+
+### ① paths 知情（P1-3）
+
+插件声明 `permissions.paths`（要访问工作目录外的路径）时，确认弹窗会列出**具体路径**：
+`运行插件「联网探测」（联网 + 访问工作目录外 2 处）
+将访问工作目录外：C:/a、C:/b`
+（超过 3 条截断为「… 等 N 处」）。真沙箱仍是 P2——插件在宿主进程里 require，
+node:fs 拦不住。
+
+### ② strict 模式（P1-1）—— 实测推翻了「全量开」的假设
+
+原来以为 strict 能给所有工具开。**实测发现不行**：strict 硬规定 object 的
+所有属性必须 `required`，而内置工具有 8 个可选参数（offset/limit/depth/cwd…），
+给它们开 strict 会 400。
+
+所以 strict 改成**只给插件加** `strict:true`：
+- 插件 schema 已过 `toStrictSchema`（全 required + additionalProperties:false），
+  是唯一确定合规的一类
+- 供应商级开关 `provider.strictTools`，默认关（中转站不认 strict）
+- `llm-body.cjs` 的 `withStrict(tool, strictToolNames)` 只给名单里的 function 加
+
+**真机实测**：baseUrl 改 `/beta` + 开 strictTools → 请求走
+`https://api.deepseek.com/beta/chat/completions`，插件正常调用，无 400。
+
+### ③ 两段式 · 第一段（P1-2）
+
+插件清单（名字 + description_for_model）进了系统提示，单独一段：
+`【本地插件（装在 data/plugins/ 下，各自描述为准）】`。
+这是两段式的第一段（清单）；完整路由（`use_plugin` + 按需注入 schema）
+留给插件真的多了再做——现在 1 个插件，全量注入毫无压力。
+
+### 测试（452 → 465）
+
+- `07-llm-body.mjs`：strict 只给名单里的 function 加（3 项）
+- `10-plugins.mjs`：权限描述纯函数（describePermissions/describePaths/pluginList，10 项）
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 465（+13）
+文件 ≤300 行               ✅ 0 违规
+真机 strict               ✅ /beta + strict 正常
+```
+
+---
+
 ## [0.33.0] — 2026-09-16 · 插件权限接上了
 
 上一版（0.32.0）插件能跑，但 manifest 里的 `permissions` 字段**只记录不强制**。

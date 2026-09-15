@@ -67,6 +67,9 @@ function normalizeProvider(raw, index) {
       : [],
     /** 是否要上游在流式响应里回 usage（有些站点不认 stream_options，可关） */
     streamUsage: p.streamUsage !== false,
+    /** DeepSeek strict 模式（Beta）：给每个 function 加 strict:true。
+     *  只在 DeepSeek 官方 /beta 端点有效，中转站不认；默认关。 */
+    strictTools: p.strictTools === true,
   }
 }
 

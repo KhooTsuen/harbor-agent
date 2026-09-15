@@ -58,6 +58,8 @@ export interface ProviderConfig {
   omitParams?: string[]
   /** 是否要上游在流式响应里回 usage（不认 stream_options 的站点要关掉） */
   streamUsage?: boolean
+  /** DeepSeek strict 模式（Beta）：给每个 function 加 strict:true；仅 /beta 端点有效 */
+  strictTools?: boolean
 }
 
 import type { CredentialsStatus } from './backend'

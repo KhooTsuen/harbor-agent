@@ -54,11 +54,12 @@ async function executePlugin(name, args, ctx, startedAt) {
 
   let approval = null
   if (risky && ctx.permission === 'ask' && typeof ctx.confirm === 'function') {
+    const pathsText = plugins.describePaths(perm)
     approval = await ctx.confirm({
       kind: 'write',
       name,
       args,
-      summary: `运行插件「${plugin.nameForHuman}」${plugins.describePermissions(perm)}`,
+      summary: `运行插件「${plugin.nameForHuman}」${plugins.describePermissions(perm)}${pathsText ? `\n将访问工作目录外：${pathsText}` : ''}`,
     })
     if (!approval) {
       auditCall(ctx, { tool: name, args, startedAt, approval: false, ok: false, error: '用户拒绝' })

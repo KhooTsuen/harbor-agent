@@ -80,14 +80,41 @@ function applyProviderBody(body, provider = {}) {
 }
 
 /**
+ * DeepSeek strict 模式（Beta）：只给**插件**的 function 加 `strict: true`。
+ *
+ * 为什么只给插件：strict 硬规定 object 的所有属性必须 required —— 而内置工具
+ * 有 8 个可选参数（offset/limit/depth/cwd…），给它们开 strict 会 400。
+ * 插件的 schema 已经过 toStrictSchema（全 required + additionalProperties:false），
+ * 是唯一确定合规的一类。
+ *
+ * 只在 DeepSeek 官方 `/beta` 端点有效；中转站不认，所以是供应商级开关、默认关。
+ */
+function withStrict(tool, strictNames) {
+  if (tool?.type === 'function' && strictNames?.includes(tool.function?.name)) {
+    return { ...tool, function: { ...tool.function, strict: true } }
+  }
+  return tool
+}
+
+/**
  * 拼出一次对话请求的请求体。
  *
  * @param {{ model: string, messages: Array, tools?: Array,
  *           temperature?: number, topP?: number, maxTokens?: number,
- *           stream?: boolean, streamUsage?: boolean, provider?: object }} input
+ *           stream?: boolean, streamUsage?: boolean, strictToolNames?: Array<string>,
+ *           provider?: object }} input
  */
 function buildChatBody(input) {
-  const { model, messages, tools, temperature, topP, maxTokens, stream = true } = input
+  const {
+    model,
+    messages,
+    tools,
+    temperature,
+    topP,
+    maxTokens,
+    stream = true,
+    strictToolNames,
+  } = input
   const provider = input.provider ?? {}
 
   const body = { model, messages, stream }
@@ -95,7 +122,10 @@ function buildChatBody(input) {
   if (typeof topP === 'number') body.top_p = topP
   if (typeof maxTokens === 'number') body.max_tokens = maxTokens
   if (Array.isArray(tools) && tools.length > 0) {
-    body.tools = tools
+    body.tools =
+      Array.isArray(strictToolNames) && strictToolNames.length > 0
+        ? tools.map((t) => withStrict(t, strictToolNames))
+        : tools
     body.tool_choice = 'auto'
   }
 
@@ -117,5 +147,6 @@ module.exports = {
   isReasoningModel,
   adaptForModel,
   applyProviderBody,
+  withStrict,
   buildChatBody,
 }

@@ -258,6 +258,37 @@ export async function run() {
       rmSync(writeDir, { recursive: true, force: true })
       rmSync(safeDir, { recursive: true, force: true })
     }
+
+    /* ── 权限描述（纯函数）── */
+
+    group('插件 / 权限描述')
+
+    const d = plugins.describePermissions
+    check('无副作用', d({ network: false, write: false }) === '（无副作用）')
+    check('联网', d({ network: true }) === '（联网）')
+    check('写文件', d({ write: true }) === '（写文件）')
+    check('联网+写', d({ network: true, write: true }) === '（联网 + 写文件）')
+    check(
+      '带 paths 数量',
+      d({ network: true, paths: ['a', 'b'] }) === '（联网 + 访问工作目录外 2 处）',
+    )
+    check(
+      'paths 忽略非字符串',
+      d({ write: true, paths: ['a', 42, null] }) === '（写文件 + 访问工作目录外 1 处）',
+    )
+
+    const dp = plugins.describePaths
+    check('无 paths 返回空', dp({}) === '')
+    check('≤3 条全列', dp({ paths: ['x', 'y', 'z'] }) === 'x、y、z')
+    check('>3 条截断', dp({ paths: ['1', '2', '3', '4', '5'] }) === '1、2、3 等 5 处')
+
+    /* pluginList：系统提示里的插件清单（含示例插件） */
+    const list = plugins.pluginList()
+    check(
+      'pluginList 含插件名和名字',
+      list.includes('get_current_time') && list.includes('时间查询'),
+      list,
+    )
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
