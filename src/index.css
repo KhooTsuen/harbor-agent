@@ -441,24 +441,33 @@
 
   .settings-section-title {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    /* 块间距要**明显**：只有 20px 的时候相邻两块会连成一片 */
-    margin-top: 1.75rem;
-    padding: 0.625rem 0.875rem;
-    font-size: var(--text-2xs, 11px);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-tertiary);
+    flex-direction: column;
     /*
-     * 块头比块身**亮一档** —— 不画线也能一眼看出「这行是标题、下面归它管」。
-     * 用 color-mix 混一点点前景色，两种主题下都会往「更亮/更暗」的方向走。
+     * 块间距要**明显**：只有 20px 的时候相邻两块会连成一片。
+     * 标题是「正文级字号 + 粗体」（用户给的参考样式），
+     * 不是之前那种全大写小标签 —— 那是「标签」，不是「标题」。
      */
+    margin-top: 1.75rem;
+    padding: 0.875rem 1rem 0.625rem;
     background: color-mix(in srgb, var(--bg-surface) 92%, var(--text-primary));
     border: 1px solid var(--border-hairline);
     border-bottom: none;
     border-radius: var(--radius-base) var(--radius-base) 0 0;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
+  }
+
+  .settings-section-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .settings-section-hint {
+    margin-top: 0.125rem;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--text-tertiary);
   }
 
   /* 第一块不要顶部空隙 */

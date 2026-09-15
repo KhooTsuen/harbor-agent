@@ -102,7 +102,10 @@ export function Row({
       className={cn(
         /* 不带自己的板：所在的「节」是一整块，见 index.css 的 .settings-body。
            行与行之间**不放分隔线** —— 要的是「一整块里排着几项」。 */
-        'flex items-center gap-5 px-3.5 py-2.5',
+        /* 每个子选项是**外块里的一个小块**：自己的边框+圆角、左右内缩。
+           底色不设 —— 由外层大块提供（见 index.css 的 .settings-body），
+           这样内块看起来是「嵌在外块里的卡片」，而不是又一层面板。 */
+        'mx-2 my-1.5 flex items-center gap-5 rounded-base border border-line-hairline px-3 py-2.5',
         danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
       )}
     >
@@ -123,15 +126,18 @@ export function Row({
 }
 
 /** 区块标题 —— 贴在块的上方，不画分隔线（分隔线是「清单」的语言） */
-export function SectionTitle({ children }: { children: ReactNode }) {
+/**
+ * 区块标题 —— 大块的**标题行**：粗体标题 +（可选）一行说明。
+ *
+ * 样式按用户给的参考改的：标题是正文级字号、粗体，
+ * 不是之前那种全大写的小标签。说明写「这一块管什么」，
+ * 比把同样的话塞进每个子选项的 hint 里更省地方也更清楚。
+ */
+export function SectionTitle({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <h3 className="settings-section-title">
-      <span
-        className="size-1 shrink-0 rounded-full"
-        style={{ background: 'color-mix(in srgb, var(--accent-blue) 70%, transparent)' }}
-        aria-hidden="true"
-      />
-      {children}
+      <span className="settings-section-heading">{children}</span>
+      {hint ? <span className="settings-section-hint">{hint}</span> : null}
     </h3>
   )
 }
