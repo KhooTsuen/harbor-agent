@@ -1,0 +1,256 @@
+import { useState } from 'react'
+import {
+  Archive,
+  ArchiveRestore,
+  Download,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  Tag,
+  Trash2,
+  FolderMinus,
+  FolderPlus,
+} from 'lucide-react'
+import type { Thread } from '@/types'
+import { cn, relativeTime } from '@/lib/utils'
+import { MODES } from '@/constants'
+import { useAppStore } from '@/stores/useAppStore'
+import { useUIStore } from '@/stores/useUIStore'
+import { threadToMarkdown } from '@/lib/export'
+import { saveText } from '@/lib/backend'
+import { IconButton } from '@/components/ui/IconButton'
+import { MenuItem, Popover } from '@/components/ui/Popover'
+import { StatusDot } from '@/components/ui/StatusDot'
+import { Tooltip } from '@/components/ui/Tooltip'
+
+/* ══════════════════════════════════════════════════════════════
+   侧栏里的一行线程
+
+   三种状态挤在一行里：
+     · 平时：状态点 + 标题 +「多久前」+ 模式首字
+     · 悬停：时间换成操作菜单按钮
+     · 重命名：整行变成输入框
+   ══════════════════════════════════════════════════════════════ */
+
+export interface ThreadRowProps {
+  thread: Thread
+  onDelete: () => void
+  /** 把这条对话挂到一个目录（弹目录选择框） */
+  onMoveToFolder?: () => void
+  /** 摘掉文件夹，变成单独对话 */
+  onDetachFolder?: () => void
+}
+
+export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: ThreadRowProps) {
+  const activeThreadId = useAppStore((s) => s.activeThreadId)
+  const setActiveThread = useAppStore((s) => s.setActiveThread)
+  const renameThread = useAppStore((s) => s.renameThread)
+  const togglePinThread = useAppStore((s) => s.togglePinThread)
+  const toggleArchiveThread = useAppStore((s) => s.toggleArchiveThread)
+  const addThreadTag = useAppStore((s) => s.addThreadTag)
+  const markThreadExported = useAppStore((s) => s.markThreadExported)
+  const showToast = useUIStore((s) => s.showToast)
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState(thread.title)
+
+  const active = thread.id === activeThreadId
+  const mode = MODES.find((m) => m.id === thread.mode)
+
+  function commitRename(): void {
+    renameThread(thread.id, draft)
+    setRenaming(false)
+  }
+
+  async function exportThread(): Promise<void> {
+    setMenuOpen(false)
+    const result = await saveText(`${thread.title}.md`, threadToMarkdown(thread))
+    if (result.ok) {
+      markThreadExported(thread.id)
+      showToast('success', '已导出', result.path ?? 'Markdown')
+    } else if (!result.canceled) {
+      showToast('error', '导出失败', result.error)
+    }
+  }
+
+  if (renaming) {
+    return (
+      <div className="px-2 py-0.5">
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') {
+              setDraft(thread.title)
+              setRenaming(false)
+            }
+          }}
+          aria-label="重命名线程"
+          className="w-full rounded-small border border-line-focus bg-bg-raised px-2 py-1 text-dense text-fg-primary outline-none"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        'group relative flex items-center gap-xs rounded-small px-2 py-1.5',
+        'cursor-pointer transition-colors duration-fast',
+        active ? 'bg-bg-raised text-fg-primary' : 'text-fg-secondary hover:bg-bg-hover',
+      )}
+      onClick={() => setActiveThread(thread.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setActiveThread(thread.id)
+        }
+      }}
+      aria-current={active}
+    >
+      {/* 选中态的左侧指示条 */}
+      {active ? (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-1 left-0 w-0.5 rounded-pill bg-fg-primary"
+        />
+      ) : null}
+
+      <StatusDot status={thread.status} size={7} />
+
+      <span className="min-w-0 flex-1 truncate text-dense" title={thread.title}>
+        {thread.pinned ? (
+          <Pin size={11} className="mr-1 inline-block shrink-0 text-fg-tertiary" />
+        ) : null}
+        {thread.title}
+        {thread.tags.length > 0 ? (
+          <span className="ml-1.5 inline-flex items-center gap-0.5 align-middle">
+            {thread.tags.slice(0, 2).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-small border border-line-hairline px-1 py-px font-mono text-2xs text-fg-tertiary"
+              >
+                {tag}
+              </span>
+            ))}
+            {thread.tags.length > 2 ? (
+              <span className="font-mono text-2xs text-fg-tertiary">+{thread.tags.length - 2}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </span>
+
+      <span className="shrink-0 font-mono text-2xs text-fg-tertiary group-hover:hidden">
+        {relativeTime(thread.updatedAt)}
+      </span>
+
+      <div className="hidden shrink-0 group-hover:flex group-focus-within:flex">
+        <Popover
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+          side="bottom"
+          align="end"
+          trigger={({ toggle }) => (
+            <span
+              role="presentation"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggle()
+              }}
+            >
+              <IconButton label="更多操作" size={28}>
+                <MoreHorizontal size={14} />
+              </IconButton>
+            </span>
+          )}
+        >
+          <MenuItem
+            icon={<Pencil size={13} />}
+            onSelect={() => {
+              setDraft(thread.title)
+              setRenaming(true)
+              setMenuOpen(false)
+            }}
+          >
+            重命名
+          </MenuItem>
+          <MenuItem
+            icon={thread.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            onSelect={() => {
+              togglePinThread(thread.id)
+              setMenuOpen(false)
+            }}
+          >
+            {thread.pinned ? '取消固定' : '固定到顶部'}
+          </MenuItem>
+          {onMoveToFolder ? (
+            <MenuItem
+              icon={<FolderPlus size={13} />}
+              onSelect={() => {
+                onMoveToFolder()
+                setMenuOpen(false)
+              }}
+            >
+              {thread.workdir ? '换个文件夹…' : '移到文件夹…'}
+            </MenuItem>
+          ) : null}
+          {thread.workdir && onDetachFolder ? (
+            <MenuItem
+              icon={<FolderMinus size={13} />}
+              onSelect={() => {
+                onDetachFolder()
+                setMenuOpen(false)
+              }}
+            >
+              移出文件夹（变成单独对话）
+            </MenuItem>
+          ) : null}
+          <MenuItem icon={<Download size={13} />} onSelect={() => void exportThread()}>
+            导出 Markdown
+          </MenuItem>
+          <MenuItem
+            icon={thread.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+            onSelect={() => {
+              toggleArchiveThread(thread.id)
+              setMenuOpen(false)
+            }}
+          >
+            {thread.archived ? '取消归档' : '归档'}
+          </MenuItem>
+          <MenuItem
+            icon={<Tag size={13} />}
+            onSelect={() => {
+              const tag = window.prompt('加一个标签（如 bug / feature / refactor）', '')
+              if (tag?.trim()) addThreadTag(thread.id, tag.trim())
+              setMenuOpen(false)
+            }}
+          >
+            加标签
+          </MenuItem>
+          <MenuItem
+            icon={<Trash2 size={13} />}
+            onSelect={() => {
+              setMenuOpen(false)
+              onDelete()
+            }}
+          >
+            删除
+          </MenuItem>
+        </Popover>
+      </div>
+
+      <Tooltip content={mode ? `模式：${mode.label}` : '模式'} side="right">
+        <span className="hidden shrink-0 text-2xs text-fg-tertiary group-hover:hidden lg:inline">
+          {mode?.label.slice(0, 1)}
+        </span>
+      </Tooltip>
+    </div>
+  )
+}

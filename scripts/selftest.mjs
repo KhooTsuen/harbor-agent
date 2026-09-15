@@ -1,0 +1,53 @@
+/**
+ * 内核单元测试
+ *
+ * 直接 require core/ 下的模块，不需要 Electron、不联网。
+ *
+ *   node scripts/selftest.mjs
+ *
+ * 结构（原本是一个 1193 行的文件，拆开之后好读也好定位）：
+ *
+ *   scripts/selftest/harness.mjs         记分与汇总
+ *   scripts/selftest/env.mjs             公共环境（被 require 的内核模块、路径、沙箱）
+ *   scripts/selftest/groups/01-basics.mjs        路径 / 配置 / 会话文件 / 各工具
+ *   scripts/selftest/groups/02-…                 技能 / 记忆 / 搜索 / 统计 / 备份
+ *   scripts/selftest/groups/03-…                 文件系统与安全（脱敏/凭证/风险/审计）
+ *   scripts/selftest/groups/04-…                 可靠性（任务/回滚/错误分类/路由）
+ *   scripts/selftest/groups/05-…                 Agent 循环冒烟 + 会话目录分组
+ *   scripts/selftest/groups/06-…                 系统提示内容回归 / 状态 / 预算 / 意图路由
+ *   scripts/selftest/groups/07-…                 请求体适配（中转站兼容）/ 流内错误
+ *
+ * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
+ *
+ * 注意：**测试全绿 ≠ 能用**。UI、会话、发送、权限这些必须真的走一遍
+ * （见 AGENT.md 的验证纪律）。
+ */
+
+import { report } from './selftest/harness.mjs'
+import { setupSandbox, rmSync, SANDBOX } from './selftest/env.mjs'
+
+import { run as basics } from './selftest/groups/01-basics.mjs'
+import { run as skillsMemory } from './selftest/groups/02-skills-memory.mjs'
+import { run as fsSafety } from './selftest/groups/03-fs-safety.mjs'
+import { run as reliability } from './selftest/groups/04-reliability.mjs'
+import { run as agentLoop } from './selftest/groups/05-agent-loop.mjs'
+import { run as promptState } from './selftest/groups/06-prompt-state.mjs'
+import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
+
+const GROUPS = [basics, skillsMemory, fsSafety, reliability, agentLoop, promptState, llmBody]
+
+async function main() {
+  setupSandbox()
+
+  for (const run of GROUPS) await run()
+
+  /* ── 清理 ── */
+  rmSync(SANDBOX, { recursive: true, force: true })
+
+  process.exit(report())
+}
+
+main().catch((error) => {
+  console.error('\n测试自己崩了：', error)
+  process.exit(1)
+})
