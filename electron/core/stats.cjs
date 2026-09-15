@@ -1,0 +1,140 @@
+/**
+ * 用量统计
+ *
+ * 记服务端返回的 token 用量，分三类累计：总量 / 按天 / 按模型。
+ * 为什么要按天：用户想知道「这个月花了多少」，只有总量答不出来。
+ *
+ * 为什么不用数据库：一天几十条，一个 JSON 文件够用，而且能直接打开看。
+ *
+ * 注意：token 数由服务端返回，不是自己估的。服务端不给 usage 的
+ * 供应商（少数第三方中转）就记不上，这一项本来就是尽力而为。
+ */
+
+const fs = require('node:fs')
+const path = require('node:path')
+const { DIRS } = require('./paths.cjs')
+const log = require('./log.cjs')
+
+/** 按天数据只留这么久，不然文件会一直长 */
+const KEEP_DAYS = 90
+
+function statsFile() {
+  return path.join(DIRS.data, 'stats.json')
+}
+
+function emptyBucket() {
+  return { prompt: 0, completion: 0, total: 0, calls: 0 }
+}
+
+function emptyData() {
+  return { version: 1, since: Date.now(), total: emptyBucket(), byDay: {}, byModel: {} }
+}
+
+function load() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(statsFile(), 'utf8'))
+    /* 手改坏了也要能用：缺什么补什么 */
+    return {
+      version: 1,
+      since: Number(raw?.since) || Date.now(),
+      total: { ...emptyBucket(), ...(raw?.total ?? {}) },
+      byDay: raw?.byDay && typeof raw.byDay === 'object' ? raw.byDay : {},
+      byModel: raw?.byModel && typeof raw.byModel === 'object' ? raw.byModel : {},
+    }
+  } catch {
+    return emptyData()
+  }
+}
+
+function save(data) {
+  try {
+    fs.mkdirSync(DIRS.data, { recursive: true })
+    fs.writeFileSync(statsFile(), JSON.stringify(data, null, 2), 'utf8')
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addInto(bucket, usage) {
+  bucket.prompt += Number(usage.prompt_tokens) || 0
+  bucket.completion += Number(usage.completion_tokens) || 0
+  bucket.total +=
+    Number(usage.total_tokens) ||
+    (Number(usage.prompt_tokens) || 0) + (Number(usage.completion_tokens) || 0)
+  bucket.calls += 1
+}
+
+/** 砍掉过期的按天数据，返回是否改动过 */
+function prune(data) {
+  const cutoff = new Date(Date.now() - KEEP_DAYS * 86_400_000).toISOString().slice(0, 10)
+  let changed = false
+  for (const day of Object.keys(data.byDay)) {
+    if (day < cutoff) {
+      delete data.byDay[day]
+      changed = true
+    }
+  }
+  return changed
+}
+
+/**
+ * 记一次调用。
+ *
+ * @param {object} usage  服务端返回的 { prompt_tokens, completion_tokens, total_tokens }
+ * @param {string} model  模型名，用于按模型分组
+ */
+function record(usage, model) {
+  if (!usage || typeof usage !== 'object') return { ok: false, error: '没有 usage' }
+  const hasAny =
+    Number(usage.prompt_tokens) || Number(usage.completion_tokens) || Number(usage.total_tokens)
+  if (!hasAny) return { ok: false, error: 'usage 里没有 token 数' }
+
+  const data = load()
+  addInto(data.total, usage)
+
+  const day = today()
+  data.byDay[day] = data.byDay[day] ?? emptyBucket()
+  addInto(data.byDay[day], usage)
+
+  const name = String(model || '未知模型')
+  data.byModel[name] = data.byModel[name] ?? emptyBucket()
+  addInto(data.byModel[name], usage)
+
+  prune(data)
+  return save(data)
+}
+
+/** 给界面看：总量 + 最近 30 天 + 按模型降序 */
+function summary() {
+  const data = load()
+
+  const days = Object.entries(data.byDay)
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .slice(0, 30)
+    .map(([day, bucket]) => ({ day, ...bucket }))
+
+  const models = Object.entries(data.byModel)
+    .map(([model, bucket]) => ({ model, ...bucket }))
+    .sort((a, b) => b.total - a.total)
+
+  return {
+    since: data.since,
+    total: data.total,
+    days,
+    models,
+    file: statsFile(),
+  }
+}
+
+function reset() {
+  const result = save(emptyData())
+  log.info('用量统计已清空')
+  return result
+}
+
+module.exports = { record, summary, reset, load, statsFile, KEEP_DAYS }

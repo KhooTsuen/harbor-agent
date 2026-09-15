@@ -1,0 +1,283 @@
+/**
+ * Agent 循环
+ *
+ * 一轮对话 = 若干「回合」：
+ *   调模型 → 模型要工具 → 执行 → 结果喂回去 → 再调模型 → … → 模型不再要工具
+ *
+ * 两个硬边界：
+ *   · maxTurns 防止工具连环调用把 token 烧光
+ *   · AbortSignal 让「停止」按钮真的能立刻停住（包括正在跑的 shell）
+ */
+
+const tools = require('./tools/index.cjs')
+const stats = require('./stats.cjs')
+const log = require('./log.cjs')
+const taskCore = require('./task.cjs')
+const changeset = require('./changeset.cjs')
+/*
+ * 注意：run() 的形参也叫 `config`（那是**配置对象**，没有方法）。
+ * 所以模块本身必须换个名字引进来 —— 否则 `config.hasKey(...)`
+ * 会在一个普通对象上调用，报 “is not a function”。
+ * 这个坑真的踩过：它不报类型错（.cjs 不过 tsc），自检也照不到，
+ * 只有真发一句话才会炸。
+ */
+const configCore = require('./config.cjs')
+const router = require('./router.cjs')
+const { callModel, selfReview, mergeUsage } = require('./loop-model.cjs')
+const { buildPromptContext } = require('./loop-prompt.cjs')
+const { executeToolCalls } = require('./loop-tools.cjs')
+const { resolveRoute } = require('./loop-route.cjs')
+const modeRouter = require('./mode-router.cjs')
+
+const MAX_TURNS = 25
+
+/* ══════════════════════════════════════════════════════════
+   主循环
+   ══════════════════════════════════════════════════════════ */
+
+/**
+ * @param {object} options
+ * @param {Array} options.history      历史消息（含本轮用户输入）
+ * @param {object} options.config      主进程配置
+ * @param {string} options.workdir
+ * @param {string} options.mode
+ * @param {AbortSignal} options.signal
+ * @param {(event: object) => void} options.emit     推给渲染层
+ * @param {(req: object) => Promise<boolean>} options.confirm  写操作确认
+ * @param {string} [options.sessionId]  会话 id（审计与授权用）
+ * @param {string} [options.taskId]     任务 id（可恢复任务用）
+ * @param {string} [options.goal]       本轮的原始目标（用户那句话）
+ */
+async function run(options) {
+  /*
+   * 一次 Agent 运行 = 一条任务 + 一个文件改动事务。
+   *
+   * 任务回答「干什么、到哪一步了、能不能继续」；事务回答「改了哪些文件、怎么整批撤」。
+   * 两者都不进会话文件 —— 会话是聊天记录，不该兼任工作台账。
+   */
+  const goal = String(options.goal ?? '')
+  const sessionId = options.sessionId ?? ''
+
+  const task = taskCore.create({
+    goal,
+    sessionId,
+    projectId: options.projectId,
+    workdir: options.workdir,
+    mode: options.mode,
+    title: goal.slice(0, 60),
+  })
+  const session = changeset.begin({ taskId: task.id, sessionId, title: task.title })
+  const changeSetId = session.ok ? session.id : ''
+
+  options.emit?.({ type: 'task', taskId: task.id, changeSetId, goal: task.goal })
+
+  try {
+    const result = await runLoop({ ...options, taskId: task.id, changeSetId })
+
+    if (changeSetId) changeset.commit(changeSetId, { verified: result.verified ?? null })
+
+    if (result.exhausted) {
+      /* 輪数用尽 = 活没干完，标成暂停让它可恢复 */
+      taskCore.update(task.id, { status: 'paused' })
+    } else {
+      taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
+    }
+
+    return { ...result, taskId: task.id, changeSetId }
+  } catch (error) {
+    /* 中断/报错都算「没干完」—— 任务留着可恢复，事务不提交（还能整批撤） */
+    const aborted = error instanceof Error && error.name === 'AbortError'
+    if (aborted) taskCore.update(task.id, { status: 'paused' })
+    else taskCore.fail(task.id, error instanceof Error ? error.message : String(error))
+    throw error
+  }
+}
+
+/**
+ * 真正的循环。包一层 run() 是为了把「任务/事务的开始与收尾」集中在一处，
+ * 不用在十几种出口上各写一遍。
+ */
+async function runLoop(options) {
+  const { history, config, workdir, mode, signal, emit, confirm } = options
+  const threadSettings = options.threadSettings ?? {}
+  const provider = config.activeProvider ? config.activeProvider : configCore.activeProvider()
+
+  if (!provider) throw new Error('没有可用的供应商')
+  if (!configCore.hasKey(provider)) throw new Error(`${provider.name} 还没填 API Key`)
+
+  const {
+    userText,
+    provider: useProvider,
+    model: useModel,
+  } = resolveRoute({
+    config,
+    provider,
+    options,
+    emit,
+  })
+
+  /* 环境 / 工具清单 / 记忆 / 项目说明 / 分层系统提示 —— 见 loop-prompt.cjs */
+  const { messages } = buildPromptContext({
+    config,
+    workdir,
+    mode,
+    history,
+    threadSettings,
+    options,
+  })
+
+  const ctx = {
+    workdir,
+    /* 审计 / 授权 / 任务都靠这几个 id 串起来 */
+    sessionId: options.sessionId ?? '',
+    taskId: options.taskId ?? '',
+    changeSetId: options.changeSetId ?? '',
+    permission: config.tools.permission,
+    /* 用户约束是运行时约束，不依赖模型遵守 Prompt。 */
+    allowTools: threadSettings.allowTools !== false,
+    allowWrite:
+      threadSettings.allowWrite !== false &&
+      mode !== 'plan' &&
+      !/(只分析|不要修改|禁止修改|不许写|不要写文件|不执行修改)/.test(userText),
+    allowNetwork:
+      threadSettings.allowNetwork !== false && !/(不联网|不要联网|禁止联网|离线)/.test(userText),
+    temporary: options.temporary === true,
+    shellTimeout: config.tools.shellTimeout,
+    shellPolicy: config.tools.shellPolicy,
+    fileScope: config.tools.fileScope,
+    outputLimit: config.tools.outputLimit,
+    signal,
+    confirm,
+    log,
+  }
+
+  let totalUsage = null
+  const toolRuns = []
+  let turn = 0
+  let planParsed = false
+
+  for (; turn < MAX_TURNS; turn += 1) {
+    if (signal.aborted) throw new DOMException('aborted', 'AbortError')
+    emit({ type: 'turn_start', turn: turn + 1 })
+
+    /* ── 调模型（带重试与降级）── */
+    const result = await callModel({
+      config,
+      provider: useProvider,
+      model: useModel,
+      messages,
+      tools: tools.toApiSchema(),
+      temperature: config.assistant.temperature,
+      topP: config.assistant.topP,
+      maxTokens: config.assistant.maxTokens,
+      signal,
+      onContent: (text) => emit({ type: 'content', text }),
+      onReasoning: (text) => emit({ type: 'reasoning', text }),
+      onUsage: (usage) => {
+        totalUsage = mergeUsage(totalUsage, usage)
+        /* 每次 LLM 调用都要记一笔 —— 一轮 agent 循环里可能调好几次，分开算才准 */
+        try {
+          stats.record(usage, useModel)
+        } catch (error) {
+          log.warn(`记用量失败：${error instanceof Error ? error.message : error}`)
+        }
+      },
+    })
+
+    if (result.usage && !totalUsage) totalUsage = result.usage
+
+    /*
+     * ── 计划 ──
+     * 模型第一次回复里如果给了 ```plan 块，存进任务并推给界面。
+     * 只看第一次：后面再给的多半是对计划的修正，界面上会跳来跳去。
+     */
+    if (!planParsed && result.content) {
+      planParsed = true
+      const plan = taskCore.parsePlan(result.content)
+      if (plan.length > 0) {
+        taskCore.setPlan(options.taskId, plan)
+        emit({ type: 'plan', plan })
+      }
+    }
+
+    /* ── 没有工具调用 → 这轮结束 ── */
+    if (result.toolCalls.length === 0) {
+      /* 收尾前打最后一个检查点，写明「到这为止是好的」 */
+      if (options.taskId) {
+        try {
+          taskCore.checkpoint(options.taskId, {
+            label: `第 ${turn + 1} 轮结束`,
+            note: result.content?.slice(0, 300) ?? '',
+          })
+        } catch {
+          /* 台账写不进去不影响回答 */
+        }
+      }
+      emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
+      let finalContent = result.content
+      if (
+        config.assistant.selfReview === true &&
+        (mode === 'execute' || mode === 'goal' || mode === 'plan')
+      ) {
+        try {
+          emit({ type: 'review', status: 'started' })
+          finalContent = await selfReview({
+            config,
+            provider: useProvider,
+            model: useModel,
+            content: finalContent,
+            userText,
+            signal,
+          })
+          emit({ type: 'review', status: 'completed' })
+        } catch (error) {
+          log.warn(`自检复核失败，保留原回答：${error instanceof Error ? error.message : error}`)
+        }
+      }
+      return {
+        content: finalContent,
+        reasoning: result.reasoning,
+        usage: totalUsage,
+        turns: turn + 1,
+        toolRuns,
+      }
+    }
+
+    /* ── 有工具调用：把 assistant 这条带 tool_calls 的消息存进历史 ── */
+    messages.push({
+      role: 'assistant',
+      content: result.content || '',
+      tool_calls: result.toolCalls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments },
+      })),
+    })
+
+    emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
+
+    /* 这一轮的工具逐个执行（含任务台账 / 检查点）—— 见 loop-tools.cjs */
+    await executeToolCalls({
+      toolCalls: result.toolCalls,
+      ctx,
+      options,
+      messages,
+      toolRuns,
+      emit,
+      turn,
+    })
+  }
+
+  /* 轮数用尽 */
+  emit({ type: 'turn_end', turn: MAX_TURNS, usage: totalUsage })
+  return {
+    content: `（已经连续调用工具 ${MAX_TURNS} 轮，先停在这里。你可以说「继续」让我接着做。）`,
+    reasoning: '',
+    usage: totalUsage,
+    turns: MAX_TURNS,
+    toolRuns,
+    exhausted: true,
+  }
+}
+
+module.exports = { run, runLoop, MAX_TURNS }

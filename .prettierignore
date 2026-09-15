@@ -1,0 +1,7 @@
+dist
+dist-portable
+node_modules
+coverage
+shots
+.chrome-profile*
+data

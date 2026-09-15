@@ -1,0 +1,572 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════════
+   字体
+
+   规范要求「完全使用系统字体栈，禁止加载自定义 Web 字体」，
+   所以 **@font-face 已注释掉**。
+
+   Inter / IBM Plex Mono 的 woff2 还留在 src/assets/fonts（共 78KB），
+   想用就把下面三行打开，并把 --font-sans / --font-mono 换成注释里的值。
+   ══════════════════════════════════════════════════════════════ */
+
+/*
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/inter.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('./assets/fonts/plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('./assets/fonts/plex-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+*/
+
+/* ══════════════════════════════════════════════════════════════
+   设计 Token
+
+   值的来源分两类，注释里都标了：
+     · 【实测】从 23 张同类界面的像素统计里量出来的
+     · 【规范】来自更新需求文档
+
+   四套主题：
+     default —— 默认。当前产品的基准配色
+     chatgpt —— 规范给的基准值（#212121 那套），用来对齐 ChatGPT 桌面端
+     spec    —— 早期需求文档里的色板，留着对照
+     light   —— 亮色
+   ══════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme='default'] {
+  color-scheme: dark;
+
+  /* ── 色彩【实测】── */
+  --bg-canvas: #101010;
+  --bg-surface: #202020;
+  --bg-raised: #2a2a2a;
+  --bg-hover: #262626;
+  --bg-overlay: rgb(0 0 0 / 0.5);
+
+  --text-primary: #f8f8f8;
+  --text-secondary: #9a9a9a;
+  --text-tertiary: #6b6b6b;
+  --text-inverse: #101010;
+
+  --border-hairline: rgb(255 255 255 / 0.08);
+  --border-strong: rgb(255 255 255 / 0.14);
+  --border-focus: #ededed;
+
+  /* ── 语义色：只用于 Diff / 错误 / 成功 ── */
+  --diff-add: #34c759;
+  --diff-remove: #ff3b30;
+  --diff-add-bg: rgb(52 199 89 / 0.15);
+  --diff-remove-bg: rgb(255 59 48 / 0.15);
+  --error: #ff3b30;
+  --success: #10a37f;
+  --warning: #f5a623;
+
+  /* ── 语义别名 ──
+     这几个名字在组件里用了一阵，却一直没定义过（颜色静默失效，不报错）。
+     补在这里，只定义一次 —— 各主题的差别主要在背景和文字色上。 */
+  --danger: var(--error);
+  --info: #4a9eff;
+
+  /* ── 代码高亮 ── */
+  --accent-blue: #6b7cf7;
+  --accent-green: #10a37f;
+  --accent-yellow: #f5a623;
+  --accent-purple: #a78bfa;
+
+  /* 主按钮 = 反色。暗色下是白底黑字（实测如此） */
+  --cta-bg: #f8f8f8;
+  --cta-fg: #101010;
+  --cta-bg-hover: #ffffff;
+
+  /* ── 字体【规范】── */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Cascadia Mono', monospace;
+
+  /* ── 字号：三层【规范】── */
+  --text-meta: 0.9375rem; /* 15px */
+  --text-body: 1rem; /* 16px */
+  --text-title: 1.5rem; /* 24px */
+  --text-dense: 0.875rem; /* 14px，面板小字 */
+
+  --leading-meta: 1.43;
+  --leading-body: 1.5;
+  --leading-title: 1.33;
+
+  /* ── 间距：4px 网格【规范】── */
+  --space-xs: 6px;
+  --space-sm: 10px;
+  --space-md: 16px;
+  --space-lg: 24px;
+
+  /* ── 圆角：统一 10px【规范】── */
+  --radius-base: 10px;
+  --radius-small: 6px;
+  --radius-pill: 9999px;
+
+  /* ── 动效【规范】── */
+  --motion-fast: 150ms;
+  --motion-base: 250ms;
+  --motion-slow: 350ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* ── 悬停 / 按下遮罩【规范】── */
+  --overlay-hover: rgb(255 255 255 / 0.06);
+  --overlay-active: rgb(255 255 255 / 0.12);
+
+  /* ── 玻璃拟态【规范】── */
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-inset: rgb(255 255 255 / 0.06);
+  --glass-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+  /* 暗色下把背后压暗，保证玻璃上的文字仍然清楚 */
+  --glass-veil: brightness(0.55);
+
+  /* ── 布局 ── */
+  --topbar-h: 48px;
+  --statusbar-h: 28px;
+}
+
+/* ── ChatGPT 桌面端基准【规范】───────────────────────────── */
+
+[data-theme='chatgpt'] {
+  color-scheme: dark;
+
+  --bg-canvas: #212121;
+  --bg-surface: #2f2f2f;
+  --bg-raised: #383838;
+  --bg-hover: #343434;
+  --bg-overlay: rgb(0 0 0 / 0.5);
+
+  --text-primary: #ececec;
+  --text-secondary: #b4b4b4;
+  --text-tertiary: #8e8ea0;
+  --text-inverse: #212121;
+
+  --border-hairline: rgb(255 255 255 / 0.08);
+  --border-strong: rgb(255 255 255 / 0.16);
+  --border-focus: #ececec;
+
+  --diff-add: #34c759;
+  --diff-remove: #ff3b30;
+  --diff-add-bg: rgb(52 199 89 / 0.15);
+  --diff-remove-bg: rgb(255 59 48 / 0.15);
+  --error: #ff3b30;
+  --success: #10a37f;
+  --warning: #f5a623;
+
+  --cta-bg: #ececec;
+  --cta-fg: #212121;
+  --cta-bg-hover: #ffffff;
+
+  --glass-veil: brightness(0.62);
+}
+
+/* ── 早期 spec 色板（保留对照用）─────────────────────────── */
+
+[data-theme='spec'] {
+  color-scheme: dark;
+
+  --bg-canvas: #0e0f12;
+  --bg-surface: #202123;
+  --bg-raised: #2a2b2e;
+  --bg-hover: #26272a;
+
+  --text-primary: #f5f7fa;
+  --text-secondary: #9ea1aa;
+  --text-tertiary: #6b6f78;
+  --text-inverse: #0e0f12;
+
+  --border-hairline: rgb(255 255 255 / 0.08);
+  --border-strong: rgb(255 255 255 / 0.14);
+  --border-focus: #2b8fff;
+
+  --cta-bg: #f5f7fa;
+  --cta-fg: #0e0f12;
+  --cta-bg-hover: #ffffff;
+
+  --glass-veil: brightness(0.55);
+}
+
+/* ── 亮色 ─────────────────────────────────────────────────── */
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-canvas: #f9f9f9;
+  --bg-surface: #ffffff;
+  --bg-raised: #f1f1f1;
+  --bg-hover: #ededed;
+  --bg-overlay: rgb(0 0 0 / 0.32);
+
+  --text-primary: #0d0d0d;
+  --text-secondary: #5d5d5d;
+  --text-tertiary: #8e8ea0;
+  --text-inverse: #ffffff;
+
+  --border-hairline: rgb(0 0 0 / 0.05);
+  --border-strong: rgb(0 0 0 / 0.12);
+  --border-focus: #0d0d0d;
+
+  --diff-add: #34c759;
+  --diff-remove: #ff3b30;
+  --diff-add-bg: rgb(52 199 89 / 0.12);
+  --diff-remove-bg: rgb(255 59 48 / 0.12);
+  --error: #ff3b30;
+  --success: #10a37f;
+  --warning: #b8860b;
+
+  /* 亮色下主按钮是黑底白字 */
+  --cta-bg: #0d0d0d;
+  --cta-fg: #ffffff;
+  --cta-bg-hover: #2a2a2a;
+
+  --overlay-hover: rgb(0 0 0 / 0.05);
+  --overlay-active: rgb(0 0 0 / 0.1);
+
+  --glass-border: rgb(0 0 0 / 0.06);
+  --glass-inset: rgb(255 255 255 / 0.6);
+  --glass-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+  /* 亮色下把背后提亮 */
+  --glass-veil: brightness(1.15);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   基础
+   ══════════════════════════════════════════════════════════════ */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--border-hairline);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  html {
+    font-size: var(--text-body);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-meta);
+    line-height: var(--leading-meta);
+    background: var(--bg-canvas);
+    color: var(--text-primary);
+    /*
+     * 故意不写 -webkit-font-smoothing: antialiased ——
+     * 它会把笔画削细，暗色背景上看着发锐。交给系统默认（次像素）渲染，
+     * 字面更饱满。
+     */
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+
+  /* 语义化 HTML 的默认表现 */
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* 焦点环：所有可聚焦元素共用，必须清晰可见 */
+  :focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 1px;
+    border-radius: var(--radius-small);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+    background-clip: content-box;
+  }
+
+  ::selection {
+    background: rgb(140 140 140 / 0.3);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   玻璃拟态
+
+   默认 **关闭**（html[data-glass="off"]）。原因写在 README：
+   实测参考实现没有毛玻璃，但需求文档要求把它当核心视觉语言，
+   所以做出来、做精细，但让开关决定要不要用。
+
+   三级：subtle（侧栏/状态栏）/ medium（Composer/右栏）/ strong（弹窗/菜单）
+   ══════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* 关闭态：纯色，1px 边框，不用阴影建立层级 */
+  .glass-subtle,
+  .glass-medium,
+  .glass-strong,
+  .glass,
+  .glass-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+  }
+
+  .glass-panel {
+    background: var(--bg-canvas);
+  }
+
+  /* ── 开启态 ── */
+  [data-glass='on'] .glass-subtle {
+    background: color-mix(in srgb, var(--bg-canvas) 65%, transparent);
+    backdrop-filter: blur(16px) saturate(140%) var(--glass-veil);
+    -webkit-backdrop-filter: blur(16px) saturate(140%) var(--glass-veil);
+    border-color: var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inset),
+      var(--glass-shadow);
+  }
+
+  [data-glass='on'] .glass-medium,
+  [data-glass='on'] .glass {
+    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    border-color: var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inset),
+      var(--glass-shadow);
+  }
+
+  [data-glass='on'] .glass-strong {
+    background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+    backdrop-filter: blur(32px) saturate(160%) var(--glass-veil);
+    -webkit-backdrop-filter: blur(32px) saturate(160%) var(--glass-veil);
+    border-color: var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inset),
+      var(--glass-shadow);
+  }
+
+  /* 侧栏 / 顶栏用 canvas 底色，不是 surface（参考实现那边两者几乎同色） */
+  [data-glass='on'] .glass-panel {
+    background: color-mix(in srgb, var(--bg-canvas) 72%, transparent);
+    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    border-color: var(--glass-border);
+  }
+
+  /* ── 玻璃表面的状态：只动透明度 / 边框 / 内高光，不做位移动画 ── */
+  [data-glass='on'] .glass-strong:hover,
+  [data-glass='on'] .glass-subtle:hover {
+    border-color: color-mix(in srgb, var(--glass-border) 80%, var(--text-primary));
+  }
+
+  /*
+   * 性能：玻璃元素提前告诉浏览器会发生什么，并把它隔离出来，
+   * 避免重绘时波及整个页面。
+   */
+  /*
+   * 性能：提前告诉浏览器会发生什么。
+   *
+   * ⚠️ 这里**故意没有** contain: paint —— 规范里要求加它，但它会把
+   * 「超出元素边界的部分」全裁掉，包括向上弹出的 Popover 菜单。
+   * Composer 就是玻璃元素，模式选择菜单弹出来时被切了一半。
+   * 性能收益远小于这个 bug，所以只用 will-change。
+   */
+  [data-glass='on'] .glass-subtle,
+  [data-glass='on'] .glass-medium,
+  [data-glass='on'] .glass-strong,
+  [data-glass='on'] .glass,
+  [data-glass='on'] .glass-panel {
+    will-change: backdrop-filter;
+  }
+
+  /* ── 回退 1：浏览器不支持 backdrop-filter ── */
+  @supports not (backdrop-filter: blur(1px)) {
+    [data-glass='on'] .glass-subtle,
+    [data-glass='on'] .glass-medium,
+    [data-glass='on'] .glass-strong,
+    [data-glass='on'] .glass,
+    [data-glass='on'] .glass-panel {
+      background: var(--bg-surface);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    [data-glass='on'] .glass-panel {
+      background: var(--bg-canvas);
+    }
+  }
+
+  /* ── 回退 2：系统要求减少透明度 ── */
+  @media (prefers-reduced-transparency: reduce) {
+    [data-glass='on'] .glass-subtle,
+    [data-glass='on'] .glass-medium,
+    [data-glass='on'] .glass-strong,
+    [data-glass='on'] .glass,
+    [data-glass='on'] .glass-panel {
+      background: var(--bg-surface);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: none;
+    }
+    [data-glass='on'] .glass-panel {
+      background: var(--bg-canvas);
+    }
+  }
+
+  /* ── 回退 3：系统要求更高对比度 ── */
+  @media (prefers-contrast: more) {
+    [data-glass='on'] .glass-subtle,
+    [data-glass='on'] .glass-medium,
+    [data-glass='on'] .glass-strong,
+    [data-glass='on'] .glass,
+    [data-glass='on'] .glass-panel {
+      background: var(--bg-surface);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-color: var(--text-primary);
+    }
+    [data-glass='on'] .glass-panel {
+      background: var(--bg-canvas);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   动效
+
+   两条关闭路径：应用内开关（data-animations="off"）、系统设置。
+   玻璃拟态的动效**只允许**透明度 / 边框颜色 / 内高光变化。
+   ══════════════════════════════════════════════════════════════ */
+
+[data-animations='off'] *,
+[data-animations='off'] *::before,
+[data-animations='off'] *::after {
+  animation-duration: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 加载指示器的转圈是功能性的，不该被关掉 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Utilities
+   ══════════════════════════════════════════════════════════════ */
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 终端 / 打字机光标 */
+  .caret::after {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 1.05em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--text-primary);
+    animation: caret-blink 1.1s step-end infinite;
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
