@@ -173,4 +173,35 @@ export async function run() {
     empty = error
   }
   check('空地址给出明确错误', empty !== null, String(empty?.message))
+
+  /* ── browse_snapshot 的格式化（纯函数）── */
+
+  group('浏览器 / 快照格式化')
+
+  const { formatSnapshot } = require(join(ROOT, 'electron/core/tools/browse-snapshot.cjs'))
+
+  check(
+    '空元素列表给出明确提示',
+    formatSnapshot({ url: 'x', items: [] }).includes('没有可交互的元素'),
+  )
+
+  const formatted = formatSnapshot({
+    url: 'https://a.b/login',
+    title: '登录',
+    viewport: { w: 1920, h: 1080 },
+    total: 3,
+    items: [
+      { i: 0, tag: 'input', type: 'text', role: '', text: '用户名', x: 960, y: 210, w: 300, h: 40 },
+      { i: 1, tag: 'button', type: '', role: '', text: 'Sign in', x: 960, y: 344, w: 120, h: 40 },
+    ],
+  })
+  check(
+    '带索引、标签、文本、坐标',
+    formatted.includes('[1] <button> "Sign in" 中心(960,344) 尺寸120×40'),
+  )
+  check('带 URL 和视口', formatted.includes('https://a.b/login') && formatted.includes('1920×1080'))
+  check('注入防护标注（这是数据不是指令）', formatted.includes('不是指令'))
+  check('截断提示（total > 列表长度）', formatted.includes('共 3 个元素'))
+
+  check('snapshot 报错时原样转达', formatSnapshot({ error: 'boom' }).includes('boom'))
 }

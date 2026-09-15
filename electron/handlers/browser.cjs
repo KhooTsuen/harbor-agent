@@ -75,6 +75,12 @@ function register() {
       return { ok: true }
     }
 
+    /* snapshot：可交互元素列表，直接透传（不用正文清洗） */
+    if (result.snapshot) {
+      entry.resolve({ ok: true, snapshot: result.snapshot })
+      return { ok: true }
+    }
+
     /*
      * ★ 正文在这里清洗 + 截断，不在渲染层做。
      *

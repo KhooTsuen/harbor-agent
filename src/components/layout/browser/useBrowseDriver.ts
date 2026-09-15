@@ -99,6 +99,63 @@ const READ_SCRIPT = `
   })()
 `
 
+/*
+ * 可交互元素快照（「眼睛 + 坐标」合一的地基）。
+ *
+ * 返回每个可交互元素的：索引、标签、角色、文本、**中心坐标 + 宽高**。
+ * 坐标从 getBoundingClientRect 拿 —— 是精确的，不像视觉推理会漂。
+ * 模型看「文本 + 角色」判断该点哪个，用「索引」让 click 精确执行。
+ *
+ * 只留看得见的、视口内、有尺寸的元素，最多 80 个 —— 不然一个页面
+ * 几百个元素会塞爆上下文。
+ */
+const SNAPSHOT_SCRIPT = `
+  (function () {
+    try {
+      var SEL = 'a,button,input,textarea,select,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="radio"],[contenteditable="true"],[onclick]'
+      var all = document.querySelectorAll(SEL)
+      var vw = window.innerWidth || 0
+      var vh = window.innerHeight || 0
+      var items = []
+      var seen = new Set()
+      var MAX = 80
+
+      for (var k = 0; k < all.length && items.length < MAX; k++) {
+        var el = all[k]
+        if (seen.has(el)) continue
+        seen.add(el)
+
+        var rect = el.getBoundingClientRect()
+        if (rect.width < 4 || rect.height < 4) continue
+        if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue
+
+        var cs = window.getComputedStyle(el)
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue
+
+        var text = (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || '')
+          .toString().trim().replace(/\\s+/g, ' ')
+        if (text.length > 100) text = text.slice(0, 100)
+
+        items.push({
+          i: items.length,
+          tag: el.tagName.toLowerCase(),
+          type: el.tagName === 'INPUT' ? (el.type || '') : '',
+          role: el.getAttribute('role') || '',
+          text: text,
+          x: Math.round(rect.left + rect.width / 2),
+          y: Math.round(rect.top + rect.height / 2),
+          w: Math.round(rect.width),
+          h: Math.round(rect.height)
+        })
+      }
+
+      return { url: location.href, title: document.title, viewport: { w: vw, h: vh }, items: items, total: all.length }
+    } catch (e) {
+      return { url: location.href, error: String(e), items: [] }
+    }
+  })()
+`
+
 /**
  * 消费 store 里的 pending 请求。
  *
@@ -124,6 +181,7 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         html?: string
         title?: string
         url?: string
+        snapshot?: unknown
         error?: string
       }): void => {
         void window.workbench?.browserResult?.(pending!.id, result)
@@ -142,6 +200,15 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         /* ① 先等它可用 —— 不等的话调任何方法都会报「must be attached to the DOM」 */
         await waitForDomReady(view, 15_000)
         if (!alive) return
+
+        /* snapshot：读当前页面的可交互元素，不导航 */
+        if (pending!.action === 'snapshot') {
+          const raw = (await view.executeJavaScript?.(SNAPSHOT_SCRIPT)) as
+            Record<string, unknown> | undefined
+          if (!alive) return
+          reply({ ok: true, snapshot: raw })
+          return
+        }
 
         /*
          * ② 导航。

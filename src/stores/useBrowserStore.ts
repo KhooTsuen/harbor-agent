@@ -24,6 +24,8 @@ export interface BrowserTabItem {
 /** 主进程发来、还没被执行的一次浏览请求 */
 export interface PendingBrowse {
   id: string
+  /** navigate=导航并读正文；snapshot=读当前页面的可交互元素（不导航） */
+  action: 'navigate' | 'snapshot'
   url: string
 }
 
@@ -74,6 +76,8 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
 
   requestBrowse: (request) =>
     set((state) => {
+      /* snapshot 不导航、不开新标签：只读当前已经打开的页面 */
+      if (request.action === 'snapshot') return { pending: request }
       /*
        * 已经有同一个地址的标签就复用它 —— 不然 Agent 读三次同一个页面
        * 会开出三个标签，用户看着莫名其妙。
