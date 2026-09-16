@@ -169,75 +169,105 @@ export function RightPanel() {
       </div>
 
       {/* 内容 */}
-      {activeRightTab === 'diff' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {diffs.length > 0 ? (
-            <>
-              <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">
-                <span className="text-fg-secondary">未提交的改动</span>
-                {thread?.status === 'running' ? (
-                  <span className="flex items-center gap-1 text-fg-tertiary">
-                    <span className="inline-block size-1.5 animate-pulse rounded-full bg-warning" />
-                    生成中…
-                  </span>
-                ) : null}
-                <span className="ml-auto flex items-center gap-2 font-mono">
-                  <span style={{ color: 'var(--diff-add)' }}>+{additions}</span>
-                  <span style={{ color: 'var(--diff-remove)' }}>−{deletions}</span>
-                </span>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                <DiffViewer files={diffs} />
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-1 items-center justify-center">
-              <EmptyState
-                icon={<GitCompareArrows size={28} />}
-                title="没有待审查的改动"
-                description="让 Agent 改点东西，diff 会出现在这里。也可以用 /review 主动发起一次审查。"
-              />
-            </div>
-          )}
-        </div>
-      ) : null}
-
       {/*
+        内容区。
+        多包一层 relative 是为了给下面的浏览器层当定位基准 —— 它要 absolute 铺满
+        这一块（而不是铺满整个 aside），不然会盖住上面的标签栏。
+      */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {activeRightTab === 'diff' ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {diffs.length > 0 ? (
+              <>
+                <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">
+                  <span className="text-fg-secondary">未提交的改动</span>
+                  {thread?.status === 'running' ? (
+                    <span className="flex items-center gap-1 text-fg-tertiary">
+                      <span className="inline-block size-1.5 animate-pulse rounded-full bg-warning" />
+                      生成中…
+                    </span>
+                  ) : null}
+                  <span className="ml-auto flex items-center gap-2 font-mono">
+                    <span style={{ color: 'var(--diff-add)' }}>+{additions}</span>
+                    <span style={{ color: 'var(--diff-remove)' }}>−{deletions}</span>
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  <DiffViewer files={diffs} />
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <EmptyState
+                  icon={<GitCompareArrows size={28} />}
+                  title="没有待审查的改动"
+                  description="让 Agent 改点东西，diff 会出现在这里。也可以用 /review 主动发起一次审查。"
+                />
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/*
         终端面板**不随标签卸载** —— 卸载会连带杀掉 PTY 会话，
         跑一半的 vim / htop 就没了。切标签只隐藏；重新可见时
         xterm 那边的 ResizeObserver 会自然触发一次 fit。
         `contents` 是为了保持它是 flex 子元素（不被额外 div 打断布局）。
       */}
-      <div className={activeRightTab === 'terminal' ? 'contents' : 'hidden'}>
-        {/*
+        <div className={activeRightTab === 'terminal' ? 'contents' : 'hidden'}>
+          {/*
           用 effectiveProject 而不是 project：
           单独对话没挂在任何文件夹上，projects 里就没有对应项，
           project 会是 undefined —— 终端会整块空白（看着像坏了）。
         */}
-        {effectiveProject ? <Terminal project={effectiveProject} /> : null}
+          {effectiveProject ? <Terminal project={effectiveProject} /> : null}
+        </div>
+
+        {activeRightTab === 'files' ? (
+          openFile ? (
+            <FilePreview node={openFile} onClose={() => setOpenFile(null)} />
+          ) : fileTree ? (
+            <FileTree root={fileTree} activeFileId={null} onOpenFile={setOpenFile} />
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <EmptyState
+                icon={<FileCode2 size={28} />}
+                title={treeError ? '读取工作目录失败' : '工作目录为空'}
+                description={
+                  treeError || '当前工作目录没有可显示的文件。去「设置 → 工具」检查工作目录。'
+                }
+              />
+            </div>
+          )
+        ) : null}
+
+        {activeRightTab === 'artifacts' ? <ArtifactsPanel /> : null}
+        {activeRightTab === 'state' ? <StatePanel /> : null}
+
+        {/*
+          浏览器**不随标签卸载** —— 和终端同一个道理，但理由不一样：
+          <webview> 一从 DOM 里摘掉，底下的 webContents 就被销毁，
+          切回来等于重新打开网页 —— 滚动位置、填了一半的表单、SPA 的前端状态全没。
+          （用户报的就是这个。）
+
+          absolute 铺在内容区上，未激活时 invisible（不画、不接事件）。
+          用 invisible 而不是 display:none 是取语义 ——「还在这儿，只是没在画」。
+          手测过：两种写法下网页的 window.innerWidth 都是 369，不会塔成 0
+          （Electron 不会把隐藏的 guest 缩到 0），所以这里不是靠它保尺寸，
+          真正保尺寸的是 absolute inset-0。
+
+          代价：浏览器开着就直一直占着一个渲染进程（这是「不丢状态」的必然开销）。
+          没开过标签时只是个空状态，不费什么。
+        */}
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col',
+            activeRightTab === 'browser' ? 'z-10' : 'invisible',
+          )}
+        >
+          <BrowserTab />
+        </div>
       </div>
-
-      {activeRightTab === 'files' ? (
-        openFile ? (
-          <FilePreview node={openFile} onClose={() => setOpenFile(null)} />
-        ) : fileTree ? (
-          <FileTree root={fileTree} activeFileId={null} onOpenFile={setOpenFile} />
-        ) : (
-          <div className="flex flex-1 items-center justify-center">
-            <EmptyState
-              icon={<FileCode2 size={28} />}
-              title={treeError ? '读取工作目录失败' : '工作目录为空'}
-              description={
-                treeError || '当前工作目录没有可显示的文件。去「设置 → 工具」检查工作目录。'
-              }
-            />
-          </div>
-        )
-      ) : null}
-
-      {activeRightTab === 'browser' ? <BrowserTab /> : null}
-      {activeRightTab === 'artifacts' ? <ArtifactsPanel /> : null}
-      {activeRightTab === 'state' ? <StatePanel /> : null}
     </aside>
   )
 }
