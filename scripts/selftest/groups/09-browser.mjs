@@ -174,11 +174,36 @@ export async function run() {
   }
   check('空地址给出明确错误', empty !== null, String(empty?.message))
 
-  /* ── browse_snapshot 的格式化（纯函数）── */
+  /* ── browse_click 的参数校验 ── */
 
-  group('浏览器 / 快照格式化')
+  group('浏览器 / browse_click 工具')
 
-  const { formatSnapshot } = require(join(ROOT, 'electron/core/tools/browse-snapshot.cjs'))
+  const click = require(join(ROOT, 'electron/core/tools/browse-click.cjs'))
+  check('工具注册名是 browse_click', click.name === 'browse_click')
+  check('★ 归到写操作里（会改变页面）', click.network === true)
+  check('参数只要求 index', JSON.stringify(click.parameters.required) === '["index"]')
+
+  let neg = null
+  try {
+    await click.run({ index: -1 })
+  } catch (error) {
+    neg = error
+  }
+  check('拒绝负数索引', neg !== null, String(neg?.message))
+
+  let nan = null
+  try {
+    await click.run({ index: 'abc' })
+  } catch (error) {
+    nan = error
+  }
+  check('拒绝非数字索引', nan !== null, String(nan?.message))
+
+  /* ── browse_elements 的格式化（纯函数）── */
+
+  group('浏览器 / 元素清单格式化')
+
+  const { formatSnapshot } = require(join(ROOT, 'electron/core/tools/browse-elements.cjs'))
 
   check(
     '空元素列表给出明确提示',

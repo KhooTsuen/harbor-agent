@@ -19,7 +19,8 @@ const runShell = require('./run_shell.cjs')
 const remember = require('./remember.cjs')
 const searchWeb = require('./search_web.cjs')
 const browse = require('./browse.cjs')
-const browseSnapshot = require('./browse-snapshot.cjs')
+const browseElements = require('./browse-elements.cjs')
+const browseClick = require('./browse-click.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -34,7 +35,8 @@ const ALL = [
   runShell,
   searchWeb,
   browse,
-  browseSnapshot,
+  browseElements,
+  browseClick,
   remember,
 ]
 
@@ -49,7 +51,8 @@ const WRITE_TOOLS = new Set([
   'edit_file',
   'run_shell',
   'browse',
-  'browse_snapshot',
+  'browse_elements',
+  'browse_click',
   'remember',
 ])
 
