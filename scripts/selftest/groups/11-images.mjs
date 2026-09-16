@@ -80,6 +80,18 @@ export async function run() {
       task.pickTaskImage({ data: { image_urls: ['https://cdn/2.png'] } }) === 'https://cdn/2.png',
     )
     check(
+      '★ url 是字符串数组也能拿到（真机踩过：图出了但永远找不到）',
+      task.pickTaskImage({
+        data: { status: 'completed', result: { images: [{ url: ['https://cdn/arr.png'] }] } },
+      }) === 'https://cdn/arr.png',
+    )
+    check(
+      '★ url 数组里有多个时取第一个',
+      task.pickTaskImage({
+        data: { result: { images: [{ url: ['https://cdn/a.png', 'https://cdn/b.png'] }] } },
+      }) === 'https://cdn/a.png',
+    )
+    check(
       '失败原因能读出来',
       task.pickFailReason({ data: { fail_reason: '内容审核不通过' } }) === '内容审核不通过',
     )
@@ -228,66 +240,6 @@ export async function run() {
       JSON.stringify(calls),
     )
     check('能查到之前那张图', result.ok === true && result.image === 'https://cdn/later.png')
-
-    /* ── ③ generate_image 工具 ─────────────────────────────── */
-
-    group('图像 / generate_image 工具')
-    const tool = registry.byName('generate_image')
-    check('工具已注册', tool !== null)
-    check('归到写操作（ask 档要确认、readonly 档要拦）', registry.WRITE_TOOLS.has('generate_image'))
-    check(
-      '出现在给模型的工具清单里',
-      tools.catalog().some((t) => t.name === 'generate_image'),
-    )
-
-    let noArgs = null
-    try {
-      await tool.run({}, { workdir: SANDBOX })
-    } catch (error) {
-      noArgs = error
-    }
-    check('prompt 和 taskId 都没给会明确报错', noArgs !== null && /taskId/.test(noArgs.message))
-
-    /* 用一根假的「已生成」结果，验证落盘 + 返回值 */
-    const realGenerate = scene.generateImage
-    scene.generateImage = async () => ({
-      ok: true,
-      image: `data:image/png;base64,${Buffer.from('fake-png-bytes').toString('base64')}`,
-      model: 'test-image-model',
-    })
-
-    const output = await tool.run({ prompt: '一只戴帽子的猫' }, { workdir: SANDBOX })
-    scene.generateImage = realGenerate
-
-    check(
-      '返回值里有 markdown 图片（界面这才显示得出来）',
-      /!\[[^\]]*\]\(file:\/\//.test(output),
-      output.slice(0, 120),
-    )
-    check('返回值里说了存到哪', output.includes('generated'), output.slice(-120))
-    check('返回值里带上用的模型', output.includes('test-image-model'))
-
-    /* 真的写到盘上了 */
-    const dir = path.join(SANDBOX, 'generated')
-    const files = fs.existsSync(dir)
-      ? fs.readdirSync(dir).filter((f) => /^image-.*\.png$/.test(f))
-      : []
-    check('图片真的落到了 generated/ 下', files.length > 0, JSON.stringify(files.slice(0, 3)))
-
-    /* 超时也要能落成一句人话，而不是抛异常 */
-    scene.generateImage = async () => ({ ok: false, pending: true, taskId: 'task_wait' })
-    const pendingOut = await tool.run({ prompt: '慢图' }, { workdir: SANDBOX })
-    scene.generateImage = realGenerate
-    check(
-      '超时返回任务号让模型稍后再查',
-      pendingOut.includes('task_wait'),
-      pendingOut.slice(0, 120),
-    )
-    check(
-      '★ 明确叫模型别用 run_shell sleep 硬等（那是被逼出来的歪招）',
-      pendingOut.includes('run_shell sleep'),
-      pendingOut.slice(0, 200),
-    )
   } finally {
     globalThis.fetch = origin
   }

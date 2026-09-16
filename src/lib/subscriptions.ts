@@ -19,3 +19,27 @@ export function subscribePluginChanges(
   if (!bridge) return () => {}
   return bridge.onPluginsChanged(callback)
 }
+
+/**
+ * 生图完成 / 失败。
+ *
+ * 生图是异步的：工具提交完就返回了（上游要排队几分钟），
+ * 真正出图时那一轮对话早就结束了 —— 所以靠主进程推回来。
+ */
+export function subscribeImageDone(
+  callback: (payload: {
+    taskId: string
+    sessionId?: string
+    file?: string
+    url?: string
+    model?: string
+    content?: string
+    error?: string
+    /** 进度事件会带这个：submitted / processing / done / failed */
+    status?: string
+    elapsedMs?: number
+  }) => void,
+): () => void {
+  if (!bridge?.onImageDone) return () => {}
+  return bridge.onImageDone(callback)
+}

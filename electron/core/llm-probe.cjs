@@ -118,6 +118,7 @@ async function generateImage({
   interval,
   timeout,
   once,
+  submitOnly,
 }) {
   if (taskId) {
     return await task.waitForTask({
@@ -167,6 +168,8 @@ async function generateImage({
       error: `返回里既没有图片也没有 task_id：${JSON.stringify(data ?? {}).slice(0, 200)}`,
     }
   }
+
+  if (submitOnly) return { ok: true, submitOnly: true, taskId: id, model }
 
   return await task.waitForTask({ baseUrl, apiKey, taskId: id, model, signal, interval, timeout })
 }

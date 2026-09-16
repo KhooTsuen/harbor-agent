@@ -117,6 +117,8 @@ export function StatusBar() {
    */
   /* 状态栏说的是「应用整体忙不忙」—— 任意一条对话在跑都算 */
   const sending = useThreadStore((s) => s.sendingThreads.length > 0)
+  /* 生图任务：异步的，主进程每 3 秒推一次状态（见 core/image-watch.cjs） */
+  const imageTask = useUIStore((s) => s.imageTask)
   const mode = thread?.mode ?? 'pair'
 
   return (
@@ -131,6 +133,21 @@ export function StatusBar() {
         />
         {sending ? '生成中' : '就绪'}
       </span>
+
+      {/*
+        生图进度。生图是异步的（上游排队 + 出图），光转圈看不出在干什么 ——
+        这里把上游状态和已等待时间直接摊开，用户一眼知道是排队还是正在画。
+      */}
+      {imageTask ? (
+        <span className="flex items-center gap-1.5" style={{ color: 'var(--warning)' }}>
+          <span
+            className="inline-block size-1.5 animate-pulse rounded-full"
+            style={{ background: 'var(--warning)' }}
+          />
+          {imageTaskLabel(imageTask.status)}
+          {imageTask.elapsedMs > 0 ? ` · 已等待 ${Math.round(imageTask.elapsedMs / 1000)} 秒` : ''}
+        </span>
+      ) : null}
 
       <span className="font-mono">{mode}</span>
       <span className="font-mono">{thread?.model ?? '—'}</span>
@@ -147,4 +164,12 @@ export function StatusBar() {
       ) : null}
     </footer>
   )
+}
+
+/** 上游状态 → 人话。APIMart 文档：长时间 SUBMITTED 就是排队中 */
+function imageTaskLabel(status?: string): string {
+  const value = String(status ?? '').toLowerCase()
+  if (value === 'submitted' || value === 'pending' || value === 'not_start') return '画图 · 排队中'
+  if (value === 'processing' || value === 'in_progress') return '画图 · 正在生成'
+  return '画图 · 进行中'
 }

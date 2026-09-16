@@ -100,23 +100,31 @@ function pickFailReason(data) {
  *   · result.images[].url   ← APIMart 统一任务接口的形态
  *   · image_urls[0]         ← MJ 风格
  *   · data[0].url / url     ← 少数站点
+ *
+ * ★ 真机抓到的：`url` 可能是**字符串数组**（`"url": ["https://..."]`），
+ *   不是单个字符串。只认 string 的话「图出了但永远找不到」，
+ *   轮询就一直跑到超时。这里两种都认。
  */
 function pickTaskImage(data) {
   const node = data?.data ?? data
-  const fromResult = node?.result?.images
-  if (Array.isArray(fromResult)) {
-    for (const item of fromResult) {
+
+  const fromArray = (list) => {
+    if (!Array.isArray(list)) return ''
+    for (const item of list) {
       if (typeof item === 'string' && item) return item
       if (typeof item?.url === 'string' && item.url) return item.url
+      if (Array.isArray(item?.url)) {
+        const first = item.url.find((u) => typeof u === 'string' && u)
+        if (first) return first
+      }
     }
+    return ''
   }
-  const fromUrls = node?.image_urls ?? node?.images
-  if (Array.isArray(fromUrls)) {
-    for (const item of fromUrls) {
-      if (typeof item === 'string' && item) return item
-      if (typeof item?.url === 'string' && item.url) return item.url
-    }
-  }
+
+  const fromResult = fromArray(node?.result?.images)
+  if (fromResult) return fromResult
+  const fromUrls = fromArray(node?.image_urls ?? node?.images)
+  if (fromUrls) return fromUrls
   if (typeof node?.url === 'string' && node.url) return node.url
   return ''
 }
@@ -208,6 +216,8 @@ async function waitForTask({
         pending: true,
         taskId,
         status,
+        /** 原始响应（截断）—— 排查「图出了但还在轮询」这种解析问题就靠它 */
+        raw: lastSeen,
         error: `上游状态：${status || '(没读到状态字段)'}`,
       }
     }
