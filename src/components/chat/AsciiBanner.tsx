@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
-import asciiArt from '@/assets/aperture.txt?raw'
+import { useBannerAnimation } from './useBannerAnimation'
 
 /* ══════════════════════════════════════════════════════════════
    空对话时的装饰横幅（Aperture 标志，ASCII）
@@ -16,10 +16,8 @@ import asciiArt from '@/assets/aperture.txt?raw'
    纯装饰：`aria-hidden`，屏幕阅读器不用念这一堆 @。
    ══════════════════════════════════════════════════════════════ */
 
-/** 去掉首尾空行与行尾空白 —— 图本来就是靠行首缩进定位的，行尾空格没用 */
-const ART = asciiArt.replace(/^\s*\n/, '').replace(/\s+$/, '')
-
 export function AsciiBanner() {
+  const art = useBannerAnimation()
   const wrapRef = useRef<HTMLDivElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
 
@@ -55,7 +53,7 @@ export function AsciiBanner() {
         /* leading-none：62 行，行距一大图就被拉长变形 */
         className="m-0 whitespace-pre font-mono leading-none text-fg-primary"
       >
-        {ART}
+        {art}
       </pre>
     </div>
   )

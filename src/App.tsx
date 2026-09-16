@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { BootSequence } from '@/components/boot/BootSequence'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar, StatusBar } from '@/components/layout/TopBar'
 import { RightPanelHost } from '@/components/layout/RightPanelHost'
@@ -33,6 +34,23 @@ import { useApplyAppearance } from '@/hooks/useApplyAppearance'
    ══════════════════════════════════════════════════════════════ */
 
 export default function App() {
+  const [mainMounted, setMainMounted] = useState(false)
+  const [booting, setBooting] = useState(true)
+  const prepareMain = useCallback(() => setMainMounted(true), [])
+  const finishBoot = useCallback(() => {
+    setMainMounted(true)
+    setBooting(false)
+  }, [])
+
+  return (
+    <>
+      {mainMounted ? <MainApp /> : null}
+      {booting ? <BootSequence onPrepare={prepareMain} onDone={finishBoot} /> : null}
+    </>
+  )
+}
+
+function MainApp() {
   const settings = useSettingsStore((s) => s.settings)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
 

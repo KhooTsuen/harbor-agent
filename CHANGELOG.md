@@ -1,5 +1,57 @@
 # 更新日志
 
+## [0.54.0] — 2026-09-17 · 启动动画 + Aperture 横幅旋转
+
+两件事：应用启动时有仪式感，空对话页的 Aperture 标志会转。
+
+### ① 启动动画（新）
+
+`src/components/boot/`：黑屏 → 终端初始化 → 系统检测 → glitch 乱码 →
+Logo 重构 → 核心加载进度条 → 系统身份确认 → `ONLINE`，最后光标闪烁等输入。
+
+- `BootSequence.tsx`（159 行）+ `bootFrames.ts`（109 行）+ `bootFrames.test.ts`
+- 约 10 秒；带 CRT 横纹与扫描线；末尾有 Portal 彩蛋
+- **主界面在动画结束前就提前挂载**，启动黑幕最后才淡出 —— 切换时不卡
+- 动画与主界面不同时抢焦点
+
+### ② 空对话横幅：光圈真的会转（新）
+
+以前是一张静态 ASCII（`aperture.txt`），现在旋转。
+
+- `src/assets/banner/aperture-frames.json` —— 96 帧预生成，约 2.9 MB
+- `src/components/chat/useBannerAnimation.ts` —— 每 125ms 切一帧（8 fps，
+  完整转一圈约 12 秒）；**页面不可见时暂停**；尊重 `prefers-reduced-motion`
+- `scripts/generate-banner-ascii.py` —— 开发期生成帧的脚本，**不参与运行时**
+
+**层次处理是这里的关键**：直接把整幅图旋转的话字母 `A` 会跟着转；简单叠加的话
+光圈转到前面时会穿帮。实际做法是「光圈灰度化 → **补全被 `A` 遮挡的部分** →
+旋转 → 按 `@` / `.` / 空格重新量化为 ASCII → 再把字母叠回最前」，
+所以字母始终不动、始终压在光圈上面。
+
+### 测试
+
+前端 200 → **205**（新增启动帧测试）。
+
+### 验证
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 205
+内核自测                   ✅ 541
+文件 ≤300 行               ✅ 0 违规（App.tsx 289，本次 +18）
+真机探针                   animated:true nowrap:true heightStable:true lines:62
+```
+
+### 已知未处理（记录在案）
+
+- **启动动画 10 秒，且没有跳过入口**（设计稿原意 5–6 秒）。每次启动都要等，
+  这是后续最该动的一处。
+- **帧数据 2.9 MB 静态 import 进主 bundle**（bundle 约 3.9 MB）。
+  字母部分本来就不变，只存变化的光圈区域可省约 60%。
+- `src/assets/banner/` 里的 `aperture.svg`、`LICENSE`、`wordmark.txt` 未被运行时使用。
+
+---
+
 ## [0.53.0] — 2026-09-17 · 工具调用归类 + 一轮概览
 
 用户看了 [dsh-watcher](https://github.com/aa2246740/dsh-watcher)（DeepSeek Harness
