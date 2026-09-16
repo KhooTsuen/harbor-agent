@@ -19,7 +19,7 @@ const skills = require('./skills.cjs')
 const memory = require('./memory.cjs')
 const project = require('./project.cjs')
 const promptStack = require('./prompt-stack.cjs')
-const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, WORK_RULES } = promptStack
+const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, WORK_RULES, BROWSER_GUIDE } = promptStack
 const contextBuilder = require('./context-builder.cjs')
 const conversationState = require('./conversation-state.cjs')
 const sessionCore = require('./session.cjs')
@@ -161,6 +161,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     skills: skillSection,
     tools: toolsSection(),
     toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
+    /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */
+    browserGuide: BROWSER_GUIDE,
     taskState: options.taskState ?? '',
     conversationState: assembled.systemContext.conversationState,
     userPreferences: '',
