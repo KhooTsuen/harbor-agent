@@ -20,7 +20,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
-const { scrub } = require('./redact.cjs')
+const { scrub, redact } = require('./redact.cjs')
 const log = require('./log.cjs')
 
 const MAX_RESULT_CHARS = 2000
@@ -81,12 +81,13 @@ function record(entry) {
     finishedAt,
     ms: Math.max(0, finishedAt - startedAt),
     ok: entry.ok !== false,
-    error: entry.error ? String(entry.error).slice(0, 500) : '',
+    /* error / result 也要过脱敏 —— 工具结果里可能夹着密码之类的敏感值 */
+    error: entry.error ? redact(String(entry.error).slice(0, 500)) : '',
     affectedFiles: Array.isArray(entry.affectedFiles)
       ? entry.affectedFiles.map((f) => String(f)).slice(0, 50)
       : [],
     networkTarget: entry.networkTarget ? String(entry.networkTarget).slice(0, 300) : '',
-    result: entry.result ? String(entry.result).slice(0, MAX_RESULT_CHARS) : '',
+    result: entry.result ? redact(String(entry.result).slice(0, MAX_RESULT_CHARS)) : '',
     extras: entry.extras ? scrub(entry.extras, 4) : undefined,
   }
 

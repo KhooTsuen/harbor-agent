@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clickScript, toIndex, typeScript } from '../scripts'
+import { SNAPSHOT_SCRIPT, clickScript, toIndex, typeScript } from '../scripts'
 
 /* ══════════════════════════════════════════════════════════════
    浏览器操作的脚本生成
@@ -58,5 +58,59 @@ describe('脚本生成', () => {
     const script = typeScript(2, 'abc', false)
     expect(script).toContain('Object.getOwnPropertyDescriptor(proto, ')
     expect(script).toContain("dispatchEvent(new Event('input'")
+  })
+})
+
+describe('密码框闸门', () => {
+  /*
+   * 用户要的是「明确授权就放行」——「明确」的落地方式就是一个确认弹窗。
+   * 所以脚本默认**不填**密码，带上 authorized 才填。
+   */
+  it('★ 没授权时不填，返回 needsConfirm', () => {
+    const script = typeScript(0, 'secret123', false, false)
+    expect(script).toContain('var authorized = false')
+    expect(script).toContain('needsConfirm: true')
+  })
+
+  it('★ 授权后才真的填', () => {
+    expect(typeScript(0, 'secret123', false, true)).toContain('var authorized = true')
+  })
+
+  it('★ 密码不回显（返回值会进模型上下文和对话记录）', () => {
+    const script = typeScript(0, 'secret123', false, true)
+    expect(script).toContain('isPassword ?')
+    expect(script).toContain('已隐藏')
+  })
+
+  it('密码框靠 type=password 认出来', () => {
+    expect(typeScript(0, 'x', false, true)).toContain("target.type === 'password'")
+  })
+})
+
+describe('快照不泄露密码', () => {
+  /*
+   * 真机抳到过：`browse_elements` 读 `el.value`，把密码框里的密码
+   * 原样写进了元素清单 → 进了模型上下文、工具结果和会话。
+   * 这一组是**真在 jsdom 里跑一遍脚本**，不是只查字符串。
+   */
+  it('★ 密码框只回「已填/未填」，不回具体值', () => {
+    document.body.innerHTML =
+      '<input type="text" value="alice">' +
+      '<input type="password" value="MyTestPass123">' +
+      '<input type="password" placeholder="Password">'
+
+    /* jsdom 里 getBoundingClientRect 全是 0，会被脚本的「零尺寸」过滤掉 —— 打个桩 */
+    Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 100, height: 30, right: 100, bottom: 30 }),
+    })
+
+    const result = eval(SNAPSHOT_SCRIPT) as { items?: Array<{ text?: string }> } | undefined
+    const joined = (result?.items ?? []).map((i) => i.text ?? '').join(' | ')
+
+    expect(joined).not.toContain('MyTestPass123')
+    expect(joined).toContain('已填')
+    /* 普通输入框的值照旧能读到（别因噎废食） */
+    expect(joined).toContain('alice')
   })
 })
