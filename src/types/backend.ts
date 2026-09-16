@@ -34,6 +34,7 @@ export interface WorkbenchBridge extends SafetyBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
   showWindow: () => Promise<{ ok: boolean }>
+  setTitleBar: (colors: { color: string; symbolColor: string }) => Promise<{ ok: boolean }>
   getConfig: () => Promise<AppConfig>
   patchConfig: (partial: Record<string, unknown>) => Promise<{ ok: boolean; config: AppConfig }>
   resetConfig: () => Promise<{ ok: boolean; config: AppConfig }>

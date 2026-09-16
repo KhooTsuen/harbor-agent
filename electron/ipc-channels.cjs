@@ -113,6 +113,7 @@ const EXPECTED_CHANNELS = [
   'task:remove',
   'task:unfinished',
   'task:update',
+  'window:titleBar',
   'workdir:choose',
   'workdir:get',
   'workdir:pick',

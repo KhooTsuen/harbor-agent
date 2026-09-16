@@ -1,23 +1,16 @@
-import {
-  FolderPlus,
-  ListChecks,
-  MessageSquarePlus,
-  PanelLeftClose,
-  Search,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { FolderPlus, ListChecks, MessageSquarePlus, Search, Trash2, X } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
-import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useRealBackend } from '@/lib/backend'
 import { useBulkSelect } from '@/hooks/useBulkSelect'
 import { IconButton } from '@/components/ui/IconButton'
-import { Tooltip } from '@/components/ui/Tooltip'
 
 /* ══════════════════════════════════════════════════════════════
-   侧栏头部：标题 / 折叠 / 新建 / 切换目录 / 多选 / 搜索
+   侧栏头部：新建 / 切换目录 / 多选 / 搜索
+
+   「⌘ Workbench」标识和折叠按钮已经上移到窗口级顶栏（AppTitleBar）——
+   那是窗口级的东西，不该由侧栏自己再画一份。
 
    从 Sidebar.tsx 拆出来的 —— 那边加了「上下两栏 + 分隔线」之后过 300 行。
    这一段只管「用户想干什么」的入口，和列表怎么排没关系。
@@ -27,7 +20,6 @@ export function SidebarHeader() {
   const createThread = useAppStore((s) => s.createThread)
   const createProject = useAppStore((s) => s.createProject)
   const chooseWorkdir = useConfigStore((s) => s.chooseWorkdir)
-  const updateSettings = useSettingsStore((s) => s.updateSettings)
   const searchQuery = useUIStore((s) => s.searchQuery)
   const setSearchQuery = useUIStore((s) => s.setSearchQuery)
   const showToast = useUIStore((s) => s.showToast)
@@ -35,26 +27,8 @@ export function SidebarHeader() {
 
   return (
     <>
-      {/* 头部 */}
-      <div className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-2.5">
-        <span
-          aria-hidden="true"
-          className="grid size-6 shrink-0 place-items-center rounded-small bg-bg-raised font-mono text-2xs font-semibold text-fg-primary"
-        >
-          ⌘
-        </span>
-        <span className="min-w-0 flex-1 truncate text-dense font-semibold text-fg-primary">
-          Workbench
-        </span>
-        <Tooltip content="折叠侧边栏（Ctrl+B）">
-          <IconButton label="折叠侧边栏" onClick={() => updateSettings({ sidebarCollapsed: true })}>
-            <PanelLeftClose size={15} />
-          </IconButton>
-        </Tooltip>
-      </div>
-
       {/* 新建 + 搜索 */}
-      <div className="flex flex-col gap-0.5 px-2 pb-2">
+      <div className="flex flex-col gap-0.5 px-2 pt-2 pb-2">
         <button
           type="button"
           onClick={() => createThread()}

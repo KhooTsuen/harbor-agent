@@ -345,6 +345,42 @@
   .glass-medium,
   .glass-strong,
   .glass,
+  /*
+   * 窗口右上角原生按钮（最小化 / 最大化 / 关闭）占的宽度。
+   *
+   * 用 Chromium 给的 titlebar-area-* 算：高 DPI 下按钮会变宽，写死 138px
+   * （Windows 100% 缩放的值）在 125% / 150% 下就让位不够、内容会被盖住。
+   * 拿不到这两个变量时（非 overlay 平台）算出 0，等于不让位。
+   */
+  :root {
+    --titlebar-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px));
+  }
+
+  /*
+   * 窗口级顶栏的拖拽区。
+   * 整条顶栏都能拖动窗口，但里面的按钮/输入框照常可点 —— 用后代选择器自动排除，
+   * 免得以后每加一个控件就要记得补一次 no-drag。
+   */
+  .titlebar-drag {
+    -webkit-app-region: drag;
+  }
+
+  .titlebar-drag button,
+  .titlebar-drag input,
+  .titlebar-drag textarea,
+  .titlebar-drag select,
+  .titlebar-drag a,
+  .titlebar-drag [role='button'],
+  /*
+   * 包着控件的 span（比如 Tooltip 那层 wrapper）也必须排除。
+   * 不排的话那块是 drag 区 —— Chromium 对 drag 区的鼠标事件投递不完整，
+   * hover 会卡住，提示就挂在上面不走了。
+   */
+  .titlebar-drag span:has(button),
+  .titlebar-drag span:has([role='button']) {
+    -webkit-app-region: no-drag;
+  }
+
   .glass-panel {
     background: var(--bg-surface);
     border: 1px solid var(--border-hairline);
