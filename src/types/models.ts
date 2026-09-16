@@ -82,6 +82,8 @@ export interface AppConfig {
   providers: ProviderConfig[]
   /** 各场景用哪个模型（留空则回退到 assistant.model） */
   scenes: SceneMap
+  /** 生图相关：保存目录等 */
+  image: { dir: string }
   assistant: {
     name: string
     systemPrompt: string

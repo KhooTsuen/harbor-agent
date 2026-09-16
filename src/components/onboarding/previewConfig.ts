@@ -81,6 +81,8 @@ export const PREVIEW_CONFIG: AppConfig = {
     ocr: { providerId: '', model: '' },
     image: { providerId: '', model: '' },
   },
+
+  image: { dir: '' },
   mcp: { servers: [] },
   search: { provider: 'duckduckgo', apiKey: '', endpoint: '', maxResults: 5 },
 }

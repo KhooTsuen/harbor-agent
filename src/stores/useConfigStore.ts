@@ -40,6 +40,7 @@ interface ConfigState {
   patchFallback: (patch: Partial<AppConfig['fallback']>) => Promise<void>
   patchMcp: (servers: AppConfig['mcp']['servers']) => Promise<void>
   patchScene: (id: SceneId, patch: Partial<SceneConfig>) => Promise<void>
+  patchImage: (patch: Partial<AppConfig['image']>) => Promise<void>
   updateProvider: (id: string, patch: Partial<ProviderConfig>) => Promise<void>
   addProvider: () => Promise<void>
   removeProvider: (id: string) => Promise<void>
@@ -79,6 +80,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   patchAssistant: async (patch) => {
     const config = await pushConfig({ assistant: patch })
+    if (config) set({ config })
+  },
+
+  patchImage: async (patch) => {
+    const config = await pushConfig({ image: patch })
     if (config) set({ config })
   },
 

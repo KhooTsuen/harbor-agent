@@ -1,5 +1,6 @@
 import { SectionTitle } from '../parts'
 import { ScenesTab } from '../tabs/ScenesTab'
+import { ImageSaveTab } from '../tabs/ImageSaveTab'
 import { ThreadSettingsTab } from '../tabs/ThreadSettingsTab'
 import { ProjectContextTab } from '../tabs/ProjectContextTab'
 
@@ -17,6 +18,11 @@ export function ConversationPanel(): React.ReactElement {
   return (
     <>
       <ScenesTab />
+
+      <div className="py-2">
+        <SectionTitle>生图</SectionTitle>
+        <ImageSaveTab />
+      </div>
 
       <div>
         <SectionTitle>项目上下文</SectionTitle>
