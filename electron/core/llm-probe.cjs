@@ -10,6 +10,19 @@
 
 const { buildUrl } = require('./llm-body.cjs')
 const task = require('./image-task.cjs')
+const http = require('./http.cjs')
+
+/**
+ * 测连接 / 拉模型清单 / 提交生图都不是流式请求，给个上限。
+ * 不加的话，遇到连不上的域名会挂到系统 TCP 超时（大约两分钟），
+ * 用户点一下「刷新」就得干等 —— 而且当时根本看不出是网络问题。
+ */
+const PROBE_TIMEOUT_MS = 30_000
+
+/** 调用方传了 signal 就用它的，没传才兜底 */
+function withTimeout(signal, ms = PROBE_TIMEOUT_MS) {
+  return signal ?? AbortSignal.timeout(ms)
+}
 
 /** 非流式，用来测连接 */
 async function ping({ baseUrl, apiKey, chatPath, model, signal }) {
@@ -17,7 +30,7 @@ async function ping({ baseUrl, apiKey, chatPath, model, signal }) {
   const headers = { 'Content-Type': 'application/json' }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
-  const response = await fetch(url, {
+  const response = await http.fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -26,7 +39,7 @@ async function ping({ baseUrl, apiKey, chatPath, model, signal }) {
       max_tokens: 4,
       stream: false,
     }),
-    signal,
+    signal: withTimeout(signal),
   })
 
   if (!response.ok) {
@@ -51,7 +64,7 @@ async function listModels({ baseUrl, apiKey, signal }) {
   const headers = {}
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
-  const response = await fetch(url, { headers, signal })
+  const response = await http.fetch(url, { headers, signal: withTimeout(signal) })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
     return { ok: false, error: `HTTP ${response.status}：${detail.slice(0, 200)}` }
@@ -120,11 +133,11 @@ async function generateImage({
    */
   if (size) body.size = size
 
-  const response = await fetch(url, {
+  const response = await http.fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal,
+    signal: withTimeout(signal, 60_000),
   })
 
   if (!response.ok) {

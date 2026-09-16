@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import { check, group } from '../harness.mjs'
-import { ROOT, existsSync, readFileSync } from '../env.mjs'
+import { ROOT, existsSync, readFileSync, require } from '../env.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    模块引用：相对 require 的路径必须真的存在
@@ -82,4 +82,31 @@ export async function run() {
   }
 
   check('相对 require 都指向真实文件', missing.length === 0, missing.join(' | '))
+
+  /* ── HTTP 客户端：网络栈要跟着环境走 ─────────────────────
+   *
+   * ★ 真机抓到的：用户挂着代理访问 APIMart，浏览器能开，Agent 却 `fetch failed`
+   *   （UND_ERR_CONNECT_TIMEOUT）—— 因为 Electron 主进程的全局 fetch 是
+   *   Node 的 undici，**不读系统代理**。换成 Chromium 的 `net.fetch` 就通了。
+   *
+   * 这里只能测「没有 Electron 时能不能退化」，因为自检就是纯 Node 环境；
+   * 真正走代理那一半靠真机验证（CHANGELOG 0.48.0 有记录）。
+   */
+  group('HTTP / 网络栈选择')
+  const http = require(path.join(ROOT, 'electron/core/http.cjs'))
+  check('http.fetch 可用', typeof http.fetch === 'function')
+
+  /*
+   * 不缓存 globalThis.fetch —— 缓存了的话这一步会失败，
+   * 而那个 bug 在真机上表现为「换了网络栈不重启不生效」，极难查。
+   */
+  const realFetch = globalThis.fetch
+  let called = 0
+  globalThis.fetch = async () => {
+    called += 1
+    return { ok: true }
+  }
+  await http.fetch('https://example.invalid/')
+  globalThis.fetch = realFetch
+  check('不缓存 fetch（缓存了打桩和换网络栈都会失效）', called === 1, String(called))
 }

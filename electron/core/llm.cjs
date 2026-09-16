@@ -11,6 +11,7 @@
  *   - AbortSignal 中断
  */
 
+const http = require('./http.cjs')
 const log = require('./log.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
 const plugins = require('./plugins.cjs')
@@ -100,7 +101,7 @@ async function chatStream(options) {
 
   log.info(`请求模型 ${model} → ${url}`)
 
-  const response = await fetch(url, {
+  const response = await http.fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

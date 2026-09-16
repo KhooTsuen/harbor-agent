@@ -11,6 +11,7 @@
  * 让用户按自己的网络情况选，比写死一个好。
  */
 
+const http = require('./http.cjs')
 const log = require('./log.cjs')
 
 const TIMEOUT_MS = 20_000
@@ -22,7 +23,7 @@ async function fetchJson(url, init = {}, signal) {
   signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal })
+    const res = await http.fetch(url, { ...init, signal: controller.signal })
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       throw new Error(`HTTP ${res.status}：${detail.slice(0, 200)}`)
@@ -41,7 +42,7 @@ async function fetchText(url, init = {}, signal) {
   signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
-    const res = await fetch(url, {
+    const res = await http.fetch(url, {
       ...init,
       signal: controller.signal,
       headers: {
