@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { sameUrl } from '@/lib/url'
 
 /* ══════════════════════════════════════════════════════════════
    浏览器标签的状态
@@ -95,8 +96,12 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
       /*
        * 已经有同一个地址的标签就复用它 —— 不然 Agent 读三次同一个页面
        * 会开出三个标签，用户看着莫名其妙。
+       *
+       * 「同一个地址」用 sameUrl 判，不用 `===`：Agent 给的地址写法不统一
+       * （`example.com` 和 `example.com/`），严格比较会当成两个页面，
+       * 于是白开一个标签、webview 重建、页面重新加载。
        */
-      const existing = state.tabs.find((t) => t.url === request.url)
+      const existing = state.tabs.find((t) => sameUrl(t.url, request.url ?? ''))
       if (existing) return { activeId: existing.id, pending: request }
       const id = newTabId()
       return {

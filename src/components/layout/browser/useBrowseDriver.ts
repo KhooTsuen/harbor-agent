@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
+import { sameUrl } from '@/lib/url'
 import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from './scripts'
 
 /* ══════════════════════════════════════════════════════════════
@@ -187,9 +188,12 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
          * ② 导航。
          * 新标签的 `src` 已经是目标地址了，webview 自己会去 —— 这种情况不用再 loadURL
          * （多调一次会白闪一下）。只有复用旧标签、地址不一致时才手动导。
+         *
+         * 比地址用 sameUrl：`example.com` 和 `example.com/` 是同一个页面，
+         * 严格比较会判定成不一致 → 白 loadURL 一次 → 页面重新加载（表单就没了）。
          */
         const current = view.getURL?.() ?? ''
-        if (current && current !== pending!.url) {
+        if (current && !sameUrl(current, pending!.url)) {
           const loading = view.loadURL?.(pending!.url)
           if (loading && typeof loading.then === 'function') await loading.catch(() => undefined)
           await waitForLoad(view, 20_000)
