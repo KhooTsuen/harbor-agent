@@ -23,6 +23,23 @@ function currentHistoryLimit() {
   return Number.isFinite(value) ? Math.max(0, Math.min(200, Math.floor(value))) : 20
 }
 
+/**
+ * history 里最后一条用户消息的文字 —— 当作任务目标（任务标题）。
+ * 内容可能是字符串，也可能是多模态数组（带图时），两种都认。
+ */
+function lastUserText(history) {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const message = history[i]
+    if (message?.role !== 'user') continue
+    if (typeof message.content === 'string') return message.content.slice(0, 200)
+    if (Array.isArray(message.content)) {
+      const text = message.content.find((part) => part?.type === 'text')?.text
+      if (typeof text === 'string') return text.slice(0, 200)
+    }
+  }
+  return ''
+}
+
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
   /* ── 发起一轮对话 ─────────────────────────────────────── */
 
@@ -74,6 +91,12 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
           projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
           taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
+          /*
+           * 拿用户那句话当任务目标。
+           * 不传的话任务标题永远是「未命名任务」—— 未完成任务的横幅上
+           * 就只写着「有一条没干完的任务：未命名任务」，用户根本不知道是啥。
+           */
+          goal: lastUserText(history),
           temporary: payload?.temporary === true,
           threadSettings: payload?.threadSettings ?? {},
         })

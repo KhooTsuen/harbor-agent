@@ -127,3 +127,19 @@ export function plainText(nodes: InlineNode[]): string {
     })
     .join('')
 }
+
+/**
+ * 从一段 markdown 里把所有图片地址抠出来。
+ *
+ * 用在工具卡片上：工具输出是纯文本（`<pre>`），里面的 `![图](x)` 只会显示成
+ * 一堆方括号 —— 生图工具明明返回了图，用户却只能看到文件路径。
+ * 把它们抠出来单独渲染成缩略图。
+ */
+export function extractImageUrls(text: string): string[] {
+  const found: string[] = []
+  const pattern = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+  for (const match of String(text ?? '').matchAll(pattern)) {
+    if (/^(https?:|file:|data:image\/)/i.test(match[1])) found.push(match[1])
+  }
+  return [...new Set(found)]
+}

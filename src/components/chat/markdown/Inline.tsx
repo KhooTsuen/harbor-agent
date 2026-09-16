@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 import type { InlineNode } from '@/lib/markdown'
+import { openImageFromDom } from '@/stores/useImageLightbox'
 
 /* ══════════════════════════════════════════════════════════════
    行内节点渲染
@@ -66,7 +67,9 @@ function render(node: InlineNode, key: number) {
           src={node.src}
           alt={node.alt}
           loading="lazy"
-          className="my-2 block max-h-80 max-w-full rounded border border-line-subtle"
+          data-chat-image="true"
+          className="my-2 block max-h-80 max-w-full cursor-zoom-in rounded border border-line-subtle"
+          onClick={() => openImageFromDom(node.src)}
         />
       )
 

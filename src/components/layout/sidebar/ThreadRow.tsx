@@ -23,6 +23,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem, Popover } from '@/components/ui/Popover'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { useThreadHasTask } from '@/stores/useTaskStore'
 
 /* ══════════════════════════════════════════════════════════════
    侧栏里的一行线程
@@ -51,6 +52,8 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
   const addThreadTag = useAppStore((s) => s.addThreadTag)
   const markThreadExported = useAppStore((s) => s.markThreadExported)
   const showToast = useUIStore((s) => s.showToast)
+  /* 这条对话有没干完的任务 → 挂个黄点（别的地方不再乱弹横幅） */
+  const hasUnfinishedTask = useThreadHasTask(thread.id)
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -124,6 +127,21 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
       ) : null}
 
       <StatusDot status={thread.status} size={7} />
+
+      {/*
+        有没干完的任务 → 黄点。
+        以前是每切到一条对话就在顶部弹个横幅，不管那任务是不是这条对话的 ——
+        现在改成「侧栏一眼看是哪条」，只在那条对话里才弹详情。
+      */}
+      {hasUnfinishedTask ? (
+        <Tooltip content="有没干完的任务">
+          <span
+            aria-label="有没干完的任务"
+            className="inline-block size-1.5 shrink-0 rounded-full"
+            style={{ background: 'var(--warning)' }}
+          />
+        </Tooltip>
+      ) : null}
 
       <span className="min-w-0 flex-1 truncate text-dense" title={thread.title}>
         {thread.pinned ? (

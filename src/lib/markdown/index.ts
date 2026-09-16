@@ -7,7 +7,7 @@
 
 export type { Align, BlockNode, InlineNode, ListItem } from './types'
 export { parseFenceInfo } from './blocks'
-export { parseInline, plainText } from './inline'
+export { parseInline, plainText, extractImageUrls } from './inline'
 export { parseBlocks } from './blocks'
 export { isTableSeparator, splitRow } from './table'
 
