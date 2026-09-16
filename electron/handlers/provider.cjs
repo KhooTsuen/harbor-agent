@@ -15,7 +15,7 @@ const log = require('../core/log.cjs')
 function register({ ipcMain }) {
   /* ── 供应商测连接 ───────────────────────────────────────── */
   ipcMain.handle('provider:ping', async (_event, providerId) => {
-    const llm = require('./core/llm.cjs')
+    const llm = require('../core/llm.cjs')
     const all = config.get().providers
     const target = providerId ? all.find((p) => p.id === providerId) : config.activeProvider()
     if (!target) return { ok: false, error: '没有可用的供应商' }
@@ -37,7 +37,7 @@ function register({ ipcMain }) {
   /* ── 拉取供应商的模型清单 ───────────────────────────────── */
 
   ipcMain.handle('provider:listModels', async (_event, providerId) => {
-    const llm = require('./core/llm.cjs')
+    const llm = require('../core/llm.cjs')
     const all = config.get().providers
     const target = providerId ? all.find((p) => p.id === providerId) : config.activeProvider()
     if (!target) return { ok: false, error: '没有可用的供应商' }
