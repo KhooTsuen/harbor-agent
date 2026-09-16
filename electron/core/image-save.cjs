@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { resolvePath } = require('./tools/_shared.cjs')
+const config = require('./config.cjs')
 
 /* ══════════════════════════════════════════════════════════════
    生图结果落盘
@@ -29,15 +30,25 @@ const OUTPUT_DIR = 'generated'
  */
 async function saveImage(image, ctx = {}) {
   const { buffer, ext } = await readImage(image)
-  const relative = path.join(OUTPUT_DIR, `image-${stamp()}.${ext}`)
+  const name = `image-${stamp()}.${ext}`
 
-  /* 走统一的工作目录检查（和 write_file 同一条路，不绕过权限） */
-  const file = resolvePath(relative, ctx.workdir, ctx)
+  /*
+   * 用户自定义了保存目录（设置 → 对话 → 生图保存位置）就存那里。
+   * 用户自己选的目录视为已授权，不走工作目录的权限检查 ——
+   * 不然「存到 D:\图库」这种再正常不过的需求会被 Workspace Only 拦住。
+   */
+  const customDir = String(config.get().image?.dir ?? '').trim()
+  if (customDir) {
+    const file = path.join(customDir, name)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, buffer)
+    return { file, url: pathToFileURL(file).href }
+  }
 
+  /* 默认：工作目录下的 generated/（走统一的权限检查，和 write_file 同一条路） */
+  const file = resolvePath(path.join(OUTPUT_DIR, name), ctx.workdir, ctx)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, buffer)
-
-  /* 界面要能直接显示本地图 —— file:// 在这儿是能加载的（实测过） */
   return { file, url: pathToFileURL(file).href }
 }
 

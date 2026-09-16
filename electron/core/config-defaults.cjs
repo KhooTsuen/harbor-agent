@@ -168,6 +168,12 @@ const DEFAULTS = {
     image: { providerId: '', model: '' },
   },
 
+  /* 生图相关的杂项设置 */
+  image: {
+    /** 保存目录。空 = 工作目录下的 generated/；填了就用填的（绝对路径） */
+    dir: '',
+  },
+
   mcp: {
     /**
      * 每个 server：

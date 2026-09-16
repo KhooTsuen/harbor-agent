@@ -16,7 +16,7 @@ interface Rule {
 }
 
 /** 只放行这些开头的链接 —— `javascript:` 之类一律当普通文字 */
-const SAFE_HREF = /^(https?:|\/|\.\/|\.\.\/|#|mailto:)/i
+const SAFE_HREF = /^(https?:|file:|\/|\.\/|\.\.\/|#|mailto:)/i
 
 const RULES: Rule[] = [
   /* 行内代码优先级最高：里面的 * 和 _ 都不该被解析 */
@@ -26,7 +26,7 @@ const RULES: Rule[] = [
   {
     re: /!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/,
     build: (m) =>
-      /^(https?:|data:image\/|\/|\.\/|\.\.\/)/i.test(m[2])
+      /^(https?:|file:|data:image\/|\/|\.\/|\.\.\/)/i.test(m[2])
         ? { type: 'image', src: m[2], alt: m[1] }
         : null,
   },

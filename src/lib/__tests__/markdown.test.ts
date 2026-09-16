@@ -83,6 +83,10 @@ describe('parseInline', () => {
     expect(shape(parseInline('![图](https://a.com/b.png)'))).toBe('img(图)')
   })
 
+  it('★ file:// 本地图片也能渲染（生图结果要靠它显示在对话里）', () => {
+    expect(shape(parseInline('![图](file:///E:/work/generated/image-1.png)'))).toBe('img(图)')
+  })
+
   it('反斜杠转义', () => {
     expect(shape(parseInline('\\*不是斜体\\*'))).toBe('*不是斜体*')
   })
