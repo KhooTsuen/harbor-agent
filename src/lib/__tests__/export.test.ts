@@ -11,7 +11,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     status: 'idle',
     mode: 'pair',
     model: 'test',
-    reasoning: 'medium',
+    reasoning: 'high',
     pinned: false,
     archived: false,
     tags: [],

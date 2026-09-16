@@ -102,7 +102,7 @@ function withStrict(tool, strictNames) {
  * @param {{ model: string, messages: Array, tools?: Array,
  *           temperature?: number, topP?: number, maxTokens?: number,
  *           stream?: boolean, streamUsage?: boolean, strictToolNames?: Array<string>,
- *           provider?: object }} input
+ *           reasoningEffort?: string, provider?: object }} input
  */
 function buildChatBody(input) {
   const {
@@ -114,6 +114,7 @@ function buildChatBody(input) {
     maxTokens,
     stream = true,
     strictToolNames,
+    reasoningEffort,
   } = input
   const provider = input.provider ?? {}
 
@@ -121,6 +122,14 @@ function buildChatBody(input) {
   if (typeof temperature === 'number') body.temperature = temperature
   if (typeof topP === 'number') body.top_p = topP
   if (typeof maxTokens === 'number') body.max_tokens = maxTokens
+  /*
+   * 思考强度（DeepSeek `reasoning_effort`）：none | low | high | max。
+   * ⚠️ 这个档位曾经是「假功能」—— UI 有选择器、前端有状态，但从没发给模型。
+   * DeepSeek 默认 high；传 none 关闭思考。
+   */
+  if (typeof reasoningEffort === 'string' && reasoningEffort) {
+    body.reasoning_effort = reasoningEffort
+  }
   if (Array.isArray(tools) && tools.length > 0) {
     body.tools =
       Array.isArray(strictToolNames) && strictToolNames.length > 0

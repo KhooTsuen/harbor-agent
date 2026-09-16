@@ -231,6 +231,8 @@ export interface ChatSendPayload {
     allowTools?: boolean
     allowWrite?: boolean
     useMemory?: boolean
+    /** 思考强度（DeepSeek reasoning_effort）：low / high / max */
+    reasoning?: 'low' | 'high' | 'max'
   }
   messages: Array<{
     role: string

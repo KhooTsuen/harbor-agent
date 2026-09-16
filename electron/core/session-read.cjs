@@ -32,6 +32,8 @@ function list() {
       title: safeTitle(meta?.title),
       mode: typeof meta?.mode === 'string' ? meta.mode : 'pair',
       model: typeof meta?.model === 'string' ? meta.model : '',
+      /** 思考强度档位（low / high / max）；老会话没有就空串 */
+      reasoning: typeof meta?.reasoning === 'string' ? meta.reasoning : '',
       /** 老会话没有这个字段，返回空串（前端会补上） */
       workdir: typeof meta?.workdir === 'string' ? meta.workdir : '',
       threadSettings:

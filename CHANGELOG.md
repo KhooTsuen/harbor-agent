@@ -1,5 +1,51 @@
 # 更新日志
 
+## [0.38.0] — 2026-09-16 · 修「假功能」：思考档位从没生效过
+
+看 DeepSeek 官方仓库时发现的：`awesome-deepseek-agent` 里同类 agent 都有「思考强度」
+档位，我们 UI 上也有（`low/medium/high`），但**从没传给模型**。查下去发现三处断点：
+
+| 环节 | 状态 |
+|---|---|
+| UI 选择器 | ✅ 有 |
+| 存到内存 | ✅ `thread.reasoning` |
+| **发给 API** | ❌ `ThreadSettings` 里没这字段，`loop.cjs` 也没传 |
+| **持久化** | ❌ `setThreadReasoning` 没调 `updateSessionMeta`；`toThread` 硬编码 `'medium'` |
+| **读回** | ❌ `session:list` 不透传 `reasoning` |
+
+**等于：这个档位从头到尾都是摆设。**
+
+### 修法
+
+1. **对齐 DeepSeek 真实档位**：`low/medium/high` → `low/high/max`
+   （DeepSeek 实际是 `none/low/high/max`，且 `medium` 会被映射成 `high`）
+2. **接到 API**：`reasoning_effort` 走 `loop.cjs → llm.cjs → buildChatBody`
+3. **持久化**：`setThreadReasoning` 加 `updateSessionMeta`；`session-write.create/updateMeta`
+   加 `reasoning`；`session-read.list` 透传；`toThread` 读回
+4. **旧数据归一**：`medium` → `high`（importSchemas 用 `z.preprocess`）
+
+顺带消掉了 `turns.ts` 里重复调四次的 `threads.find`。
+
+### 真机验证（全链路）
+
+- 发消息无 400（说明 `reasoning_effort` 被 DeepSeek 接受）
+- session meta 里 `reasoning: 'high'` 落盘 ✓
+- 手改成 `max` → 重启 → UI 显示「**最高**」✓
+
+### 测试 476 → 480
+
+`reasoning_effort` 4 项（透传 / low·max·none / 不传不发 / 空字符串不发）；
+**变异测试**：让 `reasoning_effort` 失效 → 2 条红。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 480
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.37.0] — 2026-09-16 · browse_click + 改名消除「快照」误解
 
 ### browse_click（「手」）

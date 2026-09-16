@@ -145,6 +145,7 @@ export async function createSession(options?: {
   model?: string
   /** 这条会话的工作目录；'' = 明确不属于任何文件夹 */
   workdir?: string
+  reasoning?: string
   threadSettings?: Record<string, unknown>
 }): Promise<{ id: string; title: string } | null> {
   if (!bridge) return null
@@ -181,6 +182,8 @@ export async function updateSessionMeta(
     mode?: string
     model?: string
     workdir?: string
+    /** 思考强度档位（low / high / max） */
+    reasoning?: string
     threadSettings?: Record<string, unknown>
   },
 ): Promise<void> {

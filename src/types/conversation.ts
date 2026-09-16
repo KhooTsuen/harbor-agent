@@ -80,6 +80,8 @@ export interface ThreadSettings {
   allowTools?: boolean
   allowWrite?: boolean
   useMemory?: boolean
+  /** 思考强度（DeepSeek reasoning_effort）：low / high / max */
+  reasoning?: ReasoningLevel
 }
 
 export interface ConversationState {

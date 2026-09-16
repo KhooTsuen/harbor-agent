@@ -17,6 +17,7 @@ function create({
   mode = 'pair',
   model = '',
   workdir = '',
+  reasoning,
   threadSettings,
 } = {}) {
   const id = newId()
@@ -26,6 +27,8 @@ function create({
     title: safeTitle(title),
     mode,
     model,
+    /* 思考强度档位（low / high / max）—— 和 mode/model 一样随会话落盘 */
+    ...(reasoning ? { reasoning: String(reasoning) } : {}),
     /*
      * 会话属于哪个工作目录。侧栏按它分组 —— 换了目录就只看那个目录的会话，
      * 否则一堆不相干的对话混在一起没法找。
@@ -115,6 +118,8 @@ function updateMeta(id, patch) {
   if (patch.mode !== undefined) meta.mode = String(patch.mode)
   if (patch.model !== undefined) meta.model = String(patch.model)
   if (patch.workdir !== undefined) meta.workdir = String(patch.workdir)
+  /* 思考强度档位（low/high/max）—— 以前不在白名单里，所以选了也存不下来 */
+  if (patch.reasoning !== undefined) meta.reasoning = String(patch.reasoning)
   if (patch.threadSettings !== undefined) meta.threadSettings = patch.threadSettings
 
   writeLines(id, lines)

@@ -73,7 +73,9 @@ export const ThreadSchema = z.object({
   status: z.enum(['idle', 'running', 'success', 'error', 'waiting']).default('idle'),
   mode: z.enum(['plan', 'pair', 'execute', 'goal']).default('pair'),
   model: z.string().default(''),
-  reasoning: z.enum(['low', 'medium', 'high']).default('medium'),
+  reasoning: z
+    .preprocess((v) => (v === 'medium' ? 'high' : v), z.enum(['low', 'high', 'max']))
+    .default('high'),
   pinned: z.boolean().default(false),
   archived: z.boolean().default(false),
   tags: z.array(z.string()).default([]),

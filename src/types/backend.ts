@@ -66,6 +66,7 @@ export interface WorkbenchBridge extends SafetyBridge {
     model?: string
     /** 这条会话的工作目录；'' = 明确不属于任何文件夹（单独对话） */
     workdir?: string
+    reasoning?: string
     threadSettings?: Record<string, unknown>
   }) => Promise<{ id: string; title: string; mode: string; model: string; createdAt: number }>
   loadSession: (id: string) => Promise<SessionDetail | null>
@@ -77,6 +78,7 @@ export interface WorkbenchBridge extends SafetyBridge {
       mode?: string
       model?: string
       workdir?: string
+      reasoning?: string
       threadSettings?: Record<string, unknown>
     },
   ) => Promise<{ id: string; title: string } | null>
@@ -114,7 +116,6 @@ export interface WorkbenchBridge extends SafetyBridge {
   removeSkill: (id: string) => Promise<{ ok: boolean; error?: string }>
   openSkillsDir: () => Promise<{ ok: boolean; dir: string }>
 
-  /* 老的纯文本记忆接口（整段读写），结构化接口在 SafetyBridge 里 */
   getMemory: () => Promise<{ text: string; stats: MemoryStats; path: string }>
   setMemory: (text: string) => Promise<{ ok: boolean; stats?: MemoryStats; error?: string }>
   clearMemory: () => Promise<{ ok: boolean; stats: MemoryStats }>
@@ -244,7 +245,6 @@ export interface WorkbenchBridge extends SafetyBridge {
     ok: boolean
     sessions: Array<{ id: string; pid: number; cols: number; rows: number; startedAt: number }>
   }>
-  /** 终端输出分片与退出事件走同一个回调，type 区分 */
   onPtyEvent: (
     callback: (
       event:

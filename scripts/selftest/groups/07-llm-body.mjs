@@ -158,6 +158,28 @@ export async function run() {
     }).tools[0].function.strict === undefined,
   )
 
+  /* ── 思考强度（reasoning_effort）—— 这个档位以前是「假功能」，从没进过请求体 ── */
+
+  check(
+    '★ 传了 reasoningEffort 就进请求体',
+    buildChatBody({ model: 'm', messages: [], reasoningEffort: 'high' }).reasoning_effort ===
+      'high',
+  )
+  check(
+    'max / low / none 都原样透传',
+    ['low', 'max', 'none'].every(
+      (v) => buildChatBody({ model: 'm', messages: [], reasoningEffort: v }).reasoning_effort === v,
+    ),
+  )
+  check(
+    '不传 reasoningEffort 就不发这个字段',
+    buildChatBody({ model: 'm', messages: [] }).reasoning_effort === undefined,
+  )
+  check(
+    '空字符串也不发（不做无意义的字段）',
+    buildChatBody({ model: 'm', messages: [], reasoningEffort: '' }).reasoning_effort === undefined,
+  )
+
   group('请求体 / URL 拼接')
 
   check(

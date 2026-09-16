@@ -29,7 +29,7 @@ export const MODES: readonly ModeMeta[] = [
     id: 'pair',
     label: '标准',
     hint: '边做边解释，改了什么说清楚',
-    reasoning: 'medium',
+    reasoning: 'high',
   },
   {
     id: 'execute',
@@ -55,14 +55,14 @@ export function modeMeta(mode: ThreadMode): ModeMeta {
 
 export const REASONING_LABEL: Record<ReasoningLevel, string> = {
   low: '低',
-  medium: '中',
   high: '高',
+  max: '最高',
 }
 
 export const REASONING_HINT: Record<ReasoningLevel, string> = {
   low: '快，够用就行',
-  medium: '平衡',
-  high: '慢，适合难题',
+  high: '平衡',
+  max: '慢，适合难题',
 }
 
 /* ── 线程状态 ────────────────────────────────────────────────── */
@@ -95,25 +95,25 @@ export const MODELS: readonly ModelOption[] = [
     id: 'demo-standard',
     label: '标准',
     description: '通用模型（仅浏览器预览使用）',
-    reasoning: ['low', 'medium', 'high'],
+    reasoning: ['low', 'high', 'max'],
   },
   {
     id: 'demo-mini',
     label: '轻量',
     description: '轻量模型（仅浏览器预览使用）',
-    reasoning: ['low', 'medium'],
+    reasoning: ['low', 'high'],
   },
   {
     id: 'demo-reasoning',
     label: '强推理',
     description: '推理模型（仅浏览器预览使用）',
-    reasoning: ['medium', 'high'],
+    reasoning: ['high', 'max'],
   },
   {
     id: 'local-custom',
     label: '自定义',
     description: '接你自己部署的模型',
-    reasoning: ['low', 'medium', 'high'],
+    reasoning: ['low', 'high', 'max'],
   },
 ] as const
 
