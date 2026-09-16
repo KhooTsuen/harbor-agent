@@ -9,7 +9,8 @@ import { Markdown } from './Markdown'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
 import { TerminalOutput } from './TerminalOutput'
-import { ThinkBlock, ToolRunList } from './ProcessBlocks'
+import { ThinkBlock } from './ProcessBlocks'
+import { ToolRunList } from './ToolRuns'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
