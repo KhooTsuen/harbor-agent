@@ -194,7 +194,7 @@ async function ocr({ imageDataUrl, signal }) {
  *
  * `taskId` 传了就只查不提交 —— 接着等上一次超时的那张图。
  */
-async function generateImage({ prompt, size, signal, taskId }) {
+async function generateImage({ prompt, size, signal, taskId, once }) {
   const { provider, model, fallback } = resolve('image')
 
   /*
@@ -223,6 +223,7 @@ async function generateImage({ prompt, size, signal, taskId }) {
     size,
     signal,
     taskId,
+    once,
   })
 }
 

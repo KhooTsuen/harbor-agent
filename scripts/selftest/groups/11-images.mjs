@@ -162,6 +162,50 @@ export async function run() {
     check('超时标记为 pending', result.ok === false && result.pending === true)
     check('超时把 task_id 带回来（可以稍后续查）', result.taskId === 'task_slow')
 
+    /*
+     * once 模式：只查一眼就走。
+     * 用户问「那个任务现在怎么样了」时用它 —— 不该再等 5 分钟。
+     */
+    calls = stubFetch((url, options) =>
+      options?.method === 'POST'
+        ? jsonResponse({ data: [{ task_id: 'task_peek' }] })
+        : jsonResponse({ code: 200, data: { status: 'processing' } }),
+    )
+    result = await llm.generateImage({
+      baseUrl: 'https://api.test/v1',
+      model: 'm',
+      taskId: 'task_peek',
+      once: true,
+    })
+    check('★ once 模式只请求一次（不轮询）', calls.length === 1, String(calls.length))
+    check('★ once 模式把上游状态原样带回来', result.status === 'processing', String(result.status))
+
+    /*
+     * 超时要留下现场。
+     * 之前只说「等了 5 分钟没出图」—— 什么都说明不了：是上游真的慢，
+     * 还是我们压根没认出它的状态字段？现在把原始响应带上。
+     */
+    stubFetch((url, options) =>
+      options?.method === 'POST'
+        ? jsonResponse({ data: [{ task_id: 'task_x' }] })
+        : jsonResponse({
+            code: 200,
+            data: { status: 'PROCESSING', weird_field: '上游字段名不一样' },
+          }),
+    )
+    result = await llm.generateImage({
+      baseUrl: 'https://api.test/v1',
+      model: 'm',
+      prompt: 'p',
+      interval: 5,
+      timeout: 40,
+    })
+    check(
+      '★ 超时错误里带着原始响应（能排查了）',
+      /上游字段名不一样/.test(result.error),
+      result.error.slice(0, 200),
+    )
+
     /* 只查不提交：不该再打 /images/generations（不重复扣费） */
     calls = stubFetch((url, options) =>
       options?.method === 'POST'

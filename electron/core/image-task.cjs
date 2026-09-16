@@ -28,16 +28,20 @@ const POLL_INTERVAL_MS = 3500
 /**
  * 轮询上限。
  *
- * ★ 真机踩到的：设成 180 秒时，用户那张 1:1 的图**等了 183 秒还没出来** ——
- *   工具超时返回「还没画完」，模型只好自己 `run_shell sleep 60` 再查一次。
- *   那是被逼出来的歪招：它没别的办法等，而且白烧一轮 shell + 一次模型调用。
+ * ★ 这数字是**实测**定的，不是拍的。用户在 APIMart 后台看到：
  *
- * 现在给到 5 分钟。agent 循环本来就允许长工具调用（界面上会显示已用时），
- * 与其让模型自己想歪招，不如让工具老实等下去。
+ *     提交 02:51:32 ── 我们轮询 304 秒 ── 02:56:36 超时
+ *     APIMart 任务 02:56:35 创建 ── 12 秒 ── 02:56:47 完成
+ *                                   ↑ 只差 11 秒
  *
+ * 也就是说 **APIMart 光排队就要 5 分钟左右**，真正出图只要 12–15 秒。
+ * 而当时的上限正好也是 5 分钟 —— 每次都差十几秒，图其实早就画好了，
+ * 我们提前放弃了（用户以为「没画出来」）。
+ *
+ * 所以给到 10 分钟：把「排队 + 出图」整段覆盖掉。
  * 仍然超时的话把 task_id 带回去，可以只查不提交地接着等（不重复扣费）。
  */
-const POLL_TIMEOUT_MS = 300_000
+const POLL_TIMEOUT_MS = 600_000
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -130,8 +134,9 @@ function pickTaskImage(data) {
  * @param {AbortSignal} [input.signal]
  * @param {number} [input.interval]
  * @param {number} [input.timeout]
+ * @param {boolean} [input.once]  只看一眼就走（不等待）—— 用来当场问「现在什么状态」
  * @param {(elapsedMs: number) => void} [input.onTick]  给上层记日志用
- * @returns {Promise<{ok:boolean, image?:string, model?:string, taskId?:string, error?:string, pending?:boolean}>}
+ * @returns {Promise<{ok:boolean, image?:string, model?:string, taskId?:string, error?:string, pending?:boolean, status?:string}>}
  */
 async function waitForTask({
   baseUrl,
@@ -141,6 +146,7 @@ async function waitForTask({
   signal,
   interval = POLL_INTERVAL_MS,
   timeout = POLL_TIMEOUT_MS,
+  once = false,
   onTick,
 }) {
   const url = `${String(baseUrl).replace(/\/+$/, '')}/tasks/${encodeURIComponent(taskId)}`
@@ -148,9 +154,17 @@ async function waitForTask({
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
   const deadline = Date.now() + timeout
   const startedAt = Date.now()
+  /*
+   * 最后一次看到的原始响应。
+   * 超时时把它带回去 —— 否则「等了 5 分钟没出图」这句话什么都说明不了：
+   * 到底是上游真的慢，还是我们根本没认出它的状态字段？留个现场。
+   */
+  let lastSeen = ''
+  let lastStatus = ''
 
   while (Date.now() < deadline) {
-    await sleep(interval)
+    /* once 模式不等待，立刻查一次 */
+    if (!once) await sleep(interval)
     if (signal?.aborted) return { ok: false, error: '已取消', taskId }
 
     let response
@@ -175,6 +189,8 @@ async function waitForTask({
 
     const data = await response.json().catch(() => null)
     const status = pickStatus(data)
+    lastSeen = JSON.stringify(data ?? {}).slice(0, 400)
+    lastStatus = status
 
     if (status === 'failed' || status === 'failure') {
       return { ok: false, taskId, error: `生成失败：${pickFailReason(data) || '上游没给原因'}` }
@@ -186,6 +202,16 @@ async function waitForTask({
       /* 说完成了却没图 —— 再等一轮，可能是状态先到、结果后到 */
     }
 
+    if (once) {
+      return {
+        ok: false,
+        pending: true,
+        taskId,
+        status,
+        error: `上游状态：${status || '(没读到状态字段)'}`,
+      }
+    }
+
     onTick?.(Date.now() - startedAt)
   }
 
@@ -194,7 +220,10 @@ async function waitForTask({
     ok: false,
     pending: true,
     taskId,
-    error: `等了 ${Math.round(timeout / 1000)} 秒还没出图`,
+    status: lastStatus,
+    error:
+      `等了 ${Math.round(timeout / 1000)} 秒还没出图` +
+      `（最后读到状态 ${lastStatus || '?'}；原始响应 ${lastSeen || '(空)'}）`,
   }
 }
 

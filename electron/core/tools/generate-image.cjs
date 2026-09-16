@@ -43,6 +43,11 @@ module.exports = {
         type: 'string',
         description: '只查这个任务、不重新生成（上一次超时后拿到的那串 task_id）',
       },
+      wait: {
+        type: 'boolean',
+        description:
+          '传 false 就只查一眼、立即返回上游当前状态（不等出图）。用户问「那个任务现在怎么样了」时用这个',
+      },
     },
     /*
      * 不写 required：prompt 和 taskId 是「二选一」，
@@ -65,6 +70,7 @@ module.exports = {
     const prompt = String(args?.prompt ?? '').trim()
     const taskId = String(args?.taskId ?? '').trim()
     const size = String(args?.size ?? '').trim()
+    const onlyCheck = args?.wait === false
 
     if (!prompt && !taskId) {
       throw new Error('要给我画面描述（prompt）；或者给一个 taskId，让我接着查上一次的任务')
@@ -74,16 +80,24 @@ module.exports = {
       prompt,
       size: size || undefined,
       taskId: taskId || undefined,
+      once: onlyCheck && Boolean(taskId),
     })
+
+    /* 只查一眼：不等待、不下载，直接把上游状态报出来 */
+    if (onlyCheck && result.pending) {
+      return `上游现在还是「${result.status || '未知'}」，还没出图。${result.error ?? ''}`
+    }
 
     /* 超时不等于失败：任务还在跑，把任务号交出去让它稍后再查 */
     if (!result.ok && result.pending && result.taskId) {
       return [
         `还没画完 —— 已经等了 5 分钟，上游还在处理。任务号：\`${result.taskId}\``,
         '',
+        `上游最后的状态：${result.error ?? '(没读到)'}`,
+        '',
         '**不要用 run_shell sleep 去等**：那是在白烧时间（还会多花一次模型调用）。',
         '直接告诉用户「还在生成，稍等」就行；用户问起时再调',
-        `\`generate_image({ taskId: "${result.taskId}" })\` 查一次 —— 只查不提交，不会重复扣费。`,
+        `\`generate_image({ taskId: "${result.taskId}", wait: false })\` 看一眼上游状态（不等、不扣费）。`,
       ].join('\n')
     }
     if (!result.ok) throw new Error(result.error)
