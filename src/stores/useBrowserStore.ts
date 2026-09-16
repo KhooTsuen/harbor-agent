@@ -33,6 +33,8 @@ export interface PendingBrowse {
   text?: string
   /** type 时用：输入后要不要回车 */
   pressEnter?: boolean
+  /** type 时用：用户已明确授权填密码（由确认弹窗得到） */
+  authorized?: boolean
 }
 
 interface BrowserState {

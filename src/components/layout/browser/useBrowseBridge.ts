@@ -50,6 +50,7 @@ export function useBrowseBridge(): void {
           index: req.index,
           text: req.text,
           pressEnter: req.pressEnter,
+          authorized: req.authorized,
         })
         useUIStore.getState().setActiveRightTab('browser')
         return

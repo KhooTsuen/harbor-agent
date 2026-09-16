@@ -1,5 +1,5 @@
 import { check, group } from '../harness.mjs'
-import { ROOT, join, require } from '../env.mjs'
+import { ROOT, join, readFileSync, require } from '../env.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    浏览器：正文清洗 + 导航策略 + 注入标注
@@ -226,6 +226,17 @@ export async function run() {
     emptyText = error
   }
   check('拒绝空文本', emptyText !== null, String(emptyText?.message))
+
+  /*
+   * ★ 密码闸门（源码级守卫）
+   *
+   * 「用户明确授权才填密码」是条**安全线**，删掉了不能全绿。
+   * 它没法在本环境中跑（要真的浏览器），所以查源码里这几根线在不在。
+   */
+  const typeSrc = readFileSync(join(ROOT, 'electron/core/tools/browse-type.cjs'), 'utf8')
+  check('★ 密码框会弹确认（走 ctx.confirm）', /ctx\.confirm\(/.test(typeSrc))
+  check('★ 授权后才带 authorized 重发', /authorized:\s*true/.test(typeSrc))
+  check('★ 密码值会登记成已知密钥（审计/日志才会脱敏）', /redact\.remember\(/.test(typeSrc))
 
   /* ── browse_elements 的格式化（纯函数）── */
 

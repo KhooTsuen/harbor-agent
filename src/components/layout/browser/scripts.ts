@@ -72,8 +72,20 @@ export const SNAPSHOT_SCRIPT = `
       for (var k = 0; k < list.length && items.length < MAX; k++) {
         var el = list[k]
         var rect = el.getBoundingClientRect()
-        var text = (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || '')
-          .toString().trim().replace(/\\s+/g, ' ')
+        /*
+         * 密码框不读值 —— 读出来会把密码原样带进模型上下文、工具结果和会话。
+         * 只告诉「填没填」，不告诉填了什么。
+         */
+        var isPassword = el.tagName === 'INPUT' && el.type === 'password'
+        var text = ''
+        if (isPassword) {
+          text = el.value
+            ? '••••••（已填）'
+            : (el.getAttribute('placeholder') || el.getAttribute('aria-label') || '密码框')
+        } else {
+          text = (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || '')
+        }
+        text = text.toString().trim().replace(/\\s+/g, ' ')
         if (text.length > 100) text = text.slice(0, 100)
         items.push({
           i: items.length,
@@ -144,7 +156,12 @@ export function clickScript(index: number): string {
  * text 用 JSON.stringify 嵌进去：用户输入里可能有引号/换行/反引号，
  * 直接拼进脚本字符串会把脚本写坏。
  */
-export function typeScript(index: number, text: string, pressEnter: boolean): string {
+export function typeScript(
+  index: number,
+  text: string,
+  pressEnter: boolean,
+  authorized = false,
+): string {
   const enterBlock = pressEnter
     ? `
         /* 回车：keydown/keypress/keyup 都发一遍 —— 不同站点监听的事件不一样 */
@@ -164,6 +181,17 @@ export function typeScript(index: number, text: string, pressEnter: boolean): st
         var tag = target.tagName.toLowerCase()
         var isField = tag === 'input' || tag === 'textarea' || target.isContentEditable
         if (!isField) return { ok: false, error: '第 ${index} 个元素是 <' + tag + '>，不是输入框，打不了字' }
+
+        /*
+         * 密码框：没拿到用户明确授权就不动，回去让宿主弹确认。
+         * 光靠提示词约束不够 —— 这里也卡一道（和「危险命令」一个道理）。
+         */
+        var isPassword = tag === 'input' && target.type === 'password'
+        var authorized = ${authorized === true}
+        if (isPassword && !authorized) {
+          return { ok: false, needsConfirm: true, label: '密码框' }
+        }
+
         var value = ${JSON.stringify(text)}
 
         target.focus()
@@ -178,7 +206,9 @@ export function typeScript(index: number, text: string, pressEnter: boolean): st
           target.dispatchEvent(new Event('input', { bubbles: true }))
         }
         ${enterBlock}
-        return { ok: true, typed: value.slice(0, 60), into: tag }
+        /* 密码不回显 —— 返回值会进模型上下文和对话记录 */
+        var echoed = isPassword ? '••••••（已隐藏）' : value.slice(0, 60)
+        return { ok: true, typed: echoed, into: tag, password: isPassword }
       } catch (e) {
         return { ok: false, error: String(e) }
       }

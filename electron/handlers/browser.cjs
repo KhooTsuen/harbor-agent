@@ -71,7 +71,12 @@ function register() {
 
     const result = payload?.result ?? {}
     if (result.ok !== true) {
-      entry.resolve({ ok: false, error: String(result.error ?? '读取失败') })
+      entry.resolve({
+        ok: false,
+        error: String(result.error ?? '读取失败'),
+        /* 密码框会走这条：先不填，让工具回去问用户 */
+        needsConfirm: result.needsConfirm === true,
+      })
       return { ok: true }
     }
 
@@ -89,7 +94,12 @@ function register() {
 
     /* type：输入结果，直接透传 */
     if (result.type !== undefined) {
-      entry.resolve({ ok: true, type: result.type, into: result.into })
+      entry.resolve({
+        ok: true,
+        type: result.type,
+        into: result.into,
+        password: result.password === true,
+      })
       return { ok: true }
     }
 

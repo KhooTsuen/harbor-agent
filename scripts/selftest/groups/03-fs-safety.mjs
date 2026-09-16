@@ -240,6 +240,25 @@ export async function run() {
     JSON.stringify(secretEntry?.args),
   )
 
+  /*
+   * ★ result / error 也要脱敏。
+   * 真机抓到过：browse_elements 读输入框的值，把密码原样写进了 result ——
+   * 而当时审计只脱了 args/extras，result 是原样落盘的。
+   */
+  redactCore.remember('SuperSecretPw123')
+  auditCore.record({
+    sessionId: 'selftest',
+    tool: 'probe_secret',
+    args: {},
+    result: '填进去的值是 SuperSecretPw123',
+    error: '失败了：SuperSecretPw123',
+    ok: false,
+  })
+  const resultEntry = auditCore.read({ limit: 5, sessionId: 'selftest' })[0]
+  const dump = JSON.stringify(resultEntry ?? {})
+  check('★ 审计里的 result / error 也脱敏', !dump.includes('SuperSecretPw123'), dump.slice(0, 160))
+  check('脱敏了但记录还在（不是整条丢掉）', dump.includes('probe_secret'))
+
   /* ══════════════════════════════════════════════════════
      P0 可靠：任务与检查点
      ══════════════════════════════════════════════════════ */

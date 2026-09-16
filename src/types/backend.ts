@@ -45,7 +45,6 @@ export interface WorkbenchBridge extends SafetyBridge {
   listModels: (providerId?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>
   getWorkdir: () => Promise<string>
   pickWorkdir: () => Promise<{ ok: boolean; workdir?: string; canceled?: boolean }>
-  /** 只挑目录，不改全局工作目录（给单条对话挂目录用） */
   chooseFolder: () => Promise<{ ok: boolean; dir?: string; canceled?: boolean }>
   sendChat: (
     payload: ChatSendPayload,
@@ -222,8 +221,6 @@ export interface WorkbenchBridge extends SafetyBridge {
   shellAbort: (requestId: string) => Promise<{ ok: boolean; error?: string }>
   onShellData: (callback: (data: ShellData) => void) => () => void
 
-  /* ── 真终端（PTY）────────────────────────────────────── */
-
   ptyStart: (payload: { id: string; cols?: number; rows?: number; cwd?: string }) => Promise<{
     ok: boolean
     id?: string
@@ -272,6 +269,8 @@ export interface WorkbenchBridge extends SafetyBridge {
       click?: string
       type?: string
       into?: string
+      password?: boolean
+      needsConfirm?: boolean
       error?: string
     },
   ) => Promise<{ ok: boolean; error?: string }>
@@ -284,10 +283,11 @@ export interface BrowserRequestEvent {
   id: string
   action: 'navigate' | 'snapshot' | 'click' | 'type'
   url?: string
-  /** click/type：目标元素索引；type：text=输入的文字，pressEnter=是否回车 */
+  /** click/type: index 目标元素；type: text 内容、pressEnter 回车、authorized 已授权填密码 */
   index?: number
   text?: string
   pressEnter?: boolean
+  authorized?: boolean
 }
 
 declare global {

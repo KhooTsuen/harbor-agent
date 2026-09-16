@@ -107,6 +107,8 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         click?: string
         type?: string
         into?: string
+        password?: boolean
+        needsConfirm?: boolean
         error?: string
       }): void => {
         void window.workbench?.browserResult?.(pending!.id, result)
@@ -152,11 +154,32 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
               toIndex(pending!.index),
               String(pending!.text ?? ''),
               Boolean(pending!.pressEnter),
+              pending!.authorized === true,
             ),
-          )) as { ok?: boolean; error?: string; typed?: string; into?: string } | undefined
+          )) as
+            | {
+                ok?: boolean
+                error?: string
+                typed?: string
+                into?: string
+                password?: boolean
+                needsConfirm?: boolean
+              }
+            | undefined
           if (!alive) return
-          if (raw?.ok) reply({ ok: true, type: raw.typed ?? '', into: raw.into ?? '' })
-          else reply({ ok: false, error: String(raw?.error ?? '输入失败') })
+          if (raw?.ok) {
+            reply({
+              ok: true,
+              type: raw.typed ?? '',
+              into: raw.into ?? '',
+              password: raw.password === true,
+            })
+          } else if (raw?.needsConfirm) {
+            /* 密码框：先不填，回去让宿主问用户 */
+            reply({ ok: false, needsConfirm: true, error: '需要用户确认' })
+          } else {
+            reply({ ok: false, error: String(raw?.error ?? '输入失败') })
+          }
           return
         }
 
