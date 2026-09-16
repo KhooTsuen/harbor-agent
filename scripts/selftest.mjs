@@ -19,6 +19,7 @@
  *   scripts/selftest/groups/08-…                 用量闸（预算）
  *   scripts/selftest/groups/09-…                 浏览器正文清洗 / 导航策略 / browse 工具
  *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
+ *   scripts/selftest/groups/11-…                 图像：异步任务轮询 + generate_image 工具
  *
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
  *
@@ -39,6 +40,7 @@ import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
 import { run as limits } from './selftest/groups/08-limits.mjs'
 import { run as browser } from './selftest/groups/09-browser.mjs'
 import { run as plugins } from './selftest/groups/10-plugins.mjs'
+import { run as images } from './selftest/groups/11-images.mjs'
 
 const GROUPS = [
   basics,
@@ -51,6 +53,7 @@ const GROUPS = [
   limits,
   browser,
   plugins,
+  images,
 ]
 
 async function main() {

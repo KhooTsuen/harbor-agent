@@ -189,11 +189,27 @@ async function ocr({ imageDataUrl, signal }) {
   return { text: (result.content ?? '').trim(), model }
 }
 
-/** 图像生成：走 /images/generations，返回 base64 */
-async function generateImage({ prompt, size = '1024x1024', signal }) {
-  const { provider, model } = resolve('image')
+/**
+ * 图像生成：走 /images/generations，异步任务会自动轮询到出图（见 image-task.cjs）
+ *
+ * `taskId` 传了就只查不提交 —— 接着等上一次超时的那张图。
+ */
+async function generateImage({ prompt, size, signal, taskId }) {
+  const { provider, model, fallback } = resolve('image')
+
+  /*
+   * 没配「画图」场景时 resolve 会回退到默认聊天模型 —— 而聊天模型调
+   * /images/generations 只会 404。与其让模型拿到一个 404 自己猜，
+   * 不如直接说清楚该去哪配。
+   */
+  if (fallback && !taskId) {
+    throw new Error(
+      '「画图」还没指定模型。去「设置 → 对话 → 场景 → 画图」挑一个生图模型；' +
+        '生图和聊天是两套 API，聊天模型画不了图。',
+    )
+  }
   if (!config.hasKey(provider)) {
-    throw new Error('图像生成要在「设置 → 模型与提示词」里单独指定一个模型')
+    throw new Error(`供应商 ${provider.name || provider.id} 还没填 API Key`)
   }
   if (!model) {
     throw new Error('图像生成没有指定模型')
@@ -206,6 +222,7 @@ async function generateImage({ prompt, size = '1024x1024', signal }) {
     prompt,
     size,
     signal,
+    taskId,
   })
 }
 
