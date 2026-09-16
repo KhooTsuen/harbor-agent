@@ -9,6 +9,7 @@
  */
 
 const { buildUrl } = require('./llm-body.cjs')
+const task = require('./image-task.cjs')
 
 /** 非流式，用来测连接 */
 async function ping({ baseUrl, apiKey, chatPath, model, signal }) {
@@ -81,24 +82,48 @@ function parseModelList(data) {
 }
 
 /**
- * 图像生成（/images/generations）。
+ * 图像生成（`/images/generations`）。
  *
  * 和聊天是两套 API —— 所以「图像生成」那个场景必须单独挑模型，
  * 拿聊天模型去调只会 404。
  *
- * 返回格式各家不同，两种都兼容：
- *   · { data: [{ b64_json }] }  —— 要求 response_format: 'b64_json'
- *   · { data: [{ url }] }       —— 有些中转站忽略 response_format，只给 URL
+ * 返回两条路都认（文档依据见 image-task.cjs 顶部）：
+ *   · 同步站点直接给 b64_json / url           → 直接用
+ *   · 异步站点给 task_id（APIMart 全家都是）→ 轮询到出图
+ *
+ * 传了 `taskId` 就**只查不提交** —— 用来接着等上一次超时的那张图，
+ * 不会重复扣费。
  */
-async function generateImage({ baseUrl, apiKey, model, prompt, size = '1024x1024', signal }) {
+async function generateImage({
+  baseUrl,
+  apiKey,
+  model,
+  prompt,
+  size,
+  signal,
+  taskId,
+  interval,
+  timeout,
+}) {
+  if (taskId) {
+    return await task.waitForTask({ baseUrl, apiKey, taskId, model, signal, interval, timeout })
+  }
+
   const url = buildUrl(baseUrl, '/images/generations')
   const headers = { 'Content-Type': 'application/json' }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
+  const body = { model, prompt, n: 1, response_format: 'b64_json' }
+  /*
+   * size 不传就走服务端默认（APIMart 默认 1:1）。
+   * 写死 '1024x1024' 会把「16:9」这种比例参数堵死 —— 而中转站基本都支持比例。
+   */
+  if (size) body.size = size
+
   const response = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model, prompt, n: 1, size, response_format: 'b64_json' }),
+    body: JSON.stringify(body),
     signal,
   })
 
@@ -108,16 +133,19 @@ async function generateImage({ baseUrl, apiKey, model, prompt, size = '1024x1024
   }
 
   const data = await response.json().catch(() => null)
-  const first = Array.isArray(data?.data) ? data.data[0] : null
-  if (!first) return { ok: false, error: '服务没有返回图片' }
 
-  if (typeof first.b64_json === 'string' && first.b64_json) {
-    return { ok: true, image: `data:image/png;base64,${first.b64_json}`, model }
+  const direct = task.pickSyncImage(data)
+  if (direct) return { ok: true, image: direct, model }
+
+  const id = task.pickTaskId(data)
+  if (!id) {
+    return {
+      ok: false,
+      error: `返回里既没有图片也没有 task_id：${JSON.stringify(data ?? {}).slice(0, 200)}`,
+    }
   }
-  if (typeof first.url === 'string' && first.url) {
-    return { ok: true, image: first.url, model }
-  }
-  return { ok: false, error: '返回里既没有 b64_json 也没有 url' }
+
+  return await task.waitForTask({ baseUrl, apiKey, taskId: id, model, signal, interval, timeout })
 }
 
 module.exports = { ping, listModels, parseModelList, generateImage }

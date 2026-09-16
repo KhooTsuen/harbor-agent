@@ -22,6 +22,7 @@ const browse = require('./browse.cjs')
 const browseElements = require('./browse-elements.cjs')
 const browseClick = require('./browse-click.cjs')
 const browseType = require('./browse-type.cjs')
+const generateImage = require('./generate-image.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -39,6 +40,7 @@ const ALL = [
   browseElements,
   browseClick,
   browseType,
+  generateImage,
   remember,
 ]
 
@@ -47,6 +49,9 @@ const ALL = [
 /*
  * browse 也算：它会联网，而且会占用用户正在看的浏览器标签（有副作用）。
  * 归到「写操作」里 —— readonly 档要拦、ask 档要确认。
+ *
+ * generate_image 更要算：它**要花钱**（按张计费），还会往工作目录写文件，
+ * 而且慢。放进来用户才有机会先看一眼 prompt。
  */
 const WRITE_TOOLS = new Set([
   'write_file',
@@ -56,6 +61,7 @@ const WRITE_TOOLS = new Set([
   'browse_elements',
   'browse_click',
   'browse_type',
+  'generate_image',
   'remember',
 ])
 
