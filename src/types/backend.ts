@@ -1,13 +1,8 @@
-/* ══════════════════════════════════════════════════════════════
-   window.workbench 的声明
-
-   渲染层有两种运行环境：
-     · Electron  → 桥存在，使用真实文件、终端、模型和磁盘配置
-     · 浏览器    → 没有桌面桥，仅用于 UI 预览
-
-   所有 IPC 调用都返回 { ok, ... } 形状，失败不扔异常
-   （跨进程扔了也拿不到栈）。
-   ══════════════════════════════════════════════════════════════ */
+/*
+ * window.workbench 的声明。
+ * Electron 下有真实文件/终端/模型；浏览器预览下只有 UI。
+ * 所有 IPC 都返回 { ok, ... }，失败不扔异常（跨进程扔了也拿不到栈）。
+ */
 
 import type {
   AppConfig,
@@ -31,6 +26,7 @@ import type {
 } from './models'
 
 import type { MemoryStats, SafetyBridge } from './safety'
+import type { ImageDonePayload } from './image'
 
 export * from './models'
 
@@ -255,6 +251,9 @@ export interface WorkbenchBridge extends SafetyBridge {
   onPluginsChanged: (
     callback: (change: { added: string[]; removed: string[]; count: number }) => void,
   ) => () => void
+
+  /** 生图完成 / 失败（异步任务，可能几分钟后才回来） */
+  onImageDone: (callback: (payload: ImageDonePayload) => void) => () => void
 
   onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
   browserResult: (

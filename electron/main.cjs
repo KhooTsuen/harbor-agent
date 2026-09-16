@@ -3,10 +3,7 @@
  *
  * 职责：
  *   ① **在 app ready 之前**把所有 Electron 的路径锁到 data/ 下（绝不写 C 盘）
- *   ② 建窗口、装配 IPC
- *   ③ 转发流式事件给渲染层
- *
- * 注意：这个文件不做具体业务，业务在 core/ 和 handlers/ 里。
+ *   ② 建窗口、装配 IPC；不写具体业务（业务在 core/ 和 handlers/ 里）
  */
 
 const path = require('node:path')
@@ -22,6 +19,7 @@ const { setupTray, showWindow, setQuitting, isQuitting } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
 const navigationPolicy = require('./navigation-policy.cjs')
 const pluginWatcher = require('./core/plugin-watcher.cjs')
+const imageHandler = require('./handlers/image.cjs')
 
 /* ══════════════════════════════════════════════════════════
    ① 锁路径 —— 必须早于 app.whenReady()
@@ -230,6 +228,7 @@ if (!gotLock) {
       .boot(config)
       .then(() => log.info('MCP 初始化完成'))
     pluginWatcher.install({ send }) // 插件热插拔：监听 data/plugins/，增删自动重扫 + 通知前端
+    imageHandler.register({ send }) // 生图出图后：落盘 + 写会话 + 通知前端（见 handlers/image.cjs）
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

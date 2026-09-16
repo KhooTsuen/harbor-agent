@@ -202,6 +202,24 @@ const api = {
     return () => ipcRenderer.removeListener('plugins:changed', handler)
   },
 
+  /**
+   * 订阅「生图完成 / 失败」。
+   *
+   * 生图是异步的：工具提交完就返回了，真正出图可能要好几分钟 ——
+   * 那时对话早就结束一轮了，所以靠主进程推事件回来把图片插进对话。
+   */
+  onImageDone: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('image:ready', handler)
+    ipcRenderer.on('image:failed', handler)
+    ipcRenderer.on('image:progress', handler)
+    return () => {
+      ipcRenderer.removeListener('image:ready', handler)
+      ipcRenderer.removeListener('image:failed', handler)
+      ipcRenderer.removeListener('image:progress', handler)
+    }
+  },
+
   /* ── 浏览器：让主进程的 `browse` 工具能驱动这个 webview ── */
 
   /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */

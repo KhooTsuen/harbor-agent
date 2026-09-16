@@ -13,6 +13,14 @@ interface UIState {
   rightPanelVisible: boolean
   activeRightTab: RightTab
   settingsOpen: boolean
+  /**
+   * 正在跑的生图任务 —— 界面用它显示实时进度。
+   * 生图是异步的（上游排队 + 出图要几十秒到几分钟），主进程每 3 秒推一次状态。
+   */
+  imageTask: { taskId: string; sessionId?: string; status?: string; elapsedMs: number } | null
+  setImageTask: (
+    task: { taskId: string; sessionId?: string; status?: string; elapsedMs: number } | null,
+  ) => void
   commandPaletteOpen: boolean
   searchQuery: string
   permission: PermissionRequest | null
@@ -37,6 +45,7 @@ export const useUIStore = create<UIState>((set) => ({
   rightPanelVisible: true,
   activeRightTab: 'diff',
   settingsOpen: false,
+  imageTask: null,
   commandPaletteOpen: false,
   searchQuery: '',
   permission: null,
@@ -45,6 +54,7 @@ export const useUIStore = create<UIState>((set) => ({
   toggleRightPanel: () => set((s) => ({ rightPanelVisible: !s.rightPanelVisible })),
   setRightPanelVisible: (visible) => set({ rightPanelVisible: visible }),
   setActiveRightTab: (tab) => set({ activeRightTab: tab, rightPanelVisible: true }),
+  setImageTask: (task) => set({ imageTask: task }),
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),

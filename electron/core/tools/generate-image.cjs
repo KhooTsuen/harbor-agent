@@ -1,9 +1,5 @@
-const fs = require('node:fs')
-const path = require('node:path')
-const { pathToFileURL } = require('node:url')
 const scene = require('../scene.cjs')
-const { resolvePath } = require('./_shared.cjs')
-const http = require('../http.cjs')
+const { saveImage } = require('../image-save.cjs')
 
 /*
  * generate_image —— 让 Agent 自己画图
@@ -11,23 +7,28 @@ const http = require('../http.cjs')
  * 用哪家、哪个模型，走的是「设置 → 对话 → 场景 → 画图」那一个配置 ——
  * 和输入框工具栏里那个「画图」按钮是同一个。配一次，两边都能用。
  *
- * ── 为什么要落盘，不直接把 URL 给模型 ──
- * 中转站返回的图片链接**大多 24–72 小时就过期**。只把链接记住，明天再看
- * 这条对话图就裂了。所以这里下载下来存进工作目录，永久有效。
- * （实测过：界面能直接加载本地 file:// 图片，不用再搭一套协议。）
+ * ── 为什么是「提交完就返回」，而不是等出图 ──
+ *
+ * APIMart 光**排队**就要 5 分钟左右（实测：提交 02:51:32 → 任务 02:56:35
+ * 才创建 → 02:56:47 完成，真正画只用 12 秒）。
+ *
+ * 早先的版本让工具同步干等，结果很难看：
+ *   · 界面卡五六分钟，用户以为程序死了
+ *   · 超时上限怎么调都不对 —— 180 秒不够，5 分钟还是差十几秒
+ *   · 一旦超时图就丢了，模型被逼着用 `run_shell sleep` 硬等（真发生过）
+ *
+ * 现在：提交 → 立刻拿到 task_id 返回 → `image-watch` 在后台盯着 →
+ * 出图后由 main 落盘并把图片**推进这条对话**。用户什么都不用管。
  *
  * ── 模型看不到图 ──
- * 返回的是 markdown 图片语法，**给人看的**；模型自己不认图（除非是多模态的）。
- * 所以文字里也说清楚存到哪了，方便下一步操作（比如把图塞进文档）。
+ * 返回给人看的是 markdown 图片；模型自己不认图（除非是多模态的）。
+ * 所以文字里也要说清楚东西存在哪，方便下一步（比如塞进文档）。
  */
-
-/** 图片落在工作目录的哪个子目录下 */
-const OUTPUT_DIR = 'generated'
 
 module.exports = {
   name: 'generate_image',
   description:
-    '生成图片（文生图）。用「设置 → 场景 → 画图」里配的那个生图模型。prompt 要具体：主体、动作、环境、光线、风格。可选 size 指定比例（如 "16:9"、"1:1"）。图片会保存到工作目录的 generated/ 子目录。★ 这个工具会一直等到出图（最长 5 分钟），所以**不要**再用 run_shell sleep 去等；如果它返回了 task_id，说明上游还没好，直接告诉用户「还在生成」就行，下次用同一个 taskId 再调一次即可（只查不提交，不重复扣费）。',
+    '生成图片（文生图）。用「设置 → 场景 → 画图」里配的那个生图模型。prompt 要具体：主体、动作、环境、光线、风格。可选 size 指定比例（如 "16:9"、"1:1"）。★ 这个工具**只负责提交**，立刻返回任务号，不等待出图（上游要排队好几分钟）—— 出图后图片会自动出现在这条对话里。所以提交完**不要说「画好了」**，说「已提交，稍后出图」。要查进度时传 taskId + wait:false 看一眼上游状态。',
   parameters: {
     type: 'object',
     properties: {
@@ -41,12 +42,12 @@ module.exports = {
       },
       taskId: {
         type: 'string',
-        description: '只查这个任务、不重新生成（上一次超时后拿到的那串 task_id）',
+        description: '查已有任务、不重新生成（上一次提交拿到的那串 task_id）',
       },
       wait: {
         type: 'boolean',
         description:
-          '传 false 就只查一眼、立即返回上游当前状态（不等出图）。用户问「那个任务现在怎么样了」时用这个',
+          '配合 taskId 用：传 false 就只查一眼上游状态、立即返回（不等出图）。用户问「那个任务怎么样了」时用',
       },
     },
     /*
@@ -73,101 +74,70 @@ module.exports = {
     const onlyCheck = args?.wait === false
 
     if (!prompt && !taskId) {
-      throw new Error('要给我画面描述（prompt）；或者给一个 taskId，让我接着查上一次的任务')
+      throw new Error('要给我画面描述（prompt）；或者给一个 taskId，让我去查那张图')
     }
 
-    const result = await scene.generateImage({
-      prompt,
-      size: size || undefined,
-      taskId: taskId || undefined,
-      once: onlyCheck && Boolean(taskId),
-    })
-
-    /* 只查一眼：不等待、不下载，直接把上游状态报出来 */
-    if (onlyCheck && result.pending) {
-      return `上游现在还是「${result.status || '未知'}」，还没出图。${result.error ?? ''}`
+    /* ── ① 只查一眼：不等待、不下载，直接报上游状态 ── */
+    if (taskId && onlyCheck) {
+      const peek = await scene.generateImage({ taskId, once: true })
+      if (peek.ok && peek.image) {
+        const saved = await saveImage(peek.image, ctx)
+        return [
+          '图已经好了 ——',
+          '',
+          `![${altOf(prompt)}](${saved.url})`,
+          '',
+          `已存到：${saved.file}`,
+        ].join('\n')
+      }
+      if (peek.pending) {
+        return `上游现在还是「${peek.status || '未知'}」，还没出图。原始响应：${peek.raw || '(空)'}`
+      }
+      throw new Error(peek.error)
     }
 
-    /* 超时不等于失败：任务还在跑，把任务号交出去让它稍后再查 */
-    if (!result.ok && result.pending && result.taskId) {
+    /* ── ② 用 taskId 把已有的图取回来（任务通常已完成，所以同步等没问题）── */
+    if (taskId) {
+      const got = await scene.generateImage({ taskId })
+      if (!got.ok) throw new Error(got.error)
+      const saved = await saveImage(got.image, ctx)
       return [
-        `还没画完 —— 已经等了 5 分钟，上游还在处理。任务号：\`${result.taskId}\``,
+        `图取回来了（${got.model}）。`,
         '',
-        `上游最后的状态：${result.error ?? '(没读到)'}`,
+        `![${altOf(prompt)}](${saved.url})`,
         '',
-        '**不要用 run_shell sleep 去等**：那是在白烧时间（还会多花一次模型调用）。',
-        '直接告诉用户「还在生成，稍等」就行；用户问起时再调',
-        `\`generate_image({ taskId: "${result.taskId}", wait: false })\` 看一眼上游状态（不等、不扣费）。`,
+        `已存到：${saved.file}`,
       ].join('\n')
     }
-    if (!result.ok) throw new Error(result.error)
 
-    const saved = await saveImage(result.image, ctx)
-    const alt = prompt.replace(/[[\]]/g, '').slice(0, 60) || '生成的图片'
+    /* ── ③ 提交新的：**立刻返回**，后台守望者接着盯 ── */
+    const submitted = await scene.submitImage({
+      prompt,
+      size: size || undefined,
+      sessionId: ctx.sessionId,
+      workdir: ctx.workdir,
+    })
+    if (!submitted.ok) throw new Error(submitted.error)
 
     return [
-      `画好了（${result.model}）。`,
+      `已经提交给上游了（任务号 \`${submitted.taskId}\`，模型 ${submitted.model}）。`,
       '',
-      `![${alt}](${saved.url})`,
+      '上游要**排队几分钟**才真正开始画（实测大约 5 分钟），所以我没有在这里干等 ——',
+      '出图后图片会**自动出现在这条对话里**，不用你催、也不用再问一次。',
       '',
-      `已存到：${saved.file}`,
+      '**现在还没画好**，跟用户说「已提交，稍等」就行，别说「画好了」。',
+      '用户要查进度的话，用 `generate_image({ taskId: "' +
+        submitted.taskId +
+        '", wait: false })` 看一眼。',
     ].join('\n')
   },
 }
 
-/* ── 存盘 ─────────────────────────────────────────────────── */
-
-/**
- * 把拿到的图片写进工作目录。
- *
- * 两种来源：`data:image/png;base64,xxx`（同步站点）或 http(s) 链接（异步站点出图后）。
- */
-async function saveImage(image, ctx) {
-  const { buffer, ext } = await readImage(image)
-  const relative = path.join(OUTPUT_DIR, `image-${stamp()}.${ext}`)
-
-  /* 走统一的工作目录检查（和 write_file 同一条路，不绕过权限） */
-  const file = resolvePath(relative, ctx.workdir, ctx)
-
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, buffer)
-
-  /* 界面要能直接显示本地图 —— file:// 在这儿是能加载的（实测过） */
-  return { file, url: pathToFileURL(file).href }
-}
-
-async function readImage(image) {
-  const text = String(image ?? '')
-
-  const inline = /^data:([^;,]+);base64,(.*)$/s.exec(text)
-  if (inline) {
-    return { buffer: Buffer.from(inline[2], 'base64'), ext: extOf(inline[1]) }
-  }
-
-  if (/^https?:\/\//i.test(text)) {
-    const response = await http.fetch(text)
-    if (!response.ok) throw new Error(`下载图片失败：HTTP ${response.status}`)
-    const buffer = Buffer.from(await response.arrayBuffer())
-    return { buffer, ext: extOf(response.headers.get('content-type') ?? '') }
-  }
-
-  throw new Error('拿到的图片地址不认识（既不是 data: 也不是 http(s)）')
-}
-
-/** 按 MIME 猜扩展名；猜不出就当 png（中转站绝大多数出 png） */
-function extOf(mime) {
-  const type = String(mime).toLowerCase()
-  if (type.includes('jpeg') || type.includes('jpg')) return 'jpg'
-  if (type.includes('webp')) return 'webp'
-  return 'png'
-}
-
-/** 文件名用本地时间戳 + 毫秒，连画多张也不会撞名 */
-function stamp() {
-  const now = new Date()
-  const pad = (value, width = 2) => String(value).padStart(width, '0')
+/** markdown 图片的 alt 用 prompt 摘要；`[` `]` 会破坏语法，去掉 */
+function altOf(prompt) {
   return (
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-    `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${pad(now.getMilliseconds(), 3)}`
+    String(prompt ?? '')
+      .replace(/[[\]]/g, '')
+      .slice(0, 60) || '生成的图片'
   )
 }

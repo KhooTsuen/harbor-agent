@@ -17,6 +17,7 @@
 const config = require('./config.cjs')
 const llm = require('./llm.cjs')
 const log = require('./log.cjs')
+const imageWatch = require('./image-watch.cjs')
 
 /** 场景清单。改这里要同步 前端 constants/scenes.ts 和 config.cjs 的默认值 */
 const SCENES = ['chat', 'title', 'prompt', 'translate', 'suggest', 'compact', 'ocr', 'image']
@@ -190,6 +191,54 @@ async function ocr({ imageDataUrl, signal }) {
 }
 
 /**
+ * 提交生图任务，**立刻返回任务号**，剩下的交给后台守望。
+ *
+ * ★ 为什么不让它同步等：
+ *   APIMart 光排队就要 5 分钟左右（实测：提交 02:51:32 → 任务 02:56:35 创建
+ *   → 02:56:47 完成）。同步等的话界面会卡住五六分钟，一旦超时图就丢了，
+ *   用户还得自己记下 task_id 再问一遍。
+ *
+ * 所以：提交完就撒手，image-watch 在后台盯着，出图后由 main 落盘 + 推进对话。
+ */
+async function submitImage({ prompt, size, sessionId, workdir }) {
+  const { provider, model, fallback } = resolve('image')
+
+  if (fallback) {
+    throw new Error(
+      '「画图」还没指定模型。去「设置 → 对话 → 场景 → 画图」挑一个生图模型；' +
+        '生图和聊天是两套 API，聊天模型画不了图。',
+    )
+  }
+  if (!config.hasKey(provider)) {
+    throw new Error(`供应商 ${provider.name || provider.id} 还没填 API Key`)
+  }
+  if (!model) throw new Error('图像生成没有指定模型')
+
+  const result = await llm.generateImage({
+    baseUrl: provider.baseUrl,
+    apiKey: config.providerKey(provider),
+    model,
+    prompt,
+    size,
+    submitOnly: true,
+  })
+  if (!result.ok) return result
+
+  imageWatch.watch({
+    taskId: result.taskId,
+    sessionId: String(sessionId ?? ''),
+    workdir: String(workdir ?? ''),
+    prompt,
+    baseUrl: provider.baseUrl,
+    apiKey: config.providerKey(provider),
+    model: result.model ?? model,
+    log: (line) => log.info(line),
+  })
+
+  return result
+}
+
+/**
  * 图像生成：走 /images/generations，异步任务会自动轮询到出图（见 image-task.cjs）
  *
  * `taskId` 传了就只查不提交 —— 接着等上一次超时的那张图。
@@ -230,6 +279,7 @@ async function generateImage({ prompt, size, signal, taskId, once }) {
 module.exports = {
   SCENES,
   resolve,
+  submitImage,
   call,
   ask,
   ocr,
