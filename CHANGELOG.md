@@ -1,5 +1,44 @@
 # 更新日志
 
+## [0.37.0] — 2026-09-16 · browse_click + 改名消除「快照」误解
+
+### browse_click（「手」）
+
+按索引点击当前页面的元素。index 来自 browse_elements 返回的 [N]。
+真机完整闭环：browse 打开 → browse_elements 看 → browse_click(3) 点 Sign in
+→ browse_elements 再确认。
+
+### 改名 browse_snapshot → browse_elements
+
+用户试用后问「它说网页是快照网页？我以为是实时的」。排查：读的**本来就是实时
+页面**（webview 里真实加载的当前 DOM），是「snapshot」这个词让模型跟着说「快照」，
+用户误以为读的是「百度快照」那种存档旧网页。
+
+改名 browse_elements + 描述和返回文案明确写「实时当前页面」+「不是存档快照」。
+
+### 脚本抽到 scripts.ts + 共享遍历逻辑
+
+snapshot 和 click 必须用**完全一样的遍历逻辑**，否则索引对不上（点错元素比
+点不中还糟）。抽出 `__walkInteractive` 一份共用，snapshot 和 click 都内联它。
+
+### 顺带修的 bug
+
+改名时 WRITE_TOOLS 里残留了旧名 `browse_snapshot`（prettier 把 Set 排成多行，
+单行替换没匹配上），导致 browse_elements 其实没进写操作集合。已修。
+
+### 测试 465 → 476（+11）
+
+browse_click 参数校验 5 项 + browse_elements 格式化 6 项。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 476
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.36.0] — 2026-09-16 · browser_snapshot：computer use 的地基
 
 用户要「像 ChatGPT 一样模拟人类使用软件」，范围定在网页。先做了个 10 分钟

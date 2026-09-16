@@ -255,7 +255,6 @@ export interface WorkbenchBridge extends SafetyBridge {
 
   onEvent: (callback: (event: ChatEvent) => void) => () => void
 
-  /** 插件热插拔：新增/删除插件时主进程通知 */
   onPluginsChanged: (
     callback: (change: { added: string[]; removed: string[]; count: number }) => void,
   ) => () => void
@@ -270,6 +269,8 @@ export interface WorkbenchBridge extends SafetyBridge {
       html?: string
       title?: string
       url?: string
+      snapshot?: unknown
+      click?: string
       error?: string
     },
   ) => Promise<{ ok: boolean; error?: string }>
@@ -280,8 +281,9 @@ export interface WorkbenchBridge extends SafetyBridge {
 /** 主进程发来的一次浏览请求 */
 export interface BrowserRequestEvent {
   id: string
-  action: string
+  action: 'navigate' | 'snapshot' | 'click'
   url?: string
+  index?: number
 }
 
 declare global {

@@ -81,6 +81,12 @@ function register() {
       return { ok: true }
     }
 
+    /* click：点击结果，直接透传 */
+    if (result.click !== undefined) {
+      entry.resolve({ ok: true, click: result.click })
+      return { ok: true }
+    }
+
     /*
      * ★ 正文在这里清洗 + 截断，不在渲染层做。
      *

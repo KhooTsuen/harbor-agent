@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
+import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript } from './scripts'
 
 /* ══════════════════════════════════════════════════════════════
    执行 Agent 的浏览请求（真正操作 webview 的那一半）
@@ -78,85 +79,6 @@ function waitForLoad(view: WebviewElement, timeoutMs: number): Promise<void> {
 }
 
 /**
- * 读正文的脚本。
- *
- * 优先 `innerText` —— 那是**渲染后的可见文本**，JS 生成的内容也在里面，
- * 这才是「用浏览器读页面」的意义。HTML 只在拿不到时兜底。
- */
-const READ_SCRIPT = `
-  (function () {
-    try {
-      var body = document.body ? document.body.innerText : ''
-      return {
-        text: body || '',
-        html: document.documentElement ? document.documentElement.outerHTML : '',
-        title: document.title || '',
-        url: location.href || ''
-      }
-    } catch (e) {
-      return { text: '', html: '', title: '', url: '', error: String(e) }
-    }
-  })()
-`
-
-/*
- * 可交互元素快照（「眼睛 + 坐标」合一的地基）。
- *
- * 返回每个可交互元素的：索引、标签、角色、文本、**中心坐标 + 宽高**。
- * 坐标从 getBoundingClientRect 拿 —— 是精确的，不像视觉推理会漂。
- * 模型看「文本 + 角色」判断该点哪个，用「索引」让 click 精确执行。
- *
- * 只留看得见的、视口内、有尺寸的元素，最多 80 个 —— 不然一个页面
- * 几百个元素会塞爆上下文。
- */
-const SNAPSHOT_SCRIPT = `
-  (function () {
-    try {
-      var SEL = 'a,button,input,textarea,select,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="radio"],[contenteditable="true"],[onclick]'
-      var all = document.querySelectorAll(SEL)
-      var vw = window.innerWidth || 0
-      var vh = window.innerHeight || 0
-      var items = []
-      var seen = new Set()
-      var MAX = 80
-
-      for (var k = 0; k < all.length && items.length < MAX; k++) {
-        var el = all[k]
-        if (seen.has(el)) continue
-        seen.add(el)
-
-        var rect = el.getBoundingClientRect()
-        if (rect.width < 4 || rect.height < 4) continue
-        if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue
-
-        var cs = window.getComputedStyle(el)
-        if (cs.display === 'none' || cs.visibility === 'hidden') continue
-
-        var text = (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || '')
-          .toString().trim().replace(/\\s+/g, ' ')
-        if (text.length > 100) text = text.slice(0, 100)
-
-        items.push({
-          i: items.length,
-          tag: el.tagName.toLowerCase(),
-          type: el.tagName === 'INPUT' ? (el.type || '') : '',
-          role: el.getAttribute('role') || '',
-          text: text,
-          x: Math.round(rect.left + rect.width / 2),
-          y: Math.round(rect.top + rect.height / 2),
-          w: Math.round(rect.width),
-          h: Math.round(rect.height)
-        })
-      }
-
-      return { url: location.href, title: document.title, viewport: { w: vw, h: vh }, items: items, total: all.length }
-    } catch (e) {
-      return { url: location.href, error: String(e), items: [] }
-    }
-  })()
-`
-
-/**
  * 消费 store 里的 pending 请求。
  *
  * @param webviewRef 指向 BrowserTab 里那个 webview 元素
@@ -182,6 +104,7 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         title?: string
         url?: string
         snapshot?: unknown
+        click?: string
         error?: string
       }): void => {
         void window.workbench?.browserResult?.(pending!.id, result)
@@ -207,6 +130,17 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
             Record<string, unknown> | undefined
           if (!alive) return
           reply({ ok: true, snapshot: raw })
+          return
+        }
+
+        /* click：按索引点击当前页面的元素（不导航） */
+        if (pending!.action === 'click') {
+          const raw = (await view.executeJavaScript?.(
+            clickScript(Number(pending!.index) || -1),
+          )) as { ok?: boolean; error?: string; clicked?: string } | undefined
+          if (!alive) return
+          if (raw?.ok) reply({ ok: true, click: raw.clicked ?? '' })
+          else reply({ ok: false, error: String(raw?.error ?? '点击失败') })
           return
         }
 
