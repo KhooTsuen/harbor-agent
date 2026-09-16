@@ -98,6 +98,15 @@ export function UsageTab() {
               hint={`开始于 ${new Date(data.since).toLocaleDateString('zh-CN')}`}
             />
             <StatCard label="调用次数" value={data.total.calls} hint="一轮任务可能调多次" />
+            <StatCard
+              label="缓存命中"
+              value={data.total.cached}
+              hint={
+                data.total.prompt > 0
+                  ? `占输入 ${Math.round((data.total.cached / data.total.prompt) * 100)}%`
+                  : '前缀命中的 token 更便宜'
+              }
+            />
           </div>
 
           {data.models.length > 0 ? (

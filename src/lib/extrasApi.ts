@@ -107,7 +107,7 @@ export async function mcpRestart(): Promise<McpServerStatus[]> {
 
 const EMPTY_SUMMARY: StatsSummary = {
   since: Date.now(),
-  total: { prompt: 0, completion: 0, total: 0, calls: 0 },
+  total: { prompt: 0, completion: 0, total: 0, calls: 0, cached: 0 },
   days: [],
   models: [],
   file: '',

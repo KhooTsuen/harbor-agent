@@ -29,15 +29,14 @@ const sessionCore = require('./session.cjs')
    ══════════════════════════════════════════════════════════ */
 
 /**
- * 环境信息。
+ * 环境信息（**静态部分**）。
  *
- * **这几行少不得**：没有当前时间，模型会把「最新」理解成训练数据里的时间
- * （实测过 —— 问它「现在几点」，它会说「我的系统提示里没有时间信息」）。
+ * 只有「操作系统 / 工作目录 / 文件访问范围」这些基本不变的东西。
+ * ⚠️ 当前时间**不在这里** —— 它每轮都变，放这层会把整个提示的缓存前缀冲掉。
+ * 见 `currentTimeSection()`。
  */
 function environmentSection({ workdir, assistantName = 'Agent' }) {
-  const timeText = new Date().toLocaleString('zh-CN', { hour12: false })
   return [
-    `- 当前时间：${timeText}`,
     `- 操作系统：${process.platform === 'win32' ? 'Windows' : process.platform}`,
     `- 工作目录：${workdir}`,
     '- 相对路径一律理解为相对工作目录。',
@@ -46,6 +45,17 @@ function environmentSection({ workdir, assistantName = 'Agent' }) {
     '  被拒绝时不要反复重试，问用户想怎么办。',
     `- 你是 ${assistantName}，跑在用户本机上。`,
   ].join('\n')
+}
+
+/**
+ * 当前时间 —— **单独一层，放最后**。
+ *
+ * 它是唯一**每轮都变**的内容。DeepSeek 的 prompt 缓存是前缀匹配，
+ * 把它放在开头等于让后面所有 token 每轮都没法命中。放最后，
+ * 前面稳定的部分就能一直命中（命中 token 约 1/10 价）。
+ */
+function currentTimeSection() {
+  return `- 当前时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`
 }
 
 /**
@@ -158,6 +168,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     /* 最后两层：越靠后越容易被遵守 */
     workRules: WORK_RULES,
     safety: SAFETY_GUIDE,
+    /* 当前时间单独一层，放在最末（它每轮都变，不能污染前面的缓存前缀） */
+    currentTime: currentTimeSection(),
   })
   const systemPrompt = config.assistant.systemPrompt?.trim()
     ? `${config.assistant.systemPrompt}\n\n${stack.message.content}`

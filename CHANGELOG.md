@@ -1,5 +1,45 @@
 # 更新日志
 
+## [0.39.0] — 2026-09-16 · 缓存优先（命中率 1% → 45%）
+
+Reasonix 的 cache-first 启发：DeepSeek 的 prompt 缓存是**前缀匹配**，命中 token
+约 1/10 价。而我们之前的 system prompt 把「当前时间」放在**第 2 层**——每轮都变，
+等于从第 2 层往后的缓存全废。实测命中率只有 ~1%。
+
+### 改了什么
+
+1. **层序重排**：稳定区在前、易变区在后：
+   ```
+   稳定区（缓存锚）：coreIdentity → environment(静态) → conversationPolicy →
+     userPreferences → projectInstructions → skills → tools → toolPolicy →
+     workRules → safety
+   易变区：relevantMemory → taskState → conversationState → retrievedContext
+     → currentTime（当前时间垫底）
+   ```
+   - 「当前时间」从 environment 拆成独立层放最后（它每轮都变，不能污染前缀）
+   - safety 从「压轴」提到稳定区末尾（每轮不变，放着不命中太亏）
+2. **记录缓存命中**：`stats.cjs` 记 `cached`（兼容 DeepSeek `prompt_cache_hit_tokens`
+   和 OpenAI `prompt_tokens_details.cached_tokens` 两种字段）
+3. **UI 显示**：用量页加「缓存命中」卡片 + 占输入百分比
+
+### 真机验证
+
+同一会话连发 3 句：prompt +10833，cached +4864，**命中率 45%**（旧版 ~1%）。
+第一句是新前缀所以 0 命中拉低了平均；后续轮次命中更高。
+
+### 测试
+
+层序回归测试改断言（「边界压轴」→「边界在稳定区」「时间在最后」），481 项。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 152
+内核自测                   ✅ 481
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.38.0] — 2026-09-16 · 修「假功能」：思考档位从没生效过
 
 看 DeepSeek 官方仓库时发现的：`awesome-deepseek-agent` 里同类 agent 都有「思考强度」
