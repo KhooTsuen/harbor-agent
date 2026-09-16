@@ -1,5 +1,45 @@
 # 更新日志
 
+## [0.47.1] — 2026-09-17 · 修：设置页「测试连接 / 刷新」报 Cannot find module
+
+用户配 APIMart 时点「刷新」拉模型列表，界面上直接弹：
+
+    Error invoking remote method 'provider:listModels':
+    Error: Cannot find module '/core/llm.cjs'
+
+**原因**：`electron/handlers/provider.cjs` 里写的是 `require('./core/llm.cjs')` ——
+但那个文件在 `handlers/` 下，应该是 `../core/llm.cjs`。
+（同一个文件第 12 行的 `require('../core/config.cjs')` 就是对的，纯手误。）
+
+**为什么一直没被发现**：
+
+- `.cjs` 不过 tsc，路径写错编译器不管
+- 这个 require 写在 **handler 内部**（懒加载），只有**点按钮**时才执行
+- 所以开发、单测、打包自检全绿 —— 一路溜到用户手里
+
+和之前那个「`ipcMain` 忘 require」是同一类洞：**只有真跑才看得见**。
+
+**修**：两处 `./core/llm.cjs` → `../core/llm.cjs`。
+
+**顺手加了守卫**（这才是重点）：新增 `groups/12-requires.mjs` ——
+扫所有 `.cjs/.mjs` 的相对 `require`，解析不到的一律报红。
+分工明确：**tsc 管 `.ts/.tsx`，它管 `.cjs/.mjs` 的 require 路径**。
+
+（写的时候踩了自己的老坑：扫描器把**注释里举例的那个错路径**也报了出来 ——
+加 `stripComments` 先去掉注释再扫。）
+
+**真机验证**：
+
+    修复前：Cannot find module '/core/llm.cjs'
+    修复后：测试连接 → 连上了，模型 deepseek-flash
+
+（顺带确认了用户的 APIMart key 有效、baseUrl 正确。）
+
+**测试**：内核 531 → 532。变异验证：把路径改回去 → 守卫立刻报出
+`provider.cjs → ./core/llm.cjs`。
+
+---
+
 ## [0.47.0] — 2026-09-17 · 生图接上异步任务 + generate_image 工具
 
 用户在配 APIMart（OpenAI 兼容中转站，500+ 模型，含大量生图）。两件事：

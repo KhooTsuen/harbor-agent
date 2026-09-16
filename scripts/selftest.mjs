@@ -20,6 +20,7 @@
  *   scripts/selftest/groups/09-…                 浏览器正文清洗 / 导航策略 / browse 工具
  *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
  *   scripts/selftest/groups/11-…                 图像：异步任务轮询 + generate_image 工具
+ *   scripts/selftest/groups/12-…                 模块引用：相对 require 路径都存在
  *
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
  *
@@ -41,6 +42,7 @@ import { run as limits } from './selftest/groups/08-limits.mjs'
 import { run as browser } from './selftest/groups/09-browser.mjs'
 import { run as plugins } from './selftest/groups/10-plugins.mjs'
 import { run as images } from './selftest/groups/11-images.mjs'
+import { run as requires } from './selftest/groups/12-requires.mjs'
 
 const GROUPS = [
   basics,
@@ -54,6 +56,7 @@ const GROUPS = [
   browser,
   plugins,
   images,
+  requires,
 ]
 
 async function main() {
