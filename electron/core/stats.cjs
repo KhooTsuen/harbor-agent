@@ -23,7 +23,8 @@ function statsFile() {
 }
 
 function emptyBucket() {
-  return { prompt: 0, completion: 0, total: 0, calls: 0 }
+  /* cached：命中 prompt 缓存的 token 数（命中部分便宜很多） */
+  return { prompt: 0, completion: 0, total: 0, calls: 0, cached: 0 }
 }
 
 function emptyData() {
@@ -78,6 +79,14 @@ function addInto(bucket, usage) {
   bucket.total +=
     Number(usage.total_tokens) ||
     (Number(usage.prompt_tokens) || 0) + (Number(usage.completion_tokens) || 0)
+  /*
+   * 缓存命中的 token。两家字段不一样：
+   *   DeepSeek: prompt_cache_hit_tokens
+   *   OpenAI:   prompt_tokens_details.cached_tokens
+   * 以前这两处都没读 —— 命中率到底多少，一直是笔糊涂账。
+   */
+  bucket.cached +=
+    Number(usage.prompt_cache_hit_tokens) || Number(usage.prompt_tokens_details?.cached_tokens) || 0
   bucket.calls += 1
 }
 

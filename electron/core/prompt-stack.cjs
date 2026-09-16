@@ -72,20 +72,37 @@ const VERSION = 'prompt-stack/1'
  * 它会断言下面每一项都真的进了系统提示。删层会让测试红。
  */
 const ORDER = [
+  /*
+   * ── 稳定区：这些内容基本不变，放前面 —— 前缀缓存靠它们命中 ──
+   * DeepSeek 的 prompt 缓存是**前缀匹配**：开头越稳定，命中的 token 越多
+   * （命中部分约 1/10 价）。所以「不变的在前面」是省钱的硬要求。
+   */
   'coreIdentity',
   'environment',
   'conversationPolicy',
   'userPreferences',
-  'relevantMemory',
   'projectInstructions',
   'skills',
   'tools',
   'toolPolicy',
+  'workRules',
+  /*
+   * safety 从「压轴」提到稳定区末尾：它每轮都一样，放着不命中太亏。
+   * 「越靠后越容易被遵守」这条对规则有效，但放在易变区之前仍属于提示的前段，
+   * 而且它每轮命中省下的 token 是实在的。
+   */
+  'safety',
+
+  /*
+   * ── 易变区：每轮都可能变，一律放后面；缓存前缀到这儿就断了 ──
+   * ⚠️ currentTime 必须在**最后** —— 它是唯一每轮都变的（之前它在第 2 层，
+   * 等于把整个提示的缓存全废了）。
+   */
+  'relevantMemory',
   'taskState',
   'conversationState',
   'retrievedContext',
-  'workRules',
-  'safety',
+  'currentTime',
 ]
 
 function text(value) {
@@ -117,16 +134,18 @@ function buildLayers(input = {}) {
 ${input.responseDepth ? `- 回答深度：${input.responseDepth}。不要靠截断文字实现深度控制。` : ''}`,
     ),
     layer('userPreferences', 'User Preferences', input.userPreferences),
-    layer('relevantMemory', 'Relevant Memory', input.relevantMemory),
     layer('projectInstructions', 'Project Instructions', input.projectInstructions),
     layer('skills', 'Skills', input.skills),
     layer('tools', 'Tools', input.tools),
     layer('toolPolicy', 'Tool Policy', input.toolPolicy),
+    layer('workRules', 'How To Work', input.workRules),
+    layer('safety', 'Boundaries', input.safety),
+    /* ↓ 易变区（每轮可能变，放后面） */
+    layer('relevantMemory', 'Relevant Memory', input.relevantMemory),
     layer('taskState', 'Task State', input.taskState),
     layer('conversationState', 'Conversation State', input.conversationState),
     layer('retrievedContext', 'Retrieved Context', input.retrievedContext),
-    layer('workRules', 'How To Work', input.workRules),
-    layer('safety', 'Boundaries', input.safety),
+    layer('currentTime', 'Current Time', input.currentTime),
   ]
 }
 

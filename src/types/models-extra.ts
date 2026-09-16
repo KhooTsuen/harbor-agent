@@ -9,6 +9,8 @@ export interface UsageBucket {
   completion: number
   total: number
   calls: number
+  /** 命中 prompt 缓存的 token 数（命中部分便宜很多） */
+  cached: number
 }
 
 export interface StatsSummary {

@@ -26,11 +26,11 @@ export async function run() {
     assistantName: 'Agent',
     responseDepth: 'standard',
     environment: [
-      '- 当前时间：2026-09-14 22:30:00',
       '- 操作系统：Windows',
       '- 工作目录：E:\\probe',
       '- **文件访问有范围限制**：默认只能读写工作目录内的文件。',
     ].join('\n'),
+    currentTime: '- 当前时间：2026-09-14 22:30:00',
     relevantMemory: '## 关于用户和这个项目（长期记忆）\n- [偏好] 用中文',
     projectInstructions: '## 这个项目的说明（来自 AGENT.md）\n- 数据只落 data/',
     skills: '## 技能\n- foo：干什么的',
@@ -57,10 +57,10 @@ export async function run() {
 
   /* ② 内容 —— 下面这些就是当初漏掉的五块 */
   const requiredInPrompt = {
-    '环境：当前时间': /当前时间/,
     '环境：操作系统': /操作系统/,
     '环境：工作目录': /工作目录/,
     '环境：文件范围限制': /文件访问有范围限制/,
+    '末尾：当前时间': /当前时间/,
     工具清单: /read_file/,
     '工具清单（第二个工具）': /run_shell/,
     模式说明: /计划模式/,
@@ -81,13 +81,20 @@ export async function run() {
     check(`提示里有「${label}」`, pattern.test(promptText))
   }
 
-  /* ③ 顺序：规矩与边界必须在最后（越靠后越容易被遵守） */
+  /*
+   * ③ 顺序：**稳定区在前、易变区在后**。
+   * DeepSeek 的 prompt 缓存是前缀匹配 —— 开头越稳定，命中的 token 越多。
+   * 所以「当前时间」这种每轮都变的内容必须在最后，否则整个前缀都白费。
+   */
   const idxIdentity = promptText.indexOf('Core Identity')
   const idxRules = promptText.indexOf('先看再改')
   const idxSafety = promptText.indexOf('Boundaries')
+  const idxTime = promptText.indexOf('当前时间')
   check('身份在最前', idxIdentity >= 0 && idxIdentity < idxRules)
   check('规矩在边界之前', idxRules < idxSafety)
-  check('边界压轴', idxSafety > promptText.length * 0.7)
+  /* 缓存优先：边界不再压轴，但它每轮不变，放稳定区末尾才不浪费缓存命中 */
+  check('边界在稳定区（易变区之前）', idxSafety > 0 && idxSafety < idxTime)
+  check('★ 当前时间在最后（每轮都变，不能污染前缀缓存）', idxTime > promptText.length * 0.8)
 
   /* ══════════════════════════════════════════════════════
      CE-002 / CE-003 / CE-004：新内核模块
