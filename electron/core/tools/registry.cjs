@@ -21,6 +21,7 @@ const searchWeb = require('./search_web.cjs')
 const browse = require('./browse.cjs')
 const browseElements = require('./browse-elements.cjs')
 const browseClick = require('./browse-click.cjs')
+const browseType = require('./browse-type.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -37,6 +38,7 @@ const ALL = [
   browse,
   browseElements,
   browseClick,
+  browseType,
   remember,
 ]
 
@@ -53,6 +55,7 @@ const WRITE_TOOLS = new Set([
   'browse',
   'browse_elements',
   'browse_click',
+  'browse_type',
   'remember',
 ])
 

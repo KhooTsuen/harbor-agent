@@ -87,6 +87,12 @@ function register() {
       return { ok: true }
     }
 
+    /* type：输入结果，直接透传 */
+    if (result.type !== undefined) {
+      entry.resolve({ ok: true, type: result.type, into: result.into })
+      return { ok: true }
+    }
+
     /*
      * ★ 正文在这里清洗 + 截断，不在渲染层做。
      *

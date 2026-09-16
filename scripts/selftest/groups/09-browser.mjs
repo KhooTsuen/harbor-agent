@@ -199,6 +199,34 @@ export async function run() {
   }
   check('拒绝非数字索引', nan !== null, String(nan?.message))
 
+  /* ── browse_type 的参数校验 ── */
+
+  group('浏览器 / browse_type 工具')
+
+  const typeTool = require(join(ROOT, 'electron/core/tools/browse-type.cjs'))
+  check('工具注册名是 browse_type', typeTool.name === 'browse_type')
+  check('★ 归到写操作里（会改变页面）', typeTool.network === true)
+  check(
+    '参数要求 index + text',
+    JSON.stringify(typeTool.parameters.required) === '["index","text"]',
+  )
+
+  let badIdxType = null
+  try {
+    await typeTool.run({ index: -1, text: 'x' })
+  } catch (error) {
+    badIdxType = error
+  }
+  check('拒绝负数索引（Type）', badIdxType !== null, String(badIdxType?.message))
+
+  let emptyText = null
+  try {
+    await typeTool.run({ index: 0, text: '' })
+  } catch (error) {
+    emptyText = error
+  }
+  check('拒绝空文本', emptyText !== null, String(emptyText?.message))
+
   /* ── browse_elements 的格式化（纯函数）── */
 
   group('浏览器 / 元素清单格式化')

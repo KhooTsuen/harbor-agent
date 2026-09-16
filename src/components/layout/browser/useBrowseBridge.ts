@@ -30,9 +30,9 @@ export function useBrowseBridge(): void {
     if (!bridge?.onBrowserRequest) return
 
     const off = bridge.onBrowserRequest((req: BrowserRequestEvent) => {
-      if (req.action === 'snapshot' || req.action === 'click') {
+      if (req.action === 'snapshot' || req.action === 'click' || req.action === 'type') {
         /*
-         * 读/点当前页面的元素，不导航。
+         * 读/点/打字：操作当前页面，不导航。
          * 前提是浏览器里已经有打开的页面 —— 没有就直说，别让主进程干等 45 秒。
          */
         const { activeId } = useBrowserStore.getState()
@@ -48,6 +48,8 @@ export function useBrowseBridge(): void {
           action: req.action,
           url: '',
           index: req.index,
+          text: req.text,
+          pressEnter: req.pressEnter,
         })
         useUIStore.getState().setActiveRightTab('browser')
         return

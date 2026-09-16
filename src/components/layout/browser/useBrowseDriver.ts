@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
-import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript } from './scripts'
+import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from './scripts'
 
 /* ══════════════════════════════════════════════════════════════
    执行 Agent 的浏览请求（真正操作 webview 的那一半）
@@ -105,6 +105,8 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         url?: string
         snapshot?: unknown
         click?: string
+        type?: string
+        into?: string
         error?: string
       }): void => {
         void window.workbench?.browserResult?.(pending!.id, result)
@@ -135,12 +137,26 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
 
         /* click：按索引点击当前页面的元素（不导航） */
         if (pending!.action === 'click') {
-          const raw = (await view.executeJavaScript?.(
-            clickScript(Number(pending!.index) || -1),
-          )) as { ok?: boolean; error?: string; clicked?: string } | undefined
+          const raw = (await view.executeJavaScript?.(clickScript(toIndex(pending!.index)))) as
+            { ok?: boolean; error?: string; clicked?: string } | undefined
           if (!alive) return
           if (raw?.ok) reply({ ok: true, click: raw.clicked ?? '' })
           else reply({ ok: false, error: String(raw?.error ?? '点击失败') })
+          return
+        }
+
+        /* type：按索引往输入框打字（不导航） */
+        if (pending!.action === 'type') {
+          const raw = (await view.executeJavaScript?.(
+            typeScript(
+              toIndex(pending!.index),
+              String(pending!.text ?? ''),
+              Boolean(pending!.pressEnter),
+            ),
+          )) as { ok?: boolean; error?: string; typed?: string; into?: string } | undefined
+          if (!alive) return
+          if (raw?.ok) reply({ ok: true, type: raw.typed ?? '', into: raw.into ?? '' })
+          else reply({ ok: false, error: String(raw?.error ?? '输入失败') })
           return
         }
 

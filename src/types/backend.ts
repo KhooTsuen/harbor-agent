@@ -259,7 +259,6 @@ export interface WorkbenchBridge extends SafetyBridge {
     callback: (change: { added: string[]; removed: string[]; count: number }) => void,
   ) => () => void
 
-  /* ── 浏览器：主进程的 browse 工具请求渲染层操作 webview ── */
   onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
   browserResult: (
     id: string,
@@ -271,6 +270,8 @@ export interface WorkbenchBridge extends SafetyBridge {
       url?: string
       snapshot?: unknown
       click?: string
+      type?: string
+      into?: string
       error?: string
     },
   ) => Promise<{ ok: boolean; error?: string }>
@@ -281,9 +282,12 @@ export interface WorkbenchBridge extends SafetyBridge {
 /** 主进程发来的一次浏览请求 */
 export interface BrowserRequestEvent {
   id: string
-  action: 'navigate' | 'snapshot' | 'click'
+  action: 'navigate' | 'snapshot' | 'click' | 'type'
   url?: string
+  /** click/type：目标元素索引；type：text=输入的文字，pressEnter=是否回车 */
   index?: number
+  text?: string
+  pressEnter?: boolean
 }
 
 declare global {
@@ -291,10 +295,6 @@ declare global {
     workbench?: WorkbenchBridge
   }
 }
-
-/* ══════════════════════════════════════════════════════════════
-   安全 / 可靠相关的形状
-   ══════════════════════════════════════════════════════════════ */
 
 /* 安全 / 可靠相关（审计、授权、任务、改动事务、凭证、记忆）*/
 export * from './safety'

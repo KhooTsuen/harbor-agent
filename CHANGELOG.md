@@ -1,5 +1,49 @@
 # 更新日志
 
+## [0.40.0] — 2026-09-16 · browse_type（打字）+ 修索引 0 的 bug
+
+「眼睛 + 手」补齐第二个动作：**往输入框里打字**。至此可以跑完整的
+「打开 → 看元素 → 打字 → 点提交」流程（登录、搜索都靠它）。
+
+### browse_type
+
+- 参数 `index`（来自 browse_elements）+ `text` + 可选 `pressEnter`
+- 只能打在输入框上（不是就报错，而不是静默什么都不做 —— 那样模型会
+  以为填进去了，继续往下走）
+- ⚠️ **用原型上的 native setter + dispatch input 事件**，不能直接
+  `el.value = text`：React/Vue 的受控组件会忽略直接赋值（内部 state 没变，
+  下次渲染又盖回去）。真机在 GitHub 登录页验证通过
+
+### ★ 修一个真机抓到的 bug：索引 0 全废
+
+`browse_click` 和 `browse_type` 都报「索引 -1 不存在」。根因：
+```js
+Number(pending.index) || -1     // 0 || -1 === -1
+```
+**索引 0 是 falsy，被吃成了 -1** —— 「点/输入第一个元素」直接失效。
+（之前测 `browse_click(3)` 侥幸没暴露。）
+
+修法：`scripts.ts` 加 `toIndex()`，只认数字和纯数字字符串
+（`Number(null)` 也是 0，所以不能一把梭），并加单测钉住：
+`toIndex(0) === 0`、`toIndex(null) === -1`。
+
+### 测试
+
+- 内核 481 → 486（browse_type 工具级 5 项）
+- 前端 152 → **160**（`scripts.test.ts`：toIndex 3 + 脚本生成 5）
+
+真机验证：GitHub 登录页 → `browse_type(0, "testuser123")` → 再读元素
+显示 `[0] <input type=text> "testuser123"`（值真的进 DOM 了）。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 160
+内核自测                   ✅ 486
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.39.0] — 2026-09-16 · 缓存优先（命中率 1% → 45%）
 
 Reasonix 的 cache-first 启发：DeepSeek 的 prompt 缓存是**前缀匹配**，命中 token
