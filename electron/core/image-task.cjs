@@ -26,10 +26,18 @@
 const http = require('./http.cjs')
 const POLL_INTERVAL_MS = 3500
 /**
- * 轮询上限。文档说 4K + high 可能超过 120 秒，所以给得宽一点。
- * 超时不代表失败 —— 任务还在跑，把 task_id 带回去让用户/模型稍后再查。
+ * 轮询上限。
+ *
+ * ★ 真机踩到的：设成 180 秒时，用户那张 1:1 的图**等了 183 秒还没出来** ——
+ *   工具超时返回「还没画完」，模型只好自己 `run_shell sleep 60` 再查一次。
+ *   那是被逼出来的歪招：它没别的办法等，而且白烧一轮 shell + 一次模型调用。
+ *
+ * 现在给到 5 分钟。agent 循环本来就允许长工具调用（界面上会显示已用时），
+ * 与其让模型自己想歪招，不如让工具老实等下去。
+ *
+ * 仍然超时的话把 task_id 带回去，可以只查不提交地接着等（不重复扣费）。
  */
-const POLL_TIMEOUT_MS = 180_000
+const POLL_TIMEOUT_MS = 300_000
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
