@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { MessageItem } from './MessageItem'
+import { AsciiBanner } from './AsciiBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { EMPTY_THREAD_PROMPTS } from '@/constants'
@@ -57,8 +58,15 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   }, [count, pinnedToBottom])
 
   if (messages.length === 0) {
+    /*
+      justify-evenly 而不是 center：空白在「上 / 图与卡片之间 / 下」三等分，
+      图自然靠上、卡片自然靠下 —— 就是标注里「下移到这个位置」那个效果。
+      center + 固定 gap 做不到这件事：居中会吃掉一半位移。
+    */
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-evenly overflow-y-auto px-6 py-8">
+        {/* 装饰横幅：上面放图，下面放「想让 Agent 做什么」（顺序不要换） */}
+        <AsciiBanner />
         <EmptyState
           title="想让 Agent 做什么？"
           description="描述你想要的改动，或者贴一段代码问为什么。左侧可以同时开多个线程并行跑。"
