@@ -1,5 +1,47 @@
 # 更新日志
 
+## [0.45.0] — 2026-09-17 · 同一个页面的不同写法，不再当成新标签
+
+验证 0.44.0 时挖出来的：AI 第一次 `browse` 给的是 `https://example.com`，
+第二次给的是 `https://example.com/`（模型自己补了尾斜杠）。而 store 判断
+「是不是同一个地址的标签」用的是**严格字符串相等**：
+
+    const existing = state.tabs.find((t) => t.url === request.url)
+
+于是当成新地址 → 开第二个标签 → webview 重建 → 页面重新加载。
+这一下就把 0.43/0.44 的修复在常见场景里废掉了：**让 AI 再看一眼同一页面就重开**。
+
+**修法**：新增 `src/lib/url.ts` 的 `sameUrl()` —— 协议/域名大小写、末尾斜杠
+都不算区别，路径、查询串、锚点一律保持原样。两处都用它比：
+
+1. `useBrowserStore.requestBrowse` —— 决定复用现有标签还是开新的
+2. `useBrowseDriver` 的导航分支 —— 复用标签时**别白 loadURL 一次**
+   （`view.getURL()` 返回的是浏览器规范化过的 `https://example.com/`，
+    而 `pending.url` 是不带斜杠的，严格比较必然不等 → 白刷一次页面，
+    表单和滚动位置就没了）
+
+**真机验证**（端到端，三个场景跑在一轮里）：
+
+    ① 打开 example.com，往页面里埋一个 JS 记号
+    ② 让 AI 再看一次同一页面 → 同一 webview、记号还在、url 不变   ← 本版修的
+    ③ 折叠右栏再展开       → 同一 webview、记号还在、折叠时 innerW=369  ← 0.44.0 修的
+
+**测试**：前端 171 → 185
+
+- `src/lib/__tests__/url.test.ts`（10 项：斜杠 / 大小写 / 端口 / 路径 / 查询 / 锚点 / about:blank）
+- `src/stores/__tests__/useBrowserStore.test.ts`（4 项：直接调 store，验证「复用而不开新标签」）
+
+两处都做了变异验证（改回 `===` → 立刻红）。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 185
+内核自测                   ✅ 498
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.44.0] — 2026-09-17 · 折叠右栏也不再丢网页
 
 上一版修了「切标签丢网页」，但**折叠整个右栏**（Ctrl+J / 点 ×）还是会丢 ——
