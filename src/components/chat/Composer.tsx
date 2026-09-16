@@ -93,7 +93,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   /* 当前会话的模式 / 模型 / 推理档位，缺省时回退到全局配置 */
   const mode = thread?.mode ?? 'pair'
   const model = thread?.model || configuredModel || ''
-  const reasoning = thread?.reasoning ?? 'medium'
+  const reasoning = thread?.reasoning ?? 'high'
 
   const trimmed = input.trim()
   const tooLong = input.length >= MAX_INPUT_LENGTH

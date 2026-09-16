@@ -28,7 +28,7 @@ export type AgentPhase =
 
 export type ThreadStatus = AgentPhase | 'running' | 'success' | 'error' | 'waiting'
 export type ThreadMode = 'plan' | 'pair' | 'execute' | 'goal'
-export type ReasoningLevel = 'low' | 'medium' | 'high'
+export type ReasoningLevel = 'low' | 'high' | 'max'
 
 /* ── 数据模型 ───────────────────────────────────────────────── */
 

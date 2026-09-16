@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FontFamilyId, Settings, SettingsPatch } from '@/types'
+import type { FontFamilyId, ReasoningLevel, Settings, SettingsPatch } from '@/types'
 import { LAYOUT } from '@/constants'
 import { clamp } from '@/lib/utils'
 import { useRealBackend, pushGeneral } from '@/lib/backend'
@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultMode: 'pair',
   /** 空 = 用配置里的 assistant.model */
   defaultModel: '',
-  defaultReasoning: 'medium',
+  defaultReasoning: 'high',
   defaultProjectId: '',
   sendOnEnter: true,
   typewriterSpeed: 1,
@@ -53,8 +53,10 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     s.defaultMode === 'plan' || s.defaultMode === 'execute' || s.defaultMode === 'goal'
       ? s.defaultMode
       : 'pair'
-  const reasoning =
-    s.defaultReasoning === 'low' || s.defaultReasoning === 'high' ? s.defaultReasoning : 'medium'
+  const reasoning: ReasoningLevel =
+    s.defaultReasoning === 'low' || s.defaultReasoning === 'high' || s.defaultReasoning === 'max'
+      ? s.defaultReasoning
+      : 'high'
 
   const fontFamily: FontFamilyId =
     s.fontFamily === 'yahei' ||

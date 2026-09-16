@@ -175,8 +175,11 @@ export const useAppStore = create<AppState>()(
         if (useRealBackend && !id.startsWith('pending_')) void updateSessionMeta(id, { model })
       },
 
-      setThreadReasoning: (id, reasoning) =>
-        set((s) => ({ threads: s.threads.map((t) => (t.id === id ? { ...t, reasoning } : t)) })),
+      setThreadReasoning: (id, reasoning) => {
+        set((s) => ({ threads: s.threads.map((t) => (t.id === id ? { ...t, reasoning } : t)) }))
+        /* 以前这里漏了持久化 —— 选完重启就回到默认值 */
+        if (useRealBackend && !id.startsWith('pending_')) void updateSessionMeta(id, { reasoning })
+      },
 
       /* 分支 / 编辑 / 对话状态 / 线程级设置：见 app/threadEdits.ts */
       ...makeThreadEditActions(set, get),

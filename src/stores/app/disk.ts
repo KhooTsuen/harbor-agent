@@ -1,4 +1,4 @@
-import type { Message, Project, Thread, ThreadMode } from '@/types'
+import type { Message, Project, ReasoningLevel, Thread, ThreadMode } from '@/types'
 import { uid } from '@/lib/utils'
 import { listSessions, loadSession, removeSession } from '@/lib/backend'
 import { appendMessage as appendToDisk } from '@/lib/backend'
@@ -54,6 +54,7 @@ function toThread(item: {
   mode?: string
   model?: string
   workdir?: string
+  reasoning?: string
   threadSettings?: Thread['settings']
   messageCount: number
   createdAt: number
@@ -70,7 +71,8 @@ function toThread(item: {
     status: 'idle',
     mode: (item.mode as ThreadMode) ?? 'pair',
     model: item.model ?? '',
-    reasoning: 'medium',
+    /* 以前这里硬编码 'medium'，从不读盘 —— 所以档位重启就丢 */
+    reasoning: (item.reasoning as ReasoningLevel) || 'high',
     ...(item.threadSettings ? { settings: item.threadSettings } : {}),
     pinned: false,
     archived: false,

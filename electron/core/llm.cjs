@@ -87,6 +87,8 @@ async function chatStream(options) {
      */
     strictToolNames:
       options.provider?.strictTools === true ? plugins.list().map((p) => p.name) : undefined,
+    /* 思考强度：none / low / high / max（deepseek 的 reasoning_effort） */
+    reasoningEffort: options.reasoningEffort,
     provider: options.provider,
   })
 

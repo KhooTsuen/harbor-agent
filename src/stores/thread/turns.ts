@@ -176,17 +176,18 @@ export async function runElectronTurn(
   })
 
   try {
-    /* 带上这条会话自己的目录 —— 侧栏里每条对话可以挂不同文件夹 */
-    const threadWorkdir = useAppStore.getState().threads.find((t) => t.id === threadId)?.workdir
+    /* 拿一次就够了 —— 这段以前把同一个 find 重复调了四次 */
+    const thread = useAppStore.getState().threads.find((t) => t.id === threadId)
     const result = await sendChat({
       requestId,
       mode,
       messages: history,
       sessionId: threadId,
-      projectId: useAppStore.getState().threads.find((t) => t.id === threadId)?.projectId,
-      temporary: Boolean(useAppStore.getState().threads.find((t) => t.id === threadId)?.temporary),
-      threadSettings: useAppStore.getState().threads.find((t) => t.id === threadId)?.settings,
-      ...(threadWorkdir ? { workdir: threadWorkdir } : {}),
+      projectId: thread?.projectId,
+      temporary: Boolean(thread?.temporary),
+      /* 思考档位跟着 threadSettings 一起发 —— 以前漏了，档位从没到过主进程 */
+      threadSettings: { ...thread?.settings, reasoning: thread?.reasoning },
+      ...(thread?.workdir ? { workdir: thread.workdir } : {}),
     })
     if (!result.ok) throw new Error(result.error ?? '发送失败')
   } catch (error) {

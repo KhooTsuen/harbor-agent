@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, Hand } from 'lucide-react'
 import type { ThreadMode } from '@/types'
-import { MODES } from '@/constants'
+import { MODES, REASONING_LABEL } from '@/constants'
 import { MenuItem, MenuLabel, Popover } from '@/components/ui/Popover'
 
 /* ══════════════════════════════════════════════════════════════
@@ -51,7 +51,7 @@ export function ModePicker({
             onChange(m.id)
             setOpen(false)
           }}
-          hint={m.reasoning === 'high' ? '高推理' : '中推理'}
+          hint={`${REASONING_LABEL[m.reasoning]}推理`}
         >
           <span className="flex flex-col">
             <span>{m.label}</span>

@@ -179,6 +179,8 @@ async function runLoop(options) {
       temperature: config.assistant.temperature,
       topP: config.assistant.topP,
       maxTokens: config.assistant.maxTokens,
+      /* 思考强度档位（thread 里选的 low/high/max）—— 以前这里漏了，档位从没传给模型 */
+      reasoningEffort: threadSettings.reasoning,
       signal,
       onContent: (text) => emit({ type: 'content', text }),
       onReasoning: (text) => emit({ type: 'reasoning', text }),

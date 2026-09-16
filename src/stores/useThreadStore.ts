@@ -125,6 +125,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
           title: '新对话',
           mode: thread.mode,
           model: thread.model,
+          /* 思考强度档位随会话一起落盘，重启后才记得住 */
+          reasoning: thread.reasoning,
           /* 单独对话要显式传 ''，否则主进程会把它塞进全局工作目录那个文件夹 */
           workdir: thread.workdir ?? '',
           threadSettings: thread.settings ? { ...thread.settings } : undefined,

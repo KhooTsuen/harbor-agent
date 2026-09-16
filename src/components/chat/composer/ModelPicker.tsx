@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
    浏览器预览下没有真实配置，退回内置模型列表。
    ══════════════════════════════════════════════════════════════ */
 
-const ALL_LEVELS: readonly ReasoningLevel[] = ['low', 'medium', 'high']
+const ALL_LEVELS: readonly ReasoningLevel[] = ['low', 'high', 'max']
 /** 模型多于这个数才出搜索框 —— 少的时候加了只是噪音 */
 const SEARCH_THRESHOLD = 8
 
@@ -86,7 +86,7 @@ export function ModelPicker({
   function pickModel(id: string): void {
     onModel(id)
     if (!levels.includes(reasoning)) {
-      onReasoning(levels[levels.length - 1] ?? 'medium')
+      onReasoning(levels[levels.length - 1] ?? 'high')
     }
   }
 
