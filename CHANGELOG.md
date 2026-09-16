@@ -1,5 +1,62 @@
 # 更新日志
 
+## [0.48.0] — 2026-09-17 · 修：走代理的中转站连不上
+
+用户配 APIMart（挂代理访问）时，点「刷新」拉模型清单报 `fetch failed`。
+
+### 诊断
+
+    APIMart  /v1/models   → ERR fetch failed | cause: UND_ERR_CONNECT_TIMEOUT
+    DeepSeek /v1/models   → HTTP 401（139ms）
+    APIMart  首页         → ERR fetch failed（连首页都连不上）
+    DNS 正常：api.apimart.ai → 103.42.176.244
+    环境里没有 proxy 变量
+
+**不是代码问题，是网络栈问题**：Electron 主进程里的全局 `fetch` 是
+**Node 的 undici —— 它不读系统代理**。用户浏览器能打开 apimart.ai（走了系统代理），
+Agent 却连不上。
+
+### 验证
+
+同一个网址，换成 Chromium 的 `net.fetch`：
+
+    net.fetch → api.apimart.ai/v1/models  HTTP 401（1622ms）  ← 连上了
+
+### 修法
+
+新增 `electron/core/http.cjs`，所有主进程发起的 HTTP 都走它：
+优先 `net.fetch`（Chromium 网络栈，**跟随系统代理**），纯 Node 环境（自检）
+退回全局 fetch。替换 8 处调用 —— 对话流 / 测连接 / 拉模型 / 生图提交 /
+任务轮询 / 图片下载 / 联网搜索。
+
+**顺带两件**：
+
+1. `ping` / `listModels` / 生图提交加超时（30s / 60s）。以前连不上会挂到
+   系统 TCP 超时（约 2 分钟），用户点一下「刷新」只能干等，而且完全看不出
+   是网络问题。
+2. `http.cjs` **不缓存** `globalThis.fetch`。缓存看着自然，但会让
+   「测试里替换 globalThis.fetch 打桩」直接失效 —— 模块加载时就把原始 fetch
+   钉死了。这个 bug 在真机上表现为「换了网络栈不重启不生效」，极难查。
+
+### 真机验证
+
+    DeepSeek：拉到 2 个（495ms）
+    APIMart ：拉到 3 个（1540ms）
+       → gpt-image-2.5-ext / gpt-image-2.5-flare / gpt-image-2.5-sunburst
+
+也确认了：APIMart 按 key 的授权只返回这 3 个 —— **正是用户在平台上勾选的那些生图模型**。
+
+**测试**：内核 532 → 534（新增「不缓存 fetch」守卫，变异验证：加回缓存 → 流内错误组全红）。
+
+```
+tsc / eslint / prettier   ✅
+前端单测                   ✅ 189
+内核自测                   ✅ 534
+文件 ≤300 行               ✅ 0 违规
+```
+
+---
+
 ## [0.47.1] — 2026-09-17 · 修：设置页「测试连接 / 刷新」报 Cannot find module
 
 用户配 APIMart 时点「刷新」拉模型列表，界面上直接弹：

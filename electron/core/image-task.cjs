@@ -23,6 +23,7 @@
  */
 
 /** 官方建议 3–5 秒，取中间 */
+const http = require('./http.cjs')
 const POLL_INTERVAL_MS = 3500
 /**
  * 轮询上限。文档说 4K + high 可能超过 120 秒，所以给得宽一点。
@@ -146,7 +147,7 @@ async function waitForTask({
 
     let response
     try {
-      response = await fetch(url, { headers, signal })
+      response = await http.fetch(url, { headers, signal })
     } catch (error) {
       /* 网络抖一下不算失败，继续等下一轮 */
       if (signal?.aborted) return { ok: false, error: '已取消', taskId }

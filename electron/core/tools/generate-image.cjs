@@ -3,6 +3,7 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const scene = require('../scene.cjs')
 const { resolvePath } = require('./_shared.cjs')
+const http = require('../http.cjs')
 
 /*
  * generate_image —— 让 Agent 自己画图
@@ -128,7 +129,7 @@ async function readImage(image) {
   }
 
   if (/^https?:\/\//i.test(text)) {
-    const response = await fetch(text)
+    const response = await http.fetch(text)
     if (!response.ok) throw new Error(`下载图片失败：HTTP ${response.status}`)
     const buffer = Buffer.from(await response.arrayBuffer())
     return { buffer, ext: extOf(response.headers.get('content-type') ?? '') }
