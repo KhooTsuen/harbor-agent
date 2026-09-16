@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -27,6 +27,21 @@ const SIDE_CLASS: Record<TooltipSide, string> = {
 export function Tooltip({ content, side = 'bottom', children, className }: TooltipProps) {
   const id = useId()
   const [open, setOpen] = useState(false)
+
+  /*
+   * 光靠 mouseleave 关不干净：窗口失焦、或者鼠标移到网页盖不到的地方（原生按钮、
+   * 拖拽区）时，网页侧就收不到 mouseleave 了，提示会一直挂着。
+   * 所以再加两个出口。
+   */
+  useEffect(() => {
+    const close = () => setOpen(false)
+    window.addEventListener('blur', close)
+    document.addEventListener('visibilitychange', close)
+    return () => {
+      window.removeEventListener('blur', close)
+      document.removeEventListener('visibilitychange', close)
+    }
+  }, [])
 
   return (
     <span

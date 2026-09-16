@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BootSequence } from '@/components/boot/BootSequence'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { TopBar, StatusBar } from '@/components/layout/TopBar'
+import { AppTitleBar } from '@/components/layout/AppTitleBar'
+import { StatusBar } from '@/components/layout/StatusBar'
 import { RightPanelHost } from '@/components/layout/RightPanelHost'
 import { BottomPanel } from '@/components/layout/BottomPanel'
 import { CommandPalette } from '@/components/layout/CommandPalette'
@@ -216,6 +217,9 @@ function MainApp() {
 
   return (
     <div className="flex h-full flex-col bg-bg-base text-fg-primary">
+      {/* 窗口级顶栏：横跨三栏、压在它们之上，所以它在三栏容器**外面** */}
+      <AppTitleBar onToggleBottomPanel={() => setBottomOpen((v) => !v)} />
+
       <div className="flex min-h-0 flex-1">
         {/* 侧栏 */}
         <div
@@ -243,8 +247,6 @@ function MainApp() {
 
         {/* 主区 */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="对话区">
-          <TopBar onToggleBottomPanel={() => setBottomOpen((v) => !v)} />
-
           <ErrorBoundary>
             <TaskBanner />
 

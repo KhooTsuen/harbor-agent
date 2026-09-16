@@ -19,6 +19,7 @@ const api = {
   selfTest: () => ipcRenderer.invoke('app:selfTest'),
   quitApp: () => ipcRenderer.invoke('app:quit'),
   showWindow: () => ipcRenderer.invoke('app:showWindow'),
+  setTitleBar: (colors) => ipcRenderer.invoke('window:titleBar', colors),
 
   /* ── 配置 ─────────────────────────────────────────────── */
   getConfig: () => ipcRenderer.invoke('config:get'),

@@ -31,6 +31,20 @@ export function useApplyAppearance(): void {
 
     function apply(): void {
       root.dataset.theme = resolveTheme()
+      syncTitleBar()
+    }
+
+    /*
+     * 窗口按钮（最小化/最大化/关闭）现在画在窗口级顶栏的右上角，
+     * 而 overlay 只吃纯色、CSS 变量传不进去 —— 所以换主题时把当前色值推给主进程，
+     * 否则亮色主题下右上角会留一块深色补丁。
+     */
+    function syncTitleBar(): void {
+      const style = getComputedStyle(root)
+      void window.workbench?.setTitleBar({
+        color: style.getPropertyValue('--bg-canvas').trim() || '#101010',
+        symbolColor: style.getPropertyValue('--text-primary').trim() || '#f8f8f8',
+      })
     }
 
     apply()

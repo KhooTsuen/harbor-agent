@@ -17,6 +17,7 @@ const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
 const { setupTray, showWindow, setQuitting, isQuitting } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
+const windowChrome = require('./handlers/window.cjs')
 const navigationPolicy = require('./navigation-policy.cjs')
 const pluginWatcher = require('./core/plugin-watcher.cjs')
 const imageHandler = require('./handlers/image.cjs')
@@ -67,6 +68,8 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     title: 'Personal Agent',
+    /* 系统标题栏的背景隐藏、界面顶到窗口最上沿（见 handlers/window.cjs） */
+    ...windowChrome.windowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -80,9 +83,7 @@ function createWindow() {
   windowState.set(win)
   mainWindow = win
 
-  win.once('ready-to-show', () => {
-    if (!HEADLESS) win.show()
-  })
+  win.once('ready-to-show', () => windowChrome.showAndMaximize(win, HEADLESS))
 
   /* 外链一律用系统浏览器打开，不在应用里跳走 */
   /* 导航策略 + webview 加固：主窗口和每个 webview 都要挂，见 navigation-policy.cjs */
@@ -260,14 +261,13 @@ if (!gotLock) {
   })
 }
 
-ipcMain.handle('app:quit', () => {
-  setQuitting(true)
-  app.quit()
-})
-
-ipcMain.handle('app:showWindow', () => {
-  showWindow()
-  return { ok: true }
+/* 窗口外观 + 显示/退出（从本文件拆出去的，见 handlers/window.cjs） */
+windowChrome.register({
+  ipcMain,
+  app,
+  setQuitting,
+  showWindow,
+  getMainWindow: () => mainWindow,
 })
 
 /* 渲染层的请求走 handlers/ 注册 */
