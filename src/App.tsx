@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar, StatusBar } from '@/components/layout/TopBar'
-import { RightPanel } from '@/components/layout/RightPanel'
+import { RightPanelHost } from '@/components/layout/RightPanelHost'
 import { BottomPanel } from '@/components/layout/BottomPanel'
 import { CommandPalette } from '@/components/layout/CommandPalette'
 import { SettingsModal } from '@/components/settings/SettingsModal'
@@ -255,34 +255,15 @@ export default function App() {
           {bottomOpen ? <BottomPanel onClose={() => setBottomOpen(false)} /> : null}
         </main>
 
-        {/* 右侧面板 */}
-        {rightPanelVisible ? (
-          <>
-            <ResizeHandle
-              side="left"
-              label="调整右侧面板宽度"
-              value={settings.rightPanelWidth}
-              min={LAYOUT.rightPanel.min}
-              max={LAYOUT.rightPanel.max}
-              onChange={(next) => updateSettings({ rightPanelWidth: next })}
-            />
-            <div className="shrink-0" style={{ width: settings.rightPanelWidth }}>
-              <ErrorBoundary>
-                <RightPanel />
-              </ErrorBoundary>
-            </div>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={toggleRightPanel}
-            className="shrink-0 border-l border-line-subtle px-1 text-2xs text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
-            aria-label="展开右侧面板"
-            title="展开右侧面板（Ctrl+J）"
-          >
-            ‹
-          </button>
-        )}
+        {/* 右侧面板（抽成组件是因为「折叠也不卸载」，里面那段注释值得单独放） */}
+        <RightPanelHost
+          visible={rightPanelVisible}
+          width={settings.rightPanelWidth}
+          min={LAYOUT.rightPanel.min}
+          max={LAYOUT.rightPanel.max}
+          onToggle={toggleRightPanel}
+          onResize={(next) => updateSettings({ rightPanelWidth: next })}
+        />
       </div>
 
       <StatusBar />
