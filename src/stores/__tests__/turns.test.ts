@@ -61,21 +61,34 @@ describe('runElectronTurn', () => {
 
   it('sendChat 返回后不能立刻收尾，要等 done', async () => {
     const threadId = useAppStore.getState().activeThreadId
-    const setCalls: Array<{ sending?: boolean }> = []
+    /*
+     * zustand 的 set 既能收对象也能收函数（turns.ts 用的是函数形式）。
+     * 所以这里维护一份假 state 并求值，否则收尾那条记录会漏掉。
+     */
+    const setCalls: Array<{ sendingThreads?: string[] }> = []
+    let fakeState = { sendingThreads: [] as string[] }
+    const collect = (partial: unknown): void => {
+      const next =
+        typeof partial === 'function'
+          ? (partial as (s: typeof fakeState) => { sendingThreads?: string[] })(fakeState)
+          : (partial as { sendingThreads?: string[] })
+      fakeState = { ...fakeState, ...next }
+      setCalls.push(next)
+    }
 
-    const pending = runElectronTurn(threadId, 'hi', (partial) => setCalls.push(partial))
+    const pending = runElectronTurn(threadId, 'hi', collect)
     /* 让 sendChat 的 Promise 落地 */
     await Promise.resolve()
     await Promise.resolve()
 
     /* 关键断言：sendChat 已经返回了，但界面仍应是「发送中」 */
     expect(h.sent).not.toBeNull()
-    expect(setCalls.at(-1)?.sending).toBe(true)
+    expect(setCalls.at(-1)?.sendingThreads).toContain(threadId)
 
     emitFromBackend({ type: 'done', content: '好的' })
     await pending
 
-    expect(setCalls.at(-1)?.sending).toBe(false)
+    expect(setCalls.at(-1)?.sendingThreads).toEqual([])
     expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.status).toBe('success')
   })
 
@@ -100,16 +113,29 @@ describe('runElectronTurn', () => {
 
   it('收到 error 事件后收尾，状态是 error', async () => {
     const threadId = useAppStore.getState().activeThreadId
-    const setCalls: Array<{ sending?: boolean }> = []
+    /*
+     * zustand 的 set 既能收对象也能收函数（turns.ts 用的是函数形式）。
+     * 所以这里维护一份假 state 并求值，否则收尾那条记录会漏掉。
+     */
+    const setCalls: Array<{ sendingThreads?: string[] }> = []
+    let fakeState = { sendingThreads: [] as string[] }
+    const collect = (partial: unknown): void => {
+      const next =
+        typeof partial === 'function'
+          ? (partial as (s: typeof fakeState) => { sendingThreads?: string[] })(fakeState)
+          : (partial as { sendingThreads?: string[] })
+      fakeState = { ...fakeState, ...next }
+      setCalls.push(next)
+    }
 
-    const pending = runElectronTurn(threadId, 'hi', (partial) => setCalls.push(partial))
+    const pending = runElectronTurn(threadId, 'hi', collect)
     await Promise.resolve()
     await Promise.resolve()
 
     emitFromBackend({ type: 'error', message: 'API Key 无效' })
     await pending
 
-    expect(setCalls.at(-1)?.sending).toBe(false)
+    expect(setCalls.at(-1)?.sendingThreads).toEqual([])
     expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.status).toBe('error')
   })
 

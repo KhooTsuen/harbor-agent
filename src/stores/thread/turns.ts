@@ -18,18 +18,34 @@ import { handleStreamEvent, type StreamState } from './streamEvents'
    由 useThreadStore 调用。
    ══════════════════════════════════════════════════════════════ */
 
-/** 正在进行的真实请求（用于中断） */
-let activeRequestId: string | null = null
-export function stopActiveRequest(): void {
-  if (activeRequestId) {
-    void abortChat(activeRequestId)
-    activeRequestId = null
+/**
+ * 正在进行的真实请求，**按对话存**。
+ *
+ * 以前是一个 `activeRequestId: string | null` —— 并行跑两条对话时，
+ * 第二条会把第一条的 id 覆盖掉，于是「停止」永远只能停最后开始的那条。
+ */
+const activeRequests = new Map<string, string>()
+
+/** 传 threadId 只停那一条；不传就把所有在跑的都停掉 */
+export function stopActiveRequest(threadId?: string): void {
+  if (threadId) {
+    const id = activeRequests.get(threadId)
+    if (id) void abortChat(id)
+    activeRequests.delete(threadId)
+  } else {
+    for (const id of activeRequests.values()) void abortChat(id)
+    activeRequests.clear()
   }
   abortMockTurn()
 }
 
+/** 按对话记的「正在跑」—— 对应 useThreadStore.sendingThreads */
+export interface ThreadPartial {
+  sendingThreads?: string[]
+}
+
 export interface TurnSetter {
-  (partial: { sending?: boolean; streamingMessageId?: string | null }): void
+  (partial: ThreadPartial | ((state: { sendingThreads: string[] }) => ThreadPartial)): void
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -63,8 +79,8 @@ export async function runElectronTurn(
   app.setThreadStatus(threadId, 'running')
 
   const requestId = uid('req')
-  activeRequestId = requestId
-  set({ sending: true, streamingMessageId: placeholder.id })
+  activeRequests.set(threadId, requestId)
+  set((s) => ({ sendingThreads: [...new Set([...s.sendingThreads, threadId])] }))
 
   /** 工具调用累积（id -> record） */
   const toolRuns: ToolRunRecord[] = []
@@ -124,8 +140,8 @@ export async function runElectronTurn(
     finished = true
     window.clearTimeout(timeoutId)
     off()
-    activeRequestId = null
-    set({ sending: false, streamingMessageId: null })
+    activeRequests.delete(threadId)
+    set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
   }
 
   /* 兜底：万一结束事件因故没到，也不能让界面一直转 */

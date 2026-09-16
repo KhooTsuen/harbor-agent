@@ -1,4 +1,5 @@
 import { RefreshCw, Sparkles } from 'lucide-react'
+import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { refreshSuggestions } from '@/stores/thread/sceneTasks'
 
@@ -18,7 +19,10 @@ export interface SuggestionChipsProps {
 
 export function SuggestionChips({ threadId, onPick }: SuggestionChipsProps) {
   const suggestions = useThreadStore((s) => s.suggestions)
-  const sending = useThreadStore((s) => s.sending)
+  /* 这条对话在跑就不显示 —— 别的对话跑着不影响 */
+  const sending = useAppStore(
+    (s) => s.threads.find((t) => t.id === threadId)?.status === 'running',
+  )
 
   /* 生成中、或者没有建议时都不占地方 */
   if (sending || suggestions.length === 0) return null
