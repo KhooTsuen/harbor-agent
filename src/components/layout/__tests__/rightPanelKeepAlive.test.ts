@@ -22,6 +22,8 @@ import { describe, expect, it } from 'vitest'
    ══════════════════════════════════════════════════════════════ */
 
 const FILE = join(process.cwd(), 'src/components/layout/RightPanel.tsx')
+const APP_FILE = join(process.cwd(), 'src/App.tsx')
+const HOST_FILE = join(process.cwd(), 'src/components/layout/RightPanelHost.tsx')
 
 describe('右栏：浏览器标签常驻', () => {
   const src = readFileSync(FILE, 'utf8')
@@ -40,5 +42,38 @@ describe('右栏：浏览器标签常驻', () => {
   it('浏览器层用 absolute 铺在内容区上，切走时 invisible 而不是不渲染', () => {
     expect(flat).toContain('absolute inset-0 flex flex-col')
     expect(flat).toContain("'invisible'")
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════
+   同一类问题的另一半：折叠整个右栏
+
+   原来是 `{rightPanelVisible ? <RightPanel /> : null}` —— 点 × 折叠时
+   整个右栏卸载，里面的 <webview> 一样被销毁。现在这段搬进了
+   RightPanelHost，折叠只加 `hidden`。
+
+   （附带好处：`useBrowseBridge` 挂在 RightPanel 上，折叠着的时候
+     Agent 的浏览请求也有人接 —— 以前是没人接，等到超时报错。）
+   ══════════════════════════════════════════════════════════════ */
+
+describe('右栏：折叠也不卸载', () => {
+  const host = readFileSync(HOST_FILE, 'utf8')
+  const flatHost = host.replace(/\s+/g, ' ')
+
+  it('RightPanel 不在条件渲染里', () => {
+    const line = host.split('\n').find((l) => l.includes('<RightPanel'))
+    expect(line, '找不到 <RightPanel />').toBeDefined()
+    expect(line).not.toContain('?')
+    expect(flatHost).not.toMatch(/visible\s*\?\s*<RightPanel/)
+  })
+
+  it('折叠是加 hidden，不是不渲染', () => {
+    expect(flatHost).toContain("!visible && 'hidden'")
+  })
+
+  it('App 用的是这个 host（别把面板又内联回去）', () => {
+    const app = readFileSync(APP_FILE, 'utf8').replace(/\s+/g, ' ')
+    expect(app).toContain('<RightPanelHost')
+    expect(app).not.toContain('<RightPanel />')
   })
 })
