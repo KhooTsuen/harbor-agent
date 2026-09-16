@@ -3,6 +3,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useRealBackend, subscribePluginChanges } from '@/lib/backend'
 import { subscribeImageDone } from '@/lib/subscriptions'
+import { useTaskStore } from '@/stores/useTaskStore'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -15,6 +16,19 @@ import { uid } from '@/lib/utils'
    ══════════════════════════════════════════════════════════════ */
 
 export function useBackendSubscriptions(): void {
+  /*
+   * 未完成任务：启动拉一次 + 每 20 秒刷。
+   * 侧栏对话行的黄点、对话顶部那条横幅都读它 ——
+   * 以前是横幅自己拉、而且拿的是**全部**对话的任务，切到哪都弹。
+   */
+  useEffect(() => {
+    if (!useRealBackend) return
+    const refresh = useTaskStore.getState().refresh
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 20_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   /* 插件热插拔：发现新增/删除插件时弹个轻提示（不打断） */
   useEffect(() => {
     if (!useRealBackend) return

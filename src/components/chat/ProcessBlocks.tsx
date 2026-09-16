@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { extractImageUrls } from '@/lib/markdown'
+import { openImageFromDom } from '@/stores/useImageLightbox'
 import { CheckCircle2, ChevronDown, ChevronRight, Loader2, Terminal, XCircle } from 'lucide-react'
 import type { ToolRunRecord } from '@/types'
 import { cn } from '@/lib/utils'
@@ -87,6 +89,8 @@ function ToolRunRow({ run }: { run: ToolRunRecord }) {
   const [open, setOpen] = useState(false)
   const running = run.output === '' && run.ms === undefined
   const hasOutput = run.output.trim().length > 0
+  /* 工具输出里可能带图片（生图、下载图之类）—— 单独抠出来渲染 */
+  const images = extractImageUrls(run.output)
 
   return (
     <div className="rounded-sm border border-line-subtle bg-bg-base/40">
@@ -130,6 +134,27 @@ function ToolRunRow({ run }: { run: ToolRunRecord }) {
           <span className="shrink-0 font-mono text-fg-tertiary">{run.ms}ms</span>
         ) : null}
       </button>
+
+      {/*
+        工具输出里的图片**不管折不折叠都显示**。
+        工具输出是纯文本（<pre>），`![图](x)` 只会显示成一堆方括号 ——
+        生图工具明明返回了图，用户却只看到文件路径。这里把图抠出来直接渲染。
+      */}
+      {images.length > 0 ? (
+        <div className="flex flex-wrap gap-2 border-t border-line-subtle px-2 py-2">
+          {images.map((src) => (
+            <img
+              key={src}
+              src={src}
+              alt="工具产出的图片"
+              loading="lazy"
+              data-chat-image="true"
+              className="max-h-48 cursor-zoom-in rounded border border-line-subtle"
+              onClick={() => openImageFromDom(src)}
+            />
+          ))}
+        </div>
+      ) : null}
 
       {open && hasOutput ? (
         <pre className="max-h-64 overflow-auto border-t border-line-subtle px-2 py-1.5 font-mono text-2xs leading-[1.6] text-fg-secondary whitespace-pre-wrap break-all">

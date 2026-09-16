@@ -8,6 +8,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { Onboarding } from '@/components/onboarding/Onboarding'
 import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
 import { PermissionDialog } from '@/components/dialogs/PermissionDialog'
+import { ImageLightbox } from '@/components/chat/ImageLightbox'
 import { ToastViewport } from '@/components/ui/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
@@ -263,6 +264,7 @@ export default function App() {
       <CommandPalette />
       <SettingsModal />
       <PermissionDialog />
+      <ImageLightbox />
       <ToastViewport />
     </div>
   )

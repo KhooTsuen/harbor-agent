@@ -4,7 +4,8 @@ import type { ChangeSetSummary, TaskRecord } from '@/types/backend'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
-import { changesetList, changesetRollback, taskUnfinished, taskUpdate } from '@/lib/safetyApi'
+import { changesetList, changesetRollback, taskUpdate } from '@/lib/safetyApi'
+import { useTaskStore } from '@/stores/useTaskStore'
 
 /* ══════════════════════════════════════════════════════════════
    任务横幅
@@ -22,19 +23,21 @@ import { changesetList, changesetRollback, taskUnfinished, taskUpdate } from '@/
 
 export function TaskBanner() {
   const setActiveThread = useAppStore((s) => s.setActiveThread)
+  const activeThreadId = useAppStore((s) => s.activeThreadId)
   const showToast = useUIStore((s) => s.showToast)
 
-  const [tasks, setTasks] = useState<TaskRecord[]>([])
+  /* 未完成任务改成从 store 读（侧栏黄点也用它） */
+  const allTasks = useTaskStore((s) => s.unfinished)
+  const refreshTasks = useTaskStore((s) => s.refresh)
   const [changesets, setChangesets] = useState<ChangeSetSummary[]>([])
   const [busy, setBusy] = useState('')
   const [hidden, setHidden] = useState(false)
 
   const refresh = useCallback(async () => {
-    const [unfinished, list] = await Promise.all([taskUnfinished(), changesetList({ limit: 5 })])
-    setTasks(unfinished)
+    const [, list] = await Promise.all([refreshTasks(), changesetList({ limit: 5 })])
     /* 只看「提交过、还没撤、真改过文件」的那种 */
     setChangesets(list.filter((c) => c.status === 'committed' && c.fileCount > 0))
-  }, [])
+  }, [refreshTasks])
 
   useEffect(() => {
     void refresh()
@@ -77,7 +80,14 @@ export function TaskBanner() {
     await refresh()
   }
 
-  if (hidden) return null
+  /*
+   * ★ 只显示**当前这条对话**的未完成任务。
+   * 以前显示的是全部 —— 于是不管切到哪条对话都在弹同一个横幅（用户抱怨过）。
+   * 别的对话有没有未完成，看侧栏那个黄点就够了。
+   */
+  const tasks = allTasks.filter((task) => task.sessionId === activeThreadId)
+
+  if (hidden || tasks.length === 0) return null
   if (tasks.length === 0 && changesets.length === 0) return null
 
   return (
