@@ -57,6 +57,25 @@ const WORK_RULES = [
   '- 不确定的事就说不确定，不要编。',
 ].join('\n')
 
+/*
+ * 浏览器的用法。
+ *
+ * 这套顺序是照着**人用网页**来的：看一眼 → 动一下 → 再看一眼。
+ * 不写这段，模型会「凭记忆连点」—— 页面一跳转，手里那套索引就全废了，
+ * 于是点空、填错，或者以为没生效就重复点。
+ */
+const BROWSER_GUIDE = [
+  '- 顺序：`browse` 打开页面 → `browse_elements` 看有什么能点/能填 →',
+  '  `browse_click` / `browse_type` 操作 → **再** `browse_elements` 看结果。',
+  '- **先看再动**。click / type 的 index 只对**最近一次** `browse_elements` 读到的',
+  '  页面状态有效；页面一跳转、弹窗、异步刷新，就重新读一遍再操作。',
+  '- **动完就重新看**。别一口气连点好几下 —— 上一步的结果（跳转、报错、验证码）',
+  '  往往决定下一步该干什么。',
+  '- 只想读文字用 `browse`；要**操作**才用 `browse_elements`。',
+  '- 操作后清单没变化，可能只是还没加载完：稍等再读一次，不要重复点。',
+  '- 碰到登录墙、验证码、要用户本人确认的步骤，直接告诉用户，不要硬试。',
+].join('\n')
+
 const VERSION = 'prompt-stack/1'
 
 /*
@@ -85,6 +104,7 @@ const ORDER = [
   'skills',
   'tools',
   'toolPolicy',
+  'browserGuide',
   'workRules',
   /*
    * safety 从「压轴」提到稳定区末尾：它每轮都一样，放着不命中太亏。
@@ -138,6 +158,7 @@ ${input.responseDepth ? `- 回答深度：${input.responseDepth}。不要靠截�
     layer('skills', 'Skills', input.skills),
     layer('tools', 'Tools', input.tools),
     layer('toolPolicy', 'Tool Policy', input.toolPolicy),
+    layer('browserGuide', 'Browser', input.browserGuide),
     layer('workRules', 'How To Work', input.workRules),
     layer('safety', 'Boundaries', input.safety),
     /* ↓ 易变区（每轮可能变，放后面） */
@@ -180,6 +201,7 @@ module.exports = {
   PERMISSION_GUIDE,
   SAFETY_GUIDE,
   WORK_RULES,
+  BROWSER_GUIDE,
   buildLayers,
   toSystemMessage,
   build,

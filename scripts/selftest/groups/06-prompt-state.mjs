@@ -14,7 +14,9 @@ import {
   memory,
   modeRouterCore,
   promptStackCore,
+  readFileSync,
   resolve,
+  ROOT,
   skills,
   tools,
 } from '../env.mjs'
@@ -39,7 +41,7 @@ export async function run() {
     taskState: '## 任务\n- 正在做 A',
     conversationState: '## Conversation State\n- 目标：B',
     /* 用**真实常量**，不是手写假文案 —— 手写的测不出生产文案被改坏 */
-    /* 用**真实常量**，不是手写假文案 —— 手写的测不出生产文案被改坏 */
+    browserGuide: promptStackCore.BROWSER_GUIDE,
     workRules: promptStackCore.WORK_RULES,
     safety: promptStackCore.SAFETY_GUIDE,
   }
@@ -76,6 +78,11 @@ export async function run() {
     项目说明: /AGENT\.md/,
     技能: /技能/,
     任务状态: /任务/,
+    /* 浏览器用法：这几个词只在这一层出现 */
+    '浏览器：先看再动': /先看再动/,
+    '浏览器：动完重新看': /动完就重新看/,
+    '浏览器：索引只对最近一次有效': /最近一次/,
+    '浏览器：登录墙不硬试': /登录墙/,
   }
   for (const [label, pattern] of Object.entries(requiredInPrompt)) {
     check(`提示里有「${label}」`, pattern.test(promptText))
@@ -95,6 +102,51 @@ export async function run() {
   /* 缓存优先：边界不再压轴，但它每轮不变，放稳定区末尾才不浪费缓存命中 */
   check('边界在稳定区（易变区之前）', idxSafety > 0 && idxSafety < idxTime)
   check('★ 当前时间在最后（每轮都变，不能污染前缀缓存）', idxTime > promptText.length * 0.8)
+  /* 浏览器用法是不变的内容，应该在稳定区（缓存前缀里），不能拖到易变区 */
+  const idxBrowser = promptText.indexOf('先看再动')
+  check('★ 浏览器用法在稳定区（缓存友好）', idxBrowser > 0 && idxBrowser < idxTime)
+
+  /*
+   * ★ 接线守卫（CE-001 那一类事故）：
+   * 上面都是拿手拼的 stackInput 测「这一层能不能用」，**测不出**
+   * loop-prompt.cjs 忘了把 BROWSER_GUIDE 传进来 —— 那样提示里根本没有这段，
+   * 而且测试全绿。所以直接查一眼生产代码有没有接这根线。
+   */
+  const loopPromptSrc = readFileSync(join(ROOT, 'electron/core/loop-prompt.cjs'), 'utf8')
+  /* 用 ^ 锤行首：注释掉的 / 改成字符串的都不算 —— 否则守卫会假绿（刚试过） */
+  check(
+    '★ loop-prompt 真的把 browserGuide 传下去了',
+    /^\s*browserGuide:\s*BROWSER_GUIDE/m.test(loopPromptSrc),
+  )
+
+  /*
+   * ★ 把接线守卫推广到**所有层**：
+   * CE-001 那次事故就是「分层时漏传了几块」—— 局部测全绿、模型却什么都不知道。
+   * 这里逐个查 loop-prompt.cjs 有没有把该传的层传下去。
+   * （coreIdentity / conversationPolicy 是 buildLayers 内置的，不用传）
+   */
+  const WIRED_LAYERS = [
+    'environment',
+    'userPreferences',
+    'projectInstructions',
+    'skills',
+    'tools',
+    'toolPolicy',
+    'browserGuide',
+    'workRules',
+    'safety',
+    'relevantMemory',
+    'taskState',
+    'conversationState',
+    'retrievedContext',
+    'currentTime',
+  ]
+  const missing = WIRED_LAYERS.filter((id) => !new RegExp(`^\\s*${id}:`, 'm').test(loopPromptSrc))
+  check(
+    '★ 每一层都在 loop-prompt 里接了线',
+    missing.length === 0,
+    `没接的层：${missing.join(', ')}`,
+  )
 
   /* ══════════════════════════════════════════════════════
      CE-002 / CE-003 / CE-004：新内核模块
