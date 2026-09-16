@@ -94,7 +94,27 @@ export const SNAPSHOT_SCRIPT = `
   })()
 `
 
-/** 按索引点击（index 是 SNAPSHOT_SCRIPT 返回的 i） */
+/**
+ * 把「元素索引」规整成非负整数。
+ *
+ * ⚠️ 千万别写 `Number(x) || -1` —— **索引 0 会变成 -1**（0 是 falsy），
+ * 「点/输入第一个元素」直接失效。真机抓到的坑（browse_click(0)/browse_type(0) 全挂）。
+ */
+export function toIndex(value: unknown): number {
+  /* 只认「数字」和「纯数字字符串」两种写法 —— 不能用 Number() 一把梭：
+     Number(null)/Number('')/Number(false) 都是 0，会把「没传索引」当成索引 0。 */
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && value >= 0 ? value : -1
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    return Number(value.trim())
+  }
+  return -1
+}
+
+/**
+ * 按索引点击（index 是 SNAPSHOT_SCRIPT 返回的 i）
+ */
 export function clickScript(index: number): string {
   return `
     (function () {
@@ -106,6 +126,59 @@ export function clickScript(index: number): string {
         var text = (target.innerText || target.value || '').toString().trim().slice(0, 60)
         target.click()
         return { ok: true, clicked: tag + (text ? ' "' + text + '"' : '') }
+      } catch (e) {
+        return { ok: false, error: String(e) }
+      }
+    })()
+  `
+}
+
+/**
+ * 按索引往输入框打字（index 来自 SNAPSHOT_SCRIPT）。
+ *
+ * ⚠️ 不能直接写 `el.value = text` —— React/Vue 的**受控组件**会忽略
+ * 直接赋值（它们的内部 state 没变，下一次渲染还会把值盖回去）。
+ * 必须用原型上的 native setter 赋值，再 dispatch `input` 事件，
+ * 框架才会收到「用户改了值」的信号。这是自动化填表最容易踩的坑。
+ *
+ * text 用 JSON.stringify 嵌进去：用户输入里可能有引号/换行/反引号，
+ * 直接拼进脚本字符串会把脚本写坏。
+ */
+export function typeScript(index: number, text: string, pressEnter: boolean): string {
+  const enterBlock = pressEnter
+    ? `
+        /* 回车：keydown/keypress/keyup 都发一遍 —— 不同站点监听的事件不一样 */
+        var KE = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }
+        target.dispatchEvent(new KeyboardEvent('keydown', KE))
+        target.dispatchEvent(new KeyboardEvent('keypress', KE))
+        target.dispatchEvent(new KeyboardEvent('keyup', KE))
+    `
+    : ''
+
+  return `
+    (function () {
+      try {
+        ${WALK_FN}
+        var target = __walkInteractive()[${index}]
+        if (!target) return { ok: false, error: '索引 ${index} 不存在（页面元素可能变了，重新 browse_elements 看当前页面）' }
+        var tag = target.tagName.toLowerCase()
+        var isField = tag === 'input' || tag === 'textarea' || target.isContentEditable
+        if (!isField) return { ok: false, error: '第 ${index} 个元素是 <' + tag + '>，不是输入框，打不了字' }
+        var value = ${JSON.stringify(text)}
+
+        target.focus()
+        if (tag === 'input' || tag === 'textarea') {
+          var proto = tag === 'input' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype
+          var setter = Object.getOwnPropertyDescriptor(proto, 'value').set
+          setter.call(target, value)
+          target.dispatchEvent(new Event('input', { bubbles: true }))
+          target.dispatchEvent(new Event('change', { bubbles: true }))
+        } else {
+          target.textContent = value
+          target.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+        ${enterBlock}
+        return { ok: true, typed: value.slice(0, 60), into: tag }
       } catch (e) {
         return { ok: false, error: String(e) }
       }
