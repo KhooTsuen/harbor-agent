@@ -117,9 +117,19 @@ async function generateImage({
   taskId,
   interval,
   timeout,
+  once,
 }) {
   if (taskId) {
-    return await task.waitForTask({ baseUrl, apiKey, taskId, model, signal, interval, timeout })
+    return await task.waitForTask({
+      baseUrl,
+      apiKey,
+      taskId,
+      model,
+      signal,
+      interval,
+      timeout,
+      once,
+    })
   }
 
   const url = buildUrl(baseUrl, '/images/generations')
