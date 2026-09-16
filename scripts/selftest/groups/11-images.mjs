@@ -239,6 +239,11 @@ export async function run() {
       pendingOut.includes('task_wait'),
       pendingOut.slice(0, 120),
     )
+    check(
+      '★ 明确叫模型别用 run_shell sleep 硬等（那是被逼出来的歪招）',
+      pendingOut.includes('run_shell sleep'),
+      pendingOut.slice(0, 200),
+    )
   } finally {
     globalThis.fetch = origin
   }

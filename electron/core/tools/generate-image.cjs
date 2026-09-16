@@ -27,7 +27,7 @@ const OUTPUT_DIR = 'generated'
 module.exports = {
   name: 'generate_image',
   description:
-    '生成图片（文生图）。用「设置 → 场景 → 画图」里配的那个生图模型。prompt 要具体：主体、动作、环境、光线、风格。可选 size 指定比例（如 "16:9"、"1:1"）。图片会保存到工作目录的 generated/ 子目录并显示给用户。生成通常要几十秒，慢的话可能到两三分钟。',
+    '生成图片（文生图）。用「设置 → 场景 → 画图」里配的那个生图模型。prompt 要具体：主体、动作、环境、光线、风格。可选 size 指定比例（如 "16:9"、"1:1"）。图片会保存到工作目录的 generated/ 子目录。★ 这个工具会一直等到出图（最长 5 分钟），所以**不要**再用 run_shell sleep 去等；如果它返回了 task_id，说明上游还没好，直接告诉用户「还在生成」就行，下次用同一个 taskId 再调一次即可（只查不提交，不重复扣费）。',
   parameters: {
     type: 'object',
     properties: {
@@ -79,9 +79,11 @@ module.exports = {
     /* 超时不等于失败：任务还在跑，把任务号交出去让它稍后再查 */
     if (!result.ok && result.pending && result.taskId) {
       return [
-        `还没画完（等了一会儿就先不等了）。任务号：\`${result.taskId}\``,
+        `还没画完 —— 已经等了 5 分钟，上游还在处理。任务号：\`${result.taskId}\``,
         '',
-        `过一两分钟可以用 generate_image({ taskId: "${result.taskId}" }) 再查一次，不会重复扣费。`,
+        '**不要用 run_shell sleep 去等**：那是在白烧时间（还会多花一次模型调用）。',
+        '直接告诉用户「还在生成，稍等」就行；用户问起时再调',
+        `\`generate_image({ taskId: "${result.taskId}" })\` 查一次 —— 只查不提交，不会重复扣费。`,
       ].join('\n')
     }
     if (!result.ok) throw new Error(result.error)
