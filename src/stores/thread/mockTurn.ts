@@ -48,7 +48,7 @@ export async function runMockTurn(
   app.setThreadStatus(threadId, 'running')
 
   const controller = new AbortController()
-  set({ sending: true, streamingMessageId: placeholder.id })
+  set((s) => ({ sendingThreads: [...new Set([...s.sendingThreads, threadId])] }))
   /* 浏览器预览也支持停止：直接把 signal 挂到 store 上 */
   mockAbort = () => controller.abort()
 
@@ -96,6 +96,6 @@ export async function runMockTurn(
     }
   } finally {
     mockAbort = null
-    set({ sending: false, streamingMessageId: null })
+    set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
   }
 }

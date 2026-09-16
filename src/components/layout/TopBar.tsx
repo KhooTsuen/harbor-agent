@@ -25,7 +25,8 @@ export function TopBar({ onToggleBottomPanel }: { onToggleBottomPanel: () => voi
   const rightPanelVisible = useUIStore((s) => s.rightPanelVisible)
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel)
 
-  const sending = useThreadStore((s) => s.sending)
+  /* 当前这条对话在不在跑（别的对话跑着是别的事） */
+  const sending = thread?.status === 'running'
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
 
@@ -114,7 +115,8 @@ export function StatusBar() {
    * 工作目录只在 Composer 下面显示一次；状态栏不再重复。
    * （同一份信息出现两处，用户会以为是两个不同的目录。）
    */
-  const sending = useThreadStore((s) => s.sending)
+  /* 状态栏说的是「应用整体忙不忙」—— 任意一条对话在跑都算 */
+  const sending = useThreadStore((s) => s.sendingThreads.length > 0)
   const mode = thread?.mode ?? 'pair'
 
   return (

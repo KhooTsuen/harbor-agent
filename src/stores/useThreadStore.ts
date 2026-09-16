@@ -24,7 +24,15 @@ import { useConfigStore } from './useConfigStore'
 
 interface ThreadState {
   input: string
-  sending: boolean
+  /**
+   * 正在跑的对话 id。
+   *
+   * 以前这里是个全局的 `sending: boolean` —— 于是 a 对话在跑时，
+   * b 对话的发送按钮也被禁用，看着像「不能多开」。
+   * 后端本来就是每个请求独立的（各自的 AbortController），
+   * 所以前端按对话记就够了。
+   */
+  sendingThreads: string[]
   /** 待发送的图片（data URL）。发出去后清空 */
   inputImages: string[]
   addInputImage: (dataUrl: string) => void
@@ -33,7 +41,6 @@ interface ThreadState {
   /** 当前会话的「建议回复」（一轮结束后生成，点一下填进输入框） */
   suggestions: string[]
   setSuggestions: (threadId: string, list: string[]) => void
-  streamingMessageId: string | null
 
   setInput: (value: string) => void
   clearInput: () => void
@@ -45,22 +52,27 @@ interface ThreadState {
 
 export const useThreadStore = create<ThreadState>((set, get) => ({
   input: '',
-  sending: false,
+  sendingThreads: [],
   inputImages: [],
   suggestions: [],
-  streamingMessageId: null,
 
   setInput: (value) => set({ input: value.slice(0, MAX_INPUT_LENGTH) }),
   clearInput: () => set({ input: '' }),
 
   sendMessage: (override) => {
     const raw = (override ?? get().input).trim()
-    if (get().sending) return
     /* 只有图片、没有文字也算有效输入 */
     if (!raw && get().inputImages.length === 0) return
 
     const app = useAppStore.getState()
     const ui = useUIStore.getState()
+
+    /*
+     * 只挡「这条对话自己在跑」。
+     * 别的对话在跑不该拦着这条 —— 每条对话有自己的 agent 循环，
+     * 后端本来就是并发的（每个请求一个 AbortController）。
+     */
+    if (getActiveThread(app)?.status === 'running') return
 
     /* /compact：手动压缩，不发给模型 */
     if (raw === '/compact') {
@@ -200,8 +212,12 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   },
 
   stopGeneration: () => {
-    stopActiveRequest()
-    set({ sending: false })
+    /* 只停当前这条 —— 别的对话在跑的不受影响 */
+    const current = getActiveThread(useAppStore.getState())
+    stopActiveRequest(current?.id)
+    if (current) {
+      set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== current.id) }))
+    }
   },
 
   continueThread: () => {

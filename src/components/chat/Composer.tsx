@@ -41,10 +41,10 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const setInput = useThreadStore((s) => s.setInput)
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
-  const sending = useThreadStore((s) => s.sending)
-
   const activeThreadId = useAppStore((s) => s.activeThreadId)
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
+
+  const sending = thread?.status === 'running'
   const project = useAppStore((s) => s.projects.find((p) => p.id === s.activeProjectId))
   /* 这条对话所属的文件夹（不是「当前选中的」—— 那是两回事） */
   const threadFolder = useAppStore((s) => s.projects.find((p) => p.id === thread?.projectId))
