@@ -1,5 +1,57 @@
 # 更新日志
 
+## [0.57.1] — 2026-09-18 · 修超长对话拉到底端抽搐
+
+用户把一个 381 条消息的对话（从 RikkaHub 完整迁入，11.89MB）导进来之后发现：
+**拉到底端会一直抽搐**。而且只在长对话上出现。
+
+### 三条反馈回路（都只在长对话上成立）
+
+`MessageList` 的滚动逻辑里有三个互相咬合的问题，而它们**全部被 `if (useWindowing)`
+包着** —— 窗口化只在 **> 80 条**消息时启用，所以短对话永远走不到这条路：
+
+1. **单阈值震荡** —— `setPinnedToBottom(distance < 80)`：在底端附近 `distance`
+   在 80 上下反复跨越，贴底状态来回翻转
+2. **effect 自激** —— 贴底那个 `useLayoutEffect` 的依赖里带着 `pinnedToBottom`：
+   滚到底 → 置 true → `scrollIntoView` 贴底 → 位置微变 → 跨过阈值置 false → …
+3. **每次 scroll 都 setState** —— `setScrollTop(node.scrollTop)` 每次都触发重渲染，
+   而重渲染会改虚拟窗口 → 改 DOM 高度 → 浏览器修正 scrollTop → 再触发 scroll
+
+长对话上「窗口化改 DOM 高度」这一层会把上面每一条都放大成可见的抖动。
+
+### 改法
+
+```diff
+- setPinnedToBottom(distance < 80)                    // 单阈值
++ pinnedRef.current = prev ? distance < 160 : distance < 80   // 滞回
+
+- useLayoutEffect(…, [count, pinnedToBottom])          // 依赖里带 state
++ useLayoutEffect(…, [count])                          // 只跟新消息走
+
+- if (useWindowing) setScrollTop(node.scrollTop)       // 每次 scroll
++ rAF 合并 + 滚动不足半条消息就不更新                    // 大多数 scroll 被吃掉
+```
+
+顺带把 `pinnedToBottom` 从 state 改成**纯 ref** —— 它只被写不被读，用 state 只是
+白送重渲染。现在滚动**完全不触发重渲染**（除非窗口真的换了半屏以上）。
+
+### 说明
+
+用户报的抽搐**我没能复现**（程序化 `scrollTop` 抓不到，停手后振幅恒为 0）。
+所以这里修的是**代码里确实存在的三条回路**，而不是"我看到了并修好了"。
+请用户实际拉到底端验证。
+
+导入脚本 `tools/import-rikkahub-conversation.mjs` 一并提交 ——
+它只读 RikkaHub 的 `rikka_hub.db`（`file:...?mode=ro`），把 `pc_message_node.messages`
+里的 parts（text / reasoning / tool / image / document）转成 PersonalAgent 的会话格式。
+
+### 验证
+
+    底端来回蹭 30 次后：scrollTop 振幅 0px ✓ 应用正常、内容渲染完整
+    前端 219 / 内核 572；tsc、eslint、prettier 全过
+
+---
+
 ## [0.57.0] — 2026-09-18 · 启动提速 + 任务台账进上下文
 
 攒了三件事：启动流程优化（含动态分包）、底部面板改运行日志、把任务台账真正接进模型上下文。

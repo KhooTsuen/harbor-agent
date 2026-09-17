@@ -23,12 +23,18 @@ export interface MessageListProps {
 export function MessageList({ messages, onSuggestion }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
-  const [pinnedToBottom, setPinnedToBottom] = useState(true)
+  /*
+   * 「现在是否贴着底」只用 ref，**不用 state**。
+   * 用 state 的话每次跨越阈值都要重渲染，而重渲染在长对话里会改 DOM 高度、
+   * 又反过来改滚动位置 —— 就是那个抽搐的燃料。ref 不触发渲染，回路断掉。
+   */
+  const pinnedRef = useRef(true)
   const [scrollTop, setScrollTop] = useState(0)
   const count = messages.length
   const useWindowing = messages.length > 80
   const estimatedHeight = 150
-  const overscan = 8
+  /* 多渲染几条 —— 窗口切换得越少，底下那个「改 DOM 高度 → 修正 scrollTop」的循环越不容易被触发 */
+  const overscan = 16
   const windowStart = useWindowing
     ? Math.max(0, Math.floor(scrollTop / estimatedHeight) - overscan)
     : 0
@@ -40,22 +46,57 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     [messages, windowStart, windowEnd],
   )
 
-  /* 用户往上滚了就取消「自动贴底」，滚回底部再恢复 */
+  /*
+   * 用户往上滚了就取消「自动贴底」，滚回底部再恢复。
+   *
+   * ⚠️ 这里曾经是「每次 scroll 都 setScrollTop(node.scrollTop)」，会抽搐：
+   *     setState → 重渲染 → 虚拟窗口范围变 → 渲染的消息条数变 → DOM 高度变
+   *     → 浏览器修正 scrollTop → 又触发 scroll → …… 无限循环。
+   *   「拉到底端一直抽搐」就是这么来的，而且**只在长对话上出现** ——
+   *   因为窗口化只在 > 80 条时启用，短对话根本不走这条路。
+   *
+   *   现在两道闸：① 滚动量不足半条消息就**不更新**（大多数 scroll 都被吃掉）；
+   *   ② 用 rAF 合并同一帧里的多次 scroll。
+   */
   useEffect(() => {
     const node = scrollerRef.current
     if (!node) return
-    function onScroll(): void {
-      const distance = node!.scrollHeight - node!.scrollTop - node!.clientHeight
-      setPinnedToBottom(distance < 80)
-      if (useWindowing) setScrollTop(node?.scrollTop ?? 0)
-    }
-    node.addEventListener('scroll', onScroll, { passive: true })
-    return () => node.removeEventListener('scroll', onScroll)
-  }, [useWindowing])
+    let frame = 0
 
+    function onScroll(): void {
+      const el = node!
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+      /*
+       * 滞回：贴底状态下要离开 160px 才算「离开」，非贴底状态下滚进 80px 才算「贴上」。
+       * 单阈值会在边界上反复跨越，滚回去又跨回来 —— 就成了抽搐。
+       */
+      pinnedRef.current = pinnedRef.current ? distance < 160 : distance < 80
+      if (!useWindowing) return
+
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const next = el.scrollTop
+        setScrollTop((prev) => (Math.abs(next - prev) > estimatedHeight / 2 ? next : prev))
+      })
+    }
+
+    node.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      node.removeEventListener('scroll', onScroll)
+    }
+  }, [useWindowing, estimatedHeight])
+
+  /*
+   * 贴底只跟着**消息条数**走。
+   *
+   * 以前依赖里有 pinnedToBottom —— 那是个自激回路：滚到底 → 置 true → 贴底 →
+   * 位置微变 → 跨过阈值置 false → …（长对话上还会叠加「窗口化改 DOM 高度」）。
+   * 现在读 ref、依赖里只有 count，这条回路就断了：只有真来了新消息才滚。
+   */
   useLayoutEffect(() => {
-    if (pinnedToBottom) bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [count, pinnedToBottom])
+    if (pinnedRef.current) bottomRef.current?.scrollIntoView({ block: 'end' })
+  }, [count])
 
   if (messages.length === 0) {
     /*
