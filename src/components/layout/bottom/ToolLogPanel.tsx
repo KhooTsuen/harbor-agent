@@ -16,10 +16,17 @@ import { cn } from '@/lib/utils'
 
 const PAGE_LIMIT = 200
 
-/** 一行日志的摘要：优先 error → 受影响文件 → 网络目标 → 结果，取第一个非空 */
+/**
+ * 一行日志的摘要：优先 error → 受影响文件 → 网络目标 → 结果，取第一个非空。
+ *
+ * 字段一律兜底：审计文件可以被外部写坏 —— 破坏性测试里实测过，手工塞一条
+ * `{"ts":1,"tool":"x"}` 就够让这里抛 TypeError，而读它的组件一抛就白屏。
+ * **磁盘上的东西永远当成不可信**。
+ */
 export function summarize(entry: AuditEntry): string {
   if (entry.error) return entry.error
-  if (entry.affectedFiles.length > 0) return entry.affectedFiles[0]
+  const files = entry.affectedFiles ?? []
+  if (files.length > 0) return files[0]
   if (entry.networkTarget) return entry.networkTarget
   if (entry.result) return entry.result
   return ''
@@ -51,8 +58,16 @@ export function ToolLogPanel(): ReactElement {
     const q = query.trim().toLowerCase()
     if (!q) return entries
     return entries.filter((entry) =>
-      [entry.tool, entry.error, entry.result, entry.networkTarget, ...entry.affectedFiles].some(
-        (s) => (s ?? '').toLowerCase().includes(q),
+      [
+        entry.tool,
+        entry.error,
+        entry.result,
+        entry.networkTarget,
+        ...(entry.affectedFiles ?? []),
+      ].some((s) =>
+        String(s ?? '')
+          .toLowerCase()
+          .includes(q),
       ),
     )
   }, [entries, query])
@@ -90,8 +105,8 @@ export function ToolLogPanel(): ReactElement {
           </p>
         ) : (
           <ul className="flex flex-col">
-            {filtered.map((entry) => (
-              <LogRow key={`${entry.startedAt}-${entry.tool}-${entry.ts}`} entry={entry} />
+            {filtered.map((entry, index) => (
+              <LogRow key={`${entry.startedAt}-${entry.tool}-${entry.ts}-${index}`} entry={entry} />
             ))}
           </ul>
         )}
@@ -107,12 +122,14 @@ function LogRow({ entry }: { entry: AuditEntry }) {
       className="flex items-center gap-2 border-b border-line-subtle/40 px-2 py-1 text-xs last:border-b-0"
       title={summary}
     >
-      <span className="shrink-0 font-mono text-2xs text-fg-tertiary">{fmtTime(entry.ts)}</span>
+      <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
+        {fmtTime(Number(entry.ts) || 0)}
+      </span>
       <span
         className={cn('shrink-0 font-mono text-2xs', entry.ok ? 'text-fg-secondary' : '')}
         style={entry.ok ? undefined : { color: 'var(--danger)' }}
       >
-        {entry.tool}
+        {entry.tool ?? '(未知工具)'}
       </span>
       <span
         className="shrink-0 font-mono text-2xs"
@@ -120,7 +137,9 @@ function LogRow({ entry }: { entry: AuditEntry }) {
       >
         {entry.ok ? '✓' : '✗'}
       </span>
-      <span className="shrink-0 font-mono text-2xs text-fg-tertiary">{entry.ms}ms</span>
+      <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
+        {Number(entry.ms) || 0}ms
+      </span>
       <span className="min-w-0 flex-1 truncate text-fg-tertiary">{summary}</span>
     </li>
   )

@@ -2,20 +2,10 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import { BootSequence } from '@/components/boot/BootSequence'
 import { useBootGate } from '@/components/boot/useBootGate'
 import { Sidebar } from '@/components/layout/Sidebar'
-import {
-  BottomPanel,
-  CommandPalette,
-  ImageLightbox,
-  MessageList,
-  Onboarding,
-  RightPanelHost,
-  SettingsModal,
-} from '@/components/layout/lazyAppParts'
+import { BottomPanel, MessageList, RightPanelHost } from '@/components/layout/lazyAppParts'
 import { AppTitleBar } from '@/components/layout/AppTitleBar'
 import { StatusBar } from '@/components/layout/StatusBar'
-import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
-import { PermissionDialog } from '@/components/dialogs/PermissionDialog'
-import { ToastViewport } from '@/components/ui/Toast'
+import { GlobalLayers } from '@/components/layout/GlobalLayers'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
 import { TaskBanner } from '@/components/chat/TaskBanner'
@@ -26,7 +16,6 @@ import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
-import { useImageLightbox } from '@/stores/useImageLightbox'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { LAYOUT } from '@/constants'
 import { matchCombo } from '@/lib/utils'
@@ -74,7 +63,6 @@ function MainApp() {
   const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
   const permissionOpen = useUIStore((s) => s.permission !== null)
-  const lightboxOpen = useImageLightbox((s) => s.images.length > 0)
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
   const activeRightTab = useUIStore((s) => s.activeRightTab)
 
@@ -204,8 +192,10 @@ function MainApp() {
 
   return (
     <div className="flex h-full flex-col bg-bg-base text-fg-primary">
-      {/* 窗口级顶栏：横跨三栏、压在它们之上，所以它在三栏容器**外面** */}
-      <AppTitleBar onToggleBottomPanel={() => setBottomOpen((v) => !v)} />
+      {/* 窗口级顶栏（横跨三栏）。也包一层：它一出错整个窗口就没法操作了 */}
+      <ErrorBoundary>
+        <AppTitleBar onToggleBottomPanel={() => setBottomOpen((v) => !v)} />
+      </ErrorBoundary>
 
       <div className="flex min-h-0 flex-1">
         {/* 侧栏 */}
@@ -252,43 +242,43 @@ function MainApp() {
             <Composer />
           </ErrorBoundary>
 
+          {/* 底部面板也要包：它一崩，历史上会把整个应用卸载成白屏 */}
           {bottomOpen ? (
-            <Suspense fallback={null}>
-              <BottomPanel onClose={() => setBottomOpen(false)} />
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={null}>
+                <BottomPanel onClose={() => setBottomOpen(false)} />
+              </Suspense>
+            </ErrorBoundary>
           ) : null}
         </main>
 
         {/* 右侧面板（抽成组件是因为「折叠也不卸载」，里面那段注释值得单独放） */}
-        <Suspense
-          fallback={
-            rightPanelVisible ? (
-              <div className="shrink-0" style={{ width: settings.rightPanelWidth }} />
-            ) : null
-          }
-        >
-          <RightPanelHost
-            visible={rightPanelVisible}
-            width={settings.rightPanelWidth}
-            min={LAYOUT.rightPanel.min}
-            max={LAYOUT.rightPanel.max}
-            onToggle={toggleRightPanel}
-            onResize={(next) => updateSettings({ rightPanelWidth: next })}
-          />
-        </Suspense>
+        <ErrorBoundary className="shrink-0">
+          <Suspense
+            fallback={
+              rightPanelVisible ? (
+                <div className="shrink-0" style={{ width: settings.rightPanelWidth }} />
+              ) : null
+            }
+          >
+            <RightPanelHost
+              visible={rightPanelVisible}
+              width={settings.rightPanelWidth}
+              min={LAYOUT.rightPanel.min}
+              max={LAYOUT.rightPanel.max}
+              onToggle={toggleRightPanel}
+              onResize={(next) => updateSettings({ rightPanelWidth: next })}
+            />
+          </Suspense>
+        </ErrorBoundary>
       </div>
 
-      <StatusBar />
+      <ErrorBoundary>
+        <StatusBar />
+      </ErrorBoundary>
 
-      {/* 全局层 */}
-      <Suspense fallback={null}>
-        {showOnboarding ? <Onboarding config={config ?? PREVIEW_CONFIG} /> : null}
-        {commandPaletteOpen ? <CommandPalette /> : null}
-        {settingsOpen ? <SettingsModal /> : null}
-        {lightboxOpen ? <ImageLightbox /> : null}
-      </Suspense>
-      <PermissionDialog />
-      <ToastViewport />
+      {/* 全局层：弹窗 / 覆盖层（里面自带 Suspense + ErrorBoundary） */}
+      <GlobalLayers config={config} showOnboarding={showOnboarding} />
     </div>
   )
 }

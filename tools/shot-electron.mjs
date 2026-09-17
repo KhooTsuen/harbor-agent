@@ -23,10 +23,19 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const EXE = resolve(ROOT, 'dist-portable', 'PersonalAgent', 'PersonalAgent.exe')
+/*
+ * 用哪个便携版。默认 dist-portable/PersonalAgent —— 破坏性测试时要指向
+ * 隔离副本（test-env/），否则改的是副本、测的是真身，白测。
+ * 也能用环境变量 PA_EXE（脚本里拼路径时比命令行方便）。
+ */
+const EXE = resolve(
+  process.env.PA_EXE ??
+    process.argv.find((a) => a.startsWith('--exe='))?.slice(6) ??
+    resolve(ROOT, 'dist-portable', 'PersonalAgent', 'PersonalAgent.exe'),
+)
 const OUT_DIR = resolve(
   process.argv.find((a) => a.startsWith('--out='))?.slice(6) ?? 'shots/electron',
 )
@@ -123,7 +132,7 @@ async function findTarget(timeoutMs = 30000) {
 /* ── 主流程 ─────────────────────────────────────────────── */
 
 const app = spawn(EXE, [`--remote-debugging-port=${PORT}`], {
-  cwd: resolve(ROOT, 'dist-portable', 'PersonalAgent'),
+  cwd: dirname(EXE),
   stdio: 'ignore',
   detached: false,
 })

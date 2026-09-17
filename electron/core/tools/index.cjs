@@ -29,7 +29,14 @@ const { runWithPathPermission, auditCall, affectedFiles } = require('./permissio
 async function execute(name, args, ctx = {}) {
   const startedAt = Date.now()
 
-  /* ── MCP 工具：外部进程，按写操作对待 ── */
+  /*
+   * ── MCP 工具：外部进程，按写操作对待 ──
+   *
+   * 下面所有「确认」都用 `approval !== true` 而不是 `!approval`：
+   * 真值判断会把**任何非假值**都当成同意 —— 破坏性测试里传了个对象
+   * `{ ok: false }`（本意是拒绝），结果被当成同意、还把授权写进了磁盘。
+   * 确认这种事必须 fail-closed：**不是明确的 true 就是拒绝**。
+   */
   if (isMcpTool(name)) {
     let approval = null
     if (ctx.permission === 'readonly') {
@@ -43,7 +50,7 @@ async function execute(name, args, ctx = {}) {
         args,
         summary: `调用 MCP 工具 ${name}（外部进程，行为不受本应用控制）`,
       })
-      if (!approval) {
+      if (approval !== true) {
         auditCall(ctx, {
           tool: name,
           args,
@@ -140,7 +147,7 @@ async function execute(name, args, ctx = {}) {
         risk: verdict,
         summary: `${summary}\n\n风险：${label}`,
       })
-      if (!approved) {
+      if (approved !== true) {
         auditCall(ctx, {
           tool: name,
           args,
@@ -191,7 +198,7 @@ async function execute(name, args, ctx = {}) {
     const needAsk = ctx.permission === 'ask'
     if (needAsk) {
       approval = await ctx.confirm({ kind: 'write', name, args, summary })
-      if (!approval) {
+      if (approval !== true) {
         auditCall(ctx, {
           tool: name,
           args,

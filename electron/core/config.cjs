@@ -14,6 +14,7 @@ const path = require('node:path')
 const { configFile, DIRS } = require('./paths.cjs')
 const C = require('./config-defaults.cjs')
 const { normalize } = require('./config-normalize.cjs')
+const log = require('./log.cjs')
 const credentials = require('./credentials.cjs')
 const redact = require('./redact.cjs')
 
@@ -57,12 +58,19 @@ function migrateLegacySecrets(cfg) {
   return { moved: refs.length, refs }
 }
 
+/** Node 的错误信息在不同版本里字段不一样，统一取一次 */
+function messageOf(error) {
+  return error?.message ?? String(error)
+}
+
 /** 落盘前把只存在于内存的字段摘掉 */
 function stripInternal(cfg) {
+  /* _loadWarning 只活在内存里（给界面提示用），落盘时摘掉 */
+  const { _loadWarning, ...rest } = cfg
   return {
-    ...cfg,
-    providers: cfg.providers.map(({ _legacyApiKey, ...rest }) => rest),
-    search: (({ _legacyApiKey, ...rest }) => rest)(cfg.search),
+    ...rest,
+    providers: rest.providers.map(({ _legacyApiKey, ...p }) => p),
+    search: (({ _legacyApiKey, ...s }) => s)(rest.search),
   }
 }
 
@@ -70,13 +78,39 @@ function load() {
   if (cache) return cache
 
   let raw = null
+  let loadWarning = ''
+  let original = ''
   try {
-    raw = JSON.parse(fs.readFileSync(configFile(), 'utf8'))
-  } catch {
-    raw = null
+    original = fs.readFileSync(configFile(), 'utf8')
+    raw = JSON.parse(original)
+  } catch (error) {
+    /*
+     * 配置读不出来时，**先把现场留一份**再回退默认值。
+     *
+     * 不这么做的话：启动后的某次设置同步会把坏文件覆盖成默认值 ——
+     * 用户原来的 provider 列表、工作目录、快捷键全部静默消失，
+     * 而且没有任何提示。这是破坏性测试实测出来的（截断 config.json
+     * 后启动，providers 从 2 个变 1 个、workdir 被清空）。
+     *
+     * 注意 credentials.json 那边的做法更好（坏文件原样不动），
+     * 配置这边做不到「不回写」—— 设置改一次就要写一次 —— 所以退而求其次：
+     * 至少让原文件活在一份 .broken-<时间戳> 里，并且让界面能提示用户。
+     */
+    loadWarning =
+      error instanceof Error ? messageOf(error) : String(error)
+    if (original) {
+      try {
+        const backup = `${configFile()}.broken-${Date.now()}`
+        fs.writeFileSync(backup, original, 'utf8')
+        log.warn(`配置损坏，已留存现场：${backup}`)
+      } catch {
+        /* 备份失败也不能拦住启动 */
+      }
+    }
   }
 
   cache = normalize(raw)
+  cache._loadWarning = loadWarning
 
   /* 老配置里可能有明文 key —— 搬家并立刻重写文件 */
   const migrated = migrateLegacySecrets(cache)
@@ -176,6 +210,8 @@ function forRenderer() {
   const c = load()
   return {
     ...stripInternal(c),
+    /* 配置损坏的提示要留给界面 —— stripInternal 会把它摘掉，这里补回来 */
+    _loadWarning: c._loadWarning,
     providers: c.providers.map((p) => {
       const configured = hasKey(p)
       return {

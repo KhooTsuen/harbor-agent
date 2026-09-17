@@ -66,6 +66,11 @@ import type { CredentialsStatus } from './backend'
 
 export interface AppConfig {
   version: number
+  /**
+   * 只有内存里有：配置文件读不出来时的错误原因（主进程填）。
+   * 界面据此提示「配置损坏，已重置」—— 不然用户只会发现设置莫名其妙没了。
+   */
+  _loadWarning?: string
   general: {
     theme: 'default' | 'chatgpt' | 'spec' | 'light' | 'system'
     glassmorphism: boolean

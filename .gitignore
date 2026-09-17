@@ -51,3 +51,7 @@ tmp_*
 .chrome-profile-*/
 .chrome.log
 .chrome-path
+
+# 破坏性测试：隔离环境与备份（都是几百 MB 的整目录副本）
+test-env/
+backups/
