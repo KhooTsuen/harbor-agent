@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   BOOT_TIMING,
   EASTER_EGGS,
@@ -11,24 +11,40 @@ import {
 } from './bootFrames'
 
 interface BootSequenceProps {
+  skipping: boolean
+  onSkip: () => void
   onPrepare: () => void
   onDone: () => void
 }
 
 const FRAME_INTERVAL = 1000 / 20
+const SKIP_FADE_MS = 180
 
-export function BootSequence({ onPrepare, onDone }: BootSequenceProps) {
+export function BootSequence({ skipping, onSkip, onPrepare, onDone }: BootSequenceProps) {
   const [elapsed, setElapsed] = useState(0)
   const [easterEgg] = useState(() => EASTER_EGGS[Math.floor(Math.random() * EASTER_EGGS.length)])
+  const preparedRef = useRef(false)
+  const finishedRef = useRef(false)
   const logoVisible = elapsed >= BOOT_TIMING.logoStart
   const logoWrapRef = useRef<HTMLDivElement>(null)
   const logoRef = useRef<HTMLPreElement>(null)
+
+  const prepareOnce = useCallback(() => {
+    if (preparedRef.current) return
+    preparedRef.current = true
+    onPrepare()
+  }, [onPrepare])
+
+  const finishOnce = useCallback(() => {
+    if (finishedRef.current) return
+    finishedRef.current = true
+    onDone()
+  }, [onDone])
 
   useEffect(() => {
     const startedAt = performance.now()
     let animationFrame = 0
     let lastPaint = 0
-    let prepared = false
 
     const tick = (now: number): void => {
       const nextElapsed = Math.min(now - startedAt, BOOT_TIMING.total)
@@ -36,12 +52,9 @@ export function BootSequence({ onPrepare, onDone }: BootSequenceProps) {
         setElapsed(nextElapsed)
         lastPaint = nextElapsed
       }
-      if (!prepared && nextElapsed >= BOOT_TIMING.prepareMain) {
-        prepared = true
-        onPrepare()
-      }
+      if (nextElapsed >= BOOT_TIMING.prepareMain) prepareOnce()
       if (nextElapsed >= BOOT_TIMING.total) {
-        onDone()
+        finishOnce()
         return
       }
       animationFrame = requestAnimationFrame(tick)
@@ -49,7 +62,7 @@ export function BootSequence({ onPrepare, onDone }: BootSequenceProps) {
 
     animationFrame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(animationFrame)
-  }, [onDone, onPrepare])
+  }, [finishOnce, prepareOnce])
 
   useLayoutEffect(() => {
     const wrap = logoWrapRef.current
@@ -89,10 +102,16 @@ export function BootSequence({ onPrepare, onDone }: BootSequenceProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex select-none flex-col overflow-hidden bg-black font-mono text-[#E6E6E6]"
-      style={{ opacity: Math.max(0, fadeOpacity) }}
+      className="fixed inset-0 z-[90] flex cursor-pointer select-none flex-col overflow-hidden bg-black font-mono text-[#E6E6E6]"
+      style={{
+        opacity: skipping ? 0 : Math.max(0, fadeOpacity),
+        transition: skipping ? `opacity ${SKIP_FADE_MS}ms linear` : undefined,
+      }}
+      onMouseDown={(event) => {
+        if (event.button === 0) onSkip()
+      }}
       role="status"
-      aria-label="Personal Agent 正在启动"
+      aria-label="Personal Agent 正在启动，单击鼠标左键可跳过"
     >
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.07]"
