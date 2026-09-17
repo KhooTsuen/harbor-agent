@@ -1,16 +1,18 @@
-import { ChevronDown, ListChecks, TerminalSquare, X } from 'lucide-react'
-import { StatusDot } from '@/components/ui/StatusDot'
+import { ChevronDown, ScrollText, TerminalSquare, X } from 'lucide-react'
 import { IconButton } from '@/components/ui/IconButton'
 import { Terminal } from './Terminal'
+import { ToolLogPanel } from './bottom/ToolLogPanel'
 import { useAppStore } from '@/stores/useAppStore'
-import { relativeTime } from '@/lib/utils'
 import { useState } from 'react'
 
 /* ══════════════════════════════════════════════════════════════
    底部面板（Ctrl+J）
 
-   两个视图：当前项目的所有线程状态 / 终端。
-   线程列表在这里是「并行任务监工」的入口——一眼看到哪条在跑、哪条挂了。
+   两个视图：运行日志 / 终端。
+
+   「日志」补的是「工具调用记录出了那条对话就找不到」的缺口 ——
+   它是全局流水（时间 / 工具 / 状态 / 耗时），可搜索。
+   以前这里是「任务」（当前项目的对话列表），但那和侧栏完全重复，已经换掉了。
    ══════════════════════════════════════════════════════════════ */
 
 export interface BottomPanelProps {
@@ -18,15 +20,9 @@ export interface BottomPanelProps {
 }
 
 export function BottomPanel({ onClose }: BottomPanelProps) {
-  const [view, setView] = useState<'threads' | 'terminal'>('threads')
+  const [view, setView] = useState<'log' | 'terminal'>('log')
 
-  const threads = useAppStore((s) => s.threads)
-  const activeProjectId = useAppStore((s) => s.activeProjectId)
-  const activeThreadId = useAppStore((s) => s.activeThreadId)
-  const setActiveThread = useAppStore((s) => s.setActiveThread)
   const project = useAppStore((s) => s.projects.find((p) => p.id === s.activeProjectId))
-
-  const list = threads.filter((t) => t.projectId === activeProjectId)
 
   return (
     <section
@@ -37,17 +33,16 @@ export function BottomPanel({ onClose }: BottomPanelProps) {
       <header className="flex shrink-0 items-center gap-1 border-b border-line-subtle px-2 py-1">
         <button
           type="button"
-          onClick={() => setView('threads')}
-          aria-current={view === 'threads'}
+          onClick={() => setView('log')}
+          aria-current={view === 'log'}
           className={
-            view === 'threads'
+            view === 'log'
               ? 'flex items-center gap-1.5 rounded-sm bg-bg-raised px-2 py-1 text-xs text-fg-primary'
               : 'flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-fg-secondary hover:bg-bg-hover'
           }
         >
-          <ListChecks size={13} />
-          任务
-          <span className="font-mono text-2xs text-fg-tertiary">{list.length}</span>
+          <ScrollText size={13} />
+          日志
         </button>
         <button
           type="button"
@@ -69,38 +64,8 @@ export function BottomPanel({ onClose }: BottomPanelProps) {
         </div>
       </header>
 
-      {view === 'threads' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {list.length === 0 ? (
-            <p className="px-2 py-4 text-center text-2xs text-fg-tertiary">这个项目下还没有对话</p>
-          ) : (
-            <ul className="flex flex-col gap-0.5">
-              {list.map((thread) => (
-                <li key={thread.id}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveThread(thread.id)}
-                    aria-current={thread.id === activeThreadId}
-                    className={
-                      thread.id === activeThreadId
-                        ? 'flex w-full items-center gap-2 rounded-sm bg-bg-raised px-2 py-1.5 text-left text-xs text-fg-primary'
-                        : 'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-fg-secondary hover:bg-bg-hover'
-                    }
-                  >
-                    <StatusDot status={thread.status} size={7} />
-                    <span className="min-w-0 flex-1 truncate">{thread.title}</span>
-                    <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
-                      {thread.messages.length} 条
-                    </span>
-                    <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
-                      {relativeTime(thread.updatedAt)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {view === 'log' ? (
+        <ToolLogPanel />
       ) : project ? (
         <Terminal project={project} />
       ) : (
@@ -111,7 +76,7 @@ export function BottomPanel({ onClose }: BottomPanelProps) {
 
       <footer className="flex shrink-0 items-center gap-2 border-t border-line-subtle px-2 py-0.5 text-2xs text-fg-tertiary">
         <ChevronDown size={11} />
-        <span>Ctrl+J 收起</span>
+        <span>关闭面板</span>
       </footer>
     </section>
   )

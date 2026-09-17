@@ -117,35 +117,38 @@ function days() {
 }
 
 /**
- * 读记录（默认今天）。
+ * 读记录。
+ *
+ * day 没指定时跨天读最近 7 天 —— 否则只读「今天」：深夜还在用的话，
+ * 第二天凌晨打开日志面板就看不到昨晚的记录（文件是按天分的）。
  *
  * @param {{ day?: string, limit?: number, sessionId?: string, tool?: string, onlyProblems?: boolean }} options
  */
 function read({ day, limit = 200, sessionId = '', tool = '', onlyProblems = false } = {}) {
-  const target = day || today()
-  const file = fileFor(target)
-
-  let lines = []
-  try {
-    lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
-  } catch {
-    return []
-  }
-
+  const targets = day ? [day] : days().slice(0, 7)
   const out = []
-  /* 从新到旧 */
-  for (let i = lines.length - 1; i >= 0 && out.length < limit; i -= 1) {
+
+  for (const target of targets) {
+    let lines = []
     try {
-      const item = JSON.parse(lines[i])
-      if (sessionId && item.sessionId !== sessionId) continue
-      if (tool && item.tool !== tool) continue
-      if (onlyProblems && (item.ok || item.approval === false)) {
-        if (item.ok) continue
-      }
-      out.push(item)
+      lines = fs.readFileSync(fileFor(target), 'utf8').split('\n').filter(Boolean)
     } catch {
-      /* 半行（写到一半崩了）跳过 */
+      continue
     }
+
+    /* 每个文件内从新到旧 */
+    for (let i = lines.length - 1; i >= 0 && out.length < limit; i -= 1) {
+      try {
+        const item = JSON.parse(lines[i])
+        if (sessionId && item.sessionId !== sessionId) continue
+        if (tool && item.tool !== tool) continue
+        if (onlyProblems && item.ok) continue
+        out.push(item)
+      } catch {
+        /* 半行（写到一半崩了）跳过 */
+      }
+    }
+    if (out.length >= limit) break
   }
   return out
 }

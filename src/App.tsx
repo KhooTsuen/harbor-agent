@@ -1,34 +1,36 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { BootSequence } from '@/components/boot/BootSequence'
 import { useBootGate } from '@/components/boot/useBootGate'
 import { Sidebar } from '@/components/layout/Sidebar'
+import {
+  BottomPanel,
+  CommandPalette,
+  ImageLightbox,
+  MessageList,
+  Onboarding,
+  RightPanelHost,
+  SettingsModal,
+} from '@/components/layout/lazyAppParts'
 import { AppTitleBar } from '@/components/layout/AppTitleBar'
 import { StatusBar } from '@/components/layout/StatusBar'
-import { RightPanelHost } from '@/components/layout/RightPanelHost'
-import { BottomPanel } from '@/components/layout/BottomPanel'
-import { CommandPalette } from '@/components/layout/CommandPalette'
-import { SettingsModal } from '@/components/settings/SettingsModal'
-import { Onboarding } from '@/components/onboarding/Onboarding'
 import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
 import { PermissionDialog } from '@/components/dialogs/PermissionDialog'
-import { ImageLightbox } from '@/components/chat/ImageLightbox'
 import { ToastViewport } from '@/components/ui/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
-import { MessageList } from '@/components/chat/MessageList'
 import { TaskBanner } from '@/components/chat/TaskBanner'
 import { Composer } from '@/components/chat/Composer'
+import { useAppBootstrap } from '@/hooks/useAppBootstrap'
 import { useOnboardingGate } from '@/hooks/useOnboardingGate'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
+import { useImageLightbox } from '@/stores/useImageLightbox'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { LAYOUT } from '@/constants'
 import { matchCombo } from '@/lib/utils'
-import { getWorkdir, loadConfig, useRealBackend } from '@/lib/backend'
 import { useBackendSubscriptions } from '@/hooks/useBackendSubscriptions'
-import { configToSettings } from '@/lib/configMapping'
 import { useApplyAppearance } from '@/hooks/useApplyAppearance'
 
 /* ══════════════════════════════════════════════════════════════
@@ -36,7 +38,9 @@ import { useApplyAppearance } from '@/hooks/useApplyAppearance'
    ══════════════════════════════════════════════════════════════ */
 
 export default function App() {
-  const { mainMounted, booting, skipping, prepareMain, finishBoot, skipBoot } = useBootGate()
+  const bootstrapReady = useAppBootstrap()
+  const { mainMounted, booting, skipping, prepareMain, finishBoot, skipBoot } =
+    useBootGate(bootstrapReady)
 
   return (
     <>
@@ -70,6 +74,7 @@ function MainApp() {
   const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
   const permissionOpen = useUIStore((s) => s.permission !== null)
+  const lightboxOpen = useImageLightbox((s) => s.images.length > 0)
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
   const activeRightTab = useUIStore((s) => s.activeRightTab)
 
@@ -78,32 +83,6 @@ function MainApp() {
 
   /* 底部面板初值取上次的状态，所以打开时不会「闪一下再展开」 */
   const [bottomOpen, setBottomOpen] = useState(settings.lastBottomPanelOpen)
-  const setWorkdir = useAppStore((s) => s.setWorkdir)
-  const loadFromDisk = useAppStore((s) => s.loadFromDisk)
-
-  /* ① 启动时从主进程拉配置 —— Electron 下以它为准 */
-  useEffect(() => {
-    if (!useRealBackend) return
-    void (async () => {
-      /* 先填 useConfigStore，确保设置页拿到真实磁盘配置 */
-      await useConfigStore.getState().reload()
-      const cfg = await loadConfig()
-      if (cfg) {
-        const current = useSettingsStore.getState().settings
-        useSettingsStore.getState().syncFromConfig(configToSettings(cfg, current))
-      }
-      const dir = await getWorkdir()
-      if (dir) setWorkdir(dir)
-      /* 会话列表从真实磁盘读取 */
-      await loadFromDisk()
-
-      /* 回到上次打开的那个对话（它可能已被删，那就留在第一个上） */
-      const saved = useSettingsStore.getState().settings.lastThreadId
-      if (saved && useAppStore.getState().threads.some((t) => t.id === saved)) {
-        useAppStore.setState({ activeThreadId: saved })
-      }
-    })()
-  }, [setWorkdir, loadFromDisk])
 
   /* 后台推来的事件（插件热插拔 / 生图完成）—— 见那个 hook */
   useBackendSubscriptions()
@@ -163,9 +142,14 @@ function MainApp() {
         updateSettings({ sidebarCollapsed: !settings.sidebarCollapsed })
         return
       }
-      if (matchCombo(event, shortcut('toggle-right', 'mod+j'))) {
+      if (matchCombo(event, shortcut('toggle-bottom', 'mod+j'))) {
         event.preventDefault()
         setBottomOpen((v) => !v)
+        return
+      }
+      if (matchCombo(event, shortcut('toggle-right', 'mod+shift+j'))) {
+        event.preventDefault()
+        toggleRightPanel()
         return
       }
       if (matchCombo(event, shortcut('diff-tab', 'mod+shift+g'))) {
@@ -204,6 +188,7 @@ function MainApp() {
       setRightPanelVisible,
       settings.sidebarCollapsed,
       settingsOpen,
+      toggleRightPanel,
       updateSettings,
       settings.shortcutKeys,
     ],
@@ -252,41 +237,57 @@ function MainApp() {
           <ErrorBoundary>
             <TaskBanner />
 
-            <MessageList
-              messages={messages}
-              onSuggestion={(text) => {
-                setInput(text)
-                sendMessage(text)
-              }}
-            />
+            <Suspense fallback={<div className="min-h-0 flex-1" />}>
+              <MessageList
+                messages={messages}
+                onSuggestion={(text) => {
+                  setInput(text)
+                  sendMessage(text)
+                }}
+              />
+            </Suspense>
           </ErrorBoundary>
 
           <ErrorBoundary>
             <Composer />
           </ErrorBoundary>
 
-          {bottomOpen ? <BottomPanel onClose={() => setBottomOpen(false)} /> : null}
+          {bottomOpen ? (
+            <Suspense fallback={null}>
+              <BottomPanel onClose={() => setBottomOpen(false)} />
+            </Suspense>
+          ) : null}
         </main>
 
         {/* 右侧面板（抽成组件是因为「折叠也不卸载」，里面那段注释值得单独放） */}
-        <RightPanelHost
-          visible={rightPanelVisible}
-          width={settings.rightPanelWidth}
-          min={LAYOUT.rightPanel.min}
-          max={LAYOUT.rightPanel.max}
-          onToggle={toggleRightPanel}
-          onResize={(next) => updateSettings({ rightPanelWidth: next })}
-        />
+        <Suspense
+          fallback={
+            rightPanelVisible ? (
+              <div className="shrink-0" style={{ width: settings.rightPanelWidth }} />
+            ) : null
+          }
+        >
+          <RightPanelHost
+            visible={rightPanelVisible}
+            width={settings.rightPanelWidth}
+            min={LAYOUT.rightPanel.min}
+            max={LAYOUT.rightPanel.max}
+            onToggle={toggleRightPanel}
+            onResize={(next) => updateSettings({ rightPanelWidth: next })}
+          />
+        </Suspense>
       </div>
 
       <StatusBar />
 
       {/* 全局层 */}
-      {showOnboarding ? <Onboarding config={config ?? PREVIEW_CONFIG} /> : null}
-      <CommandPalette />
-      <SettingsModal />
+      <Suspense fallback={null}>
+        {showOnboarding ? <Onboarding config={config ?? PREVIEW_CONFIG} /> : null}
+        {commandPaletteOpen ? <CommandPalette /> : null}
+        {settingsOpen ? <SettingsModal /> : null}
+        {lightboxOpen ? <ImageLightbox /> : null}
+      </Suspense>
       <PermissionDialog />
-      <ImageLightbox />
       <ToastViewport />
     </div>
   )

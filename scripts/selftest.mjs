@@ -21,6 +21,8 @@
  *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
  *   scripts/selftest/groups/11-…                 图像：异步任务轮询 + generate_image 工具
  *   scripts/selftest/groups/12-…                 模块引用：相对 require 路径都存在
+ *   scripts/selftest/groups/13-…                 generate_image 工具
+ *   scripts/selftest/groups/14-…                 任务台账注入 / 完整性 / 完成门禁
  *   scripts/selftest/groups/13-…                 generate_image 工具（提交即返回）
  *
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
@@ -45,6 +47,7 @@ import { run as plugins } from './selftest/groups/10-plugins.mjs'
 import { run as images } from './selftest/groups/11-images.mjs'
 import { run as requires } from './selftest/groups/12-requires.mjs'
 import { run as imagesTool } from './selftest/groups/13-images-tool.mjs'
+import { run as taskContext } from './selftest/groups/14-task-context.mjs'
 
 const GROUPS = [
   basics,
@@ -60,6 +63,7 @@ const GROUPS = [
   images,
   requires,
   imagesTool,
+  taskContext,
 ]
 
 async function main() {

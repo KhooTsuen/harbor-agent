@@ -13,6 +13,7 @@ const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
+const taskContext = require('./task-context.cjs')
 const changeset = require('./changeset.cjs')
 /*
  * 注意：run() 的形参也叫 `config`（那是**配置对象**，没有方法）。
@@ -23,7 +24,7 @@ const changeset = require('./changeset.cjs')
  */
 const configCore = require('./config.cjs')
 const router = require('./router.cjs')
-const { callModel, selfReview, mergeUsage } = require('./loop-model.cjs')
+const { callModel, reviewWithEvents, mergeUsage } = require('./loop-model.cjs')
 const { buildPromptContext } = require('./loop-prompt.cjs')
 const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute } = require('./loop-route.cjs')
@@ -156,6 +157,8 @@ async function runLoop(options) {
   const toolRuns = []
   let turn = 0
   let planParsed = false
+  /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
+  let gateSeen = {}
 
   for (; turn < MAX_TURNS; turn += 1) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
@@ -197,22 +200,31 @@ async function runLoop(options) {
 
     if (result.usage && !totalUsage) totalUsage = result.usage
 
-    /*
-     * ── 计划 ──
-     * 模型第一次回复里如果给了 ```plan 块，存进任务并推给界面。
-     * 只看第一次：后面再给的多半是对计划的修正，界面上会跳来跳去。
-     */
+    /* ── 计划 ── */
     if (!planParsed && result.content) {
       planParsed = true
-      const plan = taskCore.parsePlan(result.content)
-      if (plan.length > 0) {
-        taskCore.setPlan(options.taskId, plan)
-        emit({ type: 'plan', plan })
-      }
+      const plan = taskContext.capturePlan({
+        taskId: options.taskId ?? '',
+        content: result.content,
+      })
+      if (plan) emit({ type: 'plan', plan })
     }
 
     /* ── 没有工具调用 → 这轮结束 ── */
     if (result.toolCalls.length === 0) {
+      /* 完成门禁：计划没勾完就想收工 → 顶回去继续（刹车在 task-context.cjs） */
+      const gate = taskContext.shouldContinue({
+        taskId: options.taskId ?? '',
+        content: result.content ?? '',
+        seen: gateSeen,
+      })
+      if (gate.continue) {
+        gateSeen = gate.seen
+        messages.push({ role: 'assistant', content: result.content ?? '' })
+        messages.push({ role: 'user', content: gate.message })
+        continue
+      }
+
       /* 收尾前打最后一个检查点，写明「到这为止是好的」 */
       if (options.taskId) {
         try {
@@ -225,26 +237,17 @@ async function runLoop(options) {
         }
       }
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
-      let finalContent = result.content
-      if (
-        config.assistant.selfReview === true &&
-        (mode === 'execute' || mode === 'goal' || mode === 'plan')
-      ) {
-        try {
-          emit({ type: 'review', status: 'started' })
-          finalContent = await selfReview({
-            config,
-            provider: useProvider,
-            model: useModel,
-            content: finalContent,
-            userText,
-            signal,
-          })
-          emit({ type: 'review', status: 'completed' })
-        } catch (error) {
-          log.warn(`自检复核失败，保留原回答：${error instanceof Error ? error.message : error}`)
-        }
-      }
+      /* 自检复核（开关、事件、失败保留原回答都在里面） */
+      const finalContent = await reviewWithEvents({
+        config,
+        provider: useProvider,
+        model: useModel,
+        content: result.content,
+        userText,
+        signal,
+        mode,
+        emit,
+      })
       return {
         content: finalContent,
         reasoning: result.reasoning,

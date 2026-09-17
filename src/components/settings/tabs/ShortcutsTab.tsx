@@ -32,15 +32,13 @@ export function ShortcutsTab() {
       const combo = eventToCombo(event)
       if (!combo) return
 
-      const conflict = Object.entries(settings.shortcutKeys).find(
-        ([id, value]) => id !== recording && value === combo,
+      const conflict = SHORTCUTS.find(
+        (shortcut) =>
+          shortcut.id !== recording &&
+          (settings.shortcutKeys[shortcut.id] ?? shortcut.defaultKeys) === combo,
       )
       if (conflict) {
-        showToast(
-          'warning',
-          '快捷键冲突',
-          `已经绑定给「${SHORTCUTS.find((s) => s.id === conflict[0])?.label ?? conflict[0]}」`,
-        )
+        showToast('warning', '快捷键冲突', `已经绑定给「${conflict.label}」`)
         return
       }
       updateSettings({ shortcutKeys: { ...settings.shortcutKeys, [recording]: combo } })

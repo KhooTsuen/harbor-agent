@@ -22,9 +22,11 @@ let root: Root
 /** 最近一次渲染拿到的 gate 对象，用来调它的方法 */
 let gate: ReturnType<typeof useBootGate>
 
+let ready = true
+
 /** 渲染成 "booting:mainMounted:skipping"，读字符串比逐个对对象属性可靠 */
 function Probe(): ReactElement {
-  const current = useBootGate()
+  const current = useBootGate(ready)
   gate = current
   return (
     <span data-testid="gate">{`${current.booting}:${current.mainMounted}:${current.skipping}`}</span>
@@ -37,6 +39,7 @@ function state(): string {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  ready = true
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -71,6 +74,19 @@ describe('useBootGate', () => {
     })
     expect(vi.getTimerCount()).toBe(1)
 
+    act(() => vi.advanceTimersByTime(SKIP_FADE_MS))
+    expect(state()).toBe('false:true:true')
+  })
+
+  it('数据未就绪时记住跳过请求，加载完成后才进入主界面', () => {
+    ready = false
+    act(() => root.render(<Probe />))
+    act(() => gate.skipBoot())
+    expect(state()).toBe('true:false:false')
+
+    ready = true
+    act(() => root.render(<Probe />))
+    expect(state()).toBe('true:true:true')
     act(() => vi.advanceTimersByTime(SKIP_FADE_MS))
     expect(state()).toBe('false:true:true')
   })

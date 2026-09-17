@@ -24,6 +24,9 @@ import { useTaskStore } from '@/stores/useTaskStore'
 export function TaskBanner() {
   const setActiveThread = useAppStore((s) => s.setActiveThread)
   const activeThreadId = useAppStore((s) => s.activeThreadId)
+  const activeStatus = useAppStore(
+    (s) => s.threads.find((thread) => thread.id === s.activeThreadId)?.status,
+  )
   const showToast = useUIStore((s) => s.showToast)
 
   /* 未完成任务改成从 store 读（侧栏黄点也用它） */
@@ -40,11 +43,9 @@ export function TaskBanner() {
   }, [refreshTasks])
 
   useEffect(() => {
+    /* 进入会话或这一轮写入新消息后刷新；空闲时不常驻轮询。 */
     void refresh()
-    /* 每轮对话结束后主进程会更新任务，隔一会儿再拉一次就够了（不做实时订阅，代价不值） */
-    const timer = window.setInterval(() => void refresh(), 20_000)
-    return () => window.clearInterval(timer)
-  }, [refresh])
+  }, [activeThreadId, activeStatus, refresh])
 
   async function resume(task: TaskRecord): Promise<void> {
     setBusy(task.id)
