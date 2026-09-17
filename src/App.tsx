@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BootSequence } from '@/components/boot/BootSequence'
+import { useBootGate } from '@/components/boot/useBootGate'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { AppTitleBar } from '@/components/layout/AppTitleBar'
 import { StatusBar } from '@/components/layout/StatusBar'
@@ -35,18 +36,19 @@ import { useApplyAppearance } from '@/hooks/useApplyAppearance'
    ══════════════════════════════════════════════════════════════ */
 
 export default function App() {
-  const [mainMounted, setMainMounted] = useState(false)
-  const [booting, setBooting] = useState(true)
-  const prepareMain = useCallback(() => setMainMounted(true), [])
-  const finishBoot = useCallback(() => {
-    setMainMounted(true)
-    setBooting(false)
-  }, [])
+  const { mainMounted, booting, skipping, prepareMain, finishBoot, skipBoot } = useBootGate()
 
   return (
     <>
       {mainMounted ? <MainApp /> : null}
-      {booting ? <BootSequence onPrepare={prepareMain} onDone={finishBoot} /> : null}
+      {booting ? (
+        <BootSequence
+          skipping={skipping}
+          onSkip={skipBoot}
+          onPrepare={prepareMain}
+          onDone={finishBoot}
+        />
+      ) : null}
     </>
   )
 }
