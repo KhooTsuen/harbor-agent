@@ -4,6 +4,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useRealBackend, subscribePluginChanges } from '@/lib/backend'
 import { subscribeImageDone } from '@/lib/subscriptions'
 import { useTaskStore } from '@/stores/useTaskStore'
+import { useThreadStore } from '@/stores/useThreadStore'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -16,18 +17,22 @@ import { uid } from '@/lib/utils'
    ══════════════════════════════════════════════════════════════ */
 
 export function useBackendSubscriptions(): void {
+  const runningCount = useThreadStore((state) => state.sendingThreads.length)
+
   /*
-   * 未完成任务：启动拉一次 + 每 20 秒刷。
-   * 侧栏对话行的黄点、对话顶部那条横幅都读它 ——
-   * 以前是横幅自己拉、而且拿的是**全部**对话的任务，切到哪都弹。
+   * 未完成任务：启动、对话运行状态变化、窗口重新可见时刷新。
+   * 空闲时不轮询；任务不会凭空变化，20 秒常驻定时器只会重复读磁盘。
    */
   useEffect(() => {
     if (!useRealBackend) return
     const refresh = useTaskStore.getState().refresh
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 20_000)
-    return () => window.clearInterval(timer)
-  }, [])
+    const refreshVisible = (): void => {
+      if (!document.hidden) void refresh()
+    }
+    refreshVisible()
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => document.removeEventListener('visibilitychange', refreshVisible)
+  }, [runningCount])
 
   /* 插件热插拔：发现新增/删除插件时弹个轻提示（不打断） */
   useEffect(() => {

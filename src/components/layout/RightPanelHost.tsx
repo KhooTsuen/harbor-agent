@@ -54,7 +54,7 @@ export function RightPanelHost({ visible, width, min, max, onToggle, onResize }:
           onClick={onToggle}
           className="shrink-0 border-l border-line-subtle px-1 text-2xs text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
           aria-label="展开右侧面板"
-          title="展开右侧面板（Ctrl+J）"
+          title="展开右侧面板"
         >
           ‹
         </button>

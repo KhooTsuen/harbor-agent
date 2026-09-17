@@ -9,6 +9,7 @@
  */
 
 const loop = require('../core/loop.cjs')
+const taskContext = require('../core/task-context.cjs')
 const config = require('../core/config.cjs')
 const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
@@ -91,6 +92,15 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
           projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
           taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
+          /*
+           * 把未完成任务的台账注入提示（taskState 层）。
+           * 这个层以前一直空着：任务只活在界面上（侧栏黄点、横幅），
+           * 模型自己不知道还有没干完的活 —— 长对话里就是「目标漂移」。
+           */
+          taskState: taskContext.buildTaskState({
+            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+            taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
+          }),
           /*
            * 拿用户那句话当任务目标。
            * 不传的话任务标题永远是「未命名任务」—— 未完成任务的横幅上

@@ -126,7 +126,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'settings', label: '打开设置', group: '通用', defaultKeys: 'mod+,' },
   { id: 'send', label: '发送消息', group: '对话', defaultKeys: 'mod+enter' },
   { id: 'toggle-sidebar', label: '折叠侧边栏', group: '布局', defaultKeys: 'mod+b' },
-  { id: 'toggle-right', label: '切换右侧面板', group: '布局', defaultKeys: 'mod+j' },
+  { id: 'toggle-bottom', label: '切换底部面板', group: '布局', defaultKeys: 'mod+j' },
+  {
+    id: 'toggle-right',
+    label: '切换右侧面板',
+    group: '布局',
+    defaultKeys: 'mod+shift+j',
+  },
   { id: 'diff-tab', label: '打开审查标签', group: '布局', defaultKeys: 'mod+shift+g' },
   { id: 'dismiss', label: '关闭弹窗 / 取消', group: '通用', defaultKeys: 'esc' },
 ] as const

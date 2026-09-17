@@ -13,7 +13,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const { parsePlan } = require('./task-plan.cjs')
+const { parsePlan, fingerprint } = require('./task-plan.cjs')
 
 /** 任务状态 */
 const STATUSES = [
@@ -268,6 +268,12 @@ function setPlan(id, plan) {
   const task = get(id)
   if (!task) return null
   task.plan = plan
+  /*
+   * 记下「批准时」的指纹：注入前会重算，对不上就只报警不当作原计划。
+   * 防的是工具结果、并行会话或某个 bug 把计划悄悄改掉，
+   * 而模型还照着旧计划干活。
+   */
+  task.planHash = fingerprint(plan)
   task.updatedAt = Date.now()
   write(task)
   return task
@@ -279,6 +285,7 @@ module.exports = {
   get,
   update,
   parsePlan,
+  fingerprint,
   setPlan,
   addStep,
   addChangedFile,

@@ -114,6 +114,28 @@ async function selfReview({ config, provider, model, content, userText, signal }
   return review.content?.trim() || content
 }
 
+/**
+ * 自检复核（带事件 + 开关判断）。
+ *
+ * 从 loop.cjs 搬过来的（那边贴着 300 行）。它原本是围在 selfReview 外面的
+ * 一层包装：判断开关和模式、发 started/completed 事件、吞掉失败保留原回答。
+ * 搬过来才完整。
+ */
+async function reviewWithEvents({ config, provider, model, content, userText, signal, mode, emit }) {
+  if (config.assistant.selfReview !== true) return content
+  if (mode !== 'execute' && mode !== 'goal' && mode !== 'plan') return content
+
+  try {
+    emit({ type: 'review', status: 'started' })
+    const reviewed = await selfReview({ config, provider, model, content, userText, signal })
+    emit({ type: 'review', status: 'completed' })
+    return reviewed
+  } catch (error) {
+    log.warn(`自检复核失败，保留原回答：${error instanceof Error ? error.message : error}`)
+    return content
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -128,4 +150,4 @@ function mergeUsage(a, b) {
   }
 }
 
-module.exports = { callModel, selfReview, mergeUsage }
+module.exports = { callModel, selfReview, reviewWithEvents, mergeUsage }

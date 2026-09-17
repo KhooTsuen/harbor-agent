@@ -10,6 +10,8 @@
  * 而工具调用是给机器看的，混在一起两边都不好用。
  */
 
+const crypto = require('node:crypto')
+
 /**
  * 解析模型给的计划。
  *
@@ -30,4 +32,15 @@ function parsePlan(text) {
     .slice(0, 20)
 }
 
-module.exports = { parsePlan }
+/**
+ * 计划整体指纹。
+ *
+ * 放在这里而不是 task.cjs，是为了避开循环依赖（task.cjs 要算指纹、
+ * task-context.cjs 要读任务）—— 这里只依赖 node:crypto，两边都能安全引用。
+ */
+function fingerprint(plan) {
+  const text = (Array.isArray(plan) ? plan : []).join('\n')
+  return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)
+}
+
+module.exports = { parsePlan, fingerprint }
