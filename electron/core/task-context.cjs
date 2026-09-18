@@ -71,7 +71,34 @@ function stripMarks(plan) {
  * `taskId` 用来标出「当前正在做的那条」，其余只列标题 —— 并行跑多条对话时，
  * 模型需要知道自己手上是哪一条，否则容易把别的任务的计划当成自己的。
  */
-function buildTaskState({ sessionId = '', taskId = '' } = {}) {
+/**
+ * AG-018：用户这句话是不是「接着刚才的做」？
+ *
+ * ★ 要小心别把「继续优化 Agent 执行系统」当成继续 —— 那是新任务。
+ *   所以两条约束：**句子短**（超过 15 字基本是在描述新要求）、
+ *   **模式明确**（「继续」后面只接「改/做/干/写/弄/来」这类光杆动词，不接宾语）。
+ *
+ * 文档点名的几种：继续 / 然后呢 / 继续改 / 接着做 / 还是刚才那个问题。
+ */
+const CONTINUE_RE = [
+  /^(继续|接着|然后呢|往下|接着来|再来)$/,
+  /^(继续|接着)(改|做|干|写|弄|来|吧|下去|往下)?$/,
+  /(接着做|接着干|继续做|继续改|继续弄|还是刚才|刚才那个|上一步|上一次那个)/,
+  /^(go on|continue|keep going)$/i,
+]
+
+function isContinueIntent(text) {
+  const t = String(text ?? '')
+    .trim()
+    .replace(/[。！!？?~～\s]+$/, '')
+  /* 15 字：真机调出来的。30 字太松 —— 「接着把刚才那个模块重构一下，另外还要
+     加上日志和错误处理」会被当成继续，那明明是**新要求**。宁可漏判（当成新任务
+     再问一句）也不要误判（把新活儿当成接着做）。 */
+  if (!t || t.length > 15) return false
+  return CONTINUE_RE.some((re) => re.test(t))
+}
+
+function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
   let tasks = []
   try {
     /*
@@ -93,6 +120,11 @@ function buildTaskState({ sessionId = '', taskId = '' } = {}) {
     ...others.slice(0, Math.max(0, MAX_TASKS - mine.length)),
   ]
   if (ordered.length === 0) return ''
+
+  /* 诊断用：确认「用户在说继续」这条真的被认出来了（taskState 不落盘） */
+  if (isContinueIntent(userText)) {
+    log.info(`任务连续性：用户说「${String(userText).trim()}」，已注入「接着做」提示`)
+  }
 
   const blocks = []
   for (const task of ordered) {
@@ -154,9 +186,20 @@ function buildTaskState({ sessionId = '', taskId = '' } = {}) {
     '继续干活时以它为准：接着计划里**第一条没有 [x] 的**往下做，别重复已经完成的步骤。',
     '做完一步就把那一条标成 `[x]`（用 ```plan 块给出更新后的完整计划）。',
     '如果某一步其实不需要做了，也在计划里说明理由，不要默默跳过。',
+    /*
+     * AG-018：用户在说「继续」时，把话说死。
+     *
+     * 不做这一步的话，模型有可能会把「继续」当成一个含糊的新要求 ——
+     * 重新问一遍背景，或者干脆重头讲一遍计划。
+     */
+    isContinueIntent(userText)
+      ? `\n（用户这句「${String(userText).trim()}」是在说**接着做** —— 目标是上面那条任务，不是新任务。先看计划进度和最近一步，从停住的地方往下走；缺上下文就查最近工具结果，别从头再问一遍。）`
+      : '',
     '',
     blocks.join('\n\n'),
-  ].join('\n')
+  ]
+    .filter((line) => line !== '')
+    .join('\n')
 }
 
 /**
@@ -239,4 +282,5 @@ module.exports = {
   stripMarks,
   isDone,
   resetProgressMemory,
+  isContinueIntent,
 }
