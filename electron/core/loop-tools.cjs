@@ -18,6 +18,14 @@ const taskCore = require('./task.cjs')
 const errors = require('./errors.cjs')
 const { isAborted } = require('./abort.cjs')
 
+/** 工具返回算不算成功 —— 全项目只有这一处判定 */
+function isToolOk(output) {
+  const text = String(output ?? '')
+  return !text.startsWith('错误：') && !text.startsWith('用户拒绝了')
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 /**
  * @param {{ toolCalls: Array, ctx: object, options: object, messages: Array,
  *           toolRuns: Array, emit: Function, turn: number }} input
@@ -63,9 +71,32 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args })
     const startedAt = Date.now()
 
-    const output = await tools.execute(call.name, args, ctx)
+    /*
+     * AG-016：失败后自动恢复（文档策略表里的 FileChanged→重新读取、
+     * Timeout / Network→有限 Retry）。
+     *
+     * ★ 只对**只读**工具做 —— 理由在 `errors.canAutoRecover`：
+     *   `run_shell` 超时后自动重试等于把命令再跑一遍，那不是恢复是重复副作用。
+     *   写操作交给模型判断（AG-015 已经把分类和建议喂给它了）。
+     */
+    let output = await tools.execute(call.name, args, ctx)
+    for (let retry = 0; retry < errors.MAX_AUTO_RETRY && !isToolOk(output); retry += 1) {
+      const retryInfo = errors.classifyToolOutput(output, { name: call.name })
+      if (!errors.canAutoRecover(retryInfo, call.name)) break
+      /* AG-002 定义的 agent.retrying —— 界面和日志都看得到「它在自己重试」 */
+      emit({
+        type: 'agent.retrying',
+        toolCallId: call.id,
+        name: call.name,
+        attempt: retry + 1,
+        kind: retryInfo.kind,
+        hint: retryInfo.hint,
+      })
+      await sleep(errors.backoffMs(retry, retryInfo.kind))
+      output = await tools.execute(call.name, args, ctx)
+    }
 
-    const ok = !output.startsWith('错误：') && !output.startsWith('用户拒绝了')
+    const ok = isToolOk(output)
     const run = {
       id: call.id,
       name: call.name,

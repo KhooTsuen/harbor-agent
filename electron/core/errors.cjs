@@ -249,11 +249,42 @@ function classifyToolOutput(output, extra = {}) {
   return info
 }
 
+/**
+ * 可以安全自动重试的工具（AG-016）。
+ *
+ * ★ 关键是**只读**：
+ *   「文件被改过 → 重新读一遍」很安全；
+ *   但 `run_shell` 超时后自动重试会把命令**再跑一遍** —— 那不是恢复，
+ *   那是重复副作用（可能重启服务、重复提交、重复转账）。
+ *   写操作一律不自动重试，交给模型判断（AG-015 已经给了它分类和建议）。
+ */
+const READONLY_TOOLS = new Set(['read_file', 'list_dir', 'search_web', 'browse', 'browse_elements'])
+
+/** 值得自动重试的几种策略（其余的要么要用户、要么要模型动手） */
+const AUTO_STRATEGIES = new Set(['reread', 'retry', 'backoff'])
+
+/** 自动重试最多几次（文档：「必须有最大 Retry 次数」） */
+const MAX_AUTO_RETRY = 1
+
+/**
+ * 这个错误 + 这个工具，能不能自动重试？
+ *
+ * @param {{ strategy?: string }} info  `classify` / `classifyToolOutput` 的结果
+ * @param {string} toolName
+ */
+function canAutoRecover(info, toolName) {
+  if (!AUTO_STRATEGIES.has(String(info?.strategy ?? ''))) return false
+  return READONLY_TOOLS.has(String(toolName ?? ''))
+}
+
 module.exports = {
   KINDS,
   STRATEGY_TEXT,
+  READONLY_TOOLS,
+  MAX_AUTO_RETRY,
   classify,
   classifyToolOutput,
+  canAutoRecover,
   shouldRetry,
   backoffMs,
   fromStatus,

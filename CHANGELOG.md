@@ -1,5 +1,78 @@
 # 更新日志
 
+## [0.71.0] — 2026-09-19 · AG-016 自动恢复
+
+AG-015 给每类错误定了 `strategy`（恢复策略），这一步是**把策略真的执行起来**。
+
+### 工具级自动重试（核心）
+
+`loop-tools.cjs` 里工具失败后会看两件事：错误的策略、以及**这个工具能不能安全重试**。
+
+★ **后一条比前一条重要**。文档的策略表说「Timeout → 有限 Retry」，但如果那条命令是
+`run_shell`，重试就等于**把命令再跑一遍** —— 那不是恢复，是重复副作用
+（可能重启服务、重复提交、重复转账）。所以：
+
+```
+只读工具（read_file / list_dir / search_web / browse / browse_elements）
+   + 策略是 reread / retry / backoff   → 自动重试
+其余（write_file / edit_file / run_shell / remember / generate_image）→ 一律不重试
+```
+
+写操作失败交给模型判断 —— AG-015 已经把分类和「建议怎么办」喂给它了。
+
+**上限**：`MAX_AUTO_RETRY = 1`（初次 + 重试一次），文档要求「必须有最大 Retry 次数」。
+**退避**：复用 `errors.backoffMs`（限流等久一点）。
+**事件**：重试前发 `agent.retrying`（AG-002 早就定义好的事件，这次终于用上了）——
+界面和日志都看得见「它在自己重试」。
+
+### 上下文超限 → 自动压缩一次
+
+文档的策略表里 `ContextOverflow → Compact`。原来只是发个事件提示用户手动 `/compact`，
+现在 `loop-model.cjs` 捕获到 `context_overflow` 会**自己压一次再重试**：
+
+- 新增 `compact.rebuild(history, summary, keepTail = 6)` —— 用摘要替换旧对话，
+  **保留系统提示和最近 6 条**。保留尾巴是有意的：摘要一定会丢细节，
+  而「刚刚发生的事」往往还要接着用（刚读出来的文件内容、刚报的错、刚写的计划）。
+- **就地**改 `messages`（`length = 0` + `push`）—— `loop.cjs` 拿的是同一个数组引用，
+  下一轮直接用短的。
+- **只压一次**：压完还超限说明不是「历史太长」而是「单条太长」，再压也没用，
+  直接报错让用户处理。
+- 压缩自己失败时不掩盖原来的错（记日志，照旧抛 `context_overflow`）。
+
+### 真机验证
+
+任务「读取一个不存在的文件」：
+
+```
+agent.tool.started       read_file
+agent.retrying           read_file file_changed attempt=1   ← ★ 自动重试真的发生了
+agent.tool.failed        read_file                          ← 重试仍失败（文件确实没有）
+agent.tool.started       run_shell                          ← 模型换个做法接着干
+agent.tool.completed     run_shell
+agent.completed
+```
+
+这条链路正好把 AG-015 + AG-016 一起验了：**分类 → 自动重试 → 仍失败则如实上报 →
+模型据「建议」换做法**。
+
+### 测试
+
+内核 **927 → 950**（新增 `scripts/selftest/groups/25-autorecover.mjs`），前端 295 不变。
+`tsc` / `eslint` / `prettier` 全过，全仓 0 文件超 300 行。
+
+核心守卫不是「可重试的错误就重试」，而是 **`canAutoRecover(err, toolName)` 必须带工具名** ——
+`retry` 策略 + `run_shell` 必须是 false，这条错了会出真事故。
+
+### 已知问题
+
+1. **`ProcessExit → 检查退出码`** 目前仍然只是「把分类告诉模型」（AG-015 做的），
+   没有程序化的「读 stderr 找原因」。真正的自动诊断需要按语言/工具分别解析输出，
+   那是另一个量级的事。
+2. **`ToolFailure → 分析后 Re-plan`** 同样是靠模型（给它分类 + 建议），
+   内核没有强制的 re-plan 流程 —— 严格说那是 AG-017 的范围。
+3. 自动重试只覆盖**工具**失败；模型调用失败的重试早就有（`loop-model.cjs`），
+   两条路径的退避参数目前是各自算的，没统一。
+4. `compact.rebuild` 的 `keepTail = 6` 是拍的，没有实测校准过留几条合适。
 ## [0.70.0] — 2026-09-19 · AG-015 错误分类
 
 文档列了 11 类错误（NetworkError / AuthenticationError / TimeoutError / RateLimitError /
