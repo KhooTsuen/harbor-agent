@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
 import { PlanCard } from './PlanCard'
+import { ProgressTimeline } from './ProgressTimeline'
 import { changesetList, changesetRollback, taskUpdate } from '@/lib/safetyApi'
 import { useTaskStore } from '@/stores/useTaskStore'
 
@@ -29,6 +30,10 @@ export function TaskBanner() {
     (s) => s.threads.find((thread) => thread.id === s.activeThreadId)?.status,
   )
   const showToast = useUIStore((s) => s.showToast)
+  /* AG-005：走过的相位（状态机推过来的，前端只记） */
+  const phases = useAppStore(
+    (s) => s.threads.find((thread) => thread.id === s.activeThreadId)?.phaseHistory,
+  )
 
   /* 未完成任务改成从 store 读（侧栏黄点也用它） */
   const allTasks = useTaskStore((s) => s.unfinished)
@@ -108,6 +113,7 @@ export function TaskBanner() {
             </p>
             {/* AG-004：计划单独看得见（含版本历史），不再只给一个「N 步」的数字 */}
             <PlanCard versions={tasks[0].planVersions ?? []} />
+            <ProgressTimeline phases={phases ?? []} steps={tasks[0].steps} plan={tasks[0].plan} />
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button

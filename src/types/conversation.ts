@@ -118,6 +118,8 @@ export interface Thread {
    * 渲染层不自己推断。status 是旧的简化状态，只剩预览模式（mockTurn）在用。
    */
   phase?: AgentPhase
+  /* AG-005：走过的相位（相邻去重，事件驱动）—— 进度时间线的「阶段行」靠它 */
+  phaseHistory?: AgentPhase[]
   mode: ThreadMode
   model: string
   reasoning: ReasoningLevel

@@ -168,7 +168,19 @@ export const useAppStore = create<AppState>()(
       /* AG-001：阶段由主进程状态机推过来，前端只负责记下 */
       setThreadPhase: (id: string, phase: import('@/types').AgentPhase) =>
         set((s) => ({
-          threads: s.threads.map((t) => (t.id === id ? touch({ ...t, phase }) : t)),
+          threads: s.threads.map((t) => {
+            if (t.id !== id) return t
+            /*
+             * AG-005：顺手记一条历史（时间线要显示「走过的路」）。
+             * 相邻去重 —— `executing` 在一轮里会被反复转移（每个工具一次），
+             * 不去重的话历史全是同一个词。这是**事件驱动**的记录，
+             * 不是渲染层自己推断状态。
+             */
+            const history = t.phaseHistory ?? []
+            const next =
+              history[history.length - 1] === phase ? history : [...history, phase].slice(-24)
+            return touch({ ...t, phase, phaseHistory: next })
+          }),
         })),
 
       setThreadMode: (id, mode) => {

@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils'
  * 归类之后显示「读取 5 个文件」比「read_file ×5」好读得多。
  * 没收录的工具就老实用原名 + 次数 —— 不编（学 dsh-watcher 的原则）。
  */
-const ACTIONS: Record<string, [string, string]> = {
+export const ACTIONS: Record<string, [string, string]> = {
   read_file: ['读取', '个文件'],
   write_file: ['写入', '个文件'],
   edit_file: ['修改', '个文件'],
