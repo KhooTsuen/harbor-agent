@@ -11,7 +11,7 @@ import { AssistantActions } from './message/AssistantActions'
 import { TerminalOutput } from './TerminalOutput'
 import { ThinkBlock } from './ProcessBlocks'
 import { ToolRunList } from './ToolRuns'
-import { phaseLabel } from '@/lib/agentPhase'
+import { activityLabel } from '@/lib/agentActivity'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
@@ -150,7 +150,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
                     阶段文字来自主进程的状态机（AG-001 的 phase），
                     还没收到第一个 phase 事件时退回一句通用的。
                   */}
-                  {phaseLabel(message.phase) || '正在处理…'}
+                  {activityLabel(message.toolRuns ?? [], message.phase)}
                 </p>
               ) : null}
 

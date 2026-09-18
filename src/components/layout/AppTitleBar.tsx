@@ -1,4 +1,4 @@
-import { PanelBottom, PanelLeft, PanelRight, Play, Square } from 'lucide-react'
+import { Loader2, PanelBottom, PanelLeft, PanelRight, Play, Square } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useThreadStore } from '@/stores/useThreadStore'
@@ -7,6 +7,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { sumDiff } from '@/components/chat/DiffViewer'
 import { useAgentActive } from '@/hooks/useAgentActive'
+import { activityLabel } from '@/lib/agentActivity'
 
 /* ══════════════════════════════════════════════════════════════
    窗口级顶栏（高 40px，**横跨整个窗口**）
@@ -43,6 +44,14 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
 
+  /*
+    AG-008：顶栏顺带说一句「现在到底在干什么」。
+    toolRuns 挂在 assistant 消息上，所以要找**最后一条助手消息**，
+    不能直接拿 messages.at(-1) —— 那可能是用户刚发出去的那条。
+  */
+  const lastAssistant = [...(thread?.messages ?? [])].reverse().find((m) => m.role === 'assistant')
+  const activity = activityLabel(lastAssistant?.toolRuns ?? [], thread?.phase)
+
   const diffs = (thread?.messages ?? []).flatMap((m) => m.diffs ?? [])
   const { additions, deletions } = sumDiff(diffs)
 
@@ -75,6 +84,14 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
       <h1 className="min-w-0 flex-1 truncate px-2 text-dense text-fg-secondary">
         {thread?.title ?? '没有打开的对话'}
       </h1>
+
+      {/* 只在跑的时候出现，空着不动 —— 顶栏不该有恒定的装饰 */}
+      {sending ? (
+        <span className="hidden min-w-0 shrink items-center gap-1.5 truncate text-2xs text-fg-tertiary md:flex">
+          <Loader2 size={11} className="shrink-0 animate-spin" />
+          <span className="truncate">{activity}</span>
+        </span>
+      ) : null}
 
       {diffs.length > 0 ? (
         <span
