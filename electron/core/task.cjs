@@ -1,9 +1,9 @@
 /**
  * 任务（Task）
  *
- * 长期 Agent 最大的问题不是聊天，而是「**任务做到一半怎么办**」。
- * 会话只是聊天记录，回答不了：要干什么、计划是什么、走到哪一步、改了哪些
- * 文件、上次检查点在哪、现在该不该继续。所以会话之外再记一份任务。
+ * 长期 Agent 最大的问题不是聊天，而是「**任务做到一半怎么办**」。会话只是
+ * 聊天记录，回答不了：要干什么、走到哪一步、改了哪些文件、该不该继续。
+ * 所以会话之外再记一份任务。
  *
  * 存储：`data/tasks/<id>.json`（一个任务一个文件，坏了只坏一个）
  * 与 changeSet 的分工：任务管「做什么」，事务管「改了啥、怎么撤」。
@@ -13,25 +13,15 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const { parsePlan, fingerprint, recordVersion, migrate } = require('./task-plan.cjs')
+const { parsePlan, fingerprint, recordVersion, migrate, nextActionOf } = require('./task-plan.cjs')
 
-/** 任务状态 */
-const STATUSES = [
-  'running', // 正在跑
-  'waiting_user', // 等用户确认
-  'paused', // 中断/退出时没跑完
-  'completed',
-  'failed',
-  'cancelled',
-]
+/** 任务状态；`paused` = 中断/退出时没跑完（启动时提示续做的就是它） */
+const STATUSES = ['running', 'waiting_user', 'paused', 'completed', 'failed', 'cancelled']
 
-/** 「没干完」的状态 —— 启动时提示续做的就是这些 */
 const UNFINISHED = new Set(['running', 'waiting_user', 'paused'])
-
 function root() {
   return path.join(DIRS.data, 'tasks')
 }
-
 function fileFor(id) {
   return path.join(root(), `${id}.json`)
 }
@@ -86,6 +76,11 @@ function create({
     changeSetId: '',
     errors: [],
     result: '',
+    /* AG-012：重启恢复要用的四样 —— 下一步、停的时刻、恢复过几次、批过什么 */
+    nextAction: '',
+    permissions: [],
+    pausedAt: 0,
+    resumeCount: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     finishedAt: 0,
@@ -109,6 +104,10 @@ function update(id, patch) {
     'plan',
     'planVersions',
     'changeSetId',
+    'nextAction',
+    'permissions',
+    'pausedAt',
+    'resumeCount',
   ]) {
     if (patch[key] !== undefined) task[key] = patch[key]
   }
@@ -223,7 +222,7 @@ function pauseRunning() {
   let count = 0
   for (const task of list({ limit: 500 })) {
     if (task.status === 'running' || task.status === 'waiting_user') {
-      update(task.id, { status: 'paused' })
+      update(task.id, { status: 'paused', pausedAt: Date.now() })
       count += 1
     }
   }
@@ -272,6 +271,8 @@ function setPlan(id, plan, options = {}) {
   const version = recordVersion(task, plan, options)
   if (!version) return null
   if (version.changed) {
+    /* AG-012：顺手记下「下一步」—— 重启后不必把整份计划再喂一遍 */
+    task.nextAction = nextActionOf(plan)
     task.updatedAt = Date.now()
     write(task)
   }

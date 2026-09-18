@@ -70,8 +70,8 @@ async function run(options) {
     if (changeSetId) changeset.commit(changeSetId, { verified: result.verified ?? null })
 
     if (result.exhausted || result.paused) {
-      /* 轮数用尽 / 用户暂停 = 活没干完，标成 paused 让它可恢复 */
-      taskCore.update(task.id, { status: 'paused' })
+      /* 轮数用尽 / 用户暂停 = 活没干完，标成 paused 让它可恢复（AG-012 记下停的时刻） */
+      taskCore.update(task.id, { status: 'paused', pausedAt: Date.now() })
     } else {
       taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
     }
@@ -81,7 +81,7 @@ async function run(options) {
     /* 中断/报错都算「没干完」—— 任务留着可恢复，事务不提交（还能整批撤） */
     const aborted = error instanceof Error && error.name === 'AbortError'
     life.mark(aborted ? 'cancelled' : 'failed', traceKey(options))
-    if (aborted) taskCore.update(task.id, { status: 'paused' })
+    if (aborted) taskCore.update(task.id, { status: 'paused', pausedAt: Date.now() })
     else taskCore.fail(task.id, error instanceof Error ? error.message : String(error))
     throw error
   }

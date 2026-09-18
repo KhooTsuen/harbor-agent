@@ -42,11 +42,16 @@ function canResume(taskId) {
 /**
  * 把任务改回 running 并返回它自己（**不新建**）。
  * 状态不对（已完成 / 不存在）时返回 null，交给调用方新建一条。
+ *
+ * AG-012：顺手记 `resumeCount` —— 恢复过几次，重启清单里给用户看。
  */
 function reopen(taskId) {
   const task = taskCore.get(String(taskId ?? ''))
   if (!task || !RESUMABLE.has(task.status)) return null
-  return taskCore.update(task.id, { status: 'running' })
+  return taskCore.update(task.id, {
+    status: 'running',
+    resumeCount: (task.resumeCount ?? 0) + 1,
+  })
 }
 
 /**

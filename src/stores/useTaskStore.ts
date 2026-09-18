@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { TaskRecord } from '@/types/safety'
-import { taskUnfinished } from '@/lib/safetyApi'
+import type { TaskRecoveryItem } from '@/types/safety'
+import { taskRecovery } from '@/lib/safetyApi'
 
 /* ══════════════════════════════════════════════════════════════
    未完成的任务
@@ -15,14 +15,19 @@ import { taskUnfinished } from '@/lib/safetyApi'
    ══════════════════════════════════════════════════════════════ */
 
 interface TaskState {
-  unfinished: TaskRecord[]
+  unfinished: TaskRecoveryItem[]
   refresh: () => Promise<void>
 }
 
 export const useTaskStore = create<TaskState>((set) => ({
   unfinished: [],
+  /*
+   * AG-012：改用 `task:recovery` 而不是 `task:unfinished`。
+   * 两者都答「哪些任务没干完」，但前者多带三样用户做决定需要的东西：
+   * 停在哪一步、停手后哪些文件被动过、恢复过几次。
+   */
   refresh: async () => {
-    const list = await taskUnfinished()
+    const list = await taskRecovery()
     set({ unfinished: list })
   },
 }))
