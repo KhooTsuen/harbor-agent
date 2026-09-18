@@ -1,12 +1,9 @@
 /**
  * Agent 循环
  *
- * 一轮对话 = 若干「回合」：
- *   调模型 → 模型要工具 → 执行 → 结果喂回去 → 再调模型 → … → 模型不再要工具
- *
- * 两个硬边界：
- *   · maxTurns 防止工具连环调用把 token 烧光
- *   · AbortSignal 让「停止」按钮真的能立刻停住（包括正在跑的 shell）
+ * 一轮对话 = 若干「回合」：调模型 → 要工具 → 执行 → 结果喂回去 → … → 不再要工具。
+ * 两个硬边界：maxTurns 防止烧 token；AbortSignal 让「停止」能立刻停住（含 shell）。
+ * 状态由 AG-001 的 lifecycle 驱动 —— 每次转移都会发事件，UI 只读不猜。
  */
 
 const tools = require('./tools/index.cjs')
@@ -14,14 +11,10 @@ const stats = require('./stats.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const taskContext = require('./task-context.cjs')
+const life = require('./lifecycle.cjs')
 const changeset = require('./changeset.cjs')
-/*
- * 注意：run() 的形参也叫 `config`（那是**配置对象**，没有方法）。
- * 所以模块本身必须换个名字引进来 —— 否则 `config.hasKey(...)`
- * 会在一个普通对象上调用，报 “is not a function”。
- * 这个坑真的踩过：它不报类型错（.cjs 不过 tsc），自检也照不到，
- * 只有真发一句话才会炸。
- */
+/* run() 的形参也叫 config，模块得换名引 —— 否则 config.hasKey() 会在普通对象上调用。 */
+
 const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const { callModel, reviewWithEvents, mergeUsage } = require('./loop-model.cjs')
@@ -89,6 +82,7 @@ async function run(options) {
   } catch (error) {
     /* 中断/报错都算「没干完」—— 任务留着可恢复，事务不提交（还能整批撤） */
     const aborted = error instanceof Error && error.name === 'AbortError'
+    life.mark(aborted ? 'cancelled' : 'failed', options.taskId ?? '')
     if (aborted) taskCore.update(task.id, { status: 'paused' })
     else taskCore.fail(task.id, error instanceof Error ? error.message : String(error))
     throw error
@@ -159,17 +153,16 @@ async function runLoop(options) {
   let planParsed = false
   /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
   let gateSeen = {}
+  /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
+  const tid = options.taskId ?? ''
+  life.mark('preparing', tid)
 
   for (; turn < MAX_TURNS; turn += 1) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
 
-    /*
-     * ── 用量闸 ──
-     * 调模型**之前**查一次账（这是唯一能真正省钱的位置）。超了会抛错，
-     * 细节在 limits.cjs —— 按 token 数算，不按金额（金额要维护会过期的价目表）。
-     */
+    /* 用量闸：调模型**之前**查账（唯一能真省钱的位置）。按 token 算，不按金额 */
     limits.enforce(emit)
-
+    life.mark('thinking', tid)
     emit({ type: 'turn_start', turn: turn + 1 })
 
     /* ── 调模型（带重试与降级）── */
@@ -212,6 +205,7 @@ async function runLoop(options) {
 
     /* ── 没有工具调用 → 这轮结束 ── */
     if (result.toolCalls.length === 0) {
+      life.mark('verifying', tid)
       /* 完成门禁：计划没勾完就想收工 → 顶回去继续（刹车在 task-context.cjs） */
       const gate = taskContext.shouldContinue({
         taskId: options.taskId ?? '',
@@ -237,6 +231,7 @@ async function runLoop(options) {
         }
       }
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
+      life.mark('responding', tid)
       /* 自检复核（开关、事件、失败保留原回答都在里面） */
       const finalContent = await reviewWithEvents({
         config,
@@ -248,6 +243,7 @@ async function runLoop(options) {
         mode,
         emit,
       })
+      life.mark('completed', tid)
       return {
         content: finalContent,
         reasoning: result.reasoning,
@@ -258,6 +254,7 @@ async function runLoop(options) {
     }
 
     /* ── 有工具调用：把 assistant 这条带 tool_calls 的消息存进历史 ── */
+    life.mark('executing', tid)
     messages.push({
       role: 'assistant',
       content: result.content || '',

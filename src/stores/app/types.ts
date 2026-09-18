@@ -1,4 +1,4 @@
-import type { Message, Project, Thread, ThreadMode, ThreadStatus } from '@/types'
+import type { AgentPhase, Message, Project, Thread, ThreadMode, ThreadStatus } from '@/types'
 import type { StoredMessage } from '@/types/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -50,6 +50,8 @@ export interface AppState {
 
   /* 线程属性 */
   setThreadStatus: (id: string, status: ThreadStatus) => void
+  /* AG-001：阶段由主进程状态机推过来，前端只负责记下 */
+  setThreadPhase: (id: string, phase: AgentPhase) => void
   setThreadMode: (id: string, mode: ThreadMode) => void
   setThreadModel: (id: string, model: string) => void
   setThreadReasoning: (id: string, reasoning: Thread['reasoning']) => void

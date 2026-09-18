@@ -1,6 +1,7 @@
-import type { Message, ToolRunRecord } from '@/types'
+import type { AgentPhase, Message, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
 import { confirmChat } from '@/lib/backend'
+import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 
@@ -45,6 +46,19 @@ export function handleStreamEvent(
 
   switch (type) {
     /* ── 内容与思考：分片追加 ── */
+    /*
+     * AG-001：生命周期阶段由主进程推过来，渲染层照单收下 —— 不自己算。
+     * 以前是「发消息就置 running、结束按事件猜 success/error」，
+     * 那种做法下 UI 和后台随时可能不一致。
+     */
+    case 'phase': {
+      const phase = String(event.phase ?? '') as AgentPhase
+      if (phase) {
+        state.patch({ phase })
+        useAppStore.getState().setThreadPhase(state.threadId, phase)
+      }
+      return { handled: true }
+    }
     case 'content': {
       state.content += String(event.text ?? '')
       state.patch({ content: state.content })

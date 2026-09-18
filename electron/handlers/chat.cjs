@@ -10,6 +10,7 @@
 
 const loop = require('../core/loop.cjs')
 const taskContext = require('../core/task-context.cjs')
+const life = require('../core/lifecycle.cjs')
 const config = require('../core/config.cjs')
 const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
@@ -77,6 +78,23 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
 
     const confirm = (request) => askUser(requestId, request, emit)
 
+    /*
+     * AG-001：状态机的每次转移都推给渲染层（前端只读、不自己猜）。
+     * key 用 taskId，没有就退化成 requestId —— 同一进程里可能有多个请求在跑，
+     * 所以订阅者要按 key 过滤。
+     */
+    const phaseKey = (typeof payload?.taskId === 'string' && payload.taskId) || requestId
+    const offPhase = life.onTransition((e) => {
+      if (e.taskId !== phaseKey) return
+      send('chat:event', {
+        requestId,
+        type: 'phase',
+        phase: e.to,
+        from: e.from,
+        detail: e.detail,
+      })
+    })
+
     /* 不 await：立刻返回，后面靠事件推 */
     void (async () => {
       try {
@@ -91,7 +109,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           /* 会话 id：审计、授权、任务记录都靠它串起来 */
           sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
           projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
-          taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
+          taskId: phaseKey,
           /*
            * 把未完成任务的台账注入提示（taskState 层）。
            * 这个层以前一直空着：任务只活在界面上（侧栏黄点、横幅），
@@ -132,6 +150,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           log.error(`对话失败：${message}`)
         }
       } finally {
+        /* 退订状态转发 —— 不退的话每发一条消息就多一个监听器 */
+        offPhase()
+        life.forget(phaseKey)
         streams.delete(requestId)
         /* 收尾：把这轮没答复的确认全部按「拒绝」处理，避免悬挂 */
         for (const [id, entry] of pendingConfirms) {

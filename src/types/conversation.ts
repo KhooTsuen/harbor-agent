@@ -113,6 +113,11 @@ export interface Thread {
   title: string
   messages: Message[]
   status: ThreadStatus
+  /**
+   * AG-001：Agent 生命周期阶段。**由主进程的状态机驱动**（收到 phase 事件才变），
+   * 渲染层不自己推断。status 是旧的简化状态，只剩预览模式（mockTurn）在用。
+   */
+  phase?: AgentPhase
   mode: ThreadMode
   model: string
   reasoning: ReasoningLevel

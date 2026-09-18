@@ -11,21 +11,31 @@ export type ThemeName = 'default' | 'chatgpt' | 'spec' | 'light'
 export type ThemePreference = ThemeName | 'system'
 export type ToggleState = 'on' | 'off'
 export type RightTab = 'diff' | 'terminal' | 'files' | 'browser' | 'artifacts' | 'state'
+/**
+ * Agent 生命周期阶段（AG-001）。
+ *
+ * **和主进程的 `electron/core/lifecycle.cjs` 必须一字不差** ——
+ * 状态机的唯一真相源在那边，这里只是渲染层的类型。
+ *
+ * 老的 searching / reading / writing / compacting 已去掉：那些是**动作**不是**阶段**，
+ * 属于 executing 期间的细节描述（AG-008 用 phaseLabel 说「正在读取相关文件…」）。
+ */
 export type AgentPhase =
   | 'idle'
+  | 'preparing'
   | 'thinking'
   | 'planning'
-  | 'searching'
-  | 'reading'
-  | 'writing'
   | 'executing'
   | 'verifying'
-  | 'waiting_user'
-  | 'compacting'
+  | 'responding'
   | 'completed'
-  | 'failed'
+  | 'waiting_user'
+  | 'paused'
+  | 'retrying'
   | 'cancelled'
+  | 'failed'
 
+/** 旧的简化状态：只剩预览模式（mockTurn）在用，真后端一律看 phase */
 export type ThreadStatus = AgentPhase | 'running' | 'success' | 'error' | 'waiting'
 export type ThreadMode = 'plan' | 'pair' | 'execute' | 'goal'
 export type ReasoningLevel = 'low' | 'high' | 'max'
