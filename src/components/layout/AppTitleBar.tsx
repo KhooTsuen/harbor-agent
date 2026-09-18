@@ -6,7 +6,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { sumDiff } from '@/components/chat/DiffViewer'
-import { isActivePhase } from '@/lib/agentPhase'
+import { useAgentActive } from '@/hooks/useAgentActive'
 
 /* ══════════════════════════════════════════════════════════════
    窗口级顶栏（高 40px，**横跨整个窗口**）
@@ -39,7 +39,7 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel)
 
   /* 当前这条对话在不在跑（别的对话跑着是别的事） */
-  const sending = isActivePhase(thread?.phase)
+  const sending = useAgentActive(thread?.id)
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
 

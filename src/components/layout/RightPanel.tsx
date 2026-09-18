@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { FileNode, Project, RightTab } from '@/types'
 import { cn } from '@/lib/utils'
+import { useAgentActive } from '@/hooks/useAgentActive'
 import { buildFileTree } from '@/lib/mock'
 import { fsTree, toFileNode } from '@/lib/fsApi'
 import { sumDiff } from '@/components/chat/DiffViewer'
@@ -26,7 +27,6 @@ import { IconButton } from '@/components/ui/IconButton'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { isElectron } from '@/lib/backend'
-import { isActivePhase } from '@/lib/agentPhase'
 
 /* ══════════════════════════════════════════════════════════════
    RightPanel
@@ -65,6 +65,7 @@ export function RightPanel() {
   useBrowseBridge()
 
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
+  const active = useAgentActive(thread?.id)
 
   /*
    * 右栏（文件树 / 终端）该看哪个目录：**跟着当前这条对话走**。
@@ -182,7 +183,7 @@ export function RightPanel() {
               <>
                 <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">
                   <span className="text-fg-secondary">未提交的改动</span>
-                  {isActivePhase(thread?.phase) ? (
+                  {active ? (
                     <span className="flex items-center gap-1 text-fg-tertiary">
                       <span className="inline-block size-1.5 animate-pulse rounded-full bg-warning" />
                       生成中…

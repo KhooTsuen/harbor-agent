@@ -1,5 +1,101 @@
 # 更新日志
 
+## [0.60.0] — 2026-09-18 · AG-003 首反馈 / TTFB
+
+文档要求：「用户发送后必须**立即**获得反馈」，并且要能量出来 ——
+六个时刻、三个指标。
+
+### 改造前的问题
+
+1. **按下发送到主进程回第一个事件之间，界面是死的。** 按钮不变、没有文字，
+   用户会以为没点上。这段时间正常时只有几十毫秒，但冷启动、磁盘慢、主进程忙的时候
+   会很显眼。
+2. **没有任何耗时埋点**（`grep firstToken / ttft / requestTime` → 0 命中）。
+   「有点慢」只能靠感觉 —— 是 IPC 慢、建任务慢、还是模型慢？说不清。
+3. `phaseLabel()`（AG-001 写的「正在准备任务」这些文案）**没有任何地方调用**。
+
+### 改法
+
+**① 本地立即反馈（渲染层）**
+
+新增 `src/hooks/useAgentActive.ts`：
+
+```ts
+localPending || isActivePhase(phase)
+  ↑ sendingThreads          ↑ 主进程状态机（AG-001）
+```
+
+`sendingThreads` 在**按下发送那一瞬**（`sendChat` 之前）就置上了 —— 所以界面
+立刻有反应，不用等 IPC 往返。和 AG-001 不冲突：AG-001 反对的是「渲染层**猜后台状态**」，
+这里补的是「渲染层连自己刚提交过都不知道」。
+
+4 处 UI（Composer / AppTitleBar / RightPanel / SuggestionChips）统一改用它。
+
+**② 说清在干什么**
+
+`MessageItem` 的流式占位从写死的「正在处理…」改成 `phaseLabel(message.phase)` ——
+「正在准备任务」/「正在分析任务」/「正在执行」…，说不出来才退回通用文案。
+
+**③ 六个时刻的埋点（主进程）**
+
+新增 `electron/core/metrics.cjs`（151 行）：
+
+| 时刻 | 认领哪条事件 |
+|---|---|
+| `requestTime` | 渲染层带过来（用户真正按下发送的时刻，不用 IPC 收到的时间） |
+| `taskCreatedTime` | `task` 事件 |
+| `firstFeedbackTime` | **第一条事件**（不管是什么） |
+| `firstTokenTime` | `content` 或 `reasoning`（纯推理模型可能先出思考） |
+| `firstToolTime` | `agent.tool.started` / `agent.tool.failed` |
+| `completionTime` | `agent.completed` / `failed` / `cancelled` |
+
+算出 `firstFeedbackMs` / `taskCreatedMs` / `ttftMs` / `firstToolMs` / `totalMs`，
+发一条 **`metrics.timeline`**（显式 `persist`，落进 `data/events/*.jsonl`）。
+
+**埋点只在 `chat.cjs` 的 emit 包装里调一次**（`metrics.observe`）——
+不用在每个模块各插一遍，也不会漏掉某个事件。
+
+**④ 端到端接上**
+
+`turns.ts` 在函数**最开头**取 `requestTime`（不是发 IPC 之前 —— 那会少算一段），
+随 `sendChat` 带给主进程。
+
+### 测试
+
+新增 `17-metrics.mjs`（34 项）：六个时刻各自认领哪条事件、**同一时刻只记第一次**
+（第三个 token 不算 TTFT）、首反馈 = 第一条事件、reasoning 也算吐字、
+三种结束方式都认、指标数值准确、算完清内存、异常兜底 completion、
+待办上限、`metrics.timeline` 落盘，以及接线守卫（`begin`/`observe`/`finish`
+在 chat.cjs、`requestTime` 在 turns.ts 开头、hook 的 OR 判定）。
+内核 656 → **690**。
+
+**变异验证**：每个 token 都覆盖 firstToken → 2 项红；首反馈只认 `agent.started`
+→ 2 项红；`content` 不算吐字 → 3 项红。
+
+前端 220 → **221**：新增一条**顺序**断言（不是时序）—— `runElectronTurn` 从函数头
+到 `sendingThreads` 那一行之间一个 await 都没有，所以调用方下一行检查就等于
+「主进程收到 IPC 之前」。真机上测不了这件事：React 18 批处理状态更新，点完
+按钮那一刻 DOM 本来就没变，靠 DOM 时序区分不了「本地生效」和「主进程已回」。
+变异验证：在同步段插一个 `await Promise.resolve()` → 该断言立刻红。
+
+### 真机验证（隔离环境）
+
+**① 慢速假上游**（每 5 秒一个 token）：
+
+    点发送后 60ms 按钮已变成「停止生成」
+    占位文案 = 「正在分析任务」（不是旧的写死的「正在处理…」）
+
+**② 真实上游**：
+
+    metrics.timeline 落盘：
+      requestTime → 首反馈   firstFeedbackMs = 18
+      requestTime → 建任务   taskCreatedMs   = 18
+      ★ TTFT                ttftMs          = 1022
+      首次工具反馈           firstToolMs     = None（这轮没调工具，正确）
+      ★ 总耗时               totalMs         = 1060
+
+---
+
 ## [0.59.0] — 2026-09-18 · AG-002 统一 Event Bus
 
 AG-001 把「状态」收到了一处，AG-002 把「事件」也收到一处。

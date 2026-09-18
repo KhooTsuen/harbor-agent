@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowUp, ImageIcon, Paperclip, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isActivePhase } from '@/lib/agentPhase'
 import { MAX_INPUT_LENGTH } from '@/constants'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
@@ -19,6 +18,7 @@ import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
 import { fsTree } from '@/lib/fsApi'
+import { useAgentActive } from '@/hooks/useAgentActive'
 
 /* ══════════════════════════════════════════════════════════════ Composer  这是这类工具最有辨识度的组件，结构照它排： ① 输入区 ② 工具行：+ / 模式 / 权限 … 模型 · 推理 · 发送 ③ 上下文行：项目路径 / 提文件 / 命令  发送键是**白色圆形 + 黑色箭头**（实测三张截图一致），不是彩色。 ══════════════════════════════════════════════════════════════ */
 
@@ -36,7 +36,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const activeThreadId = useAppStore((s) => s.activeThreadId)
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
 
-  const sending = isActivePhase(thread?.phase)
+  const sending = useAgentActive(thread?.id)
   const project = useAppStore((s) => s.projects.find((p) => p.id === s.activeProjectId))
   /* 这条对话所属的文件夹（不是「当前选中的」—— 那是两回事） */
   const threadFolder = useAppStore((s) => s.projects.find((p) => p.id === thread?.projectId))
