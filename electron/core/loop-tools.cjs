@@ -15,6 +15,7 @@
 const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
 const taskCore = require('./task.cjs')
+const errors = require('./errors.cjs')
 const { isAborted } = require('./abort.cjs')
 
 /**
@@ -104,6 +105,17 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
      * AG-002：成败写在事件名里（agent.tool.completed / agent.tool.failed）——
      * 前端不用再去读 ok 字段判成败，也方便日志和诊断直接按名字筛。
      */
+    /*
+     * AG-015：失败时给一句**分类判断**。
+     *
+     * 文档的「失败体验标准」里写着应该出现这种句子：
+     *   Agent 判断：这是测试失败，不是执行环境错误。
+     *
+     * 不做这一步的话，模型看到一个「错误：…」只会原样重试 ——
+     * 同一个坑里反复掉（这也正是 AG-017「失败后继续」要治的）。
+     */
+    const info = ok ? null : errors.classifyToolOutput(output, { name: call.name })
+
     emit({
       type: ok ? 'agent.tool.completed' : 'agent.tool.failed',
       toolCallId: call.id,
@@ -111,10 +123,20 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       ok,
       result: output,
       ms: run.ms,
+      /* 失败分类：界面据此说人话，模型也看得到 */
+      ...(info ? { errorKind: info.kind, errorHint: info.hint } : {}),
     })
 
-    /* 工具结果喂回模型 */
-    messages.push({ role: 'tool', tool_call_id: call.id, content: output })
+    /* 工具结果喂回模型（失败时附上分类与建议，它才知道该换个做法） */
+    messages.push({
+      role: 'tool',
+      tool_call_id: call.id,
+      content: info
+        ? `${output}\n\n[错误分类] ${info.kind} —— ${info.hint}。建议：${
+            errors.STRATEGY_TEXT[info.strategy] ?? info.strategy
+          }`
+        : output,
+    })
   }
 
   /* 这一轮真动过文件 → 打一个检查点（崩了从这裏恢复） */

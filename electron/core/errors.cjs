@@ -6,35 +6,90 @@
  * 这两种都是错的：429 该退避重试，401 该让用户去改 Key，
  * 上下文超限该压缩，文件被改过该重新读一遍。
  *
- * 所以先把错误分成几类，每类给一个明确处置：
+ * 所以先把错误分成几类，每类给一个明确处置（AG-015）：
  *
- *   network         网络不通        → 重试（退避）
- *   timeout         超时            → 重试（退避）
- *   rate_limit      限流            → 退避更久
- *   server          5xx             → 重试
- *   auth            401/403         → **别重试**，让用户去检查 Key
- *   bad_request     400 参数问题    → 别重试，改请求
- *   model_unsupported 模型不支持该能力 → 提示换模型
- *   context_overflow 上下文超限     → 压缩
- *   file_changed    文件被改过      → 重新读
- *   permission      权限不足        → 问用户
- *   aborted         用户主动中断     → 什么都不做
- *   unknown                         → 报出来
+ *   kind            retryable  strategy      needsUser
+ *   network         网络不通     是  retry         否
+ *   timeout         超时         是  retry         否
+ *   rate_limit      限流         是  backoff       否
+ *   server          5xx          是  retry         否
+ *   auth            401/403      否  ask           **是**（要用户去改 Key）
+ *   bad_request     400 参数     否  replan        否
+ *   model_unsupported 模型不支持 否  switch_model  **是**
+ *   context_overflow 上下文超限  否  compact       否
+ *   file_changed    文件被改过   否  reread        否
+ *   permission      权限不足     否  ask           **是**
+ *   tool_failure    工具执行失败 否  replan        否
+ *   process_exit    命令非零退出 否  inspect       否
+ *   mcp             MCP 出错     是  retry         否
+ *   aborted         用户中断     否  none          否
+ *   unknown                      否  none          **是**
+ *
+ * `strategy` / `needsUser` 是 AG-015 加的：光知道「能不能重试」不够 ——
+ * 界面要告诉用户「现在发生了什么、我打算怎么办、要不要你插手」。
+ * 具体取值见下面 KINDS 的注释。
  */
 
+/**
+ * 每类的处置。
+ *
+ *   retryable —— 能不能自动重试（`shouldRetry` 用）
+ *   strategy  —— 恢复策略，取值：
+ *                  retry        直接重试
+ *                  backoff      退避后重试（限流这类要等久一点）
+ *                  reread       重新读取（文件被改过）
+ *                  compact      压缩上下文
+ *                  replan       分析后重新规划（AG-017）
+ *                  inspect      检查退出码/输出（命令非零退出）
+ *                  ask          需要用户出手（给 Key、给权限）
+ *                  switch_model 换个模型
+ *                  none         不处理
+ *   needsUser —— 要不要用户介入。这一项决定界面是「自己重试」还是「告诉用户」
+ *   hint      —— 给用户看的说明（不是给日志看的）
+ */
 const KINDS = {
-  network: { retryable: true, hint: '网络请求失败' },
-  timeout: { retryable: true, hint: '请求超时' },
-  rate_limit: { retryable: true, hint: '被限流了' },
-  server: { retryable: true, hint: '对方服务端出错' },
-  auth: { retryable: false, hint: '认证失败 —— 检查 API Key' },
-  bad_request: { retryable: false, hint: '请求参数不被接受' },
-  model_unsupported: { retryable: false, hint: '这个模型不支持该能力' },
-  context_overflow: { retryable: false, hint: '上下文超出模型上限' },
-  file_changed: { retryable: false, hint: '文件在读取后被改动了' },
-  permission: { retryable: false, hint: '权限不足' },
-  aborted: { retryable: false, hint: '被主动中断' },
-  unknown: { retryable: false, hint: '未知错误' },
+  network: { retryable: true, strategy: 'retry', needsUser: false, hint: '网络请求失败' },
+  timeout: { retryable: true, strategy: 'retry', needsUser: false, hint: '请求超时' },
+  rate_limit: { retryable: true, strategy: 'backoff', needsUser: false, hint: '被限流了' },
+  server: { retryable: true, strategy: 'retry', needsUser: false, hint: '对方服务器出错' },
+  auth: { retryable: false, strategy: 'ask', needsUser: true, hint: '认证失败 —— 检查 API Key' },
+  bad_request: { retryable: false, strategy: 'replan', needsUser: false, hint: '请求参数不被接受' },
+  model_unsupported: {
+    retryable: false,
+    strategy: 'switch_model',
+    needsUser: true,
+    hint: '这个模型不支持该能力',
+  },
+  context_overflow: {
+    retryable: false,
+    strategy: 'compact',
+    needsUser: false,
+    hint: '上下文超出模型上限',
+  },
+  file_changed: {
+    retryable: false,
+    strategy: 'reread',
+    needsUser: false,
+    /* 两种情况归一类：读的时候不存在，或者读完之后被人改了 */
+    hint: '文件不存在，或者读完之后被改动了',
+  },
+  permission: { retryable: false, strategy: 'ask', needsUser: true, hint: '权限不足' },
+  /* AG-015 新增的三类 */
+  tool_failure: {
+    retryable: false,
+    strategy: 'replan',
+    needsUser: false,
+    hint: '工具执行失败',
+  },
+  process_exit: {
+    retryable: false,
+    strategy: 'inspect',
+    needsUser: false,
+    hint: '命令非正常退出（看退出码和输出）',
+  },
+  mcp: { retryable: true, strategy: 'retry', needsUser: false, hint: 'MCP 服务出错' },
+  aborted: { retryable: false, strategy: 'none', needsUser: false, hint: '被主动中断' },
+  unknown: { retryable: false, strategy: 'none', needsUser: true, hint: '未知错误' },
 }
 
 /** 从 HTTP 状态码判断 */
@@ -89,6 +144,10 @@ const MESSAGE_RULES = [
   [/(socket hang up|fetch failed|network|econnreset|enotfound)/i, 'network'],
   [/(old text|找不到这段原文|出现多次|file.*changed|文件不存在)/i, 'file_changed'],
   [/(permission denied|eacces|没有权限|需要授权)/i, 'permission'],
+  /* AG-015 新增三类：先具体后笼统，所以放在最后几条 */
+  [/(\bmcp\b|json-?rpc|MCP 服务器)/i, 'mcp'],
+  [/(退出码|exit code|exited with|process exited)/i, 'process_exit'],
+  [/工具.{0,6}(失败|出错|异常)/, 'tool_failure'],
 ]
 
 /**
@@ -96,7 +155,7 @@ const MESSAGE_RULES = [
  *
  * @param {unknown} error
  * @param {{ status?: number }} [extra]
- * @returns {{ kind: string, retryable: boolean, hint: string, status: number, message: string }}
+ * @returns {{ kind: string, retryable: boolean, strategy: string, needsUser: boolean, hint: string, status: number, message: string }}
  */
 function classify(error, extra = {}) {
   const message = error instanceof Error ? error.message : String(error ?? '')
@@ -121,6 +180,8 @@ function classify(error, extra = {}) {
   return {
     kind,
     retryable: meta.retryable,
+    strategy: meta.strategy,
+    needsUser: meta.needsUser,
     hint: meta.hint,
     status,
     message: message.slice(0, 500),
@@ -149,4 +210,52 @@ function backoffMs(attempt, kind = 'unknown') {
   return Math.min(delay, 8000)
 }
 
-module.exports = { KINDS, classify, shouldRetry, backoffMs, fromStatus, fromCode }
+/**
+ * 恢复策略 → 给模型看的一句话（AG-015）。
+ *
+ * 文档的「失败体验标准」里写着应该出现这种句子：
+ *
+ *   Agent 判断：这是测试失败，不是执行环境错误。
+ *   下一步：正在读取测试输出并定位失败原因…
+ *
+ * 那就是这里 —— 失败的工具结果后面接一句「这是什么错、你该怎么办」，
+ * 模型就不至于在同一个坑里反复试。
+ */
+const STRATEGY_TEXT = {
+  retry: '可以直接重试',
+  backoff: '等一会儿再重试',
+  reread: '重新读一次（文件可能已经变了）',
+  compact: '上下文太长了，需要先压缩',
+  replan: '分析原因后换个做法，不要重复同样的调用',
+  inspect: '看退出码和输出，判断是命令自己失败还是环境问题',
+  ask: '需要用户介入 —— 说清楚你需要什么',
+  switch_model: '换个模型',
+  none: '不必重试，如实报告',
+}
+
+/**
+ * 从工具的输出文本分类。
+ *
+ * 工具失败时返回的是**字符串**（`错误：…`），不是 Error —— 所以不能直接
+ * 丢给 `classify`，得先把文本包成 Error 走一遍规则。
+ * 一条兜底：以「错误：」开头、但没有任何特征命中的，就是工具自己失败了。
+ */
+function classifyToolOutput(output, extra = {}) {
+  const text = String(output ?? '')
+  const info = classify(new Error(text), extra)
+  if (info.kind === 'unknown' && /^错误：/.test(text.trim())) {
+    return { ...info, ...KINDS.tool_failure, kind: 'tool_failure' }
+  }
+  return info
+}
+
+module.exports = {
+  KINDS,
+  STRATEGY_TEXT,
+  classify,
+  classifyToolOutput,
+  shouldRetry,
+  backoffMs,
+  fromStatus,
+  fromCode,
+}
