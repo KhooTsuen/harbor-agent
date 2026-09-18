@@ -26,6 +26,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { isElectron } from '@/lib/backend'
+import { isActivePhase } from '@/lib/agentPhase'
 
 /* ══════════════════════════════════════════════════════════════
    RightPanel
@@ -181,7 +182,7 @@ export function RightPanel() {
               <>
                 <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">
                   <span className="text-fg-secondary">未提交的改动</span>
-                  {thread?.status === 'running' ? (
+                  {isActivePhase(thread?.phase) ? (
                     <span className="flex items-center gap-1 text-fg-tertiary">
                       <span className="inline-block size-1.5 animate-pulse rounded-full bg-warning" />
                       生成中…

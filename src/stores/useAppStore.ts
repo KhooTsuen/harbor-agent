@@ -165,6 +165,12 @@ export const useAppStore = create<AppState>()(
           threads: s.threads.map((t) => (t.id === id ? touch({ ...t, status }) : t)),
         })),
 
+      /* AG-001：阶段由主进程状态机推过来，前端只负责记下 */
+      setThreadPhase: (id: string, phase: import('@/types').AgentPhase) =>
+        set((s) => ({
+          threads: s.threads.map((t) => (t.id === id ? touch({ ...t, phase }) : t)),
+        })),
+
       setThreadMode: (id, mode) => {
         set((s) => ({ threads: s.threads.map((t) => (t.id === id ? { ...t, mode } : t)) }))
         if (useRealBackend && !id.startsWith('pending_')) void updateSessionMeta(id, { mode })

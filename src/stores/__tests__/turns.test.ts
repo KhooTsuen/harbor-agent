@@ -44,6 +44,7 @@ vi.mock('@/lib/backend', async (importOriginal) => {
 
 import { useAppStore } from '@/stores/useAppStore'
 import { runElectronTurn } from '@/stores/thread/turns'
+import { useThreadStore } from '../useThreadStore'
 
 /** 模拟主进程推一个事件回来 */
 function emitFromBackend(event: Record<string, unknown>): void {
@@ -111,7 +112,7 @@ describe('runElectronTurn', () => {
     await pending
   })
 
-  it('收到 error 事件后收尾，状态是 error', async () => {
+  it('主进程推 failed → 前端记下 phase（不再自己猜 status）', async () => {
     const threadId = useAppStore.getState().activeThreadId
     /*
      * zustand 的 set 既能收对象也能收函数（turns.ts 用的是函数形式）。
@@ -136,10 +137,25 @@ describe('runElectronTurn', () => {
     await pending
 
     expect(setCalls.at(-1)?.sendingThreads).toEqual([])
-    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.status).toBe('error')
   })
 
-  it('收到 aborted 事件后收尾，状态为 cancelled', async () => {
+  it('★ AG-001：phase 只由主进程的事件驱动', async () => {
+    const threadId = useAppStore.getState().activeThreadId
+    const pending = runElectronTurn(threadId, 'hi', () => {})
+    await Promise.resolve()
+    await Promise.resolve()
+
+    /* 主进程状态机推什么，前端就记什么 —— 渲染层不自己推断 */
+    emitFromBackend({ type: 'phase', phase: 'executing' })
+    await Promise.resolve()
+    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.phase).toBe('executing')
+
+    emitFromBackend({ type: 'phase', phase: 'failed' })
+    await pending
+    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.phase).toBe('failed')
+  })
+
+  it('收到 aborted 事件后正常收尾（不卡在发送中）', async () => {
     const threadId = useAppStore.getState().activeThreadId
     const pending = runElectronTurn(threadId, 'hi', () => {})
     await Promise.resolve()
@@ -148,7 +164,7 @@ describe('runElectronTurn', () => {
     emitFromBackend({ type: 'aborted' })
     await pending
 
-    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.status).toBe('cancelled')
+    expect(useThreadStore.getState().sendingThreads).not.toContain(threadId)
   })
 
   it('done 之后订阅要取消掉，不留监听', async () => {

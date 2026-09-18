@@ -1,5 +1,80 @@
 # 更新日志
 
+## [0.58.0] — 2026-09-18 · AG-001 统一 Agent 生命周期
+
+按《Agent 使用流畅度优化开发需求》开始逐项改造。**AG-001 是第一项**，
+也是后面所有项的地基。
+
+### 改造前的问题
+
+**状态有两个来源，而且渲染层会自己推断。**
+
+```ts
+// 前端 turns.ts —— 发一条消息就自己宣布「在跑」
+app.setThreadStatus(threadId, 'running')
+// 结束再按事件类型自己猜：
+const map = { done: 'success', error: 'error', aborted: 'cancelled' }
+```
+
+后果是文档 §AG-001 写的那两条：UI 说在跑、后台可能已经停了；UI 显示失败、
+后台可能还在清理。而且 `ThreadStatus`（running/success/error/waiting）和
+`AgentPhase`（idle/thinking/…）是**两套并行状态**，各模块各读各的。
+
+### 改法：状态机是唯一真相源
+
+**新增 `electron/core/lifecycle.cjs`（213 行）**：
+
+- **13 个状态**，和文档 §2 一字不差：
+  `idle preparing thinking planning executing verifying responding completed
+   waiting_user paused retrying cancelled failed`
+- **合法转移表** —— 没列出来的转移一律拒绝。宁可转移时抛错，也不要状态悄悄跑偏
+  （那种 bug 只有用户能发现）。`executing → executing` 是有意的：一轮里会跑很多次工具
+- **终态出不去**：`completed` / `failed` / `cancelled` 之后再收到转移会被忽略并记一笔
+- `onTransition(fn)` 全局订阅 + `mark(phase, taskId)` 便捷打点
+
+**`loop.cjs` 驱动状态**（8 处）：任务开始 `preparing` → 调模型前 `thinking` →
+有工具调用 `executing` → 收尾 `verifying` → `responding` → `completed`；
+catch 里按 `aborted` 分到 `cancelled` / `failed`。
+
+**`handlers/chat.cjs` 转发事件**：`life.onTransition` → 推 `phase` 事件给渲染层
+（key 用 `taskId`，没有就退化成 `requestId`）；请求结束时退订 + `forget`，
+不然每发一条消息就多一个监听器。
+
+**渲染层只读**：
+
+- `streamEvents.ts` 加 `case 'phase'` —— 收到就记下，不自己算
+- **删掉两处自己推状态**：发消息时的 `setThreadStatus('running')`，
+  以及结束时按 `done/error/aborted` 猜 success/error/cancelled
+- 新增 `lib/agentPhase.ts`：`isActivePhase()` / `isTerminalPhase()` / `phaseLabel()`
+- **4 处 UI 从 `status === 'running'` 改成 `isActivePhase(phase)`**
+  （Composer / AppTitleBar / RightPanel / SuggestionChips）
+- 前端 `AgentPhase` 对齐成主进程那 13 个；老的
+  `searching/reading/writing/compacting` 删掉 —— 那些是**动作**不是**阶段**，
+  归 `executing` 期间的文字描述（AG-008 用 `phaseLabel` 说「正在读取相关文件…」）
+
+### 测试
+
+新增 `15-lifecycle.mjs`（39 项）：状态集、终态、转移规则、状态机行为、
+订阅通知、未知状态抛错、注册表。内核 572 → **611**。
+
+**变异验证**：
+- 允许非法转移直接放行 → 4 项红
+- 同状态重复也发事件 → 3 项红
+
+前端 219 → **220**（`turns.test.ts` 改成断言 `phase`，并新增一条
+「phase 只由主进程事件驱动」）。
+
+### 真机验证
+
+用假上游 slow 模式（每 5 秒一个 token）跑一轮：
+
+    停止按钮出现于 0ms，12 秒后仍在 ✓
+
+**这条验证是有分量的**：前端已经不再自己置 `running`，而按钮照样正确 ——
+说明主进程状态机的事件链路真的通了。
+
+---
+
 ## [0.57.2] — 2026-09-18 · 关掉虚拟滚动，超长对话不再飘
 
 0.57.1 修了「拉到底端抽搐」的三条反馈回路，但用户反馈**还是不行**：

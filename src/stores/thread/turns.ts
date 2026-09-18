@@ -76,7 +76,11 @@ export async function runElectronTurn(
     toolRuns: [],
   }
   app.addMessage(threadId, placeholder)
-  app.setThreadStatus(threadId, 'running')
+  /*
+   * AG-001：这里以前是 setThreadStatus(threadId, 'running') —— 渲染层自己宣布
+   * 「在跑了」。现在状态由主进程的状态机推（preparing/thinking/executing…），
+   * 前端只收 phase 事件。UI 与后台不一致的根源就在这一行。
+   */
 
   const requestId = uid('req')
   activeRequests.set(threadId, requestId)
@@ -164,19 +168,12 @@ export async function runElectronTurn(
     snapshot: () => ({ ...placeholder, content, reasoning, toolRuns, citations }),
     finish: () => {
       finish()
-      /* 状态由事件类型决定：done 成功、error 失败、aborted 取消 */
-      const map: Record<string, 'success' | 'error' | 'cancelled'> = {
-        done: 'success',
-        error: 'error',
-        aborted: 'cancelled',
-      }
-      const next = map[lastEventType] ?? 'success'
-      useAppStore.getState().setThreadStatus(threadId, next)
       /*
-       * 成功才跑后置任务（起标题、生成建议回复）——
-       * 失败/取消的对话没必要再花一次模型调用。
+       * AG-001：不再自己算 success/error/cancelled —— 主进程已经推了
+       * completed / failed / cancelled，渲染层只读 phase。
+       * 这里只需要知道「要不要跑后置任务」。
        */
-      if (next === 'success') void runPostTurnTasks(threadId)
+      if (lastEventType === 'done' || lastEventType === '') void runPostTurnTasks(threadId)
     },
   }
 
