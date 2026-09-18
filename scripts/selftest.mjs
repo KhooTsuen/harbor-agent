@@ -63,6 +63,7 @@ import { run as autoRecover } from './selftest/groups/25-autorecover.mjs'
 import { run as continueAfterFail } from './selftest/groups/26-continue.mjs'
 import { run as continuity } from './selftest/groups/27-continuity.mjs'
 import { run as fileCache } from './selftest/groups/28-filecache.mjs'
+import { run as contextCache } from './selftest/groups/29-contextcache.mjs'
 
 const GROUPS = [
   basics,
@@ -93,6 +94,7 @@ const GROUPS = [
   continueAfterFail,
   continuity,
   fileCache,
+  contextCache,
 ]
 
 async function main() {

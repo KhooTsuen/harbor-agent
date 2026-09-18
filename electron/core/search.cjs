@@ -12,6 +12,7 @@
  */
 
 const http = require('./http.cjs')
+const searchCache = require('./search-cache.cjs')
 const log = require('./log.cjs')
 
 const TIMEOUT_MS = 20_000
@@ -221,10 +222,23 @@ async function search(query, options) {
   const provider = PROVIDERS[id]
   const maxResults = Math.min(10, Math.max(1, Number(options.maxResults) || 5))
 
+  /*
+   * AG-020：同样的 provider + 查询词 + 数量 → 直接给缓存。
+   * 搜索走网络、部分 provider 还按次收费，重复搜同一个词是白花钱。
+   * 失效只有 TTL（10 分钟）—— 外部世界随时在变，我们没有 mtime 那种判据。
+   */
+  const cached = searchCache.get(id, text, maxResults)
+  if (cached.hit) {
+    log.info(`搜索「${text}」命中缓存（${Math.round((cached.age ?? 0) / 1000)}s 前的结果）`)
+    return cached.value
+  }
+
   log.info(`搜索「${text}」via ${provider.label}`)
 
   const results = await provider.run(text, { ...options, maxResults })
-  return results.filter((r) => r.url).slice(0, maxResults)
+  const out = results.filter((r) => r.url).slice(0, maxResults)
+  searchCache.put(id, text, maxResults, out, { source: provider.label })
+  return out
 }
 
 /** 把结果转成给模型看的文本 */
@@ -251,4 +265,4 @@ function formatResults(query, results) {
   return lines.join('\n')
 }
 
-module.exports = { search, formatResults, providerList, PROVIDERS }
+module.exports = { search, formatResults, providerList, PROVIDERS, searchCache }
