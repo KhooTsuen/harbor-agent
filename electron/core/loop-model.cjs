@@ -38,6 +38,8 @@ async function callModel(options) {
   }
 
   let lastError = null
+  /* AG-016：上下文超限只自动压一次（压完还超说明不是「历史长」而是「单条长」） */
+  let compacted = false
 
   for (let index = 0; index < candidates.length; index += 1) {
     const target = candidates[index]
@@ -68,6 +70,16 @@ async function callModel(options) {
         if (info.kind === 'aborted') throw error
         if (info.kind === 'context_overflow') {
           emit?.({ type: 'context_overflow', hint: info.hint })
+          /*
+           * AG-016：自动压缩一次再重试（文档策略表：ContextOverflow → Compact）。
+           * 只压一次 —— 压完还超限，说明不是「历史太长」而是「单条太长」，
+           * 那种再压也没用，直接报错让用户处理。
+           */
+          if (!compacted && Array.isArray(options.messages) && options.messages.length > 4) {
+            compacted = true
+            await compactMessages({ ...options, provider: target })
+            continue
+          }
           throw error
         }
         if (!errors.shouldRetry(info, attempt, fb)) break
@@ -147,6 +159,34 @@ async function reviewWithEvents({
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * AG-016：把历史压成一段摘要，**就地**换掉 `messages`。
+ *
+ * 就地改（`length = 0` + `push`）是为了让调用方看得见 —— `loop.cjs` 的
+ * `messages` 是同一个数组引用，下一轮直接用短的就行。
+ *
+ * 压缩自己也失败时不掩盖原来的错：记一条日志，让调用方照旧抛 context_overflow。
+ */
+async function compactMessages({ messages, provider, model, apiKey, chatPath, emit }) {
+  try {
+    const compact = require('./compact.cjs')
+    const summary = await compact.summarize({
+      baseUrl: provider.baseUrl,
+      apiKey,
+      chatPath: chatPath ?? provider.chatPath,
+      model,
+      messages,
+    })
+    const rebuilt = compact.rebuild(messages, summary)
+    messages.length = 0
+    messages.push(...rebuilt)
+    emit?.({ type: 'compacted', summary: summary.slice(0, 200), kept: rebuilt.length })
+    log.info(`上下文超限：已压缩到 ${rebuilt.length} 条消息`)
+  } catch (error) {
+    log.warn(`自动压缩失败：${error instanceof Error ? error.message : error}`)
+  }
 }
 
 /**

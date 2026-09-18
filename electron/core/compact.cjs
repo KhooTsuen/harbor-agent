@@ -119,10 +119,34 @@ function estimateHistoryTokens(messages) {
 /** 是否该压：历史 token 超过模型上限的这个比例 */
 const COMPACT_RATIO = 0.6
 
+/**
+ * AG-016：用摘要替掉旧的对话，留下系统提示和最近几条。
+ *
+ * 保留尾巴是有意的：摘要一定会丢细节，而「刚刚发生的事」往往还要接着用
+ * （刚读出来的文件内容、刚报的错、刚写的计划）。
+ */
+function rebuild(history, summary, keepTail = 6) {
+  const list = Array.isArray(history) ? history : []
+  const system = list.filter((m) => m.role === 'system')
+  const rest = list.filter((m) => m.role !== 'system')
+  return [
+    ...system,
+    { role: 'user', content: `【之前对话的摘要】\n${summary}` },
+    ...rest.slice(-keepTail),
+  ]
+}
+
 function shouldCompact(messages, maxTokens) {
   const used = estimateHistoryTokens(messages)
   const limit = Math.max(2000, Math.floor((maxTokens || 4096) * COMPACT_RATIO))
   return { needed: used > limit, used, limit }
 }
 
-module.exports = { summarize, estimateTokens, estimateHistoryTokens, shouldCompact, COMPACT_RATIO }
+module.exports = {
+  summarize,
+  rebuild,
+  estimateTokens,
+  estimateHistoryTokens,
+  shouldCompact,
+  COMPACT_RATIO,
+}
