@@ -16,6 +16,7 @@ const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
 const taskCore = require('./task.cjs')
 const errors = require('./errors.cjs')
+const { buildFailureNote } = require('./loop-prompt.cjs')
 const { isAborted } = require('./abort.cjs')
 
 /** 工具返回算不算成功 —— 全项目只有这一处判定 */
@@ -33,6 +34,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  */
 async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, emit, turn }) {
   let touchedFiles = false
+  /* AG-017：本轮的成败名单 —— 结尾要拿它给模型一句「进度对照」 */
+  const doneNames = []
+  const failures = []
   for (const call of toolCalls) {
     /*
      * AG-010：模型一轮可能给好几个 tool_call。用户在第 1 个执行中点停止时，
@@ -97,6 +101,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     }
 
     const ok = isToolOk(output)
+    if (ok) doneNames.push(call.name)
     const run = {
       id: call.id,
       name: call.name,
@@ -168,6 +173,22 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
           }`
         : output,
     })
+    if (info) failures.push({ name: call.name, hint: info.hint })
+  }
+
+  /*
+   * AG-017：本轮有失败 → 给模型一句「什么成了、什么败了」。
+   *
+   * 它明明能看到历史里的成功步骤，为什么还要写这一句？因为**历史会被压缩**
+   * （AG-016 的 ContextOverflow → Compact）：压完之后早期步骤只剩摘要里的
+   * 一句话，模型有可能会「保险起见从头再来」。任务台账在磁盘上、不受压缩影响，
+   * 所以在这里把进度再说一遍，并直说「成功的别重做」。
+   */
+  if (failures.length > 0) {
+    const note = buildFailureNote({ done: doneNames, failed: failures })
+    messages.push({ role: 'user', content: note })
+    /* 留个痕 —— 诊断时能确认这句话真的进了模型上下文（messages 不落盘） */
+    log.info(`失败后继续：已完成 ${doneNames.length} 步，失败 ${failures.length} 步`)
   }
 
   /* 这一轮真动过文件 → 打一个检查点（崩了从这裏恢复） */

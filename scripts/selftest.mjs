@@ -60,6 +60,7 @@ import { run as recovery } from './selftest/groups/22-recovery.mjs'
 import { run as approval } from './selftest/groups/23-approval.mjs'
 import { run as errorKinds } from './selftest/groups/24-errors.mjs'
 import { run as autoRecover } from './selftest/groups/25-autorecover.mjs'
+import { run as continueAfterFail } from './selftest/groups/26-continue.mjs'
 
 const GROUPS = [
   basics,
@@ -87,6 +88,7 @@ const GROUPS = [
   approval,
   errorKinds,
   autoRecover,
+  continueAfterFail,
 ]
 
 async function main() {
