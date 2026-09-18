@@ -117,9 +117,12 @@ export async function run() {
   const chatSrc = readFileSync(join(ROOT, 'electron/handlers/chat.cjs'), 'utf8')
   check('★ chat.cjs 在请求开始时 begin', chatSrc.includes('metrics.begin(phaseKey'))
   check(
-    '★ chat.cjs 每条事件都过 observe（不用各模块各插埋点）',
-    chatSrc.includes('metrics.observe(phaseKey, event)'),
+    '★ 每条事件都过 observe（AG-011 抽到 core/chat-emit.cjs 后仍然如此）',
+    readFileSync(join(ROOT, 'electron/core/chat-emit.cjs'), 'utf8').includes(
+      'metrics.observe(phaseKey, event)',
+    ),
   )
+  check('★ chat.cjs 用的是抽出来的 emitter', chatSrc.includes('createEmitter({'))
   check('★ chat.cjs 收尾时 finish', chatSrc.includes('metrics.finish(phaseKey)'))
   check(
     '★ 没配供应商那条提前返回的路径也 finish 了（不然内存里留一条）',

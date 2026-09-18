@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENT_ACTIONS, TOOL_LABELS, toolLabel } from '../agentActivity'
+import { isActivePhase } from '../agentPhase'
 import { summarizeArgs } from '../../stores/thread/parseToolOutput'
 
 /* ══════════════════════════════════════════════════════════════
@@ -107,9 +108,36 @@ describe('界面上的两处（源码守卫）', () => {
   })
 
   it('跑着的时候写了新消息，停止按钮会说清楚', () => {
-    const src = readFileSync(join(SRC, 'components', 'chat', 'Composer.tsx'), 'utf8')
-    expect(src).toContain('const hasContent =')
+    /* AG-011：按钮区抽到了 composer/SendControls.tsx */
+    const src = readFileSync(
+      join(SRC, 'components', 'chat', 'composer', 'SendControls.tsx'),
+      'utf8',
+    )
+    expect(src).toContain('hasContent')
     expect(src).toContain('想发这条新消息，得先停掉当前这条')
+  })
+})
+
+describe('暂停之后的界面状态（AG-011）', () => {
+  it('★ paused 不算「正在干活」—— 否则暂停后按钮不消失', () => {
+    expect(isActivePhase('paused')).toBe(false)
+  })
+
+  it('干活的阶段仍然算', () => {
+    expect(isActivePhase('executing')).toBe(true)
+    expect(isActivePhase('thinking')).toBe(true)
+    expect(isActivePhase('preparing')).toBe(true)
+  })
+
+  it('★ 等用户确认（waiting_user）仍算 —— 请求还活着，按钮得留着', () => {
+    expect(isActivePhase('waiting_user')).toBe(true)
+  })
+
+  it('终态和空闲都不算', () => {
+    expect(isActivePhase('completed')).toBe(false)
+    expect(isActivePhase('cancelled')).toBe(false)
+    expect(isActivePhase('idle')).toBe(false)
+    expect(isActivePhase(undefined)).toBe(false)
   })
 })
 

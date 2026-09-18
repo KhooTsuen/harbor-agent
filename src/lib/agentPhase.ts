@@ -17,6 +17,18 @@ const TERMINAL: readonly AgentPhase[] = ['completed', 'failed', 'cancelled']
 const IDLE: readonly AgentPhase[] = ['idle']
 
 /**
+ * 不在干活的几个阶段：空闲 / **暂停**。
+ *
+ * AG-011：`paused` 必须在这里。它原来是「不在 IDLE、也不在 TERMINAL」
+ * 就算活着 —— 于是用户暂停之后，界面一直显示「停止」按钮，
+ * 看起来像没停下来（真机测了 65 秒都没消失）。
+ *
+ * 注意 `waiting_user` **不**算停 —— 请求还在跑，只是在等你点确认，
+ * 那时候按钮得留着。
+ */
+const NOT_RUNNING: readonly AgentPhase[] = [...IDLE, 'paused']
+
+/**
  * 这个阶段算「正在干活」吗？
  *
  * 用来决定：显示「发送」还是「停止」、要不要禁用输入、状态栏转不转圈。
@@ -24,7 +36,7 @@ const IDLE: readonly AgentPhase[] = ['idle']
  */
 export function isActivePhase(phase?: AgentPhase): boolean {
   if (!phase) return false
-  return !IDLE.includes(phase) && !TERMINAL.includes(phase)
+  return !NOT_RUNNING.includes(phase) && !TERMINAL.includes(phase)
 }
 
 /** 阶段是不是已经结束了（三种结束方式之一） */

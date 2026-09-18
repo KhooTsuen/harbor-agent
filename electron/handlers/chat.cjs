@@ -13,7 +13,7 @@ const taskContext = require('../core/task-context.cjs')
 const life = require('../core/lifecycle.cjs')
 const bus = require('../core/events.cjs')
 const metrics = require('../core/metrics.cjs')
-const { createBatcher } = require('../core/stream-batch.cjs')
+const { createEmitter } = require('../core/chat-emit.cjs')
 const config = require('../core/config.cjs')
 const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
@@ -75,36 +75,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
      */
     metrics.begin(phaseKey, { requestTime: payload?.requestTime })
 
-    /*
-     * AG-002：所有事件先过统一总线（统一结构 + 环形缓冲 + agent.* 落盘），
-     * 再推给渲染层。这样 UI、日志、Task Center、诊断包看的是**同一份事件流**，
-     * 而不是各模块各自记一份。
-     */
-    /*
-     * AG-011：流式增量先过批处理器再出 IPC。
-     *
-     * 真机测出来主进程事件循环每被卡 5~14 秒（CPU 吃满、rss 198M 而 JS heap
-     * 只有 10~20M）—— 烧的不是 JS，是每 token 一条 `webContents.send` 的
-     * 跨进程投递。详见 `core/stream-batch.cjs` 的头注释。
-     */
-    const batcher = createBatcher({
-      send: (type, text) => send('chat:event', { requestId, type, text }),
-    })
-
-    const emit = (event) => {
-      const { type, ...payload } = event
-      bus.emit(type, payload, { taskId: phaseKey })
-      /* AG-003：让时间线认领六个时刻（首反馈 / 首个 token / 首次工具 / 结束） */
-      metrics.observe(phaseKey, event)
-
-      /* 正文和思考是增量 —— 攒起来；其余（工具/相位/错误/结束）立刻发，但先冲缓存 */
-      if ((type === 'content' || type === 'reasoning') && typeof event.text === 'string') {
-        batcher.put(type, event.text)
-        return
-      }
-      batcher.flush()
-      send('chat:event', { requestId, ...event })
-    }
+    /* 事件怎么出去（总线 + 时间线 + 批处理）全在 core/chat-emit.cjs 里 */
+    const { emit, flush } = createEmitter({ requestId, phaseKey, send })
 
     if (!provider) {
       emit({ type: 'error', message: '还没有配置供应商，去「设置 → 模型」里加一个' })
@@ -114,7 +86,12 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
     }
 
     const controller = new AbortController()
-    streams.set(requestId, controller)
+    /*
+     * AG-011：暂停请求挂在 entry 上。
+     * 「中断」（abort）和「暂停」（安全点停下）是两件事，这里各留一个口子。
+     */
+    const pause = { requested: false }
+    streams.set(requestId, { controller, pause })
 
     const confirm = (request) => askUser(requestId, request, emit)
 
@@ -139,12 +116,27 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
     /* 不 await：立刻返回，后面靠事件推 */
     void (async () => {
       try {
+        /* AG-011：带 resumeTaskId = 接着上次那条做（生命周期上是新一轮，
+           会发 agent.started，但用户视角是「恢复」，补一条 agent.resumed）。 */
+        if (payload?.resumeTaskId) {
+          emit({
+            type: 'agent.resumed',
+            phase: 'thinking',
+            detail: `继续任务 ${payload.resumeTaskId}`,
+          })
+        }
+
         const result = await loop.run({
           history,
           config: current,
           workdir,
           mode,
           signal: controller.signal,
+          /* AG-011：让循环能问「用户是不是请求暂停了」 */
+          controls: { pauseRequested: () => pause.requested },
+          /* AG-011：带这个就是「接着上次那条任务做」——循环会复用原任务，
+             而不是新建一条（不然「不重复已完成步骤」无从谈起） */
+          resumeTaskId: typeof payload?.resumeTaskId === 'string' ? payload.resumeTaskId : '',
           emit,
           confirm,
           /* 会话 id：审计、授权、任务记录都靠它串起来 */
@@ -196,7 +188,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
         }
       } finally {
         /* AG-011：最后一段增量还在缓存里 —— 不冲掉就永远看不见了 */
-        batcher.flush()
+        flush()
         /* AG-003：算 TTFT / 首次工具反馈 / 总耗时，发 metrics.timeline 事件 */
         metrics.finish(phaseKey)
         /* 退订状态转发 —— 不退的话每发一条消息就多一个监听器 */
@@ -243,17 +235,29 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
   /* ── 中断 ─────────────────────────────────────────────── */
 
   ipcMain.handle('chat:abort', (_event, requestId) => {
-    const controller = streams.get(requestId)
-    if (!controller) return { ok: false, error: '这个请求已经结束了' }
-    controller.abort()
+    const entry = streams.get(requestId)
+    if (!entry) return { ok: false, error: '这个请求已经结束了' }
+    entry.controller.abort()
     streams.delete(requestId)
 
-    for (const [id, entry] of pendingConfirms) {
-      if (entry.requestId === requestId) {
-        entry.resolve(false)
+    for (const [id, pending] of pendingConfirms) {
+      if (pending.requestId === requestId) {
+        pending.resolve(false)
         pendingConfirms.delete(id)
       }
     }
+    return { ok: true }
+  })
+
+  /* ── 暂停（AG-011）──────────────────────────────────────
+   * 和「中断」是两件事：abort 立刻断（正在跑的工具也一起杀），pause 是
+   * **先把手上这一步做完**再停。这里只置个标记，真正停在哪由 loop 每轮开头决定
+   * —— 那个位置的上一轮工具已全部跑完，才是「完成当前安全操作」的准确含义。
+   */
+  ipcMain.handle('chat:pause', (_event, requestId) => {
+    const entry = streams.get(requestId)
+    if (!entry) return { ok: false, error: '这个请求已经结束了' }
+    entry.pause.requested = true
     return { ok: true }
   })
 

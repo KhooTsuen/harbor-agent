@@ -55,6 +55,7 @@ import { run as metrics } from './selftest/groups/17-metrics.mjs'
 import { run as plan } from './selftest/groups/18-plan.mjs'
 import { run as abortTrace } from './selftest/groups/19-abort.mjs'
 import { run as streamBatch } from './selftest/groups/20-streambatch.mjs'
+import { run as resume } from './selftest/groups/21-resume.mjs'
 
 const GROUPS = [
   basics,
@@ -77,6 +78,7 @@ const GROUPS = [
   plan,
   abortTrace,
   streamBatch,
+  resume,
 ]
 
 async function main() {
