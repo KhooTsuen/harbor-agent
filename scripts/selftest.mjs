@@ -62,6 +62,7 @@ import { run as errorKinds } from './selftest/groups/24-errors.mjs'
 import { run as autoRecover } from './selftest/groups/25-autorecover.mjs'
 import { run as continueAfterFail } from './selftest/groups/26-continue.mjs'
 import { run as continuity } from './selftest/groups/27-continuity.mjs'
+import { run as fileCache } from './selftest/groups/28-filecache.mjs'
 
 const GROUPS = [
   basics,
@@ -91,6 +92,7 @@ const GROUPS = [
   autoRecover,
   continueAfterFail,
   continuity,
+  fileCache,
 ]
 
 async function main() {

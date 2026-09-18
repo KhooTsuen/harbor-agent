@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const { resolvePath, readTextFile, withLineNumbers, truncateMiddle } = require('./_shared.cjs')
+const fileCache = require('../file-cache.cjs')
 
 module.exports = {
   name: 'read_file',
@@ -19,7 +20,17 @@ module.exports = {
     const file = resolvePath(args.path, ctx.workdir, ctx)
     if (!fs.existsSync(file)) throw new Error(`文件不存在：${file}`)
 
-    const text = readTextFile(file)
+    /*
+     * AG-019：同一个文件、内容没变 → 用缓存，并在抬头里注明。
+     *
+     * 为什么**照样把内容给出去**（而不是只回一句「没变」）：历史可能被压缩
+     * （AG-016），压完之后旧内容就只剩摘要了 —— 那时候只回一句「没变」
+     * 等于让模型凭空相信一个它看不见的东西。
+     */
+    const cached = fileCache.get(file)
+    const text = cached.hit ? cached.content : readTextFile(file)
+    if (!cached.hit) fileCache.put(file, { content: text, source: 'read_file' })
+
     const lines = text.split('\n')
     const offset = Math.max(1, Number(args.offset) || 1)
     const limit = Math.min(4000, Math.max(1, Number(args.limit) || 400))
@@ -27,7 +38,7 @@ module.exports = {
 
     const shown = withLineNumbers(slice.join('\n'), offset)
     const more = offset - 1 + limit < lines.length
-    const header = `${file}（共 ${lines.length} 行）`
+    const header = `${file}（共 ${lines.length} 行${cached.hit ? '，与上次读取内容一致' : ''}）`
 
     return truncateMiddle(
       `${header}\n${shown}${more ? `\n…（还有 ${lines.length - (offset - 1 + limit)} 行，用 offset 继续读）` : ''}`,
