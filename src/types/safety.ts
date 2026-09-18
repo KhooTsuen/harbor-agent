@@ -108,9 +108,29 @@ export interface TaskRecord {
   changeSetId: string
   errors: Array<{ at: number; message: string }>
   result: string
+  /** AG-012：下一步要做的（计划里第一条没打勾的）—— 重启恢复时给用户看 */
+  nextAction?: string
+  /** AG-011/012：什么时候停的、恢复过几次 */
+  pausedAt?: number
+  resumeCount?: number
   createdAt: number
   updatedAt: number
   finishedAt: number
+}
+
+/**
+ * AG-012：一条「重启后可以接着做」的任务 —— 就是 TaskRecord 再**附加**三样
+ * 界面做决定需要的东西：停手后环境变没变、计划走到哪、能不能恢复。
+ *
+ * 直接基于 TaskRecord 扩展（而不是另写一份精简结构）是因为界面要用
+ * `steps` / `plan` / `planVersions` 渲染时间线和计划 —— 否则还得再拉一次。
+ */
+export type TaskRecoveryItem = TaskRecord & {
+  /** 停手之后被别的东西动过的文件 */
+  envChanged: string[]
+  /** 计划进度（内核现算的，免得前端再数一遍） */
+  progress: { done: number; total: number; current: number }
+  canResume: boolean
 }
 
 export interface ChangeSetSummary {
@@ -234,6 +254,8 @@ export interface SafetyBridge {
     tasks: TaskRecord[]
   }>
   taskUnfinished: () => Promise<{ ok: boolean; tasks: TaskRecord[] }>
+  /** AG-012：重启后的恢复清单（带「停在哪一步 / 哪些文件被动过 / 恢复过几次」） */
+  taskRecovery: () => Promise<{ ok: boolean; items: TaskRecoveryItem[] }>
   taskGet: (id: string) => Promise<{ ok: boolean; task: TaskRecord | null }>
   taskUpdate: (payload: { id: string; patch: Record<string, unknown> }) => Promise<{
     ok: boolean

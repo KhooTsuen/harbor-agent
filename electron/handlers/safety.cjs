@@ -15,6 +15,7 @@
 const audit = require('../core/audit.cjs')
 const capability = require('../core/capability.cjs')
 const task = require('../core/task.cjs')
+const recovery = require('../core/task-recovery.cjs')
 const changeset = require('../core/changeset.cjs')
 const credentials = require('../core/credentials.cjs')
 const config = require('../core/config.cjs')
@@ -98,6 +99,13 @@ function register({ ipcMain }) {
   }))
 
   ipcMain.handle('task:unfinished', () => ({ ok: true, tasks: task.unfinished() }))
+
+  /*
+   * AG-012：重启后的恢复清单。
+   * 比 task:unfinished 多带三样用户做决定需要知道的东西 —— 停在哪一步、
+   * 停手后哪些文件被动过、恢复过几次。**纯读**，不会自己跑任务。
+   */
+  ipcMain.handle('task:recovery', () => ({ ok: true, items: recovery.scan() }))
 
   ipcMain.handle('task:get', (_event, id) => ({ ok: true, task: task.get(String(id ?? '')) }))
 

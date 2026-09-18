@@ -124,8 +124,24 @@ export function TaskBanner() {
             <p className="text-dense text-fg-primary">有一条没干完的任务：{tasks[0].title}</p>
             <p className="mt-0.5 text-2xs text-fg-tertiary">
               已执行 {tasks[0].steps.length} 步 · 改了 {tasks[0].changedFiles.length} 个文件
+              {tasks[0].resumeCount ? ` · 恢复过 ${tasks[0].resumeCount} 次` : ''}
               {tasks.length > 1 ? ` · 另外还有 ${tasks.length - 1} 条` : ''}
             </p>
+
+            {/* AG-012：停在哪一步 + 环境变没变 —— 用户据这些决定「要不要接着做」 */}
+            {tasks[0].nextAction ? (
+              <p className="mt-0.5 text-2xs text-fg-secondary">下一步：{tasks[0].nextAction}</p>
+            ) : null}
+            {tasks[0].envChanged.length > 0 ? (
+              <p className="mt-0.5 text-2xs" style={{ color: 'var(--warning)' }}>
+                ⚠ 你离开之后 {tasks[0].envChanged.length} 个文件被改过（
+                {tasks[0].envChanged
+                  .slice(0, 2)
+                  .map((f) => f.split(/[\\/]/).pop())
+                  .join('、')}
+                ）—— 接着做之前它会先重读
+              </p>
+            ) : null}
             {/* AG-004：计划单独看得见（含版本历史），不再只给一个「N 步」的数字 */}
             <PlanCard versions={tasks[0].planVersions ?? []} />
             <ProgressTimeline phases={phases ?? []} steps={tasks[0].steps} plan={tasks[0].plan} />

@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
+import { useTaskStore } from '@/stores/useTaskStore'
 
 let bootstrapPromise: Promise<void> | null = null
 
@@ -44,6 +45,35 @@ async function bootstrap(): Promise<void> {
   }
 
   await preloadWorkspaceUi()
+
+  /*
+   * AG-012：如果上次有没做完的任务，**让用户知道**。
+   *
+   * 任务横幅只看当前会话（那是有意的 —— 以前把所有会话的都携在顶上，
+   * 用户报过「弹得太频繁」），所以重启后停在默认对话时，别的会话里的
+   * 未完成任务是看不到的。这里补一条**不抢焦点**的提示。
+   *
+   * ★ 只提示，**不自动接着跑** —— 文档里写着「不得直接盲目恢复执行」。
+   *   你完全可能刚改过它要动的文件。
+   */
+  try {
+    await useTaskStore.getState().refresh()
+    const pending = useTaskStore.getState().unfinished
+    if (pending.length > 0) {
+      const dirty = pending.filter((item) => item.envChanged.length > 0).length
+      useUIStore
+        .getState()
+        .showToast(
+          'info',
+          `上次有 ${pending.length} 条任务没做完`,
+          dirty > 0
+            ? `其中 ${dirty} 条要动的文件已经变过了 —— 点侧栏对话旁的黄点接着做`
+            : '点侧栏对话旁的黄点可以接着做',
+        )
+    }
+  } catch {
+    /* 恢复清单读不到不影响启动 */
+  }
 }
 
 export function useAppBootstrap(): boolean {

@@ -121,6 +121,8 @@ const api = {
 
   taskList: (options) => ipcRenderer.invoke('task:list', options),
   taskUnfinished: () => ipcRenderer.invoke('task:unfinished'),
+  /* AG-012：重启后的恢复清单 */
+  taskRecovery: () => ipcRenderer.invoke('task:recovery'),
   taskGet: (id) => ipcRenderer.invoke('task:get', id),
   taskUpdate: (payload) => ipcRenderer.invoke('task:update', payload),
   taskRemove: (id) => ipcRenderer.invoke('task:remove', id),

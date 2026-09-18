@@ -6,6 +6,7 @@ import type {
   CredentialsStatus,
   RiskVerdict,
   TaskRecord,
+  TaskRecoveryItem,
   WorkbenchBridge,
 } from '@/types/backend'
 
@@ -102,6 +103,21 @@ export async function taskUnfinished(): Promise<TaskRecord[]> {
   try {
     const result = await bridge.taskUnfinished()
     return result.tasks ?? []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * AG-012：重启后的恢复清单。
+ * 比 taskUnfinished 多带「停在哪一步 / 哪些文件被动过 / 恢复过几次」——
+ * 都是用户决定「要不要接着做」时该知道的事。
+ */
+export async function taskRecovery(): Promise<TaskRecoveryItem[]> {
+  if (!bridge?.taskRecovery) return []
+  try {
+    const result = await bridge.taskRecovery()
+    return result.items ?? []
   } catch {
     return []
   }

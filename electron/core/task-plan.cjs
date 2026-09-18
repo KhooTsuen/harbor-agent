@@ -92,4 +92,18 @@ function migrate(task) {
   return task
 }
 
-module.exports = { parsePlan, fingerprint, recordVersion, migrate }
+/**
+ * AG-012：计划里**第一条没打勾的** —— 就是「下一步要做的」。
+ *
+ * 存进任务记录（`task.nextAction`），重启之后不必把整份计划重新喂给模型，
+ * 就能直接告诉用户「它停在哪一步」。
+ */
+function nextActionOf(plan) {
+  const list = Array.isArray(plan) ? plan : []
+  const line = list.find((item) => !/^\s*\[[xX]\]/.test(String(item)))
+  if (line === undefined) return ''
+  return String(line)
+    .replace(/^\s*\[[ xX]\]\s*/, '')
+    .slice(0, 200)
+}
+module.exports = { parsePlan, fingerprint, recordVersion, migrate, nextActionOf }
