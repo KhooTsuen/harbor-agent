@@ -35,6 +35,28 @@ const sessionCore = require('./session.cjs')
  * ⚠️ 当前时间**不在这里** —— 它每轮都变，放这层会把整个提示的缓存前缀冲掉。
  * 见 `currentTimeSection()`。
  */
+/**
+ * AG-017：失败后的「进度对照」。
+ *
+ * 为什么在模型**明明能看到历史**的情况下还要写这个：
+ * **历史会被压缩**（AG-016 的 ContextOverflow → Compact）—— 压完之后
+ * 早期步骤只剩摘要里的一句话，细节就模糊了，那时候模型有可能会「保险起见
+ * 从头再来」。而任务台账在磁盘上、不受压缩影响，所以在这里把
+ * 「哪些成了、哪个败了」再明确说一遍，并且直说「成功的别重做」。
+ *
+ * 文档对这一条的描述：
+ *   Step 1 ✓ / Step 2 ✓ / Step 3 ✗ → 分析失败 → 调整 Step 3 → 继续
+ *   **禁止从 Step 1 重新开始**
+ */
+function buildFailureNote({ done = [], failed = [] } = {}) {
+  const lines = []
+  if (done.length > 0) lines.push(`本轮已完成：${done.join('、')}`)
+  for (const item of failed) lines.push(`失败：${item.name} —— ${item.hint || '原因不明'}`)
+  lines.push('请**针对失败的那一步调整做法**（换参数、换工具，或先把原因查清楚），')
+  lines.push('**已经成功的不必重做** —— 从失败的那一步接着往下走。')
+  return `[上一轮执行情况]\n${lines.join('\n')}`
+}
+
 function environmentSection({ workdir, assistantName = 'Agent' }) {
   return [
     `- 操作系统：${process.platform === 'win32' ? 'Windows' : process.platform}`,
@@ -189,4 +211,4 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   return { messages }
 }
 
-module.exports = { buildPromptContext }
+module.exports = { buildPromptContext, buildFailureNote }
