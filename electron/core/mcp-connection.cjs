@@ -10,6 +10,7 @@
  */
 
 const { spawn } = require('node:child_process')
+const { onAbort } = require('./abort.cjs')
 const log = require('./log.cjs')
 
 const PROTOCOL_VERSION = '2024-11-05'
@@ -177,20 +178,38 @@ class McpConnection {
     this.child.stdin.write(`${JSON.stringify(payload)}\n`)
   }
 
-  request(method, params, timeoutMs = CALL_TIMEOUT_MS) {
+  request(method, params, timeoutMs = CALL_TIMEOUT_MS, signal) {
     const id = this.nextId++
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let settled = false
+      /* 「谁先到算谁」：超时 / 中断 / 正常回包，只有第一个生效 */
+      const settle = (fn, value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
         this.pending.delete(id)
-        reject(new Error(`${method} 超时（${Math.round(timeoutMs / 1000)}s）`))
-      }, timeoutMs)
-      this.pending.set(id, { resolve, reject, timer })
+        off()
+        fn(value)
+      }
+      const timer = setTimeout(
+        () => settle(reject, new Error(`${method} 超时（${Math.round(timeoutMs / 1000)}s）`)),
+        timeoutMs,
+      )
+      /*
+       * AG-010：用户点停止就把这条挂着的请求撤掉。
+       * 不撤的话它要等满超时（默认几十秒）才回来 —— 期间 Stop 看起来「没反应」，
+       * 而且模型链路一直挂着。
+       */
+      const off = onAbort(signal, () => settle(reject, new Error('已被用户中断')))
+      this.pending.set(id, {
+        resolve: (value) => settle(resolve, value),
+        reject: (error) => settle(reject, error),
+        timer,
+      })
       try {
         this.send({ jsonrpc: '2.0', id, method, params })
       } catch (error) {
-        clearTimeout(timer)
-        this.pending.delete(id)
-        reject(error)
+        settle(reject, error)
       }
     })
   }
@@ -218,7 +237,7 @@ class McpConnection {
     return this.tools
   }
 
-  async call(toolName, args) {
+  async call(toolName, args, signal) {
     /*
      * 每个服务器可以有自己的超时。默认 60 秒 ——
      * 没有超时的外部进程调用会把整个 Agent 循环挂死，
@@ -228,6 +247,7 @@ class McpConnection {
       'tools/call',
       { name: toolName, arguments: args ?? {} },
       this.config.timeoutMs || DEFAULT_CALL_TIMEOUT_MS,
+      signal,
     )
 
     /* MCP 把工具输出放在 content 数组里，元素类型可能是 text / image / resource */

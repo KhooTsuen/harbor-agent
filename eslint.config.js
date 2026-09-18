@@ -4,7 +4,16 @@ import reactHooks from 'eslint-plugin-react-hooks'
 
 export default [
   {
-    ignores: ['dist/**', 'dist-portable/**', 'node_modules/**', 'electron/**', 'coverage/**'],
+    ignores: [
+      'dist/**',
+      'dist-portable/**',
+      'node_modules/**',
+      'electron/**',
+      'coverage/**',
+      /* 这两个是「复制一份打包产物出来试跑」的目录，里面是压缩后的成品代码 */
+      'tmp/**',
+      'test-env/**',
+    ],
   },
   {
     files: ['src/**/*.{ts,tsx}'],

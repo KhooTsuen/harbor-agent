@@ -13,6 +13,7 @@
 
 const http = require('./http.cjs')
 const log = require('./log.cjs')
+const { onAbort } = require('./abort.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
 const plugins = require('./plugins.cjs')
 
@@ -118,6 +119,16 @@ async function chatStream(options) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
 
+  /*
+   * AG-010：`signal` 传给了 fetch，但**打断不了已经在等的 `reader.read()`** ——
+   * 它要等上游把下一个 chunk 发过来才醒。模型思考时 chunk 间隔好几秒，
+   * 实测点了停止又拖了 8136ms 才进 cancelled（用户看到的是「停止没反应」）。
+   * 所以：中断时主动把流撤掉，让它立刻 done。
+   */
+  const offAbort = onAbort(signal, () => {
+    void reader.cancel().catch(() => {})
+  })
+
   let buffer = ''
   let content = ''
   let reasoning = ''
@@ -127,6 +138,11 @@ async function chatStream(options) {
   let finishReason = null
 
   for (;;) {
+    /* 快路径：上一个 chunk 处理完就已经断了，不必再等 reader */
+    if (signal?.aborted) {
+      offAbort()
+      throw new DOMException('aborted', 'AbortError')
+    }
     const { done, value } = await reader.read()
     if (done) break
 
@@ -195,6 +211,13 @@ async function chatStream(options) {
       }
     }
   }
+
+  offAbort()
+  /*
+   * `reader.cancel()` 会让上面那个 `read()` 立刻 done —— 那**不能当成正常收流结束**，
+   * 否则中断会被当成「上游返回了空内容」报出去。再查一次 signal，把真话抛出来。
+   */
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
 
   const toolCalls = [...toolCallMap.entries()]
     .sort((a, b) => a[0] - b[0])

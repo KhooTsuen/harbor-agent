@@ -1,5 +1,74 @@
 # 更新日志
 
+## [0.65.0] — 2026-09-19 · AG-010 真正能停（Stop 全链路）
+
+点「停止」以前只是**不显示**了 —— 正在跑的子进程、正在等的 MCP、正在读的模型流
+都还在跑。这次把 `AbortSignal` 一路接到了最底下，并且**用真机 + 落盘事件**证明：
+**停止之后不会再发起新的工具调用**。
+
+### 四个真缺口（都是真机抓出来的，不是推理出来的）
+
+1. **`run_shell` 中断后拖 29.6 秒**：`child.kill()` 只杀直接子进程（`cmd.exe`），
+   命令本体还在跑；而且 `exec` 的 callback 要等输出管道全部关掉才回调，工具迟迟不返回。
+   → 改成 **`killTree`（Windows `taskkill /T /F`）+ `createSettler` 抢先结算**（不等 callback）。
+   实测同一场景 **29650ms → 635ms**。
+
+2. **一轮里多个 tool_call 时，后面的照跑**：`loop-tools.cjs` 的循环里没有中断检查。
+   → 循环开头 `if (isAborted(ctx.signal))`：**没跑的工具也要补一条 tool 消息**，
+   否则下一轮请求 OpenAI 协议 400（tool_call 必须一一对应）。
+
+3. **`loop.cjs` 在「流读完 → 开始跑工具」之间没有检查**：真机抓到停止后 **2.7 秒**
+   仍然 `agent.tool.started` —— 用户恰好卡在这个缝里。→ 加闸。
+
+4. **`llm.cjs` 的 `reader.read()` 打断不了**：fetch 的 signal 管不到已经在等的读操作，
+   把停止拖了 8 秒（DeepSeek 思考时 chunk 间隔就是几秒）。
+   → `onAbort` 里 `reader.cancel()`；并且**收流结束后必须再查一次 signal**
+   （`cancel()` 会让 `read()` 快速 done，那是中断不是正常收流）。
+
+### 新增 `electron/core/abort.cjs`（唯一的中断原语）
+
+`isAborted` / `killTree` / `onAbort`（signal 已断则**立刻执行**，返回摘除函数）/
+`createSettler`（谁先到算谁）。`killTree` 故意用异步 `spawn` + `unref()` ——
+杀进程不值得再卡主进程，调用方要的是「立刻结算」不是「确认杀干净」。
+
+### 测试
+
+- 新增 `scripts/selftest/groups/19-abort.mjs`（内核 **769 → 777**）：`abort.cjs` 单元、
+  **真起 `ping -n 12` 然后中断**（断言 < 5 秒）、以及九组**源码接线守卫**。
+- 前端 272 项不变；`tsc` / `eslint` / `prettier` 全过；全仓 0 文件超 300 行。
+
+### 真机验证（打包版 + CDP 驱动 + `data/events/*.jsonl` 交叉验证）
+
+| 场景 | 停止后新增 `agent.tool.started` | `agent.cancelled` 延迟 |
+| --- | --- | --- |
+| 工具运行中（第 1 次） | **0 条** | 3.6s |
+| 工具运行中（第 2 次） | **0 条** | 11.2s |
+| 模型流式期间 | **0 条** | 6.9s |
+
+**验收条款「Stop 后 5 秒内不得再出现新 Tool Call」通过。**
+
+### 已知问题（这次挖出来但**没修**）
+
+**主进程事件循环会被阻塞 3.5 ~ 14 秒。** 证据：在 `main.cjs` 里挂 500ms 心跳，
+实测出现 `EVENTLOOP LAG 13989ms`；同时 `chat:abort` 这条 IPC **比用户点击晚 12.3 秒**
+才到达主进程，而一旦到达，`controller.abort()` → `onAbort` 只用了 **3ms**。
+也就是说 abort 链路本身是好的，**慢的是主进程根本没空处理 IPC**。
+
+其中相当一部分是**验证脚本自己造成的**（探针每 500ms 读一次 `document.body.innerText`，
+会强制整页重排）：换成轻量选择器后，同一个场景的最大 LAG 从 **13989ms 降到 3532ms**。
+剩下 3.5 秒的真实阻塞还没定位（`--cpu-prof` 在 Electron 里没产出 profile）。
+
+→ **建议作为下一项（AG-011）单独处理**：它同时是 AG-009「UI 不阻塞」的违反。
+
+### 顺手清理
+
+- 删掉根目录里被 git 跟踪的 `.probe-main.cjs`（9 月 16 日的临时探针，
+  第 55 行 `stack.split('
+')` 里的 `
+` 被 heredoc 变成了真换行，文件早就语法坏了）。
+- `eslint.config.js` 的 ignores 补上 `tmp/**` 与 `test-env/**` ——
+  这两个目录里放的是**复制出来的打包产物**，以前会让 eslint 报「解析错误」。
+
 ## [0.64.0] — 2026-09-19 · AG-009 Agent 工作期间 UI 不阻塞
 
 文档要求 Agent 执行期间用户仍然可以：切换线程 / 查看历史 / 打开设置 / 查看文件 /

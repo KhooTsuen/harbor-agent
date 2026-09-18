@@ -63,7 +63,9 @@ async function execute(name, args, ctx = {}) {
       }
     }
     try {
-      const result = await mcp.callTool(name, args ?? {})
+      /* AG-010：把中断信号一路带到 MCP 请求里 —— 否则 Stop 之后这条调用
+         要等满超时才回来 */
+      const result = await mcp.callTool(name, args ?? {}, ctx.signal)
       const text = result === null ? `错误：MCP 工具 ${name} 不在任何运行中的服务器上` : result
       auditCall(ctx, {
         tool: name,
