@@ -20,7 +20,6 @@ const log = require('../core/log.cjs')
 
 /** confirmId -> resolve，等渲染层点「允许/拒绝」 */
 const pendingConfirms = new Map()
-
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 
 function currentHistoryLimit() {
@@ -148,13 +147,14 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
            */
           traceId: phaseKey,
           /*
-           * 把未完成任务的台账注入提示（taskState 层）。
-           * 这个层以前一直空着：任务只活在界面上（侧栏黄点、横幅），
-           * 模型自己不知道还有没干完的活 —— 长对话里就是「目标漂移」。
+           * 把未完成任务的台账注入提示（taskState 层）—— 模型以前不知道
+           * 还有没干完的活，长对话里就是「目标漂移」。
            */
           taskState: taskContext.buildTaskState({
             sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
             taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
+            /* AG-018：把用户这句话也交给它 —— 说「继续」时要明确告诉他“这是接着做” */
+            userText: lastUserText(history),
           }),
           /*
            * 拿用户那句话当任务目标。
