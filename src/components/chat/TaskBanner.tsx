@@ -94,7 +94,15 @@ export function TaskBanner() {
    */
   const tasks = allTasks.filter((task) => task.sessionId === activeThreadId)
 
-  if (hidden || tasks.length === 0) return null
+  /*
+   * 这里原先是两句：
+   *   if (hidden || tasks.length === 0) return null
+   *   if (tasks.length === 0 && changesets.length === 0) return null
+   * 第二句永远走不到（第一句已经把 tasks 为空挡掉了）—— 于是「只有待回滚的改动、
+   * 没有未完成任务」时横幅整个不显示，那句「最近一次改动 · N 个文件」的回滚入口
+   * 就白做了。删掉第一句里的 tasks 判断。
+   */
+  if (hidden) return null
   if (tasks.length === 0 && changesets.length === 0) return null
 
   return (

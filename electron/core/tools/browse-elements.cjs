@@ -58,9 +58,9 @@ module.exports = {
     return '读实时页面上现在可交互的元素'
   },
 
-  async run() {
+  async run(_args, ctx = {}) {
     const browser = require('../../handlers/browser.cjs')
-    const result = await browser.request('snapshot', {})
+    const result = await browser.request('snapshot', {}, ctx.signal)
     if (!result.ok) {
       throw new Error(`${result.error}。先用 browse 打开一个网页，再让我读它的元素。`)
     }

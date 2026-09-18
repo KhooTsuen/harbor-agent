@@ -85,9 +85,13 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
         {thread?.title ?? '没有打开的对话'}
       </h1>
 
-      {/* 只在跑的时候出现，空着不动 —— 顶栏不该有恒定的装饰 */}
+      {/*
+        只在跑的时候出现，空着不动 —— 顶栏不该有恒定的装饰。
+        以前这里是 `hidden md:flex`（窄窗口就看不到活动），改成**总是显示**：
+        宽度不够时有 `min-w-0` + `truncate` + `max-w-[38vw]` 兜底，压到 0 也不会挤坏布局。
+      */}
       {sending ? (
-        <span className="hidden min-w-0 shrink items-center gap-1.5 truncate text-2xs text-fg-tertiary md:flex">
+        <span className="flex min-w-0 max-w-[38vw] shrink items-center gap-1.5 truncate text-2xs text-fg-tertiary">
           <Loader2 size={11} className="shrink-0 animate-spin" />
           <span className="truncate">{activity}</span>
         </span>

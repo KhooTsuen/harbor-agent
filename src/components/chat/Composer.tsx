@@ -91,7 +91,12 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const tooLong = input.length >= MAX_INPUT_LENGTH
   /* 光贴一张图不写字也该能发 —— 截图提问是很常见的用法 */
   const hasImages = useThreadStore((s) => s.inputImages.length > 0)
-  const canSend = !sending && (trimmed.length > 0 || hasImages) && !tooLong
+  /*
+   * 「写了东西」和「能发」是两回事：跑着的时候写了东西也发不出去（下面按钮会变成停止）。
+   * 拆开是因为要拿 hasContent 给停止按钮做提示 —— AG-009 留下的「用户以为按钮坏了」。
+   */
+  const hasContent = trimmed.length > 0 || hasImages
+  const canSend = !sending && hasContent && !tooLong
 
   /* 补全菜单：打 / 出命令，打 @ 出文件 */
   const options = (() => {
@@ -242,7 +247,9 @@ export function Composer({ onFocusRequest }: ComposerProps) {
               />
 
               {sending ? (
-                <Tooltip content="停止生成">
+                <Tooltip
+                  content={hasContent ? '停止生成（想发这条新消息，得先停掉当前这条）' : '停止生成'}
+                >
                   <IconButton
                     label="停止生成"
                     size={32}

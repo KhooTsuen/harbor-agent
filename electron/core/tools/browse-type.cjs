@@ -59,7 +59,7 @@ module.exports = {
     const pressEnter = Boolean(args?.pressEnter)
 
     const browser = require('../../handlers/browser.cjs')
-    let result = await browser.request('type', { index, text, pressEnter })
+    let result = await browser.request('type', { index, text, pressEnter }, ctx?.signal)
 
     /*
      * 一旦确认这是密码框，**立刻**把这个值登记成「已知密钥」：
@@ -82,7 +82,11 @@ module.exports = {
         summary: `要在「密码框」里输入 ${text.length} 个字符。\n内容不会显示在对话里，也不会写进记录。确认是你授权的吗？`,
       })
       if (!approved) return '你拒绝了往密码框里输入，那就没填。'
-      result = await browser.request('type', { index, text, pressEnter, authorized: true })
+      result = await browser.request(
+        'type',
+        { index, text, pressEnter, authorized: true },
+        ctx?.signal,
+      )
     }
 
     if (!result.ok) throw new Error(result.error)

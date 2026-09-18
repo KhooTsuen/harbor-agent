@@ -55,6 +55,33 @@ export function verbOf(name: string): string {
 }
 
 /**
+ * 工具名 → 人话（名词形式）。
+ *
+ * 时间线的「动作行」是给人看的，显示 `list_dir` 等于没显示（AG-005 留下的已知问题）。
+ * 和 `AGENT_ACTIONS` 分开是因为**用途不同**：那边是「动词 + 量词」拿来拼句子
+ * （「正在读取 main.ts」、「读取 5 个文件」），这边是一个能独立站住的名词短语。
+ */
+export const TOOL_LABELS: Record<string, string> = {
+  read_file: '读取文件',
+  write_file: '写入文件',
+  edit_file: '修改文件',
+  list_dir: '查看目录',
+  run_shell: '运行命令',
+  search_web: '联网搜索',
+  remember: '记入长期记忆',
+  browse: '打开网页',
+  browse_elements: '读取页面元素',
+  browse_click: '点击页面元素',
+  browse_type: '填写页面输入',
+  generate_image: '生成图片',
+}
+
+/** 工具名的人话；没收录的返回原名（不编） */
+export function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? name
+}
+
+/**
  * 正在跑的那条工具记录。
  *
  * 判据和 ToolRuns.tsx 一致：**还没有 result 也没有耗时**就是还在跑 ——
