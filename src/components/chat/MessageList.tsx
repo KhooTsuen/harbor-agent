@@ -31,7 +31,15 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   const pinnedRef = useRef(true)
   const [scrollTop, setScrollTop] = useState(0)
   const count = messages.length
-  const useWindowing = messages.length > 80
+  /*
+   * 虚拟滚动暂时关掉（阈值提到不可能达到）。
+   *
+   * 原来的实现用固定 150px 估算每条高度，但真实消息高度能差几十倍 ——
+   * 超长对话一滚就飘。要么老老实实用「逐条实测高度 + 绝对定位占位」重写，
+   * 要么就别虚拟滚动：385 条全渲染的代价是初始渲染慢一点，但滚动是
+   * CSS 原生滚动，不会飘。先全渲染，等单个对话真的长到会卡再重写。
+   */
+  const useWindowing = messages.length > 1_000_000
   const estimatedHeight = 150
   /* 多渲染几条 —— 窗口切换得越少，底下那个「改 DOM 高度 → 修正 scrollTop」的循环越不容易被触发 */
   const overscan = 16
