@@ -15,6 +15,7 @@
 const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
 const taskCore = require('./task.cjs')
+const { isAborted } = require('./abort.cjs')
 
 /**
  * @param {{ toolCalls: Array, ctx: object, options: object, messages: Array,
@@ -23,8 +24,22 @@ const taskCore = require('./task.cjs')
  */
 async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, emit, turn }) {
   let touchedFiles = false
-
   for (const call of toolCalls) {
+    /*
+     * AG-010：模型一轮可能给好几个 tool_call。用户在第 1 个执行中点停止时，
+     * 剩下的**不许再发起** —— 文档验收就是「Stop 后 5 秒内不得继续出现新的
+     * Agent Tool Call」。但每个 tool_call 都要补一条 tool 消息：OpenAI 协议
+     * 要求一一对应，缺了下一轮请求会被 400，模型也会以为工具还没回话。
+     */
+    if (isAborted(ctx.signal)) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: call.id,
+        content: '用户中断了这次执行，这个工具没有运行。',
+      })
+      continue
+    }
+
     let args = {}
     try {
       args = call.arguments ? JSON.parse(call.arguments) : {}

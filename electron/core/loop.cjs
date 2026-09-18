@@ -23,7 +23,6 @@ const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute } = require('./loop-route.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-
 const MAX_TURNS = 25
 
 /* ══════════════════════════════════════════════════════════
@@ -129,9 +128,9 @@ async function runLoop(options) {
     options,
   })
 
+  /* 审计 / 授权 / 任务都靠下面这几个 id 串起来 */
   const ctx = {
     workdir,
-    /* 审计 / 授权 / 任务都靠这几个 id 串起来 */
     sessionId: options.sessionId ?? '',
     taskId: options.taskId ?? '',
     changeSetId: options.changeSetId ?? '',
@@ -256,6 +255,9 @@ async function runLoop(options) {
         toolRuns,
       }
     }
+
+    /* AG-010：读流结束到开始执行工具之间也要查中断（真机：停止后 2.7 秒仍发起新工具） */
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
 
     /* ── 有工具调用：把 assistant 这条带 tool_calls 的消息存进历史 ── */
     life.mark('executing', traceKey(options))

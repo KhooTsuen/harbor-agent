@@ -89,12 +89,12 @@ function listTools() {
 }
 
 /** 按完整名调用；名字不是 MCP 工具时返回 null（交给本地工具处理） */
-async function callTool(fullName, args) {
+async function callTool(fullName, args, signal) {
   for (const conn of connections.values()) {
     const tool = conn.tools.find((t) => t.fullName === fullName)
     if (!tool) continue
     if (!conn.alive) throw new Error(`MCP 服务器「${conn.id}」不在运行`)
-    return await conn.call(tool.name, args)
+    return await conn.call(tool.name, args, signal)
   }
   return null
 }

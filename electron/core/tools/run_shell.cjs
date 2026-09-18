@@ -1,5 +1,6 @@
 const { exec } = require('node:child_process')
 const { truncateMiddle } = require('./_shared.cjs')
+const { createSettler, killTree, onAbort } = require('../abort.cjs')
 
 /** 明显会毁掉人的命令，直接拒掉 */
 const DANGEROUS = [
@@ -49,7 +50,22 @@ module.exports = {
     const timeoutSec = Math.min(600, Math.max(5, Number(args.timeout) || ctx.shellTimeout || 60))
 
     return await new Promise((resolve) => {
-      const child = exec(
+      const finish = createSettler(resolve)
+      /* 先声明再挂监听：onAbort 在 signal 已经断掉时会立刻触发，
+         那时 child 还是 null —— killTree(null) 是安全的，这条顺序能兜住 */
+      let child = null
+      const off = onAbort(ctx.signal, () => {
+        killTree(child)
+        /*
+         * AG-010：**不等 exec 的 callback**。
+         * callback 要等输出管道关掉才来 —— 实测中断之后又等了 29.6 秒
+         * （命令自己跑完），等于用户点了停止还得瞪半分钟。
+         * 进程已经交给 killTree 了，这里立刻把 Promise 结掉。
+         */
+        finish('[已被用户中断，这条命令的子进程已经终止]')
+      })
+
+      child = exec(
         command,
         {
           cwd,
@@ -60,6 +76,7 @@ module.exports = {
           shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
         },
         (error, stdout, stderr) => {
+          off()
           const parts = []
           const out = String(stdout ?? '').trimEnd()
           const err = String(stderr ?? '').trimEnd()
@@ -75,21 +92,8 @@ module.exports = {
             parts.push('[退出码 0]')
           }
 
-          resolve(truncateMiddle(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT))
+          finish(truncateMiddle(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT))
         },
-      )
-
-      /* 用户中途中断时，把这个子进程也带走 */
-      ctx.signal?.addEventListener(
-        'abort',
-        () => {
-          try {
-            child.kill()
-          } catch {
-            /* 已经退出了 */
-          }
-        },
-        { once: true },
       )
     })
   },
