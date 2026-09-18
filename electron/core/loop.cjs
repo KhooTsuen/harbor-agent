@@ -130,7 +130,6 @@ async function runLoop(options) {
     options,
   })
 
-  /* 审计 / 授权 / 任务都靠下面这几个 id 串起来 */
   const ctx = {
     workdir,
     sessionId: options.sessionId ?? '',
@@ -153,6 +152,7 @@ async function runLoop(options) {
     signal,
     confirm,
     log,
+    granted: new Map() /* AG-013：「允许本次」的批准时刻，见 tools/approval.cjs */,
   }
 
   let totalUsage = null

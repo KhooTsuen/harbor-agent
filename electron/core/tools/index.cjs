@@ -13,6 +13,7 @@
  */
 
 const mcp = require('../mcp.cjs')
+const approvals = require('./approval.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
 const registry = require('./registry.cjs')
@@ -44,7 +45,7 @@ async function execute(name, args, ctx = {}) {
       return `错误：当前是「只读」权限，MCP 工具（外部进程）被拒绝。需要在设置里放宽权限。`
     }
     if (ctx.permission !== 'full' && typeof ctx.confirm === 'function') {
-      approval = await ctx.confirm({
+      approval = await approvals.ask(ctx, {
         kind: 'mcp',
         name,
         args,
@@ -142,7 +143,7 @@ async function execute(name, args, ctx = {}) {
         })
         return `错误：这条命令需要用户确认（${label}），但当前没有可确认的界面，按拒绝处理。`
       }
-      const approved = await ctx.confirm({
+      const approved = await approvals.ask(ctx, {
         kind: 'risk',
         name,
         args,
@@ -199,7 +200,7 @@ async function execute(name, args, ctx = {}) {
     /* ask 档：确认；full 档：只读+低风险的 shell 不打扰，写文件也不打扰 */
     const needAsk = ctx.permission === 'ask'
     if (needAsk) {
-      approval = await ctx.confirm({ kind: 'write', name, args, summary })
+      approval = await approvals.ask(ctx, { kind: 'write', name, args, summary })
       if (approval !== true) {
         auditCall(ctx, {
           tool: name,

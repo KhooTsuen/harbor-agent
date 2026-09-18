@@ -159,13 +159,37 @@ export function handleStreamEvent(
     case 'confirm_request': {
       const confirmId = String(event.confirmId ?? '')
       const toolName = String(event.toolName ?? '操作')
+      const kind = String(event.kind ?? '')
+      const risk = (event.risk ?? null) as { level?: string } | null
+      const high = risk?.level === 'high'
+
+      /*
+       * AG-013：把「要不要允许」说成人话，并且**说清「本次」的范围**。
+       * 以前的标题是「模型请求执行：run_shell」—— 那是内部名字，
+       * 用户既看不懂、也不知道批了之后会发生什么。
+       */
+      const KIND_TEXT: Record<string, string> = {
+        write: '修改文件',
+        mcp: '调用外部工具',
+        risk: '执行命令',
+        path: '访问工作目录之外的文件',
+      }
+      /* 和 core/tools/approval.cjs 的 REMEMBERED 保持一致 */
+      const remembered = kind === 'write' || kind === 'mcp'
 
       useUIStore.getState().askPermission({
         kind: 'run-command',
-        title: `模型请求执行：${toolName}`,
-        description: String(event.summary ?? ''),
-        confirmText: '允许',
-        danger: true,
+        title: high
+          ? `⚠ 高风险：${KIND_TEXT[kind] ?? toolName}`
+          : `Agent 准备${KIND_TEXT[kind] ?? `执行 ${toolName}`}`,
+        description: [
+          String(event.summary ?? ''),
+          remembered ? '同意后，**本轮**内同类操作不再询问。' : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        confirmText: '允许本次',
+        danger: high,
         onConfirm: () => void confirmChat(confirmId, true),
         /* 关掉弹窗也算拒绝 —— 不回话的话主进程会一直等到超时 */
         onCancel: () => void confirmChat(confirmId, false),

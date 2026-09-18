@@ -8,6 +8,7 @@
 
 const audit = require('../audit.cjs')
 const capability = require('../capability.cjs')
+const approvals = require('./approval.cjs')
 const { FILE_WRITERS } = require('./registry.cjs')
 
 /**
@@ -23,7 +24,7 @@ async function runWithPathPermission(tool, args, ctx) {
     if (error?.code !== 'PERMISSION_REQUIRED') throw error
     if (typeof ctx.confirm !== 'function') return `错误：${error.message}`
 
-    const approved = await ctx.confirm({
+    const approved = await approvals.ask(ctx, {
       kind: 'path',
       name: tool.name,
       args,
