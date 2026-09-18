@@ -12,6 +12,7 @@ const loop = require('../core/loop.cjs')
 const taskContext = require('../core/task-context.cjs')
 const life = require('../core/lifecycle.cjs')
 const bus = require('../core/events.cjs')
+const metrics = require('../core/metrics.cjs')
 const config = require('../core/config.cjs')
 const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
@@ -67,6 +68,13 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
     const phaseKey = (typeof payload?.taskId === 'string' && payload.taskId) || requestId
 
     /*
+     * AG-003：开始记这条任务的时间线。
+     * `requestTime` 由渲染层带过来 —— 那才是「用户按下发送」的时刻，
+     * 拿主进程收到 IPC 的时间会少算一段网络/调度延迟。
+     */
+    metrics.begin(phaseKey, { requestTime: payload?.requestTime })
+
+    /*
      * AG-002：所有事件先过统一总线（统一结构 + 环形缓冲 + agent.* 落盘），
      * 再推给渲染层。这样 UI、日志、Task Center、诊断包看的是**同一份事件流**，
      * 而不是各模块各自记一份。
@@ -74,11 +82,15 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
     const emit = (event) => {
       const { type, ...payload } = event
       bus.emit(type, payload, { taskId: phaseKey })
+      /* AG-003：让时间线认领六个时刻（首反馈 / 首个 token / 首次工具 / 结束） */
+      metrics.observe(phaseKey, event)
       send('chat:event', { requestId, ...event })
     }
 
     if (!provider) {
       emit({ type: 'error', message: '还没有配置供应商，去「设置 → 模型」里加一个' })
+      /* 这条路径不经过下面的 finally，得自己收尾，不然时间线留在内存里 */
+      metrics.finish(phaseKey)
       return { ok: false, error: '没有配置供应商' }
     }
 
@@ -164,6 +176,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           log.error(`对话失败：${message}`)
         }
       } finally {
+        /* AG-003：算 TTFT / 首次工具反馈 / 总耗时，发 metrics.timeline 事件 */
+        metrics.finish(phaseKey)
         /* 退订状态转发 —— 不退的话每发一条消息就多一个监听器 */
         offPhase()
         life.forget(phaseKey)

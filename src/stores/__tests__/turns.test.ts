@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   listeners: [] as Array<(event: Record<string, unknown>) => void>,
-  sent: null as { requestId: string } | null,
+  sent: null as { requestId: string; requestTime?: number } | null,
   abortCalled: 0,
 }))
 
@@ -31,7 +31,7 @@ vi.mock('@/lib/backend', async (importOriginal) => {
         if (index >= 0) h.listeners.splice(index, 1)
       }
     },
-    sendChat: async (payload: { requestId: string }) => {
+    sendChat: async (payload: { requestId: string; requestTime?: number }) => {
       h.sent = payload
       return { ok: true, requestId: payload.requestId }
     },
@@ -165,6 +165,32 @@ describe('runElectronTurn', () => {
     await pending
 
     expect(useThreadStore.getState().sendingThreads).not.toContain(threadId)
+  })
+
+  it('★ AG-003：按下发送那一瞬就置上 sendingThreads（不等 IPC 回来）', async () => {
+    const threadId = useAppStore.getState().activeThreadId
+    h.sent = null
+    /* 传真的 set（生产里 useThreadStore 传的就是它）—— 空函数不会更新 store，断言就没意义了 */
+    void runElectronTurn(threadId, 'hi', useThreadStore.setState)
+
+    /*
+     * 这条断言的是**顺序**，不是时序。
+     *
+     * `runElectronTurn` 是 async，但从函数头到 `sendingThreads` 那一行之间
+     * **一个 await 都没有**（已用测试钉住），所以它同步跑完这一段才让出执行权。
+     * 也就是说：在 `void runElectronTurn(...)` 的下一行检查，就等于
+     * 「主进程收到 IPC 之前」—— 那一刻 sendingThreads 必须已经置上了。
+     *
+     * 没有它，用户按完发送到收到第一个 `agent.started` 之间会面对一个
+     * 毫无反应的界面。为什么不在真机上测：React 18 批处理状态更新，
+     * 点完按钮那一刻 DOM 本来就没变，靠 DOM 时序区分不了「本地生效」和
+     * 「主进程已回」。
+     */
+    expect(useThreadStore.getState().sendingThreads).toContain(threadId)
+
+    await vi.waitFor(() => expect(h.sent).not.toBeNull())
+    const sent = h.sent as { requestTime?: number } | null
+    expect(sent?.requestTime).toBeGreaterThan(0)
   })
 
   it('done 之后订阅要取消掉，不留监听', async () => {

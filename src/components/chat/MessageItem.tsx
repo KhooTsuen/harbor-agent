@@ -11,6 +11,7 @@ import { AssistantActions } from './message/AssistantActions'
 import { TerminalOutput } from './TerminalOutput'
 import { ThinkBlock } from './ProcessBlocks'
 import { ToolRunList } from './ToolRuns'
+import { phaseLabel } from '@/lib/agentPhase'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
@@ -144,7 +145,12 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
               ) : isStreaming ? (
                 <p className="flex items-center gap-2 text-sm text-fg-secondary">
                   <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
-                  正在处理…
+                  {/*
+                    AG-003：按下发送就要有反馈，而且要说清现在在干什么。
+                    阶段文字来自主进程的状态机（AG-001 的 phase），
+                    还没收到第一个 phase 事件时退回一句通用的。
+                  */}
+                  {phaseLabel(message.phase) || '正在处理…'}
                 </p>
               ) : null}
 

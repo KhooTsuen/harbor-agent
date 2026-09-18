@@ -224,12 +224,9 @@ export type ChatEvent =
       message: string
     }
   | { requestId: string; type: 'error'; message: string }
-  /*
-   * AG-001 + AG-002：生命周期事件。状态机每次转移推一条，事件名用标准名
-   * （agent.started / agent.thinking / agent.verification.completed …），
-   * **每条都带 phase** —— 前端只读 phase 字段、不解析事件名，将来改名不影响渲染层。
-   * executing / responding 没有标准名，用 'phase' 发（它们是执行细节）。
-   */
+  /* AG-001 + AG-002：生命周期事件。状态机每次转移推一条，事件名用标准名，
+     **每条都带 phase** —— 前端只读 phase、不解析事件名，将来改名不影响渲染层。
+     executing / responding 没有标准名，用 'phase' 发（它们是执行细节）。 */
   | {
       requestId: string
       type:
@@ -255,6 +252,8 @@ export type ChatEvent =
 /** 发出去的消息：带图时 content 是数组（多模态），否则是字符串 */
 export interface ChatSendPayload {
   requestId: string
+  /** AG-003：用户按下发送的时刻（渲染层带过来，主进程据此算 TTFT 等） */
+  requestTime?: number
   mode?: string
   model?: string
   /** 这条会话自己的工作目录（不传就用全局默认） */
