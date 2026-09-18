@@ -1,5 +1,97 @@
 # 更新日志
 
+## [0.59.0] — 2026-09-18 · AG-002 统一 Event Bus
+
+AG-001 把「状态」收到了一处，AG-002 把「事件」也收到一处。
+
+### 改造前的问题
+
+事件由各模块自己 `send('chat:event', {...})`，名字各起各的：
+
+    loop-tools.cjs   tool_start / tool_end
+    loop-model.cjs   review
+    loop-route.cjs   mode / route
+    loop.cjs         turn_start / content / reasoning / plan / turn_end
+    chat.cjs         done / aborted / error / confirm_request / phase
+
+想回答「这一轮到底发生过什么」，得挨个模块翻；诊断包、日志、UI 各记一份，
+口径还可能不一样。文档 AG-002 要的就是「**一个来源、一套名字**」。
+
+### 改法
+
+**新增 `electron/core/events.cjs`（216 行）**：
+
+- **16 个标准事件名**，和文档 AG-002 一字不差（`agent.started` / `agent.thinking` /
+  `agent.planning` / `agent.tool.*` / `agent.verification.*` / `agent.waiting_user` /
+  `agent.retrying` / `agent.paused` / `agent.resumed` / `agent.cancelled` /
+  `agent.completed` / `agent.failed`）
+- **统一结构** `{eventId, taskId, timestamp, type, payload}`
+- **相位映射表** `PHASE_TO_EVENT` —— 状态机怎么转移，事件就怎么发。
+  两条要看「从哪来」的：离开 `verifying` 进 `responding` = 验证通过；
+  从 `paused` 出去 = 恢复
+- **环形缓冲**（最近 300 条）—— 进程内的 UI / 日志 / Task Center 读同一份
+- **`agent.*` 落盘** `data/events/YYYY-MM-DD.jsonl`（过 `redact.scrub`），诊断包读得到
+- 事件系统是**旁路**：订阅者抛错、落盘失败都只丢一条 warn，不影响聊天
+
+**接线**：
+- `loop-tools.cjs`：`tool_start`/`tool_end` → `agent.tool.started` /
+  `agent.tool.completed` / `agent.tool.failed`（**成败写进事件名**，前端不用再读 ok）
+- `chat.cjs`：所有事件先过总线再推渲染层；相位事件名由 `eventForTransition` 决定
+  （**不现编字符串**），每条带 `phase` 字段
+- 渲染层：`isLifecycleEvent()` 前缀判断（`agent.*` 但排除 `agent.tool.*`），
+  只读 `phase` 字段 —— 将来事件改名不影响渲染层
+
+**流式增量（content / reasoning）有意不落盘**：一条长回答几万个增量，
+全写盘会写爆磁盘，而且它们只是传输细节，没有审计价值。
+
+### ★ 顺手抓出一个真 bug：AG-001 的状态事件从来没到过前端
+
+真机验完发现 `data/events/*.jsonl` 里**只有 `agent.tool.*`，一条 `agent.started` 都没有**。
+
+根因：`loop.run()` 内部把 key 换了 ——
+
+```js
+const result = await runLoop({ ...options, taskId: task.id, changeSetId })
+```
+
+`runLoop` 用 `options.taskId` 当状态事件的 key，而那个值此时已经是**任务台账 id**
+（`task_xxx`）；`chat.cjs` 订阅时过滤用的是自己的 key（`requestId`，`req_xxx`）——
+**两边永远对不上，每一次转移都被 `if (e.taskId !== phaseKey) return` 滤掉**。
+
+表现就是「UI 一直显示空闲，后台其实在跑」—— 正是 AG-001 要消灭的那种不一致，
+只不过换了个方向。**测试全绿也照不出来**（两边单独都对，是接线错了）。
+
+修：事件流单独用 `traceId`（谁发起请求谁定 key），和任务台账 id 分开；
+`loop.cjs` 里所有 `life.mark` 走 `traceKey(options)`。
+
+**顺带承认**：0.58.0 那条「停止按钮出现于 0ms」的验证**是假阳性** ——
+当时用的假上游太慢，我看到的其实是「继续」按钮那个位置的另一个按钮（同名不同处），
+没做交叉验证就下了结论。这次改成直接查落盘的事件文件，才算真验证。
+
+### 测试
+
+新增 `16-events.mjs`（42 项）：标准名逐字对照文档、映射表不许现编名字、
+转移→事件（含两条特殊规则）、结构、订阅与退订、订阅者抛错不影响别人、
+环形缓冲上限、**只有 agent.* 落盘**、**落盘过脱敏**、以及接线守卫
+（`eventForTransition` / `agent.tool.*` 标准名 / `traceKey` / `traceId`）。
+内核 611 → **656**。
+
+**变异验证**（证明断言有效）：
+- `persist` 改成全落盘 → 「流式增量不落盘」红
+- 摘掉 `verifying→responding` 规则 → 对应的断言红
+- `loop-tools.cjs` 改回 `tool_end` → 2 项红
+
+### 真机验证
+
+    data/events/2026-09-18.jsonl
+      agent.started → agent.thinking → phase（executing）
+      → agent.tool.started ×3 → agent.tool.completed ×3
+      → agent.verification.started → agent.verification.completed → agent.completed
+
+    0 条 content / 0 条 reasoning（流式增量确实没落盘）
+
+---
+
 ## [0.58.0] — 2026-09-18 · AG-001 统一 Agent 生命周期
 
 按《Agent 使用流畅度优化开发需求》开始逐项改造。**AG-001 是第一项**，

@@ -33,6 +33,17 @@ export interface StreamState {
 }
 
 /**
+ * AG-002：生命周期事件用的是标准名（`agent.*`），而且**每条都带 phase 字段**。
+ *
+ * 判断只看 `phase` 字段，不看事件名 —— 名字将来再改也不影响这里。
+ * `agent.tool.*` 是工具事件，不属于生命周期，排除在外。
+ */
+function isLifecycleEvent(type: string): boolean {
+  if (type === 'phase') return true
+  return type.startsWith('agent.') && !type.startsWith('agent.tool.')
+}
+
+/**
  * 处理一个来自主进程的事件。
  *
  * 返回值告诉调用方要不要接着做后置动作（目前只有 done 需要）。
@@ -44,21 +55,22 @@ export function handleStreamEvent(
 ): { handled: boolean; notifyDone?: boolean } {
   const type = String(event.type ?? '')
 
+  /*
+   * AG-001 + AG-002：生命周期阶段由主进程的状态机推过来，渲染层照单收下 ——
+   * 不自己算。以前是「发消息就置 running、结束按事件猜 success/error」，
+   * 那种做法下 UI 和后台随时可能不一致。
+   */
+  if (isLifecycleEvent(type)) {
+    const phase = String(event.phase ?? '') as AgentPhase
+    if (phase) {
+      state.patch({ phase })
+      useAppStore.getState().setThreadPhase(state.threadId, phase)
+    }
+    return { handled: true }
+  }
+
   switch (type) {
     /* ── 内容与思考：分片追加 ── */
-    /*
-     * AG-001：生命周期阶段由主进程推过来，渲染层照单收下 —— 不自己算。
-     * 以前是「发消息就置 running、结束按事件猜 success/error」，
-     * 那种做法下 UI 和后台随时可能不一致。
-     */
-    case 'phase': {
-      const phase = String(event.phase ?? '') as AgentPhase
-      if (phase) {
-        state.patch({ phase })
-        useAppStore.getState().setThreadPhase(state.threadId, phase)
-      }
-      return { handled: true }
-    }
     case 'content': {
       state.content += String(event.text ?? '')
       state.patch({ content: state.content })
@@ -72,7 +84,7 @@ export function handleStreamEvent(
     }
 
     /* ── 工具：开始先插一条 running 记录，结束时补结果 ── */
-    case 'tool_start': {
+    case 'agent.tool.started': {
       const record: ToolRunRecord = {
         id: String(event.toolCallId ?? uid('tool')),
         name: String(event.name ?? '未知工具'),
@@ -88,7 +100,8 @@ export function handleStreamEvent(
       return { handled: true }
     }
 
-    case 'tool_end': {
+    case 'agent.tool.completed':
+    case 'agent.tool.failed': {
       const id = String(event.toolCallId ?? '')
       const index = state.toolRuns.findIndex((run) => run.id === id)
       const output = String(event.result ?? '')
@@ -215,7 +228,7 @@ export function handleStreamEvent(
 
     /*
      * 这些不落到消息上，也不打扰用户：
-     *   turn_start / turn_end  —— 进度，界面靠线程状态体现
+     *   turn_start / turn_end  —— 进度，界面靠线程状态体现（phase）
      *   mode / route           —— 意图分类与模型选择，属于调试信息
      *   plan / task            —— 任务台账走 IPC 读（见 TaskBanner），不走事件流
      */

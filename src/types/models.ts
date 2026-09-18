@@ -176,14 +176,18 @@ export type ChatEvent =
   | { requestId: string; type: 'reasoning'; text: string }
   | {
       requestId: string
-      type: 'tool_start'
+      type: 'agent.tool.started'
       toolCallId: string
       name: string
       args: Record<string, unknown>
     }
   | {
       requestId: string
-      type: 'tool_end'
+      /*
+       * AG-002：成败写在事件名里 —— 前端不用再读 ok 判成败。
+       * 服务端仍会带 ok 字段，两者一致。
+       */
+      type: 'agent.tool.completed' | 'agent.tool.failed'
       toolCallId: string
       name: string
       ok: boolean
@@ -220,6 +224,33 @@ export type ChatEvent =
       message: string
     }
   | { requestId: string; type: 'error'; message: string }
+  /*
+   * AG-001 + AG-002：生命周期事件。状态机每次转移推一条，事件名用标准名
+   * （agent.started / agent.thinking / agent.verification.completed …），
+   * **每条都带 phase** —— 前端只读 phase 字段、不解析事件名，将来改名不影响渲染层。
+   * executing / responding 没有标准名，用 'phase' 发（它们是执行细节）。
+   */
+  | {
+      requestId: string
+      type:
+        | 'phase'
+        | 'agent.started'
+        | 'agent.thinking'
+        | 'agent.planning'
+        | 'agent.verification.started'
+        | 'agent.verification.completed'
+        | 'agent.waiting_user'
+        | 'agent.paused'
+        | 'agent.resumed'
+        | 'agent.retrying'
+        | 'agent.completed'
+        | 'agent.failed'
+        | 'agent.cancelled'
+      /** 相位名（和主进程 lifecycle.cjs 的 13 个状态一致） */
+      phase: string
+      from: string
+      detail?: string
+    }
 
 /** 发出去的消息：带图时 content 是数组（多模态），否则是字符串 */
 export interface ChatSendPayload {

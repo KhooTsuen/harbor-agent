@@ -50,6 +50,7 @@ import { run as requires } from './selftest/groups/12-requires.mjs'
 import { run as imagesTool } from './selftest/groups/13-images-tool.mjs'
 import { run as taskContext } from './selftest/groups/14-task-context.mjs'
 import { run as lifecycle } from './selftest/groups/15-lifecycle.mjs'
+import { run as eventsBus } from './selftest/groups/16-events.mjs'
 
 const GROUPS = [
   basics,
@@ -67,6 +68,7 @@ const GROUPS = [
   imagesTool,
   taskContext,
   lifecycle,
+  eventsBus,
 ]
 
 async function main() {

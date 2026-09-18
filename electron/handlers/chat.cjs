@@ -11,6 +11,7 @@
 const loop = require('../core/loop.cjs')
 const taskContext = require('../core/task-context.cjs')
 const life = require('../core/lifecycle.cjs')
+const bus = require('../core/events.cjs')
 const config = require('../core/config.cjs')
 const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
@@ -62,19 +63,27 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
       ? resolveWorkdir(typeof payload?.workdir === 'string' ? payload.workdir : '')
       : getWorkdir()
 
+    /* 同一进程里可能有多个请求并发，订阅者按这个 key 过滤 */
+    const phaseKey = (typeof payload?.taskId === 'string' && payload.taskId) || requestId
+
+    /*
+     * AG-002：所有事件先过统一总线（统一结构 + 环形缓冲 + agent.* 落盘），
+     * 再推给渲染层。这样 UI、日志、Task Center、诊断包看的是**同一份事件流**，
+     * 而不是各模块各自记一份。
+     */
+    const emit = (event) => {
+      const { type, ...payload } = event
+      bus.emit(type, payload, { taskId: phaseKey })
+      send('chat:event', { requestId, ...event })
+    }
+
     if (!provider) {
-      send('chat:event', {
-        requestId,
-        type: 'error',
-        message: '还没有配置供应商，去「设置 → 模型」里加一个',
-      })
+      emit({ type: 'error', message: '还没有配置供应商，去「设置 → 模型」里加一个' })
       return { ok: false, error: '没有配置供应商' }
     }
 
     const controller = new AbortController()
     streams.set(requestId, controller)
-
-    const emit = (event) => send('chat:event', { requestId, ...event })
 
     const confirm = (request) => askUser(requestId, request, emit)
 
@@ -83,16 +92,17 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
      * key 用 taskId，没有就退化成 requestId —— 同一进程里可能有多个请求在跑，
      * 所以订阅者要按 key 过滤。
      */
-    const phaseKey = (typeof payload?.taskId === 'string' && payload.taskId) || requestId
     const offPhase = life.onTransition((e) => {
       if (e.taskId !== phaseKey) return
-      send('chat:event', {
-        requestId,
-        type: 'phase',
-        phase: e.to,
-        from: e.from,
-        detail: e.detail,
-      })
+      /*
+       * AG-002：事件名由 eventForTransition 决定，**不在这里现编字符串** ——
+       * 状态机和事件名的对应关系只有一处（events.cjs 的映射表）。
+       * 每条都带 phase 字段，渲染层只看 phase 就行，不用去解析事件名。
+       * executing / responding 这类没有标准名的相位仍以 'phase' 发出
+       * （它们是执行细节，不是生命周期节点）。
+       */
+      const name = bus.eventForTransition(e.from, e.to)
+      emit({ type: name ?? 'phase', phase: e.to, from: e.from, detail: e.detail })
     })
 
     /* 不 await：立刻返回，后面靠事件推 */
@@ -109,7 +119,11 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           /* 会话 id：审计、授权、任务记录都靠它串起来 */
           sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
           projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
-          taskId: phaseKey,
+          /*
+           * 事件流的 key（和任务台账的 id 是两回事）。
+           * 状态转移订阅、总线落盘都用它 —— 之前拿任务 id 去比，永远对不上。
+           */
+          traceId: phaseKey,
           /*
            * 把未完成任务的台账注入提示（taskState 层）。
            * 这个层以前一直空着：任务只活在界面上（侧栏黄点、横幅），

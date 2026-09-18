@@ -7,7 +7,7 @@
  * （打了才能在崩了之后恢复到「上次是好的」那个点）。
  *
  * 每个工具的结果都会：
- *   · 推给界面（tool_start / tool_end）
+ *   · 推给界面（agent.tool.started / agent.tool.completed / agent.tool.failed）
  *   · 记进任务台账（做了什么、成功没、改了哪些文件）
  *   · 作为 tool 消息喂回模型
  */
@@ -30,7 +30,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       args = call.arguments ? JSON.parse(call.arguments) : {}
     } catch {
       emit({
-        type: 'tool_end',
+        type: 'agent.tool.failed',
         toolCallId: call.id,
         name: call.name,
         ok: false,
@@ -44,7 +44,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       continue
     }
 
-    emit({ type: 'tool_start', toolCallId: call.id, name: call.name, args })
+    emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args })
     const startedAt = Date.now()
 
     const output = await tools.execute(call.name, args, ctx)
@@ -85,7 +85,18 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       }
     }
 
-    emit({ type: 'tool_end', toolCallId: call.id, name: call.name, ok, result: output, ms: run.ms })
+    /*
+     * AG-002：成败写在事件名里（agent.tool.completed / agent.tool.failed）——
+     * 前端不用再去读 ok 字段判成败，也方便日志和诊断直接按名字筛。
+     */
+    emit({
+      type: ok ? 'agent.tool.completed' : 'agent.tool.failed',
+      toolCallId: call.id,
+      name: call.name,
+      ok,
+      result: output,
+      ms: run.ms,
+    })
 
     /* 工具结果喂回模型 */
     messages.push({ role: 'tool', tool_call_id: call.id, content: output })
