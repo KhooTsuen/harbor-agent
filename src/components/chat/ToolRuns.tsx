@@ -4,6 +4,7 @@ import { openImageFromDom } from '@/stores/useImageLightbox'
 import { CheckCircle2, ChevronDown, ChevronRight, Loader2, Terminal, XCircle } from 'lucide-react'
 import type { ToolRunRecord } from '@/types'
 import { cn } from '@/lib/utils'
+import { AGENT_ACTIONS as ACTIONS, runningOf, verbOf } from '@/lib/agentActivity'
 
 /* ══════════════════════════════════════════════════════════════
    工具调用列表
@@ -20,27 +21,6 @@ import { cn } from '@/lib/utils'
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 工具调用列表 ─────────────────────────────────────────── */
-
-/**
- * 工具名 → 人话。
- *
- * 归类之后显示「读取 5 个文件」比「read_file ×5」好读得多。
- * 没收录的工具就老实用原名 + 次数 —— 不编（学 dsh-watcher 的原则）。
- */
-export const ACTIONS: Record<string, [string, string]> = {
-  read_file: ['读取', '个文件'],
-  write_file: ['写入', '个文件'],
-  edit_file: ['修改', '个文件'],
-  list_dir: ['列出', '个目录'],
-  run_shell: ['运行', '条命令'],
-  search_web: ['搜索', '次'],
-  remember: ['记录', '条记忆'],
-  browse: ['打开', '个网页'],
-  browse_elements: ['读页面', '次'],
-  browse_click: ['点击', '次'],
-  browse_type: ['输入文字', '次'],
-  generate_image: ['生成', '张图片'],
-}
 
 /** 毫秒 → 人看的（<1s 给毫秒，<1min 给秒，再长给分秒） */
 function formatMs(ms: number): string {
@@ -82,7 +62,9 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
   if (runs.length === 0) return null
   const running = runs.some((run) => run.output === '' && run.ms === undefined)
   const failed = runs.some((run) => !run.ok && run.ms !== undefined)
-  const label = running ? '正在执行工具' : failed ? '工具执行失败' : '已完成工具调用'
+  /* AG-008：具体说是哪个工具在跑，而不是一句「正在执行工具」 */
+  const active = runningOf(runs)
+  const label = active ? `正在${verbOf(active.name)}…` : failed ? '工具执行失败' : '已完成工具调用'
 
   /* 概览：几步、总共多久、几个失败 —— 一眼看出这轮干了多少活 */
   const totalMs = runs.reduce((sum, run) => sum + (run.ms ?? 0), 0)
@@ -245,34 +227,6 @@ function ToolRunRow({ run }: { run: ToolRunRecord }) {
           {run.output}
         </pre>
       ) : null}
-    </div>
-  )
-}
-
-/* ── 「已处理 Ns」那种过程行 ──────────────────────────────── */
-
-export function ProcessLine({
-  seconds,
-  running,
-  children,
-}: {
-  seconds: number
-  running: boolean
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="mb-2 border-b border-line-subtle pb-1.5">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex items-center gap-1.5 text-2xs text-fg-tertiary transition-colors hover:text-fg-secondary"
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        {running ? '正在处理…' : `已处理 ${seconds}s`}
-      </button>
-      {open ? <div className="mt-1.5">{children}</div> : null}
     </div>
   )
 }
