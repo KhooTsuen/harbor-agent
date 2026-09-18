@@ -120,6 +120,16 @@ export function handleStreamEvent(
       else state.toolRuns.push(updated)
 
       /*
+       * AG-005：进度时间线的「动作行」读的是任务台账的 `steps`，
+       * 而 `useTaskStore.unfinished` 只在 TaskBanner 的 effect
+       * （依赖 activeThreadId / activeStatus）里刷新 —— 工具执行期间
+       * status 根本不变，于是时间线**永远看不到任何一步**。
+       * 真机验证抓到的（单元测试照不到这种接线）。
+       * 走事件驱动，别轮询；每个工具一次，量很小。
+       */
+      void useTaskStore.getState().refresh()
+
+      /*
        * 工具输出里能捞出可追溯的东西：
        *   · 搜索结果是网页 → Web Citation（标题/URL/域名/抓取时间）
        *   · 读取文件 → 文件 Citation
