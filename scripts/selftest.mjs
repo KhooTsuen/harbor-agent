@@ -57,6 +57,7 @@ import { run as abortTrace } from './selftest/groups/19-abort.mjs'
 import { run as streamBatch } from './selftest/groups/20-streambatch.mjs'
 import { run as resume } from './selftest/groups/21-resume.mjs'
 import { run as recovery } from './selftest/groups/22-recovery.mjs'
+import { run as approval } from './selftest/groups/23-approval.mjs'
 
 const GROUPS = [
   basics,
@@ -81,6 +82,7 @@ const GROUPS = [
   streamBatch,
   resume,
   recovery,
+  approval,
 ]
 
 async function main() {

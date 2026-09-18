@@ -249,10 +249,10 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
     return { ok: true }
   })
 
-  /* ── 暂停（AG-011）──────────────────────────────────────
-   * 和「中断」是两件事：abort 立刻断（正在跑的工具也一起杀），pause 是
-   * **先把手上这一步做完**再停。这里只置个标记，真正停在哪由 loop 每轮开头决定
-   * —— 那个位置的上一轮工具已全部跑完，才是「完成当前安全操作」的准确含义。
+  /* ── 暂停（AG-011）──
+   * abort 立刻断（正在跑的工具也杀），pause 是**做完手上这步**再停。
+   * 这里只置个标记，真正停在哪由 loop 每轮开头决定 —— 那个位置上
+   * 上一轮工具已全部跑完，才是「完成当前安全操作」的准确含义。
    */
   ipcMain.handle('chat:pause', (_event, requestId) => {
     const entry = streams.get(requestId)
@@ -273,7 +273,6 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
   })
 }
 
-/** 问用户要不要执行某个写操作 */
 function askUser(requestId, request, emit) {
   return new Promise((resolve) => {
     const confirmId = `cfm_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -286,13 +285,14 @@ function askUser(requestId, request, emit) {
     }, CONFIRM_TIMEOUT_MS)
 
     pendingConfirms.set(confirmId, { requestId, resolve, timer })
-
     emit({
       type: 'confirm_request',
       confirmId,
       toolName: request.name,
       summary: request.summary,
       args: request.args,
+      kind: request.kind ?? '',
+      risk: request.risk ?? null,
     })
   })
 }
