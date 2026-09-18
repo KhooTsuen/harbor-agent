@@ -4,6 +4,7 @@ import type { ChangeSetSummary, TaskRecord } from '@/types/backend'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
+import { PlanCard } from './PlanCard'
 import { changesetList, changesetRollback, taskUpdate } from '@/lib/safetyApi'
 import { useTaskStore } from '@/stores/useTaskStore'
 
@@ -102,10 +103,11 @@ export function TaskBanner() {
           <div className="min-w-0 flex-1">
             <p className="text-dense text-fg-primary">有一条没干完的任务：{tasks[0].title}</p>
             <p className="mt-0.5 text-2xs text-fg-tertiary">
-              {tasks[0].plan.length > 0 ? `计划 ${tasks[0].plan.length} 步 · ` : ''}
               已执行 {tasks[0].steps.length} 步 · 改了 {tasks[0].changedFiles.length} 个文件
               {tasks.length > 1 ? ` · 另外还有 ${tasks.length - 1} 条` : ''}
             </p>
+            {/* AG-004：计划单独看得见（含版本历史），不再只给一个「N 步」的数字 */}
+            <PlanCard versions={tasks[0].planVersions ?? []} />
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button

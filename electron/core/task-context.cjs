@@ -59,7 +59,9 @@ function progressOf(plan) {
 
 /** 计划正文去掉勾选标记，用来判断「是不是被改过内容」 */
 function stripMarks(plan) {
-  return (Array.isArray(plan) ? plan : []).map((line) => String(line).replace(/^\s*\[[xX ]\]\s*/, ''))
+  return (Array.isArray(plan) ? plan : []).map((line) =>
+    String(line).replace(/^\s*\[[xX ]\]\s*/, ''),
+  )
 }
 
 /**
@@ -85,7 +87,10 @@ function buildTaskState({ sessionId = '', taskId = '' } = {}) {
   /* 当前会话的任务优先；然后才是全局还开着的 */
   const mine = tasks.filter((task) => sessionId && task.sessionId === sessionId)
   const others = tasks.filter((task) => !mine.includes(task))
-  const ordered = [...mine.slice(0, MAX_TASKS), ...others.slice(0, Math.max(0, MAX_TASKS - mine.length))]
+  const ordered = [
+    ...mine.slice(0, MAX_TASKS),
+    ...others.slice(0, Math.max(0, MAX_TASKS - mine.length)),
+  ]
   if (ordered.length === 0) return ''
 
   const blocks = []
@@ -194,12 +199,23 @@ function shouldContinue({ taskId = '', content = '', seen = {} } = {}) {
  *
  * @returns {string[]|null} 存下来的计划；没有就返回 null
  */
+/**
+ * 从回复里抓计划（AG-004）。**变了才返回**，两个原因：
+ *
+ * ① 模型每一轮都会把计划原样复述一遍（上下文里就有），不判断就得每轮发事件，
+ *    一次对话刷出几十条一模一样的计划，界面一直在闪；
+ * ② 以前只抓「第一次」，模型后来重新规划（用户改了要求、或发现路走不通）
+ *    会被**静默丢弃** —— 现在每轮都给它看，变没变由这里说了算。
+ *
+ * @returns {{ plan: string[], version: number, reason: string }|null}
+ */
 function capturePlan({ taskId = '', content = '' } = {}) {
   if (!taskId) return null
   const plan = taskCore.parsePlan(content)
   if (plan.length === 0) return null
-  taskCore.setPlan(taskId, plan)
-  return plan
+  const result = taskCore.setPlan(taskId, plan)
+  if (!result || !result.changed) return null
+  return { plan: result.task.plan, version: result.version, reason: result.reason }
 }
 
 module.exports = {

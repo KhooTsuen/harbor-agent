@@ -46,6 +46,13 @@ NUL
 tmp_*
 *.tmp
 
+# 临时工作目录。注意 `tmp/` 和上面的 `tmp_*` 是两回事 ——
+# `tmp_*` 只匹配「tmp_ 开头」，盖不住这个目录，
+# 于是验证脚本的产物（备份文件、探针脚本）会被 `git add -A` 一起提交。
+tmp/
+# 一次性的排查脚本（核实完之后没有保留价值）
+tools/import-rikkahub.py
+
 # 截图工具每次跑都会建一个新的 Chrome 临时 profile（按端口命名），
 # 不会自己删 —— 攒了 10 个就有近 500MB。
 .chrome-profile-*/

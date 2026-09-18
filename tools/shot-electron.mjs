@@ -12,6 +12,7 @@
  *   node tools/shot-electron.mjs                       # 默认截「终端」标签
  *   node tools/shot-electron.mjs --out=shots/electron
  *   node tools/shot-electron.mjs --js="document.title"
+ *   node tools/shot-electron.mjs --js-file=tmp/probe.js   # 长脚本（避开命令行长度上限）
  *   node tools/shot-electron.mjs --keep                # 截完不退出（手动接着看）
  *   node tools/shot-electron.mjs --type="echo hi"      # 往终端里真的敲一串字再截图
  *
@@ -22,7 +23,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -51,8 +52,12 @@ const DEFAULT_SCRIPT = `
     return tab ? 'clicked' : 'tab not found'
   })()
 `
+/* 长脚本走 --js-file=：--js= 直接写在命令行里会撞上 Windows 参数长度上限
+   （写长一点就整个字符串被截断，症状是「脚本没执行」而不是报错） */
+const JS_FILE = process.argv.find((a) => a.startsWith('--js-file='))?.slice(10) ?? ''
 const SCRIPT =
   process.argv.find((a) => a.startsWith('--js='))?.slice(5) ??
+  (JS_FILE ? readFileSync(JS_FILE, 'utf8') : null) ??
   (process.argv.find((a) => a.startsWith('--connect')) ? '' : DEFAULT_SCRIPT)
 
 /** 要往终端里敲的内容（不含回车，回车另外发） */

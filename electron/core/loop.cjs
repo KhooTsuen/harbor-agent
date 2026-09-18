@@ -157,7 +157,6 @@ async function runLoop(options) {
   let totalUsage = null
   const toolRuns = []
   let turn = 0
-  let planParsed = false
   /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
   let gateSeen = {}
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
@@ -199,14 +198,13 @@ async function runLoop(options) {
 
     if (result.usage && !totalUsage) totalUsage = result.usage
 
-    /* ── 计划 ── */
-    if (!planParsed && result.content) {
-      planParsed = true
-      const plan = taskContext.capturePlan({
+    /* ── 计划（AG-004）：每轮都给 capturePlan 看，变了才发事件（细节见 task-context.cjs） ── */
+    if (result.content) {
+      const captured = taskContext.capturePlan({
         taskId: options.taskId ?? '',
         content: result.content,
       })
-      if (plan) emit({ type: 'plan', plan })
+      if (captured) emit({ type: 'plan', ...captured })
     }
 
     /* ── 没有工具调用 → 这轮结束 ── */

@@ -39,12 +39,17 @@ console.log('══ D2：工具返回超大输出（10MB）══')
   const t0 = Date.now()
   const out = await tools.execute(
     'run_shell',
-    { command: 'node -e "for(let i=0;i<100000;i++)console.log(\'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\')"' },
+    {
+      command:
+        'node -e "for(let i=0;i<100000;i++)console.log(\'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\')"',
+    },
     ctx(),
   )
   const text = String(out)
   console.log(`  命令跑完 ${Date.now() - t0}ms | 返回长度 ${text.length} 字符`)
-  console.log(`  ${text.length <= 9000 ? '✓ 截断了（上限 8000 + 提示尾巴）' : '⚠️ 没截断，可能撑爆上下文'}`)
+  console.log(
+    `  ${text.length <= 9000 ? '✓ 截断了（上限 8000 + 提示尾巴）' : '⚠️ 没截断，可能撑爆上下文'}`,
+  )
   console.log(`  尾部：${text.slice(-100).replace(/\n/g, ' ')}`)
 }
 
@@ -56,9 +61,13 @@ for (const [label, name, args] of [
 ]) {
   try {
     const out = await tools.execute(name, args, ctx())
-    console.log(`  ✓ ${label} → 返回了错误文本（没抛）: ${String(out).slice(0, 70).replace(/\s+/g, ' ')}`)
+    console.log(
+      `  ✓ ${label} → 返回了错误文本（没抛）: ${String(out).slice(0, 70).replace(/\s+/g, ' ')}`,
+    )
   } catch (error) {
-    console.log(`  ✓ ${label} → 抛错（会被循环接住）: ${String(error?.message ?? error).slice(0, 70)}`)
+    console.log(
+      `  ✓ ${label} → 抛错（会被循环接住）: ${String(error?.message ?? error).slice(0, 70)}`,
+    )
   }
 }
 
@@ -72,10 +81,16 @@ console.log('\n══ D7：权限确认框一直不点 ══')
   const t0 = Date.now()
   const race = await Promise.race([
     tools
-      .execute('read_file', { path: join(ROOT, 'data', 'config.json') }, ctx({ confirm: neverRespond }))
+      .execute(
+        'read_file',
+        { path: join(ROOT, 'data', 'config.json') },
+        ctx({ confirm: neverRespond }),
+      )
       .then(() => '工具返回了')
       .catch((error) => `工具抛错：${String(error?.message ?? error).slice(0, 60)}`),
-    new Promise((r) => setTimeout(() => r('⚠️ 8 秒了还没动静（工具层自己没有超时，靠上层 askUser 兜）'), 8000)),
+    new Promise((r) =>
+      setTimeout(() => r('⚠️ 8 秒了还没动静（工具层自己没有超时，靠上层 askUser 兜）'), 8000),
+    ),
   ])
   console.log(`  ${race}`)
   console.log(`  耗时 ${Date.now() - t0}ms`)

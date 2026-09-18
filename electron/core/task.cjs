@@ -13,7 +13,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const { parsePlan, fingerprint } = require('./task-plan.cjs')
+const { parsePlan, fingerprint, recordVersion, migrate } = require('./task-plan.cjs')
 
 /** 任务状态 */
 const STATUSES = [
@@ -47,7 +47,7 @@ function write(task) {
 
 function get(id) {
   try {
-    return JSON.parse(fs.readFileSync(fileFor(id), 'utf8'))
+    return migrate(JSON.parse(fs.readFileSync(fileFor(id), 'utf8')))
   } catch {
     return null
   }
@@ -75,8 +75,9 @@ function create({
     sessionId,
     projectId,
     workdir,
-    /** 模型给出的计划（从回复里解析出来的编号列表） */
+    /** 模型给出的计划（从回复里解析）；planVersions 是 AG-004 的版本历史（含当前版） */
     plan: [],
+    planVersions: [],
     /** 实际发生的事 —— 一次工具调用一条 */
     steps: [],
     checkpoints: [],
@@ -106,6 +107,7 @@ function update(id, patch) {
     'projectId',
     'workdir',
     'plan',
+    'planVersions',
     'changeSetId',
   ]) {
     if (patch[key] !== undefined) task[key] = patch[key]
@@ -263,20 +265,17 @@ function remove(id) {
   }
 }
 
-function setPlan(id, plan) {
-  if (!Array.isArray(plan) || plan.length === 0) return null
+/** 记一版计划（AG-004）：变了才写盘。planHash 防的是计划被并行会话悄悄改掉。 */
+function setPlan(id, plan, options = {}) {
   const task = get(id)
   if (!task) return null
-  task.plan = plan
-  /*
-   * 记下「批准时」的指纹：注入前会重算，对不上就只报警不当作原计划。
-   * 防的是工具结果、并行会话或某个 bug 把计划悄悄改掉，
-   * 而模型还照着旧计划干活。
-   */
-  task.planHash = fingerprint(plan)
-  task.updatedAt = Date.now()
-  write(task)
-  return task
+  const version = recordVersion(task, plan, options)
+  if (!version) return null
+  if (version.changed) {
+    task.updatedAt = Date.now()
+    write(task)
+  }
+  return { task, ...version }
 }
 
 module.exports = {

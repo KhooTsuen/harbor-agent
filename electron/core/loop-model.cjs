@@ -121,7 +121,16 @@ async function selfReview({ config, provider, model, content, userText, signal }
  * 一层包装：判断开关和模式、发 started/completed 事件、吞掉失败保留原回答。
  * 搬过来才完整。
  */
-async function reviewWithEvents({ config, provider, model, content, userText, signal, mode, emit }) {
+async function reviewWithEvents({
+  config,
+  provider,
+  model,
+  content,
+  userText,
+  signal,
+  mode,
+  emit,
+}) {
   if (config.assistant.selfReview !== true) return content
   if (mode !== 'execute' && mode !== 'goal' && mode !== 'plan') return content
 
