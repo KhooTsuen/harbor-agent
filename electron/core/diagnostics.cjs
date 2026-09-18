@@ -18,6 +18,8 @@ const session = require('./session.cjs')
 const stats = require('./stats.cjs')
 const scene = require('./scene.cjs')
 const log = require('./log.cjs')
+const fileCache = require('./file-cache.cjs')
+const searchCache = require('./search-cache.cjs')
 
 /** 日志最多带这么多行 —— 再多用户复制也费劲 */
 const LOG_LINES = 120
@@ -167,6 +169,32 @@ function lastTurnStructure() {
 }
 
 /**
+ * 缓存现状。
+ *
+ * 为什么要放进诊断包：AG-020 的 TTL / 上限一堆数字都是**拍的**，而
+ * 「命中率多少」「现在占了多少字节」是唯一能拿来校准它们的依据。
+ * 以前这些数字只活在内存里，没人看得到 —— 也就永远调不准。
+ */
+function cacheSummary() {
+  const rows = [fileCache.stats(), searchCache.stats()]
+  /* 小到 1 KB 以下时显示「0 KB」看着像坏了，所以再分一档 */
+  const human = (bytes) =>
+    bytes >= 1024 * 1024
+      ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+      : bytes >= 1024
+        ? `${Math.round(bytes / 1024)} KB`
+        : `${Math.round(bytes)} B`
+  return rows
+    .map((s) => {
+      const total = s.hits + s.misses
+      const rate = total > 0 ? `${Math.round((s.hits / total) * 100)}%` : '（还没用过）'
+      const skip = s.skipped > 0 ? ` · 因单条过大跳过 ${s.skipped} 次` : ''
+      return `- ${s.name}: ${s.size}/${s.max} 条 · ${human(s.bytes)}/${human(s.maxBytes)} · 命中率 ${rate}${skip}`
+    })
+    .join('\n')
+}
+
+/**
  * 生成完整诊断包。
  *
  * @returns {{ text: string, file: string }}
@@ -209,6 +237,9 @@ function build() {
     '',
     '## 用量',
     `- 累计调用 ${usage.total.calls} 次 · 共 ${usage.total.total} token`,
+    '',
+    '## 缓存',
+    cacheSummary(),
     '',
     `## 日志（最后 ${logLines.length} 行，密钥已打码）`,
     errors.length > 0 ? `⚠️ 其中 ERROR/WARN ${errors.length} 条` : '（没有 ERROR/WARN）',

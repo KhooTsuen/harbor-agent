@@ -74,14 +74,35 @@ export async function run() {
   check('★ 判据说无效就失效', invalid.hit === false)
   check('★ 而且把判据给的原因带出来', invalid.reason === 'changed')
 
-  /* 批量失效 */
-  const bulk = createCache({ name: 'bulk' })
-  bulk.put('src/a.ts', 1)
-  bulk.put('src/b.ts', 2)
-  bulk.put('docs/c.md', 3)
-  const removed = bulk.invalidateWhere((key) => key.startsWith('src/'))
-  check('批量作废按前缀清掉了两条', removed === 2)
-  check('不在范围内的留着', bulk.get('docs/c.md').hit === true)
+  /*
+   * 批量作废（`invalidateWhere`）在 0.76.0 **删掉了** ——
+   * 当初是「给将来留的口子」，但复查时发现**它真的没有用处**：
+   * 写文件后要作废的只有那个文件（已经显式 invalidate），而目录树缓存
+   * AG-020 有意没做。死代码还会给人「这东西在用」的错觉。
+   * 所以这里不测它了 —— 将来真需要时再加三行就够。
+   */
+
+  /* ── 字节预算（0.76.0 加的闸） ── */
+  const tiny = createCache({ name: 'bytes', max: 100, maxBytes: 200 })
+  tiny.put('a', 'x'.repeat(50)) // UTF-16 下算 100 字节
+  check('字节预算内能存下', tiny.get('a').hit === true)
+  tiny.put('b', 'y'.repeat(50))
+  tiny.put('c', 'z'.repeat(50))
+  check('★ 超出字节预算会淘汰最老的（哪怕条数还没满）', tiny.get('a').hit === false)
+  check('新加的还在', tiny.get('c').hit === true)
+  check('★ stats 报的是真实占用', tiny.stats().bytes <= 200)
+
+  const capped = createCache({ name: 'cap', maxEntryBytes: 100 })
+  const rejected = capped.put('big', 'x'.repeat(200))
+  check('★ 单条超过上限就不缓存', rejected === null)
+  check('也没留在库里', capped.get('big').hit === false)
+  check('★ stats 里记下了「因过大跳过」', capped.stats().skipped === 1)
+
+  const fresh = createCache({ name: 'fresh' })
+  fresh.put('k', 'v1')
+  fresh.put('k', 'v2')
+  check('覆盖同一条不会让字节虚高', fresh.stats().bytes === fresh.get('k').value.length * 2)
+  check('拿到的是新值', fresh.get('k').value === 'v2')
 
   /* ── 搜索缓存 ── */
   searchCache.clear()
@@ -106,7 +127,38 @@ export async function run() {
   searchCache.put('duckduckgo', 'Jan Hus', 5, results)
   check('归一化后能命中', searchCache.get('duckduckgo', '  jan   hus  ', 5).hit === true)
 
-  /* ── 接线 ── */
+  /* ── 搜索：fresh 与时效标注（0.76.0） ── */
+  const { formatResults } = require(join(ROOT, 'electron/core/search.cjs'))
+  const sample = [{ title: 'T', url: 'https://e.com', snippet: 's' }]
+
+  const plain = formatResults('q', sample)
+  check('没有 meta 时不加时效话（普通结果不该多出一行）', !plain.includes('直接复用了缓存'))
+
+  const cachedText = formatResults('q', sample, { cached: true, ageMs: 3 * 60 * 1000 })
+  check('★ 命中缓存时告诉模型「多久前的」', cachedText.includes('3 分钟前'))
+  check('★ 而且说清楚怎么绕过缓存', cachedText.includes('fresh=true'))
+  check('★ 也点明了什么时候该绕过（时效敏感）', cachedText.includes('时效敏感'))
+
+  const justNow = formatResults('q', sample, { cached: true, ageMs: 5 * 1000 })
+  check('很短的时间用「秒」而不是「0 分钟」', justNow.includes('秒前'))
+
+  const webSrc = readCore('electron/core/tools/search_web.cjs')
+  check('★ search_web 暴露了 fresh 参数', webSrc.includes('fresh: {'))
+  check('★ 而且真的传下去了', webSrc.includes('fresh: args.fresh === true'))
+  check('fresh 的描述里给了「什么时候用」', webSrc.includes('时效敏感'))
+
+  const coreSrc = readCore('electron/core/search.cjs')
+  check('★ fresh 时跳过缓存查询', coreSrc.includes('if (!options.fresh)'))
+  check(
+    '★ 但 fresh 的结果照样写回缓存（下一次就不用了）',
+    coreSrc.includes('searchCache.put(id, text, maxResults, out'),
+  )
+  check('fresh 会记在日志里（“怎么又联网了”有据可查）', coreSrc.includes('跳过缓存'))
+
+  /* ── 缓存现状进了诊断包（不然那堆数字永远校准不了） ── */
+  const diagSrc = readCore('electron/core/diagnostics.cjs')
+  check('★ 诊断包里能看到缓存状态', diagSrc.includes("'## 缓存'"))
+  check('★ 带命中率（校准 TTL 的唯一依据）', diagSrc.includes('命中率'))
   const searchSrc = readCore('electron/core/search.cjs')
   check('★ 搜索前先查缓存', searchSrc.includes('searchCache.get(id, text, maxResults)'))
   check(

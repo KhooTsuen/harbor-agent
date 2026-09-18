@@ -23,9 +23,15 @@ const { createCache } = require('./cache.cjs')
 const DEFAULT_TTL_MS = 10 * 60 * 1000
 const MAX_ENTRIES = 100
 
+/** 搜索结果是结构化数据，比文件文本小得多；但同样加字节闸（见 cache.cjs） */
+const MAX_BYTES = 2 * 1024 * 1024
+const MAX_ENTRY_BYTES = 256 * 1024
+
 const inner = createCache({
   name: 'search',
   max: MAX_ENTRIES,
+  maxBytes: MAX_BYTES,
+  maxEntryBytes: MAX_ENTRY_BYTES,
   defaultTtl: DEFAULT_TTL_MS,
 })
 
@@ -61,4 +67,14 @@ function stats() {
   return inner.stats()
 }
 
-module.exports = { get, put, clear, stats, normalize, DEFAULT_TTL_MS, MAX_ENTRIES }
+module.exports = {
+  get,
+  put,
+  clear,
+  stats,
+  normalize,
+  DEFAULT_TTL_MS,
+  MAX_ENTRIES,
+  MAX_BYTES,
+  MAX_ENTRY_BYTES,
+}

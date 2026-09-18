@@ -24,8 +24,14 @@ const { createCache } = require('./cache.cjs')
 /** 默认 5 分钟。文件不像网络资源，变的是「内容」而不是「时效」 */
 const DEFAULT_TTL_MS = 5 * 60 * 1000
 
-/** 缓存上限 —— 防长会话里无限涨（按插入顺序淘汰最老的） */
+/** 缓存上限 —— 防长会话里无限涨。条数和字节两道闸都要（见 cache.cjs 的说明） */
 const MAX_ENTRIES = 200
+
+/** 总字节预算 8 MB。按条数限最坏能到 200 × 512KB = 100 MB（`MAX_READ_BYTES`） */
+const MAX_BYTES = 8 * 1024 * 1024
+
+/** 单条上限 256 KB —— 再大的文件缓存收益小于它挤掉别人位置的成本 */
+const MAX_ENTRY_BYTES = 256 * 1024
 
 /** 文件当前的 mtime；拿不到（文件没了/读不了）返回 null */
 function mtimeOf(file) {
@@ -47,6 +53,8 @@ function validateFile(file, entry) {
 const inner = createCache({
   name: 'file',
   max: MAX_ENTRIES,
+  maxBytes: MAX_BYTES,
+  maxEntryBytes: MAX_ENTRY_BYTES,
   defaultTtl: DEFAULT_TTL_MS,
   validate: validateFile,
 })
@@ -57,7 +65,12 @@ function get(file) {
   return result.hit ? { ...result, content: result.value } : result
 }
 
-/** 存缓存。`mtimeMs` 不传就现取一次 */
+/**
+ * 存缓存。`mtimeMs` 不传就现取一次。
+ *
+ * 文件太大（超过单条上限）时 `inner.put` 返回 `null` —— 这里如实传出去，
+ * 调用方不用管（不缓存就是了，读还是读过了）。
+ */
 function put(file, { content, source = 'unknown', mtimeMs = null, ttl = DEFAULT_TTL_MS } = {}) {
   const mtime = mtimeMs ?? mtimeOf(file)
   if (mtime === null) return null
@@ -66,6 +79,7 @@ function put(file, { content, source = 'unknown', mtimeMs = null, ttl = DEFAULT_
     ttl,
     fileModifiedTime: mtime,
   })
+  if (!entry) return null
   /* 和 get 一样，把 `value` 也叫作 `content`（调用方一直是这么用的） */
   return { ...entry, content: entry.value }
 }
@@ -82,4 +96,14 @@ function stats() {
   return inner.stats()
 }
 
-module.exports = { get, put, invalidate, clear, stats, DEFAULT_TTL_MS, MAX_ENTRIES }
+module.exports = {
+  get,
+  put,
+  invalidate,
+  clear,
+  stats,
+  DEFAULT_TTL_MS,
+  MAX_ENTRIES,
+  MAX_BYTES,
+  MAX_ENTRY_BYTES,
+}
