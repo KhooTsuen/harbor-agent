@@ -212,7 +212,12 @@ function providerList() {
  * 执行一次搜索。
  *
  * @param {string} query
- * @param {object} options { provider, apiKey, endpoint, maxResults, signal }
+ * @param {object} options { provider, apiKey, endpoint, maxResults, signal, fresh }
+ * @returns {Promise<{results: Array, cached: boolean, ageMs: number}>}
+ *
+ * 返回值里带 `cached` / `ageMs` —— 调用方（`formatResults`）要把「这是几分钟前的
+ * 结果」告诉模型。缓存本身没错，但**默默给旧结果**就不行：模型不知道自己在看
+ * 旧东西，就不会想「要不要重搜」。
  */
 async function search(query, options) {
   const text = String(query ?? '').trim()
@@ -226,22 +231,28 @@ async function search(query, options) {
    * AG-020：同样的 provider + 查询词 + 数量 → 直接给缓存。
    * 搜索走网络、部分 provider 还按次收费，重复搜同一个词是白花钱。
    * 失效只有 TTL（10 分钟）—— 外部世界随时在变，我们没有 mtime 那种判据。
+   *
+   * `fresh: true` 跳过缓存（用新结果覆盖）—— 因为「TTL 该定几分钟」这个问题
+   * **本来就设有答案**，与其拍一个数字，不如把决定权交给模型：
+   * 搜「胡斯战争是哪年」用缓存没问题，搜「今天有什么新闻」自己带 fresh。
    */
-  const cached = searchCache.get(id, text, maxResults)
-  if (cached.hit) {
-    log.info(`搜索「${text}」命中缓存（${Math.round((cached.age ?? 0) / 1000)}s 前的结果）`)
-    return cached.value
+  if (!options.fresh) {
+    const hit = searchCache.get(id, text, maxResults)
+    if (hit.hit) {
+      const seconds = Math.round((hit.age ?? 0) / 1000)
+      log.info(`搜索「${text}」命中缓存（${seconds}s 前的结果）`)
+      return { results: hit.value, cached: true, ageMs: hit.age ?? 0 }
+    }
   }
 
-  log.info(`搜索「${text}」via ${provider.label}`)
+  log.info(`搜索「${text}」via ${provider.label}${options.fresh ? '（fresh，跳过缓存）' : ''}`)
 
   const results = await provider.run(text, { ...options, maxResults })
   const out = results.filter((r) => r.url).slice(0, maxResults)
   searchCache.put(id, text, maxResults, out, { source: provider.label })
-  return out
+  return { results: out, cached: false, ageMs: 0 }
 }
 
-/** 把结果转成给模型看的文本 */
 /**
  * 给结果编号 —— 模型回答时能引用「来源 [2]」，用户能对得上。
  * 不带编号的话，多来源的回答就只能说「根据搜索结果」，等于没引用。
@@ -250,11 +261,32 @@ function withCitations(results) {
   return results.map((item, index) => ({ ...item, citationId: index + 1 }))
 }
 
-function formatResults(query, results) {
+/**
+ * 把结果转成给模型看的文本。
+ *
+ * `meta` 带缓存命中信息时，**在开头明确告诉模型「这是 N 分钟前搜到的」** ——
+ * 默默给它旧结果是不行的：它不知道自己在看旧东西，就不会想「要不要重搜」。
+ * 顺带把「怎么绕过缓存」也写清楚（`fresh` 参数），它自己就能决定。
+ */
+function formatResults(query, results, meta = {}) {
   if (results.length === 0) {
     return `搜索「${query}」没有结果。可能搜索词太窄，换个说法再试；或者当前搜索服务不通（设置 → 搜索里可以换一个）。`
   }
-  const lines = [`搜索「${query}」的结果：`, '']
+
+  const lines = [`搜索「${query}」的结果：`]
+  if (meta.cached) {
+    const age = Number(meta.ageMs) || 0
+    const when =
+      age < 90 * 1000
+        ? `${Math.max(1, Math.round(age / 1000))} 秒前`
+        : `${Math.round(age / 60000)} 分钟前`
+    lines.push('')
+    lines.push(
+      `（这些是**${when}**搜到的，直接复用了缓存。如果是时效敏感的东西（最新版本、当前价格、今天发生了什么），` +
+        `用 search_web 带上 fresh=true 重新搜。）`,
+    )
+  }
+  lines.push('')
   results.forEach((item, i) => {
     lines.push(`${i + 1}. ${item.title}`)
     lines.push(`   ${item.url}`)

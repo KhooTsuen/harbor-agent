@@ -16,6 +16,11 @@ module.exports = {
     properties: {
       query: { type: 'string', description: '搜索词。用关键词，别写整句话' },
       maxResults: { type: 'integer', description: '要几条结果，默认按设置（一般 5）' },
+      fresh: {
+        type: 'boolean',
+        description:
+          '强制重新联网搜，不用缓存。默认 false。搜**时效敏感**的东西（最新版本、当前价格、今天发生了什么）时设 true；查稳定的知识（历史、语法、某个库的基本用法）不用设。缓存结果会在开头标明是多久以前的。',
+      },
     },
     required: ['query'],
   },
@@ -39,15 +44,16 @@ module.exports = {
       )
     }
 
-    const results = await search.search(String(args.query ?? ''), {
+    const found = await search.search(String(args.query ?? ''), {
       provider: settings.provider,
       apiKey,
       endpoint: settings.endpoint,
       maxResults: Number(args.maxResults) || settings.maxResults,
       signal: ctx?.signal,
+      fresh: args.fresh === true,
     })
 
-    return search.formatResults(String(args.query ?? ''), results)
+    return search.formatResults(String(args.query ?? ''), found.results, found)
   },
 
   summarize(args) {

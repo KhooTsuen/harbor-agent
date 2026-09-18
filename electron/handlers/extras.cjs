@@ -80,13 +80,15 @@ function register({ ipcMain }) {
     const typed = merged.apiKey && merged.apiKey !== '••••••••' ? merged.apiKey : ''
     const apiKey = typed || config.searchKey()
     try {
-      const results = await search.search('hello world', {
+      /* 测连通性：用 fresh 跳过缓存，不然「测试」永远拿旧结果，看不出现在通不通 */
+      const found = await search.search('hello world', {
         provider: merged.provider,
         apiKey,
         endpoint: merged.endpoint,
         maxResults: 3,
+        fresh: true,
       })
-      return { ok: true, count: results.length, sample: results[0]?.title ?? '' }
+      return { ok: true, count: found.results.length, sample: found.results[0]?.title ?? '' }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
