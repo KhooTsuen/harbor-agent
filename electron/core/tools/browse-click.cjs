@@ -31,14 +31,14 @@ module.exports = {
     return `点击页面元素 #${args?.index}`
   },
 
-  async run(args) {
+  async run(args, ctx) {
     const index = Number(args?.index)
     if (!Number.isInteger(index) || index < 0) {
       throw new Error('index 要是 browse_elements 返回的那个数字索引（比如 3）')
     }
 
     const browser = require('../../handlers/browser.cjs')
-    const result = await browser.request('click', { index })
+    const result = await browser.request('click', { index }, ctx?.signal)
     if (!result.ok) {
       throw new Error(result.error)
     }

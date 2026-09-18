@@ -216,4 +216,16 @@ export async function run() {
     'signal 已断：每个 tool_call 都补了 tool 消息',
     msgs.length === 2 && msgs.every((m) => m.role === 'tool'),
   )
+
+  /* ── 浏览器工具：Stop 全链路上最后一块没接的执行体（AG-011 补）── */
+  const browserSrc = readCore('electron/handlers/browser.cjs')
+  check('浏览器请求收 signal', browserSrc.includes('function request(action, payload, signal)'))
+  check('浏览器挂起的请求会被中断撤掉', browserSrc.includes('onAbort(signal, () => {'))
+  check('浏览器中断时立刻结算', browserSrc.includes('已被用户中断'))
+  check('浏览器结算时清掉定时器', browserSrc.includes('clearTimeout(entry.timer)'))
+
+  for (const f of ['browse', 'browse-elements', 'browse-click', 'browse-type']) {
+    const src = readCore(`electron/core/tools/${f}.cjs`)
+    check(`${f}.cjs 把中断信号交给浏览器`, /browser\s*\.\s*request\([\s\S]*?signal/.test(src))
+  }
 }

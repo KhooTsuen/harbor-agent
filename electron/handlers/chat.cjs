@@ -13,6 +13,7 @@ const taskContext = require('../core/task-context.cjs')
 const life = require('../core/lifecycle.cjs')
 const bus = require('../core/events.cjs')
 const metrics = require('../core/metrics.cjs')
+const { createBatcher } = require('../core/stream-batch.cjs')
 const config = require('../core/config.cjs')
 const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
@@ -79,11 +80,29 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
      * 再推给渲染层。这样 UI、日志、Task Center、诊断包看的是**同一份事件流**，
      * 而不是各模块各自记一份。
      */
+    /*
+     * AG-011：流式增量先过批处理器再出 IPC。
+     *
+     * 真机测出来主进程事件循环每被卡 5~14 秒（CPU 吃满、rss 198M 而 JS heap
+     * 只有 10~20M）—— 烧的不是 JS，是每 token 一条 `webContents.send` 的
+     * 跨进程投递。详见 `core/stream-batch.cjs` 的头注释。
+     */
+    const batcher = createBatcher({
+      send: (type, text) => send('chat:event', { requestId, type, text }),
+    })
+
     const emit = (event) => {
       const { type, ...payload } = event
       bus.emit(type, payload, { taskId: phaseKey })
       /* AG-003：让时间线认领六个时刻（首反馈 / 首个 token / 首次工具 / 结束） */
       metrics.observe(phaseKey, event)
+
+      /* 正文和思考是增量 —— 攒起来；其余（工具/相位/错误/结束）立刻发，但先冲缓存 */
+      if ((type === 'content' || type === 'reasoning') && typeof event.text === 'string') {
+        batcher.put(type, event.text)
+        return
+      }
+      batcher.flush()
       send('chat:event', { requestId, ...event })
     }
 
@@ -176,6 +195,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           log.error(`对话失败：${message}`)
         }
       } finally {
+        /* AG-011：最后一段增量还在缓存里 —— 不冲掉就永远看不见了 */
+        batcher.flush()
         /* AG-003：算 TTFT / 首次工具反馈 / 总耗时，发 metrics.timeline 事件 */
         metrics.finish(phaseKey)
         /* 退订状态转发 —— 不退的话每发一条消息就多一个监听器 */

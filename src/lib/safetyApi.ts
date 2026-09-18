@@ -110,6 +110,8 @@ export async function taskUnfinished(): Promise<TaskRecord[]> {
 export async function taskList(options?: {
   limit?: number
   status?: string
+  /* 主进程的 task:list 一直支持按会话过滤，前端类型漏了 —— AG-011 用上才发现 */
+  sessionId?: string
 }): Promise<TaskRecord[]> {
   if (!bridge?.taskList) return []
   try {

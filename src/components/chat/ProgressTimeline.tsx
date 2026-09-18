@@ -3,6 +3,7 @@ import type { AgentPhase } from '@/types'
 import { isTerminalPhase, phaseLabel } from '@/lib/agentPhase'
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, XCircle } from 'lucide-react'
 import { isDone, textOf } from './PlanCard'
+import { toolLabel } from '@/lib/agentActivity'
 import { cn } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -133,7 +134,8 @@ export function ProgressTimeline({ phases, steps, plan }: ProgressTimelineProps)
               <Dot state={state} />
             </span>
             <span className={cn('min-w-0', DOT_TEXT[state])}>
-              <span className="font-mono">{step.tool}</span>
+              {/* 人名话（原名放 title 里）—— AG-005 留下的「显示 list_dir」已修 */}
+              <span title={step.tool}>{toolLabel(step.tool)}</span>
               {/* 失败的那行把原因摆出来（要求里写了「失败步骤保留原因」） */}
               {detail && (
                 <span className={cn('ml-1.5', step.ok ? 'text-fg-tertiary' : '')}>

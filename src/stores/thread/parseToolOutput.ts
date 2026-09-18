@@ -78,12 +78,27 @@ export function parseSearchCitations(result: string): NonNullable<Message['citat
   return out
 }
 
+/**
+ * 命令前面的 `chcp 65001 >nul &&` 是**为了中文不乱码加的壳**，不是它真要干的事。
+ * 摘要是给人扫一眼的，把壳剥掉才好读（AG-008 留下的已知问题）。
+ */
+const CHCP_PREFIX = /^chcp\s+\d+\s*>nul\s*(?:&&|&)\s*/i
+
+/** 路径太长就抢中间 —— 头是盘符/目录，尾是文件名，两头都有用 */
+function shortPath(value: string, max = 60): string {
+  if (value.length <= max) return value
+  return `${value.slice(0, max - 25)}…${value.slice(-24)}`
+}
+
 /** 工具参数摘要，别把整坨 JSON 摊在界面上 */
 export function summarizeArgs(name: string, args: Record<string, unknown>): string {
   const path = typeof args.path === 'string' ? args.path : ''
   const command = typeof args.command === 'string' ? args.command : ''
-  if (name === 'run_shell') return command.slice(0, 100)
-  if (name === 'list_dir') return path || '.'
-  if (path) return path
+  if (name === 'run_shell') {
+    const clean = command.replace(CHCP_PREFIX, '').trim()
+    return (clean || command.trim()).slice(0, 100)
+  }
+  if (name === 'list_dir') return shortPath(path) || '.'
+  if (path) return shortPath(path)
   return JSON.stringify(args).slice(0, 80)
 }
