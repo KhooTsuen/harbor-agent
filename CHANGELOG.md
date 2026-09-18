@@ -1,5 +1,85 @@
 # 更新日志
 
+## [0.70.0] — 2026-09-19 · AG-015 错误分类
+
+文档列了 11 类错误（NetworkError / AuthenticationError / TimeoutError / RateLimitError /
+PermissionError / FileChangedError / ToolFailure / ContextOverflow / ProcessExit / MCPError /
+UnknownError），并要求每类定义四件事：**用户可理解的说明 / 是否自动恢复 / 恢复策略 /
+是否需要用户介入**。
+
+`errors.cjs` 本来就有分类，但只有前两项（`hint` + `retryable`），而且**缺三类**。
+
+### 补上缺的三类
+
+| 新增 | 怎么认出来 |
+| --- | --- |
+| `tool_failure` | 工具返回的错误没命中任何特征时兜底（「错误：…」开头） |
+| `process_exit` | 消息里有「退出码 / exit code / process exited」 |
+| `mcp` | 消息里有 `MCP` / `json-rpc` |
+
+### 每类补两列：`strategy` 和 `needsUser`
+
+光知道「能不能重试」不够 —— 界面要能回答「**现在发生了什么、我打算怎么办、要不要你插手**」。
+
+`strategy` 取值：`retry` / `backoff` / `reread` / `compact` / `replan` / `inspect` /
+`ask` / `switch_model` / `none`（每个都有对应的中文说明，见 `STRATEGY_TEXT`）。
+
+`needsUser` 为真的四类：`auth`（去改 Key）、`permission`（给权限）、
+`model_unsupported`（换模型）、`unknown`（未知的得让人看看）。
+
+### ★ 分类要被用起来才算数
+
+新增 `classifyToolOutput()` —— 工具失败时返回的是**字符串**（`错误：…`）不是 Error，
+所以先包成 Error 走一遍规则；一条兜底：以「错误：」开头但没命中任何特征的，就是工具自己失败。
+
+`loop-tools.cjs` 在工具失败时做两件事：
+
+1. **给模型一句判断**（文档「失败体验标准」里那句）：
+   > Agent 判断：这是测试失败，不是执行环境错误。
+
+   实际写进 tool 消息的样子：
+
+   ```
+   [错误分类] process_exit —— 命令非正常退出（看退出码和输出）。建议：看退出码和输出，
+   判断是命令自己失败还是环境问题
+   ```
+
+   不做这一步的话，模型看到一个「错误：…」只会原样重试 —— 同一个坑里反复掉
+   （那正是 AG-017「失败后继续」要治的）。
+
+2. **事件里带上 `errorKind` / `errorHint`**，界面据此说人话。
+
+### 真机验证
+
+任务「读取一个不存在的文件」，落盘的 `agent.tool.failed`：
+
+```
+name       = read_file
+★errorKind = file_changed
+★errorHint = 文件不存在，或者读完之后被改动了
+result     = 错误：文件不存在：E:\绝对不存在的文件-a1b2c3.txt
+```
+
+（hint 第一版写的是「文件在读取后被改动了」，真机上看着不对 —— 实际是**文件不存在**。
+这一类归的是两种情况，说明得都覆盖到，已改。）
+
+### 测试
+
+内核 **896 → 927**（新增 `scripts/selftest/groups/24-errors.mjs`），前端 295 不变。
+`tsc` / `eslint` / `prettier` 全过，全仓 0 文件超 300 行。
+
+其中一条守卫是「每类四项齐全」，另一条是「**每个 `strategy` 都得有对应的中文说明**」
+（防新增策略时漏掉 `STRATEGY_TEXT`）。
+
+### 已知问题
+
+1. 类名用的是项目内部的 `snake_case`（`network` / `auth`），不是文档的 `NetworkError` ——
+   `shouldRetry` 的 `retryOn` 列表和数据里都依赖这个写法，改名动静大收益小。
+   文件头的注释里列了完整对照。
+2. `process_exit` / `tool_failure` / `mcp` 目前只做到「认得出来 + 告诉模型」，
+   **真正按策略自动恢复**（重读、re-plan、检查退出码）是 AG-016 的事。
+3. `bad_request` / `server` / `model_unsupported` 这三类文档没列，是原有的，保留着 ——
+   它们在实际跑的时候确实会出现（4xx 参数问题、5xx、模型不支持）。
 ## [0.69.0] — 2026-09-19 · AG-013 智能权限确认（顺带把 AG-014 一起做了）
 
 这两条本来就是一件事的两面，分开做会打架：AG-013 要的「Agent 准备：修改 3 个文件 /
