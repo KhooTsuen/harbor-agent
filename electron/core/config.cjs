@@ -96,8 +96,7 @@ function load() {
      * 配置这边做不到「不回写」—— 设置改一次就要写一次 —— 所以退而求其次：
      * 至少让原文件活在一份 .broken-<时间戳> 里，并且让界面能提示用户。
      */
-    loadWarning =
-      error instanceof Error ? messageOf(error) : String(error)
+    loadWarning = error instanceof Error ? messageOf(error) : String(error)
     if (original) {
       try {
         const backup = `${configFile()}.broken-${Date.now()}`

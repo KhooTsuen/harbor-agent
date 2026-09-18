@@ -99,6 +99,8 @@ export interface TaskRecord {
   projectId: string
   workdir: string
   plan: string[]
+  /* AG-004：每一版计划（含当前版，最后一条就是现行的）。老任务没有 —— 当空数组看 */
+  planVersions?: Array<{ plan: string[]; at: number; reason: string }>
   steps: Array<{ at: number; tool: string; ok: boolean; ms: number; summary: string }>
   checkpoints: Array<{ at: number; label: string; note: string }>
   changedFiles: Array<{ path: string; at: number }>

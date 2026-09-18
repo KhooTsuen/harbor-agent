@@ -1,5 +1,84 @@
 # 更新日志
 
+## [0.61.0] — 2026-09-18 · AG-004 计划版本历史 / Re-plan
+
+文档把执行管线定成 `Understand → Plan → Execute → Verify → Respond`，
+要求「Plan 与 Execute 分离」「Plan 更新必须保留历史」「允许 Re-plan」。
+
+### 改造前的两个洞
+
+1. **`setPlan` 直接覆盖 `task.plan`** —— 计划改过之后旧的那版就没了，
+   事后看不出「为什么变成现在这样」。
+2. **`loop.cjs` 用 `planParsed` 布尔量「只抓第一次」** —— 模型后来重新规划
+   （用户改了要求、或者发现路走不通）会被**静默丢弃**。界面永远停在第一版，
+   而内核按新计划干活。这是最坏的一种不一致。
+
+### 改法
+
+**① 内核：计划版本历史（`task-plan.cjs` 46 → 91 行）**
+
+新增 `recordVersion(task, plan, {reason, at})`：把每一版计划按时间留下来
+（含当前版），**只改内存不落盘**（落盘是 `task.cjs` 的事）。返回值告诉调用方
+「这次到底变没变」—— 模型每一轮都会把计划原样复述一遍，不变就不能记新版，
+否则一次对话能刷出几十版一模一样的计划。
+
+新增 `migrate(task)`：老任务只有 `plan`、没有 `planVersions` 的，
+读的时候补一条 v1，**只补在内存里**（老数据一个字节都不动，测试钉住了这点）。
+
+**② 内核：`setPlan` 变了才写盘**
+
+返回值从 `task` 改成 `{ task, changed, version, reason }`；没变就直接返回，
+`updatedAt` 都不动（不写盘）。
+
+**③ 内核：`capturePlan` 变了才返回**
+
+以前是 `setPlan(...); return plan`（永远返回）→ 现在没变返回 `null`，
+`loop.cjs` 就不用自己判断了。
+
+**④ 内核：`loop.cjs` 去掉那个布尔量**
+
+    - let planParsed = false
+    - if (!planParsed && result.content) { planParsed = true; ... }
+    + if (result.content) { const captured = taskContext.capturePlan(...); if (captured) emit(...) }
+
+变没变由 `capturePlan` 说了算。`loop.cjs` 300 → 298 行。
+
+**⑤ 前端：计划看得见**
+
+- 新增 `src/components/chat/PlanCard.tsx`（124 行）—— 步骤列表（`[x]` 画成
+  勾掉、`[ ]` 画成空心圈）+「执行计划 · N/M 步」+「第 N 版」+ 可展开的
+  **计划历史**（每版带原因和时间）。
+- `streamEvents.ts` 加 `case 'plan'` → 触发 `useTaskStore.refresh()`。
+  **不在事件流里维护第二份真相** —— 事件里那份够画卡片，但版本历史在台账里，
+  让它重读。频率很低（计划真变了才发），不值得再做个增量协议。
+- `TaskBanner` 不再只给一个「计划 N 步」的数字，改成渲染 `PlanCard`。
+- `TaskRecord` 加 `planVersions?`（老任务当空数组看）。
+
+### 测试
+
+内核 690 → **736**（+46，新组 `18-plan.mjs`）：第一版标记、**同计划不记新版**
+（模型每轮复述）、改了留旧版、第三版、自定义 reason、空计划/不存在的任务、
+**老任务迁移不落盘**、`capturePlan` 变了才返回、接线守卫。
+
+前端 221 → **233**（+12）：`[x]`/`[X]`/`[ ]`/裸条目、只认开头的标记、
+剥标记取正文、以及三条源码守卫。
+
+**变异验证**（4 个全有效）：
+去掉「没变就不记版本」→ 11 项红；`migrate` 不清 `task.plan` → 1 项红；
+`capturePlan` 不管变没变都返回 → 1 项红；`loop.cjs` 加回 `planParsed` → 1 项红。
+
+**顺带修的真 bug**（测试抓出来的）：`migrate` 一开始忘了先清 `task.plan`，
+于是 `recordVersion` 拿它当「当前版」，一看和要补的那份一样就判定「没变」——
+第一版补不出来，老任务迁移后 `planVersions` 还是空的。
+
+### 真机验证（隔离环境 + replan 假上游）
+
+新增 `tools/fake-upstream.mjs` 的 `replan` 模式：前两轮各给一版计划
+（第二版多一条），条目不勾选 → 内核完成门禁把这一轮顶回去继续 →
+**同一个任务里自然出现两次计划**。第三轮起不给计划块，让对话能收尾。
+
+---
+
 ## [0.60.0] — 2026-09-18 · AG-003 首反馈 / TTFB
 
 文档要求：「用户发送后必须**立即**获得反馈」，并且要能量出来 ——

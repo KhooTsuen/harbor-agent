@@ -49,7 +49,15 @@ const PHASES = [
 const TRANSITIONS = {
   idle: ['preparing', 'cancelled'],
   preparing: ['thinking', 'executing', 'failed', 'cancelled'],
-  thinking: ['planning', 'executing', 'responding', 'waiting_user', 'retrying', 'failed', 'cancelled'],
+  thinking: [
+    'planning',
+    'executing',
+    'responding',
+    'waiting_user',
+    'retrying',
+    'failed',
+    'cancelled',
+  ],
   planning: ['executing', 'responding', 'waiting_user', 'failed', 'cancelled'],
   executing: [
     'executing',
@@ -77,7 +85,17 @@ const TRANSITIONS = {
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 
 /** 还「没干完」的状态 —— 重启后提示续做、侧栏黄点都用它 */
-const UNFINISHED = new Set(['preparing', 'thinking', 'planning', 'executing', 'verifying', 'responding', 'waiting_user', 'paused', 'retrying'])
+const UNFINISHED = new Set([
+  'preparing',
+  'thinking',
+  'planning',
+  'executing',
+  'verifying',
+  'responding',
+  'waiting_user',
+  'paused',
+  'retrying',
+])
 
 function isPhase(value) {
   return PHASES.includes(String(value))

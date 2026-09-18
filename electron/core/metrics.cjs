@@ -49,7 +49,8 @@ function begin(traceId, opts = {}) {
   const now = typeof opts.at === 'number' ? opts.at : Date.now()
   const timeline = {
     traceId: key,
-    requestTime: typeof opts.requestTime === 'number' && opts.requestTime > 0 ? opts.requestTime : now,
+    requestTime:
+      typeof opts.requestTime === 'number' && opts.requestTime > 0 ? opts.requestTime : now,
     taskCreated: 0,
     firstFeedback: 0,
     firstToken: 0,

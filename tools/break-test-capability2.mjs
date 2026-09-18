@@ -39,7 +39,10 @@ for (const p of probes) {
 
 console.log('\n── 对照：直接看 realpath / canon 对这两个盘的处理 ──')
 /* 从 capability 内部行为反推：传一个不存在的路径看它落到哪 */
-for (const p of [String.raw`C:\definitely\not\here\x.txt`, String.raw`E:\definitely\not\here\x.txt`]) {
+for (const p of [
+  String.raw`C:\definitely\not\here\x.txt`,
+  String.raw`E:\definitely\not\here\x.txt`,
+]) {
   const r = cap.check(p, { workdir: wd, sessionId: 'break-test' })
   console.log(`${r.ok ? '⚠️ 放行' : '🛡 拒绝'} | ${p} → absolute=${r.absolute}`)
 }

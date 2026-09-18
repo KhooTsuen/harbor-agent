@@ -2,6 +2,7 @@ import type { AgentPhase, Message, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
 import { confirmChat } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
+import { useTaskStore } from '../useTaskStore'
 import { useUIStore } from '../useUIStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 
@@ -230,8 +231,18 @@ export function handleStreamEvent(
      * 这些不落到消息上，也不打扰用户：
      *   turn_start / turn_end  —— 进度，界面靠线程状态体现（phase）
      *   mode / route           —— 意图分类与模型选择，属于调试信息
-     *   plan / task            —— 任务台账走 IPC 读（见 TaskBanner），不走事件流
+     *   task                   —— 任务台账走 IPC 读（见 TaskBanner），不走事件流
      */
+    case 'plan': {
+      /*
+       * AG-004：计划变了。事件里那份够画卡片，但任务的**版本历史**在台账里 ——
+       * 让 useTaskStore 重读一遍，不在事件流里维护第二份真相。
+       * 频率很低（只在计划真的变了才发），不值得再做个增量协议。
+       */
+      void useTaskStore.getState().refresh()
+      return { handled: true }
+    }
+
     default:
       return { handled: false }
   }

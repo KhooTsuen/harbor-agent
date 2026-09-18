@@ -81,21 +81,33 @@ export async function run() {
 
   /* 刹车二：进度连着两轮没变 → 说明顶了也没用，放行 */
   const stalled = { blocks: 1, snapshot: g1.seen.snapshot }
-  check('★ 进度没变且已顶过一次 → 放行', taskContext.shouldContinue({
-    taskId: task.id,
-    content: '做完了',
-    seen: stalled,
-  }).continue === false)
+  check(
+    '★ 进度没变且已顶过一次 → 放行',
+    taskContext.shouldContinue({
+      taskId: task.id,
+      content: '做完了',
+      seen: stalled,
+    }).continue === false,
+  )
 
   /* 计划全勾完 → 不拦 */
   taskCore.setPlan(task.id, ['[x] 读 package.json', '[x] 读 tsconfig.json'])
-  check('计划全勾完 → 不拦', taskContext.shouldContinue({ taskId: task.id, seen: {} }).continue === false)
+  check(
+    '计划全勾完 → 不拦',
+    taskContext.shouldContinue({ taskId: task.id, seen: {} }).continue === false,
+  )
 
   /* 任务不在了 / 不是 running → 不拦（不该拿别人的任务拦人） */
-  check('任务 id 不存在 → 不拦', taskContext.shouldContinue({ taskId: 'no-such-task', seen: {} }).continue === false)
+  check(
+    '任务 id 不存在 → 不拦',
+    taskContext.shouldContinue({ taskId: 'no-such-task', seen: {} }).continue === false,
+  )
 
   taskCore.update(task.id, { status: 'paused' })
-  check('任务已暂停 → 不拦', taskContext.shouldContinue({ taskId: task.id, seen: {} }).continue === false)
+  check(
+    '任务已暂停 → 不拦',
+    taskContext.shouldContinue({ taskId: task.id, seen: {} }).continue === false,
+  )
 
   /* ── ⑤ 完整性：绕过 setPlan 改掉计划要被抓到 ─────────── */
   group('任务上下文 / 计划完整性')

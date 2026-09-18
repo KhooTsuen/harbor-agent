@@ -49,12 +49,18 @@ export async function run() {
   check('failed 是终态', life.isTerminal('failed'))
   check('cancelled 是终态', life.isTerminal('cancelled'))
   check('executing 不是终态', !life.isTerminal('executing'))
-  check('区分了三种结束方式', ['completed', 'failed', 'cancelled'].every((p) => life.isTerminal(p)))
+  check(
+    '区分了三种结束方式',
+    ['completed', 'failed', 'cancelled'].every((p) => life.isTerminal(p)),
+  )
 
   group('AG-001 生命周期 / 转移规则')
   check('idle → preparing 合法', life.canTransition('idle', 'preparing'))
   check('thinking → executing 合法', life.canTransition('thinking', 'executing'))
-  check('executing → executing 合法（一轮里多次工具）', life.canTransition('executing', 'executing'))
+  check(
+    'executing → executing 合法（一轮里多次工具）',
+    life.canTransition('executing', 'executing'),
+  )
   check('executing → verifying 合法', life.canTransition('executing', 'verifying'))
   check('★ idle → completed 非法（没干活就完成）', !life.canTransition('idle', 'completed'))
   check('★ completed → executing 非法（终态出不去）', !life.canTransition('completed', 'executing'))
@@ -95,7 +101,10 @@ export async function run() {
 
   const hist = m.history
   check('历史记下了每一步', hist.length === 8, String(hist.length))
-  check('历史带时间戳', hist.every((h) => typeof h.at === 'number' && h.at > 0))
+  check(
+    '历史带时间戳',
+    hist.every((h) => typeof h.at === 'number' && h.at > 0),
+  )
 
   off()
   const n = events.length
@@ -132,6 +141,9 @@ export async function run() {
   check('forget 之后是新机器', life.forTask('task-a').phase === 'idle')
   life.clearAll()
 
-  check('「没干完」的状态表可用（重启提示续做要靠它）', life.UNFINISHED.has('paused') && life.UNFINISHED.has('executing'))
+  check(
+    '「没干完」的状态表可用（重启提示续做要靠它）',
+    life.UNFINISHED.has('paused') && life.UNFINISHED.has('executing'),
+  )
   check('终态不在「没干完」里', !life.UNFINISHED.has('completed'))
 }

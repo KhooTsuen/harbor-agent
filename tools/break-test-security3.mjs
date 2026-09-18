@@ -62,13 +62,19 @@ async function probe(label, answer, name, args) {
 console.log(`会话：${freshSession}（全新，无历史授权）\n`)
 
 console.log('══ ① 用户拒绝时，越界读能不能得逞 ══')
-const r1 = await probe('读 C:\\Windows\\win.ini', deny, 'read_file', { path: 'C:\\Windows\\win.ini' })
+const r1 = await probe('读 C:\\Windows\\win.ini', deny, 'read_file', {
+  path: 'C:\\Windows\\win.ini',
+})
 const r2 = await probe('list_dir C:\\', deny, 'list_dir', { path: 'C:\\' })
-const r3 = await probe('读凭证库', deny, 'read_file', { path: join(ROOT, 'data', 'credentials.json') })
+const r3 = await probe('读凭证库', deny, 'read_file', {
+  path: join(ROOT, 'data', 'credentials.json'),
+})
 const r4 = await probe('读工作目录内的文件（该放行）', deny, 'read_file', { path: 'hello.txt' })
 
 console.log('\n══ ② 用户同意后才放行（对照）══')
-const r5 = await probe('读 C:\\Windows\\win.ini（这次同意）', allow, 'read_file', { path: 'C:\\Windows\\win.ini' })
+const r5 = await probe('读 C:\\Windows\\win.ini（这次同意）', allow, 'read_file', {
+  path: 'C:\\Windows\\win.ini',
+})
 
 console.log('\n══ ③ 危险命令：用真实默认 policy（critical=block）══')
 const cmds = [
@@ -86,5 +92,7 @@ for (const [cmd, label] of cmds) {
   await probe(label, deny, 'run_shell', { command: cmd })
 }
 
-console.log(`\n结论：越界读被拦 ${[r1, r2, r3].filter(Boolean).length}/3，` +
-  `工作目录内放行=${!r4}，同意后放行=${!r5}`)
+console.log(
+  `\n结论：越界读被拦 ${[r1, r2, r3].filter(Boolean).length}/3，` +
+    `工作目录内放行=${!r4}，同意后放行=${!r5}`,
+)

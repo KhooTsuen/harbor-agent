@@ -52,6 +52,7 @@ import { run as taskContext } from './selftest/groups/14-task-context.mjs'
 import { run as lifecycle } from './selftest/groups/15-lifecycle.mjs'
 import { run as eventsBus } from './selftest/groups/16-events.mjs'
 import { run as metrics } from './selftest/groups/17-metrics.mjs'
+import { run as plan } from './selftest/groups/18-plan.mjs'
 
 const GROUPS = [
   basics,
@@ -71,6 +72,7 @@ const GROUPS = [
   lifecycle,
   eventsBus,
   metrics,
+  plan,
 ]
 
 async function main() {

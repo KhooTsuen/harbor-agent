@@ -52,7 +52,9 @@ let leak = 0
 
 console.log('══ ① 绝对路径 / 越界读：三档权限各试一次 ══')
 for (const perm of ['readonly', 'ask', 'full']) {
-  const b1 = await probe('读 C:\\Windows\\win.ini', perm, 'read_file', { path: 'C:\\Windows\\win.ini' })
+  const b1 = await probe('读 C:\\Windows\\win.ini', perm, 'read_file', {
+    path: 'C:\\Windows\\win.ini',
+  })
   const b2 = await probe('list_dir C:\\', perm, 'list_dir', { path: 'C:\\' })
   if (perm !== 'full' && (!b1 || !b2)) leak += 1
 }

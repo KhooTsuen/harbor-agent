@@ -13,6 +13,7 @@
  *   http://127.0.0.1:9977/v1-slow      → 每 5 秒一个 token
  *   http://127.0.0.1:9977/v1-empty     → 200 但空 body
  *   http://127.0.0.1:9977/v1-garbage   → 200 但二进制垃圾
+ *   http://127.0.0.1:9977/v1-replan    → 同一个任务里先后给两版计划（AG-004 用）
  *   http://127.0.0.1:9977/v1           → 正常（对照组）
  *
  * 坏法：
@@ -21,12 +22,16 @@
  *   slow      每 5 秒吐一个 token（测「停止」按钮能不能立刻停住）
  *   empty     200 但空 body
  *   garbage   200 但返回一段随机二进制
+ *   replan    第 1 轮给计划 A，第 2 轮给计划 B（多一条），第 3 轮起不给
  *   ok        正常返回（对照组）
  */
 
 import { createServer } from 'node:http'
 
 const PORT = Number(process.env.FAKE_PORT ?? 9977)
+
+/* replan 模式的轮次计数（一次对话会依次调用，所以按进程累计） */
+let planRounds = 0
 
 function sseChunk(delta) {
   return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
@@ -95,6 +100,42 @@ const server = createServer((req, res) => {
     return
   }
 
+  if (mode === 'replan') {
+    /*
+     * AG-004 真机验证。前两轮各给一版计划（第二版多一条）。
+     *
+     * 为什么不用工具调用来拖长循环：假上游只会发 content 增量，搬 tool_calls
+     * 字段得不偿失。计划条目不勾选（`[ ]`）就够了 —— 内核的完成门禁会把这一轮
+     * 顶回去继续，于是同一个任务里自然出现两次计划。第三轮起不给计划块，
+     * 让对话能收尾（门禁有刹车：顶够次数就放行）。
+     */
+    planRounds += 1
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    })
+    if (planRounds === 1) {
+      res.write(sseChunk({ content: '先规划一下：\n\n```plan\n- [ ] 读配置\n- [ ] 改代码\n```\n' }))
+    } else if (planRounds === 2) {
+      res.write(
+        sseChunk({
+          content:
+            '还得跑测试，计划改一下：\n\n```plan\n- [ ] 读配置\n- [ ] 改代码\n- [ ] 跑测试\n```\n',
+        }),
+      )
+    } else {
+      res.write(sseChunk({ content: '这轮没别的了。' }))
+    }
+    /* 故意慢 2.5 秒才收尾：真机验证得在「任务还在跑」的时候查界面，
+       任务一结束横幅就没了 —— 采样总是慢一步 */
+    setTimeout(() => {
+      res.write('data: [DONE]\n\n')
+      res.end()
+    }, 2500)
+    return
+  }
+
   /* ok：正常的 SSE，立刻结束 */
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -110,6 +151,6 @@ const server = createServer((req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(
     `假上游就绪：http://127.0.0.1:${PORT}/v1-<模式>/
-  模式：html | truncate | slow | empty | garbage | （无后缀=正常）`,
+  模式：html | truncate | slow | empty | garbage | replan | （无后缀=正常）`,
   )
 })
