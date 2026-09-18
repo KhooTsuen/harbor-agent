@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { resolvePath, snapshotBefore } = require('./_shared.cjs')
+const fileCache = require('../file-cache.cjs')
 
 module.exports = {
   name: 'write_file',
@@ -25,6 +26,8 @@ module.exports = {
     const existed = fs.existsSync(file)
     const before = existed ? fs.statSync(file).size : 0
     fs.writeFileSync(file, content, 'utf8')
+    /* AG-019：刚写过的文件缓存必须作废 —— mtime 判据在 Windows 上有精度风险 */
+    fileCache.invalidate(file)
 
     const verb = existed ? '覆盖' : '新建'
     return `${verb} ${file}（${before} → ${Buffer.byteLength(content, 'utf8')} 字节，${content.split('\n').length} 行）`

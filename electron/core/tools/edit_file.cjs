@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const { resolvePath, readTextFile, normalizeNewlines, snapshotBefore } = require('./_shared.cjs')
+const fileCache = require('../file-cache.cjs')
 
 /**
  * 精确替换。
@@ -66,6 +67,8 @@ module.exports = {
 
     const updated = original.slice(0, first) + newText + original.slice(first + oldText.length)
     fs.writeFileSync(file, updated, 'utf8')
+    /* AG-019：改完就作废缓存 —— 不然下一次读会拿到改之前的内容 */
+    fileCache.invalidate(file)
 
     const atLine = original.slice(0, first).split('\n').length
     const removed = oldText.split('\n').length
