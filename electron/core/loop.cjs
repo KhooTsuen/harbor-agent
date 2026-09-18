@@ -44,12 +44,9 @@ const MAX_TURNS = 25
  * @param {string} [options.goal]       本轮的原始目标（用户那句话）
  */
 async function run(options) {
-  /*
-   * 一次 Agent 运行 = 一条任务 + 一个文件改动事务。
-   *
-   * 任务回答「干什么、到哪一步了、能不能继续」；事务回答「改了哪些文件、怎么整批撤」。
-   * 两者都不进会话文件 —— 会话是聊天记录，不该兼任工作台账。
-   */
+  /* 一次运行 = 一条任务 + 一个文件改动事务。任务答「干什么、到哪一步」，
+     事务答「改了哪些文件、怎么整批撤」。都不进会话文件 —— 会话是聊天记录，
+     不该兼任工作台账。 */
   const goal = String(options.goal ?? '')
   const sessionId = options.sessionId ?? ''
 
@@ -82,11 +79,21 @@ async function run(options) {
   } catch (error) {
     /* 中断/报错都算「没干完」—— 任务留着可恢复，事务不提交（还能整批撤） */
     const aborted = error instanceof Error && error.name === 'AbortError'
-    life.mark(aborted ? 'cancelled' : 'failed', options.taskId ?? '')
+    life.mark(aborted ? 'cancelled' : 'failed', traceKey(options))
     if (aborted) taskCore.update(task.id, { status: 'paused' })
     else taskCore.fail(task.id, error instanceof Error ? error.message : String(error))
     throw error
   }
+}
+
+/*
+ * 状态事件的 key。**不能用 options.taskId** —— 那是任务台账 id（task_xxx），
+ * run() 进循环前还会把它换成 task.id；调用方（chat.cjs）订阅用的是自己的 key
+ * （requestId），两边对不上 → 事件全被过滤 → 「UI 显示空闲，后台其实在跑」。
+ * 所以事件流单独用 traceId：谁发起请求谁定 key。
+ */
+function traceKey(options) {
+  return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
 }
 
 /**
@@ -154,15 +161,14 @@ async function runLoop(options) {
   /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
   let gateSeen = {}
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
-  const tid = options.taskId ?? ''
-  life.mark('preparing', tid)
+  life.mark('preparing', traceKey(options))
 
   for (; turn < MAX_TURNS; turn += 1) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
 
     /* 用量闸：调模型**之前**查账（唯一能真省钱的位置）。按 token 算，不按金额 */
     limits.enforce(emit)
-    life.mark('thinking', tid)
+    life.mark('thinking', traceKey(options))
     emit({ type: 'turn_start', turn: turn + 1 })
 
     /* ── 调模型（带重试与降级）── */
@@ -205,7 +211,7 @@ async function runLoop(options) {
 
     /* ── 没有工具调用 → 这轮结束 ── */
     if (result.toolCalls.length === 0) {
-      life.mark('verifying', tid)
+      life.mark('verifying', traceKey(options))
       /* 完成门禁：计划没勾完就想收工 → 顶回去继续（刹车在 task-context.cjs） */
       const gate = taskContext.shouldContinue({
         taskId: options.taskId ?? '',
@@ -231,7 +237,7 @@ async function runLoop(options) {
         }
       }
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
-      life.mark('responding', tid)
+      life.mark('responding', traceKey(options))
       /* 自检复核（开关、事件、失败保留原回答都在里面） */
       const finalContent = await reviewWithEvents({
         config,
@@ -243,7 +249,7 @@ async function runLoop(options) {
         mode,
         emit,
       })
-      life.mark('completed', tid)
+      life.mark('completed', traceKey(options))
       return {
         content: finalContent,
         reasoning: result.reasoning,
@@ -254,7 +260,7 @@ async function runLoop(options) {
     }
 
     /* ── 有工具调用：把 assistant 这条带 tool_calls 的消息存进历史 ── */
-    life.mark('executing', tid)
+    life.mark('executing', traceKey(options))
     messages.push({
       role: 'assistant',
       content: result.content || '',
