@@ -1,5 +1,98 @@
 # 更新日志
 
+## [0.67.0] — 2026-09-19 · AG-011 Pause / Resume（Sprint 2 第一项）
+
+先纠正一个编号错误：上一版（0.66.0）我把那批「清扫已知问题」自作主张叫成了 AG-011，
+占用了这个编号。实际上**那份内容属于 AG-021（Streaming 优化）** —— 误打误撞做对了，
+但现在把它归回本位。**本版才是文档里的 AG-011：Pause / Resume。**
+
+### Pause：做完手上这步再停
+
+和既有的「停止」是**两件事**，所以给了两个按钮：
+
+| | 行为 | 之后 |
+| --- | --- | --- |
+| **停止**（原有） | 立刻断，正在跑的命令被杀掉（连同子进程） | 任务标 `paused`，可恢复 |
+| **暂停**（新增） | **先把手上这一步做完**，在下一个安全点停住 | 任务标 `paused`，可恢复 |
+
+**安全点是「每轮开头」** —— 那个位置上，上一轮的工具已经**全部跑完**，
+正是文档说的「完成当前安全操作，不启动下一步」。所以暂停**永远不会打断正在跑的命令**
+（这正是它和 abort 的本质区别）。
+
+实现：`chat:pause` 只置一个标记（`entry.pause.requested`），`loop.cjs` 每轮开头查一次，
+命中就 `life.mark('paused')` + 返回 `pausedResult`（和正常返回同形，只多一个 `paused: true`），
+`run()` 拿它把任务台账标成 `paused` 而不是 `completed`。
+
+### Resume：复用原任务，不从头再来
+
+「继续」按钮以前只是「切到那条会话 + 弹个 toast」，用户还得自己打一句「继续」。
+现在真的接着做：带上 `resumeTaskId` 走普通发送链路（历史、事件、生命周期全部照旧），
+主进程看到它就**复用原来那条任务**（`task-resume.openForRun`）——
+`steps` / `plan` / `changedFiles` 都还在，所以「不重复已完成步骤」是自洽的。
+
+★ 话说回来，「不重复已完成步骤」**本来就已经具备**：`task-context.cjs` 会把
+「计划里第一条没打 `[x]` 的」注入提示给模型（AG-008 做的）。这一版补的是
+**别把这些记录丢掉** —— 新建一条任务才是真的会从头再来。
+
+**环境检查**（文档要求「Resume 前检查文件和环境是否改变」）：比对任务改过的每个文件，
+`mtime` 是否晚于任务的 `updatedAt`（任务一暂停就不再更新，所以「比它还新」= Agent 撒手
+之后有人动过）。文件消失也算变了。有变化就**注入提示**告诉模型「动它们之前先重新读一遍」——
+不是拦下来不让做，而是不让它基于过时假设往下走。
+
+### 修掉的真 bug：暂停之后界面一直显示「在跑」
+
+`isActivePhase` 原来是「不在 `IDLE`、也不在 `TERMINAL` 就算活着」—— **`paused` 被算成了
+「正在干活」**。于是暂停之后「停止」按钮永远不消失，看起来像没停下来（真机测了 65 秒都没消失）。
+
+现在 `NOT_RUNNING` 显式包含 `paused`。注意 `waiting_user` **不算停** ——
+请求还活着，只是在等你点确认，那时候按钮得留着。
+
+### 真机验证（打包版 + CDP + 落盘事件交叉验证）
+
+```
++  2786ms  agent.tool.started     ← 第 1 条 ping 开始
++  9067ms  agent.tool.completed   ← 跑完
++  9116ms  agent.paused           ← ★ 暂停落在工具跑完之后（安全点，不是打断）
++ 11538ms  agent.started          ← 恢复
++ 16721ms  agent.tool.started     ← 继续干活
+```
+
+- **`agent.paused` 紧跟 `agent.tool.completed`** —— 证明没有打断正在跑的工具
+- 任务台账只有**一条** `task_mu7d7toa_tsyt`，`steps=2`（两次运行的步骤累积在一起）
+  —— 证明**复用原任务**成功
+- 暂停耗时实测 **5.6 秒**（要等当前那一轮收尾，这是设计如此；所以暂停按钮点了会
+  **立刻弹「正在暂停，做完手上这一步就会停下来」**，不然用户以为按钮坏了）
+
+### 测试
+
+内核 **799 → 841**（新增 `scripts/selftest/groups/21-resume.mjs`），前端 **291 → 295**。
+`tsc` / `eslint` / `prettier` 全过，全仓 0 文件超 300 行。
+
+其中两条是这轮踩出来的：
+
+- **Windows 上刚写完的文件，`last-write-time` 可能晚到一秒上下** —— 环境检查不留容差
+  会把「自己刚改完」误判成「又被别人改了」。给了 2 秒余量（代价：暂停后两秒内的改动检测不到）。
+- **状态机原来不允许 `preparing / thinking / responding → paused`** —— 但用户点暂停时
+  Agent 可能卡在链条的任何一环上，不该因为「刚好在 thinking」就被拒绝。现在除 `idle`
+  和三个终态外，每个活跃态都能进 `paused`。
+
+### 顺手做的结构整理（为了守住 300 行）
+
+- `electron/core/chat-emit.cjs` 新建：事件怎么出去（总线 + 时间线 + 批处理）
+- `electron/core/task-resume.cjs` 新建：恢复相关（`canResume` / `reopen` /
+  `checkEnvironment` / `openForRun`）
+- `electron/core/loop-model.cjs` 收下 `pausedResult` 与 `exhaustedResult`
+- `src/lib/bridge.ts` + `src/lib/chatControl.ts` 新建：拆 `bridge` 是为了**打破循环依赖**
+  （backend 与 chatControl 都要用它）；backend 两边都 re-export，调用方不用改 import
+- `src/components/chat/composer/SendControls.tsx` 新建：发送 / 暂停 / 停止三个按钮
+
+### 已知问题
+
+1. 「继续」走的是**新一轮生命周期**，所以事件流里会先出现 `agent.started` 再出现
+   `agent.resumed`（后者是补发的）。语义上没错，但顺序看着有点怪。
+2. 暂停的延迟取决于「当前这一轮」有多长 —— 如果模型正在输出一段很长的回答，
+   可能要等它说完。这是文档「完成当前安全操作」的直接后果，不是缺陷。
+3. 恢复时**不做自动的 diff/测试**（那是 AG-036 的范围）。
 ## [0.66.0] — 2026-09-19 · AG-011 已知问题清扫（含「点停止要等十几秒」的真凶）
 
 把 CHANGELOG 里积下的已知问题一次清掉。最大的一条不是小毛病 ——

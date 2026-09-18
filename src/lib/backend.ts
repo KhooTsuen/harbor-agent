@@ -8,19 +8,12 @@ import type {
   WorkbenchBridge,
 } from '@/types/backend'
 import type { Thread } from '@/types'
+import { bridge, isElectron, useRealBackend } from './bridge'
 
-/* 后端桥：Electron 提供真实能力；浏览器只作为无权限的 UI 预览。
-   调用方只需要看 useRealBackend，不用猜当前环境。 */
-
-const bridge: WorkbenchBridge | undefined =
-  typeof window !== 'undefined' ? window.workbench : undefined
-
-export const isElectron = Boolean(bridge)
-
-/* 生产构建永远用真实后端；mock 只能在 Vite 开发服务器里显式开启，
-   免得便携版被一个环境变量误切成演示模式。 */
-export const useRealBackend =
-  isElectron && !(import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === '1')
+/* 桥和环境判断住在 ./bridge.ts（拆出去是为了打破与 chatControl 的环）；
+   中断/暂停住在 ./chatControl.ts。两边都从这儿 re-export，调用方不用改 import。 */
+export { bridge, isElectron, useRealBackend }
+export * from './chatControl'
 
 /** 版本号：优先取环境变量，没有就用 package.json 里的 0.1.0 */
 /* 版本号由 vite.config.ts 从 package.json 注入。兜底写「未知」而不是某个
@@ -90,15 +83,6 @@ export async function sendChat(
     return await bridge.sendChat(payload)
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-export async function abortChat(requestId: string): Promise<void> {
-  if (!bridge) return
-  try {
-    await bridge.abortChat(requestId)
-  } catch {
-    /* 中断失败没什么可做的 */
   }
 }
 

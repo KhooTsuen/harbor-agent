@@ -8,6 +8,7 @@ import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
 import { changesetList, changesetRollback, taskUpdate } from '@/lib/safetyApi'
 import { useTaskStore } from '@/stores/useTaskStore'
+import { useThreadStore } from '@/stores/useThreadStore'
 
 /* ══════════════════════════════════════════════════════════════
    任务横幅
@@ -55,8 +56,14 @@ export function TaskBanner() {
 
   async function resume(task: TaskRecord): Promise<void> {
     setBusy(task.id)
+    /*
+     * AG-011：以前这里只是「切到那条会话 + 弹个 toast」，用户还得自己打一句
+     * 「继续」。现在真的接着做：带上 resumeTaskId，主进程会**复用原任务**
+     * （steps / plan / changedFiles 都在），所以不会把已完成的事再做一遍。
+     */
     if (task.sessionId) setActiveThread(task.sessionId)
-    showToast('success', '已切到那条会话', `继续：${task.title}`)
+    useThreadStore.getState().resumeTask(task.id)
+    showToast('success', '接着做', `继续：${task.title}`)
     setBusy('')
     setHidden(true)
   }

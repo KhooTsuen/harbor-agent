@@ -1,8 +1,5 @@
-/*
- * window.workbench 的声明。
- * Electron 下有真实文件/终端/模型；浏览器预览下只有 UI。
- * 所有 IPC 都返回 { ok, ... }，失败不扔异常（跨进程扔了也拿不到栈）。
- */
+/* window.workbench 的声明。Electron 下有真实文件/终端/模型，浏览器预览下只有 UI。
+   所有 IPC 都返回 { ok, ... }，失败不扔异常（跨进程扔了也拿不到栈）。 */
 
 import type {
   AppConfig,
@@ -47,6 +44,8 @@ export interface WorkbenchBridge extends SafetyBridge {
     payload: ChatSendPayload,
   ) => Promise<{ ok: boolean; requestId?: string; error?: string }>
   abortChat: (requestId: string) => Promise<{ ok: boolean; error?: string }>
+  /* AG-011：暂停 —— 做完当前这步再停，和 abort（立刻断）不是一回事 */
+  pauseChat: (requestId: string) => Promise<{ ok: boolean; error?: string }>
   confirmChat: (confirmId: string, approved: boolean) => Promise<{ ok: boolean; error?: string }>
   compactChat: (payload: {
     model?: string

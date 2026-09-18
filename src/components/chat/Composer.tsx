@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowUp, ImageIcon, Paperclip, Square } from 'lucide-react'
+import { ImageIcon, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MAX_INPUT_LENGTH } from '@/constants'
 import { useAppStore } from '@/stores/useAppStore'
@@ -10,6 +10,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem } from '@/components/ui/Popover'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ModePicker } from './composer/ModePicker'
+import { SendControls } from './composer/SendControls'
 import { ModelPicker } from './composer/ModelPicker'
 import { MENTIONS, SLASH_COMMANDS } from './composer/completions'
 import { SuggestionChips } from './composer/SuggestionChips'
@@ -33,6 +34,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const setInput = useThreadStore((s) => s.setInput)
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
+  const pauseGeneration = useThreadStore((s) => s.pauseGeneration)
   const activeThreadId = useAppStore((s) => s.activeThreadId)
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
 
@@ -246,36 +248,14 @@ export function Composer({ onFocusRequest }: ComposerProps) {
                 }}
               />
 
-              {sending ? (
-                <Tooltip
-                  content={hasContent ? '停止生成（想发这条新消息，得先停掉当前这条）' : '停止生成'}
-                >
-                  <IconButton
-                    label="停止生成"
-                    size={32}
-                    onClick={stopGeneration}
-                    className="rounded-full"
-                  >
-                    <Square size={14} fill="currentColor" />
-                  </IconButton>
-                </Tooltip>
-              ) : (
-                <Tooltip content={canSend ? '发送' : '先写点什么'}>
-                  <button
-                    type="button"
-                    onClick={submit}
-                    disabled={!canSend}
-                    aria-label="发送消息"
-                    className={cn(
-                      'grid size-8 place-items-center rounded-full transition-colors duration-fast',
-                      'bg-fg-primary text-fg-inverse hover:bg-white',
-                      'disabled:cursor-not-allowed disabled:bg-bg-raised disabled:text-fg-tertiary',
-                    )}
-                  >
-                    <ArrowUp size={16} strokeWidth={2.5} />
-                  </button>
-                </Tooltip>
-              )}
+              <SendControls
+                sending={sending}
+                hasContent={hasContent}
+                canSend={canSend}
+                onSend={submit}
+                onPause={pauseGeneration}
+                onStop={stopGeneration}
+              />
             </div>
           </div>
         </div>

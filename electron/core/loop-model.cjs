@@ -149,6 +149,35 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * AG-011：暂停时的返回值。
+ *
+ * 故意和正常返回**同形**，只多一个 `paused: true` —— 调用方（loop.run）
+ * 拿它决定把任务台账标成 paused 还是 completed，别处不用改。
+ */
+function pausedResult({ turn, usage, toolRuns }) {
+  return {
+    content: '（任务已暂停，可以从这里继续）',
+    reasoning: '',
+    usage,
+    turns: turn,
+    toolRuns,
+    paused: true,
+  }
+}
+
+/** AG-011：轮数用尽时的返回值（活没干完，同样可恢复） */
+function exhaustedResult({ usage, toolRuns, maxTurns }) {
+  return {
+    content: `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`,
+    reasoning: '',
+    usage,
+    turns: maxTurns,
+    toolRuns,
+    exhausted: true,
+  }
+}
+
 function mergeUsage(a, b) {
   if (!a) return b
   if (!b) return a
@@ -159,4 +188,11 @@ function mergeUsage(a, b) {
   }
 }
 
-module.exports = { callModel, selfReview, reviewWithEvents, mergeUsage }
+module.exports = {
+  callModel,
+  selfReview,
+  reviewWithEvents,
+  mergeUsage,
+  pausedResult,
+  exhaustedResult,
+}

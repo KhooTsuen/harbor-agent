@@ -22,6 +22,7 @@
 
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
+const taskResume = require('./task-resume.cjs')
 /* 指纹算法只该有一份，放在 task-plan.cjs（那里没有依赖，不会绕回来） */
 const { fingerprint } = require('./task-plan.cjs')
 
@@ -133,6 +134,17 @@ function buildTaskState({ sessionId = '', taskId = '' } = {}) {
     }
     if ((task.changedFiles ?? []).length > 0) {
       lines.push(`  已改文件：${task.changedFiles.length} 个`)
+    }
+
+    /*
+     * AG-011：恢复执行前提醒「环境变了」。
+     * 任务停住之后这些文件又被别的东西动过 —— 直接接着做可能基于过时假设
+     * （比如那段代码已经被改掉了）。新任务没有 changedFiles，这段不会触发。
+     */
+    const env = taskResume.checkEnvironment(task.id)
+    if (env.changed.length > 0) {
+      lines.push('  ⚠ 你停手之后这些文件又变过，动它们之前先重新读一遍：')
+      for (const file of env.changed.slice(0, 6)) lines.push(`    · ${file}`)
     }
     blocks.push(lines.join('\n'))
   }

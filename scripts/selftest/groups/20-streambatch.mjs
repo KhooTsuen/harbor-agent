@@ -57,13 +57,15 @@ export async function run() {
   await new Promise((r) => setTimeout(r, 80))
   check('到时间会自动冲出去（不用调用方管）', seen4.length === 1 && seen4[0][1] === 'x')
 
-  /* ── 接线守卫 ─────────────────────────────────────────── */
+  /* ── 接线守卫（AG-011：emit 与批处理抽到了 core/chat-emit.cjs）── */
   const chatSrc = readFileSync(join(ROOT, 'electron/handlers/chat.cjs'), 'utf8')
-  check('chat.cjs 用了批处理器', chatSrc.includes('createBatcher({'))
+  const emitSrc = readFileSync(join(ROOT, 'electron/core/chat-emit.cjs'), 'utf8')
+  check('chat.cjs 用了抽出来的 emitter', chatSrc.includes('createEmitter({'))
+  check('emitter 用了批处理器', emitSrc.includes('createBatcher({'))
   check(
     '只有 content / reasoning 走批处理',
-    chatSrc.includes("type === 'content' || type === 'reasoning'"),
+    emitSrc.includes("type === 'content' || type === 'reasoning'"),
   )
-  check('结构性事件发之前先冲缓存', chatSrc.includes('batcher.flush()'))
-  check('收尾时再冲一次（否则最后一段会丢）', /finally \{[\s\S]*?batcher\.flush\(\)/.test(chatSrc))
+  check('结构性事件发之前先冲缓存', emitSrc.includes('batcher.flush()'))
+  check('收尾时再冲一次（否则最后一段会丢）', /finally \{[\s\S]*?\bflush\(\)/.test(chatSrc))
 }

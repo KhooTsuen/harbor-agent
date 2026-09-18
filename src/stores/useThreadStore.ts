@@ -4,7 +4,7 @@ import { MAX_INPUT_LENGTH, MODES } from '@/constants'
 import { deriveTitle } from '@/lib/mock'
 import { uid } from '@/lib/utils'
 import { useRealBackend } from '@/lib/backend'
-import { runElectronTurn, stopActiveRequest } from './thread/turns'
+import { pauseActiveRequest, runElectronTurn, stopActiveRequest } from './thread/turns'
 import { createSession } from '@/lib/backend'
 import { adviseCompact, runCompact } from './thread/compact'
 import { runMockTurn } from './thread/mockTurn'
@@ -44,8 +44,12 @@ interface ThreadState {
 
   setInput: (value: string) => void
   clearInput: () => void
-  sendMessage: (override?: string) => void
+  sendMessage: (override?: string, resumeTaskId?: string) => void
   stopGeneration: () => void
+  /** AG-011：暂停 —— 做完手上这步就停，之后可以接着做（不是立刻断） */
+  pauseGeneration: () => void
+  /** AG-011：继续一条暂停的任务（复用原任务，不新建） */
+  resumeTask: (taskId: string) => void
   regenerateMessage: (messageId: string) => void
   continueThread: () => void
 }
@@ -59,7 +63,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   setInput: (value) => set({ input: value.slice(0, MAX_INPUT_LENGTH) }),
   clearInput: () => set({ input: '' }),
 
-  sendMessage: (override) => {
+  sendMessage: (override, resumeTaskId) => {
     const raw = (override ?? get().input).trim()
     /* 只有图片、没有文字也算有效输入 */
     if (!raw && get().inputImages.length === 0) return
@@ -190,10 +194,36 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     }
 
     if (useRealBackend) {
-      void runElectronTurn(threadId, raw, set)
+      void runElectronTurn(threadId, raw, set, resumeTaskId ?? '')
     } else {
       void runMockTurn(threadId, raw, set)
     }
+  },
+
+  pauseGeneration: () => {
+    /* 和 stop 一样只针对当前这条；但不删 activeRequests（请求还在跑，只是要收尾了） */
+    const current = getActiveThread(useAppStore.getState())
+    if (!current) return
+    /*
+     * AG-011：必须给**即时**反馈。
+     * 暂停是「做完手上这步再停」—— 那一轮可能是模型流式 + 一条长命令，
+     * 几十秒都正常。不给提示的话用户会以为按钮坏了（真机测过：30 秒没动静）。
+     */
+    useUIStore.getState().showToast('info', '正在暂停', '做完手上这一步就会停下来')
+    pauseActiveRequest(current.id)
+  },
+
+  resumeTask: (taskId: string) => {
+    /*
+     * AG-011：把一条暂停的任务接着做。
+     *
+     * 走的是普通发送链路（就当成用户说了一句话）—— 这样历史、事件、
+     * 生命周期全部照旧，不用另造一套。区别只在多带一个 resumeTaskId，
+     * 主进程看到它就**复用原任务**（steps/plan/changedFiles 都还在），
+     * 而不是新建一条从零开始的任务。
+     */
+    if (!taskId) return
+    get().sendMessage('继续刚才的任务，从上次停下的地方接着做，别重复已经完成的步骤。', taskId)
   },
 
   addInputImage: (dataUrl) =>

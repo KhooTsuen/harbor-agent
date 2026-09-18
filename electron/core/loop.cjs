@@ -10,6 +10,7 @@ const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
+const taskResume = require('./task-resume.cjs')
 const taskContext = require('./task-context.cjs')
 const life = require('./lifecycle.cjs')
 const changeset = require('./changeset.cjs')
@@ -17,7 +18,13 @@ const changeset = require('./changeset.cjs')
 
 const configCore = require('./config.cjs')
 const router = require('./router.cjs')
-const { callModel, reviewWithEvents, mergeUsage } = require('./loop-model.cjs')
+const {
+  callModel,
+  reviewWithEvents,
+  mergeUsage,
+  pausedResult,
+  exhaustedResult,
+} = require('./loop-model.cjs')
 const { buildPromptContext } = require('./loop-prompt.cjs')
 const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute } = require('./loop-route.cjs')
@@ -49,14 +56,9 @@ async function run(options) {
   const goal = String(options.goal ?? '')
   const sessionId = options.sessionId ?? ''
 
-  const task = taskCore.create({
-    goal,
-    sessionId,
-    projectId: options.projectId,
-    workdir: options.workdir,
-    mode: options.mode,
-    title: goal.slice(0, 60),
-  })
+  /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，
+     否则「不重复已完成步骤」就无从谈起）；其余情况新建一条。 */
+  const task = taskResume.openForRun({ ...options, goal, sessionId })
   const session = changeset.begin({ taskId: task.id, sessionId, title: task.title })
   const changeSetId = session.ok ? session.id : ''
 
@@ -67,8 +69,8 @@ async function run(options) {
 
     if (changeSetId) changeset.commit(changeSetId, { verified: result.verified ?? null })
 
-    if (result.exhausted) {
-      /* 輪数用尽 = 活没干完，标成暂停让它可恢复 */
+    if (result.exhausted || result.paused) {
+      /* 轮数用尽 / 用户暂停 = 活没干完，标成 paused 让它可恢复 */
       taskCore.update(task.id, { status: 'paused' })
     } else {
       taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
@@ -164,6 +166,11 @@ async function runLoop(options) {
   for (; turn < MAX_TURNS; turn += 1) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
 
+    /* AG-011：优雅暂停 —— 每轮开头 = 上一轮工具已全跑完（即「完成当前安全操作」） */
+    if (options.controls?.pauseRequested?.()) {
+      life.mark('paused', traceKey(options))
+      return pausedResult({ turn, usage: totalUsage, toolRuns })
+    }
     /* 用量闸：调模型**之前**查账（唯一能真省钱的位置）。按 token 算，不按金额 */
     limits.enforce(emit)
     life.mark('thinking', traceKey(options))
@@ -287,14 +294,7 @@ async function runLoop(options) {
 
   /* 轮数用尽 */
   emit({ type: 'turn_end', turn: MAX_TURNS, usage: totalUsage })
-  return {
-    content: `（已经连续调用工具 ${MAX_TURNS} 轮，先停在这里。你可以说「继续」让我接着做。）`,
-    reasoning: '',
-    usage: totalUsage,
-    turns: MAX_TURNS,
-    toolRuns,
-    exhausted: true,
-  }
+  return exhaustedResult({ usage: totalUsage, toolRuns, maxTurns: MAX_TURNS })
 }
 
 module.exports = { run, runLoop, MAX_TURNS }

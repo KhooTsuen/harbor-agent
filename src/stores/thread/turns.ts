@@ -1,6 +1,6 @@
 import type { Message, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
-import { abortChat, sendChat, subscribeChatEvents } from '@/lib/backend'
+import { abortChat, pauseChat, sendChat, subscribeChatEvents } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { abortMockTurn } from './mockTurn'
@@ -39,6 +39,22 @@ export function stopActiveRequest(threadId?: string): void {
   abortMockTurn()
 }
 
+/**
+ * 暂停（AG-011）：给主进程发个「安全点停住」的请求。
+ *
+ * ★ 和 stop 的关键区别：**不删 activeRequests** —— 请求还在跑，
+ *   只是它会做完手上这一步就自己收尾（界面会收到 agent.paused）。
+ *   删了的话用户就没法再暂停/停止它了。
+ */
+export function pauseActiveRequest(threadId?: string): void {
+  if (threadId) {
+    const id = activeRequests.get(threadId)
+    if (id) void pauseChat(id)
+    return
+  }
+  for (const id of activeRequests.values()) void pauseChat(id)
+}
+
 /** 按对话记的「正在跑」—— 对应 useThreadStore.sendingThreads */
 export interface ThreadPartial {
   sendingThreads?: string[]
@@ -56,6 +72,8 @@ export async function runElectronTurn(
   threadId: string,
   _userText: string,
   set: TurnSetter,
+  /* AG-011：带这个就是「接着上次那条任务做」——主进程会复用原任务 */
+  resumeTaskId = '',
 ): Promise<void> {
   /* AG-003：用户按下发送的时刻 —— 主进程的 TTFT 等等都是从这一刻开始算的 */
   const requestTime = Date.now()
@@ -196,6 +214,7 @@ export async function runElectronTurn(
     const thread = useAppStore.getState().threads.find((t) => t.id === threadId)
     const result = await sendChat({
       requestId,
+      resumeTaskId,
       /* AG-003：让主进程能用真正的「按下发送」时刻算延迟 */
       requestTime,
       mode,

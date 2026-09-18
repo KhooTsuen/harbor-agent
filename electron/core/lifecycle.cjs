@@ -45,20 +45,25 @@ const PHASES = [
  * 没列出来的转移一律拒绝 —— 与其让状态悄悄跑偏（那种 bug 只有用户能发现），
  * 不如在转移时就抛出来。`executing → executing` 是有意的：一轮任务里会执行
  * 很多次工具，每次都算一次「仍在执行」，但每次都要产生事件（AG-002）。
+ *
+ * AG-011：除了 `idle` 和三个终态，**每个活跃态都能进 `paused`** ——
+ * 用户点暂停的时候，Agent 可能正处在这条链的任何一环上，
+ * 不该因为「刚好在 thinking」就拒绝他。
  */
 const TRANSITIONS = {
   idle: ['preparing', 'cancelled'],
-  preparing: ['thinking', 'executing', 'failed', 'cancelled'],
+  preparing: ['thinking', 'executing', 'paused', 'failed', 'cancelled'],
   thinking: [
     'planning',
     'executing',
     'responding',
     'waiting_user',
     'retrying',
+    'paused',
     'failed',
     'cancelled',
   ],
-  planning: ['executing', 'responding', 'waiting_user', 'failed', 'cancelled'],
+  planning: ['executing', 'responding', 'waiting_user', 'paused', 'failed', 'cancelled'],
   executing: [
     'executing',
     'thinking',
@@ -70,11 +75,11 @@ const TRANSITIONS = {
     'failed',
     'cancelled',
   ],
-  verifying: ['responding', 'executing', 'retrying', 'failed', 'cancelled'],
-  responding: ['completed', 'executing', 'failed', 'cancelled'],
+  verifying: ['responding', 'executing', 'retrying', 'paused', 'failed', 'cancelled'],
+  responding: ['completed', 'executing', 'paused', 'failed', 'cancelled'],
   waiting_user: ['executing', 'thinking', 'planning', 'paused', 'cancelled'],
   paused: ['executing', 'thinking', 'planning', 'cancelled'],
-  retrying: ['thinking', 'executing', 'failed', 'cancelled'],
+  retrying: ['thinking', 'executing', 'paused', 'failed', 'cancelled'],
   /* 终态：出不去 */
   completed: [],
   failed: [],

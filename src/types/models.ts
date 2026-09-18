@@ -259,6 +259,8 @@ export interface ChatSendPayload {
   workdir?: string
   /** 会话 id：审计、路径授权、任务台账都靠它串起来 */
   sessionId?: string
+  /** AG-011：接着哪条暂停的任务做 —— 主进程会**复用那条任务**，不新建 */
+  resumeTaskId?: string
   projectId?: string
   temporary?: boolean
   threadSettings?: {

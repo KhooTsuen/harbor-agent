@@ -158,6 +158,8 @@ const api = {
   /* ── 对话 ─────────────────────────────────────────────── */
   sendChat: (payload) => ipcRenderer.invoke('chat:send', payload),
   abortChat: (requestId) => ipcRenderer.invoke('chat:abort', requestId),
+  /* AG-011：暂停（做完手上这步就往回走，不是立刻断） */
+  pauseChat: (requestId) => ipcRenderer.invoke('chat:pause', requestId),
   confirmChat: (confirmId, approved) => ipcRenderer.invoke('chat:confirm', confirmId, approved),
   compactChat: (payload) => ipcRenderer.invoke('chat:compact', payload),
 
