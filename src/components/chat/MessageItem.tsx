@@ -145,14 +145,24 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
 
               {message.content ? (
                 <div>
-                  {/*
-                   * 模型输出的是 Markdown，渲染出来而不是把 ** 之类的符号直接摆给人看。
-                   *
-                   * AG-023：文字先过 `useSmoothText` 再给 Markdown —— 上游 SSE
-                   * 是一阵一阵的（实测间隔从 51ms 到 1187ms 都有），直接渲染
-                   * 就是「一大块字突然刷出来」。摊到帧上之后才是流水。
-                   */}
-                  <Markdown text={smoothContent} streaming={isStreaming} />
+                  {isStreaming ? (
+                    /*
+                     * ★ 流式中：像思考链一样，**纯文本直接流**，不做 Markdown 解析。
+                     *
+                     * 之前的做法是流式中实时解析 Markdown（增量 + 元素缓存 +
+                     * 拆半行），这些"花样"在流式期间会让块反复重画 —— 用户看到
+                     * 的「写完一段被覆盖重写」就是它。
+                     *
+                     * 思考链为什么流得顺？因为它就是 `{text}` 直接塞一个 div，
+                     * 什么都不做。正文也照这个来：流式中原样显示（带 ## 、- 、
+                     * ``` 这些标记），写完之后再一次性渲染成 Markdown。
+                     */
+                    <div className="whitespace-pre-wrap break-words text-base leading-relaxed text-fg-primary">
+                      {smoothContent}
+                    </div>
+                  ) : (
+                    <Markdown text={message.content} />
+                  )}
                   {isStreaming ? <span className="caret" /> : null}
                 </div>
               ) : isStreaming ? (
