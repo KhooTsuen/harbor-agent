@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Message } from '@/types'
 import { cn, clockTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
+import { useSmoothText } from '@/hooks/useSmoothText'
 import { fsReveal } from '@/lib/fsApi'
 import { CodeBlock } from './CodeBlock'
 import { Markdown } from './Markdown'
@@ -36,6 +37,12 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
   const isStreaming = message.status === 'streaming'
   const [summaryOpen, setSummaryOpen] = useState(false)
   const isError = message.status === 'error'
+
+  /*
+   * AG-023：必须在 `isSystem` 那个提前 return **之前**调，否则 hook 个数会变。
+   * 上游 SSE 一阵一阵的，这段负责把文字摊到每一帧。
+   */
+  const smoothContent = useSmoothText(message.content ?? '', isStreaming)
 
   if (isSystem) {
     /* 压缩点带摘要（挂在 reasoning 上），点一下能展开看摘要内容 */
@@ -138,8 +145,14 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
 
               {message.content ? (
                 <div>
-                  {/* 模型输出的是 Markdown，渲染出来而不是把 ** 之类的符号直接摆给人看 */}
-                  <Markdown text={message.content} streaming={isStreaming} />
+                  {/*
+                   * 模型输出的是 Markdown，渲染出来而不是把 ** 之类的符号直接摆给人看。
+                   *
+                   * AG-023：文字先过 `useSmoothText` 再给 Markdown —— 上游 SSE
+                   * 是一阵一阵的（实测间隔从 51ms 到 1187ms 都有），直接渲染
+                   * 就是「一大块字突然刷出来」。摊到帧上之后才是流水。
+                   */}
+                  <Markdown text={smoothContent} streaming={isStreaming} />
                   {isStreaming ? <span className="caret" /> : null}
                 </div>
               ) : isStreaming ? (
