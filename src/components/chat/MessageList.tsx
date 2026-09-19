@@ -29,6 +29,32 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
    * 又反过来改滚动位置 —— 就是那个抽搐的燃料。ref 不触发渲染，回路断掉。
    */
   const pinnedRef = useRef(true)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  /*
+   * 是否显示「回到底部」的悬浮按钮。
+   *
+   * 这个 state 只在**跨越阈值**时变（onScroll 里先比再 set），不是每次 scroll
+   * 都 set —— 后者会把滚动位置和重渲染搞成回路（见 onScroll 的注释）。
+   */
+  const [showJump, setShowJump] = useState(false)
+  /**
+   * 内容容器的 callback ref —— 挂载时挂上 ResizeObserver（见下面的贴底说明）。
+   *
+   * 用 callback ref 而不是 `useEffect` + `querySelector`：空状态和列表状态是
+   * **两棵不同的树**，切来切去时只想把 observer 正确地挂到当时那个节点上。
+   */
+  const attachContent = (node: HTMLDivElement | null): void => {
+    resizeObserverRef.current?.disconnect()
+    resizeObserverRef.current = null
+    if (!node) return
+    const ro = new ResizeObserver(() => {
+      if (!pinnedRef.current) return
+      const sc = scrollerRef.current
+      if (sc) sc.scrollTop = sc.scrollHeight
+    })
+    ro.observe(node)
+    resizeObserverRef.current = ro
+  }
   const [scrollTop, setScrollTop] = useState(0)
   const count = messages.length
   /*
@@ -79,6 +105,8 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
        * 单阈值会在边界上反复跨越，滚回去又跨回来 —— 就成了抽搐。
        */
       pinnedRef.current = pinnedRef.current ? distance < 160 : distance < 80
+      /* 只在真的离开底部时把按钮亮出来（先比再 set，避免无意义的重渲染） */
+      setShowJump((prev) => (prev === !pinnedRef.current ? prev : !pinnedRef.current))
       if (!useWindowing) return
 
       cancelAnimationFrame(frame)
@@ -96,14 +124,30 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   }, [useWindowing, estimatedHeight])
 
   /*
-   * 贴底只跟着**消息条数**走。
+   * 贴底：盯**内容高度**，不盯消息条数。
    *
-   * 以前依赖里有 pinnedToBottom —— 那是个自激回路：滚到底 → 置 true → 贴底 →
-   * 位置微变 → 跨过阈值置 false → …（长对话上还会叠加「窗口化改 DOM 高度」）。
-   * 现在读 ref、依赖里只有 count，这条回路就断了：只有真来了新消息才滚。
+   * ⚠️ 这里曾经依赖 `[count]`（消息条数），注释还写着「只有真来了新消息才滚」。
+   * 当时是为了断开一个自激回路，但代价是：**流式期间内容一直在长而条数不变，
+   * 于是完全不滚**。用户看到的就是「视口钉在原地，同一块地方内容在换」——
+   * 后来的内容全落在看不见的下方。
+   *
+   * 改用 ResizeObserver 盯内容容器的高度：
+   *   · 流式文字变长     → 高度变 → 贴底 ✓
+   *   · 图片/代码块加载   → 高度变 → 贴底 ✓
+   *   · 用户往上滚了      → pinned 为 false → 不动 ✓
+   *
+   * 不会退回自激：我们是直接 `scrollTop = scrollHeight`，滚完 distance ≈ 0，
+   * onScroll 读到的是「还贴着底」，pinned 保持 true，不产生来回跳。
    */
+  useEffect(() => {
+    return () => resizeObserverRef.current?.disconnect()
+  }, [])
+
+  /* 消息条数变了也要贴一次（新消息上来时高度可能还没稳） */
   useLayoutEffect(() => {
-    if (pinnedRef.current) bottomRef.current?.scrollIntoView({ block: 'end' })
+    if (!pinnedRef.current) return
+    const sc = scrollerRef.current
+    if (sc) sc.scrollTop = sc.scrollHeight
   }, [count])
 
   if (messages.length === 0) {
@@ -139,22 +183,48 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   }
 
   return (
-    <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5">
-        {useWindowing && windowStart > 0 ? (
-          <div style={{ height: windowStart * estimatedHeight }} aria-hidden="true" />
-        ) : null}
-        {visibleMessages.map((message) => (
-          <MessageItem key={message.id} message={message} />
-        ))}
-        {useWindowing && windowEnd < messages.length ? (
-          <div
-            style={{ height: (messages.length - windowEnd) * estimatedHeight }}
-            aria-hidden="true"
-          />
-        ) : null}
-        <div ref={bottomRef} className="h-px" />
+    <div className="relative min-h-0 flex-1">
+      <div ref={scrollerRef} className="h-full overflow-y-auto">
+        <div ref={attachContent} className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5">
+          {useWindowing && windowStart > 0 ? (
+            <div style={{ height: windowStart * estimatedHeight }} aria-hidden="true" />
+          ) : null}
+          {visibleMessages.map((message) => (
+            <MessageItem key={message.id} message={message} />
+          ))}
+          {useWindowing && windowEnd < messages.length ? (
+            <div
+              style={{ height: (messages.length - windowEnd) * estimatedHeight }}
+              aria-hidden="true"
+            />
+          ) : null}
+          <div ref={bottomRef} className="h-px" />
+        </div>
       </div>
+
+      {/*
+       * 「回到底部」。
+       *
+       * 只在**用户自己往上滚了**（pinned 为 false）的时候出现 —— 正在往上翻历史时，
+       * Agent 还在后面写，得要个东西告诉他「后面有新的」。
+       *
+       * 不用额外判断「是不是在流式」：不流式时内容高度不变，用户不滚就永远不会
+       * 离开底部。
+       */}
+      {showJump ? (
+        <button
+          type="button"
+          onClick={() => {
+            const sc = scrollerRef.current
+            if (sc) sc.scrollTop = sc.scrollHeight
+            pinnedRef.current = true
+            setShowJump(false)
+          }}
+          className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-pill border border-line-hairline bg-bg-raised px-3 py-1.5 text-2xs text-fg-secondary shadow-lg transition-colors hover:text-fg-primary"
+        >
+          ↓ 回到底部
+        </button>
+      ) : null}
     </div>
   )
 }
