@@ -45,7 +45,14 @@ const RE_QUOTE = /^\s*>/
 export interface StableCache {
   /** 缓存对应的原文前缀 */
   text: string
-  /** 这段前缀解析出的块 */
+  /**
+   * 已经稳定下来的块。
+   *
+   * ★ **这个数组是「只增不改」的** —— 新块用 `push` 追加，引用永远不变。
+   * 这一点很关键：渲染那边会把解析出的块**转成 React 元素并缓存**，
+   * 而元素缓存的命中靠的就是「同一个元素对象」（React 碰到
+   * `oldElement === newElement` 会直接 bailout，连子节点都不过）。
+   */
   blocks: BlockNode[]
   /** 扫描位置（行首字符偏移），下次从这里继续扫围栏 */
   scanFrom: number
@@ -53,7 +60,23 @@ export interface StableCache {
   inFence: boolean
 }
 
-export const EMPTY_CACHE: StableCache = { text: '', blocks: [], scanFrom: 0, inFence: false }
+/**
+ * 空缓存。
+ *
+ * ★ 这是个模块级**共享**常量，而 `parseIncremental` 会**就地 push** 到
+ * `cache.blocks`。所以入口处第一个动作就是：碰到它先拿一份副本
+ * （见 `parseIncremental` 开头）。
+ *
+ * 不加 `Object.freeze` 是因为它会把类型变成 `readonly`，而下游期望可变数组。
+ * 代价是「忘了复制」会变成静默污染 —— 所以有单元测试盯着这点
+ * （`incremental.test.ts` 里有一条专门验证 EMPTY_CACHE 不被改）。
+ */
+export const EMPTY_CACHE: StableCache = {
+  text: '',
+  blocks: [],
+  scanFrom: 0,
+  inFence: false,
+}
 
 /**
  * 从 `from` 开始往后扫，找出**最后一个安全切点**。
@@ -120,21 +143,43 @@ export function findStablePoint(
  * @param fail  失配时的回调（诊断用 —— 真实运行里不该出现）
  */
 export interface IncrementalResult {
-  /** 稳定块 + 尾块，拼好的完整列表 */
+  /** 所有稳定块 + 尾块，拼好的完整列表 */
   blocks: BlockNode[]
   /**
-   * 还没稳定的尾巴原文。
-   *
-   * 单独给出来是为了渲染能分家：稳定块那棵子树交给一个 memo 组件
-   * （props 是同一个数组引用 → 整个子树的 diff 都跳过），
-   * 尾巴单独渲染。实测光靠「每个块 memo」不够 —— 父组件仍然要
-   * 一遍遍跑完所有子元素做 props 比较（bench 里 5000 字渲染 1101ms，
-   * 其中绝大部分就是在跑这些没变化的子元素）。
+   * **新**稳定下来的块（本次新增的那些）。渲染层把它们转成 React 元素
+   * 缓存起来 —— 用增量而不是整个列表，是为了避免重做已有元素的元素对象。
+   */
+  added: BlockNode[]
+  /**
+   * 上一次的缓存被丢弃了（文本不是往后追加，而是被改写）。
+   * 渲染层看到这个必须把元素缓存**整个重建**，否则会拿着过期的元素。
+   */
+  reset: boolean
+  /**
+   * 还没稳定的尾巴原文。单独给出来是为了把「稳定部分」和「尾巴」
+   * 分给不同的组件：前者只增不改，后者每次都变。
    */
   tailText: string
   cache: StableCache
   reused: number
   parsedChars: number
+}
+
+/**
+ * 把尾巴拆成「写完的部分」和「还在写的那一行」。
+ *
+ * 为什么要拆：模型一行一行吐，而**写到一半的那行**往往是残缺的标记 ——
+ * `- `（空内容的列表项）、```t（围栏没写完）、`| A | B`（表格缺下一行）。
+ * 拿它们去解析会让块类型反复横跳（实测列表会变 5 次）。拆出去之后，
+ * 那行写完整了才进解析 —— 每种都只变一次，而且是单向的。
+ *
+ * 注意：切点（`findStablePoint`）保证的只是「有换行收尾的完整行」，
+ * 所以尾巴里仍然可能有半行。
+ */
+export function splitPendingLine(text: string): { settled: string; pending: string } {
+  const nl = text.lastIndexOf('\n')
+  if (nl === -1) return { settled: '', pending: text }
+  return { settled: text.slice(0, nl + 1), pending: text.slice(nl + 1) }
 }
 
 /**
@@ -149,6 +194,12 @@ export function parseIncremental(
   cache: StableCache,
   fail?: (reason: string) => void,
 ): IncrementalResult {
+  /*
+   * `EMPTY_CACHE` 是共享常量，而下面要**就地 push** 到 `cache.blocks` ——
+   * 所以碰到它先拿一份属于本次调用的副本（它的数组是冻结的，直接 push 会抛）。
+   */
+  if (cache === EMPTY_CACHE) cache = { ...EMPTY_CACHE, blocks: [] }
+
   /* ① 校验：必须是「在上次的基础上往后长」才能复用。否则（比如用户编辑过）
         整份重来 —— 慢但一定对。 */
   if (!text.startsWith(cache.text)) {
@@ -166,6 +217,8 @@ export function parseIncremental(
     const tail = tailText ? parseBlocks(tailText) : []
     return {
       blocks: [...cache.blocks, ...tail],
+      added: [],
+      reset: false,
       tailText,
       cache: {
         text: cache.text,
@@ -178,13 +231,19 @@ export function parseIncremental(
     }
   }
 
-  /* ④ 有新切点 → 把「上次缓存的前缀 ~ 新切点」这新增的一段解析掉，接在后面 */
+  /* ④ 有新切点 → 把「上次缓存的前缀 ~ 新切点」这新增的一段解析掉 */
   const addedText = text.slice(cache.text.length, point)
   const added = addedText ? parseBlocks(addedText) : []
-  const blocks = [...cache.blocks, ...added]
+
+  /*
+   * ★ 关键：`blocks` 用 **push 就地追加**，不造新数组。
+   * 新数组会让渲染层的「元素缓存」全部失效（它靠的是对象引用）。
+   */
+  for (const node of added) cache.blocks.push(node)
+
   const newCache: StableCache = {
     text: text.slice(0, point),
-    blocks,
+    blocks: cache.blocks, // 同一个数组
     scanFrom: scan.scanFrom,
     inFence: scan.inFence,
   }
@@ -194,19 +253,24 @@ export function parseIncremental(
   const tail = tailText ? parseBlocks(tailText) : []
 
   return {
-    blocks: [...blocks, ...tail],
+    blocks: [...newCache.blocks, ...tail],
+    added,
+    reset: false,
     tailText,
     cache: newCache,
-    reused: cache.blocks.length,
+    reused: cache.blocks.length - added.length,
     parsedChars: addedText.length + tailText.length,
   }
 }
 
 function freshParse(text: string): IncrementalResult {
+  const blocks = text ? parseBlocks(text) : []
   return {
-    blocks: text ? parseBlocks(text) : [],
+    blocks,
+    added: blocks,
+    reset: true,
     tailText: text,
-    cache: EMPTY_CACHE,
+    cache: { ...EMPTY_CACHE, blocks, scanFrom: 0, inFence: false },
     reused: 0,
     parsedChars: text.length,
   }
