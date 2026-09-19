@@ -70,7 +70,13 @@ const payload = (sessionId: string, patch: Partial<TaskEndPayload> = {}): TaskEn
   kind: 'success',
   title: '后台任务完成',
   description: '「重构执行引擎」\n已修改 4 个文件\n测试通过',
-  files: 4,
+  outcome: {
+    taskId: 'task_1',
+    files: 4,
+    tests: 'passed',
+    testCommand: 'npm test',
+    testSummary: '12 passed',
+  },
   ...patch,
 })
 
@@ -156,8 +162,10 @@ describe('AG-029 / 后台任务通知（渲染层）', () => {
   it('★ AG-033：当前对话完成 → 亮出「下一步」入口', () => {
     const active = useAppStore.getState().activeThreadId
     useUIStore.setState({ nextSteps: null })
-    act(() => h.taskEnd[0](payload(active, { files: 3 })))
-    expect(useUIStore.getState().nextSteps).toEqual({ threadId: active, files: 3 })
+    act(() => h.taskEnd[0](payload(active)))
+    expect(useUIStore.getState().nextSteps?.threadId).toBe(active)
+    expect(useUIStore.getState().nextSteps?.outcome.files).toBe(4)
+    expect(useUIStore.getState().nextSteps?.outcome.tests).toBe('passed')
   })
 
   it('★ AG-033：别的对话完成 → 不在这条对话上亮入口', () => {
@@ -165,7 +173,7 @@ describe('AG-029 / 后台任务通知（渲染层）', () => {
     const other = useAppStore.getState().createThread()
     useAppStore.getState().setActiveThread(active)
     useUIStore.setState({ nextSteps: null })
-    act(() => h.taskEnd[0](payload(other, { files: 3 })))
+    act(() => h.taskEnd[0](payload(other)))
     expect(useUIStore.getState().nextSteps).toBeNull()
   })
 

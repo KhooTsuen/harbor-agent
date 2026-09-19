@@ -51,7 +51,9 @@ export function useTaskNotifications(): void {
         payload.kind === 'success' &&
         payload.sessionId === useAppStore.getState().activeThreadId
       ) {
-        useUIStore.getState().setNextSteps({ threadId: payload.sessionId, files: payload.files })
+        useUIStore
+          .getState()
+          .setNextSteps({ threadId: payload.sessionId, outcome: payload.outcome })
       }
 
       if (

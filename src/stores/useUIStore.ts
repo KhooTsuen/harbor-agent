@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { PermissionRequest, RightTab, Toast, ToastKind } from '@/types'
+import type { TaskOutcome } from '@/types/notify'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -28,8 +29,10 @@ interface UIState {
   /**
    * AG-033：任务刚结束、给用户几个「下一步」入口。
    * 只认**当前这条对话**（threadId 对不上就不显示），点一个或关掉就清。
+   * AG-034：带的是「这一轮到底干了什么」（改了几个文件 / 测试跑没跑过），
+   * 入口据此挑，而不是一份固定清单。
    */
-  nextSteps: { threadId: string; files: number } | null
+  nextSteps: { threadId: string; outcome: TaskOutcome } | null
 
   toggleRightPanel: () => void
   setRightPanelVisible: (visible: boolean) => void
@@ -47,7 +50,7 @@ interface UIState {
   ) => string
   hideToast: (id: string) => void
 
-  setNextSteps: (value: { threadId: string; files: number } | null) => void
+  setNextSteps: (value: { threadId: string; outcome: TaskOutcome } | null) => void
   askPermission: (request: PermissionRequest) => void
   closePermission: () => void
 }

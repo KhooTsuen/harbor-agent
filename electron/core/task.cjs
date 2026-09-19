@@ -13,6 +13,7 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const redact = require('./redact.cjs')
+const outcome = require('./task-outcome.cjs')
 const {
   parsePlan,
   parsePlanBlock,
@@ -161,6 +162,8 @@ function addCommand(id, command, result = '') {
   task.commands.push({
     command: String(command).slice(0, 500),
     result: String(result).slice(0, 300),
+    /* AG-034：退出码单独存 —— result 截到 300 字，尾巴上的 `[退出码 N]` 常常被截掉 */
+    exitOk: outcome.exitOf(result),
     at: Date.now(),
   })
   if (task.commands.length > 100) task.commands = task.commands.slice(-100)

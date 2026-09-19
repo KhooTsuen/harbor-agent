@@ -68,6 +68,7 @@ import { run as taskName } from './selftest/groups/30-taskname.mjs'
 import { run as sessionRedact } from './selftest/groups/31-session-redact.mjs'
 import { run as notify } from './selftest/groups/32-notify.mjs'
 import { run as trayGroup } from './selftest/groups/33-tray.mjs'
+import { run as taskOutcome } from './selftest/groups/34-outcome.mjs'
 
 const GROUPS = [
   basics,
@@ -103,6 +104,7 @@ const GROUPS = [
   sessionRedact,
   notify,
   trayGroup,
+  taskOutcome,
 ]
 
 async function main() {
