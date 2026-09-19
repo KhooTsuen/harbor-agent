@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { TaskRecord } from '@/types/safety'
 import { useAppStore } from '@/stores/useAppStore'
 import { useTaskStore } from '@/stores/useTaskStore'
-import { taskList } from '@/lib/safetyApi'
 import { ProgressTimeline } from './ProgressTimeline'
 import { cn } from '@/lib/utils'
 
@@ -48,21 +47,19 @@ export function TaskList() {
   const phases = useAppStore(
     (s) => s.threads.find((thread) => thread.id === s.activeThreadId)?.phaseHistory ?? [],
   )
-  /* unfinished 一变（任务开始/结束）就重新拉一次全量 —— 这就是刷新时机 */
-  const unfinished = useTaskStore((s) => s.unfinished)
-  const [tasks, setTasks] = useState<TaskRecord[]>([])
+  const allTasks = useTaskStore((s) => s.tasks)
+  const refresh = useTaskStore((s) => s.refresh)
   const [openId, setOpenId] = useState('')
 
+  /* AG-028：不再自己拉 task:list；状态页和全局任务中心共用同一份 store 快照。 */
   useEffect(() => {
-    let alive = true
-    void (async () => {
-      const list = await taskList({ sessionId: activeThreadId ?? '', limit: 20 })
-      if (alive) setTasks(list)
-    })()
-    return () => {
-      alive = false
-    }
-  }, [activeThreadId, unfinished])
+    void refresh()
+  }, [refresh])
+
+  const tasks = useMemo(
+    () => allTasks.filter((task) => task.sessionId === activeThreadId).slice(0, 20),
+    [activeThreadId, allTasks],
+  )
 
   if (tasks.length === 0) {
     return <p className="text-xs text-fg-tertiary">还没有任务记录。</p>

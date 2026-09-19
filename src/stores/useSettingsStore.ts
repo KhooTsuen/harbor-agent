@@ -80,7 +80,12 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     customFontFamily: typeof s.customFontFamily === 'string' ? s.customFontFamily : '',
     lastThreadId: typeof s.lastThreadId === 'string' ? s.lastThreadId : '',
     lastRightTab:
-      s.lastRightTab === 'terminal' || s.lastRightTab === 'files' || s.lastRightTab === 'browser'
+      s.lastRightTab === 'terminal' ||
+      s.lastRightTab === 'files' ||
+      s.lastRightTab === 'browser' ||
+      s.lastRightTab === 'artifacts' ||
+      s.lastRightTab === 'tasks' ||
+      s.lastRightTab === 'state'
         ? s.lastRightTab
         : 'diff',
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,

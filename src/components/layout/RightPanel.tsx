@@ -4,6 +4,7 @@ import {
   FileCode2,
   GitCompareArrows,
   Globe,
+  ListTodo,
   Package,
   TerminalSquare,
   X,
@@ -21,6 +22,7 @@ import { BrowserTab } from './BrowserTab'
 import { useBrowseBridge } from './browser/useBrowseBridge'
 import { ArtifactsPanel } from '@/components/chat/ArtifactsPanel'
 import { StatePanel } from '@/components/chat/StatePanel'
+import { TaskCenter } from '@/components/chat/TaskCenter'
 import { Terminal } from './Terminal'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -31,8 +33,8 @@ import { isElectron } from '@/lib/backend'
 /* ══════════════════════════════════════════════════════════════
    RightPanel
 
-   四个标签：审查（diff）/ 终端 / 文件 / 浏览器。
-   「文件」在 Electron 下读真实工作目录；浏览器标签使用 Electron webview 内嵌。
+   右侧工作区：审查 / 终端 / 文件 / 浏览器 / 成果 / 任务 / 状态。
+   「任务」是 AG-028 的全局后台任务中心；「状态」仍是当前对话的长期状态。
    ══════════════════════════════════════════════════════════════ */
 
 const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode2 }[] = [
@@ -41,6 +43,7 @@ const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode2 }[] =
   { id: 'files', label: '文件', icon: FileCode2 },
   { id: 'browser', label: '浏览器', icon: Globe },
   { id: 'artifacts', label: '成果', icon: Package },
+  { id: 'tasks', label: '任务', icon: ListTodo },
   { id: 'state', label: '状态', icon: Activity },
 ] as const
 
@@ -127,7 +130,7 @@ export function RightPanel() {
       aria-label="右侧面板"
     >
       {/*
-        标签栏：右栏默认只有 380px，六个标签都带文字会被挤成竖排单字。
+        标签栏：右栏默认只有 380px，七个标签都带文字会被挤成竖排单字。
         改法：**只有当前标签显示文字**，其余只留图标（悬停有 tooltip），
         这样在最小宽度和最大字号缩放下都放得下；再窄就横向滚动（滚动条隐藏），
         关闭按钮留在滚动区外面，永远可见。
@@ -145,15 +148,15 @@ export function RightPanel() {
               title={tab.label}
               aria-label={tab.label}
               className={cn(
-                'relative flex h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded-sm px-1 transition-colors duration-fast',
+                'relative flex h-7 shrink-0 items-center justify-center gap-1 rounded-sm transition-colors duration-fast',
                 active
-                  ? 'bg-bg-raised text-fg-primary'
-                  : 'text-fg-secondary hover:bg-bg-hover hover:text-fg-primary',
+                  ? 'min-w-12 bg-bg-raised px-2 text-fg-primary'
+                  : 'w-7 px-0 text-fg-secondary hover:bg-bg-hover hover:text-fg-primary',
               )}
             >
               <Icon size={13} className="shrink-0" />
-              {/* 六个标签均分宽度 + truncate：固定 padding 在默认宽度下会折行 */}
-              <span className="truncate text-2xs">{tab.label}</span>
+              {/* 非当前标签靠 aria-label + title 说明，视觉上只留图标，避免七等分挤字。 */}
+              <span className={cn('text-2xs', !active && 'sr-only')}>{tab.label}</span>
               {tab.id === 'diff' && diffs.length > 0 ? (
                 <span className="shrink-0 font-mono text-2xs text-fg-tertiary">{diffs.length}</span>
               ) : null}
@@ -244,6 +247,7 @@ export function RightPanel() {
         ) : null}
 
         {activeRightTab === 'artifacts' ? <ArtifactsPanel /> : null}
+        {activeRightTab === 'tasks' ? <TaskCenter /> : null}
         {activeRightTab === 'state' ? <StatePanel /> : null}
 
         {/*
