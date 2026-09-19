@@ -78,7 +78,11 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
   }
 
   return (
-    <article className={cn('group flex w-full flex-col', isUser ? 'items-end' : 'items-start')}>
+    <article
+      /* AG-038：给基准测试一个能数的锚点（「渲染出来几条」比「节点总数」更直观） */
+      data-message-id={message.id}
+      className={cn('group flex w-full flex-col', isUser ? 'items-end' : 'items-start')}
+    >
       {isUser ? (
         <div className="flex max-w-[78%] flex-col items-end gap-1">
           {/* 用户贴的图：贴在气泡上方，和聊天软件的习惯一致 */}

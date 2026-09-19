@@ -20,6 +20,10 @@ export interface MessageListProps {
   onSuggestion: (text: string) => void
 }
 
+/* AG-038：一次渲染多少条 / 点一次「载入更早」多给多少条 */
+const INITIAL_TAIL = 200
+const TAIL_STEP = 300
+
 export function MessageList({ messages, onSuggestion }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
@@ -55,29 +59,27 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     ro.observe(node)
     resizeObserverRef.current = ro
   }, [])
-  const [scrollTop, setScrollTop] = useState(0)
   const count = messages.length
   /*
-   * 虚拟滚动暂时关掉（阈值提到不可能达到）。
+   * ── AG-038：渐增渲染 ──
    *
-   * 原来的实现用固定 150px 估算每条高度，但真实消息高度能差几十倍 ——
-   * 超长对话一滚就飘。要么老老实实用「逐条实测高度 + 绝对定位占位」重写，
-   * 要么就别虚拟滚动：385 条全渲染的代价是初始渲染慢一点，但滚动是
-   * CSS 原生滚动，不会飘。先全渲染，等单个对话真的长到会卡再重写。
+   * 基准测试量出来的：**1000 条消息全渲染 = 3 秒、3 万个 DOM 节点**
+   * （每条约 30 个节点）。这就是「Agent 用得越久越卡」的来源。
+   *
+   * 为什么不用虚拟滚动：它要靠**估算**每条的高度来摆占位块，而消息高度能差
+   * 几十倍（一行回答 vs 一个代码块），估错一滚就飘 —— 那套代码因此被关掉过
+   * （阈值提到不可能达到，见 git 历史）。渐增渲染没有假高度：
+   * 默认只渲染最近 TAIL_STEP 条，上面给一个「载入更早的」按钮，
+   * 滚动仍是原生滚动，永远不会飘。
+   *
+   * 为什么是「最近 N 条」而不是「前 N 条」：聊天默认看的是最新的，
+   * 而且流式追加的永远是末尾 —— 截前 N 条会让新消息根本进不了视野。
    */
-  const useWindowing = messages.length > 1_000_000
-  const estimatedHeight = 150
-  /* 多渲染几条 —— 窗口切换得越少，底下那个「改 DOM 高度 → 修正 scrollTop」的循环越不容易被触发 */
-  const overscan = 16
-  const windowStart = useWindowing
-    ? Math.max(0, Math.floor(scrollTop / estimatedHeight) - overscan)
-    : 0
-  const windowEnd = useWindowing
-    ? Math.min(messages.length, Math.ceil((scrollTop + 900) / estimatedHeight) + overscan)
-    : messages.length
+  const [tailCount, setTailCount] = useState(INITIAL_TAIL)
+  const hiddenCount = Math.max(0, count - tailCount)
   const visibleMessages = useMemo(
-    () => messages.slice(windowStart, windowEnd),
-    [messages, windowStart, windowEnd],
+    () => (hiddenCount > 0 ? messages.slice(-tailCount) : messages),
+    [messages, tailCount, hiddenCount],
   )
 
   /*
@@ -107,13 +109,6 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
       pinnedRef.current = pinnedRef.current ? distance < 160 : distance < 80
       /* 只在真的离开底部时把按钮亮出来（先比再 set，避免无意义的重渲染） */
       setShowJump((prev) => (prev === !pinnedRef.current ? prev : !pinnedRef.current))
-      if (!useWindowing) return
-
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const next = el.scrollTop
-        setScrollTop((prev) => (Math.abs(next - prev) > estimatedHeight / 2 ? next : prev))
-      })
     }
 
     node.addEventListener('scroll', onScroll, { passive: true })
@@ -121,7 +116,7 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
       cancelAnimationFrame(frame)
       node.removeEventListener('scroll', onScroll)
     }
-  }, [useWindowing, estimatedHeight])
+  }, [])
 
   /*
    * 贴底：盯**内容高度**，不盯消息条数。
@@ -230,18 +225,18 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     <div className="relative min-h-0 flex-1">
       <div ref={scrollerRef} className="h-full overflow-y-auto">
         <div ref={attachContent} className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5">
-          {useWindowing && windowStart > 0 ? (
-            <div style={{ height: windowStart * estimatedHeight }} aria-hidden="true" />
+          {hiddenCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setTailCount((value) => value + TAIL_STEP)}
+              className="mx-auto rounded-pill border border-line-hairline px-3 py-1 text-2xs text-fg-tertiary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
+            >
+              载入更早的 {Math.min(TAIL_STEP, hiddenCount)} 条（还有 {hiddenCount} 条）
+            </button>
           ) : null}
           {visibleMessages.map((message) => (
             <MessageItem key={message.id} message={message} />
           ))}
-          {useWindowing && windowEnd < messages.length ? (
-            <div
-              style={{ height: (messages.length - windowEnd) * estimatedHeight }}
-              aria-hidden="true"
-            />
-          ) : null}
           <div ref={bottomRef} className="h-px" />
         </div>
       </div>
