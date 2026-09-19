@@ -252,6 +252,18 @@ const DEFAULTS = {
    * 用量闸：调模型之前查一次账，超了就拦。
    * 按 **token 数** 而不是金额 —— 金额要维护价目表，中转站计价又各不相同。
    */
+  /**
+   * 每个任务的执行预算（AG-040）。任务自己的 `budget` 会覆盖这里的值。
+   * `0` = 不限。
+   */
+  budget: {
+    maxSteps: 50,
+    maxToolCalls: 100,
+    maxRuntime: 1800,
+    maxRetries: 3,
+    maxTokens: 100000,
+  },
+
   limits: {
     enabled: false,
     /** 0 = 不限 */

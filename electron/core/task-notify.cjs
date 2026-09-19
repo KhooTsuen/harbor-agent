@@ -9,10 +9,22 @@
  * 显示应用内提示 —— 两边同一份措辞，不会各写一套。
  */
 
-/** 哪两种结束方式值得通知。用户自己按的停止不属于「完成/失败」，不打扰他 */
+/**
+ * 哪几种结束方式值得通知。用户自己按的停止不属于「完成/失败」，不打扰他。
+ *
+ * AG-040：撞执行预算停下来也算 —— 那不是失败，是**停下来等你做决定**
+ * （继续 / 停止 / 调整预算），而这时用户多半没在看。
+ */
 const END_META = {
   completed: { kind: 'success', title: '后台任务完成' },
   failed: { kind: 'error', title: '后台任务失败' },
+  budget: { kind: 'warning', title: '任务已达到执行上限' },
+}
+
+/** 这一轮的结束该怎么归类（撞预算时用 `budget`，其余看状态） */
+function endKindOf(phase, task) {
+  if (String(phase) === 'paused' && task?.pauseReason === 'budget') return 'budget'
+  return String(phase ?? '')
 }
 
 /** 取结果的第一行 —— 「测试通过」这种结论通常就写在最前面 */
@@ -34,7 +46,7 @@ function firstLine(text) {
  * @returns {{ kind: string, title: string, description: string } | null}
  */
 function endNotice(phase, task) {
-  const meta = END_META[String(phase ?? '')]
+  const meta = END_META[endKindOf(phase, task)]
   if (!meta) return null
 
   const name = task?.title || task?.goal || '未命名任务'
@@ -43,6 +55,11 @@ function endNotice(phase, task) {
   if (task) {
     const files = (task.changedFiles ?? []).length
     lines.push(files > 0 ? `已修改 ${files} 个文件` : '没有改动文件')
+    if (task.pauseReason === 'budget' && task.budgetHit) {
+      const { label, used, limit } = task.budgetHit
+      lines.push(`${label}：${used} / ${limit}`)
+      lines.push('可以继续、停下，或者把上限调高')
+    }
     const conclusion = firstLine(task.result)
     if (conclusion) lines.push(conclusion)
     else if (phase === 'failed') {
@@ -54,4 +71,4 @@ function endNotice(phase, task) {
   return { kind: meta.kind, title: meta.title, description: lines.join('\n') }
 }
 
-module.exports = { endNotice, END_META }
+module.exports = { endNotice, END_META, endKindOf }

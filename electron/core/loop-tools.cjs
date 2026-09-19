@@ -84,7 +84,11 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
      *   写操作交给模型判断（AG-015 已经把分类和建议喂给它了）。
      */
     let output = await tools.execute(call.name, args, ctx)
-    for (let retry = 0; retry < errors.MAX_AUTO_RETRY && !isToolOk(output); retry += 1) {
+    /* AG-040：重试次数上限来自任务预算（默认 3），不再写死 */
+    const maxRetries = Number.isFinite(options.budget?.maxRetries)
+      ? Math.max(0, options.budget.maxRetries)
+      : errors.MAX_AUTO_RETRY
+    for (let retry = 0; retry < maxRetries && !isToolOk(output); retry += 1) {
       const retryInfo = errors.classifyToolOutput(output, { name: call.name })
       if (!errors.canAutoRecover(retryInfo, call.name)) break
       /* AG-002 定义的 agent.retrying —— 界面和日志都看得到「它在自己重试」 */

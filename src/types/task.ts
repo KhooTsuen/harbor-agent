@@ -19,6 +19,26 @@ export interface TaskDiagnosis {
   text: string
 }
 
+/**
+ * AG-040：一个任务的执行预算（五项都可以留空 = 用设置里的默认）。
+ * `0` 表示不限。
+ */
+export interface TaskBudget {
+  maxSteps?: number
+  maxToolCalls?: number
+  maxRuntime?: number
+  maxRetries?: number
+  maxTokens?: number
+}
+
+/** 撞预算时记下来的数字（界面原样显示「50 / 50」） */
+export interface BudgetHit {
+  reason: string
+  label: string
+  used: number
+  limit: number
+}
+
 export interface TaskRecord {
   id: string
   title: string
@@ -43,6 +63,14 @@ export interface TaskRecord {
   /** AG-011/012：什么时候停的、恢复过几次 */
   pausedAt?: number
   resumeCount?: number
+  /** AG-040：这个任务自己的预算覆盖；`budgetResolved` 是主进程算好的实际值 */
+  budget?: TaskBudget
+  budgetResolved?: Required<TaskBudget>
+  /** 停下来的原因（'budget' = 撞了执行上限，不是失败） */
+  pauseReason?: string
+  pauseDetail?: string
+  /** 撞预算那一下的数字 */
+  budgetHit?: BudgetHit | null
   /** AG-035：用户批过/拒过的操作（AG-013 起就在记，这里补上类型） */
   permissions?: Array<{
     at: number

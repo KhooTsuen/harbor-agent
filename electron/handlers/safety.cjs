@@ -17,6 +17,8 @@ const capability = require('../core/capability.cjs')
 const task = require('../core/task.cjs')
 const diagnose = require('../core/task-diagnose.cjs')
 const metrics = require('../core/metrics.cjs')
+const budget = require('../core/budget.cjs')
+const configCore = require('../core/config.cjs')
 const recovery = require('../core/task-recovery.cjs')
 const changeset = require('../core/changeset.cjs')
 const changesetDiff = require('../core/changeset-diff.cjs')
@@ -92,13 +94,23 @@ function register({ ipcMain }) {
 
   /* ── 任务 ─────────────────────────────────────────────── */
 
+  /*
+   * AG-040：顺手把「这个任务实际用哪份预算」算好带上 ——
+   * 内置默认 ← 设置 ← 任务自己的覆盖，只有主进程知道全貌；
+   * 界面据此显示「50 / 50」并预填「调整预算」表单。
+   */
+  const withBudget = (record) =>
+    record ? { ...record, budgetResolved: budget.resolve(configCore.get(), record) } : record
+
   ipcMain.handle('task:list', (_event, options = {}) => ({
     ok: true,
-    tasks: task.list({
-      limit: Math.min(200, Number(options.limit) || 30),
-      status: options.status ?? '',
-      sessionId: options.sessionId ?? '',
-    }),
+    tasks: task
+      .list({
+        limit: Math.min(200, Number(options.limit) || 30),
+        status: options.status ?? '',
+        sessionId: options.sessionId ?? '',
+      })
+      .map(withBudget),
   }))
 
   ipcMain.handle('task:unfinished', () => ({ ok: true, tasks: task.unfinished() }))
@@ -110,7 +122,10 @@ function register({ ipcMain }) {
    */
   ipcMain.handle('task:recovery', () => ({ ok: true, items: recovery.scan() }))
 
-  ipcMain.handle('task:get', (_event, id) => ({ ok: true, task: task.get(String(id ?? '')) }))
+  ipcMain.handle('task:get', (_event, id) => ({
+    ok: true,
+    task: withBudget(task.get(String(id ?? ''))),
+  }))
 
   /*
    * AG-035：诊断报告。

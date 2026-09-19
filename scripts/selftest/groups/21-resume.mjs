@@ -108,7 +108,11 @@ export async function run() {
   check('paused 可以回到 executing（恢复）', life.canTransition('paused', 'executing') === true)
 
   /* ── 源码守卫 ─────────────────────────────────────────── */
-  const loopSrc = readCore('electron/core/loop.cjs')
+  /*
+   * AG-040：一次运行的「开始与收尾」搬进了 loop-run.cjs（loop.cjs 只管中间的循环）。
+   * 这几条守卫关心的是**行为还在不在**，所以两个文件合起来看 —— 免得下次搬家又白红一次。
+   */
+  const loopSrc = readCore('electron/core/loop.cjs') + readCore('electron/core/loop-run.cjs')
   check('loop 每轮开头查暂停请求', loopSrc.includes('options.controls?.pauseRequested?.()'))
   check('暂停点会标相位 paused', loopSrc.includes("life.mark('paused'"))
   check('暂停走 pausedResult（和正常返回同形）', loopSrc.includes('pausedResult({'))

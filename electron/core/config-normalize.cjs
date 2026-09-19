@@ -116,6 +116,7 @@ function normalize(raw) {
   const changeset = obj(g.changeset)
 
   const limits = obj(g.limits)
+  const budgetRaw = obj(g.budget)
 
   const providers =
     Array.isArray(g.providers) && g.providers.length > 0
@@ -247,6 +248,15 @@ function normalize(raw) {
     /*
      * 用量闸。token 数用 clampNumber 兜底（负数、乱填都打回 0 = 不限）。
      */
+    /* AG-040：任务预算（0 = 不限；坏值退回默认） */
+    budget: {
+      maxSteps: Math.round(clampNumber(budgetRaw.maxSteps, 0, 10_000, 50)),
+      maxToolCalls: Math.round(clampNumber(budgetRaw.maxToolCalls, 0, 1_000_000, 100)),
+      maxRuntime: Math.round(clampNumber(budgetRaw.maxRuntime, 0, 86400, 1800)),
+      maxRetries: Math.round(clampNumber(budgetRaw.maxRetries, 0, 20, 3)),
+      maxTokens: Math.round(clampNumber(budgetRaw.maxTokens, 0, 1_000_000_000, 100000)),
+    },
+
     limits: {
       enabled: bool(limits.enabled, false),
       dailyTokens: Math.round(clampNumber(limits.dailyTokens, 0, 1_000_000_000, 0)),

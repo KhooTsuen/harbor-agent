@@ -219,14 +219,18 @@ function pausedResult({ turn, usage, toolRuns }) {
 }
 
 /** AG-011：轮数用尽时的返回值（活没干完，同样可恢复） */
-function exhaustedResult({ usage, toolRuns, maxTurns }) {
+function exhaustedResult({ usage, toolRuns, maxTurns, budgetHit = null }) {
   return {
-    content: `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`,
+    content: budgetHit
+      ? `${budgetHit.message}
+（停下来等你决定：继续 / 停止 / 调整预算。）`
+      : `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`,
     reasoning: '',
     usage,
     turns: maxTurns,
     toolRuns,
     exhausted: true,
+    budgetHit,
   }
 }
 
