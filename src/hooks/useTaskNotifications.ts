@@ -41,6 +41,19 @@ export function useTaskNotifications(): void {
   useEffect(() => {
     if (!useRealBackend) return
     return subscribeTaskEnd((payload) => {
+      /*
+       * AG-033：任务**成功完成**且就是当前这条对话 → 亮出「下一步」入口。
+       *   · 只看 success（文档说的是「任务完成后」；失败/取消给建议没意义）
+       *   · 只认当前对话（别的对话跑完，用户还在这条上）
+       * 入口只是把话写好，点下去走普通发送链路，不会自动执行任何东西。
+       */
+      if (
+        payload.kind === 'success' &&
+        payload.sessionId === useAppStore.getState().activeThreadId
+      ) {
+        useUIStore.getState().setNextSteps({ threadId: payload.sessionId, files: payload.files })
+      }
+
       if (
         !shouldNotifyEnd({
           threadId: payload.sessionId,

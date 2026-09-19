@@ -12,6 +12,8 @@ export interface TaskEndPayload {
   kind: 'success' | 'error' | 'info' | 'warning'
   title: string
   description: string
+  /** AG-033：这次改了几个文件（决定「下一步」给哪些入口） */
+  files: number
 }
 
 export interface NotifyBridge {

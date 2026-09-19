@@ -2,6 +2,7 @@ import { RefreshCw, Sparkles } from 'lucide-react'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { refreshSuggestions } from '@/stores/thread/sceneTasks'
 import { useAgentActive } from '@/hooks/useAgentActive'
+import { useUIStore } from '@/stores/useUIStore'
 
 /* ══════════════════════════════════════════════════════════════
    建议回复
@@ -21,9 +22,11 @@ export function SuggestionChips({ threadId, onPick }: SuggestionChipsProps) {
   const suggestions = useThreadStore((s) => s.suggestions)
   /* 这条对话在跑就不显示 —— 别的对话跑着不影响 */
   const sending = useAgentActive(threadId)
+  /* 有「下一步」时让位给它（AG-033：同一块地方只放一样东西） */
+  const hasNextSteps = useUIStore((s) => s.nextSteps?.threadId === threadId)
 
-  /* 生成中、或者没有建议时都不占地方 */
-  if (sending || suggestions.length === 0) return null
+  /* 生成中、有下一步、或者没有建议时都不占地方 */
+  if (sending || hasNextSteps || suggestions.length === 0) return null
 
   return (
     <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1">

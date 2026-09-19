@@ -25,6 +25,11 @@ interface UIState {
   searchQuery: string
   permission: PermissionRequest | null
   toasts: Toast[]
+  /**
+   * AG-033：任务刚结束、给用户几个「下一步」入口。
+   * 只认**当前这条对话**（threadId 对不上就不显示），点一个或关掉就清。
+   */
+  nextSteps: { threadId: string; files: number } | null
 
   toggleRightPanel: () => void
   setRightPanelVisible: (visible: boolean) => void
@@ -42,6 +47,7 @@ interface UIState {
   ) => string
   hideToast: (id: string) => void
 
+  setNextSteps: (value: { threadId: string; files: number } | null) => void
   askPermission: (request: PermissionRequest) => void
   closePermission: () => void
 }
@@ -55,6 +61,7 @@ export const useUIStore = create<UIState>((set) => ({
   searchQuery: '',
   permission: null,
   toasts: [],
+  nextSteps: null,
 
   toggleRightPanel: () => set((s) => ({ rightPanelVisible: !s.rightPanelVisible })),
   setRightPanelVisible: (visible) => set({ rightPanelVisible: visible }),
@@ -79,6 +86,8 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   hideToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  setNextSteps: (value) => set({ nextSteps: value }),
 
   askPermission: (request) => set({ permission: request }),
   closePermission: () => set({ permission: null }),

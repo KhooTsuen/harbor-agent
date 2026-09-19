@@ -70,6 +70,7 @@ const payload = (sessionId: string, patch: Partial<TaskEndPayload> = {}): TaskEn
   kind: 'success',
   title: '后台任务完成',
   description: '「重构执行引擎」\n已修改 4 个文件\n测试通过',
+  files: 4,
   ...patch,
 })
 
@@ -150,6 +151,29 @@ describe('AG-029 / 后台任务通知（渲染层）', () => {
 
     expect(useAppStore.getState().activeThreadId).toBe(other)
     expect(useUIStore.getState().activeRightTab).toBe('tasks')
+  })
+
+  it('★ AG-033：当前对话完成 → 亮出「下一步」入口', () => {
+    const active = useAppStore.getState().activeThreadId
+    useUIStore.setState({ nextSteps: null })
+    act(() => h.taskEnd[0](payload(active, { files: 3 })))
+    expect(useUIStore.getState().nextSteps).toEqual({ threadId: active, files: 3 })
+  })
+
+  it('★ AG-033：别的对话完成 → 不在这条对话上亮入口', () => {
+    const active = useAppStore.getState().activeThreadId
+    const other = useAppStore.getState().createThread()
+    useAppStore.getState().setActiveThread(active)
+    useUIStore.setState({ nextSteps: null })
+    act(() => h.taskEnd[0](payload(other, { files: 3 })))
+    expect(useUIStore.getState().nextSteps).toBeNull()
+  })
+
+  it('★ AG-033：失败不亮「下一步」（文档说的是「任务完成后」）', () => {
+    const active = useAppStore.getState().activeThreadId
+    useUIStore.setState({ nextSteps: null })
+    act(() => h.taskEnd[0](payload(active, { kind: 'error', title: '后台任务失败' })))
+    expect(useUIStore.getState().nextSteps).toBeNull()
   })
 
   it('失败的通知用 error 样式（kind 由主进程给）', () => {
