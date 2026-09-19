@@ -2,6 +2,7 @@ import type { Thread } from '@/types'
 import { uid } from '@/lib/utils'
 import { useRealBackend, updateSessionMeta } from '@/lib/backend'
 import type { AppState } from './types'
+import { useUIStore } from '@/stores/useUIStore'
 
 /* ══════════════════════════════════════════════════════════════
    线程级的编辑动作：分支 / 改用户消息 / 对话状态 / 本会话设置
@@ -49,6 +50,11 @@ export function makeThreadEditActions(set: Setter, get: () => AppState): EditedA
         activeThreadId: id,
         activeProjectId: branch.projectId,
       }))
+      /*
+       * AG-032：分支之后会自动切到新对话，界面上「啪」地换了一条 ——
+       * 不说一句用户会以为是切错地方了（消息动作和上一条动作两个入口都走这里）。
+       */
+      useUIStore.getState().showToast('success', '已创建分支', branch.title)
       return id
     },
 

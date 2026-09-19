@@ -104,8 +104,11 @@ export function MemoryTab() {
   }
 
   async function toggle(item: MemoryItem): Promise<void> {
-    if (item.status === 'active') await memoryDisable(item.id)
+    /* AG-032：开关状态只有一个字的差别，不点回去看不出来改了没 */
+    const disabling = item.status === 'active'
+    if (disabling) await memoryDisable(item.id)
     else await memoryEnable(item.id)
+    showToast('success', disabling ? '已停用' : '已启用', item.content.slice(0, 40))
     void refresh()
   }
 
