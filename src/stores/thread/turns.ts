@@ -178,9 +178,43 @@ export async function runElectronTurn(
    * 立刻返回的（agent 循环在后台跑），所以订阅刚建立就被取消了，done 事件
    * 全丢，界面永远停在「正在处理」。
    */
+  /*
+   * 助手回复落盘。
+   *
+   * 以前只落用户消息，助手那条**一次都没写** —— 磁盘上的会话文件永远只有
+   * meta + user，重启后助手说过的话全没了。（读的那一侧早就支持 assistant，
+   * 连 toolRuns / citations / usage 都解析好了，是写这一侧漏了。）
+   *
+   * 存的是**收尾后状态里的那条消息**，不是闭包里那几个变量：usage 只在状态里，
+   * toolRuns 在流式过程中被复制过几份，读它更稳。
+   * aborted 也存 —— 那是用户自己按停的，半截回复也是结果；error 不存，
+   * 把报错当历史喂回模型没有意义。
+   */
+  const persistReply = (): void => {
+    if (lastEventType !== 'done' && lastEventType !== 'aborted') return
+    const final = useAppStore
+      .getState()
+      .threads.find((t) => t.id === threadId)
+      ?.messages.find((m) => m.id === placeholder.id)
+    if (!final) return
+    const text = final.content ?? ''
+    /* 空回复（比如刚发出去就被停掉）不写 —— 免得会话里多一条空消息 */
+    if (!text.trim() && (final.toolRuns ?? []).length === 0) return
+    useAppStore.getState().persistMessage(threadId, {
+      role: 'assistant',
+      content: text,
+      ...(final.reasoning ? { reasoning: final.reasoning } : {}),
+      ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
+      ...(final.citations?.length ? { citations: final.citations } : {}),
+      ...(final.usage ? { usage: final.usage } : {}),
+      ts: final.timestamp,
+    })
+  }
+
   const finish = (): void => {
     if (finished) return
     finished = true
+    persistReply()
     window.clearTimeout(timeoutId)
     off()
     activeRequests.delete(threadId)

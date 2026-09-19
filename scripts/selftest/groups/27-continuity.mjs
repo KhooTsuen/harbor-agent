@@ -49,8 +49,12 @@ export async function run() {
 
   /* ── 注入 ── */
   const note = taskContext.buildTaskState({ userText: '继续' })
-  /* 没有未完成任务时返回空 —— 那就没东西可继续，对 */
-  check('没有未完成任务时不硬造提示', note === '')
+  /*
+   * 没有未完成任务时不造台账；但**新活的第一轮**要把本轮请求带上 ——
+   * AG-027 的任务名（`# 名字`）就靠它，只写通用规矩模型不照做（见 30-taskname）。
+   */
+  check('没有未完成任务时不造台账', !note.includes('还没做完'))
+  check('★ 但会带上本轮请求（新活第一轮）', note.includes('本轮请求'))
 
   const src = readCore('electron/core/task-context.cjs')
   check('★ 认出「继续」后会明说「这是接着做，不是新任务」', src.includes('不是新任务'))

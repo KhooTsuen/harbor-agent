@@ -99,6 +99,19 @@ function deriveTitle(text) {
 }
 
 /**
+ * 没有名字时的兜底名。
+ *
+ * 为什么单独一个函数：`create()` 用它、`adoptTitle()` 拿它做比较 ——
+ * 两边必须**逐字一致**，否则一对不上就永远采纳不了。
+ * 真实踩到的例子：goal = 「继续」→ `deriveTitle` 剥完口语前缀剩空串 →
+ * `create` 兜底成「未命名任务」，而比较时算出的是 `''` → 不相等 →
+ * 模型给的名字永远被当成「它已经有名字了」拒掉。
+ */
+function fallbackTitle(goal) {
+  return deriveTitle(goal) || '未命名任务'
+}
+
+/**
  * 采纳模型给的任务名 —— **只在任务还没有自己的名字时**。
  *
  * 为什么要这道闸：模型每轮都会把计划块重发一遍，措辞稍微一变就会改名，
@@ -108,7 +121,7 @@ function deriveTitle(text) {
 function adoptTitle(task, raw) {
   const title = normalizeTitle(raw)
   if (!title || !task) return false
-  if (task.title && task.title !== deriveTitle(task.goal)) return false
+  if (task.title && task.title !== fallbackTitle(task.goal)) return false
   if (task.title === title) return false
   task.title = title
   return true
@@ -195,6 +208,7 @@ module.exports = {
   parsePlanBlock,
   normalizeTitle,
   deriveTitle,
+  fallbackTitle,
   adoptTitle,
   fingerprint,
   recordVersion,

@@ -103,6 +103,20 @@ export async function run() {
   const tEmpty = newTask('')
   check('goal 为空 → 未命名任务', tEmpty.title === '未命名任务')
 
+  /*
+   * 全是口语前缀的 goal（「继续」「接着做」）—— 剥完剩空串。
+   * 这里踩过一个真坑：create 兜底成「未命名任务」，但采纳判断算出的是 ''，
+   * 两边对不上 → 模型给的名字**永远**被当成「它已经有名字了」拒掉。
+   */
+  group('任务名 / 口语 goal 也要能改名')
+  check('fallbackTitle(继续) = 未命名任务', taskPlan.fallbackTitle('继续') === '未命名任务')
+  check('deriveTitle(继续) = 空（所以要兜底）', taskPlan.deriveTitle('继续') === '')
+  const tFiller = newTask('继续')
+  const vFiller = taskCore.setPlan(tFiller.id, ['[ ] A', '[ ] B'], { title: '读配置并核对' })
+  check('★ 口语 goal 的任务能采纳模型给的名', taskCore.get(tFiller.id).title === '读配置并核对')
+  check('返回的名字也对了', vFiller.title === '读配置并核对')
+  check('采纳过就不再改', taskCore.setPlan(tFiller.id, ['[x] A', '[ ] B'], { title: '别的名' }).title === '读配置并核对')
+
   /* ── ⑥ 模型给了名字就采纳（只采纳一次）────────────────── */
   group('任务名 / 采纳模型给的名字')
   const t2 = newTask('继续优化 Agent')
@@ -149,13 +163,38 @@ export async function run() {
 
   /* ── ⑨ 接线守卫 ───────────────────────────────────────── */
   group('任务名 / 接线守卫')
-  const promptSrc = readFileSync(join(ROOT, 'electron/core/task-context.cjs'), 'utf8')
+  const hintSrc = readFileSync(join(ROOT, 'electron/core/task-hint.cjs'), 'utf8')
   check(
     '★ 提示词告诉模型第一行写任务名',
-    promptSrc.includes('第一行') && promptSrc.includes('任务名'),
+    hintSrc.includes('第一行') && hintSrc.includes('任务名'),
   )
+  const promptSrc = readFileSync(join(ROOT, 'electron/core/task-context.cjs'), 'utf8')
   check('★ 台账注入用 parsePlanBlock', promptSrc.includes('parsePlanBlock'))
   check('★ capturePlan 把 title 交给 setPlan', promptSrc.includes('title: block.title'))
+  check(
+    '★ 台账与第一轮共用同一份格式说明（不是各写一遍）',
+    promptSrc.includes('taskHint.ledgerFormatLine()') &&
+      !promptSrc.includes('块的**第一行**写任务名'),
+  )
+
+  /*
+   * 新活的第一轮：没有未完成任务时，注入内容必须把「这次这句话」带上。
+   * 真机实测（deepseek-flash）：只在系统提示的通用条目里写规矩，模型不写
+   * 计划块；带了本轮请求才写。这条就是那个入口。
+   *
+   * 这里直接测文案函数（不走 buildTaskState）—— 后者看的是**全局**未完成任务，
+   * 本组前面已经建了好几条，环境不干净。接线由下面的守卫钉。
+   */
+  const hint = require(join(ROOT, 'electron/core/task-hint.cjs'))
+  const fresh = hint.freshRequest('把两个脚本对比一遍')
+  check('★ 第一轮带上用户那句话', fresh.includes('把两个脚本对比一遍'))
+  check('★ 第一轮要 plan 块', fresh.includes('```plan'))
+  check('★ 第一轮要任务名', fresh.includes('第一行写任务名'))
+  check('没头没尾不注入', hint.freshRequest('') === '' && hint.freshRequest(undefined) === '')
+  check(
+    '★ 没任务时走的是这条路（不是返回空）',
+    promptSrc.includes('taskHint.freshRequest(userText)'),
+  )
 
   const resumeSrc = readFileSync(join(ROOT, 'electron/core/task-resume.cjs'), 'utf8')
   check('★ 起运行的那条路不再拿聊天句当标题', !/title:\s*goal/.test(resumeSrc))
