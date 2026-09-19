@@ -1,8 +1,6 @@
-import { memo, type ReactNode } from 'react'
+import { memo } from 'react'
 import { Check } from 'lucide-react'
 import type { BlockNode, ListItem } from '@/lib/markdown'
-import { parseBlocks } from '@/lib/markdown'
-import { splitPendingLine } from '@/lib/markdown/incremental'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from '../CodeBlock'
 import { Inline } from './Inline'
@@ -153,66 +151,3 @@ export function BlockList({ blocks }: { blocks: BlockNode[] }) {
     </>
   )
 }
-
-/**
- * 把缓存的元素包一层。
- *
- * `elements` 数组的引用**永远不变**（只 push），所以 memo 一直命中 ——
- * 而 memo 命中意味着连「遍历那 131 个元素做引用比较」都不发生。
- * 不包这一层的话，虽然每个元素都能 bailout，React 还是要把整个数组跑一遍
- * （实测每次约 2ms，而尾巴本身只要 0.16ms）。
- */
-export const CachedBlocks = memo(function CachedBlocks({ elements }: { elements: ReactNode[] }) {
-  return <>{elements}</>
-})
-
-/**
- * 还在长的尾巴。
- *
- * ★ **残缺的标记行**不进解析（先当普通文字），**完整的一行照常解析** ——
- * 这是「流式时块不能频繁跳动」和「文字别突然变格式」两个诉求的平衡点。
- *
- * 只有这些「光杆/半截」标记现在解析会得到错误类型（等写完又变回来），
- * 才需要降级成纯文本：
- *
- *     `- `       光杆列表 → 现在像段落，写全了变列表
- *     ```t      半截围栏 → 现在像段落，闭合了变代码块
- *     `| A | B |` 表格头  → 现在像段落，分隔线来了变表格
- *
- * 而 `- 甲`、`## 标题`、普通段落这些**完整**的行，现在解析就正确且稳定，
- * 直接渲染 —— 不会「先显示成 `## 标题` 纯文本、换行后突然变成大标题」
- * （那正是用户说的「写完一段被覆盖重写」的真身）。
- *
- * 实测（逐字喂，数类型签名变化次数）：
- *
- *     列表      不拆 5 次 → 拆了 0 次
- *     任务列表  不拆 3 次 → 拆了 1 次
- *     代码块    不拆 1 次 → 拆了 1 次（结构定型，不可避免）
- *     表格      不拆 1 次 → 拆了 1 次（同上）
- *
- * ★ `streaming` 为 false 时**必须正常解析**最后一行。写完了还当纯文本的话，
- * `这是**重点**` 这种没换行收尾的内容会丢掉所有格式 —— 这个被已有的
- * Markdown 渲染测试当场拦住过。
- */
-export const TailBlock = memo(function TailBlock({
-  text,
-  streaming,
-}: {
-  text: string
-  streaming: boolean
-}) {
-  if (!text) return null
-  const { settled, pending } = splitPendingLine(text)
-  return (
-    <>
-      {settled ? <BlockList blocks={parseBlocks(settled)} /> : null}
-      {pending ? (
-        streaming ? (
-          <p className="my-1.5 whitespace-pre-wrap break-words">{pending}</p>
-        ) : (
-          <BlockList blocks={parseBlocks(pending)} />
-        )
-      ) : null}
-    </>
-  )
-})
