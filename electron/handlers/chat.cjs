@@ -288,6 +288,9 @@ function askUser(requestId, request, emit) {
       args: request.args,
       kind: request.kind ?? '',
       risk: request.risk ?? null,
+      /* AG-036：会改成什么样（`write_file` / `edit_file` 才有） */
+      diff: request.diff ?? null,
+      diffNote: request.diffNote ?? '',
     })
   })
 }

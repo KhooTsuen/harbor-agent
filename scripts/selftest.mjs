@@ -71,6 +71,7 @@ import { run as trayGroup } from './selftest/groups/33-tray.mjs'
 import { run as taskOutcome } from './selftest/groups/34-outcome.mjs'
 import { run as checkpoint } from './selftest/groups/35-checkpoint.mjs'
 import { run as diagnose } from './selftest/groups/36-diagnose.mjs'
+import { run as writeDiff } from './selftest/groups/37-writediff.mjs'
 
 const GROUPS = [
   basics,
@@ -109,6 +110,7 @@ const GROUPS = [
   taskOutcome,
   checkpoint,
   diagnose,
+  writeDiff,
 ]
 
 async function main() {

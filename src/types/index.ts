@@ -201,6 +201,9 @@ export interface PermissionRequest {
   description: string
   confirmText: string
   danger: boolean
+  /** AG-036：这次会改成什么（写文件时才有）—— 弹窗里默认折叠，点开才看 */
+  diff?: DiffFile[]
+  diffNote?: string
   onConfirm: () => void
   /** 取消/关闭时调（用于「写操作确认被拒绝」这种场景） */
   onCancel?: () => void
