@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { AdvancedPanel } from './AdvancedPanel'
 import { IconButton } from '@/components/ui/IconButton'
+import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    单个供应商的编辑卡片
@@ -186,7 +187,7 @@ export function ProviderCard({ provider }: ProviderCardProps) {
         {result ? (
           <span
             className="flex items-center gap-1 text-2xs"
-            style={{ color: result.ok ? 'var(--success)' : 'var(--error)' }}
+            style={{ color: colorOf(statusOfTool(result.ok)) }}
             role="status"
             aria-live="polite"
           >

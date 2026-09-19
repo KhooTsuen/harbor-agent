@@ -3,6 +3,7 @@ import { RefreshCw, Search } from 'lucide-react'
 import type { AuditEntry } from '@/types/safety'
 import { auditList } from '@/lib/safetyApi'
 import { cn } from '@/lib/utils'
+import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    运行日志
@@ -127,13 +128,13 @@ function LogRow({ entry }: { entry: AuditEntry }) {
       </span>
       <span
         className={cn('shrink-0 font-mono text-2xs', entry.ok ? 'text-fg-secondary' : '')}
-        style={entry.ok ? undefined : { color: 'var(--danger)' }}
+        style={entry.ok ? undefined : { color: colorOf('failed') }}
       >
         {entry.tool ?? '(未知工具)'}
       </span>
       <span
         className="shrink-0 font-mono text-2xs"
-        style={{ color: entry.ok ? 'var(--success)' : 'var(--danger)' }}
+        style={{ color: colorOf(statusOfTool(entry.ok)) }}
       >
         {entry.ok ? '✓' : '✗'}
       </span>

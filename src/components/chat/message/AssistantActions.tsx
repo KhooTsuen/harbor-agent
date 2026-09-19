@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { sceneTranslate } from '@/lib/sceneApi'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    助手消息的操作条（复制 / 重新生成 / 赞踩 / 分支）
@@ -55,7 +56,11 @@ export function AssistantActions({ message }: { message: Message }) {
           onClick={() => void copy()}
           className="rounded p-1 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
         >
-          {copied ? <Check size={13} style={{ color: 'var(--success)' }} /> : <Copy size={13} />}
+          {copied ? (
+            <Check size={13} style={{ color: colorOf('completed') }} />
+          ) : (
+            <Copy size={13} />
+          )}
         </button>
         <button
           type="button"

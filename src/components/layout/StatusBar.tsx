@@ -4,6 +4,7 @@ import { formatCount, formatTokens } from '@/lib/format'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { colorOf, statusOfPhase } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    StatusBar（高 28px）—— 窗口最底下那一条
@@ -45,7 +46,7 @@ export function StatusBar() {
       <span className="flex items-center gap-1.5">
         <span
           className={cn('inline-block size-1.5 rounded-full', sending && 'animate-pulse')}
-          style={{ background: sending ? 'var(--warning)' : 'var(--success)' }}
+          style={{ background: colorOf(statusOfPhase(sending ? 'executing' : 'completed')) }}
         />
         {sending ? '生成中' : '就绪'}
       </span>
@@ -55,10 +56,10 @@ export function StatusBar() {
         这里把上游状态和已等待时间直接摊开，用户一眼知道是排队还是正在画。
       */}
       {imageTask ? (
-        <span className="flex items-center gap-1.5" style={{ color: 'var(--warning)' }}>
+        <span className="flex items-center gap-1.5" style={{ color: colorOf('running') }}>
           <span
             className="inline-block size-1.5 animate-pulse rounded-full"
-            style={{ background: 'var(--warning)' }}
+            style={{ background: colorOf('running') }}
           />
           {imageTaskLabel(imageTask.status)}
           {imageTask.elapsedMs > 0 ? ` · 已等待 ${Math.round(imageTask.elapsedMs / 1000)} 秒` : ''}

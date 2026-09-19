@@ -17,6 +17,7 @@ import { Row, SectionTitle } from '../parts'
 import { AuditPanel } from '../security/AuditPanel'
 import { GrantsPanel } from '../security/GrantsPanel'
 import { LEVEL_COLOR, LEVEL_LABEL, POLICY_OPTIONS, SCOPE_OPTIONS } from '../security/meta'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 安全
@@ -240,7 +241,7 @@ export function SecurityTab() {
                 已用系统加密（{creds.backend}）· {creds.count} 条
               </span>
             ) : (
-              <span className="flex items-center gap-1" style={{ color: 'var(--warning)' }}>
+              <span className="flex items-center gap-1" style={{ color: colorOf('warning') }}>
                 <AlertTriangle size={12} />
                 当前环境拿不到系统加密，密钥是明文存在本机文件里（别把 data/ 拷给别人）
               </span>

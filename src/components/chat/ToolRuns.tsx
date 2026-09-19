@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, Loader2, Terminal, XCircle } f
 import type { ToolRunRecord } from '@/types'
 import { cn } from '@/lib/utils'
 import { AGENT_ACTIONS as ACTIONS, runningOf, verbOf } from '@/lib/agentActivity'
+import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    工具调用列表
@@ -83,9 +84,9 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
         {running ? (
           <Loader2 size={12} className="animate-spin" />
         ) : failed ? (
-          <XCircle size={12} style={{ color: 'var(--danger)' }} />
+          <XCircle size={12} style={{ color: colorOf('failed') }} />
         ) : (
-          <CheckCircle2 size={12} style={{ color: 'var(--success)' }} />
+          <CheckCircle2 size={12} style={{ color: colorOf('completed') }} />
         )}
         <span>{label}</span>
         <span className="font-mono text-fg-tertiary">· {runs.length} 步</span>
@@ -93,7 +94,7 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
           <span className="font-mono text-fg-tertiary">· {formatMs(totalMs)}</span>
         ) : null}
         {failedCount > 0 ? (
-          <span className="font-mono" style={{ color: 'var(--danger)' }}>
+          <span className="font-mono" style={{ color: colorOf('failed') }}>
             · {failedCount} 个失败
           </span>
         ) : null}
@@ -130,7 +131,7 @@ function ToolGroupRow({ group }: { group: ToolGroup }) {
         <CheckCircle2
           size={12}
           className="shrink-0"
-          style={{ color: group.ok ? 'var(--success)' : 'var(--danger)' }}
+          style={{ color: colorOf(statusOfTool(group.ok)) }}
         />
         <span className="shrink-0 text-fg-secondary">
           {verb} {group.runs.length} {unit}
@@ -182,9 +183,9 @@ function ToolRunRow({ run }: { run: ToolRunRecord }) {
         {running ? (
           <Loader2 size={12} className="shrink-0 animate-spin text-fg-tertiary" />
         ) : run.ok ? (
-          <CheckCircle2 size={12} className="shrink-0" style={{ color: 'var(--success)' }} />
+          <CheckCircle2 size={12} className="shrink-0" style={{ color: colorOf('completed') }} />
         ) : (
-          <XCircle size={12} className="shrink-0" style={{ color: 'var(--danger)' }} />
+          <XCircle size={12} className="shrink-0" style={{ color: colorOf('failed') }} />
         )}
 
         <Terminal size={11} className="shrink-0 text-fg-tertiary" />

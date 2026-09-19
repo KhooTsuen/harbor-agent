@@ -1,5 +1,6 @@
 import { Check, Copy, Download, Hash, WrapText } from 'lucide-react'
 import { IconButton } from '@/components/ui/IconButton'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    CodeBlock 的标题栏
@@ -68,7 +69,11 @@ export function CodeHeader({
           <Download size={13} />
         </IconButton>
         <IconButton label={copied ? '已复制' : '复制代码'} size={28} onClick={onCopy}>
-          {copied ? <Check size={13} style={{ color: 'var(--success)' }} /> : <Copy size={13} />}
+          {copied ? (
+            <Check size={13} style={{ color: colorOf('completed') }} />
+          ) : (
+            <Copy size={13} />
+          )}
         </IconButton>
       </div>
     </div>

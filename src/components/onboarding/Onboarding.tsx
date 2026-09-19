@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { DEFAULT_PRESET, PRESETS } from './presets'
 import { StepDots, type Step } from './StepDots'
+import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    首次启动引导
@@ -197,7 +198,7 @@ export function Onboarding({ config }: { config: AppConfig }) {
             {tested ? (
               <p
                 className="mt-3 flex items-start gap-1.5 text-2xs"
-                style={{ color: tested.ok ? 'var(--success)' : 'var(--error)' }}
+                style={{ color: colorOf(statusOfTool(tested.ok)) }}
                 role="status"
               >
                 {tested.ok ? <Check size={12} className="mt-0.5 shrink-0" /> : null}
@@ -276,7 +277,7 @@ export function Onboarding({ config }: { config: AppConfig }) {
 
         {step === 'done' ? (
           <>
-            <Check size={26} className="mb-3" style={{ color: 'var(--success)' }} />
+            <Check size={26} className="mb-3" style={{ color: colorOf('completed') }} />
             <h1 className="text-lg text-fg-primary">可以开始了</h1>
             <p className="mt-2 text-dense leading-relaxed text-fg-secondary">
               在下面输入框里说你要做什么就行。左侧可以新建对话，Ctrl+K 打开命令面板。

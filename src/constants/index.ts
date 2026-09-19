@@ -1,6 +1,6 @@
 export * from './scenes'
 export * from './fonts'
-import type { ModelOption, ReasoningLevel, ShortcutDef, ThreadMode, ThreadStatus } from '@/types'
+import type { ModelOption, ReasoningLevel, ShortcutDef, ThreadMode } from '@/types'
 
 /* ══════════════════════════════════════════════════════════════
    协作模式
@@ -65,28 +65,10 @@ export const REASONING_HINT: Record<ReasoningLevel, string> = {
   max: '慢，适合难题',
 }
 
-/* ── 线程状态 ────────────────────────────────────────────────── */
-
-export interface StatusMeta {
-  id: ThreadStatus
-  label: string
-  /** 状态点的渲染方式 */
-  dot: 'gray' | 'spinning' | 'green' | 'red' | 'amber'
-}
-
-export const STATUSES: readonly StatusMeta[] = [
-  { id: 'idle', label: '空闲', dot: 'gray' },
-  { id: 'running', label: '执行中', dot: 'spinning' },
-  { id: 'success', label: '完成', dot: 'green' },
-  { id: 'error', label: '失败', dot: 'red' },
-  { id: 'waiting', label: '等待', dot: 'amber' },
-  { id: 'cancelled', label: '已停止', dot: 'amber' },
-] as const
-
-export function statusMeta(status: ThreadStatus): StatusMeta {
-  const found = STATUSES.find((s) => s.id === status)
-  return found ?? STATUSES[0]
-}
+/*
+ * AG-031：这里原来有一套 STATUSES（空闲/执行中/完成/失败/等待/已停止 +
+ * green/red/amber）—— 和状态语言表重复，已经并过去了（见 lib/statusLanguage.ts）。
+ */
 
 /* ── 模型目录 ────────────────────────────────────────────────── */
 

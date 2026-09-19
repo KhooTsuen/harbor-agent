@@ -7,6 +7,7 @@ import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
 import { diagnoseModel, modelAfterRemoval } from '@/lib/modelCheck'
+import { STATUS_CLASS, colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    模型输入框
@@ -85,7 +86,7 @@ export function ModelField({ value, onChange, providers }: ModelFieldProps) {
           className={cn(
             'min-w-0 flex-1 rounded-base border bg-bg-surface px-2.5 py-1.5 font-mono text-dense text-fg-primary',
             'placeholder:text-fg-tertiary focus:outline-none',
-            problem ? 'border-[var(--warning)]' : 'border-line-hairline focus:border-line-focus',
+            problem ? STATUS_CLASS.warning.border : 'border-line-hairline focus:border-line-focus',
           )}
         />
 
@@ -193,7 +194,7 @@ export function ModelField({ value, onChange, providers }: ModelFieldProps) {
       {problem ? (
         <p
           className="mt-1 flex items-start gap-1 text-2xs"
-          style={{ color: 'var(--warning)' }}
+          style={{ color: colorOf('warning') }}
           role="status"
         >
           <AlertTriangle size={11} className="mt-0.5 shrink-0" />

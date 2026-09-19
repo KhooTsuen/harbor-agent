@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { AuditEntry } from '@/types/backend'
 import { LEVEL_COLOR, LEVEL_LABEL } from './meta'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    审计列表
@@ -38,7 +39,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
         <span className="shrink-0 font-mono text-2xs text-fg-tertiary">{time}</span>
         <span
           className="shrink-0 font-mono text-2xs"
-          style={{ color: entry.ok ? 'var(--text-secondary)' : 'var(--danger)' }}
+          style={{ color: entry.ok ? undefined : colorOf('failed') }}
         >
           {entry.tool}
         </span>
@@ -48,7 +49,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
           </span>
         ) : null}
         {entry.approval === false ? (
-          <span className="shrink-0 text-2xs" style={{ color: 'var(--warning)' }}>
+          <span className="shrink-0 text-2xs" style={{ color: colorOf('warning') }}>
             已拒绝
           </span>
         ) : null}

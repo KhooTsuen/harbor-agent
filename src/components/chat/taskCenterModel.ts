@@ -1,16 +1,21 @@
 import type { TaskRecord } from '@/types/safety'
+import { labelOf, statusOfTask } from '@/lib/statusLanguage'
 
-export const TASK_GROUPS: ReadonlyArray<{
-  status: TaskRecord['status']
-  label: string
-}> = [
-  { status: 'running', label: '进行中' },
-  { status: 'paused', label: '已暂停' },
-  { status: 'waiting_user', label: '等待中' },
-  { status: 'failed', label: '失败' },
-  { status: 'completed', label: '已完成' },
-  { status: 'cancelled', label: '已取消' },
+/*
+ * 分组顺序（进行中在最前）+ 组标题文字。
+ * 文字取自 AG-031 的状态语言表 —— 全应用只有那一份，别在这儿再抄一遍。
+ */
+const GROUP_ORDER: readonly TaskRecord['status'][] = [
+  'running',
+  'paused',
+  'waiting_user',
+  'failed',
+  'completed',
+  'cancelled',
 ]
+
+export const TASK_GROUPS: ReadonlyArray<{ status: TaskRecord['status']; label: string }> =
+  GROUP_ORDER.map((status) => ({ status, label: labelOf(statusOfTask(status)) }))
 
 export function isPlanDone(line: string): boolean {
   return /^\s*\[[xX]\]/.test(String(line))

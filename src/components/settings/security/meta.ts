@@ -1,4 +1,5 @@
 import type { RiskVerdict } from '@/types/backend'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* 安全页共用的小常量 —— 拆出来是因为主组件已经很长了 */
 
@@ -22,8 +23,8 @@ export const LEVEL_LABEL: Record<RiskVerdict['level'], string> = {
 }
 
 export const LEVEL_COLOR: Record<RiskVerdict['level'], string> = {
-  low: 'var(--success)',
-  medium: 'var(--warning)',
-  high: 'var(--danger)',
-  critical: 'var(--danger)',
+  low: colorOf('completed'),
+  medium: colorOf('warning'),
+  high: colorOf('failed'),
+  critical: colorOf('failed'),
 }

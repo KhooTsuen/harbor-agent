@@ -8,6 +8,7 @@ import type { Project } from '@/types'
 import { onPtyEvent, ptyResize, ptyStart, ptyStop, ptyWrite } from '@/lib/ptyApi'
 import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    真终端
@@ -196,7 +197,7 @@ export function XtermTerminal({ project }: XtermTerminalProps) {
         {status === 'error' ? (
           <span
             className="shrink-0 font-mono text-2xs"
-            style={{ color: 'var(--danger)' }}
+            style={{ color: colorOf('failed') }}
             title={error}
           >
             启动失败

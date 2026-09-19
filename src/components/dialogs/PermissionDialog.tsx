@@ -3,6 +3,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useRef } from 'react'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    危险操作确认 / 写操作确认
@@ -62,7 +63,7 @@ export function PermissionDialog() {
         {permission?.danger === true ? (
           <span
             className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full"
-            style={{ background: 'rgb(229 83 75 / 0.12)', color: 'var(--danger)' }}
+            style={{ background: 'rgb(229 83 75 / 0.12)', color: colorOf('failed') }}
           >
             <AlertTriangle size={16} />
           </span>

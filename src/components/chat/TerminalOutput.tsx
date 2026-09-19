@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { TerminalLine } from '@/types'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    TerminalOutput —— 纯展示的终端输出
@@ -19,7 +20,7 @@ export interface TerminalOutputProps {
 const LINE_COLOR: Record<TerminalLine['type'], string> = {
   input: 'var(--text-primary)',
   output: 'var(--text-secondary)',
-  error: 'var(--danger)',
+  error: colorOf('failed'),
   info: 'var(--text-tertiary)',
 }
 
