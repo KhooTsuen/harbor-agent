@@ -16,6 +16,7 @@ const audit = require('../core/audit.cjs')
 const capability = require('../core/capability.cjs')
 const task = require('../core/task.cjs')
 const diagnose = require('../core/task-diagnose.cjs')
+const metrics = require('../core/metrics.cjs')
 const recovery = require('../core/task-recovery.cjs')
 const changeset = require('../core/changeset.cjs')
 const changesetDiff = require('../core/changeset-diff.cjs')
@@ -157,6 +158,12 @@ function register({ ipcMain }) {
    * 按会话取**最近一次有改动的**事务，把「改动前快照 vs 磁盘现在的样子」算成 diff。
    * 纯读：不提交、不回滚、不碰任何文件。
    */
+  /* AG-037：性能面板读最近几次的时间线（纯内存，不碰磁盘） */
+  ipcMain.handle('metrics:recent', (_event, payload = {}) => ({
+    ok: true,
+    items: metrics.list({ limit: Number(payload?.limit) || 5 }),
+  }))
+
   ipcMain.handle('changeset:diff', (_event, payload = {}) => ({
     ok: true,
     diff: changesetDiff.latest({ sessionId: String(payload.sessionId ?? '') }),

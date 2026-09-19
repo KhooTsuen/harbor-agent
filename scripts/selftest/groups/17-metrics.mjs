@@ -131,10 +131,15 @@ export async function run() {
 
   const turnsSrc = readFileSync(join(ROOT, 'src/stores/thread/turns.ts'), 'utf8')
   check('★ 前端把「按下发送」的时刻带给主进程', turnsSrc.includes('requestTime,'))
-  check(
-    'requestTime 是在函数最开始取的（不是发 IPC 之前）',
-    /const requestTime = Date\.now\(\)[\s\S]{0,120}const app = useAppStore/.test(turnsSrc),
-  )
+  /*
+   * 判的是**先后顺序**，不是字符距离 —— 原来写的是「Date.now() 到 useAppStore
+   * 之间不超过 120 字符」，AG-037 在中间加了两行埋点就把这条守卫撞红了：
+   * 意图（「在函数最开始取，不是发 IPC 之前」）没变，只是距离变了。
+   * 结构性的判据不该因为插了两行注释和埋点就失效。
+   */
+  const requestAt = turnsSrc.indexOf('const requestTime = Date.now()')
+  const appAt = turnsSrc.indexOf('const app = useAppStore')
+  check('★ requestTime 是在函数最开始取的（不是发 IPC 之前）', requestAt > 0 && appAt > requestAt)
 
   const hookSrc = readFileSync(join(ROOT, 'src/hooks/useAgentActive.ts'), 'utf8')
   check(

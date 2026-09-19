@@ -133,6 +133,7 @@ const api = {
   changesetGet: (id) => ipcRenderer.invoke('changeset:get', id),
   changesetRollback: (id) => ipcRenderer.invoke('changeset:rollback', id),
   changesetDiff: (payload) => ipcRenderer.invoke('changeset:diff', payload),
+  metricsRecent: (payload) => ipcRenderer.invoke('metrics:recent', payload),
 
   credentialsStatus: () => ipcRenderer.invoke('credentials:status'),
 

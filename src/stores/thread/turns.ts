@@ -3,6 +3,7 @@ import { uid } from '@/lib/utils'
 import { abortChat, pauseChat, sendChat, subscribeChatEvents } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
+import { usePerfStore } from '../usePerfStore'
 import { useThreadStore } from '../useThreadStore'
 import { abortMockTurn } from './mockTurn'
 import { runPostTurnTasks } from './sceneTasks'
@@ -95,6 +96,11 @@ export async function runElectronTurn(
 ): Promise<void> {
   /* AG-003：用户按下发送的时刻 —— 主进程的 TTFT 等等都是从这一刻开始算的 */
   const requestTime = Date.now()
+  /*
+   * AG-037：同一个时刻也交给性能面板 —— 它要算「首字上屏」，那是渲染层
+   * 自己这一段（IPC + React），主进程测不到。
+   */
+  usePerfStore.getState().beginRun(requestTime)
 
   const app = useAppStore.getState()
   const ui = useUIStore.getState()

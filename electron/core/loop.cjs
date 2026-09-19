@@ -2,7 +2,7 @@
  * Agent 循环。
  *
  * 一轮对话 = 若干「回合」：调模型 → 要工具 → 执行 → 结果喂回去 → … → 不再要工具。
- * 两个硬边界：maxTurns 防止烧 token；AbortSignal 让「停止」能立刻停住（含 shell）。
+ * 两个硬边界：maxTurns 防烧 token；AbortSignal 让「停止」立刻停住（含 shell）。
  * 状态由 AG-001 的 lifecycle 驱动（每次转移都发事件，UI 只读不猜）。
  */
 
@@ -45,19 +45,17 @@ const MAX_TURNS = 25
  * @param {AbortSignal} options.signal
  * @param {(event: object) => void} options.emit     推给渲染层
  * @param {(req: object) => Promise<boolean>} options.confirm  写操作确认
- * @param {string} [options.sessionId]  会话 id（审计与授权用）
- * @param {string} [options.taskId]     任务 id（可恢复任务用）
+ * @param {string} [options.sessionId]  会话 id（审计与授权用）；[options.taskId] 任务 id
  * @param {string} [options.goal]       本轮的原始目标（用户那句话）
  */
 async function run(options) {
-  /* 一次运行 = 一条任务 + 一个文件改动事务。任务答「干什么、到哪一步」，
-     事务答「改了哪些文件、怎么整批撤」。都不进会话文件 —— 会话是聊天记录，
-     不该兼任工作台账。 */
+  /* 一次运行 = 一条任务 + 一个文件改动事务：任务答「干什么、到哪一步」，
+     事务答「改了哪些文件、怎么整批撤」。都不进会话文件（会话是聊天记录）。 */
   const goal = String(options.goal ?? '')
   const sessionId = options.sessionId ?? ''
 
-  /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，
-     否则「不重复已完成步骤」就无从谈起）；其余情况新建一条。 */
+  /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，否则
+     「不重复已完成步骤」无从谈起）；其余情况新建一条。 */
   const task = taskResume.openForRun({ ...options, goal, sessionId })
   const session = changeset.begin({ taskId: task.id, sessionId, title: task.title })
   const changeSetId = session.ok ? session.id : ''
@@ -88,10 +86,9 @@ async function run(options) {
 }
 
 /*
- * 状态事件的 key。**不能用 options.taskId** —— 那是任务台账 id（task_xxx），
- * run() 进循环前还会把它换成 task.id；调用方（chat.cjs）订阅用的是自己的 key
- * （requestId），两边对不上 → 事件全被过滤 → 「UI 显示空闲，后台其实在跑」。
- * 所以事件流单独用 traceId：谁发起请求谁定 key。
+ * 状态事件的 key。**不能用 options.taskId**（那是任务台账 id，run() 进循环前还会换成
+ * task.id；调用方订阅用的是自己的 requestId，两边对不上 → 事件全被过滤 →
+ * 「UI 显示空闲，后台其实在跑」）。所以事件流单独用 traceId：谁发起请求谁定 key。
  */
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
@@ -170,7 +167,7 @@ async function runLoop(options) {
       life.mark('paused', traceKey(options))
       return pausedResult({ turn, usage: totalUsage, toolRuns })
     }
-    /* 用量闸：调模型**之前**查账（唯一能真省钱的位置）。按 token 算，不按金额 */
+    /* 用量闸：调模型**之前**查账（唯一能真省钱的位置），按 token 不按金额 */
     limits.enforce(emit)
     life.mark('thinking', traceKey(options))
     emit({ type: 'turn_start', turn: turn + 1 })
@@ -187,6 +184,10 @@ async function runLoop(options) {
       maxTokens: config.assistant.maxTokens,
       /* 思考强度档位（thread 里选的 low/high/max）—— 以前这里漏了，档位从没传给模型 */
       reasoningEffort: threadSettings.reasoning,
+      /* AG-037 埋点顺手逮到的：callModel 里一直写着 `emit?.(…)` 报重试/降级/上下文超限，
+         而调用方**从来没把 emit 传进来** —— 那些提示在界面上从未出现过（AG-016 要求告知用户） */
+      traceId: traceKey(options),
+      emit,
       signal,
       onContent: (text) => emit({ type: 'content', text }),
       onReasoning: (text) => emit({ type: 'reasoning', text }),

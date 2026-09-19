@@ -18,6 +18,7 @@ const plugins = require('./plugins.cjs')
 const skills = require('./skills.cjs')
 const memory = require('./memory.cjs')
 const project = require('./project.cjs')
+const perfMarks = require('./perf-marks.cjs')
 const promptStack = require('./prompt-stack.cjs')
 const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, WORK_RULES, BROWSER_GUIDE } = promptStack
 const contextBuilder = require('./context-builder.cjs')
@@ -109,6 +110,9 @@ function toolsSection() {
  * @returns {{ messages: Array }}
  */
 function buildPromptContext({ config, workdir, mode, history, threadSettings, options }) {
+  /* AG-037：这段（提示词拼装 + 记忆召回 + 项目说明）自己计时，循环那边只管编排 */
+  const startedAt = Date.now()
+  const traceId = String(options?.traceId || options?.taskId || '')
   /* 技能清单：只给名字 + 用途 + 路径，正文让模型自己按需读 */
   let skillSection = ''
   try {
@@ -208,6 +212,7 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     }
   }
 
+  perfMarks.mark(traceId, 'context', Date.now() - startedAt)
   return { messages }
 }
 
