@@ -7,6 +7,7 @@ import { useRealBackend } from '@/lib/backend'
 import { pauseActiveRequest, runElectronTurn, stopActiveRequest } from './thread/turns'
 import { createSession } from '@/lib/backend'
 import { adviseCompact, runCompact } from './thread/compact'
+import { tryHandleCommand } from './thread/commands'
 import { runMockTurn } from './thread/mockTurn'
 import { getActiveThread, useAppStore } from './useAppStore'
 import { useUIStore } from './useUIStore'
@@ -34,6 +35,11 @@ interface ThreadState {
   enqueueMessage: (threadId: string, text: string) => void
   removeQueuedMessage: (threadId: string, index: number) => void
 
+  /** AG-026：每条对话的输入草稿（切换线程时保留，切回来还在） */
+  drafts: Record<string, string>
+  /** 切换线程时调：把当前 input 存进旧线程的草稿，再把新线程的草稿恢复到 input */
+  switchDraft: (fromId: string | null, toId: string) => void
+
   setInput: (value: string) => void
   clearInput: () => void
   sendMessage: (override?: string, resumeTaskId?: string) => void
@@ -52,6 +58,14 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   inputImages: [],
   suggestions: [],
   queuedMessages: {},
+  drafts: {},
+
+  switchDraft: (fromId, toId) =>
+    set((s) => {
+      const drafts = { ...s.drafts }
+      if (fromId) drafts[fromId] = s.input
+      return { drafts, input: drafts[toId] ?? '' }
+    }),
 
   enqueueMessage: (threadId, text) =>
     set((s) => {
@@ -81,44 +95,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const app = useAppStore.getState()
     const ui = useUIStore.getState()
 
-    /* /compact：手动压缩，不发给模型 */
-    if (raw === '/compact') {
-      get().clearInput()
-      get().clearInputImages()
-      const current = getActiveThread(app)
-      if (current) void runCompact(current.id)
-      return
-    }
-    if (raw === '/temporary') {
-      get().clearInput()
-      const current = getActiveThread(app)
-      if (current) {
-        useAppStore.setState((s) => ({
-          threads: s.threads.map((t) => (t.id === current.id ? { ...t, temporary: true } : t)),
-        }))
-        ui.showToast('info', '临时对话', '本次对话不会写入长期记忆')
-      }
-      return
-    }
-    if (raw === '/new') {
-      get().clearInput()
-      app.createThread()
-      return
-    }
-    if (raw === '/clear') {
-      get().clearInput()
-      const current = getActiveThread(app)
-      if (current) app.clearMessages(current.id)
-      return
-    }
-    if (raw === '/readonly' || raw === '/agent' || raw === '/research') {
-      get().clearInput()
-      const current = getActiveThread(app)
-      const next =
-        raw.slice(1) === 'readonly' ? 'plan' : raw.slice(1) === 'research' ? 'plan' : 'execute'
-      if (current) app.setThreadMode(current.id, next)
-      return
-    }
+    /* 斜杠命令：/compact /temporary /new /clear /readonly…（抽到了 thread/commands.ts） */
+    if (tryHandleCommand(raw)) return
+
     /*
      * 没有对话就新建一条。
      *
@@ -298,3 +277,15 @@ export function useActiveMode(): Thread['mode'] {
   const thread = useAppStore((s) => s.threads.find((t) => t.id === threadId))
   return thread?.mode ?? MODES[1].id
 }
+
+/*
+ * AG-026：订阅 activeThreadId 变化切换草稿。用 store 订阅而不是在 setActiveThread
+ * 里手动调（避免 useAppStore import useThreadStore 的循环依赖），切线程入口再多也只靠这一处。
+ */
+let lastDraftThread = useAppStore.getState().activeThreadId
+useAppStore.subscribe((state) => {
+  const current = state.activeThreadId
+  if (current === lastDraftThread) return
+  useThreadStore.getState().switchDraft(lastDraftThread, current)
+  lastDraftThread = current
+})
