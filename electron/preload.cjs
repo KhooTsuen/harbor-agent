@@ -234,6 +234,28 @@ const api = {
     return () => ipcRenderer.removeListener('browser:request', handler)
   },
 
+  /* ── AG-029：后台任务通知 ───────────────────────────── */
+
+  /**
+   * 一轮跑完了（主进程推）。
+   *
+   * **内容由主进程算好**（`core/task-notify.cjs`）：要不要弹系统通知是它决定的
+   * （窗口藏到托盘时渲染层会被节流，判不准），它把同一份文案推过来，
+   * 渲染层只负责「用户没在看这条对话就弹个应用内提示」。
+   */
+  onTaskEnd: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('app:taskEnd', handler)
+    return () => ipcRenderer.removeListener('app:taskEnd', handler)
+  },
+
+  /** 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
+  onNotificationClick: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('app:notificationClick', handler)
+    return () => ipcRenderer.removeListener('app:notificationClick', handler)
+  },
+
   /** 把浏览结果回给主进程（不回的话那边会一直等） */
   browserResult: (id, result) => ipcRenderer.invoke('browser:result', { id, result }),
 

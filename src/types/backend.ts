@@ -24,10 +24,11 @@ import type {
 
 import type { MemoryStats, SafetyBridge } from './safety'
 import type { ImageDonePayload } from './image'
+import type { NotifyBridge } from './notify'
 
 export * from './models'
 
-export interface WorkbenchBridge extends SafetyBridge {
+export interface WorkbenchBridge extends SafetyBridge, NotifyBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
   showWindow: () => Promise<{ ok: boolean }>
