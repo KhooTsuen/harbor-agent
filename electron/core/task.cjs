@@ -10,6 +10,7 @@
 
 const log = require('./log.cjs')
 const io = require('./task-io.cjs')
+const taskIndex = require('./task-index.cjs')
 const notes = require('./task-notes.cjs')
 const {
   parsePlan,
@@ -116,17 +117,15 @@ function pauseRunning() {
   return { ok: true, paused: count }
 }
 
-function list({ limit = 50, status = '', sessionId = '' } = {}) {
-  const out = []
-  for (const id of io.ids()) {
-    const task = io.get(id)
-    if (!task) continue
-    if (status && task.status !== status) continue
-    if (sessionId && task.sessionId !== sessionId) continue
-    out.push(task)
-  }
-
-  return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
+/**
+ * 列任务：按 `updatedAt` 新→旧，可按状态 / 会话过滤。
+ *
+ * AG-039：走**索引**（`task-index.cjs`）拿顺序与过滤条件，只读真正要返回的那几个文件。
+ * 原来是「把 data/tasks 下每个 JSON 全读一遍」—— 1241 个任务实测 240ms，
+ * 而列表在工具每跑完一次就会被调用一次：主进程被反复按住，渲染层的 IPC 全排在后面。
+ */
+function list({ limit = 50, status = '', statuses = null, sessionId = '' } = {}) {
+  return taskIndex.list({ limit, status, statuses, sessionId })
 }
 
 /**
@@ -139,9 +138,8 @@ function list({ limit = 50, status = '', sessionId = '' } = {}) {
  *   （自检里报成「未完成任务能被列出来」失败）。
  */
 function unfinished() {
-  return list({ limit: 500 })
-    .filter((task) => UNFINISHED.has(task.status))
-    .slice(0, 20)
+  /* 状态集合交给索引筛（只读真正没干完的那几条，不必读 500 个文件） */
+  return list({ limit: 500, statuses: [...UNFINISHED] }).slice(0, 20)
 }
 
 /**
