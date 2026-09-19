@@ -1,5 +1,43 @@
 # 更新日志
 
+## [0.88.0] — 2026-09-19 · AG-026 Composer Draft 持久化
+
+切换线程后保留输入草稿（切回来还在，而且**不串**到别的线程）。
+
+### 现状问题
+
+`input` 一直是**全局一个**（不分线程）。切换线程时既不清空也不恢复 ——
+草稿会「串」到新线程，或者发送后一起丢。
+
+### 实现
+
+- `useThreadStore` 加 `drafts: Record<threadId, string>` + `switchDraft(fromId, toId)`
+- `switchDraft`：把当前 `input` 存进旧线程的草稿，再把新线程的草稿恢复到 `input`
+- **切换靠订阅 `useAppStore` 的 `activeThreadId` 变化**（store 级 subscribe），
+  而不是在 `setActiveThread` 里手动调 —— 这样不用让 `useAppStore` import
+  `useThreadStore`（避免循环依赖），而且切线程的入口再多也只靠这一处
+
+### 顺手压行数
+
+`useThreadStore` 又超 300 了，把**斜杠命令**（/compact /temporary /new /clear
+/readonly）抽到 `thread/commands.ts`（`tryHandleCommand`），329 → 291 行。
+命令处理用 `getState()` 访问 store（运行时调用），两边互相 import 不炸。
+
+### 真机验证
+
+```
+B 空（草稿甲没串）= 对     ← 切走时草稿没串到新线程
+切回 A = 对（草稿甲）      ← 切回来恢复
+切回 B = 对（草稿乙）      ← 双向都正确
+```
+
+### 已知问题
+
+1. **草稿在内存**，重启即丢。要「真·持久化」得落盘（和 AG-025 的队列一起）。
+   文档只要求「切换线程后保留」，先满足这个；落盘等明确要了再做。
+2. 空草稿也会存一条（`drafts[id] = ''`）。无害，但 drafts 表会慢慢攒空条目，
+   可以后续在切换/删除线程时清理。
+
 ## [0.87.0] — 2026-09-19 · AG-025 输入队列
 
 跑着的时候用户又能打字了（AG-024 已满足），这条把「能发」也补上：
