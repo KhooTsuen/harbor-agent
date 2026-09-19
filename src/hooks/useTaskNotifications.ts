@@ -1,80 +1,59 @@
 import { useEffect } from 'react'
-import type { AgentPhase } from '@/types'
-import { isTerminalPhase } from '@/lib/agentPhase'
-import { endNotice, shouldNotifyEnd } from '@/lib/taskNotify'
+import { shouldNotifyEnd } from '@/lib/taskNotify'
+import { subscribeNotificationClick, subscribeTaskEnd } from '@/lib/subscriptions'
 import { useAppStore } from '@/stores/useAppStore'
-import { useTaskStore } from '@/stores/useTaskStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useRealBackend } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
-   后台任务通知（AG-029）
+   后台任务通知（AG-029）—— 渲染层只负责**应用内那条提示**
 
    需求：任务完成/失败时告诉用户，**不抢焦点**，并给一个「查看结果」入口。
 
-   为什么盯「相位变化」而不是聊天事件流：
-   相位由主进程状态机推（AG-001），是唯一真相；聊天事件流是按 requestId
-   订阅的，而且一条对话可能因为暂停/重试走好几轮 —— 盯相位只需看
-   「这条对话刚才还在跑，现在结束了」，不用管中间发生了什么。
+   ── 分工 ──
+   主进程：判断一轮跑完没有、组装文案、决定要不要弹**系统通知** ——
+     「窗口现在是不是被用户看着」只有它答得准（`isMinimized()` /
+     `isVisible()` / `isFocused()` 是 Electron 的原话，渲染层只有一个
+     `document.hasFocus()` 分不清最小化、藏托盘、被盖住）。
+   渲染层：只决定要不要弹**应用内提示**（它知道用户在看哪条对话）。
 
-   ★ 不抢焦点 = 三件事都不做：
-     ① 不调用窗口聚焦 / 不弹系统级模态；
-     ② 不自动切对话（只弹一条带按钮的提示，点不点由用户）；
+   ★ 不抢焦点 = 三条：
+     ① 不调用窗口聚焦 / 不弹模态；
+     ② 不自动切对话（只给按钮，点不点由用户）；
      ③ 用户正在看这条对话（且窗口在前台）时根本不弹。
+     系统通知的点击是例外 —— 那是用户自己点的，主进程会把窗口叫回来。
    ══════════════════════════════════════════════════════════════ */
 
-export function useTaskNotifications(): void {
-  useEffect(() => {
-    if (!useRealBackend) return
-
-    /*
-     * 上一次看到的相位（按对话）。启动时是空的，第一条回调里每个对话的
-     * previous 都是 undefined —— 那种情况**一律跳过**，否则「启动时本来就
-     * 已经结束」的那些对话会被当成刚刚完成，一开机弹一排通知。
-     * （不要另外再「先记一遍当前状态」：那是同一个目的的第二套机制，
-     *   会让这个判断变得无法被测试验证 —— 变异测试抓到过。）
-     */
-    const seen = new Map<string, AgentPhase | undefined>()
-
-    return useAppStore.subscribe((state) => {
-      for (const thread of state.threads) {
-        const previous = seen.get(thread.id)
-        seen.set(thread.id, thread.phase)
-
-        /* 只认「刚才是别的相位、现在落在终态」这一次跳变 */
-        if (previous === undefined || previous === thread.phase) continue
-        if (!isTerminalPhase(thread.phase)) continue
-        const phase = thread.phase as AgentPhase
-
-        if (
-          !shouldNotifyEnd({
-            threadId: thread.id,
-            activeThreadId: state.activeThreadId,
-            windowFocused: document.hasFocus(),
-          })
-        ) {
-          continue
-        }
-        void notify(thread.id, phase)
-      }
-    })
-  }, [])
+/** 跳到某条任务的结果：切到它的对话 + 打开右栏任务中心 */
+function openTaskResult(threadId: string): void {
+  if (!threadId) return
+  useAppStore.getState().setActiveThread(threadId)
+  useUIStore.getState().setActiveRightTab('tasks')
 }
 
-/** 拉一次最新任务台账，再按它组通知内容（任务名、改了几个文件、结果） */
-async function notify(threadId: string, phase: AgentPhase): Promise<void> {
-  await useTaskStore.getState().refresh()
-  /* task:list 按 updatedAt 倒序 —— 第一条就是这条对话最近的活儿 */
-  const task = useTaskStore.getState().tasks.find((item) => item.sessionId === threadId)
-  const notice = endNotice(phase, task)
-  if (!notice) return
+export function useTaskNotifications(): void {
+  /* 点系统通知 → 和点应用内「查看结果」走同一条路 */
+  useEffect(() => {
+    if (!useRealBackend) return
+    return subscribeNotificationClick(({ id }) => openTaskResult(id))
+  }, [])
 
-  useUIStore.getState().showToast(notice.kind, notice.title, notice.description, {
-    label: '查看结果',
-    onClick: () => {
-      useAppStore.getState().setActiveThread(threadId)
-      /* 结果在任务中心里 —— 顺手把右栏切到那儿，不用用户自己找 */
-      useUIStore.getState().setActiveRightTab('tasks')
-    },
-  })
+  useEffect(() => {
+    if (!useRealBackend) return
+    return subscribeTaskEnd((payload) => {
+      if (
+        !shouldNotifyEnd({
+          threadId: payload.sessionId,
+          activeThreadId: useAppStore.getState().activeThreadId,
+          windowFocused: document.hasFocus(),
+        })
+      ) {
+        return
+      }
+      useUIStore.getState().showToast(payload.kind, payload.title, payload.description, {
+        label: '查看结果',
+        onClick: () => openTaskResult(payload.sessionId),
+      })
+    })
+  }, [])
 }

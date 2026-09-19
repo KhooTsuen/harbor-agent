@@ -44,7 +44,7 @@ function lastUserText(history) {
   return ''
 }
 
-function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
+function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
   /* ── 发起一轮对话 ─────────────────────────────────────── */
 
   ipcMain.handle('chat:send', async (_event, payload) => {
@@ -101,13 +101,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
      */
     const offPhase = life.onTransition((e) => {
       if (e.taskId !== phaseKey) return
-      /*
-       * AG-002：事件名由 eventForTransition 决定，**不在这里现编字符串** ——
-       * 状态机和事件名的对应关系只有一处（events.cjs 的映射表）。
-       * 每条都带 phase 字段，渲染层只看 phase 就行，不用去解析事件名。
-       * executing / responding 这类没有标准名的相位仍以 'phase' 发出
-       * （它们是执行细节，不是生命周期节点）。
-       */
+      /* AG-002：事件名由 eventForTransition 决定，不在这里现编字符串 ——
+         状态机与事件名的对应只有一处（events.cjs）。每条都带 phase 字段。 */
       const name = bus.eventForTransition(e.from, e.to)
       emit({ type: name ?? 'phase', phase: e.to, from: e.from, detail: e.detail })
     })
@@ -156,11 +151,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
             /* AG-018：把用户这句话也交给它 —— 说「继续」时要明确告诉他“这是接着做” */
             userText: lastUserText(history),
           }),
-          /*
-           * 拿用户那句话当任务目标。
-           * 不传的话任务标题永远是「未命名任务」—— 未完成任务的横幅上
-           * 就只写着「有一条没干完的任务：未命名任务」，用户根本不知道是啥。
-           */
+          /* 拿用户那句话当任务目标：不传的话任务标题永远是「未命名任务」，
+             用户根本不知道那条没干完的活是啥。 */
           goal: lastUserText(history),
           temporary: payload?.temporary === true,
           threadSettings: payload?.threadSettings ?? {},
@@ -187,6 +179,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir }) {
           log.error(`对话失败：${message}`)
         }
       } finally {
+        /* AG-029：这轮结束（成功/失败/中断都走 finally）→ 交给主进程决定要不要通知 */
+        void taskEnd?.({ sessionId: payload?.sessionId ?? '' })
+
         /* AG-011：最后一段增量还在缓存里 —— 不冲掉就永远看不见了 */
         flush()
         /* AG-003：算 TTFT / 首次工具反馈 / 总耗时，发 metrics.timeline 事件 */

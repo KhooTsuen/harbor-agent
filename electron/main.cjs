@@ -8,7 +8,7 @@
 
 const path = require('node:path')
 const fs = require('node:fs')
-const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu } = require('electron')
 
 const { DIRS, ensureDirs, auditNonC, markPackaged } = require('./core/paths.cjs')
 const log = require('./core/log.cjs')
@@ -18,6 +18,7 @@ const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
 const { setupTray, showWindow, setQuitting, isQuitting } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
 const windowChrome = require('./handlers/window.cjs')
+const { registerHandlers } = require('./register-handlers.cjs')
 const navigationPolicy = require('./navigation-policy.cjs')
 const pluginWatcher = require('./core/plugin-watcher.cjs')
 const imageHandler = require('./handlers/image.cjs')
@@ -261,39 +262,19 @@ if (!gotLock) {
   })
 }
 
-/* 窗口外观 + 显示/退出（从本文件拆出去的，见 handlers/window.cjs） */
-windowChrome.register({
+/* 渲染层用到的处理器：清单在 register-handlers.cjs（那边能一眼看全注册了哪些通道） */
+registerHandlers({
   ipcMain,
   app,
-  setQuitting,
-  showWindow,
-  getMainWindow: () => mainWindow,
-})
-
-/* 渲染层的请求走 handlers/ 注册 */
-require('./handlers/chat.cjs').register({
-  ipcMain,
+  Notification,
   config,
   log,
   send,
   streams,
-  getWorkdir: currentWorkdir,
-  resolveWorkdir,
+  setQuitting,
+  showWindow,
+  getMainWindow: () => mainWindow,
+  workdir: { currentWorkdir, resolveWorkdir },
 })
-require('./handlers/session.cjs').register({ ipcMain })
-require('./handlers/provider.cjs').register({ ipcMain })
-/* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
-require('./handlers/browser.cjs').register()
-require('./handlers/export.cjs').register({ ipcMain, getMainWindow: () => mainWindow })
-require('./handlers/skills.cjs').register({ ipcMain })
-require('./handlers/extras.cjs').register({ ipcMain })
-require('./handlers/fs.cjs').register({ ipcMain })
-require('./handlers/shell.cjs').register({ ipcMain })
-require('./handlers/scene.cjs').register({ ipcMain })
-require('./handlers/diagnostics.cjs').register({ ipcMain })
-/* 终端（真 PTY）：单独一组通道，和 shell.cjs 的「一次性执行」并存 */
-require('./handlers/pty.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })
-/* 安全 / 可靠相关：审计、路径授权、任务、改动事务、凭证状态 */
-require('./handlers/safety.cjs').register({ ipcMain })
 
 module.exports = { currentWorkdir, send }

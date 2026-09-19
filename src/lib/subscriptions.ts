@@ -1,4 +1,5 @@
 import type { ChatEvent, WorkbenchBridge } from '@/types/backend'
+import type { TaskEndPayload } from '@/types/notify'
 
 /* 订阅类桥接：和 backend.ts 分开，因为那边已经接近 300 行上限。
    这里只放「主进程 → 渲染层的推送事件」订阅。 */
@@ -42,4 +43,23 @@ export function subscribeImageDone(
 ): () => void {
   if (!bridge?.onImageDone) return () => {}
   return bridge.onImageDone(callback)
+}
+
+/**
+ * AG-029：一轮跑完了（主进程推）。
+ *
+ * 内容由主进程算好 —— 因为「要不要弹系统通知」由它判断（窗口藏到托盘时
+ * 渲染层会被节流，判不准）。这里只拿到同一份文案。
+ */
+export function subscribeTaskEnd(callback: (payload: TaskEndPayload) => void): () => void {
+  if (!bridge?.onTaskEnd) return () => {}
+  return bridge.onTaskEnd(callback)
+}
+
+/** AG-029：用户点了系统通知（主进程已把窗口叫回来） */
+export function subscribeNotificationClick(
+  callback: (payload: { id: string }) => void,
+): () => void {
+  if (!bridge?.onNotificationClick) return () => {}
+  return bridge.onNotificationClick(callback)
 }
