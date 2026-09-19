@@ -14,6 +14,7 @@
  *   http://127.0.0.1:9977/v1-empty     → 200 但空 body
  *   http://127.0.0.1:9977/v1-garbage   → 200 但二进制垃圾
  *   http://127.0.0.1:9977/v1-replan    → 同一个任务里先后给两版计划（AG-004 用）
+ *   http://127.0.0.1:9977/v1-loop      → 永远 A B A B 地调两个工具（AG-041 用）
  *   http://127.0.0.1:9977/v1           → 正常（对照组）
  *
  * 坏法：
@@ -23,6 +24,7 @@
  *   empty     200 但空 body
  *   garbage   200 但返回一段随机二进制
  *   replan    第 1 轮给计划 A，第 2 轮给计划 B（多一条），第 3 轮起不给
+ *   loop      永远交替调 `read_file`（同一个文件）与 `list_dir` —— 检测重复执行用
  *   ok        正常返回（对照组）
  */
 
@@ -32,6 +34,8 @@ const PORT = Number(process.env.FAKE_PORT ?? 9977)
 
 /* replan 模式的轮次计数（一次对话会依次调用，所以按进程累计） */
 let planRounds = 0
+/* loop 模式的轮次计数（AG-041）：偶数轮 A、奇数轮 B */
+let loopRounds = 0
 
 function sseChunk(delta) {
   return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
@@ -97,6 +101,35 @@ const server = createServer((req, res) => {
       }
     }, 5000)
     req.on('close', () => clearInterval(timer))
+    return
+  }
+
+  if (mode === 'loop') {
+    /*
+     * AG-041 真机验证：永远转圈。
+     *
+     * 每轮给一个**成功**的工具调用，两个调用交替、参数一模一样 ——
+     * 正是文档画的 A B A B。检测器应当在几轮之后改道、再几轮之后停下来问用户。
+     * 全程用 content 发不出 tool_calls，所以这里直接写 tool_calls 的 SSE 增量。
+     */
+    loopRounds += 1
+    const odd = loopRounds % 2 === 1
+    const call = {
+      index: 0,
+      id: `call_${loopRounds}`,
+      type: 'function',
+      function: odd
+        ? { name: 'read_file', arguments: JSON.stringify({ path: 'hello.txt' }) }
+        : { name: 'list_dir', arguments: JSON.stringify({ path: '.' }) },
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    })
+    res.write(sseChunk({ tool_calls: [call] }))
+    res.write('data: [DONE]' + String.fromCharCode(10, 10))
+    res.end()
     return
   }
 

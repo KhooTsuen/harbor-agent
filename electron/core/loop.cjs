@@ -9,6 +9,7 @@
 const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
 const budget = require('./budget.cjs')
+const loopGuard = require('./loop-guard.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
@@ -38,6 +39,9 @@ const modeRouter = require('./mode-router.cjs')
  *   总被 for 条件先拦下，预算检查没机会带 budgetHit（界面就显示不出 50 / 50）。
  */
 const MAX_TURNS = 200
+
+/** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
+const LOOP_NUDGE_LIMIT = 2
 
 /* ══════════════════════════════════════════════════════════
    主循环
@@ -114,6 +118,8 @@ async function runLoop(options) {
   let turn = 0
   /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
   let gateSeen = {}
+  /* AG-041：重复执行顶回去几次（超过阈值就停下来问用户） */
+  let loopNudges = 0
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
   life.mark('preparing', traceKey(options))
 
@@ -129,6 +135,19 @@ async function runLoop(options) {
       life.mark('paused', traceKey(options))
       return pausedResult({ turn, usage: totalUsage, toolRuns })
     }
+    /* AG-041：轮次边界查重复（工具已跑完，这一批签名才齐）；先改道，几次不听才交人 */
+    const loopHit = loopGuard.detect(loopGuard.signaturesOf(toolRuns))
+    if (loopHit.looping && loopNudges >= LOOP_NUDGE_LIMIT) {
+      emit({ type: 'loop', ...loopHit, handedOver: true })
+      life.mark('waiting_user', traceKey(options))
+      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, loopHit })
+    }
+    if (loopHit.looping) {
+      loopNudges += 1
+      emit({ type: 'loop', ...loopHit, handedOver: false, nudge: loopNudges })
+      messages.push({ role: 'user', content: loopGuard.nudgeMessage(loopHit) })
+    }
+
     /* AG-040：轮次边界查一次预算（每轮开头 = 上一轮工具已跑完，不会停在改了一半的状态） */
     const hit = budget.atTurnBoundary({ plan, startedAt, turn, toolRuns, usage: totalUsage })
     if (hit.exceeded) {

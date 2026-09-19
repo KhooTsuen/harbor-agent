@@ -186,6 +186,29 @@ describe('AG-040 / 撞了预算那三个按钮', () => {
     expect(budget.maxTokens).toBeUndefined()
   })
 
+  it('★ AG-041：转圈停下来 → 显示证据 + 「继续 / 停止」（没有「调整预算」）', () => {
+    draw(
+      task({
+        pauseReason: 'loop',
+        pauseDetail: 'cycle',
+        loopHit: {
+          kind: 'cycle',
+          period: 2,
+          count: 6,
+          samples: ['read_file({"path":"a.txt"})', 'run_shell({"command":"ls"})'],
+        },
+      }),
+    )
+    const text = container.textContent ?? ''
+    expect(text).toContain('检测到重复执行（6 次同类调用）')
+    expect(byText('继续')).toBeTruthy()
+    expect(byText('停止')).toBeTruthy()
+    /* 转圈和预算无关，不该给「调整预算」 */
+    expect(byText('调整预算')).toBeUndefined()
+    /* 鼠标停上去能看到到底在重复什么 */
+    expect(container.querySelector('[title*="read_file"]')).toBeTruthy()
+  })
+
   it('填了乱七八糟的值 → 不提交，只提示', async () => {
     draw(
       task({

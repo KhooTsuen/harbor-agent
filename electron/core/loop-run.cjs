@@ -45,11 +45,22 @@ async function run(options) {
        * 界面据此显示「已达到本次执行上限」和 [继续][停止][调整预算]。
        * **不是失败**：这是停下来等人做决定。
        */
-      taskCore.update(task.id, {
-        status: 'paused',
-        pausedAt: Date.now(),
-        ...(result.budgetHit ? budget.pausePatch(result.budgetHit) : {}),
-      })
+      const reason = result.budgetHit
+        ? budget.pausePatch(result.budgetHit)
+        : result.loopHit
+          ? {
+              /* AG-041：转圈转到交给人 —— 和撞预算一样是「停下来等决定」，不是失败 */
+              pauseReason: 'loop',
+              pauseDetail: result.loopHit.kind,
+              loopHit: {
+                kind: result.loopHit.kind,
+                period: result.loopHit.period ?? 1,
+                count: result.loopHit.count ?? 0,
+                samples: result.loopHit.samples ?? [],
+              },
+            }
+          : {}
+      taskCore.update(task.id, { status: 'paused', pausedAt: Date.now(), ...reason })
     } else {
       taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
     }

@@ -19,11 +19,15 @@ const END_META = {
   completed: { kind: 'success', title: '后台任务完成' },
   failed: { kind: 'error', title: '后台任务失败' },
   budget: { kind: 'warning', title: '任务已达到执行上限' },
+  loop: { kind: 'warning', title: '检测到可能陷入重复执行' },
 }
 
 /** 这一轮的结束该怎么归类（撞预算时用 `budget`，其余看状态） */
 function endKindOf(phase, task) {
-  if (String(phase) === 'paused' && task?.pauseReason === 'budget') return 'budget'
+  if (String(phase) !== 'paused') return String(phase ?? '')
+  if (task?.pauseReason === 'budget') return 'budget'
+  /* AG-041：转圈转到交给人 —— 同样需要用户做决定 */
+  if (task?.pauseReason === 'loop') return 'loop'
   return String(phase ?? '')
 }
 
@@ -55,6 +59,15 @@ function endNotice(phase, task) {
   if (task) {
     const files = (task.changedFiles ?? []).length
     lines.push(files > 0 ? `已修改 ${files} 个文件` : '没有改动文件')
+    if (task.pauseReason === 'loop' && task.loopHit) {
+      const { kind, period = 1, count = 0 } = task.loopHit
+      lines.push(
+        kind === 'repeat'
+          ? `同一个调用连着来了 ${count} 次`
+          : `这 ${period} 个调用重复了 ${Math.round(count / period)} 遍`,
+      )
+      lines.push('可以继续（换个法子）、或者停下')
+    }
     if (task.pauseReason === 'budget' && task.budgetHit) {
       const { label, used, limit } = task.budgetHit
       lines.push(`${label}：${used} / ${limit}`)

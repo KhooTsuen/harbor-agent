@@ -55,6 +55,7 @@ function reopen(taskId) {
     pauseReason: '',
     pauseDetail: '',
     budgetHit: null,
+    loopHit: null,
   })
 }
 

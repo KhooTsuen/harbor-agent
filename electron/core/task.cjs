@@ -68,6 +68,8 @@ function create({
     pauseDetail: '',
     /** 撞预算时的数字：{ reason, label, used, limit } */
     budgetHit: null,
+    /** AG-041：转圈停下来时的证据：{ kind, period, count, samples } */
+    loopHit: null,
     /* AG-012：重启恢复要用的四样 —— 下一步、停的时刻、恢复过几次、批过什么 */
     nextAction: '',
     permissions: [],
@@ -111,6 +113,7 @@ function update(id, patch) {
     'pauseReason',
     'pauseDetail',
     'budgetHit',
+    'loopHit',
     'pausedAt',
     'resumeCount',
   ]) {

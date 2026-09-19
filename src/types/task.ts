@@ -31,6 +31,17 @@ export interface TaskBudget {
   maxTokens?: number
 }
 
+/**
+ * AG-041：转圈停下来时的证据。
+ * `kind` = 'repeat'（同一个调用连着来）| 'cycle'（A B A B 这种周期）
+ */
+export interface LoopHit {
+  kind: string
+  period: number
+  count: number
+  samples: string[]
+}
+
 /** 撞预算时记下来的数字（界面原样显示「50 / 50」） */
 export interface BudgetHit {
   reason: string
@@ -71,6 +82,8 @@ export interface TaskRecord {
   pauseDetail?: string
   /** 撞预算那一下的数字 */
   budgetHit?: BudgetHit | null
+  /** AG-041：转圈那一下的证据 */
+  loopHit?: LoopHit | null
   /** AG-035：用户批过/拒过的操作（AG-013 起就在记，这里补上类型） */
   permissions?: Array<{
     at: number
