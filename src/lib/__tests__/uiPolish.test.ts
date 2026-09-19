@@ -145,21 +145,22 @@ describe('暂停之后的界面状态（AG-011）', () => {
 describe('任务事后看得见（AG-005 / AG-009 遗留）', () => {
   const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8')
 
-  it('右栏「状态」里挂了任务列表', () => {
-    expect(read('components/chat/StatePanel.tsx')).toContain('<TaskList />')
+  /*
+   * AG-030：状态页不再挂第二份任务列表。
+   * 它和右栏「任务」是同一份东西的第二遍显示，而且两处用的是**两套词**
+   * （这边「等你确认 / 已放弃」，那边「等待中 / 已取消」）。
+   * 现在任务只在任务中心一处，状态页只留一个跳过去的入口。
+   */
+  it('★ 状态页不再重复一份任务列表，而是指向任务中心', () => {
+    const state = read('components/chat/StatePanel.tsx')
+    /* 只看代码，不看注释 —— 注释里会提到「这里原来是 TaskList」（被坑过三次）*/
+    expect(state).not.toMatch(/<TaskList\s*\/>/)
+    expect(state).not.toMatch(/from '\.\/TaskList'/)
+    expect(state).toContain("setActiveRightTab('tasks')")
   })
 
-  it('★ 没有对话状态时，任务列表仍然显示', () => {
-    /* 以前是 `if (!state) return <p>…</p>` —— 连任务一起被挡掉了 */
+  it('★ 状态页在没有对话状态时也要能指路（不能整块空白）', () => {
     expect(read('components/chat/StatePanel.tsx')).not.toMatch(/if \(!state\)\s*return/)
-  })
-
-  it('点开一条任务能看到它的时间线', () => {
-    expect(read('components/chat/TaskList.tsx')).toContain('ProgressTimeline')
-  })
-
-  it('任务列表只读 —— 改状态（继续/放弃）只在右栏任务中心', () => {
-    expect(read('components/chat/TaskList.tsx')).not.toContain('taskUpdate')
   })
 
   it('★ 对话顶部横幅已撤掉，能力全在任务中心（用户反馈「打开应用先看到黄条很迷茫」）', () => {

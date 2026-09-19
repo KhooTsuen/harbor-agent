@@ -58,6 +58,11 @@ export function TaskCenter() {
   }, [hasRunning])
 
   const groups = useMemo(() => groupTasks(tasks), [tasks])
+  /* 只有真的这一类才有东西时才算「活着的分组」（AG-030：不让零值占地方）*/
+  const activeGroups = useMemo(
+    () => TASK_GROUPS.filter((group) => (groups.get(group.status)?.length ?? 0) > 0),
+    [groups],
+  )
   const recoveryById = useMemo(
     () => new Map(unfinished.map((item) => [item.id, item])),
     [unfinished],
@@ -134,23 +139,15 @@ export function TaskCenter() {
         </IconButton>
       </header>
 
-      {tasks.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-1 px-0.5">
-          {TASK_GROUPS.map((group) => (
-            <span
-              key={group.status}
-              className="rounded-pill border border-line-hairline bg-bg-raised px-2 py-0.5 text-2xs text-fg-secondary"
-            >
-              {group.label} {groups.get(group.status)?.length ?? 0}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
+      {/*
+        AG-030：顶部**不再单列一排状态 chips**。
+        它们和下面分组标题（「进行中 · 1」）是同一份计数，隔 10px 重复一遍 ——
+        典型的「重复状态标签」。分组是有序的（进行中在最前），
+        要一眼看「有没有在跑的」，看第一个分组就够了。
+      */}
       <div className="flex flex-col gap-3">
-        {TASK_GROUPS.map((group) => {
+        {activeGroups.map((group) => {
           const entries = groups.get(group.status) ?? []
-          if (entries.length === 0) return null
           return (
             <section key={group.status} aria-label={group.label}>
               <h3 className="mb-1 px-0.5 text-2xs font-medium text-fg-tertiary">

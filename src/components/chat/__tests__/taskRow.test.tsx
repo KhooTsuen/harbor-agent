@@ -131,6 +131,31 @@ describe('AG-028 / 任务行（真渲染）', () => {
     expect(opened).toBe(1)
   })
 
+  it('★ 默认不显示运行细节（AG-030：Tool 数 / 历时 / 更新时间压进详情里）', () => {
+    const el = draw(task({ steps: [{ at: 1, tool: 'read_file', ok: true, ms: 5, summary: 'x' }] }))
+    expect(el.textContent).not.toContain('Tool')
+    expect(el.textContent).not.toContain('历时')
+    expect(el.textContent).not.toContain('更新')
+
+    act(() => button(el, '详情')?.click())
+    expect(el.textContent).toContain('1 Tool')
+    expect(el.textContent).toContain('历时')
+    expect(el.textContent).toContain('更新')
+  })
+
+  it('★ 零值不显示（「改了 0 个文件」是噪音）', () => {
+    const el = draw(task({ changedFiles: [] }))
+    expect(el.textContent).not.toContain('改了')
+
+    const el2 = draw(task({ changedFiles: [{ path: 'a.ts', at: 1 }] }))
+    expect(el2.textContent).toContain('改了 1 个文件')
+  })
+
+  it('★ 有失败时把「N 次失败」摆出来（异常要突出）', () => {
+    const el = draw(task({ status: 'failed', errors: [{ at: 1, message: '炸了' }] }))
+    expect(el.textContent).toContain('1 次失败')
+  })
+
   it('计划与时间线只在展开「详情」后出现', () => {
     /* 当前步骤在收起时本来就显示（那是 AG-028 要求的一行），
        所以用一个只有时间线里才会出现的 Tool 摘要当探针。 */

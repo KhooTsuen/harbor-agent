@@ -73,6 +73,7 @@ export function TaskRow({
   const Icon = style.icon
   const progress = taskProgress(task)
   const envChanged = recovery?.envChanged ?? []
+  const changed = task.changedFiles.length
 
   return (
     <div
@@ -93,18 +94,24 @@ export function TaskRow({
           <span className="block truncate text-xs font-medium text-fg-primary">
             {task.title || task.goal || '(没有标题的任务)'}
           </span>
+          {/* 当前步骤 / 下一步 —— 这一行才是重点，元信息都压到下面那一行 */}
           <span className="mt-0.5 block truncate text-2xs text-fg-secondary">
             {currentStepOf(task)}
           </span>
+          {/*
+            AG-030：默认只留「进度 + 结果」两件。
+            原来这里挤了六项（步数 · Tool · 改文件 · 恢复次数 · 历时 · 更新），
+            文档要求重点突出「当前任务 / 当前步骤 / 结果 / 异常 / 下一步」——
+            其余都是可以展开再看的细节。零值也不显示（「改了 0 个文件」是噪音）。
+          */}
           <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
             <span>
               {progress.done}/{progress.total} 步
             </span>
-            <span>{task.steps.length} Tool</span>
-            <span>改了 {task.changedFiles.length} 个文件</span>
-            {task.resumeCount ? <span>恢复过 {task.resumeCount} 次</span> : null}
-            <span>历时 {formatDuration(elapsedMs(task, now))}</span>
-            <span>更新 {formatUpdated(task.updatedAt)}</span>
+            {changed > 0 ? <span>改了 {changed} 个文件</span> : null}
+            {task.errors.length > 0 ? (
+              <span style={{ color: 'var(--danger)' }}>{task.errors.length} 次失败</span>
+            ) : null}
           </span>
         </span>
       </button>
@@ -139,6 +146,13 @@ export function TaskRow({
 
       {open ? (
         <div className="border-t border-line-hairline px-2 py-2">
+          {/* 运行细节：默认折叠，展开才看（AG-030：不默认刷屏）*/}
+          <p className="mb-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
+            <span>{task.steps.length} Tool</span>
+            <span>历时 {formatDuration(elapsedMs(task, now))}</span>
+            <span>更新 {formatUpdated(task.updatedAt)}</span>
+            {task.resumeCount ? <span>恢复过 {task.resumeCount} 次</span> : null}
+          </p>
           {envChanged.length > 0 ? (
             <p className="mb-1.5 text-2xs" style={{ color: 'var(--warning)' }}>
               ⚠ 你离开之后 {envChanged.length} 个文件被改过（
