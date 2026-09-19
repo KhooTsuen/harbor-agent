@@ -107,14 +107,15 @@ describe('界面上的两处（源码守卫）', () => {
     expect(src).toContain('max-w-[38vw]')
   })
 
-  it('跑着的时候写了新消息，停止按钮会说清楚', () => {
-    /* AG-011：按钮区抽到了 composer/SendControls.tsx */
+  it('跑着的时候写了新消息，可以排队发送（不再要求先停掉）', () => {
+    /* AG-025：按钮区抽到了 composer/SendControls.tsx */
     const src = readFileSync(
       join(SRC, 'components', 'chat', 'composer', 'SendControls.tsx'),
       'utf8',
     )
     expect(src).toContain('hasContent')
-    expect(src).toContain('想发这条新消息，得先停掉当前这条')
+    expect(src).toContain('排队发送')
+    expect(src).toContain('加入队列')
   })
 })
 

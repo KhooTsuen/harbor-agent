@@ -30,7 +30,7 @@ function textareaBlock(src: string): string {
   return src.slice(start, end)
 }
 
-describe('AG-024 接线守卫', () => {
+describe('AG-024/025 接线守卫', () => {
   it('★ textarea 永不锁定（没有 disabled / readOnly）', () => {
     const block = textareaBlock(composer)
     expect(block).not.toContain('disabled')
@@ -38,18 +38,18 @@ describe('AG-024 接线守卫', () => {
     expect(block).not.toContain('readonly')
   })
 
-  it('★ 发送只挡「当前对话自己在跑」，不是全局拦截', () => {
-    /* 关键断言：拦的是 getActiveThread 的 status，不是 sendingThreads.length */
-    expect(store).toContain("getActiveThread(app)?.status === 'running'")
+  it('★ busy 判断按「对话」来，不是全局拦截', () => {
+    /* 关键：拦的是当前对话在 sendingThreads 里，不是全局 sendingThreads.length */
+    expect(store).toContain('get().sendingThreads.includes(threadId)')
     expect(store).not.toContain('if (get().sendingThreads.length > 0) return')
-    expect(store).not.toContain('if (app.sendingThreads.length > 0) return')
   })
 
-  it('★ 别的对话在跑时，这条照样能发（注释里写明了这条纪律）', () => {
-    expect(store).toContain('别的对话在跑不该拦着这条')
+  it('★ AG-025：当前对话在跑时，消息**入队**而不是丢弃', () => {
+    expect(store).toContain('enqueueMessage(threadId, raw)')
+    expect(store).toContain('已排队')
   })
 
-  it('★ 发送按钮只在「当前对话 sending」时禁用，不影响 textarea', () => {
-    expect(composer).toContain('canSend = !sending && hasContent && !tooLong')
+  it('★ 发送按钮不再拿 sending 卡住（跑着时是「排队」），textarea 永不锁定', () => {
+    expect(composer).toContain('canSend = hasContent && !tooLong')
   })
 })

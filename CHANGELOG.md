@@ -1,5 +1,51 @@
 # 更新日志
 
+## [0.87.0] — 2026-09-19 · AG-025 输入队列
+
+跑着的时候用户又能打字了（AG-024 已满足），这条把「能发」也补上：
+**当前对话在跑时，再发消息 = 排队，任务完成后自动接着发。**
+
+### 数据层
+
+- `useThreadStore` 加 `queuedMessages: Record<threadId, string[]>` + `enqueueMessage` / `removeQueuedMessage`
+- `sendMessage`：当前对话在跑（`sendingThreads.includes(threadId)`）→ 入队 + toast「已排队」+ 清输入框，而不是丢弃
+- `turns.ts` 的 `finish()`（done/超时/错误统一出口）→ `drainQueued(threadId)` 自动发队列第一条
+
+### ★ 顺手修了一个潜伏 bug
+
+旧的拦截是 `getActiveThread(app)?.status === 'running'` —— 但 AG-001 之后
+`status` 由主进程 phase 驱动、**从不会设成 running**，这个拦截一直在空转
+（靠 UI 层 `canSend` 拦着才没出事）。改成用 `sendingThreads` 判断。
+
+### UI
+
+- `SendControls`：`sending` 时如果输入框有内容，多一个**蓝色「排队发送」按钮**
+- `Composer`：`canSend` 不再要求 `!sending`；输入框上方显示「排队中 N 条」，
+  每条可点 × 删掉（`QueuedMessages.tsx`）
+
+### ★ 又踩一个 TDZ
+
+`queuedList` 引用了 `activeThreadId`，但声明顺序反了（在 `activeThreadId` 之前）——
+`Cannot access 'l' before initialization`，Composer 整个被 ErrorBoundary 吞掉。
+真机截图里「这一块出错了」四个字就是它。移到 `activeThreadId` 之后声明就修好了。
+**教训：selector 里引用了别的 hook 的返回值，必须保证声明顺序。**
+
+### 真机验证
+
+```
+排队后提示 = 排队中 1 条
+第二条没立刻发 = 对
+第一条完成后第二条自动发 = 是
+最终队列提示 = 空（已清空）
+```
+
+### 已知问题
+
+1. **没有「调整顺序」**（文档要求了，但先做「看得见、删得掉」）。
+2. **队列在内存里**，重启即丢（和输入草稿 AG-026 一起处理更合适）。
+3. 上一轮如果「失败/取消」，队列照样会继续发下一条（`finish` 统一出口）。
+   这是有意为之 —— 排队的消息不该因为前一条失败而丢，但没单独提示「上一条失败了」。
+
 ## [0.86.0] — 2026-09-19 · AG-024 发送不阻塞输入（已满足，加守卫）
 
 审计后确认 AG-024 的三条要求**已经满足**：

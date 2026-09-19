@@ -3,6 +3,7 @@ import { uid } from '@/lib/utils'
 import { abortChat, pauseChat, sendChat, subscribeChatEvents } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
+import { useThreadStore } from '../useThreadStore'
 import { abortMockTurn } from './mockTurn'
 import { runPostTurnTasks } from './sceneTasks'
 import { handleStreamEvent, type StreamState } from './streamEvents'
@@ -25,6 +26,23 @@ import { handleStreamEvent, type StreamState } from './streamEvents'
  * 第二条会把第一条的 id 覆盖掉，于是「停止」永远只能停最后开始的那条。
  */
 const activeRequests = new Map<string, string>()
+
+/**
+ * AG-025：一条对话跑完之后，自动发出排队的下一条。
+ *
+ * 放在 finish() 里调用 —— finish 是「消息结束」的统一出口（done / 超时 /
+ * 发送失败都走它），所以排队消息不管上一轮怎么结束的，都会接着发。
+ *
+ * 不 await：sendMessage 会同步启动新的 runTurn，剩下的交给新一轮自己的事件流。
+ */
+function drainQueued(threadId: string): void {
+  const { queuedMessages, removeQueuedMessage, sendMessage } = useThreadStore.getState()
+  const list = queuedMessages[threadId]
+  if (!list || list.length === 0) return
+  const next = list[0]
+  removeQueuedMessage(threadId, 0)
+  sendMessage(next)
+}
 
 /** 传 threadId 只停那一条；不传就把所有在跑的都停掉 */
 export function stopActiveRequest(threadId?: string): void {
@@ -167,6 +185,8 @@ export async function runElectronTurn(
     off()
     activeRequests.delete(threadId)
     set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
+    /* AG-025：这条跑完了，自动发排队的下一条 */
+    drainQueued(threadId)
   }
 
   /* 兜底：万一结束事件因故没到，也不能让界面一直转 */

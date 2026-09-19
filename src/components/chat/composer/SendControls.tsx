@@ -36,11 +36,30 @@ export function SendControls({
             <Pause size={14} fill="currentColor" />
           </IconButton>
         </Tooltip>
-        <Tooltip content={hasContent ? '停止生成（想发这条新消息，得先停掉当前这条）' : '停止生成'}>
+        <Tooltip content="停止生成">
           <IconButton label="停止生成" size={32} onClick={onStop} className="rounded-full">
             <Square size={14} fill="currentColor" />
           </IconButton>
         </Tooltip>
+        {/*
+         * AG-025：跑着的时候，输入框里有内容就多一个「排队发送」。
+         * 点它 → 消息进队列、输入框清空，当前任务完成后自动发。
+         */}
+        {hasContent ? (
+          <Tooltip content="加入队列，当前任务完成后自动发送">
+            <button
+              type="button"
+              onClick={onSend}
+              aria-label="排队发送"
+              className={cn(
+                'grid size-8 place-items-center rounded-full transition-colors duration-fast',
+                'bg-accent-blue text-white hover:bg-blue-500',
+              )}
+            >
+              <ArrowUp size={16} strokeWidth={2.5} />
+            </button>
+          </Tooltip>
+        ) : null}
       </>
     )
   }

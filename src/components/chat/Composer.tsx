@@ -11,6 +11,7 @@ import { MenuItem } from '@/components/ui/Popover'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ModePicker } from './composer/ModePicker'
 import { SendControls } from './composer/SendControls'
+import { QueuedMessages } from './composer/QueuedMessages'
 import { ModelPicker } from './composer/ModelPicker'
 import { MENTIONS, SLASH_COMMANDS } from './composer/completions'
 import { SuggestionChips } from './composer/SuggestionChips'
@@ -36,6 +37,11 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
   const pauseGeneration = useThreadStore((s) => s.pauseGeneration)
   const activeThreadId = useAppStore((s) => s.activeThreadId)
+  /* AG-025：当前对话排队的消息（跑着时用户又发的）。必须在 activeThreadId 之后声明 */
+  const queuedList = useThreadStore((s) =>
+    activeThreadId ? s.queuedMessages[activeThreadId] : undefined,
+  )
+  const removeQueuedMessage = useThreadStore((s) => s.removeQueuedMessage)
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
 
   const sending = useAgentActive(thread?.id)
@@ -98,7 +104,12 @@ export function Composer({ onFocusRequest }: ComposerProps) {
    * 拆开是因为要拿 hasContent 给停止按钮做提示 —— AG-009 留下的「用户以为按钮坏了」。
    */
   const hasContent = trimmed.length > 0 || hasImages
-  const canSend = !sending && hasContent && !tooLong
+  /*
+   * AG-025：sending 时也可以「发送」—— 只是会**排队**而不是立刻发。
+   * 所以 canSend 不再要求 !sending；真正的「立刻发 vs 排队」由 sendMessage
+   * 内部按 sendingThreads 判断。
+   */
+  const canSend = hasContent && !tooLong
 
   /* 补全菜单：打 / 出命令，打 @ 出文件 */
   const options = (() => {
@@ -143,6 +154,12 @@ export function Composer({ onFocusRequest }: ComposerProps) {
               })}
             </div>
           ) : null}
+
+          {/* AG-025：排队中的消息（点 × 删掉一条） */}
+          <QueuedMessages
+            list={queuedList}
+            onRemove={(index) => activeThreadId && removeQueuedMessage(activeThreadId, index)}
+          />
 
           {/* ① 输入区 */}
           <textarea
