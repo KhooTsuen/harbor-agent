@@ -74,6 +74,14 @@ export function useSmoothText(target: string, active: boolean): string {
       return
     }
 
+    /*
+     * 循环一直跑（不依赖 target）—— 这是故意的：
+     * 思考链开始的时候 `streaming` 已经是 true 而文字还没来，如果这时
+     * 因「没内容」而不起循环，后面文字到了也不会自己醒（effect 只看 active）。
+     *
+     * 空转的代价是零：`cur.length >= full.length` 时直接不 setState，
+     * 只是每帧读两个 ref。
+     */
     const tick = (): void => {
       const full = targetRef.current
       const cur = shownRef.current
