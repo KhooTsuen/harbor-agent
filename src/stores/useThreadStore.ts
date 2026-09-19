@@ -13,25 +13,12 @@ import { useUIStore } from './useUIStore'
 import { useConfigStore } from './useConfigStore'
 
 /* ══════════════════════════════════════════════════════════════
-   当前线程的输入与生成
-
-   **两条路径：**
-     · Electron → 真流式（agent 循环、工具调用、写操作确认）
-     · 浏览器预览 → 静态回复
-
-   两条路产出的 Message 形状一样，UI 不用关心走的哪条。
+   当前线程的输入与生成（Electron 真流式 / 浏览器预览静态回复，两条路产出一样）
    ══════════════════════════════════════════════════════════════ */
 
 interface ThreadState {
   input: string
-  /**
-   * 正在跑的对话 id。
-   *
-   * 以前这里是个全局的 `sending: boolean` —— 于是 a 对话在跑时，
-   * b 对话的发送按钮也被禁用，看着像「不能多开」。
-   * 后端本来就是每个请求独立的（各自的 AbortController），
-   * 所以前端按对话记就够了。
-   */
+  /** 正在跑的对话 id（按对话记，后端每个请求独立，别的对话不拦） */
   sendingThreads: string[]
   /** 待发送的图片（data URL）。发出去后清空 */
   inputImages: string[]
@@ -41,6 +28,11 @@ interface ThreadState {
   /** 当前会话的「建议回复」（一轮结束后生成，点一下填进输入框） */
   suggestions: string[]
   setSuggestions: (threadId: string, list: string[]) => void
+
+  /** AG-025：每条对话排队的消息（对话在跑时用户又发的），任务结束自动发第一条 */
+  queuedMessages: Record<string, string[]>
+  enqueueMessage: (threadId: string, text: string) => void
+  removeQueuedMessage: (threadId: string, index: number) => void
 
   setInput: (value: string) => void
   clearInput: () => void
@@ -59,6 +51,24 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   sendingThreads: [],
   inputImages: [],
   suggestions: [],
+  queuedMessages: {},
+
+  enqueueMessage: (threadId, text) =>
+    set((s) => {
+      const list = s.queuedMessages[threadId] ?? []
+      return { queuedMessages: { ...s.queuedMessages, [threadId]: [...list, text] } }
+    }),
+
+  removeQueuedMessage: (threadId, index) =>
+    set((s) => {
+      const list = s.queuedMessages[threadId]
+      if (!list) return {}
+      const next = list.filter((_, i) => i !== index)
+      const queuedMessages = { ...s.queuedMessages }
+      if (next.length) queuedMessages[threadId] = next
+      else delete queuedMessages[threadId]
+      return { queuedMessages }
+    }),
 
   setInput: (value) => set({ input: value.slice(0, MAX_INPUT_LENGTH) }),
   clearInput: () => set({ input: '' }),
@@ -70,13 +80,6 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
     const app = useAppStore.getState()
     const ui = useUIStore.getState()
-
-    /*
-     * 只挡「这条对话自己在跑」。
-     * 别的对话在跑不该拦着这条 —— 每条对话有自己的 agent 循环，
-     * 后端本来就是并发的（每个请求一个 AbortController）。
-     */
-    if (getActiveThread(app)?.status === 'running') return
 
     /* /compact：手动压缩，不发给模型 */
     if (raw === '/compact') {
@@ -133,6 +136,15 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
     const threadId = thread.id
     const wasUntitled = thread.title === '新对话'
+
+    /* AG-025：这条对话在跑 → 排队。用 sendingThreads 判断（旧的 status==='running' 在 AG-001 后从不会设成 running，空转）。任务结束自动发第一条。 */
+    if (get().sendingThreads.includes(threadId)) {
+      get().enqueueMessage(threadId, raw)
+      get().clearInput()
+      get().clearInputImages()
+      ui.showToast('info', '已排队', '当前任务完成后自动发送')
+      return
+    }
 
     /* 新建线程先用 pending id 占位；第一次发送前再真正创建磁盘会话。 */
     if (useRealBackend && threadId.startsWith('pending_')) {

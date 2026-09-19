@@ -93,12 +93,11 @@ describe('AG-009 / Renderer 不阻塞', () => {
     expect(bad).toEqual([])
   })
 
-  it('唯一的例外得是写明白的那一处：Composer 的 canSend', () => {
+  it('发送不再拿 sending 卡住 —— 跑着时排队（AG-025）', () => {
     const src = readFileSync(join(SRC, 'components', 'chat', 'Composer.tsx'), 'utf8')
-    expect(src).toContain('const canSend = !sending &&')
-    /* 而且 must 只有这一处 —— 别处不许再拿 sending 去卡发送 */
-    const occurrences = (src.match(/!sending/g) ?? []).length
-    expect(occurrences).toBe(1)
+    expect(src).toContain('const canSend = hasContent && !tooLong')
+    /* canSend 不再含 !sending —— 排队由 sendMessage 内部按 sendingThreads 判断 */
+    expect(src).not.toContain('const canSend = !sending')
   })
 
   it('列表类视图在跑的时候不被卸载（子任务 AG-001 家族的老教训）', () => {
