@@ -128,6 +128,47 @@ function scrub(value, maxDepth = 8) {
   return walk(value, 0, maxDepth)
 }
 
+/**
+ * 落盘专用深度脱敏：和 `scrub()` 一样识别敏感字段 / 文本里的密钥，
+ * 但**不截数组、不截对象键**。
+ *
+ * `scrub()` 给日志 / 诊断包用，50 项、100 个键的上限是防止输出爆炸；
+ * 会话文件不能套那个上限 —— 一条长任务完全可能有 50+ 次 Tool Call，
+ * 为了脱敏把第 51 条以后静默删掉，等于拿安全修复制造数据丢失。
+ */
+function scrubStorage(value, maxDepth = 32) {
+  return walkStorage(value, 0, maxDepth, new WeakSet())
+}
+
+function walkStorage(value, depth, maxDepth, seen) {
+  if (depth > maxDepth) return '（太深，已省略）'
+  if (typeof value === 'string') return redact(value)
+  if (value === null || value === undefined) return value
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'function') return '（函数）'
+  if (typeof value !== 'object') return String(value)
+  if (seen.has(value)) return '（循环引用，已省略）'
+
+  seen.add(value)
+  let out
+  if (Array.isArray(value)) {
+    out = value.map((item) => walkStorage(item, depth + 1, maxDepth, seen))
+  } else {
+    out = {}
+    for (const [key, item] of Object.entries(value)) {
+      if (isSecretKey(key)) {
+        const text = String(item ?? '')
+        out[key] = text ? `***${text.length} 字符已隐藏***` : ''
+      } else {
+        out[key] = walkStorage(item, depth + 1, maxDepth, seen)
+      }
+    }
+  }
+  seen.delete(value)
+  return out
+}
+
 function walk(value, depth, maxDepth) {
   if (depth > maxDepth) return '（太深，已省略）'
 
@@ -201,6 +242,7 @@ module.exports = {
   PLACEHOLDER,
   redact,
   scrub,
+  scrubStorage,
   scrubLight,
   remember,
   forget,

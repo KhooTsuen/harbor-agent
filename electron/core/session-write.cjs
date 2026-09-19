@@ -7,10 +7,9 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { redact: redactLine, scrub } = require('./redact.cjs')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const { fileFor, newId, safeTitle, readLines, writeLines } = require('./session-io.cjs')
+const { fileFor, newId, safeTitle, readLines, writeLines, serializeLine } = require('./session-io.cjs')
 
 function create({
   title = '新对话',
@@ -41,27 +40,16 @@ function create({
   return meta
 }
 
+/** 追加一条 JSONL 事件；和整体重写共用 session-io 的唯一序列化入口。 */
+function appendEvent(file, event) {
+  fs.appendFileSync(file, `${serializeLine(event)}\n`, 'utf8')
+}
+
 function appendState(id, state) {
   const file = fileFor(id)
   if (!fs.existsSync(file)) return { ok: false, error: '会话不存在' }
-  fs.appendFileSync(
-    file,
-    `${JSON.stringify({ type: 'conversation_state', state, ts: Date.now() })}
-`,
-    'utf8',
-  )
+  appendEvent(file, { type: 'conversation_state', state, ts: Date.now() })
   return { ok: true }
-}
-
-/**
- * 落盘前统一脱敏。
- *
- * 会话里出现密钥的路径不止一条：模型可能把 key 写进代码、
- * 工具参数里可能带着 env、报错信息可能回显整条 URL。
- * 在**唯一的写入口**过一遍，比在每个调用点记得处理可靠。
- */
-function scrubLine(line) {
-  return scrub(redactLine(line))
 }
 
 function append(id, message) {
@@ -71,12 +59,7 @@ function append(id, message) {
       { type: 'meta', id, title: '新对话', mode: 'pair', model: '', createdAt: Date.now() },
     ])
   }
-  fs.appendFileSync(
-    file,
-    `${JSON.stringify({ type: 'message', ...message })}
-`,
-    'utf8',
-  )
+  appendEvent(file, { type: 'message', ...message })
   return { ok: true }
 }
 
@@ -90,12 +73,12 @@ function append(id, message) {
 function appendCompact(id, summary, upTo) {
   const file = fileFor(id)
   if (!fs.existsSync(file)) return { ok: false, error: '会话不存在' }
-  fs.appendFileSync(
-    file,
-    `${JSON.stringify({ type: 'compact', summary: String(summary), upTo: Number(upTo) || 0, ts: Date.now() })}
-`,
-    'utf8',
-  )
+  appendEvent(file, {
+    type: 'compact',
+    summary: String(summary),
+    upTo: Number(upTo) || 0,
+    ts: Date.now(),
+  })
   log.info(`压缩会话 ${id}（覆盖前 ${upTo} 条）`)
   return { ok: true }
 }
@@ -191,5 +174,4 @@ module.exports = {
   remove,
   removeAll,
   importThreads,
-  scrubLine,
 }
