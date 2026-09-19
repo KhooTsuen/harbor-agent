@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { MessageItem } from './MessageItem'
 import { AsciiBanner } from './AsciiBanner'
@@ -43,7 +43,7 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
    * 用 callback ref 而不是 `useEffect` + `querySelector`：空状态和列表状态是
    * **两棵不同的树**，切来切去时只想把 observer 正确地挂到当时那个节点上。
    */
-  const attachContent = (node: HTMLDivElement | null): void => {
+  const attachContent = useCallback((node: HTMLDivElement | null): void => {
     resizeObserverRef.current?.disconnect()
     resizeObserverRef.current = null
     if (!node) return
@@ -54,7 +54,7 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     })
     ro.observe(node)
     resizeObserverRef.current = ro
-  }
+  }, [])
   const [scrollTop, setScrollTop] = useState(0)
   const count = messages.length
   /*
@@ -143,12 +143,56 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     return () => resizeObserverRef.current?.disconnect()
   }, [])
 
-  /* 消息条数变了也要贴一次（新消息上来时高度可能还没稳） */
+  /*
+   * ★ 真正在起作用的这条：盯**流式消息的内容长度**。
+   *
+   * 为什么不能只靠上面那个 ResizeObserver：`attachContent` 曾经是每次渲染
+   * 新建的函数，React 每次都会用新函数调一遍 callback ref →
+   * **每次 render 都 disconnect + 重新 observe**，observer 一直在重建，
+   * 回调根本轮不到执行。真机表现就是「内容超出 1971px，scrollTop 还是 0」。
+   *
+   * 这条不依赖任何 observer：内容长度一变就同步一次 scrollTop。
+   * 每帧一次赋值，代价可以忽略；而且滚完 distance≈0，不会把 pinned 打成 false。
+   */
+  const streamingChars = useMemo(
+    () =>
+      messages.reduce((n, m) => (m.status === 'streaming' ? n + (m.content?.length ?? 0) : n), 0),
+    [messages],
+  )
   useLayoutEffect(() => {
     if (!pinnedRef.current) return
     const sc = scrollerRef.current
     if (sc) sc.scrollTop = sc.scrollHeight
-  }, [count])
+  }, [streamingChars, count])
+
+  /*
+   * ★ 流式期间的最后一层保险：**每帧看一眼**，没贴底就补上。
+   *
+   * 上面那条盯着 `streamingChars`（也就是 `message.content` 的原始长度），
+   * 但屏幕上显示的是 `useSmoothText` **平滑之后**的文本 —— 平滑在追的时候
+   * `content` 已经不长了，于是滚动就不跟了。真机采样里那串连续的
+   * `51,51,51,51,78`（约 1.5 秒）就是这么来的。
+   *
+   * 每帧只做两件事：读一个 ref、比一次数字。不满足就什么都不做
+   * （不写 scrollTop，也就不会发 scroll 事件），所以不会跟 onScroll 形成回路。
+   * 流式结束立即停掉，不给静态页面留后台循环。
+   */
+  const isStreaming = useMemo(() => messages.some((m) => m.status === 'streaming'), [messages])
+  useEffect(() => {
+    if (!isStreaming) return
+    let raf = 0
+    const tick = (): void => {
+      if (pinnedRef.current) {
+        const sc = scrollerRef.current
+        if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 2) {
+          sc.scrollTop = sc.scrollHeight
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [isStreaming])
 
   if (messages.length === 0) {
     /*
