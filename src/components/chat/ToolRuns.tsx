@@ -21,7 +21,21 @@ import { colorOf, statusOfTool } from '@/lib/statusLanguage'
    没收录的工具就老实用原名 + 次数。
    ══════════════════════════════════════════════════════════════ */
 
-/* ── 工具调用列表 ─────────────────────────────────────────── */
+/* ── AG-038：摊开的上限 ──────────────────────────────────────
+
+   基准测试量出来的：**一万个工具事件展开到底 = 9.4 秒 / 12 万个 DOM 节点**。
+   归类（`groupRuns`）解决的是「十个文件十行」，但真摊开时还得有上限 ——
+   否则一个跑了几千步的任务，用户点一下「展开」就是几秒钟的白屏。
+
+   截的是**最近**的：一长串调用里，最近几步才是当前关心的（和会话列表
+   只渲染最近 200 条同一个道理）。超出的部分给一句说明，不假装没有。
+
+   ─────────────────────────────────────────────────────────── */
+
+/** 一次最多摊开多少条调用（单组内） */
+const MAX_VISIBLE_RUNS = 100
+/** 一次最多摊开多少组（连续同名归一组之后的组数） */
+const MAX_VISIBLE_GROUPS = 50
 
 /** 毫秒 → 人看的（<1s 给毫秒，<1min 给秒，再长给分秒） */
 function formatMs(ms: number): string {
@@ -71,6 +85,8 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
   const totalMs = runs.reduce((sum, run) => sum + (run.ms ?? 0), 0)
   const failedCount = runs.filter((run) => !run.ok && run.ms !== undefined).length
   const groups = groupRuns(runs)
+  const shownGroups = groups.slice(-MAX_VISIBLE_GROUPS)
+  const hiddenGroups = groups.length - shownGroups.length
 
   return (
     <div className="mb-2 rounded-sm border border-line-subtle bg-bg-base/40">
@@ -101,7 +117,13 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
       </button>
       {open ? (
         <div className="flex flex-col gap-1 border-t border-line-subtle p-1">
-          {groups.map((group) =>
+          {hiddenGroups > 0 ? (
+            <p className="px-1 py-0.5 text-2xs text-fg-tertiary">
+              只显示最近 {MAX_VISIBLE_GROUPS} 组，更早的 {hiddenGroups} 组没摊开（这一轮一共{' '}
+              {groups.length} 组）
+            </p>
+          ) : null}
+          {shownGroups.map((group) =>
             group.runs.length === 1 ? (
               <ToolRunRow key={group.runs[0].id} run={group.runs[0]} />
             ) : (
@@ -118,6 +140,7 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
 function ToolGroupRow({ group }: { group: ToolGroup }) {
   const [open, setOpen] = useState(false)
   const [verb, unit] = ACTIONS[group.name] ?? [group.name, '次']
+  const hidden = Math.max(0, group.runs.length - MAX_VISIBLE_RUNS)
 
   return (
     <div className="rounded-sm border border-line-subtle bg-bg-base/40">
@@ -143,7 +166,13 @@ function ToolGroupRow({ group }: { group: ToolGroup }) {
       </button>
       {open ? (
         <div className="flex flex-col gap-1 border-t border-line-subtle p-1">
-          {group.runs.map((run) => (
+          {hidden > 0 ? (
+            <p className="px-1 py-0.5 text-2xs text-fg-tertiary">
+              只显示最近 {MAX_VISIBLE_RUNS} 次，更早的 {hidden} 次没摊开（这一组一共{' '}
+              {group.runs.length} 次）
+            </p>
+          ) : null}
+          {group.runs.slice(-MAX_VISIBLE_RUNS).map((run) => (
             <ToolRunRow key={run.id} run={run} />
           ))}
         </div>
