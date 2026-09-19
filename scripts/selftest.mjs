@@ -72,6 +72,7 @@ import { run as taskOutcome } from './selftest/groups/34-outcome.mjs'
 import { run as checkpoint } from './selftest/groups/35-checkpoint.mjs'
 import { run as diagnose } from './selftest/groups/36-diagnose.mjs'
 import { run as writeDiff } from './selftest/groups/37-writediff.mjs'
+import { run as changesetDiff } from './selftest/groups/38-changesetdiff.mjs'
 
 const GROUPS = [
   basics,
@@ -111,6 +112,7 @@ const GROUPS = [
   checkpoint,
   diagnose,
   writeDiff,
+  changesetDiff,
 ]
 
 async function main() {

@@ -3,6 +3,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useTaskStore } from '@/stores/useTaskStore'
 import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { sumDiff } from '@/components/chat/DiffViewer'
@@ -52,7 +53,8 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
   const lastAssistant = [...(thread?.messages ?? [])].reverse().find((m) => m.role === 'assistant')
   const activity = activityLabel(lastAssistant?.toolRuns ?? [], thread?.phase)
 
-  const diffs = (thread?.messages ?? []).flatMap((m) => m.diffs ?? [])
+  /* AG-036：和右栏「审查」读同一份（改动事务里算出来的），不再各算一套 */
+  const diffs = useTaskStore((s) => s.diff)?.files ?? []
   const { additions, deletions } = sumDiff(diffs)
 
   return (

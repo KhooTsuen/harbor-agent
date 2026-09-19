@@ -132,6 +132,7 @@ const api = {
   changesetList: (options) => ipcRenderer.invoke('changeset:list', options),
   changesetGet: (id) => ipcRenderer.invoke('changeset:get', id),
   changesetRollback: (id) => ipcRenderer.invoke('changeset:rollback', id),
+  changesetDiff: (payload) => ipcRenderer.invoke('changeset:diff', payload),
 
   credentialsStatus: () => ipcRenderer.invoke('credentials:status'),
 

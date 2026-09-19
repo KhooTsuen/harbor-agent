@@ -1,4 +1,5 @@
 import type {
+  ChangeSetDiff,
   TaskDiagnosis,
   AuditEntry,
   AuditStats,
@@ -140,6 +141,29 @@ export async function taskList(options?: {
 }
 
 /** AG-035：诊断报告（读不出来时给一份空壳，界面显示「这个桌面版才有」） */
+/** AG-036：最近一批改动的 diff（取不到就给空壳，界面显示「还没有改动」） */
+export async function changesetDiff(sessionId = ''): Promise<ChangeSetDiff> {
+  const empty: ChangeSetDiff = {
+    id: '',
+    title: '',
+    taskId: '',
+    sessionId: '',
+    status: '',
+    at: 0,
+    files: [],
+    additions: 0,
+    deletions: 0,
+    skipped: [],
+  }
+  if (!bridge?.changesetDiff) return empty
+  try {
+    const result = await bridge.changesetDiff({ sessionId })
+    return result.diff ?? empty
+  } catch {
+    return empty
+  }
+}
+
 export async function taskDiagnose(id: string): Promise<TaskDiagnosis> {
   const empty: TaskDiagnosis = { title: '', status: '', conclusion: '', text: '' }
   if (!bridge?.taskDiagnose) return empty

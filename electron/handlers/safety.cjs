@@ -18,6 +18,7 @@ const task = require('../core/task.cjs')
 const diagnose = require('../core/task-diagnose.cjs')
 const recovery = require('../core/task-recovery.cjs')
 const changeset = require('../core/changeset.cjs')
+const changesetDiff = require('../core/changeset-diff.cjs')
 const credentials = require('../core/credentials.cjs')
 const config = require('../core/config.cjs')
 const risk = require('../core/risk.cjs')
@@ -150,6 +151,16 @@ function register({ ipcMain }) {
     log.info(`用户回滚了一次改动：${id}（恢复 ${result.restored?.length ?? 0} 个文件）`)
     return result
   })
+
+  /*
+   * AG-036：右栏「审查」要看的「未提交的改动」。
+   * 按会话取**最近一次有改动的**事务，把「改动前快照 vs 磁盘现在的样子」算成 diff。
+   * 纯读：不提交、不回滚、不碰任何文件。
+   */
+  ipcMain.handle('changeset:diff', (_event, payload = {}) => ({
+    ok: true,
+    diff: changesetDiff.latest({ sessionId: String(payload.sessionId ?? '') }),
+  }))
 
   /* ── 凭证库状态（**不返回值**）──────────────────────────── */
 
