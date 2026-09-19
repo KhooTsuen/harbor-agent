@@ -6,14 +6,31 @@
    （见 safety.ts 开头那段说明）。
    ══════════════════════════════════════════════════════════════ */
 
+/**
+ * 一轮跑完时的「实际发生了什么」（AG-034）—— 由内核从任务台账判读，
+ * 渲染层只按它挑「下一步」的措辞。字段和 `core/task-outcome.cjs`
+ * 的 `outcomeOf()` 一一对应。
+ */
+export interface TaskOutcome {
+  /** 这是哪一次任务（判「查看测试结果」展开的是不是同一份结果） */
+  taskId: string
+  /** 这次改了几个文件 */
+  files: number
+  /** 测试：没跑过 / 过了 / 没过 / 跑过但读不出结果（老记录） */
+  tests: 'none' | 'passed' | 'failed' | 'unknown'
+  /** 最后那条测试命令（给「查看测试结果」显示） */
+  testCommand: string
+  /** 测试输出开头几行 */
+  testSummary: string
+}
+
 /** 一轮跑完时主进程推过来的内容（文案由内核生成，两边共用一份） */
 export interface TaskEndPayload {
   sessionId: string
   kind: 'success' | 'error' | 'info' | 'warning'
   title: string
   description: string
-  /** AG-033：这次改了几个文件（决定「下一步」给哪些入口） */
-  files: number
+  outcome: TaskOutcome
 }
 
 export interface NotifyBridge {

@@ -21,6 +21,7 @@
 const log = require('../core/log.cjs')
 const taskNotify = require('../core/task-notify.cjs')
 const taskCore = require('../core/task.cjs')
+const taskOutcome = require('../core/task-outcome.cjs')
 
 /** Windows 上不设这个，通知会挂在一个「electron.app.Electron」名下 */
 const APP_ID = 'com.personalagent.workbench'
@@ -88,14 +89,14 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
       const background = !win || win.isMinimized() || !win.isVisible() || !win.isFocused()
       if (background) notify({ id: sessionId, title: notice.title, body: notice.description })
       /*
-       * AG-033：把「改了几个文件」也带上 —— 渲染层据此决定给哪些「下一步」
-       * （改了文件才有 diff / 测试 / 提交可言）。依据来自主进程的任务台账，
-       * 渲染层不用再自己数一遍。
+       * AG-033/034：把「这一轮到底干了什么」带上 —— 渲染层据此决定给哪些
+       * 「下一步」（改了文件才有 diff / 测试 / 提交；测试跑过就不必再劝它跑）。
+       * 判读都在任务台账上做（core/task-outcome.cjs），渲染层不自己猜。
        */
       win?.webContents?.send('app:taskEnd', {
         sessionId,
         ...notice,
-        files: (task?.changedFiles ?? []).length,
+        outcome: taskOutcome.outcomeOf(task),
       })
     } catch (error) {
       log.warn(`任务通知失败：${error instanceof Error ? error.message : error}`)
