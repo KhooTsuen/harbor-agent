@@ -1,5 +1,6 @@
 import type {
   ChangeSetDiff,
+  PerfTimeline,
   TaskDiagnosis,
   AuditEntry,
   AuditStats,
@@ -135,6 +136,17 @@ export async function taskList(options?: {
   try {
     const result = await bridge.taskList(options)
     return result.tasks ?? []
+  } catch {
+    return []
+  }
+}
+
+/** AG-037：最近几次的性能时间线（拿不到就给空数组，面板显示「还没有数据」） */
+export async function metricsRecent(limit = 5): Promise<PerfTimeline[]> {
+  if (!bridge?.metricsRecent) return []
+  try {
+    const result = await bridge.metricsRecent({ limit })
+    return result.items ?? []
   } catch {
     return []
   }

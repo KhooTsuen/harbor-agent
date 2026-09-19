@@ -4,6 +4,7 @@ import { confirmChat } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useTaskStore } from '../useTaskStore'
 import { useUIStore } from '../useUIStore'
+import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 
 /* ══════════════════════════════════════════════════════════════
@@ -73,12 +74,15 @@ export function handleStreamEvent(
   switch (type) {
     /* ── 内容与思考：分片追加 ── */
     case 'content': {
+      /* AG-037：「首字上屏」—— 只在**第一个**字时记一次（这一轮的第一个字） */
+      if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       state.content += String(event.text ?? '')
       state.patch({ content: state.content })
       return { handled: true }
     }
 
     case 'reasoning': {
+      if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       state.reasoning += String(event.text ?? '')
       state.patch({ reasoning: state.reasoning })
       return { handled: true }

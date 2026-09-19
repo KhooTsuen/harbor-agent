@@ -9,6 +9,7 @@ const llm = require('./llm.cjs')
 const log = require('./log.cjs')
 const configCore = require('./config.cjs')
 const errors = require('./errors.cjs')
+const perfMarks = require('./perf-marks.cjs')
 
 /**
  * 调模型，带**重试**与**降级**。
@@ -22,7 +23,18 @@ const errors = require('./errors.cjs')
  * 上下文超限（该压缩，不是该重发）。
  */
 async function callModel(options) {
-  const { config, provider, model, signal, emit } = options
+  /* AG-037：整次调用计时（含重试与降级 —— 用户等的是这个总数） */
+  const startedAt = Date.now()
+  const traceId = String(options?.traceId || options?.taskId || '')
+  try {
+    return await callModelInner(options, options.emit)
+  } finally {
+    perfMarks.mark(traceId, 'llm', Date.now() - startedAt)
+  }
+}
+
+async function callModelInner(options, emit) {
+  const { config, provider, model, signal } = options
   const fb = config.fallback ?? {
     enabled: true,
     attempts: 2,

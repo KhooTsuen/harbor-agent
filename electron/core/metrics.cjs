@@ -30,10 +30,21 @@
  */
 
 const bus = require('./events.cjs')
+const perfMarks = require('./perf-marks.cjs')
 
 /** traceId → 六个时刻。只留最近这些，防内存无限涨 */
 const MAX_PENDING = 50
 const pending = new Map()
+
+/**
+ * 最近几次跑完的时间线（AG-037 的界面读它）。
+ *
+ * 为什么在内存里留一份而不是让界面去翻 `data/events/*.jsonl`：
+ * 那是给「事后翻账」的，格式是逐行事件（要挑出 metrics.timeline 再排序）；
+ * 而性能面板要看的是**最近几次**、一眼对比。留 20 条就够，进程重开就干净。
+ */
+const MAX_RECENT = 20
+const recent = []
 
 /**
  * 开始记一条任务的时间线。
@@ -95,6 +106,12 @@ function observe(traceId, event, at) {
     case 'agent.tool.failed':
       if (!timeline.firstTool) timeline.firstTool = now
       break
+    case 'agent.tool.completed':
+    case 'agent.tool.failed':
+      /* AG-037：工具耗时事件里现成带着（`ms`），直接归桶，不用再去工具里插一遍埋点 */
+      if (!timeline.firstTool) timeline.firstTool = now
+      perfMarks.markTool(traceId, event?.name, Number(event?.ms ?? 0))
+      break
     case 'agent.completed':
     case 'agent.failed':
     case 'agent.cancelled':
@@ -119,8 +136,12 @@ function finish(traceId, opts = {}) {
   /* 异常退出时 completion 可能没记到 —— 用现在兜底，别丢整条数据 */
   if (!timeline.completion) timeline.completion = now
 
+  /* AG-037：把「时间花在哪一段」拼进同一条时间线 —— 取走即清，只算一次 */
+  const phases = perfMarks.take(key)
+
   const report = {
     ...timeline,
+    ...phases,
     /* 首反馈延迟：按下发送 → 第一条事件出去（这段时间用户面对的是「没反应」） */
     firstFeedbackMs: delta(timeline.requestTime, timeline.firstFeedback),
     taskCreatedMs: delta(timeline.requestTime, timeline.taskCreated),
@@ -130,6 +151,9 @@ function finish(traceId, opts = {}) {
   }
 
   pending.delete(key)
+
+  recent.unshift(report)
+  if (recent.length > MAX_RECENT) recent.length = MAX_RECENT
 
   /*
    * 显式 persist —— 让 metrics.timeline 也进 data/events/*.jsonl。
@@ -145,8 +169,14 @@ function get(traceId) {
   return pending.get(String(traceId || '')) ?? null
 }
 
-function clear() {
-  pending.clear()
+/** 最近几次（AG-037：新→旧）。`limit` 只是截取，不清空 */
+function list({ limit = 5 } = {}) {
+  return recent.slice(0, Math.max(1, Math.min(MAX_RECENT, Number(limit) || 5)))
 }
 
-module.exports = { begin, observe, finish, get, clear, MAX_PENDING }
+function clear() {
+  pending.clear()
+  recent.length = 0
+}
+
+module.exports = { begin, observe, finish, get, list, clear, MAX_PENDING, MAX_RECENT }

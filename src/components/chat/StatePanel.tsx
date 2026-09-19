@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { PerfPanel } from '@/components/layout/state/PerfPanel'
 
 /* ══════════════════════════════════════════════════════════════
    状态面板：**当前这条对话的长期状态**（话题 / 目标 / 约束 / 下一步…）
@@ -40,6 +41,9 @@ export function StatePanel() {
           任务、进度、可撤销的改动都在「任务」标签里
           <ArrowRight size={12} className="ml-auto shrink-0" />
         </button>
+
+        {/* AG-037：时间花在哪一段 —— 和「现在卡在哪」本来就是同一件事 */}
+        <PerfPanel threadId={thread?.id} />
 
         {state ? (
           groups.map(([label, value]) => (

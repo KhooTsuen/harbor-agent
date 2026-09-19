@@ -90,6 +90,37 @@ export interface CapabilityGrant {
 }
 
 /**
+ * AG-037：一轮跑完的性能时间线（内核给的）。
+ *
+ * 六个时刻（AG-003）+ 分段耗时（AG-037）：`*Ms` 是「按下发送」起算的延迟，
+ * `contextMs / llmMs / toolMs / searchMs` 是各段自己的总耗时 —— 合起来能回答
+ * 「这一轮到底慢在哪一段」。缺哪段就是 0，不编。
+ */
+export interface PerfTimeline {
+  traceId: string
+  requestTime: number
+  /** 按下发送 → 第一条事件（这段时间用户面对的是「没反应」） */
+  firstFeedbackMs: number | null
+  /** 按下发送 → 任务台账建好 */
+  taskCreatedMs: number | null
+  /** 按下发送 → 模型吐出第一个字 */
+  ttftMs: number | null
+  /** 按下发送 → 第一次工具开始 */
+  firstToolMs: number | null
+  /** 按下发送 → 整轮结束 */
+  totalMs: number | null
+  contextMs: number
+  llmMs: number
+  llmCalls: number
+  /** 单次模型调用里最慢的那次 */
+  llmMaxMs: number
+  toolMs: number
+  toolCalls: number
+  searchMs: number
+  searchCalls: number
+}
+
+/**
  * AG-036：最近一批改动的 diff。
  *
  * 数据来自改动事务的「改动前快照」和磁盘当前内容 —— 所以「改了什么」是**真**比出来的，
@@ -248,6 +279,8 @@ export interface SafetyBridge {
   }>
   /** AG-036：最近一批改动的 diff（右栏「审查」标签用）—— 纯读 */
   changesetDiff: (payload?: { sessionId?: string }) => Promise<{ ok: boolean; diff: ChangeSetDiff }>
+  /** AG-037：最近几次的性能时间线（性能面板用）—— 纯读，读的是内存里的那几份 */
+  metricsRecent: (payload?: { limit?: number }) => Promise<{ ok: boolean; items: PerfTimeline[] }>
   changesetGet: (id: string) => Promise<{ ok: boolean; changeset: Record<string, unknown> | null }>
   changesetRollback: (id: string) => Promise<{
     ok: boolean
