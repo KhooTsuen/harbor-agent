@@ -74,6 +74,7 @@ import { run as diagnose } from './selftest/groups/36-diagnose.mjs'
 import { run as writeDiff } from './selftest/groups/37-writediff.mjs'
 import { run as changesetDiff } from './selftest/groups/38-changesetdiff.mjs'
 import { run as perf } from './selftest/groups/39-perf.mjs'
+import { run as taskIndex } from './selftest/groups/40-taskindex.mjs'
 
 const GROUPS = [
   basics,
@@ -115,6 +116,7 @@ const GROUPS = [
   writeDiff,
   changesetDiff,
   perf,
+  taskIndex,
 ]
 
 async function main() {

@@ -30,6 +30,24 @@ function newId() {
 function write(task) {
   fs.mkdirSync(root(), { recursive: true })
   fs.writeFileSync(fileFor(task.id), JSON.stringify(task, null, 2), 'utf8')
+  syncIndex('update', task)
+}
+
+/*
+ * AG-039：谁写谁更新索引（列任务时就不必再通读每个文件）。
+ *
+ * 用**惰性 require** 破循环：task-index 要 io（读文件），io 要 index（更新索引）。
+ * 写在函数里而不是文件头，两个模块都加载完之后才真正互相引用。
+ * 索引出问题不能影响写任务 —— 所以整段包在 try 里，失败只记日志。
+ */
+function syncIndex(action, payload) {
+  try {
+    const index = require('./task-index.cjs')
+    if (action === 'update') index.update(payload)
+    else index.remove(payload)
+  } catch (error) {
+    log.warn(`更新任务索引失败：${error instanceof Error ? error.message : error}`)
+  }
 }
 
 /**
@@ -59,10 +77,13 @@ function get(id) {
  */
 function ids() {
   try {
-    return fs
-      .readdirSync(root())
-      .filter((name) => name.endsWith('.json'))
-      .map((name) => name.replace(/\.json$/, ''))
+    return (
+      fs
+        .readdirSync(root())
+        /* 下划线开头的是元数据（`_index.json`），不是任务 —— 别把它当任务读 */
+        .filter((name) => name.endsWith('.json') && !name.startsWith('_'))
+        .map((name) => name.replace(/\.json$/, ''))
+    )
   } catch (error) {
     /* 目录还不存在是正常的（还没建过任务）；别的错得让人看见 */
     if (error?.code !== 'ENOENT') log.warn(`读任务目录失败：${error?.message ?? error}`)
@@ -73,6 +94,7 @@ function ids() {
 function remove(id) {
   try {
     fs.rmSync(fileFor(id), { force: true })
+    syncIndex('remove', id)
     return { ok: true }
   } catch {
     return { ok: false }

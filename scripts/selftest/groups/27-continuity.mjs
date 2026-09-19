@@ -48,11 +48,24 @@ export async function run() {
   check('undefined 不炸', taskContext.isContinueIntent(undefined) === false)
 
   /* ── 注入 ── */
-  const note = taskContext.buildTaskState({ userText: '继续' })
   /*
-   * 没有未完成任务时不造台账；但**新活的第一轮**要把本轮请求带上 ——
-   * AG-027 的任务名（`# 名字`）就靠它，只写通用规矩模型不照做（见 30-taskname）。
+   * 这一段测的是 **task-context 的分支**：一条未完成都没有时该怎么说话。
+   *
+   * ★ 原来的写法直接 `buildTaskState(...)` 然后断言「没有『还没做完』」——
+   *   它其实依赖**真实数据目录里恰好没有未完成任务**。AG-039 之后
+   *   `unfinished()` 会把**陈旧的**未完成一起列出来（那才是对的：用户前天
+   *   停下的任务也算没干完），于是这条断言被别人的遗留数据绊红了两次。
+   *   测分支就把输入钉死：unfinished 换成空数组，测完还回去。
    */
+  const taskCore = require(join(ROOT, 'electron/core/task.cjs'))
+  const realUnfinished = taskCore.unfinished
+  taskCore.unfinished = () => []
+  let note = ''
+  try {
+    note = taskContext.buildTaskState({ userText: '继续' })
+  } finally {
+    taskCore.unfinished = realUnfinished
+  }
   check('没有未完成任务时不造台账', !note.includes('还没做完'))
   check('★ 但会带上本轮请求（新活第一轮）', note.includes('本轮请求'))
 
