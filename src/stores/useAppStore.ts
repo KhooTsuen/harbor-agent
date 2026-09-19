@@ -16,6 +16,7 @@ import { makeThreadEditActions } from './app/threadEdits'
 import { makeProjectActions } from './app/projectActions'
 import { mergeImport } from '@/lib/migrations'
 import { useConfigStore } from './useConfigStore'
+import { useUIStore } from './useUIStore'
 export { getActiveProject, getActiveThread, sortThreads } from './app/selectors'
 
 export const useAppStore = create<AppState>()(
@@ -131,15 +132,23 @@ export const useAppStore = create<AppState>()(
 
       setActiveProject: (id) => set({ activeProjectId: id }),
 
-      togglePinThread: (id) =>
+      togglePinThread: (id) => {
+        const pinned = get().threads.find((t) => t.id === id)?.pinned !== true
         set((s) => ({
           threads: s.threads.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)),
-        })),
+        }))
+        /* AG-032：置顶之后那行只是换了个位置，不解释一下看不出来 */
+        useUIStore.getState().showToast('info', pinned ? '已置顶' : '已取消置顶')
+      },
 
-      toggleArchiveThread: (id) =>
+      toggleArchiveThread: (id) => {
+        const archived = get().threads.find((t) => t.id === id)?.archived !== true
         set((s) => ({
           threads: s.threads.map((t) => (t.id === id ? { ...t, archived: !t.archived } : t)),
-        })),
+        }))
+        /* AG-032：归档 = 这一行从列表里消失，得说清它去哪了 */
+        useUIStore.getState().showToast('info', archived ? '已归档' : '已取消归档')
+      },
 
       addThreadTag: (id, tag) =>
         set((s) => ({

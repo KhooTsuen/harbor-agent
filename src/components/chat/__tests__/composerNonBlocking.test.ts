@@ -46,7 +46,8 @@ describe('AG-024/025 接线守卫', () => {
 
   it('★ AG-025：当前对话在跑时，消息**入队**而不是丢弃', () => {
     expect(store).toContain('enqueueMessage(threadId, raw)')
-    expect(store).toContain('已排队')
+    /* 而且要给回执（AG-032 把措辞与文档对齐成「已加入队列」）*/
+    expect(store).toContain('已加入队列')
   })
 
   it('★ 发送按钮不再拿 sending 卡住（跑着时是「排队」），textarea 永不锁定', () => {

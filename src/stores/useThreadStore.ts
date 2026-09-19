@@ -81,6 +81,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       const queuedMessages = { ...s.queuedMessages }
       if (next.length) queuedMessages[threadId] = next
       else delete queuedMessages[threadId]
+      /* AG-032：删掉的那条肉眼看不出来（列表只是少了一项）→ 给句回执 */
+      useUIStore.getState().showToast('info', '已移出队列')
       return { queuedMessages }
     }),
 
@@ -121,7 +123,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       get().enqueueMessage(threadId, raw)
       get().clearInput()
       get().clearInputImages()
-      ui.showToast('info', '已排队', '当前任务完成后自动发送')
+      /* AG-032：措辞与文档的例子对齐（「已加入队列」）*/
+      ui.showToast('info', '已加入队列', '当前任务完成后自动发送')
       return
     }
 
@@ -239,6 +242,11 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     if (current) {
       set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== current.id) }))
     }
+    /*
+     * AG-032：停止是**异步生效**的（要等主进程把工具/命令收干净），
+     * 光看按钮变回「发送」不够 —— 给一句回执，免得用户连点。
+     */
+    useUIStore.getState().showToast('info', '已停止', '这一轮不再往下跑，已经产出的内容留在对话里')
   },
 
   continueThread: () => {
