@@ -89,6 +89,25 @@ export interface CapabilityGrant {
   expiresAt: number
 }
 
+/**
+ * AG-036：最近一批改动的 diff。
+ *
+ * 数据来自改动事务的「改动前快照」和磁盘当前内容 —— 所以「改了什么」是**真**比出来的，
+ * 不是模型说的。`skipped` 是没算进 diff 的文件及原因（快照丢了 / 一次改太多）。
+ */
+export interface ChangeSetDiff {
+  id: string
+  title: string
+  taskId: string
+  sessionId: string
+  status: string
+  at: number
+  files: DiffFile[]
+  additions: number
+  deletions: number
+  skipped: string[]
+}
+
 export interface ChangeSetSummary {
   id: string
   taskId: string
@@ -227,6 +246,8 @@ export interface SafetyBridge {
     ok: boolean
     changesets: ChangeSetSummary[]
   }>
+  /** AG-036：最近一批改动的 diff（右栏「审查」标签用）—— 纯读 */
+  changesetDiff: (payload?: { sessionId?: string }) => Promise<{ ok: boolean; diff: ChangeSetDiff }>
   changesetGet: (id: string) => Promise<{ ok: boolean; changeset: Record<string, unknown> | null }>
   changesetRollback: (id: string) => Promise<{
     ok: boolean
@@ -239,6 +260,7 @@ export interface SafetyBridge {
   credentialsStatus: () => Promise<{ ok: boolean; status: CredentialsStatus }>
 }
 
+import type { DiffFile } from './index'
 import type { TaskDiagnosis, TaskRecord, TaskRecoveryItem } from './task'
 
 export type { TaskDiagnosis, TaskRecord, TaskRecoveryItem }

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { ChangeSetSummary, TaskRecord, TaskRecoveryItem } from '@/types/safety'
-import { changesetList, taskList, taskRecovery } from '@/lib/safetyApi'
+import type { ChangeSetDiff, ChangeSetSummary, TaskRecord, TaskRecoveryItem } from '@/types/safety'
+import { changesetDiff, changesetList, taskList, taskRecovery } from '@/lib/safetyApi'
+import { useAppStore } from './useAppStore'
 
 /* ═══════════════════════════════════════════════════════════════
    任务快照
@@ -20,6 +21,14 @@ interface TaskState {
   unfinished: TaskRecoveryItem[]
   /** 可撤销的改动（已提交 + 真改过文件）—— AG-028 从横幅搬过来的 */
   changesets: ChangeSetSummary[]
+  /**
+   * AG-036：「最近一批改动」的 diff（右栏审查标签 + 顶栏那个 +N −M 都读它）。
+   *
+   * 为什么和 tasks 一起刷：刷新的时机本来就是「有事发生了」（工具跑完、
+   * 计划变了、一轮起止、窗口重新可见）—— 那正好也是 diff 会变的时候，
+   * 各拉一份不如一次拉齐（免得两个地方看到不同的「最近一次改动」）。
+   */
+  diff: ChangeSetDiff | null
   loaded: boolean
   refresh: () => Promise<void>
 }
@@ -28,6 +37,7 @@ export const useTaskStore = create<TaskState>((set) => ({
   tasks: [],
   unfinished: [],
   changesets: [],
+  diff: null,
   loaded: false,
   /*
    * 一次刷新同时拿「全量任务」「可恢复任务」「可撤销改动」。
@@ -35,16 +45,19 @@ export const useTaskStore = create<TaskState>((set) => ({
    * 那些必须由主进程检查真实文件环境，前端自己算会形成第二份真相。
    */
   refresh: async () => {
-    const [tasks, unfinished, list] = await Promise.all([
+    const [tasks, unfinished, list, diff] = await Promise.all([
       taskList({ limit: 200 }),
       taskRecovery(),
       changesetList({ limit: 5 }),
+      /* 审查标签看的是**当前这条对话**的改动 */
+      changesetDiff(useAppStore.getState().activeThreadId),
     ])
     set({
       tasks,
       unfinished,
       /* 只看「提交过、还没撤、真改过文件」的那种 */
       changesets: list.filter((c) => c.status === 'committed' && c.fileCount > 0),
+      diff,
       loaded: true,
     })
   },

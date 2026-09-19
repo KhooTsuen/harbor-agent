@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Activity,
   FileCode2,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { FileNode, Project, RightTab } from '@/types'
 import { cn } from '@/lib/utils'
+import { colorOf } from '@/lib/statusLanguage'
 import { useAgentActive } from '@/hooks/useAgentActive'
 import { buildFileTree } from '@/lib/mock'
 import { fsTree, toFileNode } from '@/lib/fsApi'
@@ -28,6 +29,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useTaskStore } from '@/stores/useTaskStore'
 import { isElectron } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -97,8 +99,15 @@ export function RightPanel() {
   const [realTree, setRealTree] = useState<FileNode | null>(null)
   const [treeError, setTreeError] = useState('')
 
-  const diffs = useMemo(() => (thread?.messages ?? []).flatMap((m) => m.diffs ?? []), [thread])
+  /*
+   * AG-036：这里的 diff 来自**改动事务的快照**（store 的 refresh 里拉的），
+   * 不再从消息里翻 `message.diffs` —— 那条路真实流程里从来没人写过，
+   * 于是这个标签一直显示「没有待审查的改动」，而 Agent 明明刚改过文件。
+   */
+  const changed = useTaskStore((s) => s.diff)
+  const diffs = changed?.files ?? []
   const { additions, deletions } = sumDiff(diffs)
+  const skipped = changed?.skipped ?? []
 
   /* 桌面版读取真实工作目录；浏览器预览才使用静态文件树 */
   useEffect(() => {
@@ -186,6 +195,11 @@ export function RightPanel() {
               <>
                 <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">
                   <span className="text-fg-secondary">未提交的改动</span>
+                  {changed?.title ? (
+                    <span className="min-w-0 truncate text-fg-tertiary" title={changed.title}>
+                      {changed.title}
+                    </span>
+                  ) : null}
                   {active ? (
                     <span className="flex items-center gap-1 text-fg-tertiary">
                       <span className="inline-block size-1.5 animate-pulse rounded-full bg-warning" />
@@ -198,6 +212,11 @@ export function RightPanel() {
                   </span>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  {skipped.length > 0 ? (
+                    <p className="mb-2 text-2xs" style={{ color: colorOf('warning') }}>
+                      ⚠ {skipped.join('；')}
+                    </p>
+                  ) : null}
                   <DiffViewer files={diffs} />
                 </div>
               </>

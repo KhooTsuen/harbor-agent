@@ -34,6 +34,7 @@ const EXPECTED_CHANNELS = [
   'changeset:get',
   'changeset:list',
   'changeset:rollback',
+  'changeset:diff',
   'chat:abort',
   'chat:compact',
   'chat:confirm',
