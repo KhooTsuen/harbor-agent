@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, History } from 'lucide-react'
+import { ChevronDown, ChevronRight, History, Stethoscope } from 'lucide-react'
 import type { AgentPhase } from '@/types'
 import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { cn } from '@/lib/utils'
@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
 import { colorOf, iconOf, statusOfTask } from '@/lib/statusLanguage'
+import { taskDiagnose } from '@/lib/safetyApi'
+import type { TaskDiagnosis } from '@/types/safety'
 import {
   currentStepOf,
   elapsedMs,
@@ -53,12 +55,42 @@ export function TaskRow({
   onGiveUp: () => void
 }) {
   const [open, setOpen] = useState(false)
+  /*
+   * AG-035 诊断：按需拉。
+   * 台账摊开是几百行，读成人话要花一点力气 —— 用户点了「诊断」才值当，
+   * 而且**纯读**（不改任务、不跑东西），所以放在这里直接调桥就够了。
+   */
+  const [diagnosis, setDiagnosis] = useState<TaskDiagnosis | null>(null)
+  const [diagnosing, setDiagnosing] = useState(false)
   const uiStatus = statusOfTask(task.status)
   const statusColor = colorOf(uiStatus)
   const Icon = iconOf(uiStatus)
   const progress = taskProgress(task)
   const envChanged = recovery?.envChanged ?? []
   const changed = task.changedFiles.length
+
+  /** 拉一次诊断；再点一次收起来（报告已经在手上就不必再问一遍） */
+  async function runDiagnose(): Promise<void> {
+    if (diagnosis) {
+      setDiagnosis(null)
+      return
+    }
+    setDiagnosing(true)
+    try {
+      setDiagnosis(await taskDiagnose(task.id))
+    } finally {
+      setDiagnosing(false)
+    }
+  }
+
+  async function copyDiagnosis(): Promise<void> {
+    if (!diagnosis?.text) return
+    try {
+      await navigator.clipboard.writeText(diagnosis.text)
+    } catch {
+      /* 复制不了就算了 —— 报告就在眼前，用户可以自己选中 */
+    }
+  }
 
   return (
     <div
@@ -132,12 +164,44 @@ export function TaskRow({
       {open ? (
         <div className="border-t border-line-hairline px-2 py-2">
           {/* 运行细节：默认折叠，展开才看（AG-030：不默认刷屏）*/}
-          <p className="mb-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
+          <p className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
             <span>{task.steps.length} Tool</span>
             <span>历时 {formatDuration(elapsedMs(task, now))}</span>
             <span>更新 {formatUpdated(task.updatedAt)}</span>
             {task.resumeCount ? <span>恢复过 {task.resumeCount} 次</span> : null}
+            {/* AG-035：这条任务到底怎么回事 —— 一句话结论 + 可按需展开全篇 */}
+            <button
+              type="button"
+              disabled={diagnosing}
+              onClick={() => void runDiagnose()}
+              className="flex items-center gap-1 rounded-sm px-1 text-2xs transition-colors duration-fast hover:bg-bg-hover hover:text-fg-secondary disabled:opacity-50"
+            >
+              <Stethoscope size={11} />
+              {diagnosing ? '诊断中…' : diagnosis ? '收起诊断' : '诊断'}
+            </button>
           </p>
+
+          {diagnosis ? (
+            <div className="mb-1.5 rounded-sm border border-line-subtle bg-bg-base/40">
+              <p className="px-2 py-1 text-2xs text-fg-secondary">{diagnosis.conclusion}</p>
+              <div className="flex items-center gap-2 border-t border-line-subtle px-2 py-1 text-2xs text-fg-tertiary">
+                <span className="flex-1">
+                  模型 {task.model || '没有记录'} · 授权 {task.permissions?.length ?? 0} 条 · 检查点{' '}
+                  {task.checkpoints.length} 个
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void copyDiagnosis()}
+                  className="shrink-0 rounded-sm px-1 hover:bg-bg-hover hover:text-fg-primary"
+                >
+                  复制全文
+                </button>
+              </div>
+              <pre className="max-h-64 overflow-auto border-t border-line-subtle px-2 py-1.5 font-mono text-2xs leading-[1.6] whitespace-pre-wrap text-fg-tertiary">
+                {diagnosis.text}
+              </pre>
+            </div>
+          ) : null}
           {envChanged.length > 0 ? (
             <p className="mb-1.5 text-2xs" style={{ color: colorOf('warning') }}>
               ⚠ 你离开之后 {envChanged.length} 个文件被改过（

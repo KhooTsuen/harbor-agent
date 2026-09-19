@@ -15,6 +15,7 @@
 const audit = require('../core/audit.cjs')
 const capability = require('../core/capability.cjs')
 const task = require('../core/task.cjs')
+const diagnose = require('../core/task-diagnose.cjs')
 const recovery = require('../core/task-recovery.cjs')
 const changeset = require('../core/changeset.cjs')
 const credentials = require('../core/credentials.cjs')
@@ -108,6 +109,16 @@ function register({ ipcMain }) {
   ipcMain.handle('task:recovery', () => ({ ok: true, items: recovery.scan() }))
 
   ipcMain.handle('task:get', (_event, id) => ({ ok: true, task: task.get(String(id ?? '')) }))
+
+  /*
+   * AG-035：诊断报告。
+   * 按需拉（不是列表里每行都算一份）：台账摊开是几百行，读成人话要花一点力气，
+   * 用户点了「诊断」才值当。**纯读**，不改任务、不跑东西。
+   */
+  ipcMain.handle('task:diagnose', (_event, id) => ({
+    ok: true,
+    diagnosis: diagnose.diagnose(task.get(String(id ?? ''))),
+  }))
 
   ipcMain.handle('task:update', (_event, payload = {}) => {
     const updated = task.update(String(payload.id ?? ''), payload.patch ?? {})

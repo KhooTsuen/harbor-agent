@@ -69,6 +69,8 @@ import { run as sessionRedact } from './selftest/groups/31-session-redact.mjs'
 import { run as notify } from './selftest/groups/32-notify.mjs'
 import { run as trayGroup } from './selftest/groups/33-tray.mjs'
 import { run as taskOutcome } from './selftest/groups/34-outcome.mjs'
+import { run as checkpoint } from './selftest/groups/35-checkpoint.mjs'
+import { run as diagnose } from './selftest/groups/36-diagnose.mjs'
 
 const GROUPS = [
   basics,
@@ -105,6 +107,8 @@ const GROUPS = [
   notify,
   trayGroup,
   taskOutcome,
+  checkpoint,
+  diagnose,
 ]
 
 async function main() {
