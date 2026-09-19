@@ -219,18 +219,30 @@ function pausedResult({ turn, usage, toolRuns }) {
 }
 
 /** AG-011：轮数用尽时的返回值（活没干完，同样可恢复） */
-function exhaustedResult({ usage, toolRuns, maxTurns, budgetHit = null }) {
-  return {
-    content: budgetHit
-      ? `${budgetHit.message}
+function exhaustedResult({ usage, toolRuns, maxTurns, budgetHit = null, loopHit = null }) {
+  const text = (() => {
+    if (budgetHit)
+      return `${budgetHit.message}
 （停下来等你决定：继续 / 停止 / 调整预算。）`
-      : `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`,
+    if (loopHit) {
+      const what =
+        loopHit.kind === 'repeat'
+          ? `同一个调用连着来了 ${loopHit.count} 次`
+          : `这 ${loopHit.period} 个调用重复了 ${loopHit.count / loopHit.period} 遍`
+      return `检测到 Agent 可能陷入重复执行（${what}）。
+正在重新规划任务 —— 但连着几次还是转圈，先停下来问你。（继续 / 停止）`
+    }
+    return `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`
+  })()
+  return {
+    content: text,
     reasoning: '',
     usage,
     turns: maxTurns,
     toolRuns,
     exhausted: true,
     budgetHit,
+    loopHit,
   }
 }
 

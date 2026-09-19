@@ -76,6 +76,7 @@ import { run as changesetDiff } from './selftest/groups/38-changesetdiff.mjs'
 import { run as perf } from './selftest/groups/39-perf.mjs'
 import { run as taskIndex } from './selftest/groups/40-taskindex.mjs'
 import { run as budgetGroup } from './selftest/groups/41-budget.mjs'
+import { run as loopGuard } from './selftest/groups/42-loopguard.mjs'
 
 const GROUPS = [
   basics,
@@ -119,6 +120,7 @@ const GROUPS = [
   perf,
   taskIndex,
   budgetGroup,
+  loopGuard,
 ]
 
 async function main() {

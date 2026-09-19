@@ -66,6 +66,8 @@ export function TaskRow({
   /* AG-040：撞了执行预算 → 停下等人，行内给 [继续][停止][调整预算] */
   const [editingBudget, setEditingBudget] = useState(false)
   const budgetHit = task.pauseReason === 'budget' ? (task.budgetHit ?? null) : null
+  /* AG-041：转圈停下来 → 也说一句，并给「继续 / 停止」（没有「调整预算」这一项） */
+  const loopHit = task.pauseReason === 'loop' ? (task.loopHit ?? null) : null
   const uiStatus = statusOfTask(task.status)
   const statusColor = colorOf(uiStatus)
   const Icon = iconOf(uiStatus)
@@ -138,6 +140,11 @@ export function TaskRow({
                 已达到{budgetHit.label}（{budgetHit.used} / {budgetHit.limit}）
               </span>
             ) : null}
+            {loopHit ? (
+              <span style={{ color: colorOf('warning') }} title={loopHit.samples?.join(' → ')}>
+                检测到重复执行（{loopHit.count} 次同类调用）
+              </span>
+            ) : null}
           </span>
         </span>
       </button>
@@ -175,7 +182,7 @@ export function TaskRow({
         ) : null}
         {CLOSABLE.includes(task.status) ? (
           <Button variant="ghost" size="sm" disabled={busy} onClick={onGiveUp}>
-            {budgetHit ? '停止' : '放弃'}
+            {budgetHit || loopHit ? '停止' : '放弃'}
           </Button>
         ) : null}
       </div>
