@@ -5,6 +5,15 @@
  *
  * 关窗口不退出进程（窗口只是 hide），真正的退出走托盘菜单或 app:quit ——
  * 这是桌面 Agent 的常态：它是常驻的，不是「关掉就没了」的小工具。
+ *
+ * ── 一处真机踩坑（AG-029 之后）──
+ * 用户报「点 × 就退出了」「右下角图标右键没菜单」。查下来是**同一个问题**：
+ * 点 × 其实好好地藏到了托盘（用 WM_CLOSE 复现验证过），但**右键弹不出菜单**
+ * 就再也叫不回来，看着就像退出。所以这里：
+ *   ① 右键**显式**弹菜单（不再只靠 setContextMenu）—— 顺带能记日志、能排查；
+ *   ② 第一次藏到托盘时用系统通知告诉用户「还在这儿、怎么回来」。
+ *     （这正是「以为退出了」的根源：Windows 11 会把新图标塞进折叠区，
+ *       用户根本不知道它还在。）
  */
 
 const path = require('node:path')
@@ -14,10 +23,15 @@ const log = require('./core/log.cjs')
 const windowState = require('./window-state.cjs')
 
 let tray = null
+/** 菜单要留引用：右键时显式弹它（不再只靠 setContextMenu） */
+let trayMenu = null
 /** true 表示「真的要退出了」，区别于「只是关窗口」 */
 let quitting = false
 /** 窗口被关掉之后要让 main.cjs 重新建一个 —— 回调注入，避免反向依赖 */
 let createWindowHook = () => {}
+/** 藏到托盘时的提示（主进程的 Notification，注册清单注入） */
+let notifyHidden = null
+let hiddenHintShown = false
 
 function showWindow() {
   const win = windowState.get()
@@ -30,16 +44,41 @@ function showWindow() {
   win.focus()
 }
 
-function setupTray({ onCreateWindow } = {}) {
-  if (onCreateWindow) createWindowHook = onCreateWindow
-  if (tray) return
+/**
+ * 藏到托盘（点 × 走这里）。
+ *
+ * 第一次会补一条系统通知 —— 否则用户点完 × 就不见了，还以为程序退出了。
+ * 只提示一次：第二次他已经知道了，再弹就是骚扰。
+ */
+function hideToTray(win) {
+  win.hide()
+  if (hiddenHintShown) return
+  hiddenHintShown = true
+  try {
+    notifyHidden?.({
+      id: '',
+      title: 'Personal Agent 还在后台跑',
+      body: '点右下角托盘图标可以回来；要真正退出，用托盘图标的右键菜单。',
+    })
+  } catch (error) {
+    log.warn(`托盘提示发不出去：${error instanceof Error ? error.message : error}`)
+  }
+}
 
-  /* 图标：打包后在 resources 里，开发时在 build/ 下 */
+function trayIconPath() {
   const candidates = [
     path.join(__dirname, '..', 'build', 'icon-128.png'),
     path.join(process.resourcesPath ?? '', 'build', 'icon-128.png'),
   ]
-  const icon = candidates.find((file) => fs.existsSync(file))
+  return candidates.find((file) => fs.existsSync(file))
+}
+
+function setupTray({ onCreateWindow, notify } = {}) {
+  if (onCreateWindow) createWindowHook = onCreateWindow
+  if (notify) notifyHidden = notify
+  if (tray) return
+
+  const icon = trayIconPath()
   if (!icon) {
     log.warn('找不到托盘图标，托盘不创建')
     return
@@ -48,20 +87,37 @@ function setupTray({ onCreateWindow } = {}) {
   try {
     tray = new Tray(icon)
     tray.setToolTip('Personal Agent')
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: '显示窗口', click: () => showWindow() },
-        { type: 'separator' },
-        {
-          label: '退出',
-          click: () => {
-            quitting = true
-            app.quit()
-          },
+    trayMenu = Menu.buildFromTemplate([
+      { label: '显示窗口', click: () => showWindow() },
+      { type: 'separator' },
+      {
+        label: '退出',
+        click: () => {
+          quitting = true
+          app.quit()
         },
-      ]),
-    )
+      },
+    ])
+
+    /*
+     * 右键菜单：**显式弹**。
+     *
+     * 原来只写了 `tray.setContextMenu(menu)`（Windows 上由 Electron 自己弹），
+     * 真机上用户报「右键没菜单」。改成自己处理右键有个额外好处：
+     * 能记日志、出问题查得到。
+     * macOS 另说：那边左键就是菜单，仍用 setContextMenu 的默认行为。
+     */
+    if (process.platform === 'darwin') {
+      tray.setContextMenu(trayMenu)
+    } else {
+      tray.on('right-click', () => {
+        log.info('托盘：右键 → 弹出菜单')
+        tray?.popUpContextMenu(trayMenu)
+      })
+    }
+
     tray.on('click', () => showWindow())
+    tray.on('double-click', () => showWindow())
     log.info('托盘已就绪')
   } catch (error) {
     log.warn(`托盘创建失败：${error instanceof Error ? error.message : error}`)
@@ -71,6 +127,7 @@ function setupTray({ onCreateWindow } = {}) {
 module.exports = {
   setupTray,
   showWindow,
+  hideToTray,
   isQuitting: () => quitting,
   setQuitting: (v) => {
     quitting = v

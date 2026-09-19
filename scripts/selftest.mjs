@@ -67,6 +67,7 @@ import { run as contextCache } from './selftest/groups/29-contextcache.mjs'
 import { run as taskName } from './selftest/groups/30-taskname.mjs'
 import { run as sessionRedact } from './selftest/groups/31-session-redact.mjs'
 import { run as notify } from './selftest/groups/32-notify.mjs'
+import { run as trayGroup } from './selftest/groups/33-tray.mjs'
 
 const GROUPS = [
   basics,
@@ -101,6 +102,7 @@ const GROUPS = [
   taskName,
   sessionRedact,
   notify,
+  trayGroup,
 ]
 
 async function main() {
