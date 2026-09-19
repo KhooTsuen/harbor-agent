@@ -23,8 +23,10 @@ const IDLE: readonly AgentPhase[] = ['idle']
  * 就算活着 —— 于是用户暂停之后，界面一直显示「停止」按钮，
  * 看起来像没停下来（真机测了 65 秒都没消失）。
  *
- * 注意 `waiting_user` **不**算停 —— 请求还在跑，只是在等你点确认，
- * 那时候按钮得留着。
+ * `waiting_user` **不**算停 —— 请求还在跑、只是在等你点确认（权限弹窗那类），
+ * 那时按钮得留着。★ 但**预算撞上限 / 循环交人**用的是 `paused`（AG-043 真机改的）：
+ * 那两种情况下 run 已经结束、就等你拍板，用 waiting_user 会让人以为任务没停、
+ * 也没法直接打字改方向。
  */
 const NOT_RUNNING: readonly AgentPhase[] = [...IDLE, 'paused']
 

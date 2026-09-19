@@ -55,10 +55,25 @@ async function run(options) {
     }
   }
 
-  /* AG-042：控制台要显示「自动重试了几次」—— 事件里数一遍，不改别的模块 */
+  /*
+   * AG-042：控制台那两个数字在这里数 —— 不改别的模块。
+   *
+   * ★ token **每轮结束就写一次**（`turn_end` 事件自带本轮累计 usage）。
+   *   初版只在 run 结束时写一次，真机上一个跑了 6 分半的任务，控制台上
+   *   Token 一直显示「—」—— 因为它还没跑完。长任务恰恰是最需要看用量的时候。
+   *   注意 base 要在**开始前**取：写进去的是 base + 本轮累计（不是每轮往上加）。
+   */
+  const baseTokens = taskCore.get(task.id)?.tokens ?? 0
   const counters = { retries: 0 }
   const countingEmit = (event) => {
     if (event?.type === 'agent.retrying') counters.retries += 1
+    if (event?.type === 'turn_end') {
+      try {
+        taskCore.update(task.id, { tokens: baseTokens + budget.usageTotal(event.usage) })
+      } catch (error) {
+        log.warn(`记用量失败：${error instanceof Error ? error.message : error}`)
+      }
+    }
     options.emit?.(event)
   }
   options.emit?.({ type: 'task', taskId: task.id, changeSetId, goal: task.goal })
@@ -96,10 +111,10 @@ async function run(options) {
       taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
     }
 
-    /* AG-042：把这一轮的用量与重试次数记进台账（控制台照它显示） */
+    /* AG-042：收尾再写一次（token 用同一个 base 算，不是往上加） */
     try {
       taskCore.update(task.id, {
-        tokens: (taskCore.get(task.id)?.tokens ?? 0) + (result.usage?.total ?? 0),
+        tokens: baseTokens + budget.usageTotal(result.usage),
         retries: counters.retries,
       })
     } catch (error) {

@@ -157,7 +157,11 @@ function lastTurnStructure() {
     if (m.toolName) bits.push(`工具=${m.toolName}`)
     if (m.toolRuns?.length) bits.push(`工具记录=${m.toolRuns.length}`)
     if (m.error) bits.push(`❌错误=${String(m.error).slice(0, 120)}`)
-    if (m.usage) bits.push(`token=${m.usage.total ?? '?'}`)
+    if (m.usage) {
+      /* 同样是上游的 total_tokens（见 budget.usageTotal 的注释） */
+      const tokens = m.usage.total_tokens ?? m.usage.total
+      bits.push(`token=${tokens ?? '?'}`)
+    }
 
     const text = String(m.content ?? '')
       .replace(/\s+/g, ' ')

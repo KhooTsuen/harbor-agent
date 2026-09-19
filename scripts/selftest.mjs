@@ -79,6 +79,7 @@ import { run as budgetGroup } from './selftest/groups/41-budget.mjs'
 import { run as loopGuard } from './selftest/groups/42-loopguard.mjs'
 import { run as consoleGroup } from './selftest/groups/43-console.mjs'
 import { run as steeringGroup } from './selftest/groups/44-steering.mjs'
+import { run as pauseGroup } from './selftest/groups/45-pause.mjs'
 
 const GROUPS = [
   basics,
@@ -125,6 +126,7 @@ const GROUPS = [
   loopGuard,
   consoleGroup,
   steeringGroup,
+  pauseGroup,
 ]
 
 async function main() {
