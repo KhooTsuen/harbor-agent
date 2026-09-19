@@ -22,6 +22,7 @@
 
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
+const taskHint = require('./task-hint.cjs')
 const taskResume = require('./task-resume.cjs')
 /* 指纹算法只该有一份，放在 task-plan.cjs（那里没有依赖，不会绕回来） */
 const { fingerprint } = require('./task-plan.cjs')
@@ -119,7 +120,9 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
     ...mine.slice(0, MAX_TASKS),
     ...others.slice(0, Math.max(0, MAX_TASKS - mine.length)),
   ]
-  if (ordered.length === 0) return ''
+  /* 新活的第一轮（一条未完成任务都没有）：必须带上「本轮请求」——
+     只说通用规矩模型不照做，真机实测过（缘由写在 task-hint.cjs）。 */
+  if (ordered.length === 0) return taskHint.freshRequest(userText)
 
   /* 诊断用：确认「用户在说继续」这条真的被认出来了（taskState 不落盘） */
   if (isContinueIntent(userText)) {
@@ -184,8 +187,7 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
   return [
     '以下是**还没做完**的任务台账（来自磁盘，不是你说过的话）。',
     '继续干活时以它为准：接着计划里**第一条没有 [x] 的**往下做，别重复已经完成的步骤。',
-    '做完一步就把那一条标成 `[x]`（用 ```plan 块给出更新后的完整计划）。',
-    '```plan 块的**第一行**写任务名（形如 `# 优化 Agent 启动`，一句话说清在做什么）；下面每行一条步骤。任务名只在第一次生效，之后保持稳定。',
+    taskHint.ledgerFormatLine(),
     '如果某一步其实不需要做了，也在计划里说明理由，不要默默跳过。',
     /*
      * AG-018：用户在说「继续」时，把话说死。

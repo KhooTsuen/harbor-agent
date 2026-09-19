@@ -17,6 +17,7 @@ const {
   parsePlan,
   parsePlanBlock,
   deriveTitle,
+  fallbackTitle,
   fingerprint,
   recordVersion,
   migrate,
@@ -60,7 +61,7 @@ function create({ goal, sessionId = '', projectId = '', workdir = '', mode = 'pa
   const task = {
     id: newId(),
     /* AG-027：任务名**不取聊天原句**，从里面提炼动作名；模型在计划块里给了 `# 名字` 会覆盖它 */
-    title: deriveTitle(goal) || '未命名任务',
+    title: fallbackTitle(goal),
     goal: String(goal ?? ''),
     status: 'running',
     mode,
@@ -276,6 +277,7 @@ module.exports = {
   parsePlan,
   parsePlanBlock,
   deriveTitle,
+  fallbackTitle,
   fingerprint,
   setPlan,
   addStep,

@@ -249,8 +249,22 @@ export const useAppStore = create<AppState>()(
       openFromDisk: async (id) => {
         if (!useRealBackend) return
         set({ activeThreadId: id })
+        /*
+         * 卡住「读回来的时候把刚加的消息盖掉」这个真 bug：
+         *
+         * 这条 `await` 期间用户完全可能已经发消息了 —— `resumeTask`（点「继续」）
+         * 就是 setActiveThread 紧接着 sendMessage，中间没有等待。
+         * 读回来直接 set 就会把刚插进去的用户消息 + 流式占位一起抹掉，
+         * 界面上就是「点继续以后对话一片空白，但 Agent 其实在跑」。
+         *
+         * 判据：内存里还是**调用前那个数组**（没人动过）才允许覆盖。
+         * 注意不能用「长度是不是 0」—— 并发删消息也照样能把数组改成别的。
+         */
+        const before = get().threads.find((t) => t.id === id)
         const messages = await fetchMessagesFromDisk(id)
         if (!messages) return
+        const current = get().threads.find((t) => t.id === id)
+        if (!current || current.messages !== before?.messages) return
         set((state) => ({
           threads: state.threads.map((t) => (t.id === id ? { ...t, messages } : t)),
         }))

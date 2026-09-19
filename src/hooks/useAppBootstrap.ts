@@ -44,6 +44,19 @@ async function bootstrap(): Promise<void> {
     useAppStore.setState({ activeThreadId: saved })
   }
 
+  /*
+   * 把**当前这条对话**的消息读出来。
+   *
+   * 之前只有「点侧栏某条对话」才会读消息（setActiveThread 里那个懒加载），
+   * 启动时只设了 activeThreadId —— 于是重启后打开应用，当前对话是**空的**，
+   * 得先点别的对话再点回来才看得到历史（真机实测：磁盘上 2 条消息，
+   * 启动后消息条数 0；点一下侧栏变 2）。
+   *
+   * 消息是懒加载的（见 stores/app/disk.ts 开头），所以这里只读一条。
+   */
+  const activeId = useAppStore.getState().activeThreadId
+  if (activeId) await useAppStore.getState().openFromDisk(activeId)
+
   await preloadWorkspaceUi()
 
   /*
