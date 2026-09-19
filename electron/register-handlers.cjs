@@ -62,6 +62,9 @@ function registerHandlers(deps) {
   require('./handlers/pty.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })
   /* 安全 / 可靠相关：审计、路径授权、任务、改动事务、凭证状态 */
   require('./handlers/safety.cjs').register({ ipcMain })
+
+  /* 交给 main.cjs：藏到托盘时用它给用户一句「我还在这儿」 */
+  return { notifier }
 }
 
 module.exports = { registerHandlers }

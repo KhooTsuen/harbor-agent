@@ -15,10 +15,11 @@ const log = require('./core/log.cjs')
 const config = require('./core/config.cjs')
 const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
-const { setupTray, showWindow, setQuitting, isQuitting } = require('./tray.cjs')
+const { setupTray, showWindow, hideToTray, setQuitting, isQuitting } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
 const windowChrome = require('./handlers/window.cjs')
 const { registerHandlers } = require('./register-handlers.cjs')
+let trayNotifier = null
 const navigationPolicy = require('./navigation-policy.cjs')
 const pluginWatcher = require('./core/plugin-watcher.cjs')
 const imageHandler = require('./handlers/image.cjs')
@@ -117,7 +118,8 @@ function createWindow() {
     if (HEADLESS || isQuitting()) return
     if (config.get().general.minimizeToTray === false) return
     event.preventDefault()
-    win.hide()
+    /* 藏到托盘（第一次会补一条系统通知告诉用户「还在这儿」）—— 见 tray.cjs */
+    hideToTray(win)
   })
 
   win.on('closed', () => {
@@ -215,7 +217,7 @@ if (!gotLock) {
     createWindow()
 
     /* 托盘：自检/截图模式不需要（那两种模式要能干净退出） */
-    if (!HEADLESS) setupTray({ onCreateWindow: createWindow })
+    if (!HEADLESS) setupTray({ onCreateWindow: createWindow, notify: trayNotifier?.notify })
 
     /* 自动备份：一天一次。便携版拷 U 盘时中途拔了，data 会残 —— 靠这个兜底 */
     try {
@@ -263,7 +265,7 @@ if (!gotLock) {
 }
 
 /* 渲染层用到的处理器：清单在 register-handlers.cjs（那边能一眼看全注册了哪些通道） */
-registerHandlers({
+trayNotifier = registerHandlers({
   ipcMain,
   app,
   Notification,
@@ -275,6 +277,6 @@ registerHandlers({
   showWindow,
   getMainWindow: () => mainWindow,
   workdir: { currentWorkdir, resolveWorkdir },
-})
+}).notifier
 
 module.exports = { currentWorkdir, send }
