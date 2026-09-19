@@ -1,8 +1,27 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/safetyApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/safetyApi')>()
+  return {
+    ...actual,
+    taskDiagnose: async (id: string) => {
+      h.calls.push(id)
+      return {
+        title: '重构执行引擎',
+        status: 'failed',
+        conclusion: h.replies[0] ?? '上一轮出错了：供应商 401',
+        text: '任务：重构执行引擎',
+      }
+    },
+  }
+})
 import type { TaskRecord } from '@/types/safety'
 import { TaskRow } from '../TaskRow'
+
+/* AG-035：「诊断」是**按需**拉的一份报告 —— 这里用假的桥替身，别的测试不受影响 */
+const h = vi.hoisted(() => ({ calls: [] as string[], replies: [] as string[] }))
 
 /* ══════════════════════════════════════════════════════════════
    任务行（AG-028 收尾：横幅撤掉、动作搬进任务中心）
@@ -154,6 +173,37 @@ describe('AG-028 / 任务行（真渲染）', () => {
   it('★ 有失败时把「N 次失败」摆出来（异常要突出）', () => {
     const el = draw(task({ status: 'failed', errors: [{ at: 1, message: '炸了' }] }))
     expect(el.textContent).toContain('1 次失败')
+  })
+
+  it('★ 诊断是按需拉的 —— 不点就不请求（AG-030：不默认刷屏）', () => {
+    h.calls = []
+    const el = draw(task({ status: 'failed' }))
+    act(() => button(el, '详情')?.click())
+    expect(h.calls.length).toBe(0)
+    expect(el.textContent).not.toContain('上一轮出错了')
+  })
+
+  it('★ 点「诊断」→ 拉报告、显示结论与全文；再点收起', async () => {
+    h.calls = []
+    h.replies = ['上一轮出错了：供应商 401']
+    const el = draw(task({ status: 'failed' }))
+    act(() => button(el, '详情')?.click())
+
+    await act(async () => {
+      button(el, '诊断')?.click()
+    })
+    expect(h.calls).toEqual(['task-1'])
+    expect(el.textContent).toContain('上一轮出错了：供应商 401')
+    expect(el.textContent).toContain('任务：重构执行引擎')
+    /* 报告里那行元信息（模型/授权/检查点）也在 */
+    expect(el.textContent).toContain('模型')
+
+    await act(async () => {
+      button(el, '收起诊断')?.click()
+    })
+    expect(el.textContent).not.toContain('上一轮出错了')
+    /* 收起来之后不重新请求 —— 报告还在手上 */
+    expect(h.calls.length).toBe(1)
   })
 
   it('计划与时间线只在展开「详情」后出现', () => {

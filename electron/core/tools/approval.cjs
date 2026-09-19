@@ -74,6 +74,13 @@ async function ask(ctx, request) {
   if (ok) {
     if (REMEMBERED.has(kind)) ctx.granted?.set(kind, Date.now())
     record(ctx, { kind, name: request.name ?? '', approved: true })
+  } else {
+    /*
+     * AG-035：「被拒绝」也要记。
+     * 以前只在批准时记 —— 于是任务停下来的时候，台账上看不出
+     * 「是用户点的拒绝」，诊断报告只能猜。
+     */
+    record(ctx, { kind, name: request.name ?? '', approved: false })
   }
   return ok
 }

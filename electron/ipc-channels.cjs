@@ -109,6 +109,7 @@ const EXPECTED_CHANNELS = [
   'stats:reset',
   'stats:summary',
   'task:get',
+  'task:diagnose',
   'task:list',
   'task:pauseRunning',
   'task:recovery',

@@ -1,4 +1,5 @@
 import type {
+  TaskDiagnosis,
   AuditEntry,
   AuditStats,
   CapabilityGrant,
@@ -135,6 +136,18 @@ export async function taskList(options?: {
     return result.tasks ?? []
   } catch {
     return []
+  }
+}
+
+/** AG-035：诊断报告（读不出来时给一份空壳，界面显示「这个桌面版才有」） */
+export async function taskDiagnose(id: string): Promise<TaskDiagnosis> {
+  const empty: TaskDiagnosis = { title: '', status: '', conclusion: '', text: '' }
+  if (!bridge?.taskDiagnose) return empty
+  try {
+    const result = await bridge.taskDiagnose(id)
+    return result.diagnosis ?? empty
+  } catch {
+    return empty
   }
 }
 

@@ -8,12 +8,9 @@
  * 事务管「改了啥、怎么撤」。
  */
 
-const fs = require('node:fs')
-const path = require('node:path')
-const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const redact = require('./redact.cjs')
-const outcome = require('./task-outcome.cjs')
+const io = require('./task-io.cjs')
+const notes = require('./task-notes.cjs')
 const {
   parsePlan,
   parsePlanBlock,
@@ -29,30 +26,6 @@ const {
 const STATUSES = ['running', 'waiting_user', 'paused', 'completed', 'failed', 'cancelled']
 
 const UNFINISHED = new Set(['running', 'waiting_user', 'paused'])
-function root() {
-  return path.join(DIRS.data, 'tasks')
-}
-function fileFor(id) {
-  return path.join(root(), `${id}.json`)
-}
-
-function newId() {
-  return `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
-}
-
-function write(task) {
-  fs.mkdirSync(root(), { recursive: true })
-  fs.writeFileSync(fileFor(task.id), JSON.stringify(task, null, 2), 'utf8')
-}
-
-function get(id) {
-  try {
-    return migrate(JSON.parse(fs.readFileSync(fileFor(id), 'utf8')))
-  } catch {
-    return null
-  }
-}
-
 /**
  * 建一条任务。
  *
@@ -60,7 +33,7 @@ function get(id) {
  */
 function create({ goal, sessionId = '', projectId = '', workdir = '', mode = 'pair' } = {}) {
   const task = {
-    id: newId(),
+    id: io.newId(),
     /* AG-027：任务名**不取聊天原句**，从里面提炼动作名；模型在计划块里给了 `# 名字` 会覆盖它 */
     title: fallbackTitle(goal),
     goal: String(goal ?? ''),
@@ -83,19 +56,26 @@ function create({ goal, sessionId = '', projectId = '', workdir = '', mode = 'pa
     /* AG-012：重启恢复要用的四样 —— 下一步、停的时刻、恢复过几次、批过什么 */
     nextAction: '',
     permissions: [],
+    /*
+     * AG-035：是哪只手在干这个活。
+     * `models` 记**这个任务用过的**（按先后去重）—— 中途换过模型是
+     * 「怎么前后不一样了」的常见原因，诊断时要看得见。
+     */
+    model: '',
+    models: [],
     pausedAt: 0,
     resumeCount: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     finishedAt: 0,
   }
-  write(task)
+  io.write(task)
   return task
 }
 
 /** 打补丁（只允许白名单字段，防止手滑写坏结构） */
 function update(id, patch) {
-  const task = get(id)
+  const task = io.get(id)
   if (!task) return null
 
   for (const key of [
@@ -110,6 +90,8 @@ function update(id, patch) {
     'changeSetId',
     'nextAction',
     'permissions',
+    'model',
+    'models',
     'pausedAt',
     'resumeCount',
   ]) {
@@ -117,96 +99,7 @@ function update(id, patch) {
   }
   if (patch.status && !STATUSES.includes(patch.status)) return task
   task.updatedAt = Date.now()
-  write(task)
-  return task
-}
-
-/** 记一次工具调用 */
-function addStep(id, { tool, ok, summary, ms = 0, args }) {
-  const task = get(id)
-  if (!task) return null
-
-  task.steps.push({
-    at: Date.now(),
-    tool: String(tool ?? ''),
-    ok: ok !== false,
-    ms,
-    summary: String(summary ?? '').slice(0, 300),
-    args: args ? redact.scrubLight(args) : undefined,
-  })
-
-  /* 只留最近 200 步 —— 这个文件是给自己看的，不是流水账 */
-  if (task.steps.length > 200) task.steps = task.steps.slice(-200)
-  task.updatedAt = Date.now()
-  write(task)
-  return task
-}
-
-/** 记一次文件改动 */
-function addChangedFile(id, file, extra = {}) {
-  const task = get(id)
-  if (!task) return null
-  const absolute = String(file)
-  if (!task.changedFiles.some((f) => f.path === absolute)) {
-    task.changedFiles.push({ path: absolute, at: Date.now(), ...extra })
-  }
-  task.updatedAt = Date.now()
-  write(task)
-  return task
-}
-
-/** 记一次命令 */
-function addCommand(id, command, result = '') {
-  const task = get(id)
-  if (!task) return null
-  task.commands.push({
-    command: String(command).slice(0, 500),
-    result: String(result).slice(0, 300),
-    /* AG-034：退出码单独存 —— result 截到 300 字，尾巴上的 `[退出码 N]` 常常被截掉 */
-    exitOk: outcome.exitOf(result),
-    at: Date.now(),
-  })
-  if (task.commands.length > 100) task.commands = task.commands.slice(-100)
-  task.updatedAt = Date.now()
-  write(task)
-  return task
-}
-
-/** 打检查点 —— **崩溃后靠它恢复** */
-function checkpoint(id, { label, note = '', files = [], commands = [] } = {}) {
-  const task = get(id)
-  if (!task) return null
-  task.checkpoints.push({
-    at: Date.now(),
-    label: String(label ?? '检查点').slice(0, 120),
-    note: String(note).slice(0, 500),
-    files,
-    commands,
-  })
-  if (task.checkpoints.length > 50) task.checkpoints = task.checkpoints.slice(-50)
-  task.updatedAt = Date.now()
-  write(task)
-  return task
-}
-
-function finish(id, { status = 'completed', result = '' } = {}) {
-  const task = get(id)
-  if (!task) return null
-  task.status = STATUSES.includes(status) ? status : 'completed'
-  task.result = String(result).slice(0, 4000)
-  task.finishedAt = Date.now()
-  task.updatedAt = Date.now()
-  write(task)
-  return task
-}
-
-function fail(id, error) {
-  const task = get(id)
-  if (!task) return null
-  task.errors.push({ at: Date.now(), message: String(error).slice(0, 500) })
-  task.status = 'failed'
-  task.updatedAt = Date.now()
-  write(task)
+  io.write(task)
   return task
 }
 
@@ -224,16 +117,9 @@ function pauseRunning() {
 }
 
 function list({ limit = 50, status = '', sessionId = '' } = {}) {
-  let names = []
-  try {
-    names = fs.readdirSync(root()).filter((name) => name.endsWith('.json'))
-  } catch {
-    return []
-  }
-
   const out = []
-  for (const name of names) {
-    const task = get(name.replace(/\.json$/, ''))
+  for (const id of io.ids()) {
+    const task = io.get(id)
     if (!task) continue
     if (status && task.status !== status) continue
     if (sessionId && task.sessionId !== sessionId) continue
@@ -243,23 +129,41 @@ function list({ limit = 50, status = '', sessionId = '' } = {}) {
   return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
 }
 
-/** 有没有没干完的（启动时提示续做） */
+/**
+ * 有没有没干完的（启动时提示续做）。
+ *
+ * ★ 顺序不能反：**先筛出没干完的，再截前 20**。
+ *   原来是 `list({limit:20}).filter(...)` —— 先按 updatedAt 截 20 条再筛。
+ *   同一毫秒建的任务时间戳会撞上（台账里任务上千条时真会撞），排序不稳定，
+ *   于是**刚建的那条能被挤出前 20**，`unfinished()` 就装作没看见它
+ *   （自检里报成「未完成任务能被列出来」失败）。
+ */
 function unfinished() {
-  return list({ limit: 20 }).filter((task) => UNFINISHED.has(task.status))
+  return list({ limit: 500 })
+    .filter((task) => UNFINISHED.has(task.status))
+    .slice(0, 20)
 }
 
-function remove(id) {
-  try {
-    fs.rmSync(fileFor(id), { force: true })
-    return { ok: true }
-  } catch {
-    return { ok: false }
-  }
+/**
+ * 收尾：定状态与结果。
+ *
+ * 留在这一层（而不是 task-notes.cjs）是因为它是**状态转移**，不是往台账上
+ * 记账 —— 「记了什么」去 notes，「现在是什么状态」在这一层。
+ */
+function finish(id, { status = 'completed', result = '' } = {}) {
+  const task = io.get(id)
+  if (!task) return null
+  task.status = STATUSES.includes(status) ? status : 'completed'
+  task.result = String(result).slice(0, 4000)
+  task.finishedAt = Date.now()
+  task.updatedAt = Date.now()
+  io.write(task)
+  return task
 }
 
 /** 记一版计划（AG-004）：变了才写盘。planHash 防的是计划被并行会话悄悄改掉。 */
 function setPlan(id, plan, options = {}) {
-  const task = get(id)
+  const task = io.get(id)
   if (!task) return null
   const version = recordVersion(task, plan, options)
   if (!version) return null
@@ -267,15 +171,16 @@ function setPlan(id, plan, options = {}) {
     /* AG-012：顺手记下「下一步」—— 重启后不必把整份计划再喂一遍 */
     task.nextAction = nextActionOf(plan)
     task.updatedAt = Date.now()
-    write(task)
+    io.write(task)
   }
   return { task, ...version }
 }
 
 module.exports = {
+  ...io,
+  ...notes,
   STATUSES,
   create,
-  get,
   update,
   parsePlan,
   parsePlanBlock,
@@ -283,14 +188,8 @@ module.exports = {
   fallbackTitle,
   fingerprint,
   setPlan,
-  addStep,
-  addChangedFile,
-  addCommand,
-  checkpoint,
   finish,
-  fail,
   pauseRunning,
   list,
   unfinished,
-  remove,
 }

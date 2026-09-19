@@ -1,9 +1,9 @@
-/**
- * Agent 循环
+/*
+ * Agent 循环。
  *
  * 一轮对话 = 若干「回合」：调模型 → 要工具 → 执行 → 结果喂回去 → … → 不再要工具。
  * 两个硬边界：maxTurns 防止烧 token；AbortSignal 让「停止」能立刻停住（含 shell）。
- * 状态由 AG-001 的 lifecycle 驱动 —— 每次转移都会发事件，UI 只读不猜。
+ * 状态由 AG-001 的 lifecycle 驱动（每次转移都发事件，UI 只读不猜）。
  */
 
 const tools = require('./tools/index.cjs')
@@ -97,10 +97,7 @@ function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
 }
 
-/**
- * 真正的循环。包一层 run() 是为了把「任务/事务的开始与收尾」集中在一处，
- * 不用在十几种出口上各写一遍。
- */
+/** 真正的循环。包一层 run() 是为了把「任务/事务的开始与收尾」集中在一处，不用在十几种出口上各写一遍 */
 async function runLoop(options) {
   const { history, config, workdir, mode, signal, emit, confirm } = options
   const threadSettings = options.threadSettings ?? {}
@@ -119,6 +116,8 @@ async function runLoop(options) {
     options,
     emit,
   })
+  /* AG-035：记下是哪只模型在干这个活（诊断报告要写它） */
+  if (options.taskId) taskCore.recordModel(options.taskId, useModel)
 
   /* 环境 / 工具清单 / 记忆 / 项目说明 / 分层系统提示 —— 见 loop-prompt.cjs */
   const { messages } = buildPromptContext({

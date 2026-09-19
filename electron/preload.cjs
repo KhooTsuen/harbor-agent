@@ -124,6 +124,7 @@ const api = {
   /* AG-012：重启后的恢复清单 */
   taskRecovery: () => ipcRenderer.invoke('task:recovery'),
   taskGet: (id) => ipcRenderer.invoke('task:get', id),
+  taskDiagnose: (id) => ipcRenderer.invoke('task:diagnose', id),
   taskUpdate: (payload) => ipcRenderer.invoke('task:update', payload),
   taskRemove: (id) => ipcRenderer.invoke('task:remove', id),
   taskPauseRunning: () => ipcRenderer.invoke('task:pauseRunning'),

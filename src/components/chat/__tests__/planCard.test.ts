@@ -70,7 +70,8 @@ describe('PlanCard / 接线守卫', () => {
   })
 
   it('★ TaskRecord 里有 planVersions（老任务当空数组看）', () => {
-    const src = readFileSync(join(SRC, 'types/safety.ts'), 'utf8')
+    /* AG-035 把任务相关类型从 safety.ts 拆到了 types/task.ts —— 守卫跟着搬 */
+    const src = readFileSync(join(SRC, 'types/task.ts'), 'utf8')
     expect(src).toMatch(/planVersions\?/)
   })
 })
