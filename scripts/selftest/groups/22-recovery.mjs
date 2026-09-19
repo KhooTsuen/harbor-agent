@@ -90,13 +90,17 @@ export async function run() {
     '前端 store 用的是 recovery（不是旧的 unfinished）',
     readCore('src/stores/useTaskStore.ts').includes('taskRecovery()'),
   )
+  /*
+   * AG-028：横幅撤掉了，这两件事现在在右栏任务中心的「详情」里。
+   * 守的是**新家**，不是那个已经不存在的文件。
+   */
   check(
     '★ 界面会告诉用户「离开后有文件被动过」',
-    readCore('src/components/chat/TaskBanner.tsx').includes('envChanged'),
+    readCore('src/components/chat/TaskRow.tsx').includes('envChanged'),
   )
   check(
     '★ 界面会显示「下一步」',
-    readCore('src/components/chat/TaskBanner.tsx').includes('nextAction'),
+    readCore('src/components/chat/taskCenterModel.ts').includes('nextAction'),
   )
   check(
     '★ 启动时会提示「上次有任务没做完」',

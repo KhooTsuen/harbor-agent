@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENT_ACTIONS, TOOL_LABELS, toolLabel } from '../agentActivity'
 import { isActivePhase } from '../agentPhase'
@@ -158,15 +158,18 @@ describe('任务事后看得见（AG-005 / AG-009 遗留）', () => {
     expect(read('components/chat/TaskList.tsx')).toContain('ProgressTimeline')
   })
 
-  it('任务列表只读 —— 改状态（继续/放弃）仍归 TaskBanner 那条横幅', () => {
+  it('任务列表只读 —— 改状态（继续/放弃）只在右栏任务中心', () => {
     expect(read('components/chat/TaskList.tsx')).not.toContain('taskUpdate')
   })
 
-  it('★ TaskBanner 里那句永远走不到的判断删掉了', () => {
-    const src = read('components/chat/TaskBanner.tsx')
-    /* 只认代码行 —— 注释里会拿它举例子（`^\s*if` 碰不到注释的 `*` 开头） */
-    expect(src).not.toMatch(/^\s*if \(hidden \|\| tasks\.length === 0\) return null/m)
-    /* 只有待回滚的改动、没有未完成任务时，这条横幅也要出来 */
-    expect(src).toContain('if (tasks.length === 0 && changesets.length === 0) return null')
+  it('★ 对话顶部横幅已撤掉，能力全在任务中心（用户反馈「打开应用先看到黄条很迷茫」）', () => {
+    expect(existsSync(join(ROOT, 'src/components/chat/TaskBanner.tsx'))).toBe(false)
+    expect(read('App.tsx')).not.toContain('TaskBanner')
+    const row = read('components/chat/TaskRow.tsx')
+    expect(row).toContain('继续')
+    expect(row).toContain('放弃')
+    /* 动作真的接上了：继续 → resumeTask，放弃 → taskUpdate */
+    expect(read('components/chat/TaskCenter.tsx')).toContain('resumeTask(task.id)')
+    expect(read('components/chat/TaskCenter.tsx')).toContain('taskUpdate(task.id')
   })
 })

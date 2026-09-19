@@ -1,7 +1,7 @@
 {
   "name": "personal-agent",
   "private": true,
-  "version": "0.92.0",
+  "version": "0.93.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
