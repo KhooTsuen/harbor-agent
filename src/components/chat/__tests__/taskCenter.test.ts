@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { TaskRecord } from '@/types/safety'
@@ -98,10 +98,25 @@ describe('AG-028 / 接线守卫', () => {
     expect(src).toContain('setActiveThread(task.sessionId)')
   })
 
-  it('状态页不再单独调用 taskList（共用 store）', () => {
-    const src = readFileSync(join(SRC, 'components/chat/TaskList.tsx'), 'utf8')
-    expect(src).not.toContain("from '@/lib/safetyApi'")
-    expect(src).toContain('useTaskStore((s) => s.tasks)')
+  it('★ 任务只在一处显示（AG-030：状态页那份列表已删掉）', () => {
+    expect(existsSync(join(SRC, 'components/chat/TaskList.tsx'))).toBe(false)
+    const center = readFileSync(join(SRC, 'components/chat/TaskCenter.tsx'), 'utf8')
+    expect(center).toContain('useTaskStore((s) => s.tasks)')
+  })
+
+  it('★ 分组只渲染非空的，且顶部不再重复一排状态 chips', () => {
+    const src = readFileSync(join(SRC, 'components/chat/TaskCenter.tsx'), 'utf8')
+    /* 只遍历「活着的」分组 —— 空分组不渲染 */
+    expect(src).toContain('activeGroups.map((group) => {')
+    expect(src).toMatch(
+      /TASK_GROUPS\.filter\(\(group\) => \(groups\.get\(group\.status\)\?\.length \?\? 0\) > 0\)/,
+    )
+    /*
+     * 分组标题里已经有「进行中 · 1」—— 顶部那排 chips 不能再把它重复一遍。
+     * 直接断言「这个文件里没有胶囊样式」：任务中心里出现胶囊，基本就意味着
+     * 又在把状态/计数摆一遍（变异测试验证过：加回 chips 这条会红）。
+     */
+    expect(src).not.toContain('rounded-pill')
   })
 
   it('全量任务与恢复清单一次刷新，后端仍是唯一真相源', () => {
