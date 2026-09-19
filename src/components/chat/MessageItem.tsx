@@ -14,6 +14,7 @@ import { TerminalOutput } from './TerminalOutput'
 import { ThinkBlock } from './ProcessBlocks'
 import { ToolRunList } from './ToolRuns'
 import { activityLabel } from '@/lib/agentActivity'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
@@ -128,7 +129,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
               style={{ borderColor: 'rgb(229 83 75 / 0.4)', background: 'rgb(229 83 75 / 0.08)' }}
               role="alert"
             >
-              <span className="text-xs leading-relaxed" style={{ color: 'var(--danger)' }}>
+              <span className="text-xs leading-relaxed" style={{ color: colorOf('failed') }}>
                 {message.errorText ?? message.content}
               </span>
             </div>

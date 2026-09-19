@@ -24,6 +24,7 @@ import { MenuItem, Popover } from '@/components/ui/Popover'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { useThreadHasTask } from '@/stores/useTaskStore'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    侧栏里的一行线程
@@ -126,7 +127,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
         />
       ) : null}
 
-      <StatusDot status={thread.status} size={7} />
+      <StatusDot phase={thread.phase} size={7} />
 
       {/*
         有没干完的任务 → 黄点。
@@ -138,7 +139,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
           <span
             aria-label="有没干完的任务"
             className="inline-block size-1.5 shrink-0 rounded-full"
-            style={{ background: 'var(--warning)' }}
+            style={{ background: colorOf('warning') }}
           />
         </Tooltip>
       ) : null}

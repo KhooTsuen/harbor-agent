@@ -3,16 +3,18 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react'
 import type { Toast, ToastKind } from '@/types'
 import { useUIStore } from '@/stores/useUIStore'
+import { colorOf, statusOfToast } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    Toast —— 右下角堆叠，自动消失，可手动关
    ══════════════════════════════════════════════════════════════ */
 
+/* AG-031：颜色取自状态语言表 —— 轻提示也是状态的一种表达 */
 const KIND_META: Record<ToastKind, { icon: typeof Info; color: string }> = {
-  success: { icon: CheckCircle2, color: 'var(--success)' },
-  error: { icon: XCircle, color: 'var(--danger)' },
-  warning: { icon: AlertTriangle, color: 'var(--warning)' },
-  info: { icon: Info, color: 'var(--info)' },
+  success: { icon: CheckCircle2, color: colorOf(statusOfToast('success')) },
+  error: { icon: XCircle, color: colorOf(statusOfToast('error')) },
+  warning: { icon: AlertTriangle, color: colorOf(statusOfToast('warning')) },
+  info: { icon: Info, color: colorOf(statusOfToast('info')) },
 }
 
 const AUTO_DISMISS_MS = 4200

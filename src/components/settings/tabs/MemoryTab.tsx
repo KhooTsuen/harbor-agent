@@ -14,6 +14,7 @@ import {
 } from '@/lib/memoryApi'
 import { Button } from '@/components/ui/Button'
 import { Row, SectionTitle } from '../parts'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 记忆
@@ -214,7 +215,7 @@ export function MemoryTab() {
                   <span>{SOURCE_LABEL[item.source] ?? item.source}</span>
                   <span>{new Date(item.createdAt).toLocaleDateString('zh-CN')}</span>
                   {item.status === 'disabled' ? (
-                    <span style={{ color: 'var(--warning)' }}>已停用</span>
+                    <span style={{ color: colorOf('warning') }}>已停用</span>
                   ) : null}
                   {item.status === 'superseded' ? <span>已被新的取代</span> : null}
                 </p>

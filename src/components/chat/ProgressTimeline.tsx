@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, XCircle } fro
 import { isDone, textOf } from './PlanCard'
 import { toolLabel } from '@/lib/agentActivity'
 import { cn } from '@/lib/utils'
+import { STATUS_CLASS } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    进度时间线（AG-005）
@@ -62,8 +63,10 @@ function Dot({ state }: { state: 'done' | 'active' | 'current' | 'todo' | 'faile
   if (state === 'current') {
     return <Circle size={13} className="shrink-0 text-accent" style={{ fill: 'currentColor' }} />
   }
-  if (state === 'failed') return <XCircle size={13} className="shrink-0 text-[var(--danger)]" />
-  if (state === 'done') return <CheckCircle2 size={13} className="shrink-0 text-[var(--success)]" />
+  if (state === 'failed')
+    return <XCircle size={13} className={cn('shrink-0', STATUS_CLASS.failed.text)} />
+  if (state === 'done')
+    return <CheckCircle2 size={13} className={cn('shrink-0', STATUS_CLASS.completed.text)} />
   return <Circle size={13} className="shrink-0 text-fg-tertiary" />
 }
 
@@ -72,7 +75,7 @@ const DOT_TEXT: Record<'done' | 'active' | 'current' | 'todo' | 'failed', string
   active: 'font-medium text-fg-primary',
   current: 'font-medium text-fg-primary',
   todo: 'text-fg-tertiary',
-  failed: 'text-[var(--danger)]',
+  failed: STATUS_CLASS.failed.text,
 }
 
 /** 默认只显示最近几条动作，不然一个长任务能把面板铺满 */

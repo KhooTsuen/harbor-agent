@@ -1,5 +1,68 @@
 # 更新日志
 
+## [0.98.0] — 2026-09-19 · AG-031 统一状态视觉语言
+
+文档要求：Running / Completed / Warning / Failed / Paused / Retrying / Waiting /
+Cancelled 这八种语义，**所有页面用同一套**。
+
+### 审计：同一件事有四套说法
+
+| 出处 | 内容 |
+|---|---|
+| `TaskRow.STATUS_STYLE` | 6 种任务状态 → 颜色 + 图标 |
+| `taskCenterModel.TASK_GROUPS` | 6 种任务的**措辞**（等待中 / 已取消）|
+| `constants.STATUSES` | 又一套措辞 + 色点（空闲 / 执行中 / 完成 / 等待 / 已停止，green/red/amber）—— 侧栏那个小圆点用它 |
+| `agentPhase.LABELS` | 相位**描述**（「正在分析任务」）—— 这个不重复，是 AG-008 要的另一件事 |
+
+外加 19 个组件里直接写 `var(--success)` / `var(--danger)` / `var(--warning)`。
+同一份状态在不同页面长得不一样，用户得自己对应。
+
+### 做法
+
+- 新增 **`src/lib/statusLanguage.ts`**：八种语义（+ 一个「没在跑」的中性态）
+  各有 `label / color / icon`；另给需要 Tailwind 类名的地方一份 `STATUS_CLASS`
+  （Tailwind 的 `text-[var(--danger)]` 没法传 JS 值）。
+- 六个映射函数收在一处：`statusOfTask / statusOfPhase / statusOfStep /
+  statusOfTool / statusOfToast`，加 `colorOf / labelOf / iconOf`。
+- **19 个组件改走它**：任务行、任务中心、进度时间线、计划卡、工具列表、
+  消息错误块、终端、状态栏、轻提示、复制反馈、权限弹窗、工具流水、
+  侧栏对话行、文件预览、上手引导、设置页各处。
+- **删掉第四套** `constants.STATUSES` / `statusMeta`；侧栏那个小圆点
+  （`StatusDot`）改读**真正的相位** `thread.phase`（AG-001 之后那才是真话），
+  转圈/实心点也由「是不是活跃相位」决定。
+- **`taskCenterModel` 的分组文字改成从状态表取** —— 全应用只剩一份措辞。
+
+### 执法测试（这是 AG-031 唯一防回退的办法）
+
+`src/lib/__tests__/statusLanguage.test.ts` 里有一条会**扫全部组件源码**：
+把注释剥掉之后，还不许出现 `var(--success|danger|warning)`，也不许再抄
+「等你确认 / 已放弃」这类旧说法。想加状态？先在状态表里加一条。
+
+写这条测试时抓出 **18 个漏网文件**（设置页、审计面板、终端、上手引导…），
+一并改完才绿。
+
+### 测试
+
+- 前端 **374 → 383**：`statusLanguage.test.ts` 9 项（八种语义齐全、
+  映射正确、相位 idle 是中性灰不是「已完成」、**色板钉死**、
+  **该区分的语义必须不同色**、同一语义各处同色、两条执法扫描）
+- 内核 **1172** 不变；`tsc` / ESLint / Prettier 全过；全仓 0 文件超 300 行
+- **变异测试 8/8 变红**：组件里又写语义色 / 又抄旧状态词 / 状态表少一种 /
+  **完成色改失败色** / 等待相位映射错 / 工具失败也算完成 …
+  （其中「完成色改失败色」第一次**没抓住** —— 原来只测了「同一语义各处一致」，
+  没测「不同语义颜色要不同」；补了色板钉死 + 区分性两条断言才红。）
+- 真机截图 `tmp/shots-ag031/`：任务中心六种状态的色点、措辞与侧栏一致
+
+### ★ 又一次「无脑字符串替换」
+
+第一遍我用 `replace('var(--success)', "colorOf('completed')")` 批量刷 ——
+把**引号里的 CSS 值**也换了，产出 `'colorOf('completed')'` 这种语法错误，
+18 个文件全废。回滚重做，改成按上下文精确替换（引号内 → JS 表达式、
+Tailwind 类名 → `STATUS_CLASS`），每处写死锚点。
+教训：**批量改代码要区分「字符串里的值」和「表达式」**，
+`replace` 不看上下文；宁可分两步走，也别一把梭。
+
+---
 ## [0.97.0] — 2026-09-19 · AG-030 减少 UI 噪音
 
 文档要求的六类噪音（默认隐藏）：原始 Tool JSON / 超长参数 / 重复时间戳 /

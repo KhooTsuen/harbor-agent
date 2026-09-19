@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ListChecks } from 'lucide-react'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    执行计划（AG-004）
@@ -76,14 +77,14 @@ function PlanSteps({ plan, markCurrent = false }: { plan: string[]; markCurrent?
               <CheckCircle2
                 size={12}
                 className="mt-0.5 shrink-0"
-                style={{ color: 'var(--success)' }}
+                style={{ color: colorOf('completed') }}
               />
             ) : (
               <Circle
                 size={12}
                 className="mt-0.5 shrink-0"
                 /* AG-027：轮到的那条画实心 ●，其余 ○ —— 否则看得出剩几步，看不出在做哪步 */
-                style={current ? { color: 'var(--accent-blue)', fill: 'currentColor' } : undefined}
+                style={current ? { color: colorOf('running'), fill: 'currentColor' } : undefined}
               />
             )}
             <span

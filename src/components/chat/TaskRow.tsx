@@ -1,21 +1,12 @@
 import { useState } from 'react'
-import {
-  Ban,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  CircleDot,
-  Clock3,
-  History,
-  PauseCircle,
-  XCircle,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, History } from 'lucide-react'
 import type { AgentPhase } from '@/types'
 import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
+import { colorOf, iconOf, statusOfTask } from '@/lib/statusLanguage'
 import {
   currentStepOf,
   elapsedMs,
@@ -32,14 +23,7 @@ import {
    一个地方出现，不会「打开应用先看到一条黄条却不知道该干什么」。
    ══════════════════════════════════════════════════════════════ */
 
-const STATUS_STYLE: Record<TaskRecord['status'], { color: string; icon: typeof CircleDot }> = {
-  running: { color: 'var(--accent-blue)', icon: CircleDot },
-  paused: { color: 'var(--warning)', icon: PauseCircle },
-  waiting_user: { color: 'var(--warning)', icon: Clock3 },
-  completed: { color: 'var(--success)', icon: CheckCircle2 },
-  failed: { color: 'var(--danger)', icon: XCircle },
-  cancelled: { color: 'var(--fg-tertiary)', icon: Ban },
-}
+/* AG-031：颜色与图标来自状态语言表，这里不再自己定色 */
 
 /** 能接着做（和内核 task-resume.cjs 的 RESUMABLE 一致） */
 const RESUMABLE: TaskRecord['status'][] = ['paused', 'waiting_user']
@@ -69,8 +53,9 @@ export function TaskRow({
   onGiveUp: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const style = STATUS_STYLE[task.status]
-  const Icon = style.icon
+  const uiStatus = statusOfTask(task.status)
+  const statusColor = colorOf(uiStatus)
+  const Icon = iconOf(uiStatus)
   const progress = taskProgress(task)
   const envChanged = recovery?.envChanged ?? []
   const changed = task.changedFiles.length
@@ -89,7 +74,7 @@ export function TaskRow({
         aria-label={`任务：${task.title || task.goal || '未命名'}`}
         className="flex w-full items-start gap-1.5 px-2.5 py-2 text-left transition-colors duration-fast hover:bg-bg-hover"
       >
-        <Icon size={13} className="mt-0.5 shrink-0" style={{ color: style.color }} />
+        <Icon size={13} className="mt-0.5 shrink-0" style={{ color: statusColor }} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium text-fg-primary">
             {task.title || task.goal || '(没有标题的任务)'}
@@ -110,7 +95,7 @@ export function TaskRow({
             </span>
             {changed > 0 ? <span>改了 {changed} 个文件</span> : null}
             {task.errors.length > 0 ? (
-              <span style={{ color: 'var(--danger)' }}>{task.errors.length} 次失败</span>
+              <span style={{ color: colorOf('failed') }}>{task.errors.length} 次失败</span>
             ) : null}
           </span>
         </span>
@@ -154,7 +139,7 @@ export function TaskRow({
             {task.resumeCount ? <span>恢复过 {task.resumeCount} 次</span> : null}
           </p>
           {envChanged.length > 0 ? (
-            <p className="mb-1.5 text-2xs" style={{ color: 'var(--warning)' }}>
+            <p className="mb-1.5 text-2xs" style={{ color: colorOf('warning') }}>
               ⚠ 你离开之后 {envChanged.length} 个文件被改过（
               {envChanged
                 .slice(0, 2)
@@ -171,7 +156,7 @@ export function TaskRow({
           {task.errors.length > 0 ? (
             <ul className="mt-2 flex flex-col gap-0.5">
               {task.errors.slice(-3).map((error) => (
-                <li key={error.at} className="text-2xs" style={{ color: 'var(--danger)' }}>
+                <li key={error.at} className="text-2xs" style={{ color: colorOf('failed') }}>
                   · {error.message}
                 </li>
               ))}

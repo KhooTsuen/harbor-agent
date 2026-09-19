@@ -10,6 +10,7 @@ import type { McpServerConfig } from '@/types/models'
 import { ServerIsolation } from '../mcp/ServerIsolation'
 import { IconButton } from '@/components/ui/IconButton'
 import { Row, SectionTitle } from '../parts'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 扩展（MCP）
@@ -133,7 +134,7 @@ export function McpTab() {
                         st.alive ? (
                           <span
                             className="flex items-center gap-1 text-2xs"
-                            style={{ color: 'var(--success)' }}
+                            style={{ color: colorOf('completed') }}
                           >
                             <Check size={11} />
                             已连接 · {st.toolCount} 个工具

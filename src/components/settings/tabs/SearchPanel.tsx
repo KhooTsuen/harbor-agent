@@ -4,6 +4,7 @@ import { searchProviders, testSearch } from '@/lib/extrasApi'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
+import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    搜索配置（放在「工具」页里）
@@ -155,7 +156,7 @@ export function SearchPanel() {
         {result ? (
           <span
             className="flex min-w-0 items-center gap-1 text-2xs"
-            style={{ color: result.ok ? 'var(--success)' : 'var(--error)' }}
+            style={{ color: colorOf(statusOfTool(result.ok)) }}
             role="status"
             aria-live="polite"
           >

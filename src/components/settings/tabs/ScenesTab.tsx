@@ -12,6 +12,7 @@ import type { SceneId } from '@/types/backend'
 import { SCENES } from '@/constants'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Row, SectionTitle } from '../parts'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 默认模型与提示词
@@ -106,7 +107,7 @@ export function ScenesTab() {
 
               <p className="mt-1.5 text-2xs text-fg-tertiary">
                 {scene.requirement ? (
-                  <span style={{ color: 'var(--warning)' }}>⚠ {scene.requirement}</span>
+                  <span style={{ color: colorOf('warning') }}>⚠ {scene.requirement}</span>
                 ) : chosen.providerId && chosen.model ? (
                   '已单独指定'
                 ) : (

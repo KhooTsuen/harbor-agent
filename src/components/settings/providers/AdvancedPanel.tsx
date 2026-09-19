@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Check } from 'lucide-react'
 import type { ProviderConfig } from '@/types/backend'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Field } from '@/components/ui/Field'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    供应商 → 高级（默认折叠）
@@ -142,7 +143,7 @@ export function AdvancedPanel({ provider }: { provider: ProviderConfig }): React
             {applied ? (
               <span
                 className="flex items-center gap-1 text-2xs"
-                style={{ color: 'var(--success)' }}
+                style={{ color: colorOf('completed') }}
               >
                 <Check size={11} /> 已保存
               </span>

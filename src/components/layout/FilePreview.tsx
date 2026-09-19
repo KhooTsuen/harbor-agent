@@ -6,6 +6,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { CodeBlock } from '@/components/chat/CodeBlock'
 import { uid } from '@/lib/utils'
+import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
    文件预览
@@ -83,7 +84,11 @@ export function FilePreview({ node, onClose }: { node: FileNode; onClose: () => 
             disabled={loading || content === null}
             onClick={() => void copy()}
           >
-            {copied ? <Check size={14} style={{ color: 'var(--success)' }} /> : <Copy size={14} />}
+            {copied ? (
+              <Check size={14} style={{ color: colorOf('completed') }} />
+            ) : (
+              <Copy size={14} />
+            )}
           </IconButton>
         </Tooltip>
         {node.path ? (
@@ -105,7 +110,7 @@ export function FilePreview({ node, onClose }: { node: FileNode; onClose: () => 
         {loading ? (
           <p className="p-3 text-2xs text-fg-tertiary">读取中…</p>
         ) : error ? (
-          <p className="p-3 text-2xs" style={{ color: 'var(--warning)' }}>
+          <p className="p-3 text-2xs" style={{ color: colorOf('warning') }}>
             {error}
           </p>
         ) : (
