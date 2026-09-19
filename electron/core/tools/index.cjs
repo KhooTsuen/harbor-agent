@@ -14,6 +14,7 @@
 
 const mcp = require('../mcp.cjs')
 const approvals = require('./approval.cjs')
+const writeDiff = require('../write-diff.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
 const registry = require('./registry.cjs')
@@ -200,7 +201,20 @@ async function execute(name, args, ctx = {}) {
     /* ask 档：确认；full 档：只读+低风险的 shell 不打扰，写文件也不打扰 */
     const needAsk = ctx.permission === 'ask'
     if (needAsk) {
-      approval = await approvals.ask(ctx, { kind: 'write', name, args, summary })
+      /*
+       * AG-036：把「这次会改成什么」一起送进确认框。
+       * 只有写文件类工具算得出 diff（`write_file` / `edit_file`）；
+       * 算不出就返回空，弹窗照旧只显示摘要。
+       */
+      const view = writeDiff.preview({ tool: name, args, workdir: ctx.workdir })
+      approval = await approvals.ask(ctx, {
+        kind: 'write',
+        name,
+        args,
+        summary,
+        diff: view.diff,
+        diffNote: view.note,
+      })
       if (approval !== true) {
         auditCall(ctx, {
           tool: name,

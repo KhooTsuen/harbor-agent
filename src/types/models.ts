@@ -8,10 +8,16 @@ import type {
 } from './safety'
 import type { SearchConfig, McpServerConfig } from './models-extra'
 /* 搜索 / MCP 的类型在 models-extra.ts（这里再导出一次，调用方不用改） */
-export type { SearchConfig, McpServerConfig, McpServerStatus } from './models-extra'
+export type {
+  SearchConfig,
+  McpServerConfig,
+  McpServerStatus,
+  ConversationSearchHit,
+} from './models-extra'
 
 import type { SceneMap } from './scenes'
 /* ChatEvent 里用到；转发给外部看是下面那个 export type 块的事 */
+import type { DiffFile } from './index'
 import type { UsageBucket } from './models-extra'
 
 export * from './scenes'
@@ -50,8 +56,7 @@ export interface ProviderConfig {
   /** 密钥在凭证库里的引用名 */
   credentialRef?: string
   /**
-   * 直接 merge 进请求体的字段（优先级最高）。
-   * 给中转站/怪站点留的兜底，省的等我们改代码。
+   * 直接 merge 进请求体的字段（优先级最高）—— 给中转站留的兜底，省得等我们改代码。
    */
   extraBody?: Record<string, unknown>
   /** 明确不要发的字段名（比如某些站点不认 temperature） */
@@ -67,8 +72,7 @@ import type { CredentialsStatus } from './backend'
 export interface AppConfig {
   version: number
   /**
-   * 只有内存里有：配置文件读不出来时的错误原因（主进程填）。
-   * 界面据此提示「配置损坏，已重置」—— 不然用户只会发现设置莫名其妙没了。
+   * 只有内存里有：配置文件读不出来时的错误原因 —— 界面据此提示「配置损坏，已重置」。
    */
   _loadWarning?: string
   general: {
@@ -200,6 +204,11 @@ export type ChatEvent =
       toolName: string
       summary: string
       args: Record<string, unknown>
+      kind?: string
+      risk?: { level?: string } | null
+      /** AG-036：会改成什么样 + 算不出时的说明（写文件类工具才有） */
+      diff?: DiffFile[] | null
+      diffNote?: string
     }
   | {
       requestId: string
@@ -278,16 +287,6 @@ export interface ChatSendPayload {
     tool_calls?: unknown[]
   }>
 }
-
-export interface ConversationSearchHit {
-  threadId: string
-  title: string
-  workdir?: string
-  timestamp: number
-  role: string
-  snippet: string
-}
-
 export type {
   RiskLevel,
   PolicyAction,
