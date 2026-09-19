@@ -7,6 +7,7 @@ import { useSmoothText } from '@/hooks/useSmoothText'
 import { fsReveal } from '@/lib/fsApi'
 import { CodeBlock } from './CodeBlock'
 import { Markdown } from './Markdown'
+import { StreamingText } from './StreamingText'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
 import { TerminalOutput } from './TerminalOutput'
@@ -147,19 +148,13 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
                 <div>
                   {isStreaming ? (
                     /*
-                     * ★ 流式中：像思考链一样，**纯文本直接流**，不做 Markdown 解析。
+                     * ★ 流式中：像思考链一样纯文本直接流，只给行首标记染色。
                      *
-                     * 之前的做法是流式中实时解析 Markdown（增量 + 元素缓存 +
-                     * 拆半行），这些"花样"在流式期间会让块反复重画 —— 用户看到
-                     * 的「写完一段被覆盖重写」就是它。
-                     *
-                     * 思考链为什么流得顺？因为它就是 `{text}` 直接塞一个 div，
-                     * 什么都不做。正文也照这个来：流式中原样显示（带 ## 、- 、
-                     * ``` 这些标记），写完之后再一次性渲染成 Markdown。
+                     * 原则：**不做块重排**（块重排就是「写完一段被覆盖重写」的根源），
+                     * 每行独立渲染，`##` `-` ``` 染成浅色但不改变结构。
+                     * 写完最后一刻才交给 <Markdown> 做真正的块渲染。
                      */
-                    <div className="whitespace-pre-wrap break-words text-base leading-relaxed text-fg-primary">
-                      {smoothContent}
-                    </div>
+                    <StreamingText text={smoothContent} />
                   ) : (
                     <Markdown text={message.content} />
                   )}
