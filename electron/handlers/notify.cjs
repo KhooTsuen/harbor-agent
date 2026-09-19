@@ -87,7 +87,16 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
        */
       const background = !win || win.isMinimized() || !win.isVisible() || !win.isFocused()
       if (background) notify({ id: sessionId, title: notice.title, body: notice.description })
-      win?.webContents?.send('app:taskEnd', { sessionId, ...notice })
+      /*
+       * AG-033：把「改了几个文件」也带上 —— 渲染层据此决定给哪些「下一步」
+       * （改了文件才有 diff / 测试 / 提交可言）。依据来自主进程的任务台账，
+       * 渲染层不用再自己数一遍。
+       */
+      win?.webContents?.send('app:taskEnd', {
+        sessionId,
+        ...notice,
+        files: (task?.changedFiles ?? []).length,
+      })
     } catch (error) {
       log.warn(`任务通知失败：${error instanceof Error ? error.message : error}`)
     }

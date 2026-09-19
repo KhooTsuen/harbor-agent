@@ -15,6 +15,7 @@ import { QueuedMessages } from './composer/QueuedMessages'
 import { ModelPicker } from './composer/ModelPicker'
 import { MENTIONS, SLASH_COMMANDS } from './composer/completions'
 import { SuggestionChips } from './composer/SuggestionChips'
+import { NextSteps } from './composer/NextSteps'
 import { ComposerContextRow } from './composer/ContextRow'
 import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
@@ -280,7 +281,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
         {/* 待发送的图片 */}
         <ImageAttachments />
 
-        {/* 建议回复：点一下填进输入框 */}
+        {/* 输入框上方只放一样：任务刚跑完 → 下一步（AG-033）；平时 → 建议回复 */}
+        <NextSteps />
         {activeThreadId ? (
           <SuggestionChips threadId={activeThreadId} onPick={(text) => setInput(text)} />
         ) : null}
