@@ -93,14 +93,14 @@ describe('AG-005 / 相位历史', () => {
 })
 
 describe('AG-005 / 接线守卫', () => {
-  it('★ TaskBanner 真的把时间线放进去了', () => {
-    const src = read('components/chat/TaskBanner.tsx')
+  it('★ 任务中心真的把时间线放进去了', () => {
+    const src = read('components/chat/TaskRow.tsx')
     expect(src).toContain("import { ProgressTimeline } from './ProgressTimeline'")
     expect(src).toContain('<ProgressTimeline')
   })
 
   it('★ 时间线的三个数据源都**真的传进去了**（不是只有个名字在旁边）', () => {
-    const src = read('components/chat/TaskBanner.tsx')
+    const src = read('components/chat/TaskRow.tsx')
     /*
      * 这里断言的是**具体的传参表达式**，不是「关键词出现过」。
      * 变异测试抓到过一次：把 `phases={phases ?? []}` 换成
@@ -108,9 +108,9 @@ describe('AG-005 / 接线守卫', () => {
      * 只断言 `toContain('phaseHistory')` 的话照样绿 ——
      * 名字在 picker 里出现 ≠ 值真的传给了组件。
      */
-    expect(src).toContain('phases={phases ?? []}')
-    expect(src).toContain('steps={tasks[0].steps}')
-    expect(src).toContain('plan={tasks[0].plan}')
+    expect(src).toContain('phases={phases}')
+    expect(src).toContain('steps={task.steps}')
+    expect(src).toContain('plan={task.plan}')
   })
 
   it('★ 不显示内部思考 —— 时间线里不该出现 reasoning', () => {

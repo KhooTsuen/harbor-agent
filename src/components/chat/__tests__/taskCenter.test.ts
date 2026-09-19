@@ -117,4 +117,36 @@ describe('AG-028 / 接线守卫', () => {
     expect(app).toContain('setActiveRightTab(settings.lastRightTab)')
     expect(app).toContain('if (rightTabRestored) updateSettings')
   })
+
+  it('★ 继续 / 放弃 搬到了任务行，接的是真动作', () => {
+    const row = readFileSync(join(SRC, 'components/chat/TaskRow.tsx'), 'utf8')
+    const center = readFileSync(join(SRC, 'components/chat/TaskCenter.tsx'), 'utf8')
+    expect(row).toContain('继续')
+    expect(row).toContain('放弃')
+    /* 继续 → resumeTask（复用原任务，不新建）；放弃 → taskUpdate cancelled */
+    expect(center).toContain('useThreadStore.getState().resumeTask(task.id)')
+    expect(center).toContain("taskUpdate(task.id, { status: 'cancelled' })")
+  })
+
+  it('★ 只有可恢复/未结束的任务才出现对应按钮', () => {
+    const row = readFileSync(join(SRC, 'components/chat/TaskRow.tsx'), 'utf8')
+    expect(row).toMatch(/RESUMABLE.*=.*\['paused', 'waiting_user'\]/s)
+    expect(row).toMatch(/CLOSABLE.*=.*\['running', 'paused', 'waiting_user', 'failed'\]/s)
+  })
+
+  it('★ 撤销改动也在任务中心（横幅撤掉后唯一入口）', () => {
+    const center = readFileSync(join(SRC, 'components/chat/TaskCenter.tsx'), 'utf8')
+    expect(center).toContain('changesetRollback(changeset.id)')
+    expect(center).toContain('可撤销的改动')
+    const store = readFileSync(join(SRC, 'stores/useTaskStore.ts'), 'utf8')
+    expect(store).toContain('changesetList({ limit: 5 })')
+    expect(store).toContain("c.status === 'committed' && c.fileCount > 0")
+  })
+
+  it('★ 启动提示指向任务中心（不再让人去顶上看横幅）', () => {
+    const src = readFileSync(join(SRC, 'hooks/useAppBootstrap.ts'), 'utf8')
+    /* toast 的两个分支都要指到新家（文件里注释也会提到，所以不看次数） */
+    expect(src).toContain('右栏「任务」里可以接着做')
+    expect(src).toContain('右栏「任务」标签里可以接着做')
+  })
 })

@@ -121,9 +121,8 @@ export function handleStreamEvent(
 
       /*
        * AG-005：进度时间线的「动作行」读的是任务台账的 `steps`，
-       * 而 `useTaskStore.unfinished` 只在 TaskBanner 的 effect
-       * （依赖 activeThreadId / activeStatus）里刷新 —— 工具执行期间
-       * status 根本不变，于是时间线**永远看不到任何一步**。
+       * 而任务快照只在几个离散时机刷新（进入对话、对话状态变化）——
+       * 工具执行期间 status 根本不变，于是时间线**永远看不到任何一步**。
        * 真机验证抓到的（单元测试照不到这种接线）。
        * 走事件驱动，别轮询；每个工具一次，量很小。
        */
@@ -265,7 +264,7 @@ export function handleStreamEvent(
      * 这些不落到消息上，也不打扰用户：
      *   turn_start / turn_end  —— 进度，界面靠线程状态体现（phase）
      *   mode / route           —— 意图分类与模型选择，属于调试信息
-     *   task                   —— 任务台账走 IPC 读（见 TaskBanner），不走事件流
+     *   task                   —— 任务台账走 IPC 读（见任务中心），不走事件流
      */
     case 'plan': {
       /*

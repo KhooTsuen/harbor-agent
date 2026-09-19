@@ -63,8 +63,8 @@ describe('PlanCard / 接线守卫', () => {
     expect(src).toContain('useTaskStore.getState().refresh()')
   })
 
-  it('★ TaskBanner 用 PlanCard 展示计划（不再只给一个「N 步」的数字）', () => {
-    const src = readFileSync(join(SRC, 'components/chat/TaskBanner.tsx'), 'utf8')
+  it('★ 任务中心用 PlanCard 展示计划（不再只给一个「N 步」的数字）', () => {
+    const src = readFileSync(join(SRC, 'components/chat/TaskRow.tsx'), 'utf8')
     expect(src).toContain('PlanCard')
     expect(src).toContain('planVersions')
   })

@@ -8,7 +8,6 @@ import { StatusBar } from '@/components/layout/StatusBar'
 import { GlobalLayers } from '@/components/layout/GlobalLayers'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
-import { TaskBanner } from '@/components/chat/TaskBanner'
 import { Composer } from '@/components/chat/Composer'
 import { useAppBootstrap } from '@/hooks/useAppBootstrap'
 import { useOnboardingGate } from '@/hooks/useOnboardingGate'
@@ -237,8 +236,11 @@ function MainApp() {
         {/* 主区 */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="对话区">
           <ErrorBoundary>
-            <TaskBanner />
-
+            {/*
+              这里原本挂着「未完成任务」横幅（对话顶部那条黄条）。
+              AG-028 把它整个撤掉了 —— 任务的东西只在右栏「任务」里出现，
+              打开应用不再先看到一条黄条。
+            */}
             <Suspense fallback={<div className="min-h-0 flex-1" />}>
               <MessageList
                 messages={messages}
