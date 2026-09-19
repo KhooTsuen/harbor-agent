@@ -17,6 +17,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
+const { redact, scrubStorage } = require('./redact.cjs')
 
 const MAX_TITLE = 60
 
@@ -54,10 +55,21 @@ function readLines(id) {
   return out
 }
 
+/**
+ * 会话 JSONL 的**唯一序列化入口**。
+ *
+ * 先按字段递归脱敏，再对最终文本兜一遍模式脱敏：前者能认出
+ * `{ apiKey: '...' }` 这种敏感字段，后者兜住藏在普通文本里的 Bearer / JWT。
+ * 追加与整体重写必须都走这里，否则改标题时可能把旧密钥原样写回去。
+ */
+function serializeLine(line) {
+  return redact(JSON.stringify(scrubStorage(line)))
+}
+
 function writeLines(id, lines) {
   fs.mkdirSync(DIRS.sessions, { recursive: true })
-  const text = `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`
+  const text = `${lines.map(serializeLine).join('\n')}\n`
   fs.writeFileSync(fileFor(id), text, 'utf8')
 }
 
-module.exports = { fileFor, newId, safeTitle, readLines, writeLines, MAX_TITLE }
+module.exports = { fileFor, newId, safeTitle, readLines, writeLines, serializeLine, MAX_TITLE }
