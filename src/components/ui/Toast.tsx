@@ -16,15 +16,18 @@ const KIND_META: Record<ToastKind, { icon: typeof Info; color: string }> = {
 }
 
 const AUTO_DISMISS_MS = 4200
+/** 带「行动按钮」的提示多留一会儿 —— 4 秒来不及看清再点（AG-029 任务完成通知）*/
+const AUTO_DISMISS_WITH_ACTION_MS = 9000
 
 function ToastCard({ toast }: { toast: Toast }) {
   const hideToast = useUIStore((s) => s.hideToast)
   const { icon: Icon, color } = KIND_META[toast.kind]
 
   useEffect(() => {
-    const timer = window.setTimeout(() => hideToast(toast.id), AUTO_DISMISS_MS)
+    const ttl = toast.action ? AUTO_DISMISS_WITH_ACTION_MS : AUTO_DISMISS_MS
+    const timer = window.setTimeout(() => hideToast(toast.id), ttl)
     return () => window.clearTimeout(timer)
-  }, [toast.id, hideToast])
+  }, [toast.id, toast.action, hideToast])
 
   return (
     <motion.div
@@ -41,7 +44,22 @@ function ToastCard({ toast }: { toast: Toast }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-fg-primary">{toast.title}</p>
         {toast.description ? (
-          <p className="mt-0.5 break-words text-xs text-fg-secondary">{toast.description}</p>
+          /* whitespace-pre-line：任务通知要按行摆（「名字」/ 改了 N 个文件 / 结果）*/
+          <p className="mt-0.5 whitespace-pre-line break-words text-xs text-fg-secondary">
+            {toast.description}
+          </p>
+        ) : null}
+        {toast.action ? (
+          <button
+            type="button"
+            onClick={() => {
+              hideToast(toast.id)
+              toast.action?.onClick()
+            }}
+            className="mt-1.5 rounded-sm border border-line-subtle bg-bg-raised px-2 py-0.5 text-2xs text-fg-primary transition-colors duration-fast hover:bg-bg-hover"
+          >
+            {toast.action.label}
+          </button>
         ) : null}
       </div>
       <button

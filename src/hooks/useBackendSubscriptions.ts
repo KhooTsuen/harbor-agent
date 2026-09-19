@@ -5,6 +5,7 @@ import { useRealBackend, subscribePluginChanges } from '@/lib/backend'
 import { subscribeImageDone } from '@/lib/subscriptions'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { useTaskNotifications } from '@/hooks/useTaskNotifications'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -18,6 +19,12 @@ import { uid } from '@/lib/utils'
 
 export function useBackendSubscriptions(): void {
   const runningCount = useThreadStore((state) => state.sendingThreads.length)
+
+  /*
+   * AG-029：后台任务完成/失败的通知。
+   * 和下面几项同一性质 —— 事情发生时用户可能根本没在看这条对话。
+   */
+  useTaskNotifications()
 
   /*
    * 未完成任务：启动、对话运行状态变化、窗口重新可见时刷新。

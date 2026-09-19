@@ -215,6 +215,11 @@ export interface Toast {
   kind: ToastKind
   title: string
   description?: string
+  /**
+   * AG-029：可选的行动按钮（例：任务结束后「查看结果」）。
+   * 有动作的提示会多留一会儿 —— 4 秒来不及看清再点。
+   */
+  action?: { label: string; onClick: () => void }
 }
 
 /* ── 快捷键 ────────────────────────────────────────────────── */

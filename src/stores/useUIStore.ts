@@ -34,7 +34,12 @@ interface UIState {
   setCommandPaletteOpen: (open: boolean) => void
   setSearchQuery: (q: string) => void
 
-  showToast: (kind: ToastKind, title: string, description?: string) => string
+  showToast: (
+    kind: ToastKind,
+    title: string,
+    description?: string,
+    action?: Toast['action'],
+  ) => string
   hideToast: (id: string) => void
 
   askPermission: (request: PermissionRequest) => void
@@ -60,9 +65,15 @@ export const useUIStore = create<UIState>((set) => ({
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setSearchQuery: (q) => set({ searchQuery: q }),
 
-  showToast: (kind, title, description) => {
+  showToast: (kind, title, description, action) => {
     const id = uid('toast')
-    const toast: Toast = description ? { id, kind, title, description } : { id, kind, title }
+    const toast: Toast = {
+      id,
+      kind,
+      title,
+      ...(description ? { description } : {}),
+      ...(action ? { action } : {}),
+    }
     set((s) => ({ toasts: [...s.toasts, toast] }))
     return id
   },
