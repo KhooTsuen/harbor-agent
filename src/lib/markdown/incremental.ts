@@ -166,20 +166,60 @@ export interface IncrementalResult {
 }
 
 /**
- * 把尾巴拆成「写完的部分」和「还在写的那一行」。
+ * 判断「最后这一行」是不是还没写完整的块标记。
  *
- * 为什么要拆：模型一行一行吐，而**写到一半的那行**往往是残缺的标记 ——
- * `- `（空内容的列表项）、```t（围栏没写完）、`| A | B`（表格缺下一行）。
- * 拿它们去解析会让块类型反复横跳（实测列表会变 5 次）。拆出去之后，
- * 那行写完整了才进解析 —— 每种都只变一次，而且是单向的。
+ * 为什么要这么精细（而不是「凡最后一行都不解析」）：
  *
- * 注意：切点（`findStablePoint`）保证的只是「有换行收尾的完整行」，
- * 所以尾巴里仍然可能有半行。
+ * 完整的行现在解析就能得到**正确且稳定**的块类型 ——
+ *   · `- 甲`      → 列表项，下一行再写 `- 乙` 还是列表项，不横跳
+ *   · `## 标题`   → 标题，不会变
+ *   · `一段文字`  → 段落，不会变
+ *
+ * 只有「光杆/半截」的标记，现在解析会得到**错误**的块类型（等它写完又变回来）：
+ *   · `- `（光杆列表）  → 现在像段落，写全了变列表
+ *   · ```t（半截围栏） → 现在像段落，闭合了变代码块
+ *   · `| A | B |`（表格头）→ 现在像段落，分隔线来了变表格
+ *
+ * 所以只把**残缺的标记**降级成纯文本，完整的一行照常解析。
+ */
+function isIncompleteLine(line: string): boolean {
+  /* 光杆列表标记：`-` `*` `+`（后面没内容，或只有空任务框） */
+  if (/^\s*[-*+]\s*$/.test(line)) return true
+  if (/^\s*[-*+]\s+\[[ xX]?\]\s*$/.test(line)) return true
+  if (/^\s*\d{1,9}[.)]\s*$/.test(line)) return true
+  /* 围栏开头（还没内容、还没闭合）：``` 或 ```ts 或 ~~~ */
+  if (/^\s*(`{3,}|~{3,})\s*[^\s`~]*$/.test(line)) return true
+  /* 光杆标题：##（井号后没文字） */
+  if (/^\s*#{1,6}\s*$/.test(line)) return true
+  /* 表格行：以 | 开头（这行将来大概率是表格，等分隔线/下一行确定再说）
+     —— 注意不能用「必须含两个 |」：那样 `|` → `| A` → `| A |` 会在
+     残缺/完整之间反复横跳 */
+  if (/^\s*\|/.test(line)) return true
+  /* 光杆引用 > */
+  if (/^\s*>\s*$/.test(line)) return true
+  return false
+}
+
+/**
+ * 把尾巴拆成「已经能解析的部分」和「还在写的残缺行」。
+ *
+ * 和旧版（**凡**最后一行都拆出去）的区别：现在只有**残缺的标记行**
+ * 才拆出去当纯文本，完整的一行直接归入 settled、照常解析。
+ *
+ * 这样 `## 标题`、`- 甲`、普通段落就不会「先显示成纯文本、换行后
+ * 突然变格式」—— 那正是用户说的「写完一段被覆盖重写」的真身。
  */
 export function splitPendingLine(text: string): { settled: string; pending: string } {
   const nl = text.lastIndexOf('\n')
-  if (nl === -1) return { settled: '', pending: text }
-  return { settled: text.slice(0, nl + 1), pending: text.slice(nl + 1) }
+  if (nl === -1) {
+    /* 只有一行：残缺才拆，完整就直接解析 */
+    return isIncompleteLine(text) ? { settled: '', pending: text } : { settled: text, pending: '' }
+  }
+  const last = text.slice(nl + 1)
+  if (isIncompleteLine(last)) {
+    return { settled: text.slice(0, nl + 1), pending: last }
+  }
+  return { settled: text, pending: '' }
 }
 
 /**
