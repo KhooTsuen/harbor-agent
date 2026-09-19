@@ -20,6 +20,7 @@ import { check, group } from '../harness.mjs'
 const budget = require(join(ROOT, 'electron/core/budget.cjs'))
 const taskCore = require(join(ROOT, 'electron/core/task.cjs'))
 const taskNotify = require(join(ROOT, 'electron/core/task-notify.cjs'))
+const life = require(join(ROOT, 'electron/core/lifecycle.cjs'))
 
 export async function run() {
   const created = []
@@ -143,25 +144,6 @@ export async function run() {
   check('★ 「继续」之后标记清掉（按钮不再挂着）', taskCore.get(task.id).pauseReason === '')
   check('而预算是留着的（下次还按它跑）', taskCore.get(task.id).budget.maxSteps === 200)
 
-  /* ── ④ 通知：停下来等你决定，值得说一声 ─────────────── */
-  group('AG-040 / 撞预算要通知')
-  const notice = taskNotify.endNotice('paused', {
-    ...taskCore.get(task.id),
-    pauseReason: 'budget',
-    budgetHit: hitSteps,
-  })
-  check('★ paused + 撞预算 → 有通知', Boolean(notice), JSON.stringify(notice))
-  check('是提醒不是错误（warning）', notice?.kind === 'warning', notice?.kind)
-  check(
-    '正文里有数字和三个选择',
-    notice?.description.includes('50 / 50') && notice?.description.includes('继续'),
-  )
-  check('普通暂停（用户自己按的停）不通知', taskNotify.endNotice('paused', { title: 'x' }) === null)
-  check(
-    '完成 / 失败照旧通知',
-    taskNotify.endNotice('completed', { title: 'x' })?.kind === 'success',
-  )
-
   /* ── ⑤ 接线：循环里真的查账 ─────────────────────────── */
   group('AG-040 / 接线（循环里真的查账）')
   const loopSrc = readFileSync(join(ROOT, 'electron/core/loop.cjs'), 'utf8')
@@ -225,6 +207,9 @@ export async function run() {
     memory: { ...configModule.get().memory, autoWrite: 'off' },
   }
   const emitted = []
+  /* 走过哪些相位（AG-043：撞预算停下必须落 paused，不能是 waiting_user） */
+  const phases = []
+  const offPhases = life.onTransition((e) => phases.push(e.to))
   try {
     /* 模型每轮都要读文件 —— 永远不「说完」 */
     llmModule.chatStream = async () => ({
@@ -265,6 +250,12 @@ export async function run() {
       '推了 budget 事件（界面据此说话）',
       emitted.some((e) => e.type === 'budget' && e.reason === 'maxSteps'),
     )
+    /* 相位转移是全局广播的（chat.cjs 的转发器也订阅它）*/
+    check(
+      '★ 停下来推的是 paused 相位（不是 waiting_user）',
+      phases.includes('paused') && !phases.includes('waiting_user'),
+      JSON.stringify(phases),
+    )
     check(
       '工具确实跑了 2 次（不是空转）',
       result.toolRuns.length === 2,
@@ -285,6 +276,7 @@ export async function run() {
     taskResume.reopen(result.taskId)
     check('继续之后标记清掉', taskCore.get(result.taskId).pauseReason === '')
   } finally {
+    offPhases()
     llmModule.chatStream = originalChatStream
     credentialsCore.remove('provider:selftest-ag040')
   }

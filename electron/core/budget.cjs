@@ -1,4 +1,28 @@
 /**
+ * 一次（或多次累计的）用量里总共有多少 token。
+ *
+ * ★ **上游给的是 OpenAI 原字段 `total_tokens`，不是 `total`。**
+ *   最初这里（以及 loop-run 里）都写成 `usage.total` —— 真机上两个后果：
+ *   控制台的 Token 一直显示「—」，`maxTokens` 预算**永远不触发**（永远是 0）。
+ *   而单测全绿，因为测试桩自己编了 `{total: 123}` 这个不存在的形状。
+ *   教训（AG-036 那次也栽过一遍）：**跨模块传结构时，形状本身要有一条断言**。
+ *
+ * @param {object} usage 可能是 `{prompt_tokens, completion_tokens, total_tokens}`
+ * @returns {number}
+ */
+function usageTotal(usage) {
+  if (!usage || typeof usage !== 'object') return 0
+  /* 上游直接给的合计优先（两边命名都认，站点之间不一致） */
+  const direct = Number(usage.total_tokens ?? usage.total)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  /* 没给合计就自己加 */
+  const parts =
+    Number(usage.prompt_tokens ?? usage.prompt ?? 0) +
+    Number(usage.completion_tokens ?? usage.completion ?? 0)
+  return Number.isFinite(parts) && parts > 0 ? parts : 0
+}
+
+/**
  * 每次任务的执行预算（AG-040）
  *
  * 文档给的五项：
@@ -111,7 +135,7 @@ function atTurnBoundary({ plan, startedAt, turn, toolRuns, usage }) {
     startedAt,
     steps: turn,
     toolCalls: toolRuns?.length ?? 0,
-    tokens: usage?.total ?? 0,
+    tokens: usageTotal(usage),
   })
 }
 
@@ -142,4 +166,13 @@ function pausePatch(verdict) {
   }
 }
 
-module.exports = { DEFAULTS, LABELS, resolve, check, atTurnBoundary, pausePatch, format }
+module.exports = {
+  DEFAULTS,
+  LABELS,
+  resolve,
+  check,
+  atTurnBoundary,
+  pausePatch,
+  format,
+  usageTotal,
+}

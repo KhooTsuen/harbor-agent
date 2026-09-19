@@ -165,6 +165,10 @@ export async function run() {
     memory: { ...configModule.get().memory, autoWrite: 'off' },
   }
   const emitted = []
+  /* 交人时的相位（AG-043：必须是 paused —— 用 waiting_user 会让 Composer 卡在生成中）*/
+  const life = require(join(ROOT, 'electron/core/lifecycle.cjs'))
+  const phases = []
+  const offPhases = life.onTransition((e) => phases.push(e.to))
   try {
     /* 永远 A → B → A → B…，每次都成功 */
     let call = 0
@@ -223,6 +227,11 @@ export async function run() {
     )
     check('改道时把提示塞回了对话（模型看得见）', loopEvents.length >= 1)
 
+    check(
+      '★ 交人停下推的也是 paused 相位（不是 waiting_user）',
+      phases.includes('paused') && !phases.includes('waiting_user'),
+      JSON.stringify(phases),
+    )
     const stoppedTask = taskCore.get(result.taskId)
     check('★ 任务标成 paused（不是 failed）', stoppedTask.status === 'paused', stoppedTask.status)
     check(
@@ -231,6 +240,7 @@ export async function run() {
       JSON.stringify(stoppedTask.loopHit),
     )
   } finally {
+    offPhases()
     llmModule.chatStream = originalChatStream
     credentialsCore.remove('provider:selftest-ag041')
   }

@@ -33,10 +33,9 @@ const { resolveRoute } = require('./loop-route.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
 /*
- * 失控兜底轮数（AG-040）。用户看得见的边界是**任务预算**的 maxSteps（默认 50，
- * 那一项负责「停下来问你」）；这个 200 只防「预算设成不限而模型抽风」。
- * ★ 两个机制不能做同一件事：第一版这里设成 50（= 默认预算），结果「轮数到顶」
- *   总被 for 条件先拦下，预算检查没机会带 budgetHit（界面就显示不出 50 / 50）。
+ * 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50，那项负责
+ * 「停下来问你」），这个 200 只防「预算设成不限而模型抽风」。★ 两个机制不能做同一件事：
+ * 第一版这里设成 50，结果「轮数到顶」总被 for 条件先拦下，预算检查没机会带 budgetHit。
  */
 const MAX_TURNS = 200
 
@@ -48,9 +47,8 @@ const LOOP_NUDGE_LIMIT = 2
    ══════════════════════════════════════════════════════════ */
 
 /*
- * 状态事件的 key。**不能用 options.taskId**（那是任务台账 id，run() 进循环前还会换成
- * task.id；调用方订阅用的是自己的 requestId，两边对不上 → 事件全被过滤 →
- * 「UI 显示空闲，后台其实在跑」）。所以事件流单独用 traceId：谁发起请求谁定 key。
+ * 状态事件的 key。**不能用 options.taskId**（那是任务台账 id，run() 里还会换成 task.id；
+ * 调用方按自己的 requestId 过滤，两边对不上事件就全丢 → 「UI 显示空闲、后台在跑」）。
  */
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
@@ -139,7 +137,10 @@ async function runLoop(options) {
     const loopHit = loopGuard.detect(loopGuard.signaturesOf(toolRuns))
     if (loopHit.looping && loopNudges >= LOOP_NUDGE_LIMIT) {
       emit({ type: 'loop', ...loopHit, handedOver: true })
-      life.mark('waiting_user', traceKey(options))
+      /* ★ 用 paused 不用 waiting_user（AG-043 真机）：后者在渲染层算「还在跑」
+         （AG-011 为权限确认定的），而这里 run 已结束 —— 用它 Composer 会一直
+         显示「停止生成」，用户没法直接打字说「改成别的」。 */
+      life.mark('paused', traceKey(options))
       return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, loopHit })
     }
     if (loopHit.looping) {
@@ -152,7 +153,8 @@ async function runLoop(options) {
     const hit = budget.atTurnBoundary({ plan, startedAt, turn, toolRuns, usage: totalUsage })
     if (hit.exceeded) {
       emit({ type: 'budget', ...hit, blocked: false })
-      life.mark('waiting_user', traceKey(options))
+      /* 同上：撞预算也是「停下来了」，不是「还挂着在等你确认」 */
+      life.mark('paused', traceKey(options))
       return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, budgetHit: hit })
     }
     /* 用量闸（全局，按天/月）：调模型**之前**查账（唯一能真省钱的位置） */

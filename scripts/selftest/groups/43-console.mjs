@@ -70,6 +70,15 @@ export async function run() {
   )
   check('没有计划时不编一条出来', consoleSrc.includes('（没有计划）'))
 
+  /* ★ AG-042 真机发现：上游给的是 total_tokens，不是 total（读错导致 Token 一直「—」） */
+  check('★ usageTotal 认上游的 total_tokens', budget.usageTotal({ total_tokens: 123 }) === 123)
+  check('也认老的 total 写法（站点不一致）', budget.usageTotal({ total: 50 }) === 50)
+  check(
+    '只有分项时自己加',
+    budget.usageTotal({ prompt_tokens: 100, completion_tokens: 23 }) === 123,
+  )
+  check('空值 / 垃圾值给 0（不 NaN）', budget.usageTotal(null) === 0 && budget.usageTotal({}) === 0)
+
   /* ── ③ 真跑一遍：那两个数字要真的写进台账 ───────────── */
   /*
    * ★ 上面只验证了「台账存得下」；「循环跑完会不会真的写进去」单测照不到
@@ -103,10 +112,14 @@ export async function run() {
     memory: { ...configModule.get().memory, autoWrite: 'off' },
   }
   const emitted = []
+  /* ★ 每轮调用模型的那一刻，台账里的 token 就该已经更新了（不是等跑完才写） */
+  const tokensDuring = []
   try {
     let round = 0
     llmModule.chatStream = async () => {
       round += 1
+      /* 这条对话里最新的任务就是正在跑的这个（按 updatedAt 排） */
+      tokensDuring.push(taskCore.list({ limit: 1, sessionId: 'selftest-ag042' })[0]?.tokens ?? -1)
       if (round === 1) {
         return {
           content: '',
@@ -120,7 +133,9 @@ export async function run() {
             },
           ],
           /* 用量：控制台要显示的那个数 */
-          usage: { prompt: 100, completion: 23, total: 123 },
+          /* ★ 用**上游真实的字段名**（total_tokens）—— 以前这里编成 {total:123}，
+           *   于是内核读错字段也照样全绿，真机上 Token 一直是「—」。 */
+          usage: { prompt_tokens: 100, completion_tokens: 23, total_tokens: 123 },
         }
       }
       return { content: '读不到就算了。', reasoning: '', toolCalls: [], usage: null }
@@ -140,6 +155,21 @@ export async function run() {
     created.push(result.taskId)
 
     const finished = taskCore.get(result.taskId)
+    /*
+     * ★ 第 2 轮开始时（还没跑完），台账里的 token 应该已经是第 1 轮的用量了。
+     *   真机上发现的：初版只在 run 结束时写一次，跑 6 分半的任务一直显示「—」。
+     */
+    check(
+      '★ 测试桩用的是上游真实字段名（total_tokens）—— 编错形状会让读错字段照样全绿',
+      readFileSync(join(ROOT, 'scripts/selftest/groups/43-console.mjs'), 'utf8').includes(
+        'total_tokens: 123',
+      ),
+    )
+    check(
+      '★ token 每轮就写台账（不是等跑完）',
+      tokensDuring.length >= 2 && tokensDuring[1] === 123,
+      JSON.stringify(tokensDuring),
+    )
     check('★ 跑完 token 真的写进了台账（不是 0）', finished.tokens === 123, String(finished.tokens))
     check(
       '★ 自动重试次数也写进去了（读不到的文件重试过）',
