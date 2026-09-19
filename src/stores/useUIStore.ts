@@ -27,6 +27,16 @@ interface UIState {
   permission: PermissionRequest | null
   toasts: Toast[]
   /**
+   * AG-042 控制台要用：底部面板（日志 / 终端）的开合与当前视图。
+   * 原来这是 App.tsx 里的局部 state —— 任务行里的「查看 Tool」够不着它。
+   */
+  bottomPanelOpen: boolean
+  bottomPanelView: 'log' | 'terminal'
+  setBottomPanelOpen: (open: boolean) => void
+  /** 打开底部面板并切到指定视图（「查看 Tool」就是打开日志流水） */
+  openBottomPanel: (view: 'log' | 'terminal') => void
+
+  /**
    * AG-033：任务刚结束、给用户几个「下一步」入口。
    * 只认**当前这条对话**（threadId 对不上就不显示），点一个或关掉就清。
    * AG-034：带的是「这一轮到底干了什么」（改了几个文件 / 测试跑没跑过），
@@ -63,6 +73,8 @@ export const useUIStore = create<UIState>((set) => ({
   commandPaletteOpen: false,
   searchQuery: '',
   permission: null,
+  bottomPanelOpen: false,
+  bottomPanelView: 'log',
   toasts: [],
   nextSteps: null,
 
@@ -89,6 +101,9 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   hideToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  setBottomPanelOpen: (open) => set({ bottomPanelOpen: open }),
+  openBottomPanel: (view) => set({ bottomPanelOpen: true, bottomPanelView: view }),
 
   setNextSteps: (value) => set({ nextSteps: value }),
 
