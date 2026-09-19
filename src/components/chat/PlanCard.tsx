@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ListChecks } from 'lucide-react'
 
 /* ══════════════════════════════════════════════════════════════
@@ -20,6 +21,9 @@ import { CheckCircle2, ChevronDown, ChevronRight, Circle, ListChecks } from 'luc
 
    勾选状态来自计划条目自身的 `[x]` / `[ ]` 标记 —— 由模型维护，
    内核按它算完成度（`task-context.cjs` 的 `progressOf`），这里只是照着画。
+
+   AG-027 给步骤补上三态：✓ 已完成 / **● 当前**（第一条没勾掉的）/ ○ 待办。
+   两态看不出「现在在做哪条」，只能看出还剩几条。
    ══════════════════════════════════════════════════════════════ */
 
 export interface PlanVersion {
@@ -37,19 +41,37 @@ export function textOf(step: string): string {
   return step.replace(/^\s*\[[ xX]\]\s*/, '').trim()
 }
 
+/**
+ * 「现在轮到哪一步」= 第一条没勾掉的步骤的下标；全做完了返回 -1。
+ *
+ * 单独抽出来是因为它**不是「第一条 □」那么简单**：模型有可能把 `[ ]` 写在
+ * 后面几条上（先勾了第 3 条才发现第 2 条漏了），所以只能从头扫第一条没勾的。
+ * 抽出来还有个好处：能单独测（组件里这段代码没法直接断言）。
+ */
+export function currentStepIndex(plan: readonly string[]): number {
+  return plan.findIndex((step) => !isDone(step))
+}
+
 function clockOf(at: number): string {
   const date = new Date(at)
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function PlanSteps({ plan }: { plan: string[] }) {
+function PlanSteps({ plan, markCurrent = false }: { plan: string[]; markCurrent?: boolean }) {
+  /* 「当前」= 第一条没勾掉的。历史版本不标（旧版没有「现在」可言） */
+  const currentIndex = markCurrent ? currentStepIndex(plan) : -1
   return (
     <ol className="flex flex-col gap-0.5">
       {plan.map((step, index) => {
         const done = isDone(step)
+        const current = index === currentIndex
         return (
-          <li key={`${index}-${step}`} className="flex items-start gap-1.5 text-2xs">
+          <li
+            key={`${index}-${step}`}
+            className="flex items-start gap-1.5 text-2xs"
+            aria-current={current ? 'step' : undefined}
+          >
             {done ? (
               <CheckCircle2
                 size={12}
@@ -57,9 +79,20 @@ function PlanSteps({ plan }: { plan: string[] }) {
                 style={{ color: 'var(--success)' }}
               />
             ) : (
-              <Circle size={12} className="mt-0.5 shrink-0 text-fg-tertiary" />
+              <Circle
+                size={12}
+                className="mt-0.5 shrink-0"
+                /* AG-027：轮到的那条画实心 ●，其余 ○ —— 否则看得出剩几步，看不出在做哪步 */
+                style={current ? { color: 'var(--accent-blue)', fill: 'currentColor' } : undefined}
+              />
             )}
-            <span className={done ? 'text-fg-tertiary line-through' : 'text-fg-secondary'}>
+            <span
+              className={cn(
+                done && 'text-fg-tertiary line-through',
+                !done && !current && 'text-fg-secondary',
+                current && 'font-medium text-fg-primary',
+              )}
+            >
               {index + 1}. {textOf(step)}
             </span>
           </li>
@@ -88,7 +121,7 @@ export function PlanCard({ versions }: { versions: PlanVersion[] }) {
       </div>
 
       <div className="mt-1">
-        <PlanSteps plan={current.plan} />
+        <PlanSteps plan={current.plan} markCurrent />
       </div>
 
       {older.length > 0 ? (

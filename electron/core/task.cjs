@@ -1,19 +1,27 @@
 /**
  * 任务（Task）
  *
- * 长期 Agent 最大的问题不是聊天，而是「**任务做到一半怎么办**」。会话只是
- * 聊天记录，回答不了：要干什么、走到哪一步、改了哪些文件、该不该继续。
- * 所以会话之外再记一份任务。
- *
- * 存储：`data/tasks/<id>.json`（一个任务一个文件，坏了只坏一个）
- * 与 changeSet 的分工：任务管「做什么」，事务管「改了啥、怎么撤」。
+ * 长期 Agent 最大的问题不是聊天，而是「**任务做到一半怎么办**」。会话只是聊天记录，
+ * 回答不了：要干什么、走到哪一步、改了哪些文件、该不该继续 —— 所以另记一份任务，
+ * 存 `data/tasks/<id>.json`（一个任务一个文件，坏了只坏一个）。与 changeSet 的分工：
+ * 任务管「做什么」（AG-027：它是**独立于聊天**的一等对象，有自己的名字），
+ * 事务管「改了啥、怎么撤」。
  */
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const { parsePlan, fingerprint, recordVersion, migrate, nextActionOf } = require('./task-plan.cjs')
+const redact = require('./redact.cjs')
+const {
+  parsePlan,
+  parsePlanBlock,
+  deriveTitle,
+  fingerprint,
+  recordVersion,
+  migrate,
+  nextActionOf,
+} = require('./task-plan.cjs')
 
 /** 任务状态；`paused` = 中断/退出时没跑完（启动时提示续做的就是它） */
 const STATUSES = ['running', 'waiting_user', 'paused', 'completed', 'failed', 'cancelled']
@@ -46,19 +54,13 @@ function get(id) {
 /**
  * 建一条任务。
  *
- * @param {{ goal: string, sessionId?: string, projectId?: string, workdir?: string, mode?: string, title?: string }} options
+ * @param {{ goal: string, sessionId?: string, projectId?: string, workdir?: string, mode?: string }} options
  */
-function create({
-  goal,
-  sessionId = '',
-  projectId = '',
-  workdir = '',
-  mode = 'pair',
-  title = '',
-} = {}) {
+function create({ goal, sessionId = '', projectId = '', workdir = '', mode = 'pair' } = {}) {
   const task = {
     id: newId(),
-    title: String(title || goal || '未命名任务').slice(0, 80),
+    /* AG-027：任务名**不取聊天原句**，从里面提炼动作名；模型在计划块里给了 `# 名字` 会覆盖它 */
+    title: deriveTitle(goal) || '未命名任务',
     goal: String(goal ?? ''),
     status: 'running',
     mode,
@@ -128,7 +130,7 @@ function addStep(id, { tool, ok, summary, ms = 0, args }) {
     ok: ok !== false,
     ms,
     summary: String(summary ?? '').slice(0, 300),
-    args: args ? sanitize(args) : undefined,
+    args: args ? redact.scrubLight(args) : undefined,
   })
 
   /* 只留最近 200 步 —— 这个文件是给自己看的，不是流水账 */
@@ -136,19 +138,6 @@ function addStep(id, { tool, ok, summary, ms = 0, args }) {
   task.updatedAt = Date.now()
   write(task)
   return task
-}
-
-/** 参数里可能带密钥，简单挡一下（详细脱敏在 audit 那边做） */
-function sanitize(args) {
-  const out = {}
-  for (const [key, value] of Object.entries(args).slice(0, 12)) {
-    if (/(key|token|secret|password)/i.test(key)) {
-      out[key] = '***'
-      continue
-    }
-    out[key] = typeof value === 'string' ? value.slice(0, 200) : value
-  }
-  return out
 }
 
 /** 记一次文件改动 */
@@ -285,6 +274,8 @@ module.exports = {
   get,
   update,
   parsePlan,
+  parsePlanBlock,
+  deriveTitle,
   fingerprint,
   setPlan,
   addStep,

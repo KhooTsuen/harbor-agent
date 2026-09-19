@@ -1,5 +1,96 @@
 # 更新日志
 
+## [0.89.0] — 2026-09-19 · AG-027 Chat 与 Task 分离
+
+**任务有自己的名字了**，步骤也分出三态（✓ 完成 / ● 当前 / ○ 待办）。
+
+### 现状问题
+
+`task.title` **就是用户那句话** —— `create()` 里的 `title: String(title || goal)`，
+`task-resume.cjs` 还额外传了 `title: goal.slice(0, 60)`。于是任务台账、
+未完成横幅、任务列表里显示的全是「继续优化 Agent」这种聊天句子；
+任务没有自己的身份，Chat 与 Task 没分开。
+
+界面上只有两态：✓ 和 ○。看得出「还剩几条」，看不出「现在在做哪条」。
+
+### 名字从哪来
+
+三条路，优先拿靠前的：
+
+1. **模型在计划块第一行给** —— ` ```plan ` 块写成
+   `# 优化 Agent 启动` / `任务名：优化 Agent 启动` / `name: ...` 都认。
+   它最清楚这活叫什么，不需要再花一次调用让它「起个名」。
+2. **从聊天句里提炼**（`deriveTitle`）—— 剥掉「继续 / 帮我 / 请 / 麻烦」
+   这类口语前缀 → 取第一句 → 40 字封顶。
+   「继续优化 Agent 的启动速度」→「优化 Agent 的启动速度」（不是原句）。
+3. 实在没有 → `未命名任务`。
+
+**名字只采纳一次**（`adoptTitle`）：模型每轮都会把计划块重发一遍，措辞稍微一变
+就会改名，界面上的任务名来回跳。判据是「任务还没有自己的名字」——空，
+或者还等于从 goal 兜底推出来的那个。定下来就不动了。
+
+### 改动
+
+- `task-plan.cjs`：新增 `parsePlanBlock`（→ `{ title, steps }`）/`normalizeTitle`
+  /`deriveTitle`/`adoptTitle`；`parsePlan` 保留为「只要 steps」（老调用方不动）；
+  `recordVersion` 多接一个 `title`，顺手采纳，并把最终名字带回结果里
+- `task.cjs`：`create()` 用 `deriveTitle(goal)`；导出 `parsePlanBlock`/`deriveTitle`
+- `task-context.cjs`：`capturePlan` 改用 `parsePlanBlock` 并把 `title` 交给 `setPlan`；
+  两处提示词加上「第一行写任务名」
+- `task-resume.cjs`：**删掉 `title: goal.slice(0, 60)`** —— 起任务那条路也不再
+  拿聊天句当标题（不删这道，`adoptTitle` 会误以为「它已经有名字了」而拒绝改名）
+- 前端：`PlanCard` 第一条没勾掉的步骤画实心 ●（accent 色 + `font-medium`）；
+  `ProgressTimeline` 第一条待办从 ○ 变 ●（新增 `current` 状态，与 `active` 转圈区分开）；
+  历史版本的计划**不标** ●（旧版没有「现在」可言）
+
+### ★ 顺手修了一个真 bug（发现得很偶然）
+
+`text-accent` 这个 Tailwind 类**什么也不生成** —— `tailwind.config.js` 里
+根本没有 `accent` 这个色。于是进度时间线上那个「正在做」（转圈）图标
+一直是继承父级颜色，跟旁边的灰字一模一样。加了一行
+`accent: 'var(--accent-blue)'`。
+
+### 顺手压行数
+
+`task.cjs` 加完代码 312 行（超了）。把 `sanitize(args)` 搬去 `redact.cjs`
+（叫 `scrubLight`）—— 「别把密钥写进文件」的规矩本来就该只有一处；
+`create()` 的 `title` 形参也删了（没人传，名字统一由计划块给）。312 → 291 行。
+
+### 测试
+
+- 内核新增第 30 组 `taskname.mjs`：44 项（解析/归一化/提炼/建任务/采纳一次/
+  `capturePlan`/老任务兼容/接线守卫）。1061 → **1105**
+- 前端 `planCard.test.ts` 加 10 项（`currentStepIndex` + 三态接线 + tailwind
+  `accent` 定义）。320 → **330**
+- **变异测试 6/6 变红**：`adoptTitle` 永不采纳、去掉「已有名字不改名」那道闸、
+  `deriveTitle` 不剥前缀、名字行不当名字、标题退回聊天原句、标题行也当成一步
+  —— 每一条都真的把断言弄红了，恢复后 1105 全绿
+
+### 真机验证
+
+在便携版里真的跑（本机 `tmp/smooth-env/PersonalAgent`）：
+
+```
+页面里有「没干完的任务」=是
+显示任务名 "Optimize Agent Startup"=对
+显示了聊天原句（不该有）=没有 ✓
+aria-current="step" 的行数=2      ← 计划卡 1 个 + 进度线 1 个
+当前那条是="3. 重构初始化"         ← 两条 [x] 之后的第三条
+实心圆点颜色=rgb(107, 124, 247)   ← accent 色真的生效了
+划掉的步骤行=2 → 1. 分析启动流程 / 2. 找出阻塞点
+```
+
+截图（`tmp/shots-ag027b/`）看到的是：横幅标题是 `Optimize Agent Startup`，
+计划 2/4 步，✓✓●○，进度线上也一样 —— 和需求文档那张图对得上。
+
+### 已知问题
+
+1. 任务名来自模型那一步（` ```plan ` 块第一行）依赖模型**愿意照提示写**。
+   没写就退回 `deriveTitle` 的结果（也是个体面的名字，只是不如模型起得准）。
+2. `deriveTitle` 只剥前缀、取第一句，不做真正的「动作名」提炼
+   （「帮我看看这个项目为什么这么慢，最好优化一下」会得到整句）。
+   够用 —— 它只是兜底。
+
 ## [0.88.0] — 2026-09-19 · AG-026 Composer Draft 持久化
 
 切换线程后保留输入草稿（切回来还在，而且**不串**到别的线程）。

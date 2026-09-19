@@ -60,6 +60,13 @@ export default {
         danger: 'var(--error)',
         info: 'var(--text-secondary)',
 
+        /*
+         * 强调色。补这一条是因为 `text-accent` 在 ProgressTimeline 里早就用了 ——
+         * 但配置里一直没有 `accent` 这个色，于是那个类**什么也没生成**，
+         * 转圈图标一直是继承父级颜色（AG-027 给「当前步骤」加实心 ● 时发现的）。
+         */
+        accent: 'var(--accent-blue)',
+
         /* 主按钮（反色） */
         cta: {
           DEFAULT: 'var(--cta-bg)',

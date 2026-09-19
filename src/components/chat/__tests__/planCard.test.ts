@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isDone, textOf } from '../PlanCard'
+import { currentStepIndex, isDone, textOf } from '../PlanCard'
 
 /* ══════════════════════════════════════════════════════════════
    AG-004：执行计划卡片
@@ -72,5 +72,58 @@ describe('PlanCard / 接线守卫', () => {
   it('★ TaskRecord 里有 planVersions（老任务当空数组看）', () => {
     const src = readFileSync(join(SRC, 'types/safety.ts'), 'utf8')
     expect(src).toMatch(/planVersions\?/)
+  })
+})
+
+describe('PlanCard / 三态（AG-027）', () => {
+  it('★ 当前 = 第一条没勾掉的', () => {
+    expect(currentStepIndex(['[x] 读', '[x] 改', '[ ] 测', '[ ] 交'])).toBe(2)
+  })
+
+  it('全做完了 → 没有当前', () => {
+    expect(currentStepIndex(['[x] 读', '[x] 改'])).toBe(-1)
+  })
+
+  it('空计划 → 没有当前', () => {
+    expect(currentStepIndex([])).toBe(-1)
+  })
+
+  it('★ 不是「第一条 □」——前面勾过、中间漏了一条，当前是漏的那条', () => {
+    expect(currentStepIndex(['[x] 读', '[ ] 改', '[x] 测'])).toBe(1)
+  })
+
+  it('一条都没勾 → 第一条', () => {
+    expect(currentStepIndex(['[ ] 读', '[ ] 改'])).toBe(0)
+  })
+})
+
+describe('PlanCard / 三态接线守卫', () => {
+  it('★ 当前版计划标 ●（历史版本不标）', () => {
+    const src = readFileSync(join(SRC, 'components/chat/PlanCard.tsx'), 'utf8')
+    expect(src).toMatch(/<PlanSteps plan=\{current\.plan\} markCurrent/)
+    /* 历史那处不能带 markCurrent —— 旧版没有「现在」 */
+    expect(src).toMatch(/<PlanSteps plan=\{version\.plan\} \/>/)
+  })
+
+  it('★ ● 是实心的（不实心就和 ○ 分不出来了）', () => {
+    const src = readFileSync(join(SRC, 'components/chat/PlanCard.tsx'), 'utf8')
+    expect(src).toContain("fill: 'currentColor'")
+  })
+
+  it('★ 时间线上第一条待办是「当前」（不再全是 ○）', () => {
+    const src = readFileSync(join(SRC, 'components/chat/ProgressTimeline.tsx'), 'utf8')
+    expect(src).toContain("index === 0 ? 'current' : 'todo'")
+  })
+
+  it('★ current 与 active 是两个状态（实心点 vs 转圈）', () => {
+    const src = readFileSync(join(SRC, 'components/chat/ProgressTimeline.tsx'), 'utf8')
+    expect(src).toMatch(/state === 'current'/)
+    expect(src).toMatch(/state === 'active'/)
+  })
+
+  it('★ `accent` 这个色在 tailwind 里有定义（否则 text-accent 什么也不生成）', () => {
+    /* SRC 是 `src/`，tailwind 配置在仓库根 */
+    const src = readFileSync(join(SRC, '..', 'tailwind.config.js'), 'utf8')
+    expect(src).toContain("accent: 'var(--accent-blue)'")
   })
 })

@@ -12,24 +12,106 @@
 
 const crypto = require('node:crypto')
 
+/** 计划块第一行的任务名写法：`# 名字` / `任务名：名字` / `name: 名字` */
+const TITLE_LINE = /^(?:#{1,3}\s*(.+)|(?:任务名|任务|名称|name|title)\s*[:：]\s*(.+))$/i
+
 /**
- * 解析模型给的计划。
+ * 解析模型给的 ```plan 块。
  *
- * 约定：回复里出现一个 ```plan 围栏块，里面是编号或短横线列表。
+ * 约定：回复里出现一个 ```plan 围栏块。**第一行可以是任务名**
+ * （`# 优化 Agent 启动`，或 `任务名：优化 Agent 启动`），下面每行一条步骤
+ * （编号或短横线都行）。
+ *
+ * 为什么把任务名放进计划块：AG-027 要求「Chat 与 Task 分离」——
+ * 聊天是「继续优化 Agent」，任务叫「优化 Agent 启动」，两者不是一回事。
+ * 名字由模型在**出计划时**顺手给（它最清楚这活叫什么），不比另开一次
+ * 调用让模型「起个名」贵。
+ *
  * 不用 function calling 让模型「填计划」，是因为计划本身要给人看，
  * 而工具调用是给机器看的 —— 混在一起两边都不好用。
  *
- * @returns {string[]} 计划条目（没有就返回空数组）
+ * @returns {{ title: string, steps: string[] }}
  */
-function parsePlan(text) {
-  const match = /```(?:plan|计划)\s*\n([\s\S]*?)```/i.exec(String(text ?? ''))
-  if (!match) return []
+function parsePlanBlock(text) {
+  const match = /```(?:plan|计划|task|任务)\s*\n([\s\S]*?)```/i.exec(String(text ?? ''))
+  if (!match) return { title: '', steps: [] }
 
-  return match[1]
-    .split('\n')
-    .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s*/, '').trim())
-    .filter((line) => line.length > 0 && line.length < 200)
-    .slice(0, 20)
+  let title = ''
+  const steps = []
+  let first = true
+  for (const raw of match[1].split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+
+    /* 只有**第一行**才可能是任务名 —— 否则「步骤里带个 #」也会被当成名字 */
+    if (first) {
+      first = false
+      const named = TITLE_LINE.exec(line)
+      if (named) {
+        title = normalizeTitle(named[1] ?? named[2] ?? '')
+        continue
+      }
+    }
+
+    const step = line.replace(/^\s*(?:[-*+]|\d+[.)])\s*/, '').trim()
+    if (step.length > 0 && step.length < 200) steps.push(step)
+  }
+
+  return { title, steps: steps.slice(0, 20) }
+}
+
+/** 只取计划条目（老接口，行为不变） */
+function parsePlan(text) {
+  return parsePlanBlock(text).steps
+}
+
+/**
+ * 任务名归一化：压空白、去 markdown 标记与包裹引号、去尾部标点、超长截断。
+ * 名字要显示在两三个字宽的地方（横幅、侧栏），所以默认就掐在 60 字以内。
+ */
+function normalizeTitle(raw) {
+  const one = String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^#+\s*/, '')
+    .replace(/^["'`「『]+|[\"'`」』]+$/g, '')
+    .replace(/[：:。，,；;]+$/, '')
+    .trim()
+  return one.length > 60 ? `${one.slice(0, 59)}…` : one
+}
+
+/** 口语前缀：「继续优化 Agent」是聊天，任务该叫「优化 Agent」 */
+const FILLER =
+  /^(?:继续|接着|然后|再|帮我|帮忙|麻烦你|麻烦|请你|请|你现在|你来|你|我想|我要|需要|能不能|能否|可以帮我|可以)\s*[，,：:]?\s*/
+
+/**
+ * 从用户那句话里兜底提炼一个任务名：剥口语前缀 → 取第一句 → 掐 40 字。
+ *
+ * 模型给了 `# 名字` 就用它的；没给（简单的一问一答、或者老任务）才走这里。
+ * 兜底绝不能直接把整句话当名字 —— 那正是 AG-027 要修的「任务名 == 聊天」。
+ */
+function deriveTitle(text) {
+  let out = String(text ?? '').trim()
+  if (!out) return ''
+  for (let i = 0; i < 3 && FILLER.test(out); i += 1) out = out.replace(FILLER, '')
+  const first = out.split(/[。！？!?；;\n]/)[0] ?? out
+  const title = normalizeTitle(first || out)
+  return title.length > 40 ? `${title.slice(0, 39)}…` : title
+}
+
+/**
+ * 采纳模型给的任务名 —— **只在任务还没有自己的名字时**。
+ *
+ * 为什么要这道闸：模型每轮都会把计划块重发一遍，措辞稍微一变就会改名，
+ * 任务在界面上会来回跳。名字定下来就不动了（用户要改可以自己改标题）。
+ * 「还没有自己的名字」的判据 = 空，或者还是从 goal 兜底推出来的那个。
+ */
+function adoptTitle(task, raw) {
+  const title = normalizeTitle(raw)
+  if (!title || !task) return false
+  if (task.title && task.title !== deriveTitle(task.goal)) return false
+  if (task.title === title) return false
+  task.title = title
+  return true
 }
 
 /**
@@ -55,16 +137,16 @@ function fingerprint(plan) {
  *
  * @param {object} task 任务记录（原地改）
  * @param {string[]} plan 新计划
- * @param {{ reason?: string, at?: number }} [options]
- * @returns {{ changed: boolean, version: number, reason: string }|null} 计划为空时 null
+ * @param {{ reason?: string, at?: number, title?: string }} [options] title = 模型给的任务名
+ * @returns {{ changed: boolean, version: number, reason: string, title: string }|null} 计划为空时 null
  */
-function recordVersion(task, plan, { reason = '', at = Date.now() } = {}) {
+function recordVersion(task, plan, { reason = '', at = Date.now(), title = '' } = {}) {
   if (!task || !Array.isArray(plan) || plan.length === 0) return null
 
   const versions = Array.isArray(task.planVersions) ? task.planVersions : []
   const current = versions.length > 0 ? versions[versions.length - 1].plan : task.plan
   if (Array.isArray(current) && current.length > 0 && fingerprint(current) === fingerprint(plan)) {
-    return { changed: false, version: versions.length, reason: '' }
+    return { changed: false, version: versions.length, reason: '', title: task.title || '' }
   }
 
   const label = reason || (versions.length === 0 ? '初始计划' : '重新规划')
@@ -72,7 +154,9 @@ function recordVersion(task, plan, { reason = '', at = Date.now() } = {}) {
   task.planVersions = versions
   task.plan = plan.slice()
   task.planHash = fingerprint(plan)
-  return { changed: true, version: versions.length, reason: label }
+  /* AG-027：模型顺手给的任务名（只在任务还没有自己的名字时才采纳） */
+  adoptTitle(task, title)
+  return { changed: true, version: versions.length, reason: label, title: task.title || '' }
 }
 
 /**
@@ -106,4 +190,14 @@ function nextActionOf(plan) {
     .replace(/^\s*\[[ xX]\]\s*/, '')
     .slice(0, 200)
 }
-module.exports = { parsePlan, fingerprint, recordVersion, migrate, nextActionOf }
+module.exports = {
+  parsePlan,
+  parsePlanBlock,
+  normalizeTitle,
+  deriveTitle,
+  adoptTitle,
+  fingerprint,
+  recordVersion,
+  migrate,
+  nextActionOf,
+}
