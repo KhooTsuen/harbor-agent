@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { TaskRecoveryItem } from '@/types/safety'
-import { taskRecovery } from '@/lib/safetyApi'
+import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
+import { taskList, taskRecovery } from '@/lib/safetyApi'
 
 /* ══════════════════════════════════════════════════════════════
    未完成的任务
@@ -15,20 +15,25 @@ import { taskRecovery } from '@/lib/safetyApi'
    ══════════════════════════════════════════════════════════════ */
 
 interface TaskState {
+  /** AG-028：全局任务中心的唯一前端快照（后端 task.cjs 仍是唯一真相源） */
+  tasks: TaskRecord[]
   unfinished: TaskRecoveryItem[]
+  loaded: boolean
   refresh: () => Promise<void>
 }
 
 export const useTaskStore = create<TaskState>((set) => ({
+  tasks: [],
   unfinished: [],
+  loaded: false,
   /*
-   * AG-012：改用 `task:recovery` 而不是 `task:unfinished`。
-   * 两者都答「哪些任务没干完」，但前者多带三样用户做决定需要的东西：
-   * 停在哪一步、停手后哪些文件被动过、恢复过几次。
+   * 一次刷新同时拿「全量任务」和「可恢复任务」。
+   * 不从 tasks 在前端推导 unfinished：恢复清单还带 envChanged / canResume，
+   * 那些必须由主进程检查真实文件环境，前端自己算会形成第二份真相。
    */
   refresh: async () => {
-    const list = await taskRecovery()
-    set({ unfinished: list })
+    const [tasks, unfinished] = await Promise.all([taskList({ limit: 200 }), taskRecovery()])
+    set({ tasks, unfinished, loaded: true })
   },
 }))
 

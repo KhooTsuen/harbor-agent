@@ -71,6 +71,11 @@ function MainApp() {
 
   /* 底部面板初值取上次的状态，所以打开时不会「闪一下再展开」 */
   const [bottomOpen, setBottomOpen] = useState(settings.lastBottomPanelOpen)
+  /*
+   * right tab 住在临时 UI store，必须在这里从持久化设置恢复。
+   * 以前只有「保存 lastRightTab」没有「读取」—— 启动总回 diff，还会立刻把旧值覆盖。
+   */
+  const [rightTabRestored, setRightTabRestored] = useState(false)
 
   /* 后台推来的事件（插件热插拔 / 生图完成）—— 见那个 hook */
   useBackendSubscriptions()
@@ -88,8 +93,15 @@ function MainApp() {
   }, [activeThreadId, updateSettings])
 
   useEffect(() => {
-    updateSettings({ lastRightTab: activeRightTab })
-  }, [activeRightTab, updateSettings])
+    if (rightTabRestored) return
+    setActiveRightTab(settings.lastRightTab)
+    setRightTabRestored(true)
+    /* 只在挂载时恢复一次；之后由下面的 effect 记录用户切换。 */
+  }, [rightTabRestored, setActiveRightTab, settings.lastRightTab])
+
+  useEffect(() => {
+    if (rightTabRestored) updateSettings({ lastRightTab: activeRightTab })
+  }, [activeRightTab, rightTabRestored, updateSettings])
 
   useEffect(() => {
     updateSettings({ lastBottomPanelOpen: bottomOpen })

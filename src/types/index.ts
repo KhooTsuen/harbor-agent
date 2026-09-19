@@ -10,7 +10,7 @@
 export type ThemeName = 'default' | 'chatgpt' | 'spec' | 'light'
 export type ThemePreference = ThemeName | 'system'
 export type ToggleState = 'on' | 'off'
-export type RightTab = 'diff' | 'terminal' | 'files' | 'browser' | 'artifacts' | 'state'
+export type RightTab = 'diff' | 'terminal' | 'files' | 'browser' | 'artifacts' | 'tasks' | 'state'
 /**
  * Agent 生命周期阶段（AG-001）。
  *
