@@ -139,7 +139,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
               {message.content ? (
                 <div>
                   {/* 模型输出的是 Markdown，渲染出来而不是把 ** 之类的符号直接摆给人看 */}
-                  <Markdown text={message.content} />
+                  <Markdown text={message.content} streaming={isStreaming} />
                   {isStreaming ? <span className="caret" /> : null}
                 </div>
               ) : isStreaming ? (

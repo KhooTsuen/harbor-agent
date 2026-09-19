@@ -24,13 +24,13 @@ import { join, relative } from 'node:path'
 
 const SRC = join(__dirname, '..', '..', '..', 'src')
 
-/** 递归列出 src 下的源文件。跳过 __tests__：测试跑在 node 里，用 fs 是应该的 */
+/** 递归列出 src 下的源文件。跳过 __tests__ / __bench__：测试跑在 node 里，用 fs 是应该的 */
 function sourceFiles(dir: string = SRC): string[] {
   const out: string[] = []
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
     if (statSync(full).isDirectory()) {
-      if (name === '__tests__') continue
+      if (name === '__tests__' || name === '__bench__') continue
       out.push(...sourceFiles(full))
     } else if (/\.(ts|tsx)$/.test(name)) {
       out.push(full)
