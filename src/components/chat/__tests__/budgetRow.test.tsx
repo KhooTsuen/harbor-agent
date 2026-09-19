@@ -19,6 +19,16 @@ import type { TaskRecord } from '@/types/safety'
 
 const h = vi.hoisted(() => ({ updates: [] as Array<Record<string, unknown>> }))
 
+vi.mock('@/lib/backend', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/backend')>()
+  return {
+    ...actual,
+    useRealBackend: false,
+    pauseChat: async () => {},
+    abortChat: async () => {},
+  }
+})
+
 vi.mock('@/lib/safetyApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/safetyApi')>()
   return {

@@ -70,6 +70,11 @@ function create({
     budgetHit: null,
     /** AG-041：转圈停下来时的证据：{ kind, period, count, samples } */
     loopHit: null,
+    /** AG-042：控制台要显示的两个数字（这一轮烧了多少 token、自动重试了几次） */
+    tokens: 0,
+    retries: 0,
+    /** AG-043：用户在任务执行中改方向的记录 [{ at, text }]（原计划历史另有 planVersions） */
+    steering: [],
     /* AG-012：重启恢复要用的四样 —— 下一步、停的时刻、恢复过几次、批过什么 */
     nextAction: '',
     permissions: [],
@@ -114,6 +119,8 @@ function update(id, patch) {
     'pauseDetail',
     'budgetHit',
     'loopHit',
+    'tokens',
+    'retries',
     'pausedAt',
     'resumeCount',
   ]) {

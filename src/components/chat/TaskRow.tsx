@@ -5,6 +5,7 @@ import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { BudgetEditor } from './BudgetEditor'
+import { TaskConsole } from './TaskConsole'
 import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
 import { colorOf, iconOf, statusOfTask } from '@/lib/statusLanguage'
@@ -195,6 +196,9 @@ export function TaskRow({
 
       {open ? (
         <div className="border-t border-line-hairline px-2 py-2">
+          {/* AG-042：控制台（八项状态 + 六个动作）—— 放进详情，默认折叠 */}
+          <TaskConsole task={task} now={now} />
+
           {/* 运行细节：默认折叠，展开才看（AG-030：不默认刷屏）*/}
           <p className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
             <span>{task.steps.length} Tool</span>
@@ -243,6 +247,19 @@ export function TaskRow({
                 .join('、')}
               ）—— 接着做之前它会先重读
             </p>
+          ) : null}
+          {/* AG-043：用户在执行中改过方向 —— 原话留在这里（复盘时最有用的就是这句） */}
+          {(task.steering ?? []).length > 0 ? (
+            <div className="mb-1.5">
+              <h4 className="text-2xs text-fg-tertiary">你改过方向 · {task.steering?.length}</h4>
+              <ul className="mt-0.5 flex flex-col gap-0.5">
+                {(task.steering ?? []).slice(-3).map((item) => (
+                  <li key={item.at} className="text-2xs text-fg-secondary">
+                    · {item.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <PlanCard versions={task.planVersions ?? []} />
           <ProgressTimeline phases={phases} steps={task.steps} plan={task.plan} />

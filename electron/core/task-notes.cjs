@@ -86,6 +86,23 @@ function recordModel(id, model) {
   return task
 }
 
+/**
+ * 记一次「用户在执行中改了方向」（AG-043）。
+ *
+ * 存的是用户的原话 —— 复盘时最有用的就是这句，别改写。
+ * 只留最近 20 条：这是给人看的线索，不是聊天记录。
+ */
+function addSteering(id, text) {
+  const task = io.get(id)
+  const said = String(text ?? '').trim()
+  if (!task || !said) return null
+  const list = [...(task.steering ?? []), { at: Date.now(), text: said.slice(0, 500) }]
+  task.steering = list.slice(-20)
+  task.updatedAt = Date.now()
+  io.write(task)
+  return task
+}
+
 /** 打检查点 —— **崩溃后靠它恢复** */
 function checkpoint(id, { label, note = '', files = [], commands = [] } = {}) {
   const task = io.get(id)
@@ -113,4 +130,12 @@ function fail(id, error) {
   return task
 }
 
-module.exports = { addStep, addChangedFile, addCommand, recordModel, checkpoint, fail }
+module.exports = {
+  addStep,
+  addChangedFile,
+  addCommand,
+  recordModel,
+  addSteering,
+  checkpoint,
+  fail,
+}

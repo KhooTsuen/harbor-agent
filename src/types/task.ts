@@ -84,6 +84,11 @@ export interface TaskRecord {
   budgetHit?: BudgetHit | null
   /** AG-041：转圈那一下的证据 */
   loopHit?: LoopHit | null
+  /** AG-042：控制台显示的「这一轮烧了多少 token / 自动重试了几次」 */
+  tokens?: number
+  retries?: number
+  /** AG-043：用户在任务执行中改过方向的记录 */
+  steering?: Array<{ at: number; text: string }>
   /** AG-035：用户批过/拒过的操作（AG-013 起就在记，这里补上类型） */
   permissions?: Array<{
     at: number

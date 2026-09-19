@@ -47,6 +47,21 @@ export function currentStepOf(task: TaskRecord): string {
   return recent || '等待下一步'
 }
 
+/**
+ * 计划里下一步要做什么（**不带兜底**）。
+ *
+ * 和 `currentStepOf` 的区别：那个是给「任务行一句话」用的，计划没了会退到
+ * 「最近一步的摘要」—— 而工具步骤的摘要常常是一段文件内容（read_file 的返回）。
+ * 控制台里显示「当前步骤」时那样很难看，所以这里只要计划里的下一步；
+ * 没有就老实说没有（AG-042 真机发现：控制台那栏一度显示成一整篇 build.sh）。
+ */
+export function nextPlanStepOf(task: TaskRecord): string {
+  const pending = (task.plan ?? []).find((line) => !isPlanDone(line))
+  if (pending) return cleanPlanLine(pending)
+  if (task.nextAction) return cleanPlanLine(task.nextAction)
+  return ''
+}
+
 /** 墙上经过时间：运行中走当前时钟，结束/暂停后停在最后更新时间。 */
 export function elapsedMs(task: TaskRecord, now: number): number {
   const end =

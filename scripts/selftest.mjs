@@ -77,6 +77,8 @@ import { run as perf } from './selftest/groups/39-perf.mjs'
 import { run as taskIndex } from './selftest/groups/40-taskindex.mjs'
 import { run as budgetGroup } from './selftest/groups/41-budget.mjs'
 import { run as loopGuard } from './selftest/groups/42-loopguard.mjs'
+import { run as consoleGroup } from './selftest/groups/43-console.mjs'
+import { run as steeringGroup } from './selftest/groups/44-steering.mjs'
 
 const GROUPS = [
   basics,
@@ -121,6 +123,8 @@ const GROUPS = [
   taskIndex,
   budgetGroup,
   loopGuard,
+  consoleGroup,
+  steeringGroup,
 ]
 
 async function main() {

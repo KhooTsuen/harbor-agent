@@ -69,7 +69,13 @@ export async function run() {
   check('没有未完成任务时不造台账', !note.includes('还没做完'))
   check('★ 但会带上本轮请求（新活第一轮）', note.includes('本轮请求'))
 
-  const src = readCore('electron/core/task-context.cjs')
+  /*
+   * AG-043：「认继续 / 完成门禁 / 改方向」那三块搬进了 task-steering.cjs
+   * （task-context 只留「任务是什么、走到哪一步」）。守卫关心的是**行为还在不在**，
+   * 所以两个文件合起来看 —— 免得下次搬家又白红一次。
+   */
+  const src =
+    readCore('electron/core/task-context.cjs') + readCore('electron/core/task-steering.cjs')
   check('★ 认出「继续」后会明说「这是接着做，不是新任务」', src.includes('不是新任务'))
   check('★ 并且明确「别从头再问一遍」', src.includes('别从头再问一遍'))
   check('提示挂在 taskState 里（和计划进度同一处）', src.includes('isContinueIntent(userText)'))

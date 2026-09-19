@@ -3,7 +3,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { Terminal } from './Terminal'
 import { ToolLogPanel } from './bottom/ToolLogPanel'
 import { useAppStore } from '@/stores/useAppStore'
-import { useState } from 'react'
+import { useUIStore } from '@/stores/useUIStore'
 
 /* ══════════════════════════════════════════════════════════════
    底部面板（Ctrl+J）
@@ -20,7 +20,10 @@ export interface BottomPanelProps {
 }
 
 export function BottomPanel({ onClose }: BottomPanelProps) {
-  const [view, setView] = useState<'log' | 'terminal'>('log')
+  /* AG-042：视图也放 store —— 「查看 Tool」直接开到日志那一栏 */
+  const view = useUIStore((s) => s.bottomPanelView)
+  const openBottomPanel = useUIStore((s) => s.openBottomPanel)
+  const setView = (next: 'log' | 'terminal') => openBottomPanel(next)
 
   const project = useAppStore((s) => s.projects.find((p) => p.id === s.activeProjectId))
 

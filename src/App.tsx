@@ -68,12 +68,10 @@ function MainApp() {
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const setInput = useThreadStore((s) => s.setInput)
 
-  /* 底部面板初值取上次的状态，所以打开时不会「闪一下再展开」 */
-  const [bottomOpen, setBottomOpen] = useState(settings.lastBottomPanelOpen)
-  /*
-   * right tab 住在临时 UI store，必须在这里从持久化设置恢复。
-   * 以前只有「保存 lastRightTab」没有「读取」—— 启动总回 diff，还会立刻把旧值覆盖。
-   */
+  /* AG-042：底部面板开合搬进 store（任务行的「查看 Tool」要能打开它），初值取上次的状态 */
+  const bottomOpen = useUIStore((s) => s.bottomPanelOpen)
+  const setBottomOpen = useUIStore((s) => s.setBottomPanelOpen)
+  /* right tab 住在临时 UI store，必须从持久化设置恢复（以前只存不读，启动总回 diff） */
   const [rightTabRestored, setRightTabRestored] = useState(false)
 
   /* 后台推来的事件（插件热插拔 / 生图完成）—— 见那个 hook */
@@ -102,9 +100,10 @@ function MainApp() {
     if (rightTabRestored) updateSettings({ lastRightTab: activeRightTab })
   }, [activeRightTab, rightTabRestored, updateSettings])
 
-  useEffect(() => {
-    updateSettings({ lastBottomPanelOpen: bottomOpen })
-  }, [bottomOpen, updateSettings])
+  /* 底部面板：启动恢复「上次开没开」，之后变化就存回去 */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setBottomOpen(Boolean(settings.lastBottomPanelOpen)), [])
+  useEffect(() => updateSettings({ lastBottomPanelOpen: bottomOpen }), [bottomOpen, updateSettings])
 
   /* ③ 全局快捷键 */
   const onKeyDown = useCallback(
@@ -143,7 +142,7 @@ function MainApp() {
       }
       if (matchCombo(event, shortcut('toggle-bottom', 'mod+j'))) {
         event.preventDefault()
-        setBottomOpen((v) => !v)
+        setBottomOpen(!bottomOpen)
         return
       }
       if (matchCombo(event, shortcut('toggle-right', 'mod+shift+j'))) {
@@ -176,6 +175,7 @@ function MainApp() {
     },
     [
       activeThreadId,
+      bottomOpen,
       commandPaletteOpen,
       createThread,
       deleteThread,
@@ -183,6 +183,7 @@ function MainApp() {
       permissionOpen,
       sendMessage,
       setActiveRightTab,
+      setBottomOpen,
       setCommandPaletteOpen,
       setRightPanelVisible,
       settings.sidebarCollapsed,
@@ -205,7 +206,7 @@ function MainApp() {
     <div className="flex h-full flex-col bg-bg-base text-fg-primary">
       {/* 窗口级顶栏（横跨三栏）。也包一层：它一出错整个窗口就没法操作了 */}
       <ErrorBoundary>
-        <AppTitleBar onToggleBottomPanel={() => setBottomOpen((v) => !v)} />
+        <AppTitleBar onToggleBottomPanel={() => setBottomOpen(!bottomOpen)} />
       </ErrorBoundary>
 
       <div className="flex min-h-0 flex-1">

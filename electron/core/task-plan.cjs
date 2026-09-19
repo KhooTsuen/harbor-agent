@@ -203,7 +203,29 @@ function nextActionOf(plan) {
     .replace(/^\s*\[[ xX]\]\s*/, '')
     .slice(0, 200)
 }
+/** 一条计划项是否已勾选 */
+function isDone(line) {
+  return /^\s*\[[xX]\]/.test(String(line))
+}
+
+/** 数一下计划进度。老任务没有标记，全部算未完成 */
+function progressOf(plan) {
+  const list = Array.isArray(plan) ? plan : []
+  const done = list.filter(isDone).length
+  return { done, total: list.length }
+}
+
+/** 计划正文去掉勾选标记，用来判断「是不是被改过内容」 */
+function stripMarks(plan) {
+  return (Array.isArray(plan) ? plan : []).map((line) =>
+    String(line).replace(/^\s*\[[xX ]\]\s*/, ''),
+  )
+}
+
 module.exports = {
+  isDone,
+  progressOf,
+  stripMarks,
   parsePlan,
   parsePlanBlock,
   normalizeTitle,

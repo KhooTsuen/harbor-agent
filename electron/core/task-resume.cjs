@@ -85,12 +85,40 @@ function checkEnvironment(taskId) {
 }
 
 /**
+ * 这条对话里最近那个**没干完**的任务（AG-043）。
+ *
+ * 为什么要它：用户在执行中改方向时，渲染层**不会**带 resumeTaskId
+ * （那是点「继续」才带的）。于是原来会**新建一条任务** —— 计划、进度、检查点
+ * 全丢，而文档要的恰恰是「不重新执行无关步骤 / 保留原计划历史 / 从有效检查点继续」。
+ * 所以：这条对话还有没干完的活，这轮就接回它。
+ */
+function activeForSession(sessionId) {
+  if (!sessionId) return null
+  return (
+    taskCore
+      .list({ limit: 50, sessionId })
+      .find((task) => RESUMABLE.has(task.status) || task.status === 'running') ?? null
+  )
+}
+
+/**
  * 起一次运行：能恢复就**复用原任务**，否则新建一条。
  * 把这段放在这里（而不是 loop.cjs）是因为它长了点 —— 那边已经贴 300 行上限。
  */
 function openForRun({ resumeTaskId = '', goal = '', sessionId = '', ...options }) {
   const resumed = resumeTaskId ? reopen(resumeTaskId) : null
   if (resumed) return resumed
+
+  /*
+   * AG-043：没带 resumeTaskId，但这条对话还有没干完的任务 → 接回它（不是新建）。
+   * 状态还是 running 的（正在跑）、或者 paused/waiting_user 的（停下等你说话）
+   * 都算「这条对话的活还没完」。
+   */
+  const live = activeForSession(sessionId)
+  if (live) {
+    const reopened = reopen(live.id)
+    if (reopened) return reopened
+  }
   /* AG-027：不传 title —— 让 create 从 goal 提炼（聊天句 ≠ 任务名） */
   return taskCore.create({
     goal,
@@ -101,4 +129,4 @@ function openForRun({ resumeTaskId = '', goal = '', sessionId = '', ...options }
   })
 }
 
-module.exports = { canResume, reopen, checkEnvironment, openForRun, RESUMABLE }
+module.exports = { canResume, reopen, checkEnvironment, openForRun, activeForSession, RESUMABLE }
