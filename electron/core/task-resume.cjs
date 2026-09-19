@@ -86,13 +86,13 @@ function checkEnvironment(taskId) {
 function openForRun({ resumeTaskId = '', goal = '', sessionId = '', ...options }) {
   const resumed = resumeTaskId ? reopen(resumeTaskId) : null
   if (resumed) return resumed
+  /* AG-027：不传 title —— 让 create 从 goal 提炼（聊天句 ≠ 任务名） */
   return taskCore.create({
     goal,
     sessionId,
     projectId: options.projectId,
     workdir: options.workdir,
     mode: options.mode,
-    title: goal.slice(0, 60),
   })
 }
 

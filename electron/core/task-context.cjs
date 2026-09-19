@@ -185,6 +185,7 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
     '以下是**还没做完**的任务台账（来自磁盘，不是你说过的话）。',
     '继续干活时以它为准：接着计划里**第一条没有 [x] 的**往下做，别重复已经完成的步骤。',
     '做完一步就把那一条标成 `[x]`（用 ```plan 块给出更新后的完整计划）。',
+    '```plan 块的**第一行**写任务名（形如 `# 优化 Agent 启动`，一句话说清在做什么）；下面每行一条步骤。任务名只在第一次生效，之后保持稳定。',
     '如果某一步其实不需要做了，也在计划里说明理由，不要默默跳过。',
     /*
      * AG-018：用户在说「继续」时，把话说死。
@@ -237,7 +238,7 @@ function shouldContinue({ taskId = '', content = '', seen = {} } = {}) {
   const message = [
     `任务「${task.title || task.id}」的计划还没做完（${done}/${total}），先别收尾。`,
     next ? `下一条是：${String(next).replace(/^\s*\[[xX ]\]\s*/, '')}` : '',
-    '做完后用 ```plan 块给出**更新后的完整计划**（完成的标 `[x]`），再收尾。',
+    '做完后用 ```plan 块给出**更新后的完整计划**（第一行 `# 任务名`，完成的步骤标 `[x]`），再收尾。',
     '如果这活其实已经不需要做了，直接说明原因并把计划里对应条目标记完成。',
   ]
     .filter(Boolean)
@@ -266,11 +267,17 @@ function shouldContinue({ taskId = '', content = '', seen = {} } = {}) {
  */
 function capturePlan({ taskId = '', content = '' } = {}) {
   if (!taskId) return null
-  const plan = taskCore.parsePlan(content)
-  if (plan.length === 0) return null
-  const result = taskCore.setPlan(taskId, plan)
+  /* AG-027：计划块第一行可以是任务名（Chat 与 Task 分离 —— 别再拿聊天句当任务名） */
+  const block = taskCore.parsePlanBlock(content)
+  if (block.steps.length === 0) return null
+  const result = taskCore.setPlan(taskId, block.steps, { title: block.title })
   if (!result || !result.changed) return null
-  return { plan: result.task.plan, version: result.version, reason: result.reason }
+  return {
+    plan: result.task.plan,
+    version: result.version,
+    reason: result.reason,
+    title: result.title ?? '',
+  }
 }
 
 module.exports = {

@@ -170,10 +170,38 @@ function looksSecret(text) {
   return PATTERNS.every(([pattern]) => !pattern.test(sample)) ? false : true
 }
 
+/**
+ * 轻量脱敏 + 截断（把工具参数存进任务台账时用）。
+ *
+ * 和 `scrub` 的区别：这里**不追求深度**，只追求两件事——
+ *   ① 每一条都小（字符串掐 200 字、最多 12 个键）——任务 JSON 是要给人看的，
+ *      不能因为某次 run_shell 贴了 200KB 输出就肿起来；
+ *   ② 密钥字段不落盘（只看字段名，不做模式匹配——模式匹配的次数
+ *      和深度都很贵，而这里每条都很短）。
+ *
+ * 放在 redact.cjs 而不是 task.cjs：「别把密钥写进文件」的规矩应该只有一处。
+ *
+ * @param {Record<string, unknown>} args
+ * @returns {Record<string, unknown>}
+ */
+function scrubLight(args) {
+  const out = {}
+  for (const [key, value] of Object.entries(args ?? {}).slice(0, 12)) {
+    /* 比 SECRET_KEY 宽一档：这里宁可多打一条码 —— 台账是落盘的 */
+    if (/(key|token|secret|password)/i.test(key)) {
+      out[key] = PLACEHOLDER
+      continue
+    }
+    out[key] = typeof value === 'string' ? value.slice(0, 200) : value
+  }
+  return out
+}
+
 module.exports = {
   PLACEHOLDER,
   redact,
   scrub,
+  scrubLight,
   remember,
   forget,
   forgetAll,

@@ -64,6 +64,7 @@ import { run as continueAfterFail } from './selftest/groups/26-continue.mjs'
 import { run as continuity } from './selftest/groups/27-continuity.mjs'
 import { run as fileCache } from './selftest/groups/28-filecache.mjs'
 import { run as contextCache } from './selftest/groups/29-contextcache.mjs'
+import { run as taskName } from './selftest/groups/30-taskname.mjs'
 
 const GROUPS = [
   basics,
@@ -95,6 +96,7 @@ const GROUPS = [
   continuity,
   fileCache,
   contextCache,
+  taskName,
 ]
 
 async function main() {

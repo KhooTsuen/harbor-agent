@@ -13,7 +13,11 @@ import { cn } from '@/lib/utils'
 
      · 阶段行 —— 主进程状态机推过来的相位（✓ 走过 / ● 正在走的那个）
      · 动作行 —— 真实发生过的工具调用（✓ 成功 / ✗ 失败，失败带原因）
-     · 待办行 —— 计划里还没勾掉的步骤（○）
+     · 待办行 —— 计划里还没勾掉的步骤（**● 第一步 = 现在轮到它了**，其余 ○）
+
+   AG-027 加的是那个实心 ●：以前所有没勾掉的步骤长得一模一样（全是 ○），
+   看时间线只能看出「还剩几条」，看不出「现在在做哪条」。文档要求的
+   三态（✓ 完成 / ● 当前 / ○ 待办）就差这一格。
 
    三件**不做**的事（都是有意为之）：
 
@@ -44,19 +48,29 @@ export function firstLine(text: string, max = 72): string {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat
 }
 
-/** 一行一个状态点 */
-function Dot({ state }: { state: 'done' | 'active' | 'todo' | 'failed' }) {
+/**
+ * 一行一个状态点。
+ *
+ * `current`（●）与 `active`（转圈）是两回事：转圈是**这个动作正在跑**，
+ * 实心点是**轮到这一步了**（还没开始做）。混用就分不清「卡在动作上」
+ * 还是「刚规划完还没动手」。
+ */
+function Dot({ state }: { state: 'done' | 'active' | 'current' | 'todo' | 'failed' }) {
   if (state === 'active') {
     return <Loader2 size={13} className="shrink-0 animate-spin text-accent" />
+  }
+  if (state === 'current') {
+    return <Circle size={13} className="shrink-0 text-accent" style={{ fill: 'currentColor' }} />
   }
   if (state === 'failed') return <XCircle size={13} className="shrink-0 text-[var(--danger)]" />
   if (state === 'done') return <CheckCircle2 size={13} className="shrink-0 text-[var(--success)]" />
   return <Circle size={13} className="shrink-0 text-fg-tertiary" />
 }
 
-const DOT_TEXT: Record<'done' | 'active' | 'todo' | 'failed', string> = {
+const DOT_TEXT: Record<'done' | 'active' | 'current' | 'todo' | 'failed', string> = {
   done: 'text-fg-secondary',
   active: 'font-medium text-fg-primary',
+  current: 'font-medium text-fg-primary',
   todo: 'text-fg-tertiary',
   failed: 'text-[var(--danger)]',
 }
@@ -147,13 +161,20 @@ export function ProgressTimeline({ phases, steps, plan }: ProgressTimelineProps)
         )
       })}
 
-      {/* ── 待办行：计划里还没勾掉的 ── */}
-      {todo.map((item) => (
-        <div key={item} className="flex items-center gap-2">
-          <Dot state="todo" />
-          <span className="text-fg-tertiary">{textOf(item)}</span>
-        </div>
-      ))}
+      {/* ── 待办行：计划里还没勾掉的（第一条是「当前」，AG-027）── */}
+      {todo.map((item, index) => {
+        const state = index === 0 ? 'current' : 'todo'
+        return (
+          <div
+            key={item}
+            className="flex items-center gap-2"
+            aria-current={index === 0 ? 'step' : undefined}
+          >
+            <Dot state={state} />
+            <span className={DOT_TEXT[state]}>{textOf(item)}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
