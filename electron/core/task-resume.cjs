@@ -51,6 +51,10 @@ function reopen(taskId) {
   return taskCore.update(task.id, {
     status: 'running',
     resumeCount: (task.resumeCount ?? 0) + 1,
+    /* AG-040：接着做就别再挂着「已达上限」那三按钮了 */
+    pauseReason: '',
+    pauseDetail: '',
+    budgetHit: null,
   })
 }
 

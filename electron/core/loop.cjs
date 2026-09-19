@@ -8,6 +8,7 @@
 
 const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
+const budget = require('./budget.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
@@ -30,60 +31,17 @@ const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute } = require('./loop-route.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-const MAX_TURNS = 25
+/*
+ * 失控兜底轮数（AG-040）。用户看得见的边界是**任务预算**的 maxSteps（默认 50，
+ * 那一项负责「停下来问你」）；这个 200 只防「预算设成不限而模型抽风」。
+ * ★ 两个机制不能做同一件事：第一版这里设成 50（= 默认预算），结果「轮数到顶」
+ *   总被 for 条件先拦下，预算检查没机会带 budgetHit（界面就显示不出 50 / 50）。
+ */
+const MAX_TURNS = 200
 
 /* ══════════════════════════════════════════════════════════
    主循环
    ══════════════════════════════════════════════════════════ */
-
-/**
- * @param {object} options
- * @param {Array} options.history      历史消息（含本轮用户输入）
- * @param {object} options.config      主进程配置
- * @param {string} options.workdir
- * @param {string} options.mode
- * @param {AbortSignal} options.signal
- * @param {(event: object) => void} options.emit     推给渲染层
- * @param {(req: object) => Promise<boolean>} options.confirm  写操作确认
- * @param {string} [options.sessionId]  会话 id（审计与授权用）；[options.taskId] 任务 id
- * @param {string} [options.goal]       本轮的原始目标（用户那句话）
- */
-async function run(options) {
-  /* 一次运行 = 一条任务 + 一个文件改动事务：任务答「干什么、到哪一步」，
-     事务答「改了哪些文件、怎么整批撤」。都不进会话文件（会话是聊天记录）。 */
-  const goal = String(options.goal ?? '')
-  const sessionId = options.sessionId ?? ''
-
-  /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，否则
-     「不重复已完成步骤」无从谈起）；其余情况新建一条。 */
-  const task = taskResume.openForRun({ ...options, goal, sessionId })
-  const session = changeset.begin({ taskId: task.id, sessionId, title: task.title })
-  const changeSetId = session.ok ? session.id : ''
-
-  options.emit?.({ type: 'task', taskId: task.id, changeSetId, goal: task.goal })
-
-  try {
-    const result = await runLoop({ ...options, taskId: task.id, changeSetId })
-
-    if (changeSetId) changeset.commit(changeSetId, { verified: result.verified ?? null })
-
-    if (result.exhausted || result.paused) {
-      /* 轮数用尽 / 用户暂停 = 活没干完，标成 paused 让它可恢复（AG-012 记下停的时刻） */
-      taskCore.update(task.id, { status: 'paused', pausedAt: Date.now() })
-    } else {
-      taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
-    }
-
-    return { ...result, taskId: task.id, changeSetId }
-  } catch (error) {
-    /* 中断/报错都算「没干完」—— 任务留着可恢复，事务不提交（还能整批撤） */
-    const aborted = error instanceof Error && error.name === 'AbortError'
-    life.mark(aborted ? 'cancelled' : 'failed', traceKey(options))
-    if (aborted) taskCore.update(task.id, { status: 'paused', pausedAt: Date.now() })
-    else taskCore.fail(task.id, error instanceof Error ? error.message : String(error))
-    throw error
-  }
-}
 
 /*
  * 状态事件的 key。**不能用 options.taskId**（那是任务台账 id，run() 进循环前还会换成
@@ -159,6 +117,10 @@ async function runLoop(options) {
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
   life.mark('preparing', traceKey(options))
 
+  /* AG-040：这次任务的预算（内置默认 ← 设置 ← 任务自己的覆盖） */
+  const plan = budget.resolve(config, taskCore.get(options.taskId) ?? null)
+  const startedAt = Date.now()
+
   for (; turn < MAX_TURNS; turn += 1) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
 
@@ -167,7 +129,14 @@ async function runLoop(options) {
       life.mark('paused', traceKey(options))
       return pausedResult({ turn, usage: totalUsage, toolRuns })
     }
-    /* 用量闸：调模型**之前**查账（唯一能真省钱的位置），按 token 不按金额 */
+    /* AG-040：轮次边界查一次预算（每轮开头 = 上一轮工具已跑完，不会停在改了一半的状态） */
+    const hit = budget.atTurnBoundary({ plan, startedAt, turn, toolRuns, usage: totalUsage })
+    if (hit.exceeded) {
+      emit({ type: 'budget', ...hit, blocked: false })
+      life.mark('waiting_user', traceKey(options))
+      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, budgetHit: hit })
+    }
+    /* 用量闸（全局，按天/月）：调模型**之前**查账（唯一能真省钱的位置） */
     limits.enforce(emit)
     life.mark('thinking', traceKey(options))
     emit({ type: 'turn_start', turn: turn + 1 })
@@ -189,6 +158,8 @@ async function runLoop(options) {
       traceId: traceKey(options),
       emit,
       signal,
+      /* AG-040：自动重试次数由预算决定（默认 3） */
+      maxRetries: plan.maxRetries,
       onContent: (text) => emit({ type: 'content', text }),
       onReasoning: (text) => emit({ type: 'reasoning', text }),
       onUsage: (usage) => {
@@ -284,7 +255,7 @@ async function runLoop(options) {
     await executeToolCalls({
       toolCalls: result.toolCalls,
       ctx,
-      options,
+      options: { ...options, budget: plan } /* AG-040：工具自动重试次数用它 */,
       messages,
       toolRuns,
       emit,
@@ -292,9 +263,17 @@ async function runLoop(options) {
     })
   }
 
-  /* 轮数用尽 */
+  /* 保险丝烧了（预算设成「不限」而模型一直不罢休）—— 这不是预算停下来那一步 */
   emit({ type: 'turn_end', turn: MAX_TURNS, usage: totalUsage })
   return exhaustedResult({ usage: totalUsage, toolRuns, maxTurns: MAX_TURNS })
 }
 
-module.exports = { run, runLoop, MAX_TURNS }
+/*
+ * `run` 现在住在 loop-run.cjs（那边还管任务与事务的开始/收尾）。
+ * 惰性 require 破循环：loop-run 要用这里的 runLoop，这里要用那边的 run。
+ */
+module.exports = {
+  run: (...args) => require('./loop-run.cjs').run(...args),
+  runLoop,
+  MAX_TURNS,
+}

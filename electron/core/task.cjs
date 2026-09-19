@@ -32,7 +32,14 @@ const UNFINISHED = new Set(['running', 'waiting_user', 'paused'])
  *
  * @param {{ goal: string, sessionId?: string, projectId?: string, workdir?: string, mode?: string }} options
  */
-function create({ goal, sessionId = '', projectId = '', workdir = '', mode = 'pair' } = {}) {
+function create({
+  goal,
+  sessionId = '',
+  projectId = '',
+  workdir = '',
+  mode = 'pair',
+  budget = {},
+} = {}) {
   const task = {
     id: io.newId(),
     /* AG-027：任务名**不取聊天原句**，从里面提炼动作名；模型在计划块里给了 `# 名字` 会覆盖它 */
@@ -54,6 +61,13 @@ function create({ goal, sessionId = '', projectId = '', workdir = '', mode = 'pa
     changeSetId: '',
     errors: [],
     result: '',
+    /* AG-040：这个任务自己的执行预算覆盖（不填就用设置里的默认） */
+    budget: { ...budget },
+    /** 停下来的原因（'' | 'budget'）与细节（撞了哪一项）—— 界面据此说话 */
+    pauseReason: '',
+    pauseDetail: '',
+    /** 撞预算时的数字：{ reason, label, used, limit } */
+    budgetHit: null,
     /* AG-012：重启恢复要用的四样 —— 下一步、停的时刻、恢复过几次、批过什么 */
     nextAction: '',
     permissions: [],
@@ -93,6 +107,10 @@ function update(id, patch) {
     'permissions',
     'model',
     'models',
+    'budget',
+    'pauseReason',
+    'pauseDetail',
+    'budgetHit',
     'pausedAt',
     'resumeCount',
   ]) {

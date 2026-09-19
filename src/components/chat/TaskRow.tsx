@@ -4,6 +4,7 @@ import type { AgentPhase } from '@/types'
 import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
+import { BudgetEditor } from './BudgetEditor'
 import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
 import { colorOf, iconOf, statusOfTask } from '@/lib/statusLanguage'
@@ -62,6 +63,9 @@ export function TaskRow({
    */
   const [diagnosis, setDiagnosis] = useState<TaskDiagnosis | null>(null)
   const [diagnosing, setDiagnosing] = useState(false)
+  /* AG-040：撞了执行预算 → 停下等人，行内给 [继续][停止][调整预算] */
+  const [editingBudget, setEditingBudget] = useState(false)
+  const budgetHit = task.pauseReason === 'budget' ? (task.budgetHit ?? null) : null
   const uiStatus = statusOfTask(task.status)
   const statusColor = colorOf(uiStatus)
   const Icon = iconOf(uiStatus)
@@ -129,6 +133,11 @@ export function TaskRow({
             {task.errors.length > 0 ? (
               <span style={{ color: colorOf('failed') }}>{task.errors.length} 次失败</span>
             ) : null}
+            {budgetHit ? (
+              <span style={{ color: colorOf('warning') }}>
+                已达到{budgetHit.label}（{budgetHit.used} / {budgetHit.limit}）
+              </span>
+            ) : null}
           </span>
         </span>
       </button>
@@ -154,12 +163,28 @@ export function TaskRow({
             继续
           </Button>
         ) : null}
+        {budgetHit ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => setEditingBudget((value) => !value)}
+          >
+            调整预算
+          </Button>
+        ) : null}
         {CLOSABLE.includes(task.status) ? (
           <Button variant="ghost" size="sm" disabled={busy} onClick={onGiveUp}>
-            放弃
+            {budgetHit ? '停止' : '放弃'}
           </Button>
         ) : null}
       </div>
+
+      {editingBudget ? (
+        <div className="px-2">
+          <BudgetEditor task={task} onDone={() => setEditingBudget(false)} />
+        </div>
+      ) : null}
 
       {open ? (
         <div className="border-t border-line-hairline px-2 py-2">

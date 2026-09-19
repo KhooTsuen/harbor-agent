@@ -144,7 +144,11 @@ export async function run() {
     readCore('electron/core/tools/index.cjs').includes('ctx.signal'),
   )
 
-  const loopSrc = readCore('electron/core/loop.cjs')
+  /*
+   * AG-040：一次运行的「开始与收尾」搬进了 loop-run.cjs（loop.cjs 只管中间的循环）。
+   * 这几条守卫关心的是**行为还在不在**，所以两个文件合起来看 —— 免得下次搬家又白红一次。
+   */
+  const loopSrc = readCore('electron/core/loop.cjs') + readCore('electron/core/loop-run.cjs')
   check(
     'loop 每轮开头查 abort',
     loopSrc.includes("if (signal.aborted) throw new DOMException('aborted', 'AbortError')"),
