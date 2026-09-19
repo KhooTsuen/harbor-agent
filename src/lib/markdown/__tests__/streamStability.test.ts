@@ -44,12 +44,21 @@ function countFlips(text: string, chunk: number, split: boolean): number {
 }
 
 describe('AG-022 splitPendingLine', () => {
-  it('没换行时整段都是「还在写」', () => {
-    expect(splitPendingLine('- 甲')).toEqual({ settled: '', pending: '- 甲' })
+  it('★ 完整的一行直接解析（不再降级成纯文本）', () => {
+    expect(splitPendingLine('- 甲')).toEqual({ settled: '- 甲', pending: '' })
+    expect(splitPendingLine('## 标题')).toEqual({ settled: '## 标题', pending: '' })
+    expect(splitPendingLine('一段普通文字')).toEqual({ settled: '一段普通文字', pending: '' })
   })
 
-  it('有换行时最后一行是「还在写」', () => {
+  it('★ 残缺标记才拆出来当纯文本', () => {
+    expect(splitPendingLine('- ')).toEqual({ settled: '', pending: '- ' })
+    expect(splitPendingLine('##')).toEqual({ settled: '', pending: '##' })
+    expect(splitPendingLine('| A | B |')).toEqual({ settled: '', pending: '| A | B |' })
+  })
+
+  it('有换行时：残缺的最后一行拆出去，完整的不拆', () => {
     expect(splitPendingLine('- 甲\n- ')).toEqual({ settled: '- 甲\n', pending: '- ' })
+    expect(splitPendingLine('- 甲\n- 乙')).toEqual({ settled: '- 甲\n- 乙', pending: '' })
   })
 
   it('末尾正好是换行 → 没有「还在写」的部分', () => {
