@@ -94,6 +94,9 @@ function fakeWindow() {
   }
 }
 
+/* 品牌名从配置读 —— 断言里别再写死，不然改名时会和实现一起错 */
+const brandName = require(join(ROOT, 'electron/core/config-defaults.cjs')).BRAND.name
+
 export async function run() {
   group('托盘 / 菜单与显示窗口')
 
@@ -108,8 +111,15 @@ export async function run() {
   tray.setupTray({ notify: (payload) => shownNotices.push(payload) })
 
   check('托盘创建了', fake.trays.length === 1)
+  if (fake.trays.length === 0) {
+    /* ★ 曾经在这里直接崩过：干净 clone 里没有图标文件 → 托盘不创建 →
+       下一行访问 fake.trays[0].tooltip 抛 TypeError，整组测试挂掉。
+       现在给出人话就早退，免得后来人对着一个 TypeError 猜半天。 */
+    check('托盘图标文件在（build/icon.png 必须进仓库）', false)
+    return
+  }
   const icon = fake.trays[0]
-  check('设了 tooltip', icon.tooltip === 'Personal Agent')
+  check('设了 tooltip（跟着品牌走）', icon.tooltip === brandName)
 
   const labels = (fake.menus[0]?.template ?? []).map((item) => item.label ?? `(${item.type})`)
   check('菜单里有「显示窗口」和「退出」', labels.includes('显示窗口') && labels.includes('退出'), labels.join(', '))
