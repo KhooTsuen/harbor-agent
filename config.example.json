@@ -1,0 +1,91 @@
+{
+  "_说明": "配置示例。真正的配置文件在应用目录的 data/config.json（首次启动自动生成）。这个文件只是把结构和默认值摆出来，方便你手改或在别处部署。所有 apiKey 都是空的 —— 密钥请用界面填（走系统凭证库加密），不要写在这里。",
+  "_schemaVersion": 1,
+
+  "profile": {
+    "name": ""
+  },
+
+  "general": {
+    "theme": "default",
+    "glassmorphism": false,
+    "animations": true,
+    "fontScale": 100,
+    "sendOnEnter": true,
+    "workdir": "",
+    "minimizeToTray": true,
+    "autoTitle": true,
+    "browserNavigation": "ask"
+  },
+
+  "providers": [
+    {
+      "id": "example",
+      "name": "Example Provider（OpenAI 兼容）",
+      "baseUrl": "https://api.example.com/v1",
+      "chatPath": "/chat/completions",
+      "models": ["example-model"],
+      "enabled": false,
+      "credentialRef": "provider:example"
+    }
+  ],
+  "activeProvider": "example",
+
+  "assistant": {
+    "name": "Agent",
+    "model": "example-model",
+    "responseDepth": "standard"
+  },
+
+  "tools": {
+    "permission": "ask",
+    "fileScope": "workspace",
+    "shellPolicy": {
+      "low": "allow",
+      "medium": "ask",
+      "high": "ask",
+      "critical": "block"
+    },
+    "shellTimeout": 60
+  },
+
+  "mcp": {
+    "servers": [],
+    "_示例": {
+      "id": "filesystem",
+      "name": "文件系统",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "<你的目录>"],
+      "enabled": false,
+      "envAllowlist": ["PATH", "SystemRoot", "TEMP"],
+      "inheritEnvironment": false
+    }
+  },
+
+  "memory": {
+    "writeMode": "ask",
+    "injectCount": 6
+  },
+
+  "context": {
+    "compactThreshold": 0.8,
+    "keepRecent": 8
+  },
+
+  "limits": {
+    "dailyTokens": 0,
+    "monthlyTokens": 0
+  },
+
+  "budget": {
+    "maxSteps": 50,
+    "maxToolCalls": 100,
+    "maxRuntime": 1800,
+    "maxRetries": 3,
+    "maxTokens": 100000
+  },
+
+  "audit": {
+    "enabled": true
+  }
+}
