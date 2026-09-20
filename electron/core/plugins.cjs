@@ -220,13 +220,24 @@ function describePaths(permissions) {
   return `${paths.slice(0, 3).join('、')} 等 ${paths.length} 处`
 }
 
-/** 插件清单（系统提示里给模型看的导航，不含参数 schema —— 两段式的第一段） */
-function pluginList() {
-  const plugins = list()
-  if (plugins.length === 0) return ''
-  return plugins
+/**
+ * 插件清单的格式化（**纯函数**：给一组插件，返回系统提示里那段导航）。
+ *
+ * 抽出来是为了可测：`pluginList()` 读的是用户数据目录里的真实插件，
+ * 测试不该依赖「跑测试的机器上恰好装了个插件」—— 干净环境 clone 之后
+ * 那条断言曾经红过（本地因为开发目录里有插件所以一直是绿的）。
+ */
+function formatList(plugins) {
+  const items = Array.isArray(plugins) ? plugins : []
+  if (items.length === 0) return ''
+  return items
     .map((p) => `- \`${p.name}\`（插件「${p.nameForHuman}」）：${p.descriptionForModel}`)
     .join('\n')
+}
+
+/** 插件清单（系统提示里给模型看的导航，不含参数 schema —— 两段式的第一段） */
+function pluginList() {
+  return formatList(list())
 }
 
 /** 把插件转成工具清单（给 registry 用，形状和其它工具一致） */
@@ -290,6 +301,7 @@ module.exports = {
   getByName,
   describePermissions,
   describePaths,
+  formatList,
   pluginList,
   toStrictSchema,
   runPlugin,
