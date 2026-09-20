@@ -107,6 +107,17 @@ export async function run() {
   const windowState = require(join(ROOT, 'electron/window-state.cjs'))
   windowState.set(win)
 
+  /*
+   * ★ 打包布局：build-portable 把 build/ 拷进 resources/app/，而托盘原来只找
+   *   resources/build/ —— 路径对不上，**打包版的托盘图标一直是坏的**。
+   *   这里直接按打包后的目录结构造一遍，确认候选里有那一条。
+   */
+  const traySrc = readFileSync(join(ROOT, 'electron/tray.cjs'), 'utf8')
+  check(
+    '★ 托盘图标候选包含打包后的位置（resources/app/build）',
+    traySrc.includes("'app', 'build', 'icon-128.png'"),
+  )
+
   const shownNotices = []
   tray.setupTray({ notify: (payload) => shownNotices.push(payload) })
 

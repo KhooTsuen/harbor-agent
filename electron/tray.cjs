@@ -58,7 +58,7 @@ function hideToTray(win) {
   try {
     notifyHidden?.({
       id: '',
-      title: 'Personal Agent 还在后台跑',
+      title: `${BRAND.name} 还在后台跑`,
       body: '点右下角托盘图标可以回来；要真正退出，用托盘图标的右键菜单。',
     })
   } catch (error) {
@@ -67,11 +67,25 @@ function hideToTray(win) {
 }
 
 function trayIconPath() {
+  /*
+   * 三种布局都要能找着：
+   *   ① 开发（electron/ 的上一层有 build/）
+   *   ② 打包 —— 我们自己的 build-portable 把 build/ 放进 **resources/app/**
+   *   ③ 打包 —— 有些打包器会把它放在 resources/ 根下
+   *
+   * ★ ② 曾经漏过：打包脚本拷到 resources/app/build/，这里只找 resources/build/，
+   *   于是**打包版的托盘图标一直是坏的**（干净环境跑测试时才暴露出来）。
+   */
   const candidates = [
     path.join(__dirname, '..', 'build', 'icon-128.png'),
+    path.join(process.resourcesPath ?? '', 'app', 'build', 'icon-128.png'),
     path.join(process.resourcesPath ?? '', 'build', 'icon-128.png'),
+    /* 同一份东西在资源树里也可能叫 icon.png */
+    path.join(process.resourcesPath ?? '', 'app', 'build', 'icon.png'),
+    /* 实测打包产物里 resources/ 根下也直接放了一份 */
+    path.join(process.resourcesPath ?? '', 'icon-128.png'),
   ]
-  return candidates.find((file) => fs.existsSync(file))
+  return candidates.find((file) => file && fs.existsSync(file))
 }
 
 function setupTray({ onCreateWindow, notify } = {}) {
