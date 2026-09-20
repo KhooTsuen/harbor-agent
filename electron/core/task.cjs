@@ -88,7 +88,7 @@ function create({
     pausedAt: 0,
     resumeCount: 0,
     createdAt: Date.now(),
-    updatedAt: Date.now(),
+    updatedAt: io.monotonicNow(),
     finishedAt: 0,
   }
   io.write(task)
@@ -127,7 +127,7 @@ function update(id, patch) {
     if (patch[key] !== undefined) task[key] = patch[key]
   }
   if (patch.status && !STATUSES.includes(patch.status)) return task
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -182,7 +182,7 @@ function finish(id, { status = 'completed', result = '' } = {}) {
   task.status = STATUSES.includes(status) ? status : 'completed'
   task.result = String(result).slice(0, 4000)
   task.finishedAt = Date.now()
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -196,7 +196,7 @@ function setPlan(id, plan, options = {}) {
   if (version.changed) {
     /* AG-012：顺手记下「下一步」—— 重启后不必把整份计划再喂一遍 */
     task.nextAction = nextActionOf(plan)
-    task.updatedAt = Date.now()
+    task.updatedAt = io.monotonicNow()
     io.write(task)
   }
   return { task, ...version }

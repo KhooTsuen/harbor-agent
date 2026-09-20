@@ -24,6 +24,18 @@ export async function run() {
     return taskCore.get(task.id)
   }
 
+  /* 单调时钟：同一毫秒里连续建任务，updatedAt 也不能撞 —— 撞了排序不稳定，
+     activeForSession 会挑错任务（在 CI 上真发生过，见 task-io.cjs 的 monotonicNow） */
+  const monoA = taskCore.create({ goal: 'a', sessionId: 'selftest-ag043' })
+  created.push(monoA.id)
+  const monoB = taskCore.create({ goal: 'b', sessionId: 'selftest-ag043' })
+  created.push(monoB.id)
+  check(
+    '★ updatedAt 严格递增（同毫秒建任务也不撞）',
+    (monoB.updatedAt ?? 0) > (monoA.updatedAt ?? 0),
+    `${monoA.updatedAt} vs ${monoB.updatedAt}`,
+  )
+
   /* ── ① 什么算「改方向」 ─────────────────────────────── */
   group('AG-043 / 什么算改方向')
   const steer = newTask('把 README 改一遍')
