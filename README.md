@@ -44,7 +44,7 @@
 
 ### 方式二：从源码跑
 
-需要 **Node 20+**（Windows 10/11）。
+需要 **Node 22.19+**（Windows 10/11）。
 
 ```bash
 git clone <这个仓库>

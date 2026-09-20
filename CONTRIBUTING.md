@@ -8,7 +8,7 @@
 
 ## 环境
 
-- **Node 20 LTS**（`>=20`；开发机在 24 上也跑过）
+- **Node 22.19 或更高**（依赖里好几个包写着 `^22.13.0 || >=24.0.0`；CI 与开发机都在 24 上跑）
 - Windows 10/11（开发与打包以 Windows 为主；macOS / Linux 能跑开发版，打包与托盘未验）
 - 首次 `npm install` 会装 Electron 与 `node-pty`（后者要现场编译，Windows 上需要 VS Build Tools；仓库里带了 prebuild）
 
