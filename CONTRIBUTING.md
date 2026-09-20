@@ -1,75 +1,67 @@
 # 贡献指南
 
-这是自用项目。如果你（或未来的 AI 会话）要改它，先读这个。
+先说清楚这个项目的形状：**它是个人的工作台，不是团队产品。**
+所以它没有路线图投票、没有多平台承诺，但**对 bug 报告和小的、明确的改进非常欢迎**。
 
-> **给 AI 的话：先读 `AGENT.md`。** 那份是硬规矩、验证纪律和踩过的坑，
-> 而且本应用会自动把它注入每轮对话 —— 规矩以它为准，这里不重复。
+> 如果你（或未来的 AI 会话）要改代码，**先读 [`AGENT.md`](AGENT.md)**
+> —— 那份是硬规矩、验证纪律和踩过的坑，本应用还会把它注入每轮 Agent 对话。规矩以它为准。
 
-## 先跑起来
+## 环境
+
+- **Node 20 LTS**（`>=20`；开发机在 24 上也跑过）
+- Windows 10/11（开发与打包以 Windows 为主；macOS / Linux 能跑开发版，打包与托盘未验）
+- 首次 `npm install` 会装 Electron 与 `node-pty`（后者要现场编译，Windows 上需要 VS Build Tools；仓库里带了 prebuild）
+
+> `node_modules` 的 install scripts 被 npm 拦下时（npm 11+ 默认行为会警告），
+> 如果 PTY 起不来，跑一次 `npm approve-scripts node-pty` 或 `npm approve-scripts --allow-scripts-pending`。
+
+## 常用命令
 
 ```bash
-npm install
-npm run dev        # Electron 版（能读写文件、跑命令、真终端）
-npm run dev:web    # 浏览器演示版（mock 回复，不碰本机）
+npm run dev            # Vite + Electron（热更新）
+npm run build          # tsc --noEmit + vite build
+npm run package        # 打便携版 → dist-portable/Harbor/
+
+npm test               # 内核自检（1500+ 项，不联网、不需要 Electron）
+npm run test:unit      # 前端单元测试（vitest）
+npm run test:app       # 无窗口跑一遍，打印主进程与渲染层真实状态
+npm run pty:check      # 验 node-pty（纯 Node 与 Electron ABI 都要过）
+
+npx tsc --noEmit                                   # 类型（零容忍）
+npx eslint src --ext .ts,.tsx                      # 风格
+npx prettier --check "src/**/*.{ts,tsx}"           # 格式
 ```
 
-> `npm install` 之后如果终端功能不可用，见 `AGENT.md` 的坑清单
-> （npm 11 会拦下原生模块的安装脚本，要手动补一步）。
+## 改代码时的硬规矩
 
-## 改完自己验
+这几条不是建议，是**会被守门测试拦下**的：
 
-具体命令和「为什么光看测试通过不够」写在 `AGENT.md`，
-这里只说验收标准：
+| 规矩 | 为什么 |
+| --- | --- |
+| **单文件 ≤ 300 行** | 超了就拆。全仓零例外 |
+| **改了行为就改测试**，并做一次**变异测试**（把实现改坏，测试必须变红） | 绿的测试不等于有效的测试 |
+| **断言针对行为，不针对字符串**（源码守卫只用于"这东西还在、接线没断"） | 注释被当成代码、守卫搬家失效都踩过 |
+| **跨模块传结构时，形状本身要有断言** | 踩过两次：内核返回单个对象、渲染层按数组收；字段名读错但测试用桩编了错的形状 |
+| **没跑过的代码不许说"应该没问题"** | 盲写要显式声明 |
+| **`scripts/` 不要跑 `prettier --write`** | 检查范围只含 `src/**`，格式化它会白白撑爆行数 |
 
-- [ ] `npm run typecheck` 0 错误
-- [ ] `npm run lint` 0 错误 0 警告
-- [ ] `npm run test:unit`（前端）全绿
-- [ ] `npm test`（内核）全绿 —— **改 `electron/` 就必须跑这个**
-- [ ] `npm run build` 通过
-- [ ] 改到 UI / 会话 / 发送 → **真的手动走一遍**（用 `npm run shot:electron` 或自己点）
-- [ ] `npm run package` 能打出来，且 `--self-test` 全 true
+## 加一个工具
 
-## 设计系统
+1. 实现放 `electron/core/tools/`，按现有工具的形状导出（`name` / `description` / `parameters` / `run`）
+2. 在 `electron/core/tools/registry.cjs` 里登记
+3. **风险等级与权限**：写文件 / 跑命令 / 删除必须在 `electron/core/risk.cjs`（或工具自己的声明）里标清楚
+4. 加自检：`scripts/selftest/groups/` 里补一组，覆盖"正常调用 / 被权限拦下 / 参数非法"三条
+5. 如果它会写文件，确认走 `changeset`（这样用户能整批回滚）
 
-**值的唯一来源**是 `src/constants/design.ts` 和 `src/constants/glass.ts`，
-再由 `tailwind.config.js` 映射成 utility、`src/index.css` 输出成 CSS 变量。
+## 提交与 PR
 
-改任何颜色 / 字号 / 圆角，去那两个文件，别在组件里写死。
+- 一个改动一个提交，提交信息写**为什么**（"修 xxx 因为 yyy"），不只是"改了什么"
+- **不要提交**：`data/`（会话、记忆、凭证、审计）、`.env`、`node_modules`、`dist-portable/`、任何密钥
+- PR 请说明：改了什么、怎么验证的（跑了哪些命令）、有没有已知边界
+- 涉及安全的改动（权限、文件边界、命令执行、MCP、密钥处理）请在描述里**显式点名**
 
-两套主题并存：
+## Issue
 
-- `default` —— 实测值（从 23 张同类界面截图里量出来的），**默认**
-  （旧版本里这个主题叫 `codex`，会自动迁移）
-- `chatgpt` —— 规范给的基准值
-- `light` / `system` —— 亮色 / 跟随系统
-
-玻璃拟态**默认关**（实测参考实现没有毛玻璃），用 `html[data-glass="on"]` 打开。
-
-## 目录结构
-
-```
-electron/   主进程（CommonJS，管文件/命令/模型请求/终端/凭证）
-src/        渲染层（React + TS）
-  components/  ui / chat / layout / settings / dialogs / onboarding
-  stores/     zustand（app / thread / settings / ui / config）
-  hooks/      通用 React hooks
-  lib/        backend / fs / workdir / export / schemas / highlight / markdown
-  constants/  design / glass / index（快捷键、模型、布局尺寸）
-docs/       安全模型 + 改造进度
-scripts/    selftest（内核自测）/ build-portable / dev
-tools/      shot（浏览器预览截图）/ shot-electron（真应用截图与驱动）
-```
-
-## 文档分工
-
-| 文档 | 给谁看 | 什么时候更新 |
-|---|---|---|
-| `AGENT.md` | **AI 助手 + 本项目 Agent** | 规矩变了、踩了新坑 |
-| `README.md` | 使用者 / 想了解全貌的人 | 加了功能、改了取舍 |
-| `docs/安全模型.md` | 要碰安全相关的开发者 | 动了任何安全边界（含**没做什么**） |
-| `docs/改造任务/PROGRESS.md` | 接手的人 / 别的模型 | 完成或放弃某条改造项 |
-| `CHANGELOG.md` | 所有人 | 每次改动，写清**为什么** |
-| `CONTRIBUTING.md` | 人 | 流程变了 |
-
-**一条纪律**：同一个数字（比如测试项数、上限值）只在**唯一**一份文档里定义，
-其他地方只引用、不复制 —— 复制了就会漂，这个项目已经漂过一次。
+- Bug：版本 + 复现步骤 + **脱敏后**的日志（见 [`SECURITY.md`](SECURITY.md) 的"不要贴什么"）
+- 功能建议：说清使用场景（"我想在 X 情况下做 Y"），别只说"加个功能"
+- **安全漏洞**不要开公开 Issue，走 [SECURITY.md](SECURITY.md) 里的私密渠道
