@@ -49,7 +49,7 @@ describe('个人资料', () => {
   })
 
   it('★ 有名字没头像时，显示名字首字（中文取第一个字）', () => {
-    act(() => useProfileStore.setState({ name: 'dev-user' }))
+    act(() => useProfileStore.setState({ name: 'Sam' }))
     draw()
     expect(container.textContent).toContain('B')
     act(() => useProfileStore.setState({ name: '张三' }))
@@ -86,7 +86,7 @@ describe('个人资料', () => {
   it('首字的取法：空 → 「我」，英文取大写，超长名字只看第一个字', () => {
     expect(initialOf('')).toBe('我')
     expect(initialOf('   ')).toBe('我')
-    expect(initialOf('binlin')).toBe('B')
+    expect(initialOf('sam')).toBe('S')
     expect(initialOf('张三丰')).toBe('张')
   })
 })

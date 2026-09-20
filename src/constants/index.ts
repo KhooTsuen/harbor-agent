@@ -18,6 +18,9 @@ export interface ModeMeta {
   reasoning: ReasoningLevel
 }
 
+/** 产品名（顶栏等处显示用）—— 只在这一处定义 */
+export const BRAND_NAME = 'Personal Agent'
+
 export const MODES: readonly ModeMeta[] = [
   {
     id: 'plan',
