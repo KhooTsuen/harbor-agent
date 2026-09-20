@@ -112,7 +112,7 @@ export function BootSequence({ skipping, onSkip, onPrepare, onDone }: BootSequen
         if (event.button === 0) onSkip()
       }}
       role="status"
-      aria-label="Personal Agent 正在启动，单击鼠标左键可跳过"
+      aria-label={`${BRAND_NAME} 正在启动，单击鼠标左键可跳过`}
     >
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.07]"

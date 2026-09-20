@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { BRAND_NAME } from '@/constants'
 import { Eraser, CornerDownLeft, Square } from 'lucide-react'
 import type { Project, TerminalLine } from '@/types'
 import { uid } from '@/lib/utils'
@@ -29,7 +30,7 @@ function welcome(project: Project): TerminalLine[] {
     {
       id: uid('tl'),
       type: 'info',
-      content: `Personal Agent 终端 —— ${project.path}`,
+      content: `${BRAND_NAME} 终端 —— ${project.path}`,
       timestamp: Date.now(),
     },
     { id: uid('tl'), type: 'output', content: '输入命令，回车执行。', timestamp: Date.now() + 10 },
