@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { asked, dirname, join, require, ROOT, SANDBOX, ctx } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
@@ -28,6 +28,9 @@ const promptStack = require(join(ROOT, 'electron/core/prompt-stack.cjs'))
 
 /* 沙箱之外的一个文件 —— 验证"工作目录外的读写要单独授权" */
 const OUTSIDE_FILE = join(dirname(SANDBOX), 'selftest-outside-secret.txt')
+/* data/ 是 gitignore 的（应用运行时才建），干净 clone 里没有 —— 这里自己建出来。
+   不建的话，import 阶段就 ENOENT 崩掉（CI 上实测到的）。 */
+mkdirSync(dirname(SANDBOX), { recursive: true })
 writeFileSync(OUTSIDE_FILE, '这是沙箱外的内容，不该被随便读到')
 
 /** 危急命令：`permission` 开到 full、`confirm` 一律返回"允许"，也必须拦住 */

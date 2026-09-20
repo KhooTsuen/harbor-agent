@@ -49,6 +49,13 @@ const memSim = require(join(ROOT, 'electron/core/memory-similarity.cjs'))
 /* 测试用的沙箱目录，跑完删掉 */
 const SANDBOX = join(ROOT, 'data', 'selftest-workspace')
 
+/*
+ * data/ 是 .gitignore 里的（应用运行时才建），干净 clone 里**没有**这个目录。
+ * 而有些测试在 import 阶段就会往 data/ 里写东西（setupSandbox 还没被调到），
+ * 于是“本地好好的、CI 上 ENOENT”。在模块加载时先把 data/ 建出来。
+ */
+mkdirSync(join(ROOT, 'data'), { recursive: true })
+
 function setupSandbox() {
   rmSync(SANDBOX, { recursive: true, force: true })
   mkdirSync(SANDBOX, { recursive: true })
