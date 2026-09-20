@@ -160,7 +160,7 @@ npx eslint src --ext .ts,.tsx                      # 风格
 npx prettier --check "src/**/*.{ts,tsx}"           # 格式
 ```
 
-这套测试不是摆设：**真机发现、单测照不到**的 bug（字段名读错、状态没收尾、长任务看不到 token、
+这套测试不是摆设：**只有实际跑起来才会暴露、单测照不到**的 bug（字段名读错、状态没收尾、长任务看不到 token、
 干净环境里托盘起不来）都变成了新的断言。CI 在每次 push 时跑一遍
 （[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）。
 
