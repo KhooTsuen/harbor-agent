@@ -13,8 +13,9 @@
 模型走任何 OpenAI 兼容接口。
 
 它**不是** Codex 的仿制品，也不隶属于任何厂商。产品标识统一是
-`personal-agent` / `Personal Agent`。老代码里可能残留 `codex` 字样，
-那**只在迁移常量和 CHANGELOG 里**（迁移要用旧名识别旧数据），别往新代码里带。
+`harbor-agent`（包名）/ **Harbor**（显示名）。老代码里可能残留
+`personal-agent`、`codex` 这类旧名 —— 它们**只在 LEGACY 迁移常量里**
+（迁移要用旧名识别旧数据），别往新代码里带。
 
 ## 一句话原则
 
