@@ -196,6 +196,21 @@ export async function taskUpdate(id: string, patch: Record<string, unknown>): Pr
   }
 }
 
+/**
+ * 删掉一条对话的全部任务历史（删对话时调用）。
+ *
+ * @returns 删掉了多少条（拿不到桥时给 0）
+ */
+export async function taskPurgeBySession(sessionId: string): Promise<number> {
+  if (!sessionId) return 0
+  try {
+    const result = (await bridge?.taskPurge?.(sessionId)) as { removed?: number } | undefined
+    return Number(result?.removed ?? 0)
+  } catch {
+    return 0
+  }
+}
+
 export async function taskRemove(id: string): Promise<void> {
   if (!bridge?.taskRemove) return
   try {

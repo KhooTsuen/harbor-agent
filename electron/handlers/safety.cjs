@@ -143,6 +143,8 @@ function register({ ipcMain }) {
   })
 
   ipcMain.handle('task:remove', (_event, id) => task.remove(String(id ?? '')))
+  /* 删对话时一并清掉这条对话的任务历史 */
+  ipcMain.handle('task:purge', (_event, sessionId) => task.removeBySession(String(sessionId ?? '')))
 
   ipcMain.handle('task:pauseRunning', () => task.pauseRunning())
 

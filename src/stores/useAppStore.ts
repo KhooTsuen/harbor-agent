@@ -6,7 +6,6 @@ import {
   appendMessage as appendToDisk,
   useRealBackend,
   importSessions,
-  removeSession,
   updateSessionMeta,
 } from '@/lib/backend'
 import { fetchMessagesFromDisk, fetchWorkspaceFromDisk, folderIdFor } from './app/disk'
@@ -86,15 +85,6 @@ export const useAppStore = create<AppState>()(
           threads: s.threads.map((t) => (t.id === pendingId ? { ...t, id: realId } : t)),
           activeThreadId: s.activeThreadId === pendingId ? realId : s.activeThreadId,
         })),
-
-      deleteThread: (id) => {
-        if (useRealBackend) void removeSession(id)
-        set((s) => {
-          const threads = s.threads.filter((t) => t.id !== id)
-          const activeThreadId = s.activeThreadId === id ? (threads[0]?.id ?? '') : s.activeThreadId
-          return { threads, activeThreadId }
-        })
-      },
 
       /* 用户手动改名：titleAuto = false，之后模型起的标题不会再盖掉它 */
       renameThread: (id, title) => {

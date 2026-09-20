@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Archive, Settings } from 'lucide-react'
 import type { Thread } from '@/types'
-import { truncate } from '@/lib/utils'
+import { confirmDeleteThread } from '@/lib/confirmDeleteThread'
 import { sortThreads, useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -36,8 +36,6 @@ export function Sidebar({ loading = false }: SidebarProps) {
   const collapsed = useSettingsStore((s) => s.settings.sidebarCollapsed)
   const searchQuery = useUIStore((s) => s.searchQuery)
   const openSettings = useUIStore((s) => s.openSettings)
-  const askPermission = useUIStore((s) => s.askPermission)
-  const showToast = useUIStore((s) => s.showToast)
 
   const [showArchived, setShowArchived] = useState(false)
   const [remoteHits, setRemoteHits] = useState<
@@ -91,17 +89,8 @@ export function Sidebar({ loading = false }: SidebarProps) {
   )
 
   function requestDeleteThread(thread: Thread): void {
-    askPermission({
-      kind: 'delete-thread',
-      title: '删除这条对话？',
-      description: `「${thread.title}」里的 ${thread.messages.length} 条消息会一起删掉，不能撤销。`,
-      confirmText: '删除',
-      danger: true,
-      onConfirm: () => {
-        useAppStore.getState().deleteThread(thread.id)
-        showToast('success', '已删除', truncate(thread.title, 24))
-      },
-    })
+    /* 确认文案与 Ctrl+W 那条路共用一处（见 lib/confirmDeleteThread.ts） */
+    confirmDeleteThread(thread.id)
   }
 
   if (collapsed) return <CollapsedSidebar onCreateThread={() => createThread()} />

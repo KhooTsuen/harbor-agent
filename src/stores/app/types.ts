@@ -36,7 +36,8 @@ export interface AppState {
   /** 把某条对话挂到另一个目录（'' = 摘掉文件夹，变成单独对话） */
   setThreadWorkdir: (threadId: string, workdir: string) => Promise<void>
   replaceThreadId: (pendingId: string, realId: string) => void
-  deleteThread: (id: string) => void
+  /** 删对话（连同它的任务历史）。返回清掉的任务条数 */
+  deleteThread: (id: string) => Promise<number>
   renameThread: (id: string, title: string) => void
   /** 系统自动起的标题（保持 titleAuto = true，允许之后被更好的覆盖） */
   autoTitle: (id: string, title: string) => void

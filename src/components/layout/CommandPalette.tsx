@@ -26,6 +26,7 @@ export function CommandPalette() {
   const setOpen = useUIStore((s) => s.setCommandPaletteOpen)
   const openSettings = useUIStore((s) => s.openSettings)
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
+  const openBottomPanel = useUIStore((s) => s.openBottomPanel)
   const closeSettings = useUIStore((s) => s.closeSettings)
 
   const threads = useAppStore((s) => s.threads)
@@ -72,7 +73,8 @@ export function CommandPalette() {
         id: 'action:terminal',
         label: '打开终端面板',
         run: () => {
-          setActiveRightTab('terminal')
+          /* 终端只在底栏 —— 命令也一样，开底栏的终端那一栏 */
+          openBottomPanel('terminal')
           setOpen(false)
         },
       },
@@ -136,6 +138,7 @@ export function CommandPalette() {
     query,
     searchHistory,
     createThread,
+    openBottomPanel,
     setOpen,
     openSettings,
     setActiveRightTab,

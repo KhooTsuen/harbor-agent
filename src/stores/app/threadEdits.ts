@@ -1,6 +1,7 @@
 import type { Thread } from '@/types'
 import { uid } from '@/lib/utils'
-import { useRealBackend, updateSessionMeta } from '@/lib/backend'
+import { abortChat, removeSession, useRealBackend, updateSessionMeta } from '@/lib/backend'
+import { taskPurgeBySession } from '@/lib/safetyApi'
 import type { AppState } from './types'
 import { useUIStore } from '@/stores/useUIStore'
 
@@ -20,11 +21,45 @@ type Setter = (partial: Partial<AppState> | ((state: AppState) => Partial<AppSta
  */
 type EditedActions = Pick<
   AppState,
-  'branchThread' | 'editUserMessage' | 'updateConversationState' | 'updateThreadSettings'
+  | 'branchThread'
+  | 'editUserMessage'
+  | 'updateConversationState'
+  | 'updateThreadSettings'
+  | 'deleteThread'
 >
 
 export function makeThreadEditActions(set: Setter, get: () => AppState): EditedActions {
   return {
+    /*
+     * 删对话 = 删这条对话的**任务历史**一起删（用户明确要的）。
+     *
+     * 三件事，顺序不能反：
+     *   ① 先停掉这条对话里还在跑的任务 —— 不然任务还在后台跑、台账却被删了，
+     *    它会继续往一个不存在的任务里写东西（幽灵任务）
+     *   ② 清任务台账（按 sessionId 整批删）
+     *   ③ 删会话文件
+     *
+     * @returns 清掉的任务条数（调用方用它说一句「一并清理了 N 条任务历史」）
+     */
+    deleteThread: async (id) => {
+      let removed = 0
+      if (useRealBackend) {
+        try {
+          await abortChat(id)
+        } catch {
+          /* 没在跑就没事；abort 失败也不该挡住删除 */
+        }
+        removed = await taskPurgeBySession(id)
+        void removeSession(id)
+      }
+      set((s) => {
+        const threads = s.threads.filter((t) => t.id !== id)
+        const activeThreadId = s.activeThreadId === id ? (threads[0]?.id ?? '') : s.activeThreadId
+        return { threads, activeThreadId }
+      })
+      return removed
+    },
+
     branchThread: (threadId, messageId) => {
       const source = get().threads.find((t) => t.id === threadId)
       if (!source) return ''
