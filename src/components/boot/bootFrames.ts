@@ -1,3 +1,4 @@
+import wordmarkArt from '@/assets/wordmark.txt?raw'
 export const BOOT_TIMING = {
   typingEnd: 3200,
   progressStart: 2200,
@@ -12,7 +13,7 @@ export const BOOT_TIMING = {
 } as const
 
 export const BOOT_COPY = [
-  'PERSONAL AGENT // APERTURE LOCAL SYSTEM',
+  'HARBOR // LOCAL AGENT SYSTEM',
   '',
   '> mounting local workspace ........ OK',
   '> isolating tool runtime .......... OK',
@@ -30,29 +31,13 @@ export const EASTER_EGGS = [
 ] as const
 
 /*
- * 标识：`HARBOR` 的 5×7 点阵。
+ * 字标：`HARBOR` 的灰度点阵（489 列 × 43 行）。
  *
- * ★ 字形表就是下面全部内容 —— 自己写的，不用现成艺术字库、不引用外部图片。
- *   以前那版是《Portal》里的 Aperture 图形（别人的美术），公开前移除了。
+ * ★ 由 `scripts/generate-wordmark.py` 用系统字体渲染生成 —— 自己算的，
+ *   不引用任何现成艺术字（以前那版是《Portal》的 Aperture 图形，公开前移除了）。
+ *   手写过一版 5×7 的点阵，缩到屏幕上就一小坨，所以换成这个分辨率。
  */
-const GLYPHS: Record<string, readonly string[]> = {
-  H: ['10001', '10001', '11111', '10001', '10001', '10001', '10001'],
-  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
-  R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
-  B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
-  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
-}
-const WORDMARK = 'HARBOR'
-
-function renderWordmark(): string {
-  const lines: string[] = []
-  for (let y = 0; y < GLYPHS.H.length; y += 1) {
-    lines.push([...WORDMARK].map((letter) => GLYPHS[letter]?.[y] ?? '00000').join('0'))
-  }
-  return lines.join('\n').replace(/1/g, '█').replace(/0/g, ' ')
-}
-
-const ART = renderWordmark()
+const ART = wordmarkArt.replace(/^\s*\n/, '').replace(/\s+$/, '')
 const NOISE = '@.#%&+?:/\\<>[]{}01'
 
 export function typeBootCopy(elapsed: number): string {

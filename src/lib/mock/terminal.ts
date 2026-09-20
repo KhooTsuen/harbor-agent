@@ -1,4 +1,5 @@
 import type { TerminalLine } from '@/types'
+import { BRAND_NAME } from '@/constants'
 import { uid } from '@/lib/utils'
 import type { MockProject } from './types'
 
@@ -16,7 +17,7 @@ export function initialTerminal(project: MockProject): TerminalLine[] {
     {
       id: uid('tl'),
       type: 'info',
-      content: `Personal Agent 终端（模拟）—— ${project.path}`,
+      content: `${BRAND_NAME} 终端（模拟）—— ${project.path}`,
       timestamp: now,
     },
     { id: uid('tl'), type: 'output', content: '输入 help 看可用命令。', timestamp: now + 10 },

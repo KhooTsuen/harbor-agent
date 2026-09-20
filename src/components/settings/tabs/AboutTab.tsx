@@ -1,4 +1,5 @@
 import { APP_VERSION } from '@/lib/backend'
+import { BRAND_NAME } from '@/constants'
 import { SectionTitle } from '../parts'
 
 /* ══════════════════════════════════════════════════════════════
@@ -18,7 +19,7 @@ const DEPENDENCIES = [
 export function AboutTab() {
   return (
     <div className="py-4 text-dense leading-relaxed text-fg-secondary">
-      <h3 className="text-body font-semibold text-fg-primary">Personal Agent</h3>
+      <h3 className="text-body font-semibold text-fg-primary">{BRAND_NAME}</h3>
       <p className="mt-1 text-2xs text-fg-tertiary">{`版本 ${APP_VERSION}`}</p>
 
       <div className="mt-4 flex flex-col gap-2">
