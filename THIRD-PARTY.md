@@ -20,10 +20,10 @@ OFL 允许随软件分发（含商用），条件是**保留版权声明**（上
 
 ## 图形素材
 
-- `src/assets/banner/*`、`src/assets/aperture.txt` —— 见
-  `src/assets/banner/README.md` 的说明（来源与重建方式都写在那边）
-- `build/icon*.png`、`src/assets/icon*.png` —— 应用图标
+- `build/icon.png` / `icon-128.png` / `icon.ico` —— 应用图标，由仓库主人用 AI 图像工具生成后
+  用 `scripts/make-icon.py` 处理（圆角剪裁 + 多尺寸）。生成脚本在仓库里，可自行替换
+- 启动页那个字标（`src/assets/wordmark.txt`）**不是素材** —— 由 `scripts/generate-wordmark.py`
+  用系统字体现场渲染成点阵，仓库里那份是它的输出
 - 界面图标来自 [Lucide](https://lucide.dev)（ISC 许可）
 
-> ⚠️ 上面「图形素材」里，横幅（ASCII 艺术）与图标的**原始来源需要在公开前确认**
-> —— 见 `docs/发布清单.md` 里那条待办。
+> 三者都可以自由替换；发布产物里不含任何来源不明的第三方美术。
