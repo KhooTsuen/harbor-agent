@@ -202,8 +202,25 @@ function setPlan(id, plan, options = {}) {
   return { task, ...version }
 }
 
+/**
+ * 把某条对话（会话）的任务全部删掉 —— 删对话时一并清任务历史（用户要的）。
+ *
+ * 放门面而不是底座：`list` 认识 sessionId（还负责校验/重建索引），
+ * 底座 task-io 只管「一个任务一个文件」，不该知道会话是什么。
+ *
+ * @returns {{ ok: boolean, removed: number }}
+ */
+function removeBySession(sessionId) {
+  const target = String(sessionId ?? '')
+  if (!target) return { ok: false, removed: 0 }
+  const doomed = list({ limit: 1000, sessionId: target }).map((task) => task.id)
+  for (const id of doomed) io.remove(id)
+  return { ok: true, removed: doomed.length }
+}
+
 module.exports = {
   ...io,
+  removeBySession,
   ...notes,
   STATUSES,
   create,

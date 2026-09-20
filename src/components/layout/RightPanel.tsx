@@ -1,14 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  Activity,
-  FileCode2,
-  GitCompareArrows,
-  Globe,
-  ListTodo,
-  Package,
-  TerminalSquare,
-  X,
-} from 'lucide-react'
+import { Activity, FileCode2, GitCompareArrows, Globe, ListTodo, Package, X } from 'lucide-react'
 import type { FileNode, Project, RightTab } from '@/types'
 import { cn } from '@/lib/utils'
 import { colorOf } from '@/lib/statusLanguage'
@@ -24,7 +15,6 @@ import { useBrowseBridge } from './browser/useBrowseBridge'
 import { ArtifactsPanel } from '@/components/chat/ArtifactsPanel'
 import { StatePanel } from '@/components/chat/StatePanel'
 import { TaskCenter } from '@/components/chat/TaskCenter'
-import { Terminal } from './Terminal'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { useAppStore } from '@/stores/useAppStore'
@@ -41,7 +31,6 @@ import { isElectron } from '@/lib/backend'
 
 const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode2 }[] = [
   { id: 'diff', label: '审查', icon: GitCompareArrows },
-  { id: 'terminal', label: '终端', icon: TerminalSquare },
   { id: 'files', label: '文件', icon: FileCode2 },
   { id: 'browser', label: '浏览器', icon: Globe },
   { id: 'artifacts', label: '成果', icon: Package },
@@ -76,7 +65,7 @@ export function RightPanel() {
    * 右栏（文件树 / 终端）该看哪个目录：**跟着当前这条对话走**。
    * 单独对话没挂目录 → 用全局默认。
    *
-   * 子组件（FileTree / Terminal）收的是 Project，所以这里合成一个 ——
+   * 子组件（FileTree）收的是 Project，所以这里合成一个 ——
    * 为这点事改三四个组件的 props 不划算。
    */
   const effectiveProject = useAppStore((s) => {
@@ -231,21 +220,6 @@ export function RightPanel() {
             )}
           </div>
         ) : null}
-
-        {/*
-        终端面板**不随标签卸载** —— 卸载会连带杀掉 PTY 会话，
-        跑一半的 vim / htop 就没了。切标签只隐藏；重新可见时
-        xterm 那边的 ResizeObserver 会自然触发一次 fit。
-        `contents` 是为了保持它是 flex 子元素（不被额外 div 打断布局）。
-      */}
-        <div className={activeRightTab === 'terminal' ? 'contents' : 'hidden'}>
-          {/*
-          用 effectiveProject 而不是 project：
-          单独对话没挂在任何文件夹上，projects 里就没有对应项，
-          project 会是 undefined —— 终端会整块空白（看着像坏了）。
-        */}
-          {effectiveProject ? <Terminal project={effectiveProject} /> : null}
-        </div>
 
         {activeRightTab === 'files' ? (
           openFile ? (

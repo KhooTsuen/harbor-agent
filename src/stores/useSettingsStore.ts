@@ -79,8 +79,8 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     fontFamily,
     customFontFamily: typeof s.customFontFamily === 'string' ? s.customFontFamily : '',
     lastThreadId: typeof s.lastThreadId === 'string' ? s.lastThreadId : '',
+    /* 老版本存过 'terminal'（右栏那个标签已经收掉了）→ 白名单里不认，会落到 'diff' */
     lastRightTab:
-      s.lastRightTab === 'terminal' ||
       s.lastRightTab === 'files' ||
       s.lastRightTab === 'browser' ||
       s.lastRightTab === 'artifacts' ||

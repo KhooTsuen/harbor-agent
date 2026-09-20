@@ -271,8 +271,9 @@ export interface SafetyBridge {
     error?: string
   }>
   taskRemove: (id: string) => Promise<{ ok: boolean }>
+  /** 删掉一条对话的全部任务历史（删对话时一起清） */
+  taskPurge: (sessionId: string) => Promise<{ ok: boolean; removed: number }>
   taskPauseRunning: () => Promise<{ ok: boolean; paused?: number }>
-
   changesetList: (options?: { limit?: number; taskId?: string; sessionId?: string }) => Promise<{
     ok: boolean
     changesets: ChangeSetSummary[]

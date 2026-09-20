@@ -13,6 +13,7 @@ import { useAppBootstrap } from '@/hooks/useAppBootstrap'
 import { useOnboardingGate } from '@/hooks/useOnboardingGate'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { confirmDeleteThread } from '@/lib/confirmDeleteThread'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useThreadStore } from '@/stores/useThreadStore'
@@ -52,7 +53,6 @@ function MainApp() {
   const activeThreadId = useAppStore((s) => s.activeThreadId)
   const thread = useAppStore((s) => s.threads.find((t) => t.id === activeThreadId))
   const createThread = useAppStore((s) => s.createThread)
-  const deleteThread = useAppStore((s) => s.deleteThread)
 
   const rightPanelVisible = useUIStore((s) => s.rightPanelVisible)
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel)
@@ -163,7 +163,8 @@ function MainApp() {
       }
       if (matchCombo(event, shortcut('close-thread', 'mod+w')) && !inInput) {
         event.preventDefault()
-        if (activeThreadId) deleteThread(activeThreadId)
+        /* 和侧栏那条路一样：确认里会说明「任务记录一起删」 */
+        if (activeThreadId) confirmDeleteThread(activeThreadId)
         return
       }
 
@@ -178,7 +179,6 @@ function MainApp() {
       bottomOpen,
       commandPaletteOpen,
       createThread,
-      deleteThread,
       openSettings,
       permissionOpen,
       sendMessage,

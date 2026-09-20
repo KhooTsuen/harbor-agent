@@ -10,7 +10,8 @@
 export type ThemeName = 'default' | 'chatgpt' | 'spec' | 'light'
 export type ThemePreference = ThemeName | 'system'
 export type ToggleState = 'on' | 'off'
-export type RightTab = 'diff' | 'terminal' | 'files' | 'browser' | 'artifacts' | 'tasks' | 'state'
+/* 终端只在底栏（Ctrl+J）—— 右栏不再有终端标签，免得同一个东西两处入口 */
+export type RightTab = 'diff' | 'files' | 'browser' | 'artifacts' | 'tasks' | 'state'
 /**
  * Agent 生命周期阶段（AG-001）。
  *
