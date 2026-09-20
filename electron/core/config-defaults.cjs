@@ -94,6 +94,12 @@ const MCP_ENV_ALLOWLIST = [
 const DEFAULTS = {
   version: 2,
 
+  /** 个人资料：侧栏左下角那个圆显示什么（头像文件在 data/avatars/） */
+  profile: {
+    /** 昵称；空 = 就显示「我」 */
+    name: '',
+  },
+
   general: {
     theme: 'default',
     glassmorphism: false,

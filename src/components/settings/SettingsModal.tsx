@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { SETTINGS_TABS, type SettingsTabId } from './parts'
 import { AboutTab } from './tabs/AboutTab'
 import { MemoryTab } from './tabs/MemoryTab'
+import { ProfileTab } from './tabs/ProfileTab'
 import { GeneralPanel } from './panels/GeneralPanel'
 import { ConversationPanel } from './panels/ConversationPanel'
 import { AccessPanel } from './panels/AccessPanel'
@@ -130,6 +131,7 @@ export function SettingsModal() {
 
         {/* 右侧内容 */}
         <div className="settings-body min-w-0 flex-1 overflow-y-auto pr-1.5">
+          {tab === 'profile' ? <ProfileTab /> : null}
           {tab === 'general' ? <GeneralPanel /> : null}
           {tab === 'appearance' ? <AppearanceTab /> : null}
           {tab === 'conversation' ? <ConversationPanel /> : null}

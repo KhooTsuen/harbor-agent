@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
+import { useProfileStore } from '@/stores/useProfileStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 
 let bootstrapPromise: Promise<void> | null = null
@@ -70,6 +71,8 @@ async function bootstrap(): Promise<void> {
    */
   try {
     await useTaskStore.getState().refresh()
+    /* 个人资料（侧栏左下角那个圆）—— 名字与头像都在主进程那边 */
+    await useProfileStore.getState().load()
     const pending = useTaskStore.getState().unfinished
     if (pending.length > 0) {
       const dirty = pending.filter((item) => item.envChanged.length > 0).length

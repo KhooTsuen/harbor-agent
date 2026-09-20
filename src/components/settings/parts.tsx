@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import {
   BrainCircuit,
   Cpu,
+  UserRound,
   Database,
   Info,
   Palette,
@@ -20,6 +21,7 @@ import {
    ══════════════════════════════════════════════════════════════ */
 
 export type SettingsTabId =
+  | 'profile'
   | 'general'
   | 'appearance'
   | 'conversation'
@@ -59,6 +61,7 @@ export const SETTINGS_TABS: readonly {
   /** 分组标题（null = 不分组，直接列在最下面） */
   group: string | null
 }[] = [
+  { id: 'profile', label: '个人资料', icon: UserRound, group: '常用' },
   { id: 'general', label: '通用', icon: Settings2, group: '常用' },
   { id: 'appearance', label: '外观', icon: Palette, group: '常用' },
   { id: 'conversation', label: '对话', icon: SlidersHorizontal, group: '常用' },
