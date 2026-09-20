@@ -139,8 +139,30 @@ function setupTray({ onCreateWindow, notify } = {}) {
   }
 }
 
+/**
+ * 销毁托盘图标。
+ *
+ * 用户报过：**退出后托盘图标不消失**（鼠标划过去才没）。
+ * Electron 退出时一般会自己清理，但只要退出路径稍有不同（直接 app.exit()、
+ * 进程被杀、或者 Windows 那边没收到托盘重生通知），图标就会挂在那儿。
+ * 显式 destroy 是官方推荐的做法 —— 别把这事托付给"它应该会自动清理"。
+ */
+function destroyTray() {
+  if (!tray) return
+  try {
+    tray.destroy()
+    log.info('托盘图标已销毁')
+  } catch (error) {
+    log.warn(`销毁托盘图标失败：${error instanceof Error ? error.message : error}`)
+  } finally {
+    tray = null
+    trayMenu = null
+  }
+}
+
 module.exports = {
   setupTray,
+  destroyTray,
   showWindow,
   hideToTray,
   isQuitting: () => quitting,
