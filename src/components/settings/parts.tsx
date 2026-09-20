@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Children, isValidElement, useRef, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import {
   BrainCircuit,
@@ -85,6 +85,31 @@ export const SETTINGS_TABS: readonly {
  * 用统一的类名而不是给每处写样式：9 个标签页、几十个设置项，
  * 改一处全部生效 —— 这也是它值得单独一个组件的原因。
  */
+/**
+ * 这一行的控件里有没有**文本类**控件（input/select/textarea，排除勾选类）。
+ * 有的话标题才给「可点」的样子 —— 开关行里点标题聚焦不到东西，不该装成能点。
+ */
+function hasField(children: ReactNode): boolean {
+  let found = false
+  const walk = (node: ReactNode): void => {
+    if (found) return
+    Children.forEach(node, (child) => {
+      if (!isValidElement(child)) return
+      const type = typeof child.type === 'string' ? child.type : ''
+      if (type === 'input' || type === 'select' || type === 'textarea') {
+        const kind = String((child.props as { type?: string }).type ?? '')
+        if (type !== 'input' || (kind !== 'checkbox' && kind !== 'radio' && kind !== 'file')) {
+          found = true
+        }
+        return
+      }
+      walk((child.props as { children?: ReactNode }).children)
+    })
+  }
+  walk(children)
+  return found
+}
+
 export function Row({
   label,
   hint,
@@ -97,8 +122,24 @@ export function Row({
   children: ReactNode
   danger?: boolean
 }) {
+  const rowRef = useRef<HTMLDivElement>(null)
+  /*
+   * 点标题 = 把光标送进这一行的输入框。
+   *
+   * 试玩反馈里「设置有些地方点不开」，一类就是这个：标题看着像能点（
+   * 别处点标题都会聚焦），点上去却毫无反应，用户会以为坏了。
+   *
+   * ★ 只挑**文本类**控件：勾选框/单选框不碰 —— 点标题顺手把开关拨了才是真坑。
+   */
+  const focusField = (): void => {
+    const field = rowRef.current?.querySelector<HTMLElement>(
+      'input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea',
+    )
+    field?.focus()
+  }
   return (
     <div
+      ref={rowRef}
       className={cn(
         /* 每个子选项 = 一块独立的亚克力板（用户明确过粒度是子选项，不是节） */
         'acrylic-card flex items-center gap-5 rounded-base px-3.5 py-3',
@@ -106,7 +147,15 @@ export function Row({
       )}
     >
       <div className="w-56 shrink-0">
-        <p className={cn('text-dense', danger ? 'text-[var(--error)]' : 'text-fg-primary')}>
+        <p
+          onClick={focusField}
+          className={cn(
+            'text-dense',
+            danger ? 'text-[var(--error)]' : 'text-fg-primary',
+            /* 有输入框可聚焦时才给「能点」的样子；开关类不给，免得诱导 */
+            hasField(children) && 'cursor-text',
+          )}
+        >
           {label}
         </p>
         {hint ? <p className="mt-0.5 text-2xs leading-relaxed text-fg-tertiary">{hint}</p> : null}
