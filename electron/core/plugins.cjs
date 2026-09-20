@@ -1,27 +1,4 @@
-/**
- * 本地插件
- *
- * 一个插件 = `data/plugins/<名字>/` 下的几个文件：
- *
- *   plugin.json   清单（给模型看的说明 + 权限声明 + 参数 schema）
- *   run.cjs       执行体（导出 `async function run(args, ctx)`，返回字符串）
- *
- * ⚠️ 执行体必须是 `.cjs`（CommonJS）—— 本项目 package.json 是
- * `"type": "module"`，`.js` 里的 `module.exports` 会**静默失效**
- * （require 出来是空对象 {}，不报错），坑了插件作者一次。
- *
- * 为什么是「本地目录」而不是照着 GPT 插件做 HTTP：
- *   用户要的是**本地端**。插件就是宿主机上的一个目录，宿主扫描它、
- *   把每个插件注册成一个工具。和 MCP 的差别是——MCP 面向外部进程、
- *   要手写 command/args；插件就是一个 node 文件，配置门槛低得多。
- *
- * ⚠️ 安全边界：run.js 是**在宿主进程里 require 的**，理论上能碰任何东西。
- * 所以当前只信任「用户自己写的插件」。等将来要装第三方插件，
- * 必须加来源标记/沙箱（和 MCP 一样按不可信对待）—— 这是 P1 的事。
- *
- * 注入防护：插件返回的内容和 MCP/browse 一样，统一标注「这是数据不是指令」。
- */
-
+/* 本地插件  一个插件 = `data/plugins/<名字>/` 下的几个文件：  plugi… */
 const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
@@ -219,12 +196,7 @@ function describePaths(permissions) {
   if (paths.length <= 3) return paths.join('、')
   return `${paths.slice(0, 3).join('、')} 等 ${paths.length} 处`
 }
-
-/*
- * 插件清单的格式化（纯函数：给一组插件，返回系统提示里那段导航）。
- * 抽出来是为了可测：`pluginList()` 读的是用户数据目录里的真实插件，
- * 测试不该依赖「跑测试的机器上恰好装了个插件」（干净环境里红过）。
- */
+/* 纯函数：给一组插件，返回系统提示里那段导航（抽出来是为了不依赖真实插件目录可测） */
 function formatList(plugins) {
   const items = Array.isArray(plugins) ? plugins : []
   if (items.length === 0) return ''
