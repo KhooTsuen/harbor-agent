@@ -142,7 +142,15 @@ function register({ ipcMain }) {
     return updated ? { ok: true, task: updated } : { ok: false, error: '任务不存在' }
   })
 
-  ipcMain.handle('task:remove', (_event, id) => task.remove(String(id ?? '')))
+  /* 安全版：正在跑的任务不给删（内核自己拦，不靠界面藏按钮） */
+  ipcMain.handle('task:remove', (_event, id) => task.removeSafe(String(id ?? '')))
+  /* 按状态批量删（任务面板的「清空这一组」）；在跑的状态会被忽略并报回来 */
+  ipcMain.handle('task:removeMany', (_event, options) =>
+    task.removeMany({
+      statuses: Array.isArray(options?.statuses) ? options.statuses : [],
+      sessionId: String(options?.sessionId ?? ''),
+    }),
+  )
   /* 删对话时一并清掉这条对话的任务历史 */
   ipcMain.handle('task:purge', (_event, sessionId) => task.removeBySession(String(sessionId ?? '')))
 

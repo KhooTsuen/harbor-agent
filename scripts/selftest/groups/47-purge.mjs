@@ -50,6 +50,37 @@ export async function run() {
   )
   check('删不存在的会话：返回 0 条，不报错', taskCore.removeBySession('根本没这个').removed === 0)
 
+  /* ── 任务面板里的删除（用户要的按钮）────────────────── */
+  group('任务面板 / 删单条 + 清空一组')
+
+  const live = taskCore.create({ goal: '正在跑的', sessionId: keepSession })
+  created.push(live.id)
+  const doneOne = taskCore.create({ goal: '已完成的一条', sessionId: keepSession })
+  created.push(doneOne.id)
+  taskCore.finish(doneOne.id, { status: 'completed', result: '做完了' })
+  const failedOne = taskCore.create({ goal: '失败的一条', sessionId: keepSession })
+  created.push(failedOne.id)
+  taskCore.finish(failedOne.id, { status: 'failed', result: '没过' })
+
+  const refused = taskCore.removeSafe(live.id)
+  check(
+    '★ 正在跑的任务不给删（返回原因，不是静默失败）',
+    refused.ok === false && refused.skipped === 1 && Boolean(refused.reason),
+    JSON.stringify(refused),
+  )
+  check('★ 而且它真的还在', taskCore.get(live.id) !== null)
+  check('已完成的可以删', taskCore.removeSafe(doneOne.id).ok === true)
+  check('删掉了就查不到', taskCore.get(doneOne.id) === null)
+
+  const bulk = taskCore.removeMany({ statuses: ['completed', 'failed', 'running'], sessionId: keepSession })
+  check('★ 批量删会跳过正在跑的', bulk.skipped >= 1 && bulk.removed >= 1, JSON.stringify(bulk))
+  check('★ 正在跑的那条还在（这正是不许删的）', taskCore.get(live.id) !== null)
+  check('失败的那条被删了', taskCore.get(failedOne.id) === null)
+  check(
+    '别的对话的任务没被连带（清空只作用于这一组 + 这次限定）',
+    taskCore.get(kept) !== null,
+  )
+
   /* ── 接线 ───────────────────────────────────────────── */
   group('删对话 / 接线')
   /*
@@ -73,6 +104,13 @@ export async function run() {
   check('★ 通道清单里有 task:purge（漏了主进程不注册，界面白等）', channels.includes("'task:purge'"))
   const preload = readFileSync(join(ROOT, 'electron/preload.cjs'), 'utf8')
   check('preload 暴露了 taskPurge', preload.includes('taskPurge:'))
+  check('★ 单条删除走安全版（内核拦在跑的）', handlerSrc.includes('task.removeSafe'))
+  check('★ 批量删通道也注册了', handlerSrc.includes("'task:removeMany'") && channels.includes("'task:removeMany'"))
+  const centerSrc = readFileSync(join(ROOT, 'src/components/chat/TaskCenter.tsx'), 'utf8')
+  check(
+    '★ 在跑 / 等确认的分组没有「清空」按钮',
+    centerSrc.includes('LIVE_GROUPS.includes(group.status)'),
+  )
 
   for (const id of created) taskCore.remove(id)
   check('测试任务已清理', created.every((id) => taskCore.get(id) === null))

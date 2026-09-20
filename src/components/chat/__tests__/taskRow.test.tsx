@@ -73,7 +73,7 @@ function task(patch: Partial<TaskRecord> = {}): TaskRecord {
 
 function draw(
   record: TaskRecord,
-  handlers: { resume?: () => void; giveUp?: () => void; open?: () => void } = {},
+  handlers: { resume?: () => void; giveUp?: () => void; open?: () => void; del?: () => void } = {},
 ) {
   act(() => {
     root.render(
@@ -86,6 +86,7 @@ function draw(
         onOpen={handlers.open ?? (() => {})}
         onResume={handlers.resume ?? (() => {})}
         onGiveUp={handlers.giveUp ?? (() => {})}
+        onDelete={handlers.del ?? (() => {})}
       />,
     )
   })

@@ -119,3 +119,38 @@ export type TaskRecoveryItem = TaskRecord & {
   progress: { done: number; total: number; current: number }
   canResume: boolean
 }
+
+/* ── 台账的桥（主进程 <-> 渲染层）──
+ *
+ * 从 safety.ts 搬来的：那边 308 行贴顶了，而这些都是**任务台账**的事。
+ * 注意 `taskRemove` / `taskRemoveMany` 的 `skipped` —— 正在跑 / 等确认的任务
+ * 永远删不掉（界面不给按钮，内核也会拦），那个数字就是「想删但没删」的条数。
+ */
+export interface TaskBridge {
+  taskList: (options?: { limit?: number; status?: string; sessionId?: string }) => Promise<{
+    ok: boolean
+    tasks: TaskRecord[]
+  }>
+  taskUnfinished: () => Promise<{ ok: boolean; tasks: TaskRecord[] }>
+  /** AG-012：重启后的恢复清单（带「停在哪一步 / 哪些文件被动过 / 恢复过几次」） */
+  taskRecovery: () => Promise<{ ok: boolean; items: TaskRecoveryItem[] }>
+  taskGet: (id: string) => Promise<{ ok: boolean; task: TaskRecord | null }>
+  /** AG-035：把台账读成一段人能读的报告（只读，不改任务） */
+  taskDiagnose: (id: string) => Promise<{ ok: boolean; diagnosis: TaskDiagnosis }>
+  taskUpdate: (payload: { id: string; patch: Record<string, unknown> }) => Promise<{
+    ok: boolean
+    task?: TaskRecord
+    error?: string
+  }>
+  taskRemove: (
+    id: string,
+  ) => Promise<{ ok: boolean; removed: number; skipped: number; reason?: string }>
+  /** 按状态批量删；running / waiting_user 会被内核忽略并在 skipped 里报回来 */
+  taskRemoveMany: (options: {
+    statuses: string[]
+    sessionId?: string
+  }) => Promise<{ ok: boolean; removed: number; skipped: number }>
+  /** 删掉一条对话的全部任务历史（删对话时一起清） */
+  taskPurge: (sessionId: string) => Promise<{ ok: boolean; removed: number }>
+  taskPauseRunning: () => Promise<{ ok: boolean; paused?: number }>
+}

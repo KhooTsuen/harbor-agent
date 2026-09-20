@@ -211,6 +211,43 @@ export async function taskPurgeBySession(sessionId: string): Promise<number> {
   }
 }
 
+/**
+ * 删一条任务的台账（正在跑的不给删 —— 内核会拒，返回值说明原因）。
+ */
+export async function taskRemoveSafe(
+  id: string,
+): Promise<{ ok: boolean; removed: number; skipped: number; reason?: string }> {
+  if (!bridge?.taskRemove) return { ok: false, removed: 0, skipped: 0 }
+  try {
+    const result = await bridge.taskRemove(id)
+    return {
+      ok: result?.ok === true,
+      removed: Number(result?.removed ?? 0),
+      skipped: Number(result?.skipped ?? 0),
+      reason: result?.reason,
+    }
+  } catch {
+    return { ok: false, removed: 0, skipped: 0 }
+  }
+}
+
+/**
+ * 按状态批量删任务（「清空这一组」）。
+ * ★ 传 running / waiting_user 也没用 —— 内核会忽略它们并在 skipped 里报回来。
+ */
+export async function taskRemoveMany(options: {
+  statuses: string[]
+  sessionId?: string
+}): Promise<{ removed: number; skipped: number }> {
+  if (!bridge?.taskRemoveMany) return { removed: 0, skipped: 0 }
+  try {
+    const result = await bridge.taskRemoveMany(options)
+    return { removed: Number(result?.removed ?? 0), skipped: Number(result?.skipped ?? 0) }
+  } catch {
+    return { removed: 0, skipped: 0 }
+  }
+}
+
 export async function taskRemove(id: string): Promise<void> {
   if (!bridge?.taskRemove) return
   try {

@@ -117,6 +117,7 @@ const EXPECTED_CHANNELS = [
   'task:recovery',
   'task:purge',
   'task:remove',
+  'task:removeMany',
   'task:unfinished',
   'task:update',
   'window:titleBar',

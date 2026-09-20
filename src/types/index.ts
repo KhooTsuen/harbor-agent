@@ -194,7 +194,13 @@ export interface ModelOption {
 
 /* ── 权限确认 ───────────────────────────────────────────────── */
 
-export type PermissionKind = 'delete-thread' | 'delete-project' | 'run-command' | 'clear-data'
+export type PermissionKind =
+  | 'delete-thread'
+  | 'delete-project'
+  | 'run-command'
+  | 'clear-data'
+  /* 任务面板里「清空这一组」的记录 */
+  | 'clear-tasks'
 
 export interface PermissionRequest {
   kind: PermissionKind
