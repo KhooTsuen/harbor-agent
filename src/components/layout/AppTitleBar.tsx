@@ -2,6 +2,7 @@ import { Loader2, PanelBottom, PanelLeft, PanelRight, Play, Square } from 'lucid
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { BRAND_NAME } from '@/constants'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { IconButton } from '@/components/ui/IconButton'
@@ -79,7 +80,7 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
         ⌘
       </span>
       <span className="hidden shrink-0 text-dense font-semibold text-fg-primary sm:inline">
-        Workbench
+        {BRAND_NAME}
       </span>
 
       {/* 当前对话标题。它是状态不是标题，所以用次级色、不上大字号 */}

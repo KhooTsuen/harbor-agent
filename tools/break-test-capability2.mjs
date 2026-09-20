@@ -24,7 +24,7 @@ const probes = [
   String.raw`C:\Windows\win.ini`,
   String.raw`D:\nothing-here.txt`,
   String.raw`Z:\whatever.txt`,
-  String.raw`<repo>\package.json`,
+  String.raw`${process.cwd()}\package.json`,
 ]
 
 for (const p of probes) {

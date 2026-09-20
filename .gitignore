@@ -62,3 +62,7 @@ tools/import-rikkahub.py
 # 破坏性测试：隔离环境与备份（都是几百 MB 的整目录副本）
 test-env/
 backups/
+
+# 抓下来的第三方文档页（曾经有三份 DeepSeek 的 API 文档躺在根目录）
+.ds*.html
+.ds*.htm

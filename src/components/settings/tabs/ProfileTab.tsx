@@ -30,7 +30,7 @@ export function ProfileTab(): React.ReactElement {
         <Field
           value={name}
           onChange={setName}
-          placeholder="比如：dev-user"
+          placeholder="比如：小王"
           maxLength={40}
           aria-label="你的名字"
         />
