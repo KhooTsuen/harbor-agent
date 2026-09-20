@@ -5,6 +5,8 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { colorOf, statusOfPhase } from '@/lib/statusLanguage'
+import { Tooltip } from '@/components/ui/Tooltip'
+import { initialOf, useProfileStore } from '@/stores/useProfileStore'
 
 /* ══════════════════════════════════════════════════════════════
    StatusBar（高 28px）—— 窗口最底下那一条
@@ -34,6 +36,9 @@ export function StatusBar() {
    */
   /* 状态栏说的是「应用整体忙不忙」—— 任意一条对话在跑都算 */
   const sending = useThreadStore((s) => s.sendingThreads.length > 0)
+  const openSettings = useUIStore((s) => s.openSettings)
+  const profileName = useProfileStore((s) => s.name)
+  const profileAvatar = useProfileStore((s) => s.avatar)
   /* 生图任务：异步的，主进程每 3 秒推一次状态（见 core/image-watch.cjs） */
   const imageTask = useUIStore((s) => s.imageTask)
   const mode = thread?.mode ?? 'pair'
@@ -70,10 +75,33 @@ export function StatusBar() {
       <span className="font-mono">{thread?.model ?? '—'}</span>
       <span className="hidden font-mono sm:inline">{thread?.reasoning ?? '—'}</span>
 
+      {/*
+        个人资料（头像 / 名字首字）搬到状态栏最右端了 —— 侧栏底部那块地方太挤，
+        而且状态栏本来就是「关于我 / 这一条」的信息条。
+        点它 → 设置 → 个人资料。
+      */}
+      <Tooltip content="个人资料（名字 / 头像）">
+        <button
+          type="button"
+          onClick={() => openSettings('profile')}
+          aria-label="个人资料"
+          className={cn(
+            'ml-auto grid size-5 shrink-0 place-items-center overflow-hidden rounded-pill bg-bg-raised text-[10px] font-semibold text-fg-secondary',
+            'transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary',
+          )}
+        >
+          {profileAvatar ? (
+            <img src={profileAvatar} alt="" className="size-full object-cover" />
+          ) : (
+            initialOf(profileName)
+          )}
+        </button>
+      </Tooltip>
+
       {/* token 用量：位置紧张，只用 ↑↓ 加缩写，完整数字挂 title */}
       {tokens.total > 0 ? (
         <span
-          className="ml-auto hidden shrink-0 font-mono md:inline"
+          className="hidden shrink-0 font-mono md:inline"
           title={`本会话 token：输入 ${formatCount(tokens.prompt)} · 输出 ${formatCount(tokens.completion)} · 合计 ${formatCount(tokens.total)}`}
         >
           ↑{formatTokens(tokens.prompt)} ↓{formatTokens(tokens.completion)}
