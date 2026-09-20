@@ -283,11 +283,8 @@ export async function run() {
     check('>3 条截断', dp({ paths: ['1', '2', '3', '4', '5'] }) === '1、2、3 等 5 处')
 
     /*
-     * pluginList：系统提示里的插件清单。
-     *
-     * ★ 测的是**纯函数** `formatList`，不是 `pluginList()` —— 后者读用户数据目录里的
-     *   真实插件，干净环境 clone 之后一条都没有，断言会红（本地开发目录里恰好有
-     *   一个「时间查询」插件，所以一直绿着）。测试不该依赖跑测试的机器上装了什么。
+     * ★ 测纯函数 `formatList`，不是 `pluginList()` —— 后者读用户数据目录里的真实插件，
+     *   干净环境 clone 之后一条都没有（本地恰好有个「时间查询」插件，所以一直绿着）。
      */
     const line = plugins.formatList([
       {
