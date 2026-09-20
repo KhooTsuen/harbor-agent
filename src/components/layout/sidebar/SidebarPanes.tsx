@@ -127,25 +127,20 @@ export function SidebarPanes({ folderList, looseThreads, onDeleteThread }: Sideb
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1">
-          {folderList.length === 0 ? (
-            <p className="px-2 py-3 text-2xs leading-relaxed text-fg-tertiary">
-              还没有文件夹。用上面的
-              <FolderPlus size={11} className="mx-0.5 inline align-[-1px]" />
-              指定一个目录，它就会变成一个文件夹。
-            </p>
-          ) : (
-            folderList.map(({ project, threads }) => (
-              <FolderSection
-                key={project.id}
-                project={project}
-                threads={threads}
-                onDeleteThread={onDeleteThread}
-                onMoveThread={moveThread}
-                onDetachThread={detachThread}
-                onNewThread={() => newThread(project.id)}
-              />
-            ))
-          )}
+          {/* 空的时候不留说明文字（用户明确说这段删掉）—— 上面那排图标自己会说话 */}
+          {folderList.length === 0
+            ? null
+            : folderList.map(({ project, threads }) => (
+                <FolderSection
+                  key={project.id}
+                  project={project}
+                  threads={threads}
+                  onDeleteThread={onDeleteThread}
+                  onMoveThread={moveThread}
+                  onDetachThread={detachThread}
+                  onNewThread={() => newThread(project.id)}
+                />
+              ))}
         </div>
       </section>
 

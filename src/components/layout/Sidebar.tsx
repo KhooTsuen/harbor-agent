@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Archive, Settings } from 'lucide-react'
 import type { Thread } from '@/types'
 import { confirmDeleteThread } from '@/lib/confirmDeleteThread'
-import { initialOf, useProfileStore } from '@/stores/useProfileStore'
 import { sortThreads, useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -37,8 +36,6 @@ export function Sidebar({ loading = false }: SidebarProps) {
   const collapsed = useSettingsStore((s) => s.settings.sidebarCollapsed)
   const searchQuery = useUIStore((s) => s.searchQuery)
   const openSettings = useUIStore((s) => s.openSettings)
-  const profileName = useProfileStore((s) => s.name)
-  const profileAvatar = useProfileStore((s) => s.avatar)
 
   const [showArchived, setShowArchived] = useState(false)
   const [remoteHits, setRemoteHits] = useState<
@@ -172,25 +169,6 @@ export function Sidebar({ loading = false }: SidebarProps) {
           <IconButton label="设置" onClick={() => openSettings()}>
             <Settings size={15} />
           </IconButton>
-        </Tooltip>
-        {/*
-          个人资料：有头像显示头像，否则显示名字首字（都没设就是「我」）。
-          点它直接落到设置的「个人资料」页 —— 以前这里是个写死的装饰，
-          点了没反应（用户反馈的「历史遗留」就是它）。
-        */}
-        <Tooltip content="个人资料（名字 / 头像）">
-          <button
-            type="button"
-            onClick={() => openSettings('profile')}
-            aria-label="个人资料"
-            className="ml-auto mr-1 grid size-6 place-items-center overflow-hidden rounded-pill bg-bg-raised text-2xs font-semibold text-fg-secondary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
-          >
-            {profileAvatar ? (
-              <img src={profileAvatar} alt="" className="size-full object-cover" />
-            ) : (
-              initialOf(profileName)
-            )}
-          </button>
         </Tooltip>
       </footer>
     </aside>

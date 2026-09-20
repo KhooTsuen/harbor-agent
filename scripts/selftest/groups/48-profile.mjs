@@ -66,12 +66,17 @@ export async function run() {
   const preload = readFileSync(join(ROOT, 'electron/preload.cjs'), 'utf8')
   check('preload 暴露了四个方法', preload.includes('profilePickAvatar'))
 
+  /*
+   * 头像原本在侧栏底部（那里原来是个**写死的装饰**：一个圆里一个「我」字）。
+   * 用户说那块太挤，让搬到状态栏最右端 —— 所以这几个断言盯的是 StatusBar。
+   */
+  const statusSrc = readFileSync(join(ROOT, 'src/components/layout/StatusBar.tsx'), 'utf8')
+  check('★ 个人资料入口在状态栏（点了打开设置那一页）', statusSrc.includes("openSettings('profile')"))
+  check('状态栏上显示头像或名字首字', statusSrc.includes('initialOf(profileName)'))
   const sideSrc = readFileSync(join(ROOT, 'src/components/layout/Sidebar.tsx'), 'utf8')
-  check(
-    '★ 侧栏那个圆不再是写死的装饰（点了会打开设置）',
-    sideSrc.includes("openSettings('profile')"),
-  )
-  check('侧栏用它显示头像或名字首字', sideSrc.includes('initialOf(profileName)'))
+  check('★ 侧栏底部那个装饰已经搬走（别在两处各留一个）', !sideSrc.includes('个人资料'))
+  const panesSrc = readFileSync(join(ROOT, 'src/components/layout/sidebar/SidebarPanes.tsx'), 'utf8')
+  check('文件夹为空时不再挂那段说明（用户明确要删的）', !panesSrc.includes('还没有文件夹'))
   check(
     'bootstrap 会读一次资料（不然启动时圆是空的）',
     readFileSync(join(ROOT, 'src/hooks/useAppBootstrap.ts'), 'utf8').includes('useProfileStore'),
