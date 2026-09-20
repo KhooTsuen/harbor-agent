@@ -15,7 +15,14 @@ const log = require('./core/log.cjs')
 const config = require('./core/config.cjs')
 const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
-const { setupTray, showWindow, hideToTray, setQuitting, isQuitting } = require('./tray.cjs')
+const {
+  setupTray,
+  destroyTray,
+  showWindow,
+  hideToTray,
+  setQuitting,
+  isQuitting,
+} = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
 const windowChrome = require('./handlers/window.cjs')
 const { registerHandlers } = require('./register-handlers.cjs')
@@ -260,6 +267,17 @@ if (!gotLock) {
       require('./core/task.cjs').pauseRunning()
     } catch (error) {
       log.warn(`标记任务状态失败：${error instanceof Error ? error.message : error}`)
+    }
+
+    /*
+     * 托盘图标要**显式销毁** —— 用户报过「退出后图标还挂在右下角」。
+     * Electron 通常会自己清理，但退出路径稍有不同（app.exit / 进程被杀 /
+     * Windows 没收到托盘重生通知）就会漏。别把这事托付给"应该会"。
+     */
+    try {
+      destroyTray()
+    } catch (error) {
+      log.warn(`销毁托盘失败：${error instanceof Error ? error.message : error}`)
     }
   })
 }

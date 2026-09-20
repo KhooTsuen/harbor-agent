@@ -28,7 +28,12 @@ function fakeElectron() {
       this.handlers = new Map()
       this.popped = 0
       this.tooltip = ''
+      this.destroyed = 0
       trays.push(this)
+    }
+    /* 真的 Tray 有 destroy；退出时要靠它把图标摘掉（用户报过「退出后还在」） */
+    destroy() {
+      this.destroyed += 1
     }
     setToolTip(text) {
       this.tooltip = text
@@ -118,6 +123,14 @@ export async function run() {
     traySrc.includes("'app', 'build', 'icon-128.png'"),
   )
 
+
+  check(
+    '★ will-quit 里显式销毁托盘（不指望 Electron 自动清理）',
+    /will-quit'[\s\S]{0,900}?destroyTray\(\)/.test(
+      readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8'),
+    ),
+  )
+
   const shownNotices = []
   tray.setupTray({ notify: (payload) => shownNotices.push(payload) })
 
@@ -131,6 +144,7 @@ export async function run() {
   }
   const icon = fake.trays[0]
   check('设了 tooltip（跟着品牌走）', icon.tooltip === brandName)
+
 
   const labels = (fake.menus[0]?.template ?? []).map((item) => item.label ?? `(${item.type})`)
   check('菜单里有「显示窗口」和「退出」', labels.includes('显示窗口') && labels.includes('退出'), labels.join(', '))
@@ -180,4 +194,18 @@ export async function run() {
   check('托盘拿到了通知器（提示复用同一套系统通知）', mainSrc.includes('notify: trayNotifier?.notify'))
   const handlersSrc = readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8')
   check('注册清单把通知器交回去了', handlersSrc.includes('return { notifier }'))
+
+  /*
+   * ★ 退出时托盘图标要消失（用户报过「退出后图标还挂着」）。
+   *   这里真调一次 destroyTray，看假托盘有没有收到 destroy。
+   */
+  const trayModule = require(join(ROOT, 'electron/tray.cjs'))
+  const before = fake.trays[0]?.destroyed ?? 0
+  trayModule.destroyTray()
+  check(
+    '★ destroyTray 真的销毁了托盘图标',
+    (fake.trays[0]?.destroyed ?? 0) === before + 1,
+    `${before} → ${fake.trays[0]?.destroyed}`,
+  )
+  check('销毁后再调不报错（幂等）', (trayModule.destroyTray(), true))
 }
