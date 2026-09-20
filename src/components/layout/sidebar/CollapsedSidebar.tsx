@@ -38,7 +38,7 @@ export function CollapsedSidebar({ onCreateThread }: { onCreateThread: () => voi
       </Tooltip>
       <div className="mt-auto">
         <Tooltip content="设置（Ctrl+,）" side="right">
-          <IconButton label="设置" onClick={openSettings}>
+          <IconButton label="设置" onClick={() => openSettings()}>
             <Settings size={16} />
           </IconButton>
         </Tooltip>
