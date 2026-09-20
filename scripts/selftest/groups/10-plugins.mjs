@@ -276,16 +276,11 @@ export async function run() {
       'paths 忽略非字符串',
       d({ write: true, paths: ['a', 42, null] }) === '（写文件 + 访问工作目录外 1 处）',
     )
-
     const dp = plugins.describePaths
     check('无 paths 返回空', dp({}) === '')
     check('≤3 条全列', dp({ paths: ['x', 'y', 'z'] }) === 'x、y、z')
     check('>3 条截断', dp({ paths: ['1', '2', '3', '4', '5'] }) === '1、2、3 等 5 处')
-
-    /*
-     * ★ 测纯函数 `formatList`，不是 `pluginList()` —— 后者读用户数据目录里的真实插件，
-     *   干净环境 clone 之后一条都没有（本地恰好有个「时间查询」插件，所以一直绿着）。
-     */
+    /* ★ 测纯函数 formatList（pluginList 读真实插件目录，干净环境里没有） */
     const line = plugins.formatList([
       {
         name: 'get_current_time',
