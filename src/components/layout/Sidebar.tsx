@@ -177,7 +177,7 @@ export function Sidebar({ loading = false }: SidebarProps) {
           </IconButton>
         </Tooltip>
         <Tooltip content="设置（Ctrl+,）">
-          <IconButton label="设置" onClick={openSettings}>
+          <IconButton label="设置" onClick={() => openSettings()}>
             <Settings size={15} />
           </IconButton>
         </Tooltip>

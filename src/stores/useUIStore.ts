@@ -47,7 +47,10 @@ interface UIState {
   toggleRightPanel: () => void
   setRightPanelVisible: (visible: boolean) => void
   setActiveRightTab: (tab: RightTab) => void
-  openSettings: () => void
+  /** 打开设置。给 tab 就直接落在那一页（「调整权限」要落在「权限与安全」上） */
+  openSettings: (tab?: string) => void
+  /** 打开设置时想直接落到哪一页；没指定就是空 */
+  settingsTab: string | null
   closeSettings: () => void
   setCommandPaletteOpen: (open: boolean) => void
   setSearchQuery: (q: string) => void
@@ -69,6 +72,7 @@ export const useUIStore = create<UIState>((set) => ({
   rightPanelVisible: true,
   activeRightTab: 'diff',
   settingsOpen: false,
+  settingsTab: null,
   imageTask: null,
   commandPaletteOpen: false,
   searchQuery: '',
@@ -82,7 +86,7 @@ export const useUIStore = create<UIState>((set) => ({
   setRightPanelVisible: (visible) => set({ rightPanelVisible: visible }),
   setActiveRightTab: (tab) => set({ activeRightTab: tab, rightPanelVisible: true }),
   setImageTask: (task) => set({ imageTask: task }),
-  openSettings: () => set({ settingsOpen: true }),
+  openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null }),
   closeSettings: () => set({ settingsOpen: false }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setSearchQuery: (q) => set({ searchQuery: q }),

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/useSettingsStore'
@@ -38,6 +38,15 @@ export function SettingsModal() {
   const resetSettings = useSettingsStore((s) => s.resetSettings)
 
   const [tab, setTab] = useState<SettingsTabId>('general')
+  /*
+   * 「调整权限」这类入口会指定要落在哪一页（AG-042 真机反馈：只打开设置、
+   * 停在「通用」，用户以为点不开）。这里是**打开时**同步一次，
+   * 之后用户自己点分类不会被它抢回去。
+   */
+  const wantedTab = useUIStore((s) => s.settingsTab)
+  useEffect(() => {
+    if (open && wantedTab) setTab(wantedTab as SettingsTabId)
+  }, [open, wantedTab])
   return (
     <Modal
       open={open}

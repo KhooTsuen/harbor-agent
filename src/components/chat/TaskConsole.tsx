@@ -108,7 +108,8 @@ export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
             <Button variant="ghost" size="sm" onClick={() => openBottomPanel('log')}>
               查看 Tool
             </Button>
-            <Button variant="ghost" size="sm" onClick={openSettings}>
+            {/* 落到「权限与安全」那一页 —— 只打开设置、停在「通用」，用户找不到权限在哪 */}
+            <Button variant="ghost" size="sm" onClick={() => openSettings('access')}>
               调整权限
             </Button>
             {task.status === 'paused' ? (

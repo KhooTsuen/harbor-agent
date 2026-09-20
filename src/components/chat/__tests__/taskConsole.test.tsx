@@ -35,6 +35,7 @@ vi.mock('@/lib/safetyApi', async (importOriginal) => {
 })
 
 import { TaskRow } from '../TaskRow'
+import { useUIStore } from '@/stores/useUIStore'
 
 let container: HTMLDivElement
 let root: Root
@@ -94,6 +95,8 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  /* 每个用例都从「设置没打开、没指定页签」开始 */
+  useUIStore.setState({ settingsOpen: false, settingsTab: null })
 })
 
 afterEach(() => {
@@ -161,6 +164,20 @@ describe('AG-042 / 控制台', () => {
     const text = container.textContent ?? ''
     expect(text).toContain('计划已做完')
     expect(text).not.toContain('（没有计划）')
+  })
+
+  it('★「调整权限」要打开设置并落在「权限与安全」那一页', () => {
+    /*
+     * 真机反馈：这个按钮原来只是 `openSettings()`（落在默认的「通用」页），
+     * 用户点了以后找不到权限在哪，体感就是「点不开」。
+     */
+    draw(task({ status: 'running' }))
+    act(() => byText('详情')?.click())
+    act(() => byPrefix('控制台')?.click())
+    act(() => byText('调整权限')?.click())
+    const state = useUIStore.getState()
+    expect(state.settingsOpen).toBe(true)
+    expect(state.settingsTab).toBe('access')
   })
 
   it('★ 跑完的任务不给「暂停 / 停止」（没得停）', () => {
