@@ -202,7 +202,8 @@ export interface MemoryStats {
    调用方看到的还是一个完整的桥。
    ══════════════════════════════════════════════════════════════ */
 
-export interface SafetyBridge {
+/* 任务那摊方法在 task.ts 的 TaskBridge 里（见那边的说明） */
+export interface SafetyBridge extends TaskBridge {
   /* ── 结构化记忆 ─────────────────────────────────────── */
 
   memoryList: (options?: {
@@ -255,25 +256,6 @@ export interface SafetyBridge {
   capabilityRevoke: (target: string) => Promise<{ ok: boolean; removed?: number }>
   capabilityRevokeAll: () => Promise<{ ok: boolean }>
 
-  taskList: (options?: { limit?: number; status?: string; sessionId?: string }) => Promise<{
-    ok: boolean
-    tasks: TaskRecord[]
-  }>
-  taskUnfinished: () => Promise<{ ok: boolean; tasks: TaskRecord[] }>
-  /** AG-012：重启后的恢复清单（带「停在哪一步 / 哪些文件被动过 / 恢复过几次」） */
-  taskRecovery: () => Promise<{ ok: boolean; items: TaskRecoveryItem[] }>
-  taskGet: (id: string) => Promise<{ ok: boolean; task: TaskRecord | null }>
-  /** AG-035：把台账读成一段人能读的报告（只读，不改任务） */
-  taskDiagnose: (id: string) => Promise<{ ok: boolean; diagnosis: TaskDiagnosis }>
-  taskUpdate: (payload: { id: string; patch: Record<string, unknown> }) => Promise<{
-    ok: boolean
-    task?: TaskRecord
-    error?: string
-  }>
-  taskRemove: (id: string) => Promise<{ ok: boolean }>
-  /** 删掉一条对话的全部任务历史（删对话时一起清） */
-  taskPurge: (sessionId: string) => Promise<{ ok: boolean; removed: number }>
-  taskPauseRunning: () => Promise<{ ok: boolean; paused?: number }>
   changesetList: (options?: { limit?: number; taskId?: string; sessionId?: string }) => Promise<{
     ok: boolean
     changesets: ChangeSetSummary[]
@@ -295,6 +277,6 @@ export interface SafetyBridge {
 }
 
 import type { DiffFile } from './index'
-import type { TaskDiagnosis, TaskRecord, TaskRecoveryItem } from './task'
+import type { TaskBridge, TaskDiagnosis, TaskRecord, TaskRecoveryItem } from './task'
 
 export type { TaskDiagnosis, TaskRecord, TaskRecoveryItem }

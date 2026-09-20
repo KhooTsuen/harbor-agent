@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { changesetRollback, taskUpdate } from '@/lib/safetyApi'
+import { changesetRollback, taskRemoveMany, taskRemoveSafe, taskUpdate } from '@/lib/safetyApi'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -25,6 +25,9 @@ import { TaskRow } from './TaskRow'
    指向这里。
    ══════════════════════════════════════════════════════════════ */
 
+/** 这两个分组不给「清空」—— 任务在跑或等你确认，该做的是停止/回答，不是删记录 */
+const LIVE_GROUPS: readonly TaskRecord['status'][] = ['running', 'waiting_user']
+
 export function TaskCenter() {
   const tasks = useTaskStore((s) => s.tasks)
   const unfinished = useTaskStore((s) => s.unfinished)
@@ -39,6 +42,7 @@ export function TaskCenter() {
     (s) => s.threads.find((t) => t.id === s.activeThreadId)?.phaseHistory ?? [],
   )
   const showToast = useUIStore((s) => s.showToast)
+  const askPermission = useUIStore((s) => s.askPermission)
 
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState('')
@@ -89,6 +93,47 @@ export function TaskCenter() {
     await refresh()
     setBusy('')
     showToast('info', '已放弃这条任务', task.title)
+  }
+
+  /** 删一条任务的记录（在跑的不给删 —— 内核也会拒，这里把原因说出来） */
+  async function removeTask(task: TaskRecord): Promise<void> {
+    setBusy(task.id)
+    const result = await taskRemoveSafe(task.id)
+    setBusy('')
+    if (result.ok) {
+      showToast('success', '记录已删除', task.title)
+      await refresh()
+    } else {
+      showToast('warning', '没能删除', result.reason ?? '这条任务现在还删不了')
+    }
+  }
+
+  /**
+   * 清空一组的记录。
+   *
+   * ★ 正在跑 / 等确认的分组**不给这个按钮** —— 那两类任务要么先停止、要么等它做完。
+   *   而且真正的保险在内核：往里传 running 也会被忽略，并回一句「跳过了几条」。
+   */
+  async function clearGroup(
+    status: TaskRecord['status'],
+    label: string,
+    count: number,
+  ): Promise<void> {
+    askPermission({
+      kind: 'clear-tasks',
+      title: `清空「${label}」的 ${count} 条记录？`,
+      description: '这些任务记录会一起删掉，不能撤销。正在跑的任务不受影响。',
+      confirmText: '清空',
+      danger: true,
+      onConfirm: () => {
+        void (async () => {
+          const result = await taskRemoveMany({ statuses: [status] })
+          const skipped = result.skipped > 0 ? `，跳过 ${result.skipped} 条正在跑的` : ''
+          showToast('success', '已清空', `删除 ${result.removed} 条记录${skipped}`)
+          await refresh()
+        })()
+      },
+    })
   }
 
   async function rollback(changeset: ChangeSetSummary): Promise<void> {
@@ -150,9 +195,22 @@ export function TaskCenter() {
           const entries = groups.get(group.status) ?? []
           return (
             <section key={group.status} aria-label={group.label}>
-              <h3 className="mb-1 px-0.5 text-2xs font-medium text-fg-tertiary">
-                {group.label} · {entries.length}
-              </h3>
+              <div className="mb-1 flex items-center gap-1 px-0.5">
+                <h3 className="text-2xs font-medium text-fg-tertiary">
+                  {group.label} · {entries.length}
+                </h3>
+                <span className="flex-1" />
+                {/* 在跑 / 等确认的分组没有「清空」—— 那两类得先停止 */}
+                {LIVE_GROUPS.includes(group.status) || entries.length === 0 ? null : (
+                  <button
+                    type="button"
+                    onClick={() => void clearGroup(group.status, group.label, entries.length)}
+                    className="rounded-sm px-1 text-2xs text-fg-tertiary transition-colors duration-fast hover:text-[var(--error)]"
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
               <div className="flex flex-col gap-1.5">
                 {entries.map((task) => (
                   <TaskRow
@@ -166,6 +224,7 @@ export function TaskCenter() {
                     onOpen={() => task.sessionId && setActiveThread(task.sessionId)}
                     onResume={() => void resume(task)}
                     onGiveUp={() => void giveUp(task)}
+                    onDelete={() => void removeTask(task)}
                   />
                 ))}
               </div>

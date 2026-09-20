@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, History, Stethoscope } from 'lucide-react'
+import { ChevronDown, ChevronRight, History, Stethoscope, Trash2 } from 'lucide-react'
 import type { AgentPhase } from '@/types'
 import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
 import { BudgetEditor } from './BudgetEditor'
 import { TaskConsole } from './TaskConsole'
 import { PlanCard } from './PlanCard'
@@ -31,6 +32,8 @@ import {
 
 /** 能接着做（和内核 task-resume.cjs 的 RESUMABLE 一致） */
 const RESUMABLE: TaskRecord['status'][] = ['paused', 'waiting_user']
+/** 正在跑 / 等确认的：既不能放弃，也不能删（先按停止） */
+const LIVE: readonly TaskRecord['status'][] = ['running', 'waiting_user']
 /** 能放弃（已经结束的就没必要再放弃一次） */
 const CLOSABLE: TaskRecord['status'][] = ['running', 'paused', 'waiting_user', 'failed']
 
@@ -44,6 +47,7 @@ export function TaskRow({
   onOpen,
   onResume,
   onGiveUp,
+  onDelete,
 }: {
   task: TaskRecord
   /** 恢复清单里对应的那条 —— 带 envChanged（停手后文件被谁动过） */
@@ -55,6 +59,8 @@ export function TaskRow({
   onOpen: () => void
   onResume: () => void
   onGiveUp: () => void
+  /** 删掉这条任务的记录（在跑的不给删，别处会拦） */
+  onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
   /*
@@ -186,6 +192,18 @@ export function TaskRow({
             {budgetHit || loopHit ? '停止' : '放弃'}
           </Button>
         ) : null}
+        {/* 删除记录：在跑 / 等确认的不给（那时该按「停止」）—— 内核也会再拦一次 */}
+        {LIVE.includes(task.status) ? null : (
+          <IconButton
+            label="删除这条记录"
+            size={28}
+            disabled={busy}
+            onClick={onDelete}
+            className="hover:text-[var(--error)]"
+          >
+            <Trash2 size={13} />
+          </IconButton>
+        )}
       </div>
 
       {editingBudget ? (

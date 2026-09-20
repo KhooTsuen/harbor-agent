@@ -203,6 +203,51 @@ function setPlan(id, plan, options = {}) {
 }
 
 /**
+ * 还在跑、不许删的两个状态（删了台账它还在跑 → 幽灵任务）。
+ *
+ * 界面那一层也会把删除按钮藏起来，但**内核必须自己再拦一次** ——
+ * 界面是给人看的，内核是给所有调用方兜底的（批量清空、将来的脚本都走这里）。
+ */
+const LIVE_STATUSES = ['running', 'waiting_user']
+
+/**
+ * 删一条任务（安全版）：正在跑的不给删。
+ *
+ * @returns {{ ok: boolean, removed: number, skipped: number, reason?: string }}
+ */
+function removeSafe(id) {
+  const task = io.get(id)
+  if (!task) return { ok: false, removed: 0, skipped: 0, reason: '没有这条任务' }
+  if (LIVE_STATUSES.includes(task.status)) {
+    return { ok: false, removed: 0, skipped: 1, reason: '任务还在跑，先停止再删' }
+  }
+  io.remove(id)
+  return { ok: true, removed: 1, skipped: 0 }
+}
+
+/**
+ * 批量删（按状态，可选限定某条对话）—— 任务面板里「清空这一组」用它。
+ *
+ * ★ 传进来的状态里只要碰了 running / waiting_user，**这里直接忽略掉**，
+ *   并在返回值里说明跳过了几条（界面照它提示用户）。
+ *
+ * @returns {{ ok: boolean, removed: number, skipped: number }}
+ */
+function removeMany({ statuses = [], sessionId = '' } = {}) {
+  const wanted = (Array.isArray(statuses) ? statuses : []).filter(
+    (status) => STATUSES.includes(status) && !LIVE_STATUSES.includes(status),
+  )
+  const all = list({ limit: 1000, sessionId: String(sessionId ?? '') })
+  const doomed = all.filter((task) => wanted.includes(task.status))
+  for (const task of doomed) io.remove(task.id)
+  return {
+    ok: true,
+    removed: doomed.length,
+    skipped: all.filter((task) => LIVE_STATUSES.includes(task.status)).length,
+  }
+}
+
+/**
  * 把某条对话（会话）的任务全部删掉 —— 删对话时一并清任务历史（用户要的）。
  *
  * 放门面而不是底座：`list` 认识 sessionId（还负责校验/重建索引），
@@ -220,6 +265,8 @@ function removeBySession(sessionId) {
 
 module.exports = {
   ...io,
+  removeSafe,
+  removeMany,
   removeBySession,
   ...notes,
   STATUSES,

@@ -79,6 +79,7 @@ function draw(record: TaskRecord): void {
         onOpen={() => {}}
         onResume={() => {}}
         onGiveUp={() => {}}
+        onDelete={() => {}}
       />,
     )
   })

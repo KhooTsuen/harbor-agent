@@ -127,6 +127,7 @@ const api = {
   taskDiagnose: (id) => ipcRenderer.invoke('task:diagnose', id),
   taskUpdate: (payload) => ipcRenderer.invoke('task:update', payload),
   taskRemove: (id) => ipcRenderer.invoke('task:remove', id),
+  taskRemoveMany: (options) => ipcRenderer.invoke('task:removeMany', options),
   taskPurge: (sessionId) => ipcRenderer.invoke('task:purge', sessionId),
   taskPauseRunning: () => ipcRenderer.invoke('task:pauseRunning'),
 
