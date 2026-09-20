@@ -21,6 +21,7 @@ const fs = require('node:fs')
 const { app, Tray, Menu } = require('electron')
 const log = require('./core/log.cjs')
 const windowState = require('./window-state.cjs')
+const { BRAND } = require('./core/config-defaults.cjs')
 
 let tray = null
 /** 菜单要留引用：右键时显式弹它（不再只靠 setContextMenu） */
@@ -86,7 +87,7 @@ function setupTray({ onCreateWindow, notify } = {}) {
 
   try {
     tray = new Tray(icon)
-    tray.setToolTip('Personal Agent')
+    tray.setToolTip(BRAND.name)
     trayMenu = Menu.buildFromTemplate([
       { label: '显示窗口', click: () => showWindow() },
       { type: 'separator' },

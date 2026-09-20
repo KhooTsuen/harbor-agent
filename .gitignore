@@ -13,8 +13,13 @@ node_modules/
 
 # 构建产物（能随时重新生成）
 dist/
-build/
 dist-portable/
+# build/ 里放的是**应用图标**（安装包与托盘都要用），必须进仓库 ——
+# 以前整目录被忽略，干净 clone 之后托盘图标找不到、npm test 直接崩。
+build/*
+!build/icon.png
+!build/icon.ico
+!build/icon-128.png
 
 # ── 运行时数据：绝不提交 ──
 # data/ 里有：会话、记忆、凭证库、审计日志、任务、改动快照、备份。
@@ -66,3 +71,6 @@ backups/
 # 抓下来的第三方文档页（曾经有三份 DeepSeek 的 API 文档躺在根目录）
 .ds*.html
 .ds*.htm
+
+# 编辑器/工具留下的元数据（.dsreason.json 这类）
+.ds*.json
