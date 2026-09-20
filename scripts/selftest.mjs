@@ -82,6 +82,7 @@ import { run as steeringGroup } from './selftest/groups/44-steering.mjs'
 import { run as pauseGroup } from './selftest/groups/45-pause.mjs'
 import { run as acceptanceGroup } from './selftest/groups/46-acceptance.mjs'
 import { run as purgeGroup } from './selftest/groups/47-purge.mjs'
+import { run as profileGroup } from './selftest/groups/48-profile.mjs'
 
 const GROUPS = [
   basics,
@@ -131,6 +132,7 @@ const GROUPS = [
   pauseGroup,
   acceptanceGroup,
   purgeGroup,
+  profileGroup,
 ]
 
 async function main() {

@@ -203,7 +203,23 @@ export interface MemoryStats {
    ══════════════════════════════════════════════════════════════ */
 
 /* 任务那摊方法在 task.ts 的 TaskBridge 里（见那边的说明） */
-export interface SafetyBridge extends TaskBridge {
+/* 个人资料（头像 + 名字）：名字进配置、头像进 data/avatars/（二进制不塞 config） */
+
+export interface ProfileBridge {
+  /** 名字 + 头像（data URL；没设过就是空串） */
+  profileGet: () => Promise<{ ok: boolean; name: string; avatar: string }>
+  profileSetName: (name: string) => Promise<{ ok: boolean; name: string }>
+  /** 弹系统选图框 → 存进 data/avatars/ → 回新的 data URL */
+  profilePickAvatar: () => Promise<{
+    ok: boolean
+    canceled?: boolean
+    avatar?: string
+    error?: string
+  }>
+  profileClearAvatar: () => Promise<{ ok: boolean; avatar: string }>
+}
+
+export interface SafetyBridge extends TaskBridge, ProfileBridge {
   /* ── 结构化记忆 ─────────────────────────────────────── */
 
   memoryList: (options?: {

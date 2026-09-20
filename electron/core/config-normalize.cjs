@@ -126,6 +126,9 @@ function normalize(raw) {
   return {
     version: 2,
 
+    profile: {
+      name: typeof raw?.profile?.name === 'string' ? raw.profile.name.slice(0, 40) : '',
+    },
     general: {
       theme: pick(general.theme, C.THEMES, 'default'),
       glassmorphism: bool(general.glassmorphism, false),

@@ -45,6 +45,10 @@ const DIRS = {
   get skills() {
     return path.join(rootDir(), 'data', 'skills')
   },
+  /** 头像文件（`avatar.<ext>`）—— 不进 config，见 handlers/profile.cjs */
+  get avatars() {
+    return path.join(rootDir(), 'data', 'avatars')
+  },
   get backgrounds() {
     return path.join(rootDir(), 'data', 'backgrounds')
   },
@@ -66,6 +70,7 @@ function ensureDirs() {
     DIRS.logs,
     DIRS.sessions,
     DIRS.skills,
+    DIRS.avatars,
     DIRS.backgrounds,
     DIRS.workspace,
     DIRS.chatCache,

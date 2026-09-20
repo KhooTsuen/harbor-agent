@@ -28,6 +28,7 @@ import type { NotifyBridge } from './notify'
 
 export * from './models'
 
+/* SafetyBridge 已带上 ProfileBridge，这里不重复列 */
 export interface WorkbenchBridge extends SafetyBridge, NotifyBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
@@ -278,7 +279,6 @@ export interface WorkbenchBridge extends SafetyBridge, NotifyBridge {
   isElectron: true
 }
 
-/** 主进程发来的一次浏览请求 */
 export interface BrowserRequestEvent {
   id: string
   action: 'navigate' | 'snapshot' | 'click' | 'type'

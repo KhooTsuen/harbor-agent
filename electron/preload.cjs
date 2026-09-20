@@ -126,6 +126,11 @@ const api = {
   taskGet: (id) => ipcRenderer.invoke('task:get', id),
   taskDiagnose: (id) => ipcRenderer.invoke('task:diagnose', id),
   taskUpdate: (payload) => ipcRenderer.invoke('task:update', payload),
+  /* 个人资料：名字进配置、头像存 data/avatars/ */
+  profileGet: () => ipcRenderer.invoke('profile:get'),
+  profileSetName: (name) => ipcRenderer.invoke('profile:setName', name),
+  profilePickAvatar: () => ipcRenderer.invoke('profile:pickAvatar'),
+  profileClearAvatar: () => ipcRenderer.invoke('profile:clearAvatar'),
   taskRemove: (id) => ipcRenderer.invoke('task:remove', id),
   taskRemoveMany: (options) => ipcRenderer.invoke('task:removeMany', options),
   taskPurge: (sessionId) => ipcRenderer.invoke('task:purge', sessionId),
