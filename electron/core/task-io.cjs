@@ -27,6 +27,21 @@ function newId() {
   return `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
 }
 
+/*
+ * 单调递增的「现在」，专给 updatedAt 用。
+ *
+ * `Date.now()` 在同一毫秒内会撞（连续建/改任务、或一批里改好几条时），
+ * 撞了之后按 updatedAt 排序就不稳定 —— `activeForSession` 会因此挑错任务，
+ * 44-steering 那组在 CI 上偶发失败过。所以 updatedAt 用这个：保证进程内严格递增，
+ * 排序结果确定。createdAt / finishedAt 不参与这个排序，继续用 Date.now()。
+ */
+let lastStamp = 0
+function monotonicNow() {
+  const t = Date.now()
+  lastStamp = t > lastStamp ? t : lastStamp + 1
+  return lastStamp
+}
+
 function write(task) {
   fs.mkdirSync(root(), { recursive: true })
   fs.writeFileSync(fileFor(task.id), JSON.stringify(task, null, 2), 'utf8')
@@ -101,4 +116,4 @@ function remove(id) {
   }
 }
 
-module.exports = { root, fileFor, newId, write, get, ids, remove }
+module.exports = { root, fileFor, newId, write, get, ids, remove, monotonicNow }

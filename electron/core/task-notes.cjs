@@ -32,7 +32,7 @@ function addStep(id, { tool, ok, summary, ms = 0, args }) {
 
   /* 只留最近 200 步 —— 这个文件是给自己看的，不是流水账 */
   if (task.steps.length > 200) task.steps = task.steps.slice(-200)
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -45,7 +45,7 @@ function addChangedFile(id, file, extra = {}) {
   if (!task.changedFiles.some((f) => f.path === absolute)) {
     task.changedFiles.push({ path: absolute, at: Date.now(), ...extra })
   }
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -62,7 +62,7 @@ function addCommand(id, command, result = '') {
     at: Date.now(),
   })
   if (task.commands.length > 100) task.commands = task.commands.slice(-100)
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -81,7 +81,7 @@ function recordModel(id, model) {
   if (!models.includes(name)) models.push(name)
   task.model = name
   task.models = models
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -98,7 +98,7 @@ function addSteering(id, text) {
   if (!task || !said) return null
   const list = [...(task.steering ?? []), { at: Date.now(), text: said.slice(0, 500) }]
   task.steering = list.slice(-20)
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -115,7 +115,7 @@ function checkpoint(id, { label, note = '', files = [], commands = [] } = {}) {
     commands,
   })
   if (task.checkpoints.length > 50) task.checkpoints = task.checkpoints.slice(-50)
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
@@ -125,7 +125,7 @@ function fail(id, error) {
   if (!task) return null
   task.errors.push({ at: Date.now(), message: String(error).slice(0, 500) })
   task.status = 'failed'
-  task.updatedAt = Date.now()
+  task.updatedAt = io.monotonicNow()
   io.write(task)
   return task
 }
