@@ -1,5 +1,51 @@
 # 更新日志
 
+## [1.4.0] — 2026-09-20 · 改名 Harbor + 移除 Aperture 素材
+
+发布准备的两件大事。
+
+### ① 正式名称：Harbor
+
+品牌定义本来就在一处（`electron/core/config-defaults.cjs` 的 `BRAND`，注释写着"改品牌只改这里 + package.json"），
+所以这次改得很干净：
+
+| | 改成 |
+| --- | --- |
+| 界面显示名 | **Harbor**（顶栏、启动页、窗口标题） |
+| 包名 / MCP clientInfo | `harbor-agent` |
+| 打包产物 | `dist-portable/Harbor/Harbor.exe` |
+| 诊断包标题 / 文件名 | Harbor 诊断包 / `harbor-agent-diagnostics.md` |
+
+**故意没动**：`namespace`（localStorage 与导出文件的命名空间）仍是 `personal-agent`。
+老用户的设置与布局都挂在这个 key 下，换了等于把他们的配置清零 —— 对外显示的名字只认 `name`。
+
+顺手把四处**写死**品牌的地方改成引用 `BRAND`（窗口标题、MCP clientInfo、诊断包标题与文件名），
+以后换名字只改一处。
+
+### ② 移除 Aperture 素材（公开前的版权清理）
+
+原来仓库里有《Portal》里 Aperture 的图形（`aperture.txt` + banner 那套），
+还有三句游戏台词藏在启动页的彩蛋里 —— 那都是别人的美术和文字，公开仓库不该放。
+
+- 删：`aperture.txt`、`banner/`、`AsciiBanner.tsx`、`ringRotator.ts`、`useBannerAnimation.ts`、
+  `generate-banner-ascii.py`、对应的测试
+- **换成自己算的**：`bootFrames.ts` 里用一张 5×7 点阵表拼出 `HARBOR`（7 行 × 35 列），
+  不用任何现成艺术字库，也不引用外部图片；重建动画（从噪点里浮出来）保留
+- 三句 Portal 台词换成这个项目自己的话（「别让它跑一晚上。」这类）
+- 启动第一行从 `PERSONAL AGENT // APERTURE LOCAL SYSTEM` 改成 `HARBOR // LOCAL AGENT SYSTEM`
+
+### 其它
+
+- 空对话区那块装饰横幅没了（它下面就是「想让 Agent 做什么？」的卡片）
+- 截图重拍（顶栏已经是 Harbor）；README 与文档里的产物路径统一成 `dist-portable/Harbor`
+- 前端 476 / 内核 1586 全过；启动页那条测试改成断言「点阵：7 行、35 列、只有方块与空格」
+
+### 待你确认（发布清单里）
+
+- **应用图标**：查过了 —— `build/icon*.png`、`src/assets/icon*.png` **都没有被 git 跟踪**，
+  所以公开仓库里本来就没有它，不构成风险。要随仓库发布的话（打包 exe 用得上）说一声。
+- README 想让「刚接触这类应用的人也能看懂」，这一版还没改（下一步做）。
+
 ## [1.3.1] — 2026-09-20 · 头像挪到状态栏 + 删掉文件夹空态说明
 
 两处都是试用反馈（带截图圈的）。

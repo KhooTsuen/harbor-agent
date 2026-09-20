@@ -69,7 +69,7 @@ function createWindow() {
     /* 等页面画好再显示，避免白屏一闪；自检时不显示 */
     show: false,
     autoHideMenuBar: true,
-    title: 'Personal Agent',
+    title: config.BRAND.name,
     /* 系统标题栏的背景隐藏、界面顶到窗口最上沿（见 handlers/window.cjs） */
     ...windowChrome.windowChromeOptions(),
     webPreferences: {

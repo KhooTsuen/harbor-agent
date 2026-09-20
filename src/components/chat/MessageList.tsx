@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { MessageItem } from './MessageItem'
-import { AsciiBanner } from './AsciiBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { EMPTY_THREAD_PROMPTS } from '@/constants'
@@ -197,8 +196,6 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     */
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-evenly overflow-y-auto px-6 py-8">
-        {/* 装饰横幅：上面放图，下面放「想让 Agent 做什么」（顺序不要换） */}
-        <AsciiBanner />
         <EmptyState
           title="想让 Agent 做什么？"
           description="描述你想要的改动，或者贴一段代码问为什么。左侧可以同时开多个线程并行跑。"

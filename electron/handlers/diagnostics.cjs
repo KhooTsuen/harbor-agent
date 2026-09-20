@@ -9,6 +9,7 @@
 const { clipboard, dialog } = require('electron')
 const diagnostics = require('../core/diagnostics.cjs')
 const log = require('../core/log.cjs')
+const { BRAND } = require('../core/config-defaults.cjs')
 
 function register({ ipcMain }) {
   /** 生成并放进剪贴板 */
@@ -35,7 +36,7 @@ function register({ ipcMain }) {
       const result = diagnostics.build()
       const { canceled, filePath } = await dialog.showSaveDialog({
         title: '保存诊断包',
-        defaultPath: `personal-agent-diagnostics.md`,
+        defaultPath: `${BRAND.id}-diagnostics.md`,
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       })
       if (canceled || !filePath) return { ok: false, canceled: true }

@@ -1,4 +1,4 @@
-# Personal Agent
+# Harbor
 
 **本地优先的个人 AI Agent 工作台** —— 数据、密钥、会话全部留在你自己的机器上。
 
@@ -25,7 +25,7 @@
 
 ## 快速开始
 
-**Windows 便携版**（不需要装 Node）：下载 Release 里的压缩包，解压，双击 `PersonalAgent.exe`。
+**Windows 便携版**（不需要装 Node）：下载 Release 里的压缩包，解压，双击 `Harbor.exe`。
 数据存在 exe 同级的 `data/` 里，换电脑整目录拷走即可。
 
 **从源码跑**：

@@ -18,8 +18,12 @@ export interface ModeMeta {
   reasoning: ReasoningLevel
 }
 
-/** 产品名（顶栏等处显示用）—— 只在这一处定义 */
-export const BRAND_NAME = 'Personal Agent'
+/**
+ * 产品名（顶栏、启动页显示用）。
+ * 与主进程 `electron/core/config-defaults.cjs` 的 `BRAND.name` 保持一致 ——
+ * 渲染层拿不到那个模块，只能镜像一份。
+ */
+export const BRAND_NAME = 'Harbor'
 
 export const MODES: readonly ModeMeta[] = [
   {

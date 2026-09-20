@@ -72,7 +72,7 @@
 
 ```bash
 npm run typecheck && npm run lint && npm run test:unit && npm test && npm run build
-npm run package && (cd dist-portable/PersonalAgent && ./PersonalAgent.exe --self-test)
+npm run package && (cd dist-portable/Harbor && ./Harbor.exe --self-test)
 ```
 
 **三条必须知道的事：**

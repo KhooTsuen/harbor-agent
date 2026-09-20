@@ -12,6 +12,7 @@
 const { spawn } = require('node:child_process')
 const { onAbort } = require('./abort.cjs')
 const log = require('./log.cjs')
+const { BRAND } = require('./config-defaults.cjs')
 
 const PROTOCOL_VERSION = '2024-11-05'
 const CALL_TIMEOUT_MS = 60_000
@@ -132,7 +133,7 @@ class McpConnection {
       {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        clientInfo: { name: 'personal-agent', version: require('../../package.json').version },
+        clientInfo: { name: BRAND.id, version: require('../../package.json').version },
       },
       this.config.timeoutMs || START_TIMEOUT_MS,
     )

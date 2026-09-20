@@ -26,11 +26,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const OUT = join(ROOT, 'dist-portable', 'PersonalAgent')
+/* 产出的目录名与 exe 名跟着产品名走（Harbor）—— 见 package.json 的 build.productName */
+const OUT = join(ROOT, 'dist-portable', 'Harbor')
 const APP_OUT = join(OUT, 'resources', 'app')
 const STAGE = join(ROOT, 'dist-portable', '.data-stage')
 const ELECTRON_DIST = join(ROOT, 'node_modules', 'electron', 'dist')
-const APP_NAME = 'PersonalAgent.exe'
+const APP_NAME = 'Harbor.exe'
 
 const step = (msg) => console.log(`  ${msg}`)
 

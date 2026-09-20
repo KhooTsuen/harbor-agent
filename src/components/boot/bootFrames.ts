@@ -1,5 +1,3 @@
-import apertureArt from '@/assets/aperture.txt?raw'
-
 export const BOOT_TIMING = {
   typingEnd: 3200,
   progressStart: 2200,
@@ -31,7 +29,30 @@ export const EASTER_EGGS = [
   'Neurotoxin safeguards ... probably enabled.',
 ] as const
 
-const ART = apertureArt.replace(/^\s*\n/, '').replace(/\s+$/, '')
+/*
+ * 标识：`HARBOR` 的 5×7 点阵。
+ *
+ * ★ 字形表就是下面全部内容 —— 自己写的，不用现成艺术字库、不引用外部图片。
+ *   以前那版是《Portal》里的 Aperture 图形（别人的美术），公开前移除了。
+ */
+const GLYPHS: Record<string, readonly string[]> = {
+  H: ['10001', '10001', '11111', '10001', '10001', '10001', '10001'],
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+}
+const WORDMARK = 'HARBOR'
+
+function renderWordmark(): string {
+  const lines: string[] = []
+  for (let y = 0; y < GLYPHS.H.length; y += 1) {
+    lines.push([...WORDMARK].map((letter) => GLYPHS[letter]?.[y] ?? '00000').join('0'))
+  }
+  return lines.join('\n').replace(/1/g, '█').replace(/0/g, ' ')
+}
+
+const ART = renderWordmark()
 const NOISE = '@.#%&+?:/\\<>[]{}01'
 
 export function typeBootCopy(elapsed: number): string {

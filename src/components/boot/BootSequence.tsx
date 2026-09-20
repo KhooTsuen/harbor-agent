@@ -1,3 +1,4 @@
+import { BRAND_NAME } from '@/constants'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   BOOT_TIMING,
@@ -166,7 +167,9 @@ export function BootSequence({ skipping, onSkip, onPrepare, onDone }: BootSequen
           {elapsed >= BOOT_TIMING.finalStart ? (
             <>
               <div>{easterEgg}</div>
-              <div className="text-white">PERSONAL AGENT READY {cursorVisible ? '█' : ' '}</div>
+              <div className="text-white">
+                {BRAND_NAME.toUpperCase()} READY {cursorVisible ? '█' : ' '}
+              </div>
             </>
           ) : (
             <div>{glitchLine(streamFrame)}</div>

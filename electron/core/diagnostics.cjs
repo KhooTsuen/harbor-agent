@@ -212,7 +212,7 @@ function build() {
   const errors = logLines.filter((l) => l.includes('[ERROR]') || l.includes('[WARN]'))
 
   const sections = [
-    '# Personal Agent 诊断包',
+    `# ${config.BRAND.name} 诊断包`,
     '',
     `生成时间：${now.toLocaleString('zh-CN')}`,
     '',

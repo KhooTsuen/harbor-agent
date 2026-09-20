@@ -37,9 +37,16 @@ describe('boot sequence frames', () => {
     expect(telemetry(0).split('\n')).toHaveLength(4)
   })
 
-  it('reconstructs the original Aperture artwork exactly', () => {
+  it('★ 字标是自己算的点阵：HARBOR、7 行、只有方块和空格', () => {
+    const rows = COMPLETE_LOGO.split('\n')
+    expect(rows).toHaveLength(7) /* 5×7 字形表的高度 */
+    /* 6 个字母 × 5 列 + 字母间 1 列空隙 = 35 */
+    expect(rows[0]).toHaveLength(35)
+    /* 只有实心方块与空格 —— 说明是点阵渲染的，不是引用图片或现成艺术字 */
+    expect(COMPLETE_LOGO).toMatch(/^[█ \n]+$/)
+    expect(COMPLETE_LOGO).toContain('█')
+    /* 重建动画：进度 1 = 完整字标，进度 0 = 还没长出来 */
     expect(reconstructLogo(1, 0)).toBe(COMPLETE_LOGO)
     expect(reconstructLogo(0, 0)).not.toBe(COMPLETE_LOGO)
-    expect(COMPLETE_LOGO.split('\n')).toHaveLength(62)
   })
 })

@@ -14,12 +14,12 @@
 /** 产品标识。改品牌时只改这里 + package.json，其余地方都引用它 */
 const BRAND = {
   /** 包名 / npm name / MCP clientInfo */
-  id: 'personal-agent',
+  id: 'harbor-agent',
   /** 界面显示名 */
-  name: 'Personal Agent',
+  name: 'Harbor',
   /** 助手默认名字（用户可改） */
   assistant: 'Agent',
-  /** localStorage / 导出文件的命名空间 */
+  /* localStorage/导出文件的命名空间：改品牌时**不要动它** —— 老用户的设置与布局都挂在这个 key 下 */
   namespace: 'personal-agent',
   /** 子进程标记环境变量名 */
   envFlag: 'PERSONAL_AGENT_PTY',
