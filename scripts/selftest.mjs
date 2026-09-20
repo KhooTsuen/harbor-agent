@@ -83,6 +83,7 @@ import { run as pauseGroup } from './selftest/groups/45-pause.mjs'
 import { run as acceptanceGroup } from './selftest/groups/46-acceptance.mjs'
 import { run as purgeGroup } from './selftest/groups/47-purge.mjs'
 import { run as profileGroup } from './selftest/groups/48-profile.mjs'
+import { run as injectionGroup } from './selftest/groups/49-injection.mjs'
 
 const GROUPS = [
   basics,
@@ -133,6 +134,7 @@ const GROUPS = [
   acceptanceGroup,
   purgeGroup,
   profileGroup,
+  injectionGroup,
 ]
 
 async function main() {

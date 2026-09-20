@@ -220,12 +220,10 @@ function describePaths(permissions) {
   return `${paths.slice(0, 3).join('、')} 等 ${paths.length} 处`
 }
 
-/**
- * 插件清单的格式化（**纯函数**：给一组插件，返回系统提示里那段导航）。
- *
+/*
+ * 插件清单的格式化（纯函数：给一组插件，返回系统提示里那段导航）。
  * 抽出来是为了可测：`pluginList()` 读的是用户数据目录里的真实插件，
- * 测试不该依赖「跑测试的机器上恰好装了个插件」—— 干净环境 clone 之后
- * 那条断言曾经红过（本地因为开发目录里有插件所以一直是绿的）。
+ * 测试不该依赖「跑测试的机器上恰好装了个插件」（干净环境里红过）。
  */
 function formatList(plugins) {
   const items = Array.isArray(plugins) ? plugins : []
