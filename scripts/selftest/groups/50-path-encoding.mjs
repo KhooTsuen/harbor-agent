@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, require, ROOT, SANDBOX } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
@@ -118,6 +119,59 @@ export async function run() {
     '★ pty 起 cmd 时先切代码页（终端里才不乱码）',
     ptySrc.includes('chcp 65001') && ptySrc.includes("'/k'"),
   )
+
+  /*
+   * ★ 真起一个 pty 验一下（只在本机 Windows 跑）。
+   *   CI 是 Ubuntu，而 node-pty 在那边要现场编译 —— 没必要为这一条让 CI 依赖编译器，
+   *   所以这里用平台守卫跳过（源码守卫那条已经防住了“改回去”）。
+   */
+  if (process.platform === 'win32') {
+    const ptyModule = require(join(ROOT, 'electron/core/pty.cjs'))
+    /*
+     * ★ 用系统临时目录，**不要**放在 SANDBOX 里：
+     *   pty 进程被杀掉之后，Windows 还会把那个目录当它的 cwd 挂一小会儿，
+     *   这时删目录会 EPERM —— 放在 SANDBOX 里就会把 harness 最后那轮清理搞崩。
+     *   临时目录里即使残留也无所谓。
+     */
+    const cnCwd = join(tmpdir(), 'harbor-pty-cn-测试 目录')
+    mkdirSync(cnCwd, { recursive: true })
+    const chunks = []
+    const started = ptyModule.start({
+      id: 'selftest-cn-pty',
+      cols: 90,
+      rows: 24,
+      cwd: cnCwd,
+      onData: (c) => chunks.push(c),
+      onExit: () => {},
+    })
+    const ready = Boolean(started && started.ok !== false)
+    if (ready) {
+      ptyModule.write('selftest-cn-pty', 'echo 终端中文测试\r')
+      /* 轮询等它回来（给够时间，别把慢机器判成失败） */
+      let seen = false
+      for (let i = 0; i < 40 && !seen; i += 1) {
+        await new Promise((r) => setTimeout(r, 200))
+        seen = chunks.join('').includes('终端中文测试')
+      }
+      ptyModule.kill('selftest-cn-pty')
+      check('★ 真起一个 pty：终端里 echo 中文不乱码', seen, JSON.stringify(chunks.join('').slice(-120)))
+      check('pty 能在中文+空格 cwd 下起', ready)
+      /* 等进程真的松开 cwd 再删；删不掉也不算事（临时目录里的残留） */
+      await new Promise((r) => setTimeout(r, 600))
+      try {
+        rmSync(cnCwd, { recursive: true, force: true })
+      } catch {
+        /* 留着就留着 */
+      }
+    } else {
+      check('★ 真起一个 pty：终端里 echo 中文不乱码', false, JSON.stringify(started))
+      check('pty 能在中文+空格 cwd 下起', false)
+    }
+  } else {
+    /* 计数器保持一致 */
+    check('★ 真起一个 pty：终端里 echo 中文不乱码（非 Windows 跳过）', true, 'skipped')
+    check('pty 能在中文+空格 cwd 下起（非 Windows 跳过）', true, 'skipped')
+  }
 
   rmSync(CN_DIR, { recursive: true, force: true })
 }
