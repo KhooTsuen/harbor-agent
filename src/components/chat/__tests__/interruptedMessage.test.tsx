@@ -48,11 +48,7 @@ afterEach(() => {
 })
 
 function render(message: Message): void {
-  act(() =>
-    root.render(
-      <MessageItem message={message} />,
-    ),
-  )
+  act(() => root.render(<MessageItem message={message} />))
 }
 
 describe('被中断的回复', () => {
