@@ -94,6 +94,8 @@ function normalizeMcpServer(raw, index) {
     network: pick(str(s.network, 'ask'), ['deny', 'ask', 'allow'], 'ask'),
     timeoutMs: clampNumber(s.timeoutMs, 1000, 600_000, 30_000),
     permission: pick(str(s.permission, 'ask'), C.PERMISSIONS, 'ask'),
+    /* 用应用自带的 Node 跑（自己写的 JS 服务器不必先装 Node） */
+    useBundledNode: bool(s.useBundledNode, false),
   }
 }
 

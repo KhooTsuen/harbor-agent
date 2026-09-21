@@ -165,6 +165,7 @@ const api = {
 
   /* ── MCP ──────────────────────────────────────────────── */
   mcpStatus: () => ipcRenderer.invoke('mcp:status'),
+  mcpPresets: () => ipcRenderer.invoke('mcp:presets'),
   mcpRestart: () => ipcRenderer.invoke('mcp:restart'),
 
   /* ── 对话 ─────────────────────────────────────────────── */

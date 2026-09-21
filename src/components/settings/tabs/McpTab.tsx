@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Plug, Plus, RefreshCw, Trash2, X } from 'lucide-react'
-import type { McpServerStatus } from '@/types/backend'
-import { mcpRestart, mcpStatus } from '@/lib/extrasApi'
+import type { McpPreset, McpServerStatus } from '@/types/backend'
+import { mcpPresets, mcpRestart, mcpStatus } from '@/lib/extrasApi'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
@@ -28,6 +28,9 @@ export function McpTab() {
   const showToast = useUIStore((s) => s.showToast)
 
   const [status, setStatus] = useState<McpServerStatus[]>([])
+  const [presets, setPresets] = useState<McpPreset[]>([])
+  /* 点预设时记住它要不要用内置 Node —— 添加的时候得写进服务器配置里 */
+  const [draftBundledNode, setDraftBundledNode] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [adding, setAdding] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -43,6 +46,11 @@ export function McpTab() {
     void refreshStatus()
   }, [])
 
+  /* 预设由内核给（命令行模板唯一真相源在 mcp-presets.cjs，占位符也已填好） */
+  useEffect(() => {
+    void mcpPresets().then(setPresets)
+  }, [])
+
   function statusOf(id: string): McpServerStatus | undefined {
     return status.find((s) => s.id === id)
   }
@@ -54,6 +62,18 @@ export function McpTab() {
     setRestarting(false)
     const alive = next.filter((s) => s.alive).length
     showToast(alive > 0 ? 'success' : 'warning', '已重启', `${alive}/${next.length} 个服务器连上了`)
+  }
+
+  /*
+   * 预设只是把命令行填进草稿 —— 用户还能改，改完照常点「添加」。
+   * 名字里的括号说明（「（官方参考服务器）」）去掉，留着当服务器名太长。
+   */
+  function applyPreset(preset: McpPreset): void {
+    setDraftName(preset.name.replace(/（[^）]*）/g, '').trim() || preset.name)
+    setDraftCommand(preset.command)
+    /* ★ 这条不加就白点了：命令是 `node xxx.js`，但没有这个标志内核不会换成自带的 Node */
+    setDraftBundledNode(preset.needs === 'bundled-node')
+    setAdding(true)
   }
 
   async function addServer(): Promise<void> {
@@ -82,6 +102,8 @@ export function McpTab() {
         args,
         env: {},
         enabled: true,
+        /* 预设是「用内置 Node」那一条时才为 true */
+        useBundledNode: draftBundledNode,
         /* 隔离默认值：不继承环境变量、不给网络、工具按写操作对待 */
         inheritEnvironment: false,
         envAllowlist: [],
@@ -94,6 +116,7 @@ export function McpTab() {
     setAdding(false)
     setDraftName('')
     setDraftCommand('')
+    setDraftBundledNode(false)
     showToast('success', '已添加', '点「重启」让它连上')
   }
 
@@ -192,6 +215,37 @@ export function McpTab() {
           })}
         </ul>
       )}
+
+      {presets.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <SectionTitle>内置预设（省得记命令行）</SectionTitle>
+          <ul className="flex flex-col gap-1.5">
+            {presets.map((preset) => (
+              <li key={preset.id} className="acrylic-card flex items-start gap-2 p-2">
+                <div className="min-w-0 flex-1">
+                  <span className="text-dense text-fg-primary">{preset.name}</span>
+                  <p className="mt-0.5 text-2xs text-fg-secondary">{preset.description}</p>
+                  <p className="mt-1 truncate font-mono text-2xs text-fg-tertiary">
+                    {preset.command}
+                  </p>
+                  <p className="mt-0.5 text-2xs text-fg-tertiary">
+                    {preset.needs === 'bundled-node'
+                      ? '用应用自带的 Node 跑，不必先装 Node'
+                      : '需要系统装了 Node（走 npx）'}
+                  </p>
+                </div>
+                <IconButton
+                  label={`用这个预设：${preset.name}`}
+                  size={28}
+                  onClick={() => applyPreset(preset)}
+                >
+                  <Plus size={13} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <Row
         label="添加服务器"

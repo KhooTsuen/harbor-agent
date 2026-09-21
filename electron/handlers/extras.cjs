@@ -8,6 +8,7 @@
 const memory = require('../core/memory.cjs')
 const search = require('../core/search.cjs')
 const mcp = require('../core/mcp.cjs')
+const mcpPresets = require('../core/mcp-presets.cjs')
 const config = require('../core/config.cjs')
 const stats = require('../core/stats.cjs')
 const backup = require('../core/backup.cjs')
@@ -121,6 +122,13 @@ function register({ ipcMain }) {
   /* ── MCP ──────────────────────────────────────────────── */
 
   ipcMain.handle('mcp:status', () => mcp.status())
+
+  /* 内置预设：界面拿它做「一键添加」，命令模板唯一真相源在内核（mcp-presets.cjs） */
+  ipcMain.handle('mcp:presets', () => {
+    /* 占位符在这里填（工作目录只有内核知道），界面直接拿现成的命令行 */
+    const dir = config.get().general?.workdir ?? ''
+    return mcpPresets.list().map((p) => ({ ...p, command: mcpPresets.fillCommand(p, { dir }) }))
+  })
 
   /** 重启所有 MCP 服务器（改了配置之后用） */
   ipcMain.handle('mcp:restart', async () => {

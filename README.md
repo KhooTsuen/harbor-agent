@@ -109,6 +109,14 @@ MCP 是让 Agent 接第三方工具的标准协议（GitHub、数据库、浏览
 npx -y @modelcontextprotocol/server-filesystem D:\data
 ```
 
+**不想记命令行就用内置预设** —— 那个页面里有几张卡片（文件系统 / 网页抓取 / 知识图谱记忆 /
+Git），点一下就把命令填进表单（当前的**工作目录已经替你填好**，路径带空格会自动加引号）。
+
+**「用应用自带的 Node 跑」**：Electron 自带一个 Node（可执行文件加 `ELECTRON_RUN_AS_NODE=1`
+就是 node），所以**你自己写的 JS 服务器不用先装 Node**，指一个 `.js` 文件就行。
+有个前提说清楚：走 `npx -y @modelcontextprotocol/server-*` 的那几个官方服务器**仍然需要你装了 Node**
+—— `npx` 是 npm 的东西，Electron 只带 Node、不带 npm。预设卡片上标了哪条是哪种。
+
 **安全上刻意做了隔离**：MCP 服务器是不可信的外部程序，所以子进程**默认只拿到白名单里的环境变量**
 （PATH / SystemRoot / TEMP 这类"不给就跑不起来"的），**不会**继承你的全部环境变量
 （那等于把所有 API Key、代理凭据一起递给它）。即使你显式打开"继承环境"，密钥类变量也会被过滤掉。

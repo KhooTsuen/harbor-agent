@@ -6,14 +6,12 @@ import type {
   RouterConfig,
   ShellPolicy,
 } from './safety'
-import type { SearchConfig, McpServerConfig } from './models-extra'
+import type { SearchConfig } from './models-extra'
+import type { McpServerConfig } from './mcp'
 /* 搜索 / MCP 的类型在 models-extra.ts（这里再导出一次，调用方不用改） */
-export type {
-  SearchConfig,
-  McpServerConfig,
-  McpServerStatus,
-  ConversationSearchHit,
-} from './models-extra'
+export type { SearchConfig, ConversationSearchHit } from './models-extra'
+/* MCP 类型搬去了 ./mcp，这里再导出一次，调用方不用改 */
+export type { McpPreset, McpServerConfig, McpServerStatus } from './mcp'
 
 import type { SceneMap } from './scenes'
 /* ChatEvent 里用到；转发给外部看是下面那个 export type 块的事 */

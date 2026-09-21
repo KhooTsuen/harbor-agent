@@ -244,7 +244,7 @@ export interface ShellRunResult {
   error?: string
 }
 
-/* 搜索与 MCP 的配置类型 —— 从 models.ts 挪过来的（那边又过 300 行了） */
+/* 搜索的配置类型 —— 从 models.ts 挪过来的（那边又过 300 行了）；MCP 的已挪去 mcp.ts */
 
 export interface SearchConfig {
   provider: string
@@ -254,32 +254,6 @@ export interface SearchConfig {
   hasKey?: boolean
   credentialRef?: string
   citations?: boolean
-}
-
-export interface McpServerConfig {
-  id: string
-  name: string
-  command: string
-  args: string[]
-  env: Record<string, string>
-  enabled: boolean
-  /* ── 隔离（默认最保守）── */
-  /** 是否继承主进程环境变量。默认否 —— 不然会把所有 API Key 递给第三方程序 */
-  inheritEnvironment: boolean
-  envAllowlist: string[]
-  cwd: string
-  network: 'deny' | 'ask' | 'allow'
-  timeoutMs: number
-  permission: 'full' | 'ask' | 'readonly'
-}
-
-export interface McpServerStatus {
-  id: string
-  name: string
-  alive: boolean
-  error: string
-  toolCount: number
-  tools: Array<{ name: string; description: string }>
 }
 
 /** 一个技能（SKILL.md）*/

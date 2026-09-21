@@ -1,5 +1,4 @@
-/* window.workbench 的声明。Electron 下有真实文件/终端/模型，浏览器预览下只有 UI。
-   所有 IPC 都返回 { ok, ... }，失败不扔异常（跨进程扔了也拿不到栈）。 */
+/* window.workbench 的声明。Electron 下有真实文件/终端/模型，浏览器预览下只有 UI。 所有 IPC 都返回 { ok, ... }，失败不扔异常 —— 跨进程扔了也拿不到栈。 */
 
 import type {
   AppConfig,
@@ -9,6 +8,7 @@ import type {
   ChatEvent,
   ChatSendPayload,
   McpServerStatus,
+  McpPreset,
   SearchConfig,
   ShellData,
   ShellRunResult,
@@ -141,6 +141,7 @@ export interface WorkbenchBridge extends SafetyBridge, NotifyBridge {
   backupOpen: () => Promise<{ ok: boolean; path?: string; error?: string }>
 
   mcpStatus: () => Promise<McpServerStatus[]>
+  mcpPresets: () => Promise<McpPreset[]>
   mcpRestart: () => Promise<{ ok: boolean; servers: McpServerStatus[] }>
 
   diagnosticsCopy: () => Promise<{
@@ -295,6 +296,5 @@ declare global {
     workbench?: WorkbenchBridge
   }
 }
-
 /* 安全 / 可靠相关（审计、授权、任务、改动事务、凭证、记忆）*/
 export * from './safety'

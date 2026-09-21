@@ -85,6 +85,7 @@ import { run as purgeGroup } from './selftest/groups/47-purge.mjs'
 import { run as profileGroup } from './selftest/groups/48-profile.mjs'
 import { run as injectionGroup } from './selftest/groups/49-injection.mjs'
 import { run as pathEncoding } from './selftest/groups/50-path-encoding.mjs'
+import { run as mcpPresets } from './selftest/groups/51-mcp-presets.mjs'
 
 const GROUPS = [
   basics,
@@ -137,6 +138,7 @@ const GROUPS = [
   profileGroup,
   injectionGroup,
   pathEncoding,
+  mcpPresets,
 ]
 
 async function main() {

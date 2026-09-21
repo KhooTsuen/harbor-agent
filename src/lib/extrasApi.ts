@@ -1,5 +1,6 @@
 import type {
   BackupInfo,
+  McpPreset,
   McpServerStatus,
   MemoryStats,
   SearchConfig,
@@ -88,6 +89,19 @@ export async function mcpStatus(): Promise<McpServerStatus[]> {
   if (!bridge) return []
   try {
     return await bridge.mcpStatus()
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 内置预设。**命令模板由内核填好**（`mcp-presets.cjs` 的 fillCommand 负责把
+ * `${dir}` 换成当前工作目录、带空格时加引号）—— 渲染层不重复这套逻辑。
+ */
+export async function mcpPresets(): Promise<McpPreset[]> {
+  if (!bridge) return []
+  try {
+    return await bridge.mcpPresets()
   } catch {
     return []
   }

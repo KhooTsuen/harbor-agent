@@ -12,6 +12,7 @@
 const { spawn } = require('node:child_process')
 const { onAbort } = require('./abort.cjs')
 const log = require('./log.cjs')
+const mcpRuntime = require('./mcp-runtime.cjs')
 const { BRAND } = require('./config-defaults.cjs')
 
 const PROTOCOL_VERSION = '2024-11-05'
@@ -88,21 +89,32 @@ class McpConnection {
     const { command, args = [], env = {} } = this.config
     const env2 = this.buildEnv()
 
+    /* 「用内置 Node 跑」在这里生效：`node xxx.js` 换成应用自己的可执行文件
+       + ELECTRON_RUN_AS_NODE=1（等于标准 node），自己写的 JS 服务器就不必装 Node。
+       npx 换不动（npm 不在 Electron 里），解析函数会原样放行。 */
+    const resolved = mcpRuntime.resolveSpawn({
+      command,
+      args,
+      useBundledNode: this.config.useBundledNode === true,
+    })
+    if (resolved.replaced) {
+      log.info(`MCP「${this.id}」用应用自带的 Node 启动：${resolved.args[0] ?? ''}`)
+    }
+
     /*
      * MCP 服务器是**不可信扩展** —— 一个本地子进程，我们不知道它干什么。
      *
-     * 以前这里是 `env: { ...process.env, ...env }`：把整个环境变量表
-     * （包括所有 API Key、代理凭据、云厂商 token）递给一个第三方程序。
-     * 现在只递给白名单里的那几个 —— 少了 SystemRoot / windir / PATH
-     * 很多程序根本起不来，所以那几个是必需的；其余一律不给。
+     * 以前这里是 `env: { ...process.env, ...env }`：把整个环境变量表（所有 API Key、
+     * 代理凭据、云厂商 token）递给一个第三方程序。现在只递白名单里那几个 ——
+     * 少了 SystemRoot / windir / PATH 很多程序起不来，所以那几个必需；其余一律不给。
      */
-    this.child = spawn(command, args, {
+    this.child = spawn(resolved.command, resolved.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: env2,
+      env: { ...env2, ...resolved.env },
       /* 独立工作目录：不指定就用自己的工作目录，不用主进程的 */
       cwd: this.config.cwd || undefined,
       windowsHide: true,
-      shell: process.platform === 'win32',
+      shell: resolved.shell,
     })
 
     this.child.on('error', (error) => {

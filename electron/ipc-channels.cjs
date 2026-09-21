@@ -57,6 +57,7 @@ const EXPECTED_CHANNELS = [
   'fs:tree',
   'fs:workdir',
   'import:pickJson',
+  'mcp:presets',
   'mcp:restart',
   'mcp:status',
   'memory:add',

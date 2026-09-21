@@ -183,7 +183,7 @@ const DEFAULTS = {
   mcp: {
     /**
      * 每个 server：
-     * { id, name, command, args, env, enabled,
+     * { id, name, command, args, env, enabled, useBundledNode,
      *   inheritEnvironment, envAllowlist, cwd, network, timeoutMs, permission }
      * **默认不继承环境变量、不给网络、工具按写操作对待。**
      */
