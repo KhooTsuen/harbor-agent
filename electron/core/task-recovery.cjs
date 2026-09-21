@@ -33,10 +33,10 @@ function progressOf(plan) {
  *
  * **纯读**：不发事件、不改状态、不启动任何东西。
  */
-function scan() {
+function scan({ workdir = '' } = {}) {
   let tasks = []
   try {
-    tasks = taskCore.unfinished() ?? []
+    tasks = taskCore.unfinished({ workdir }) ?? []
   } catch (error) {
     log.warn(`恢复扫描失败：${error instanceof Error ? error.message : error}`)
     return []

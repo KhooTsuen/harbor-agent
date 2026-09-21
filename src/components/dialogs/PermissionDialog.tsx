@@ -18,8 +18,10 @@ import { colorOf } from '@/lib/statusLanguage'
    「必须让用户明确看到修改内容」：写文件时内核会把**会改成什么**算成 diff
    一起送来。默认**折叠**（只给一行「+4 −3」和「查看 Diff」），点开才展开 ——
    每次都铺一大块会把弹窗冲烂，而点开是零成本的。
+   ── 确认呈现 ──
+   权限确认使用 anchored 形态：贴在输入区上方、不遮罩、不抢页面点击。点击窗口外不会
+   触发拒绝，只有「允许本次」或「取消」会答复主进程。
    ══════════════════════════════════════════════════════════════ */
-
 export function PermissionDialog() {
   const permission = useUIStore((s) => s.permission)
   const closePermission = useUIStore((s) => s.closePermission)
@@ -29,10 +31,13 @@ export function PermissionDialog() {
   /* 记录这次弹窗是不是已经被「确认」处理过了 —— 避免确认后又触发一次 onCancel */
   const confirmedRef = useRef(false)
   const open = permission !== null
+  const impact = permission?.impact ?? []
   const diff = permission?.diff ?? []
   const stats = sumDiff(diff)
   const key = `${permission?.title ?? ''}|${permission?.description ?? ''}`
   const expanded = expandedFor === key
+
+  if (!permission || permission.kind === 'run-command') return null
 
   function handleClose(): void {
     if (!confirmedRef.current) permission?.onCancel?.()
@@ -45,8 +50,10 @@ export function PermissionDialog() {
       open={open}
       onClose={handleClose}
       title={permission?.title ?? ''}
-      description={permission?.kind === 'run-command' ? '这会真的在你机器上执行命令' : undefined}
-      width="sm"
+      width="xl"
+      variant="anchored"
+      showClose={false}
+      disableBackdropClose
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={handleClose}>
@@ -89,6 +96,17 @@ export function PermissionDialog() {
             有 diff 才出现这一行 —— 跑命令、访问目录之外的路径都没有 diff，
             它们靠上面的摘要说明。
           */}
+          {impact.length > 0 ? (
+            <div className="mt-3 rounded-sm border border-line-subtle bg-bg-base/40 px-2 py-1.5">
+              <p className="text-2xs font-medium text-fg-secondary">影响预览</p>
+              <ul className="mt-1 flex flex-col gap-0.5 text-2xs text-fg-tertiary">
+                {impact.map((item) => (
+                  <li key={item}>· {item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {diff.length > 0 ? (
             <div className="mt-3 rounded-sm border border-line-subtle bg-bg-base/40">
               <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-2xs">

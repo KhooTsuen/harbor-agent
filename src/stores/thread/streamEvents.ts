@@ -196,6 +196,7 @@ export function handleStreamEvent(
         /* AG-036：会改成什么样（没有就不传，弹窗里也不会出现「查看 Diff」） */
         diff: Array.isArray(event.diff) ? event.diff : undefined,
         diffNote: String(event.diffNote ?? ''),
+        impact: Array.isArray(event.impact) ? event.impact.map(String) : [],
         onConfirm: () => void confirmChat(confirmId, true),
         /* 关掉弹窗也算拒绝 —— 不回话的话主进程会一直等到超时 */
         onCancel: () => void confirmChat(confirmId, false),

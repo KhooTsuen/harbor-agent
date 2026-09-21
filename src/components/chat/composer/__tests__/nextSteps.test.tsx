@@ -45,7 +45,9 @@ const outcome = (patch: Partial<TaskOutcome> = {}): TaskOutcome => ({
 
 const show = (patch: Partial<TaskOutcome> = {}, threadId?: string): void => {
   const id = threadId ?? useAppStore.getState().activeThreadId
-  useUIStore.setState({ nextSteps: { threadId: id, outcome: outcome(patch) } })
+  act(() => {
+    useUIStore.setState({ nextSteps: { threadId: id, outcome: outcome(patch) } })
+  })
   draw()
 }
 

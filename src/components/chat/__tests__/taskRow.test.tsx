@@ -151,6 +151,16 @@ describe('AG-028 / 任务行（真渲染）', () => {
     expect(opened).toBe(1)
   })
 
+  it('★ 收起时先显示状态原因，再显示当前步骤', () => {
+    const el = draw(
+      task({
+        pauseReason: 'budget',
+        budgetHit: { reason: 'maxSteps', label: '轮数上限', used: 50, limit: 50 },
+      }),
+    )
+    expect(el.textContent).toContain('已暂停 · 达到轮数上限')
+    expect(el.textContent).toContain('下一步：修改')
+  })
   it('★ 默认不显示运行细节（AG-030：Tool 数 / 历时 / 更新时间压进详情里）', () => {
     const el = draw(task({ steps: [{ at: 1, tool: 'read_file', ok: true, ms: 5, summary: 'x' }] }))
     expect(el.textContent).not.toContain('Tool')

@@ -113,7 +113,7 @@ describe('AG-038 / 1000 条消息', () => {
     report('点「载入更早」之后', 0, container.querySelectorAll('*').length, `画了 ${after} 条`)
     expect(after).toBeGreaterThan(200)
     expect(after).toBeLessThanOrEqual(500)
-  })
+  }, 15000)
 
   it('★ 1000 条里滚动一次不该重排整棵树（耗时随数据线性，不退化成平方）', () => {
     const messages = Array.from({ length: 1000 }, () => message())

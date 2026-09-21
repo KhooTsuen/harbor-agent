@@ -121,8 +121,8 @@ describe('AG-028 / 接线守卫', () => {
 
   it('全量任务与恢复清单一次刷新，后端仍是唯一真相源', () => {
     const src = readFileSync(join(SRC, 'stores/useTaskStore.ts'), 'utf8')
-    expect(src).toContain('taskList({ limit: 200 })')
-    expect(src).toContain('taskRecovery()')
+    expect(src).toContain('taskList({ limit: 200, workdir })')
+    expect(src).toContain('taskRecovery(workdir)')
   })
 
   it('任务标签能作为「上次右栏标签」恢复', () => {

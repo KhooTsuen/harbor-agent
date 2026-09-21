@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Ban, Check, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
 import type { MemoryItem } from '@/types/backend'
+import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import {
@@ -62,19 +63,22 @@ export function MemoryTab() {
   const config = useConfigStore((s) => s.config)
   const patchMemory = useConfigStore((s) => s.patchMemory)
   const showToast = useUIStore((s) => s.showToast)
+  const projectId = useAppStore((s) => s.activeProjectId)
+  const project = useAppStore((s) => s.projects.find((item) => item.id === projectId))
 
   const [items, setItems] = useState<MemoryItem[]>([])
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState('')
   const [showSuperseded, setShowSuperseded] = useState(false)
+  const [memoryScope, setMemoryScope] = useState<'global' | 'project'>('global')
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!memorySupported()) return
     setBusy(true)
-    setItems(await memoryList({ includeSuperseded: showSuperseded }))
+    setItems(await memoryList({ includeSuperseded: showSuperseded, projectId }))
     setBusy(false)
-  }, [showSuperseded])
+  }, [projectId, showSuperseded])
 
   useEffect(() => {
     void refresh()
@@ -87,13 +91,19 @@ export function MemoryTab() {
       void refresh()
       return
     }
-    setItems(await memorySearch(text))
+    setItems(await memorySearch(text, { projectId, includeSuperseded: showSuperseded }))
   }
 
   async function add(): Promise<void> {
     const content = draft.trim()
     if (!content) return
-    const result = await memoryAdd({ content, type: 'fact', source: 'user_explicit' })
+    const result = await memoryAdd({
+      content,
+      type: 'fact',
+      source: 'user_explicit',
+      scope: memoryScope,
+      ...(memoryScope === 'project' && projectId ? { projectId } : {}),
+    })
     if (!result.ok) {
       showToast('error', '没记下来', result.error)
       return
@@ -126,7 +136,13 @@ export function MemoryTab() {
 
   return (
     <div className="flex flex-col gap-1 pb-6">
-      <SectionTitle>写入规则</SectionTitle>
+      <SectionTitle>当前项目</SectionTitle>
+      <p className="px-2 py-1 text-2xs text-fg-tertiary">
+        {project
+          ? `项目记忆会绑定到「${project.name}」，其他项目不会注入。`
+          : '当前没有选中的项目。项目记忆需要先选择工作目录。'}
+      </p>
+
       <Row label="模型想记东西时" hint="记忆会影响之后所有对话，记错一条比改错一个文件影响更久。">
         <select
           value={memory?.autoWrite ?? 'ask'}
@@ -191,6 +207,16 @@ export function MemoryTab() {
           placeholder="手动加一条，例如：回答用简体中文，代码注释也用中文"
           className="min-w-0 flex-1 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
         />
+        <select
+          value={memoryScope}
+          onChange={(e) => setMemoryScope(e.target.value as 'global' | 'project')}
+          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-dense text-fg-primary focus:outline-none"
+          disabled={memoryScope === 'project' && !projectId}
+          aria-label="记忆归属"
+        >
+          <option value="global">全局记忆</option>
+          <option value="project">当前项目</option>
+        </select>
         <Button variant="secondary" size="sm" icon={<Plus size={12} />} onClick={() => void add()}>
           记住
         </Button>

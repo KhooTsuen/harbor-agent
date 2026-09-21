@@ -214,7 +214,7 @@ function clear() {
 /**
  * 列出记忆。
  *
- * @param {{ status?: string, scope?: string, type?: string, includeSuperseded?: boolean }} options
+ * @param {{ status?: string, scope?: string, type?: string, projectId?: string, includeSuperseded?: boolean }} options
  */
 function list(options = {}) {
   const data = load()
@@ -224,17 +224,22 @@ function list(options = {}) {
   if (options.status) items = items.filter((i) => i.status === options.status)
   if (options.scope) items = items.filter((i) => i.scope === options.scope)
   if (options.type) items = items.filter((i) => i.type === options.type)
+  if (options.projectId !== undefined) {
+    items = items.filter(
+      (i) => i.scope !== 'project' || (options.projectId && i.projectId === options.projectId),
+    )
+  }
 
   return items.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 /** 关键词搜索（标题、内容、类型都搜） */
-function search(query) {
+function search(query, options = {}) {
   const text = String(query ?? '')
     .toLowerCase()
     .trim()
-  if (!text) return list()
-  return list({ includeSuperseded: true }).filter((item) =>
+  if (!text) return list(options)
+  return list({ ...options, includeSuperseded: true }).filter((item) =>
     `${item.content} ${item.type} ${item.scope}`.toLowerCase().includes(text),
   )
 }

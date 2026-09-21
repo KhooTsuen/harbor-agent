@@ -67,7 +67,7 @@ const api = {
   clearMemory: () => ipcRenderer.invoke('memory:clear'),
   /* 结构化记忆 */
   memoryList: (options) => ipcRenderer.invoke('memory:list', options),
-  memorySearch: (query) => ipcRenderer.invoke('memory:search', query),
+  memorySearch: (query, options) => ipcRenderer.invoke('memory:search', { query, ...options }),
   memoryAdd: (input) => ipcRenderer.invoke('memory:add', input),
   memoryUpdate: (payload) => ipcRenderer.invoke('memory:update', payload),
   memoryDisable: (id) => ipcRenderer.invoke('memory:disable', id),

@@ -178,9 +178,16 @@ export const Z = {
 /* ── 布局 ──────────────────────────────────────────────────── */
 
 export const LAYOUT_TOKENS = {
-  topbarHeight: 48,
+  topbarHeight: 40,
   statusbarHeight: 28,
-  sidebar: { min: 200, max: 400, default: 260, collapsed: 48 },
-  rightPanel: { min: 280, max: 600, default: 380 },
+  sidebar: { min: 220, max: 320, default: 240, collapsed: 48 },
+  rightPanel: { min: 320, max: 480, default: 360 },
+  contentMaxWidth: 760,
+  dialogMaxWidth: 760,
+  composerMinHeight: 52,
   composerMaxHeight: 200,
+  controlHeight: 28,
+  compactControlHeight: 24,
+  panelPadding: 12,
+  sectionGap: 12,
 } as const

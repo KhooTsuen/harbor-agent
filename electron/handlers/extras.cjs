@@ -22,15 +22,18 @@ function register({ ipcMain }) {
     ok: true,
     items: memory.list({
       status: options.status ?? '',
-      scope: options.scope ?? '',
       type: options.type ?? '',
+      projectId: options.projectId ?? '',
       includeSuperseded: options.includeSuperseded === true,
     }),
   }))
 
-  ipcMain.handle('memory:search', (_event, query) => ({
+  ipcMain.handle('memory:search', (_event, payload) => ({
     ok: true,
-    items: memory.search(String(query ?? '')),
+    items: memory.search(String(payload?.query ?? ''), {
+      projectId: String(payload?.projectId ?? ''),
+      includeSuperseded: payload?.includeSuperseded === true,
+    }),
   }))
 
   ipcMain.handle('memory:add', (_event, input) => {

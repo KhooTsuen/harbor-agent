@@ -79,7 +79,7 @@ export async function run() {
     '★ 恢复扫描不执行任何东西（只读 —— 文档要求「不得直接盲目恢复执行」）',
     !/\b(loop\.run|taskResume\.reopen|emit\()/.test(recSrc),
   )
-  check('扫描用 unfinished 拿未完成任务', recSrc.includes('taskCore.unfinished()'))
+  check('扫描用 unfinished 按项目工作目录筛选', /taskCore\.unfinished\(\{ workdir \}\)/.test(recSrc))
   check('扫描会做环境检查', recSrc.includes('taskResume.checkEnvironment'))
 
   const safetySrc = readCore('electron/handlers/safety.cjs')
@@ -88,7 +88,7 @@ export async function run() {
   check('preload 暴露了它', readCore('electron/preload.cjs').includes('taskRecovery:'))
   check(
     '前端 store 用的是 recovery（不是旧的 unfinished）',
-    readCore('src/stores/useTaskStore.ts').includes('taskRecovery()'),
+    readCore('src/stores/useTaskStore.ts').includes('taskRecovery(workdir)'),
   )
   /*
    * AG-028：横幅撤掉了，这两件事现在在右栏任务中心的「详情」里。

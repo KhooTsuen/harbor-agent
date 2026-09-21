@@ -1,5 +1,6 @@
 export * from './scenes'
 export * from './fonts'
+export * from './design'
 import type { ModelOption, ReasoningLevel, ShortcutDef, ThreadMode } from '@/types'
 
 /* ══════════════════════════════════════════════════════════════
@@ -129,10 +130,11 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
 /* ── 布局尺寸 ────────────────────────────────────────────────── */
 
 export const LAYOUT = {
-  sidebar: { default: 260, min: 200, max: 400, collapsed: 48 },
-  rightPanel: { default: 380, min: 280, max: 600 },
-  topbarHeight: 48,
+  sidebar: { default: 240, min: 220, max: 320, collapsed: 48 },
+  rightPanel: { default: 360, min: 320, max: 480 },
+  topbarHeight: 40,
   statusBarHeight: 28,
+  contentMaxWidth: 760,
   composerMaxHeight: 200,
 } as const
 

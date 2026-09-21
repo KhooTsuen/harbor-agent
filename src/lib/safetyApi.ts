@@ -116,10 +116,10 @@ export async function taskUnfinished(): Promise<TaskRecord[]> {
  * 比 taskUnfinished 多带「停在哪一步 / 哪些文件被动过 / 恢复过几次」——
  * 都是用户决定「要不要接着做」时该知道的事。
  */
-export async function taskRecovery(): Promise<TaskRecoveryItem[]> {
+export async function taskRecovery(workdir = ''): Promise<TaskRecoveryItem[]> {
   if (!bridge?.taskRecovery) return []
   try {
-    const result = await bridge.taskRecovery()
+    const result = await bridge.taskRecovery({ workdir })
     return result.items ?? []
   } catch {
     return []
@@ -131,6 +131,7 @@ export async function taskList(options?: {
   status?: string
   /* 主进程的 task:list 一直支持按会话过滤，前端类型漏了 —— AG-011 用上才发现 */
   sessionId?: string
+  workdir?: string
 }): Promise<TaskRecord[]> {
   if (!bridge?.taskList) return []
   try {
@@ -197,9 +198,7 @@ export async function taskUpdate(id: string, patch: Record<string, unknown>): Pr
 }
 
 /**
- * 删掉一条对话的全部任务历史（删对话时调用）。
- *
- * @returns 删掉了多少条（拿不到桥时给 0）
+ * 删掉一条对话的全部任务历史（删对话时调用）。@returns 删掉了多少条（拿不到桥时给 0）
  */
 export async function taskPurgeBySession(sessionId: string): Promise<number> {
   if (!sessionId) return 0

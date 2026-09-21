@@ -195,6 +195,7 @@ export interface ModelOption {
 /* ── 权限确认 ───────────────────────────────────────────────── */
 
 export type PermissionKind =
+  | 'run-command'
   | 'delete-thread'
   | 'delete-project'
   | 'run-command'
@@ -210,6 +211,7 @@ export interface PermissionRequest {
   danger: boolean
   /** AG-036：这次会改成什么（写文件时才有）—— 弹窗里默认折叠，点开才看 */
   diff?: DiffFile[]
+  impact?: string[]
   diffNote?: string
   onConfirm: () => void
   /** 取消/关闭时调（用于「写操作确认被拒绝」这种场景） */

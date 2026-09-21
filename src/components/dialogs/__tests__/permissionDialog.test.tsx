@@ -46,7 +46,7 @@ function show(
   const onCancel = patch?.onCancel ?? (() => {})
   act(() => {
     useUIStore.getState().askPermission({
-      kind: 'run-command',
+      kind: 'delete-thread',
       title: 'Agent 准备修改文件',
       description: '写文件 README.md',
       confirmText: '允许本次',
@@ -110,6 +110,12 @@ describe('AG-036 / 确认弹窗里的 Diff', () => {
     expect(button('查看 Diff')).toBeUndefined()
   })
 
+  it('影响预览显示目标和副作用说明', () => {
+    show({ impact: ['写入文件：E:/demo/a.txt', '改动会进入变更事务'] })
+    expect(container.textContent).toContain('影响预览')
+    expect(container.textContent).toContain('写入文件：E:/demo/a.txt')
+    expect(container.textContent).toContain('改动会进入变更事务')
+  })
   it('「查看 Diff」在弹窗上，不是替代允许/取消', () => {
     show({ diff: DIFF })
     expect(button('允许本次')).toBeTruthy()

@@ -152,8 +152,8 @@ function pauseRunning() {
  * 原来是「把 data/tasks 下每个 JSON 全读一遍」—— 1241 个任务实测 240ms，
  * 而列表在工具每跑完一次就会被调用一次：主进程被反复按住，渲染层的 IPC 全排在后面。
  */
-function list({ limit = 50, status = '', statuses = null, sessionId = '' } = {}) {
-  return taskIndex.list({ limit, status, statuses, sessionId })
+function list({ limit = 50, status = '', statuses = null, sessionId = '', workdir = '' } = {}) {
+  return taskIndex.list({ limit, status, statuses, sessionId, workdir })
 }
 
 /**
@@ -165,9 +165,9 @@ function list({ limit = 50, status = '', statuses = null, sessionId = '' } = {})
  *   于是**刚建的那条能被挤出前 20**，`unfinished()` 就装作没看见它
  *   （自检里报成「未完成任务能被列出来」失败）。
  */
-function unfinished() {
-  /* 状态集合交给索引筛（只读真正没干完的那几条，不必读 500 个文件） */
-  return list({ limit: 500, statuses: [...UNFINISHED] }).slice(0, 20)
+function unfinished({ workdir = '' } = {}) {
+  /* 状态集合交给索引筛；项目上下文有工作目录时只取该项目任务 */
+  return list({ limit: 500, statuses: [...UNFINISHED], workdir }).slice(0, 20)
 }
 
 /**

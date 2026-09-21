@@ -36,6 +36,10 @@ export function TaskCenter() {
   const refresh = useTaskStore((s) => s.refresh)
 
   const activeThreadId = useAppStore((s) => s.activeThreadId)
+  const activeProject = useAppStore((s) =>
+    s.projects.find((project) => project.id === s.activeProjectId),
+  )
+  const projectWorkdir = activeProject?.path ?? ''
   const setActiveThread = useAppStore((s) => s.setActiveThread)
   /* 相位只有当前对话有 —— 别的对话的任务只显示计划与步骤 */
   const phases = useAppStore(
@@ -47,10 +51,11 @@ export function TaskCenter() {
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const contextLabel = activeProject?.name || '当前对话'
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    void refresh(projectWorkdir)
+  }, [projectWorkdir, refresh])
 
   /* 只有真的有任务在跑才走秒表；空闲时不留常驻 interval。 */
   const hasRunning = tasks.some((task) => task.status === 'running')
@@ -74,7 +79,7 @@ export function TaskCenter() {
 
   async function reload(): Promise<void> {
     setRefreshing(true)
-    await refresh()
+    await refresh(projectWorkdir)
     setRefreshing(false)
   }
 
@@ -90,7 +95,7 @@ export function TaskCenter() {
   async function giveUp(task: TaskRecord): Promise<void> {
     setBusy(task.id)
     await taskUpdate(task.id, { status: 'cancelled' })
-    await refresh()
+    await refresh(projectWorkdir)
     setBusy('')
     showToast('info', '已放弃这条任务', task.title)
   }
@@ -102,7 +107,7 @@ export function TaskCenter() {
     setBusy('')
     if (result.ok) {
       showToast('success', '记录已删除', task.title)
-      await refresh()
+      await refresh(projectWorkdir)
     } else {
       showToast('warning', '没能删除', result.reason ?? '这条任务现在还删不了')
     }
@@ -130,7 +135,7 @@ export function TaskCenter() {
           const result = await taskRemoveMany({ statuses: [status] })
           const skipped = result.skipped > 0 ? `，跳过 ${result.skipped} 条正在跑的` : ''
           showToast('success', '已清空', `删除 ${result.removed} 条记录${skipped}`)
-          await refresh()
+          await refresh(projectWorkdir)
         })()
       },
     })
@@ -151,7 +156,7 @@ export function TaskCenter() {
       `恢复 ${result.restored.length} 个 · 删除 ${result.removed.length} 个` +
         (failed > 0 ? ` · ${failed} 个没恢复成功（可能太大没快照）` : ''),
     )
-    await refresh()
+    await refresh(projectWorkdir)
   }
 
   if (!loaded) {
@@ -176,7 +181,7 @@ export function TaskCenter() {
         <div className="min-w-0 flex-1">
           <h2 className="text-xs font-medium text-fg-primary">后台任务</h2>
           <p className="text-2xs text-fg-tertiary">
-            共 {tasks.length} 条 · 点任务回到对应对话，详情里有计划与时间线
+            共 {tasks.length} 条 · {contextLabel} · 点任务回到对应对话，详情里有计划与时间线
           </p>
         </div>
         <IconButton label="刷新任务" size={28} onClick={() => void reload()}>

@@ -30,7 +30,7 @@ interface TaskState {
    */
   diff: ChangeSetDiff | null
   loaded: boolean
-  refresh: () => Promise<void>
+  refresh: (workdir?: string) => Promise<void>
 }
 
 export const useTaskStore = create<TaskState>((set) => ({
@@ -44,10 +44,11 @@ export const useTaskStore = create<TaskState>((set) => ({
    * 不从 tasks 在前端推导 unfinished：恢复清单还带 envChanged / canResume，
    * 那些必须由主进程检查真实文件环境，前端自己算会形成第二份真相。
    */
-  refresh: async () => {
+  refresh: async (workdir = '') => {
     const [tasks, unfinished, list, diff] = await Promise.all([
-      taskList({ limit: 200 }),
-      taskRecovery(),
+      taskList({ limit: 200, workdir }),
+      taskRecovery(workdir),
+
       changesetList({ limit: 5 }),
       /* 审查标签看的是**当前这条对话**的改动 */
       changesetDiff(useAppStore.getState().activeThreadId),

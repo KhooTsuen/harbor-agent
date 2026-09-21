@@ -127,13 +127,20 @@ export type TaskRecoveryItem = TaskRecord & {
  * 永远删不掉（界面不给按钮，内核也会拦），那个数字就是「想删但没删」的条数。
  */
 export interface TaskBridge {
-  taskList: (options?: { limit?: number; status?: string; sessionId?: string }) => Promise<{
+  taskList: (options?: {
+    limit?: number
+    status?: string
+    sessionId?: string
+    workdir?: string
+  }) => Promise<{
     ok: boolean
     tasks: TaskRecord[]
   }>
   taskUnfinished: () => Promise<{ ok: boolean; tasks: TaskRecord[] }>
   /** AG-012：重启后的恢复清单（带「停在哪一步 / 哪些文件被动过 / 恢复过几次」） */
-  taskRecovery: () => Promise<{ ok: boolean; items: TaskRecoveryItem[] }>
+  taskRecovery: (options?: {
+    workdir?: string
+  }) => Promise<{ ok: boolean; items: TaskRecoveryItem[] }>
   taskGet: (id: string) => Promise<{ ok: boolean; task: TaskRecord | null }>
   /** AG-035：把台账读成一段人能读的报告（只读，不改任务） */
   taskDiagnose: (id: string) => Promise<{ ok: boolean; diagnosis: TaskDiagnosis }>

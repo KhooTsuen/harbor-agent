@@ -22,6 +22,7 @@ import { ImageAttachments } from './composer/ImageAttachments'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
 import { fsTree } from '@/lib/fsApi'
 import { useAgentActive } from '@/hooks/useAgentActive'
+import { PermissionBar } from './PermissionBar'
 
 /* ══════════════════════════════════════════════════════════════ Composer  这是这类工具最有辨识度的组件，结构照它排： ① 输入区 ② 工具行：+ / 模式 / 权限 … 模型 · 推理 · 发送 ③ 上下文行：项目路径 / 提文件 / 命令  发送键是**白色圆形 + 黑色箭头**（实测三张截图一致），不是彩色。 ══════════════════════════════════════════════════════════════ */
 
@@ -105,11 +106,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
    * 拆开是因为要拿 hasContent 给停止按钮做提示 —— AG-009 留下的「用户以为按钮坏了」。
    */
   const hasContent = trimmed.length > 0 || hasImages
-  /*
-   * AG-025：sending 时也可以「发送」—— 只是会**排队**而不是立刻发。
-   * 所以 canSend 不再要求 !sending；真正的「立刻发 vs 排队」由 sendMessage
-   * 内部按 sendingThreads 判断。
-   */
+  /* AG-025：sending 时也能发 —— 只是排队（拦不拦由 sendMessage 按 sendingThreads 判断） */
   const canSend = hasContent && !tooLong
 
   /* 补全菜单：打 / 出命令，打 @ 出文件 */
@@ -134,7 +131,9 @@ export function Composer({ onFocusRequest }: ComposerProps) {
 
   return (
     <div className="px-4 pb-3">
-      <div className="mx-auto max-w-3xl">
+      {/* data-composer-shell：确认面板按它的真实 rect 贴到输入区上方（见 Modal） */}
+      <div className="mx-auto w-full max-w-[var(--content-max-width)]" data-composer-shell="">
+        <PermissionBar />
         <div
           className={cn(
             'glass-panel relative rounded-md border bg-bg-elevated transition-colors duration-fast',

@@ -169,7 +169,13 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'personal-agent:settings',
-      version: 1,
+      version: 3,
+      /* 老版本升上来时只过一遍归一化（它会按新的 min/max 夹范围）——
+         别在这里强塞默认值：那等于把用户自己调过的面板宽度清掉 */
+      migrate: (persisted) => {
+        const incoming = (persisted ?? {}) as { settings?: Partial<Settings> }
+        return { settings: normalize(incoming.settings) }
+      },
       merge: (persisted, current) => {
         const incoming = (persisted ?? {}) as { settings?: Partial<Settings> }
         return { ...current, settings: normalize(incoming.settings) }

@@ -230,8 +230,10 @@ describe('AG-040 / 撞了预算那三个按钮', () => {
     act(() => byText('调整预算')?.click())
     const input = container.querySelector<HTMLInputElement>('input[aria-label="轮数"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    setter?.call(input, '-3')
-    input?.dispatchEvent(new Event('input', { bubbles: true }))
+    act(() => {
+      setter?.call(input, '-3')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
     await act(async () => {
       byText('保存')?.click()
     })

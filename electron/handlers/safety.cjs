@@ -109,18 +109,25 @@ function register({ ipcMain }) {
         limit: Math.min(200, Number(options.limit) || 30),
         status: options.status ?? '',
         sessionId: options.sessionId ?? '',
+        workdir: options.workdir ?? '',
       })
       .map(withBudget),
   }))
 
-  ipcMain.handle('task:unfinished', () => ({ ok: true, tasks: task.unfinished() }))
+  ipcMain.handle('task:unfinished', (_event, options = {}) => ({
+    ok: true,
+    tasks: task.unfinished({ workdir: String(options.workdir ?? '') }),
+  }))
 
   /*
    * AG-012：重启后的恢复清单。
    * 比 task:unfinished 多带三样用户做决定需要知道的东西 —— 停在哪一步、
    * 停手后哪些文件被动过、恢复过几次。**纯读**，不会自己跑任务。
    */
-  ipcMain.handle('task:recovery', () => ({ ok: true, items: recovery.scan() }))
+  ipcMain.handle('task:recovery', (_event, options = {}) => ({
+    ok: true,
+    items: recovery.scan({ workdir: String(options.workdir ?? '') }),
+  }))
 
   ipcMain.handle('task:get', (_event, id) => ({
     ok: true,

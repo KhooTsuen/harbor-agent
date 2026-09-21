@@ -91,10 +91,8 @@ export interface CapabilityGrant {
 
 /**
  * AG-037：一轮跑完的性能时间线（内核给的）。
- *
- * 六个时刻（AG-003）+ 分段耗时（AG-037）：`*Ms` 是「按下发送」起算的延迟，
- * `contextMs / llmMs / toolMs / searchMs` 是各段自己的总耗时 —— 合起来能回答
- * 「这一轮到底慢在哪一段」。缺哪段就是 0，不编。
+ * `*Ms` 是「按下发送」起算的延迟；`contextMs / llmMs / toolMs / searchMs` 是各段自己的
+ * 总耗时 —— 合起来能回答「这一轮慢在哪一段」。缺哪段就是 0，不编。
  */
 export interface PerfTimeline {
   traceId: string
@@ -226,9 +224,13 @@ export interface SafetyBridge extends TaskBridge, ProfileBridge {
     status?: string
     scope?: string
     type?: string
+    projectId?: string
     includeSuperseded?: boolean
   }) => Promise<{ ok: boolean; items: MemoryItem[] }>
-  memorySearch: (query: string) => Promise<{ ok: boolean; items: MemoryItem[] }>
+  memorySearch: (
+    query: string,
+    options?: { projectId?: string; includeSuperseded?: boolean },
+  ) => Promise<{ ok: boolean; items: MemoryItem[] }>
   memoryAdd: (input: Partial<MemoryItem>) => Promise<{
     ok: boolean
     item?: MemoryItem

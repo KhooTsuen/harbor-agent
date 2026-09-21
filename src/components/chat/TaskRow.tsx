@@ -11,6 +11,7 @@ import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
 import { colorOf, iconOf, statusOfTask } from '@/lib/statusLanguage'
 import { taskDiagnose } from '@/lib/safetyApi'
+import { rowStatusSummary, rowStepPrefix, TaskDiagnosisPanel } from './TaskRowParts'
 import type { TaskDiagnosis } from '@/types/safety'
 import {
   currentStepOf,
@@ -81,8 +82,12 @@ export function TaskRow({
   const progress = taskProgress(task)
   const envChanged = recovery?.envChanged ?? []
   const changed = task.changedFiles.length
+  const statusSummary = rowStatusSummary(task.status, {
+    budgetLabel: budgetHit?.label,
+    loop: Boolean(loopHit),
+  })
+  const stepPrefix = rowStepPrefix(task.status)
 
-  /** 拉一次诊断；再点一次收起来（报告已经在手上就不必再问一遍） */
   async function runDiagnose(): Promise<void> {
     if (diagnosis) {
       setDiagnosis(null)
@@ -124,8 +129,15 @@ export function TaskRow({
           <span className="block truncate text-xs font-medium text-fg-primary">
             {task.title || task.goal || '(没有标题的任务)'}
           </span>
-          {/* 当前步骤 / 下一步 —— 这一行才是重点，元信息都压到下面那一行 */}
+          <span
+            className="mt-0.5 block truncate text-2xs font-medium"
+            style={{ color: statusColor }}
+          >
+            {statusSummary}
+          </span>
+          {/* 当前步骤 / 下一步 —— 状态原因之后再给行动信息 */}
           <span className="mt-0.5 block truncate text-2xs text-fg-secondary">
+            {stepPrefix}
             {currentStepOf(task)}
           </span>
           {/*
@@ -236,25 +248,11 @@ export function TaskRow({
           </p>
 
           {diagnosis ? (
-            <div className="mb-1.5 rounded-sm border border-line-subtle bg-bg-base/40">
-              <p className="px-2 py-1 text-2xs text-fg-secondary">{diagnosis.conclusion}</p>
-              <div className="flex items-center gap-2 border-t border-line-subtle px-2 py-1 text-2xs text-fg-tertiary">
-                <span className="flex-1">
-                  模型 {task.model || '没有记录'} · 授权 {task.permissions?.length ?? 0} 条 · 检查点{' '}
-                  {task.checkpoints.length} 个
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void copyDiagnosis()}
-                  className="shrink-0 rounded-sm px-1 hover:bg-bg-hover hover:text-fg-primary"
-                >
-                  复制全文
-                </button>
-              </div>
-              <pre className="max-h-64 overflow-auto border-t border-line-subtle px-2 py-1.5 font-mono text-2xs leading-[1.6] whitespace-pre-wrap text-fg-tertiary">
-                {diagnosis.text}
-              </pre>
-            </div>
+            <TaskDiagnosisPanel
+              diagnosis={diagnosis}
+              task={task}
+              onCopy={() => void copyDiagnosis()}
+            />
           ) : null}
           {envChanged.length > 0 ? (
             <p className="mb-1.5 text-2xs" style={{ color: colorOf('warning') }}>

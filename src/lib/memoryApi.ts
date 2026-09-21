@@ -17,6 +17,7 @@ export async function memoryList(options?: {
   status?: string
   scope?: string
   type?: string
+  projectId?: string
   includeSuperseded?: boolean
 }): Promise<MemoryItem[]> {
   if (!bridge?.memoryList) return []
@@ -28,10 +29,13 @@ export async function memoryList(options?: {
   }
 }
 
-export async function memorySearch(query: string): Promise<MemoryItem[]> {
+export async function memorySearch(
+  query: string,
+  options?: { projectId?: string; includeSuperseded?: boolean },
+): Promise<MemoryItem[]> {
   if (!bridge?.memorySearch) return []
   try {
-    const result = await bridge.memorySearch(query)
+    const result = await bridge.memorySearch(query, options)
     return result.items ?? []
   } catch {
     return []

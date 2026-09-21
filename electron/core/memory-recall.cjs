@@ -71,7 +71,10 @@ function retrieve({ query = '', projectId = '', limit, scope = '' } = {}) {
   let items = store.list({ status: 'active' })
   if (projectId) {
     /* 项目范围的记忆只在该项目里生效；别的项目看不到 */
-    items = items.filter((i) => i.scope !== 'project' || !i.projectId || i.projectId === projectId)
+    items = items.filter((i) => i.scope !== 'project' || i.projectId === projectId)
+  } else {
+    /* 单独对话没有项目上下文，不能意外带入某个项目的私有记忆 */
+    items = items.filter((i) => i.scope !== 'project')
   }
   if (scope) items = items.filter((i) => i.scope === scope)
 

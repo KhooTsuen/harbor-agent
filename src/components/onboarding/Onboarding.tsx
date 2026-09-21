@@ -3,7 +3,9 @@ import { ArrowRight, Check, FolderOpen, KeyRound, Sparkles, X } from 'lucide-rea
 import type { AppConfig } from '@/types/backend'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useThreadStore } from '@/stores/useThreadStore'
 import { Button } from '@/components/ui/Button'
+import { DoneStep } from './DoneStep'
 import { Field } from '@/components/ui/Field'
 import { DEFAULT_PRESET, PRESETS } from './presets'
 import { StepDots, type Step } from './StepDots'
@@ -35,6 +37,7 @@ export function Onboarding({ config }: { config: AppConfig }) {
   const testProvider = useConfigStore((s) => s.testProvider)
   const chooseWorkdirFromStore = useConfigStore((s) => s.chooseWorkdir)
   const showToast = useUIStore((s) => s.showToast)
+  const setInput = useThreadStore((s) => s.setInput)
 
   const preset = PRESETS.find((p) => p.id === presetId) ?? DEFAULT_PRESET
   const isCustom = presetId === 'custom'
@@ -96,8 +99,12 @@ export function Onboarding({ config }: { config: AppConfig }) {
     showToast('success', '设置好了', '开始用吧')
   }
 
+  async function startSafeExample(): Promise<void> {
+    await finish()
+    setInput('请只读检查当前工作目录：列出顶层文件，并告诉我你建议先从哪里开始。不要修改任何文件。')
+  }
+
   async function skip(): Promise<void> {
-    /* 跳过也要设 dismissed：不然「没 Key」这条还会让它反复弹 */
     await patchGeneral({ onboarded: true, onboardingDismissed: true })
     showToast('info', '已跳过', '之后可以在设置里配')
   }
@@ -128,8 +135,7 @@ export function Onboarding({ config }: { config: AppConfig }) {
             <Sparkles size={26} className="mb-3 text-fg-secondary" />
             <h1 className="text-lg text-fg-primary">先配一下模型</h1>
             <p className="mt-2 text-dense leading-relaxed text-fg-secondary">
-              这个软件自己不会思考，它要连一个模型服务。整个过程两步：填一个 API
-              Key、选一个工作目录。 所有东西都存在软件自己的文件夹里，不往别处写。
+              这个软件自己不会思考，它要连一个模型服务。接下来会完成三件事：连接模型、选择工作目录、用一条只读示例任务确认一切正常。所有东西都存在软件自己的文件夹里，密钥会交给系统凭证库保存。
             </p>
             <div className="mt-5 flex justify-end">
               <Button
@@ -148,7 +154,7 @@ export function Onboarding({ config }: { config: AppConfig }) {
             <h1 className="text-lg text-fg-primary">选模型服务</h1>
             <p className="mt-1.5 text-dense leading-relaxed text-fg-secondary">
               挑一家，把它的 API Key 粘进来。Key
-              存在本地配置文件里，不会发给除这家服务之外的任何人。
+              会交给系统凭证库保存，不会发给除这家服务之外的任何人。
             </p>
 
             <div className="mt-4 flex flex-wrap gap-1.5">
@@ -276,21 +282,11 @@ export function Onboarding({ config }: { config: AppConfig }) {
         ) : null}
 
         {step === 'done' ? (
-          <>
-            <Check size={26} className="mb-3" style={{ color: colorOf('completed') }} />
-            <h1 className="text-lg text-fg-primary">可以开始了</h1>
-            <p className="mt-2 text-dense leading-relaxed text-fg-secondary">
-              在下面输入框里说你要做什么就行。左侧可以新建对话，Ctrl+K 打开命令面板。
-            </p>
-            <p className="mt-2 text-2xs leading-relaxed text-fg-tertiary">
-              想让它记住你的习惯，去「设置 → 记忆」写两句；想教它专门做某件事，去「设置 → 技能」。
-            </p>
-            <div className="mt-5 flex justify-end">
-              <Button variant="primary" loading={saving} onClick={() => void finish()}>
-                完成
-              </Button>
-            </div>
-          </>
+          <DoneStep
+            saving={saving}
+            onFinish={() => void finish()}
+            onSafeExample={() => void startSafeExample()}
+          />
         ) : null}
       </div>
     </div>

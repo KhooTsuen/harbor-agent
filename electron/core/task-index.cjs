@@ -41,6 +41,7 @@ function summaryOf(task) {
     updatedAt: task.updatedAt ?? 0,
     status: task.status ?? '',
     sessionId: task.sessionId ?? '',
+    workdir: task.workdir ?? '',
     title: task.title ?? '',
   }
 }
@@ -121,7 +122,7 @@ function load() {
   if (cache && cache.count === fileCount()) return cache
   const raw = readFile()
   const count = fileCount()
-  if (!raw || raw.items.length !== count) return rebuild()
+  if (!raw || raw.items.length !== count || raw.items.some((item) => !('workdir' in item))) return rebuild()
   cache = { version: VERSION, items: raw.items, count }
   return cache
 }
@@ -155,13 +156,14 @@ function remove(id) {
  * 返回的是**磁盘上的任务本体**（界面要 steps / plan / changedFiles），
  * 所以还是要逐个读文件；但**只读真正要返回的那些**，不再全表通读。
  */
-function list({ limit = 50, status = '', statuses = null, sessionId = '' } = {}) {
+function list({ limit = 50, status = '', statuses = null, sessionId = '', workdir = '' } = {}) {
   const index = load()
   const allowed = Array.isArray(statuses) && statuses.length > 0 ? new Set(statuses) : null
   const matched = index.items
     .filter((item) => (allowed ? allowed.has(item.status) : true))
     .filter((item) => (status ? item.status === status : true))
     .filter((item) => (sessionId ? item.sessionId === sessionId : true))
+    .filter((item) => (workdir ? item.workdir === workdir : true))
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .slice(0, Math.max(0, limit))
 

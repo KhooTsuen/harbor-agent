@@ -21,7 +21,26 @@ const registry = require('./registry.cjs')
 const { byName, isMcpTool, validateArgs, WRITE_TOOLS } = registry
 const { runWithPathPermission, auditCall, affectedFiles } = require('./permission.cjs')
 
-/* ── 执行 ─────────────────────────────────────────────────── */
+function impactFor(name, args, ctx, summary, verdict) {
+  const workdir = String(ctx.workdir ?? '')
+  if (name === 'write_file' || name === 'edit_file') {
+    const target = String(args?.path ?? args?.file ?? '')
+    const absolute =
+      target && workdir && !/^[a-zA-Z]:[\\/]/.test(target) ? `${workdir}\\${target}` : target
+    return [
+      `${name === 'write_file' ? '写入' : '修改'}文件：${absolute || '未指定路径'}`,
+      '改动会进入本次任务的变更事务，可在任务中心撤销',
+    ]
+  }
+  if (name === 'run_shell') {
+    return [
+      `在工作目录执行：${String(args?.cwd ?? workdir ?? '默认工作目录')}`,
+      `命令：${String(args?.command ?? '').slice(0, 240)}`,
+      verdict?.writes ? '命令可能修改文件或系统状态' : '命令本身可能产生外部副作用',
+    ]
+  }
+  return [`将调用工具：${name}`, summary]
+}
 
 /**
  * @param {string} name
@@ -150,6 +169,7 @@ async function execute(name, args, ctx = {}) {
         args,
         risk: verdict,
         summary: `${summary}\n\n风险：${label}`,
+        impact: impactFor(name, args, ctx, summary, verdict),
       })
       if (approved !== true) {
         auditCall(ctx, {
@@ -212,6 +232,7 @@ async function execute(name, args, ctx = {}) {
         name,
         args,
         summary,
+        impact: impactFor(name, args, ctx, summary, verdict),
         diff: view.diff,
         diffNote: view.note,
       })

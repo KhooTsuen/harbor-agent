@@ -137,8 +137,10 @@
   --glass-veil: brightness(0.55);
 
   /* ── 布局 ── */
-  --topbar-h: 48px;
+  --topbar-h: 40px;
   --statusbar-h: 28px;
+  --content-max-width: 760px;
+  --layout-gap: 8px;
 }
 
 /* ── ChatGPT 桌面端基准【规范】───────────────────────────── */

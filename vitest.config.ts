@@ -11,6 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
     /*
      * jsdom 默认每个测试文件建一次 —— 54 个文件就是 54 个 jsdom 实例，
      * 实测占掉 80% 的运行时间（vitest 5 自己会提示这一点）。
