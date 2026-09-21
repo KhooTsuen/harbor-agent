@@ -178,6 +178,11 @@ export interface Settings {
   lastRightTab: RightTab
   /** 底部面板上次是开着的吗 */
   lastBottomPanelOpen: boolean
+  /**
+   * 任务中心看哪些任务：**只看当前项目**（默认，跟已有行为一致）还是**全部项目**。
+   * 任务本身带 workdir，过滤在主进程做 —— 这里只决定要不要传。
+   */
+  taskScope: 'project' | 'all'
 }
 
 export type SettingsPatch = Partial<Settings>

@@ -41,6 +41,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lastThreadId: '',
   lastRightTab: 'diff',
   lastBottomPanelOpen: false,
+  /* 默认与已上线行为一致：有项目时只看当前项目的任务 */
+  taskScope: 'project',
 }
 
 function normalize(input: Partial<Settings> | undefined): Settings {
@@ -89,6 +91,7 @@ function normalize(input: Partial<Settings> | undefined): Settings {
         ? s.lastRightTab
         : 'diff',
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,
+    taskScope: s.taskScope === 'all' ? 'all' : 'project',
     glassmorphism: s.glassmorphism === true,
     animations: s.animations !== false,
     sidebarWidth: clamp(

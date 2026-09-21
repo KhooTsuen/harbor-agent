@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CircleDot, RefreshCw, RotateCcw } from 'lucide-react'
+import { RefreshCw, RotateCcw } from 'lucide-react'
 import type { ChangeSetSummary, TaskRecord } from '@/types/safety'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useSettingsStore } from '@/stores/useSettingsStore'
+import { scopeLabelOf, scopeToggleLabelOf, scopeWorkdirOf } from '@/lib/taskScope'
 import { changesetRollback, taskRemoveMany, taskRemoveSafe, taskUpdate } from '@/lib/safetyApi'
 import { Button } from '@/components/ui/Button'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { TaskCenterEmpty } from './TaskCenterEmpty'
 import { IconButton } from '@/components/ui/IconButton'
 import { TASK_GROUPS, groupTasks } from './taskCenterModel'
 import { TaskRow } from './TaskRow'
@@ -51,11 +53,18 @@ export function TaskCenter() {
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-  const contextLabel = activeProject?.name || '当前对话'
+  /*
+   * 「看哪些任务」：默认只看当前项目（跟已上线行为一致），可以切成全部。
+   * 过滤在主进程按任务的 workdir 做 —— 这里只决定传不传。
+   */
+  const taskScope = useSettingsStore((s) => s.settings.taskScope)
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const scopedWorkdir = scopeWorkdirOf(taskScope, projectWorkdir)
+  const contextLabel = scopeLabelOf(taskScope, activeProject?.name || '')
 
   useEffect(() => {
-    void refresh(projectWorkdir)
-  }, [projectWorkdir, refresh])
+    void refresh(scopedWorkdir)
+  }, [scopedWorkdir, refresh])
 
   /* 只有真的有任务在跑才走秒表；空闲时不留常驻 interval。 */
   const hasRunning = tasks.some((task) => task.status === 'running')
@@ -79,7 +88,7 @@ export function TaskCenter() {
 
   async function reload(): Promise<void> {
     setRefreshing(true)
-    await refresh(projectWorkdir)
+    await refresh(scopedWorkdir)
     setRefreshing(false)
   }
 
@@ -165,13 +174,10 @@ export function TaskCenter() {
 
   if (tasks.length === 0 && changesets.length === 0) {
     return (
-      <div aria-label="任务中心" className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyState
-          icon={<CircleDot size={28} />}
-          title="还没有后台任务"
-          description="让 Agent 做一件事后，运行状态、当前步骤和结果会集中显示在这里。"
-        />
-      </div>
+      <TaskCenterEmpty
+        scope={taskScope}
+        onShowAll={() => void updateSettings({ taskScope: 'all' })}
+      />
     )
   }
 
@@ -184,6 +190,17 @@ export function TaskCenter() {
             共 {tasks.length} 条 · {contextLabel} · 点任务回到对应对话，详情里有计划与时间线
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() =>
+            void updateSettings({ taskScope: taskScope === 'all' ? 'project' : 'all' })
+          }
+          aria-label={scopeToggleLabelOf(taskScope)}
+          title={scopeToggleLabelOf(taskScope)}
+          className="rounded-sm px-1 text-2xs text-fg-tertiary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
+        >
+          {scopeToggleLabelOf(taskScope)}
+        </button>
         <IconButton label="刷新任务" size={28} onClick={() => void reload()}>
           <RefreshCw size={13} className={cn(refreshing && 'animate-spin')} />
         </IconButton>
