@@ -69,10 +69,16 @@ function start({ id, cols, rows, cwd, onData, onExit }) {
   const size = { cols: clamp(cols, MIN_COLS, 80), rows: clamp(rows, MIN_ROWS, 24) }
   const shell = defaultShell()
   const dir = cwd || baseDir()
+  /*
+   * ★ 中文 Windows 上要先给 cmd 切代码页：内核控制台默认 GBK，而终端（xterm.js）
+   *   按 UTF-8 渲染 —— 不切的话 `dir` / `echo 中文` 在终端里全是乱码。
+   *   `>nul` 免得把「Active code page: 65001」打在第一屏。
+   */
+  const args = process.platform === 'win32' ? ['/k', 'chcp 65001 >nul'] : []
 
   let proc
   try {
-    proc = pty.spawn(shell, [], {
+    proc = pty.spawn(shell, args, {
       name: 'xterm-256color',
       cols: size.cols,
       rows: size.rows,
