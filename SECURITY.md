@@ -34,9 +34,9 @@ API Key / Token / Authorization / 私钥一律替换成占位符，只报长度�
 
 ## 已知问题
 
-### dev 依赖的安全告警（不影响发布产物）
+### dev 依赖的安全告警（已清零）
 
-`npm audit` 会报 5 条（1 critical / 1 high / 3 moderate），全部落在**开发链**上：
+以前 `npm audit` 会报 5 条（1 critical / 1 high / 3 moderate），全部落在**开发链**上：
 
 ```
 vitest（critical，路径穿越）· vite（high，dev server 路径穿越）
@@ -47,8 +47,10 @@ esbuild / vite-node / @vitest/mocker（moderate）
 （它们是 `devDependencies`；打包出来的 exe 里 `resources/app/node_modules` 不含它们 —— 可以自己
 `ls dist-portable/*/resources/app/node_modules | grep -E 'vite|esbuild|vitest'` 验证）。
 
-**为什么没顺手升**：修它们要跨主版本（vite 5 → 8、vitest 3 → 5），会牵动整条构建与测试链，
-属于"要单独验证一轮"的改动，不适合和发布准备混在一起。计划在发布后的版本里做。
+**现在已修**（1.5.1）：把 vite 升到 8、vitest 升到 5（跨了三个大版本），`npm audit` 现在是
+**0 vulnerabilities**。升级本身也做了一整轮验证：tsc / eslint / prettier / 前端 476 项 /
+内核 1659 项 / 构建 / **打包后真跑一遍**全部通过；顺带把 vitest 的 `pool` 换成 `vmThreads`
+（jsdom 从「每个文件建一次」变成「每个 worker 建一次」），前端测试从 **65s 降到 10s**。
 
 ## 这个应用的安全设计（供报告者判断边界）
 

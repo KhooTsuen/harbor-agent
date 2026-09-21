@@ -1,7 +1,7 @@
 {
   "name": "harbor-agent",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "本地优先的个人 AI Agent 工作台：任务台账、计划与进度、可恢复、可暂停、数据全在本机",
   "license": "MIT",
   "type": "module",
@@ -43,7 +43,7 @@
     "@types/react-dom": "^18.3.1",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.70.0",
-    "@vitejs/plugin-react": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.20",
     "electron": "^44.3.0",
     "eslint": "^10.10.0",
@@ -53,8 +53,8 @@
     "prettier": "^3.9.6",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10",
-    "vitest": "^2.1.9"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   },
   "build": {
     "productName": "Harbor",

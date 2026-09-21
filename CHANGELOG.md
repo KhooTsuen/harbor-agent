@@ -1,6 +1,22 @@
 # 更新日志
 
-## [1.5.0] — 2026-09-21 · （进行中）
+## [1.5.1] — 2026-09-22 · dev 依赖跨主版本升级（audit 清零）
+
+发布时 `SECURITY.md` 里记着一件「发布后单独做」的事：dev 依赖有 5 条 audit 告警
+（vitest critical / vite high / esbuild 等 moderate）。这一步做掉了：
+
+- vite 5 → **8**（内部已经是 rolldown）、vitest 2 → **5**、`@vitejs/plugin-react` 4 → **6**
+  —— plugin-react 4 的 peer 只声明到 vite 7，配着 vite 8 属于**不受支持的组合**，一并换掉
+- `npm audit`：5 条告警 → **0 条**
+- 顺手把 vitest 的 `pool` 换成 `vmThreads`：jsdom 从「每个测试文件建一次」变成「每个 worker 建一次」，
+  前端测试 **65s → 10s**（本地；CI 同样受益）
+
+**验证**：tsc / eslint / prettier / 前端 476 项 / 内核 1659 项 / 构建 /
+**打包后真跑一遍确认界面完整渲染**（顶栏、侧栏、任务中心、底栏状态都在），全部通过。
+
+发布产物的 bundle 确实变了（vite 8 用 rolldown 打包），所以同步出了一版新的 zip。
+
+## [1.5.0] — 2026-09-21
 
 ### 中文环境 / Windows 路径与编码
 
