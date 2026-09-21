@@ -42,6 +42,11 @@ export interface Message {
   images?: string[]
   /** 这一轮跑过的工具（真实后端模式下有值） */
   toolRuns?: ToolRunRecord[]
+  /**
+   * 这条回复没写完（上次运行被打断，文件里只留下流式过程中的快照）。
+   * 由读会话那一侧标上，界面据此说一句 —— 不说的话用户会以为模型只写了这么多。
+   */
+  interrupted?: boolean
   /** 可追溯的搜索/文件来源 */
   citations?: Citation[]
   /** 从回答中分离出的成果 */

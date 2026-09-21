@@ -8,6 +8,8 @@ import { useThreadStore } from '../useThreadStore'
 import { abortMockTurn } from './mockTurn'
 import { runPostTurnTasks } from './sceneTasks'
 import { handleStreamEvent, type StreamState } from './streamEvents'
+import { buildHistory } from './history'
+import { createReplyPersistence } from './replyPersistence'
 
 /* ══════════════════════════════════════════════════════════════
    一轮对话的两条实现路径
@@ -141,36 +143,11 @@ export async function runElectronTurn(
     useAppStore.getState().updateMessage(threadId, placeholder.id, fields)
   }
 
-  /* 历史消息喂给主进程（system 由主进程自己拼，不重复发） */
-  const history =
-    useAppStore
-      .getState()
-      .threads.find((t) => t.id === threadId)
-      ?.messages.filter((m) => m.id !== placeholder.id && m.role !== 'system')
-      .map((m) => {
-        /* 带图的消息换多模态格式 —— 漏了这步模型只会收到文字，然后说「没收到图片」 */
-        if (m.role === 'user' && m.images && m.images.length > 0) {
-          return {
-            role: m.role,
-            content: [
-              ...(m.content ? [{ type: 'text', text: m.content }] : []),
-              ...m.images.map((src) => ({ type: 'image_url', image_url: { url: src } })),
-            ],
-          }
-        }
-        return {
-          role: m.role,
-          content:
-            m.role === 'assistant' && m.toolRuns?.length
-              ? `${m.content}\n\n[此前工具执行记录]\n${m.toolRuns
-                  .map(
-                    (tool) =>
-                      `- ${tool.name}: ${tool.ok ? '成功' : '失败'}${tool.output ? `\n  ${tool.output.slice(0, 2000)}` : ''}`,
-                  )
-                  .join('\n')}`
-              : m.content,
-        }
-      }) ?? []
+  /* 历史消息喂给主进程（system 由主进程自己拼，不重复发）—— 拼法见 history.ts */
+  const history = buildHistory(
+    useAppStore.getState().threads.find((t) => t.id === threadId)?.messages ?? [],
+    placeholder.id,
+  )
 
   let off: () => void = () => {}
   let finished = false
@@ -185,42 +162,22 @@ export async function runElectronTurn(
    * 全丢，界面永远停在「正在处理」。
    */
   /*
-   * 助手回复落盘。
-   *
-   * 以前只落用户消息，助手那条**一次都没写** —— 磁盘上的会话文件永远只有
-   * meta + user，重启后助手说过的话全没了。（读的那一侧早就支持 assistant，
-   * 连 toolRuns / citations / usage 都解析好了，是写这一侧漏了。）
-   *
-   * 存的是**收尾后状态里的那条消息**，不是闭包里那几个变量：usage 只在状态里，
-   * toolRuns 在流式过程中被复制过几份，读它更稳。
-   * aborted 也存 —— 那是用户自己按停的，半截回复也是结果；error 不存，
-   * 把报错当历史喂回模型没有意义。
+   * 助手回复的落盘（分段落盘 + 收尾那条）—— 实现与来由见 replyPersistence.ts。
+   * 这里只把「当前内容是什么」的读法交给它，避免闭包里那几份拷贝互相不同步。
    */
-  const persistReply = (): void => {
-    if (lastEventType !== 'done' && lastEventType !== 'aborted') return
-    const final = useAppStore
-      .getState()
-      .threads.find((t) => t.id === threadId)
-      ?.messages.find((m) => m.id === placeholder.id)
-    if (!final) return
-    const text = final.content ?? ''
-    /* 空回复（比如刚发出去就被停掉）不写 —— 免得会话里多一条空消息 */
-    if (!text.trim() && (final.toolRuns ?? []).length === 0) return
-    useAppStore.getState().persistMessage(threadId, {
-      role: 'assistant',
-      content: text,
-      ...(final.reasoning ? { reasoning: final.reasoning } : {}),
-      ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
-      ...(final.citations?.length ? { citations: final.citations } : {}),
-      ...(final.usage ? { usage: final.usage } : {}),
-      ts: final.timestamp,
-    })
-  }
+  const persistence = createReplyPersistence({
+    threadId,
+    messageId: placeholder.id,
+    timestamp: placeholder.timestamp,
+    getContent: () => content,
+    getReasoning: () => reasoning,
+    getEventType: () => lastEventType,
+  })
 
   const finish = (): void => {
     if (finished) return
     finished = true
-    persistReply()
+    persistence.persistReply()
     window.clearTimeout(timeoutId)
     off()
     activeRequests.delete(threadId)
@@ -266,6 +223,8 @@ export async function runElectronTurn(
     if (result.handled) {
       content = streamState.content
       reasoning = streamState.reasoning
+      /* 每来一段就看看该不该落盘（判断本身很便宜，不满足就直接返回） */
+      persistence.flushPartial()
     }
   })
 

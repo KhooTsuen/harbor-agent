@@ -10,6 +10,54 @@ const { DIRS } = require('./paths.cjs')
 const { fileFor, safeTitle, readLines } = require('./session-io.cjs')
 
 /**
+ * 把带 key 的记录收敛成一条。
+ *
+ * 流式过程中渲染层会往文件里**追加同一 key 的分段快照**（`partial: true`）——
+ * 那是为了进程被强杀 / 崩溃时还能留下「它写到哪了」（会话文件是追加式的，
+ * 没地方原地更新）。收尾时再追加一条完整的（不带 partial）。于是同一个 key
+ * 在文件里可能有好几行，这里要把它们合成一条：
+ *
+ *   · 只要有**完整**的那条，就用它 —— 而且**不赌行序**：追加是异步的
+ *     （`void appendToDisk(...)`），分段晚于完整到达也不会把完整那条顶掉
+ *   · 全是分段快照 → 用**最后一条**，并标上 `interrupted: true`
+ *     （界面据此说一句「这条没写完」，不然用户以为模型就写了这么多）
+ *
+ * 没有 key 的老记录各算一条，行为与以前一样。
+ */
+function collapseByKey(messages) {
+  const out = []
+  const slot = new Map()
+  const hasFinal = new Set()
+  for (const message of messages) {
+    const key = typeof message.key === 'string' && message.key ? message.key : ''
+    if (!key) {
+      out.push(message)
+      continue
+    }
+    const at = slot.get(key)
+    if (message.partial === true) {
+      /* 已经有完整的那条了 → 晚到的快照直接丢掉 */
+      if (hasFinal.has(key)) continue
+      if (at === undefined) {
+        slot.set(key, out.length)
+        out.push({ ...message, interrupted: true })
+      } else {
+        out[at] = { ...message, interrupted: true }
+      }
+      continue
+    }
+    hasFinal.add(key)
+    if (at === undefined) {
+      slot.set(key, out.length)
+      out.push(message)
+    } else {
+      out[at] = message
+    }
+  }
+  return out
+}
+
+/**
  * 列所有会话（只读第一行 + 统计行数，不把内容全读进内存）。
  * 按 updatedAt 倒序。
  */
@@ -24,7 +72,8 @@ function list() {
     if (lines.length === 0) continue
 
     const meta = lines.find((l) => l.type === 'meta')
-    const messageCount = lines.filter((l) => l.type === 'message').length
+    /* 计数要认「收敛后的条数」—— 不然一条流式回复会被算成十几条（每段快照一行） */
+    const messageCount = collapseByKey(lines.filter((l) => l.type === 'message')).length
     const stat = fs.statSync(fileFor(id))
 
     items.push({
@@ -104,7 +153,7 @@ function load(id) {
     model: '',
     createdAt: Date.now(),
   }
-  const messages = lines.filter((l) => l.type === 'message')
+  const messages = collapseByKey(lines.filter((l) => l.type === 'message'))
   /* 压缩点：每次压缩往文件里追加一条，保留历史（可以看压缩是怎么一路发生的） */
   const compacts = lines.filter((l) => l.type === 'compact')
   const stateEvents = lines.filter((l) => l.type === 'conversation_state')
@@ -163,4 +212,4 @@ ${lastCompact.summary}`,
   return out
 }
 
-module.exports = { list, load, search, workdirs, toApiMessages }
+module.exports = { list, load, search, workdirs, toApiMessages, collapseByKey }

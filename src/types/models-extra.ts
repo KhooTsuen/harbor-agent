@@ -123,6 +123,18 @@ export interface StoredMessage {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   ts?: number
+  /**
+   * 同一段回复的身份（渲染层那条占位消息的 id）。
+   *
+   * 流式过程中会**分段落盘**（`partial: true`），收尾时再追加一条完整的 ——
+   * 同一个 key 可能对应文件里好几行，读的一侧按它收敛成一条。老记录没有这个字段，
+   * 各算各的。
+   */
+  key?: string
+  /** 这是流式过程中的快照，不是最终结果（进程被中断时它就是你最后看到的内容） */
+  partial?: boolean
+  /** 读的一侧加上去的：这条只有快照、没有写完（界面据此说一句） */
+  interrupted?: boolean
   reasoning?: string
   toolCallId?: string
   toolName?: string

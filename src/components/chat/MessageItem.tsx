@@ -177,6 +177,16 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
                 </p>
               ) : null}
 
+              {/*
+                只有流式过程中留下的快照、没写完 —— 说明上次进程被打断了。
+                不说的话用户会以为「模型就写了这么多」，而后面其实还有。
+              */}
+              {message.interrupted ? (
+                <p className="mt-1 text-2xs text-fg-tertiary">
+                  这条回复没写完 —— 上次运行被打断了，可以在右栏「任务」里接着做
+                </p>
+              ) : null}
+
               {message.codeBlocks?.map((block) => (
                 <CodeBlock key={block.id} block={block} className="mt-3" />
               ))}
