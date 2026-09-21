@@ -13,6 +13,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu } =
 const { DIRS, ensureDirs, auditNonC, markPackaged } = require('./core/paths.cjs')
 const log = require('./core/log.cjs')
 const config = require('./core/config.cjs')
+const bootCleanup = require('./boot-cleanup.cjs')
 const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
 const {
@@ -221,6 +222,9 @@ if (!gotLock) {
       if (!audit.ok) log.error(`⚠ ${audit.label} 落在 C 盘：${audit.dir}`)
     }
 
+    /* 上一轮如果是被强杀/崩溃退出的，任务会卡在 running（续不了）—— 见 boot-cleanup.cjs */
+    bootCleanup.sweepStaleTasks()
+
     createWindow()
 
     /* 托盘：自检/截图模式不需要（那两种模式要能干净退出） */
@@ -256,29 +260,7 @@ if (!gotLock) {
    * 随着父进程退出自动结束，它们挂在 ConPTY 会话上。
    */
   app.on('will-quit', () => {
-    try {
-      require('./core/pty.cjs').killAll()
-    } catch (error) {
-      log.warn(`清理终端会话失败：${error instanceof Error ? error.message : error}`)
-    }
-
-    /* 没干完的任务标成「暂停」—— 下次启动才认得出该提示用户续做 */
-    try {
-      require('./core/task.cjs').pauseRunning()
-    } catch (error) {
-      log.warn(`标记任务状态失败：${error instanceof Error ? error.message : error}`)
-    }
-
-    /*
-     * 托盘图标要**显式销毁** —— 用户报过「退出后图标还挂在右下角」。
-     * Electron 通常会自己清理，但退出路径稍有不同（app.exit / 进程被杀 /
-     * Windows 没收到托盘重生通知）就会漏。别把这事托付给"应该会"。
-     */
-    try {
-      destroyTray()
-    } catch (error) {
-      log.warn(`销毁托盘失败：${error instanceof Error ? error.message : error}`)
-    }
+    bootCleanup.onQuit({ destroyTray })
   })
 }
 

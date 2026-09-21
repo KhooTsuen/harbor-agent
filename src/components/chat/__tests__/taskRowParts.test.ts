@@ -19,6 +19,16 @@ describe('任务行 / 状态摘要', () => {
     expect(rowStatusSummary('paused', { budgetLabel: '轮数上限' })).toBe('已暂停 · 达到轮数上限')
   })
 
+  it('★ 上次被强杀：也说一句（不说的话用户以为任务是自己停的）', () => {
+    expect(rowStatusSummary('paused', { interrupted: true })).toBe('已暂停 · 上次被中断')
+  })
+
+  it('优先说「为什么停下」：撞预算比中断更具体', () => {
+    expect(rowStatusSummary('paused', { budgetLabel: '轮数上限', interrupted: true })).toBe(
+      '已暂停 · 达到轮数上限',
+    )
+  })
+
   it('★ 转圈停下：也说出来', () => {
     expect(rowStatusSummary('paused', { loop: true })).toBe('已暂停 · 检测到重复执行')
   })

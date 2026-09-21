@@ -85,6 +85,8 @@ export function TaskRow({
   const statusSummary = rowStatusSummary(task.status, {
     budgetLabel: budgetHit?.label,
     loop: Boolean(loopHit),
+    /* 只有停着的任务才说「上次被中断」——在跑时说这句是矛盾的 */
+    interrupted: task.status === 'paused' && task.pauseReason === 'interrupted',
   })
   const stepPrefix = rowStepPrefix(task.status)
 

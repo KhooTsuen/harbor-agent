@@ -126,9 +126,17 @@ export async function run() {
 
   check(
     '★ will-quit 里显式销毁托盘（不指望 Electron 自动清理）',
-    /will-quit'[\s\S]{0,900}?destroyTray\(\)/.test(
+    /*
+     * 退出清理后来搬到了 boot-cleanup.cjs（main.cjs 贴 300 行上限了），
+     * 所以两个文件**合起来看** —— 关心的是「行为还在不在」，
+     * 不该因为搬了个家就白红（这个项目里已经有过一次同样的教训）。
+     */
+    /will-quit'[\s\S]{0,400}?onQuit\(/.test(
       readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8'),
-    ),
+    ) &&
+      /destroyTray\?\.\(\)/.test(
+        readFileSync(join(ROOT, 'electron/boot-cleanup.cjs'), 'utf8'),
+      ),
   )
 
   const shownNotices = []

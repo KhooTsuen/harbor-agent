@@ -13,11 +13,13 @@ import { labelOf, statusOfTask } from '@/lib/statusLanguage'
 /** 收起时那一行状态摘要：「已暂停 · 达到轮数上限」这种 */
 export function rowStatusSummary(
   status: TaskRecord['status'],
-  hits: { budgetLabel?: string; loop?: boolean } = {},
+  hits: { budgetLabel?: string; loop?: boolean; interrupted?: boolean } = {},
 ): string {
   const label = labelOf(statusOfTask(status))
   if (hits.budgetLabel) return `${label} · 达到${hits.budgetLabel}`
   if (hits.loop) return `${label} · 检测到重复执行`
+  /* 上次是被强杀/崩溃退出的 —— 不说的话用户以为任务是自己停的 */
+  if (hits.interrupted) return `${label} · 上次被中断`
   return label
 }
 

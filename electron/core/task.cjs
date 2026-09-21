@@ -132,16 +132,30 @@ function update(id, patch) {
   return task
 }
 
-/** 程序退出时把「还在跑」的任务标成暂停 —— 下次启动才认得出要续做 */
-function pauseRunning() {
+/** 程序退出时把「还在跑」的任务标成暂停 —— 下次启动才认得出要续做
+ *
+ * 两个调用点，都是「进程里已经没有活着的循环了」：
+ *   · exit    —— will-quit
+ *   · startup —— 启动时扫上一轮的遗留。**强杀 / 崩溃退出时 will-quit 根本不会跑**，
+ *                任务会一直卡在 running；而能「接着做」的状态只有 paused / waiting_user，
+ *                于是用户看得见那条任务、却点不了继续（实测复现过）。
+ * 应用是单实例：启动时不可能真的有循环在跑，所以全部标暂停是安全的。
+ */
+function pauseRunning(where = 'exit') {
   let count = 0
   for (const task of list({ limit: 500 })) {
     if (task.status === 'running' || task.status === 'waiting_user') {
-      update(task.id, { status: 'paused', pausedAt: Date.now() })
+      update(task.id, { status: 'paused', pausedAt: Date.now(), pauseReason: 'interrupted' })
       count += 1
     }
   }
-  if (count > 0) log.info(`退出时把 ${count} 条未完成任务标为暂停`)
+  if (count > 0) {
+    log.info(
+      where === 'startup'
+        ? `启动时把 ${count} 条还标着「在跑」的任务标为暂停（上次是强杀或崩溃退出）`
+        : `退出时把 ${count} 条未完成任务标为暂停`,
+    )
+  }
   return { ok: true, paused: count }
 }
 
