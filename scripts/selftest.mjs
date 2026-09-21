@@ -84,6 +84,7 @@ import { run as acceptanceGroup } from './selftest/groups/46-acceptance.mjs'
 import { run as purgeGroup } from './selftest/groups/47-purge.mjs'
 import { run as profileGroup } from './selftest/groups/48-profile.mjs'
 import { run as injectionGroup } from './selftest/groups/49-injection.mjs'
+import { run as pathEncoding } from './selftest/groups/50-path-encoding.mjs'
 
 const GROUPS = [
   basics,
@@ -135,6 +136,7 @@ const GROUPS = [
   purgeGroup,
   profileGroup,
   injectionGroup,
+  pathEncoding,
 ]
 
 async function main() {

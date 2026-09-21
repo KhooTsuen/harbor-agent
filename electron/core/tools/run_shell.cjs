@@ -1,4 +1,5 @@
 const { exec } = require('node:child_process')
+const encoding = require('../shell-encoding.cjs')
 const { truncateMiddle } = require('./_shared.cjs')
 const { createSettler, killTree, onAbort } = require('../abort.cjs')
 
@@ -65,6 +66,12 @@ module.exports = {
         finish('[已被用户中断，这条命令的子进程已经终止]')
       })
 
+      /*
+       * ★ 输出按**字节**收（encoding: 'buffer'），再交给 shell-encoding 去解。
+       *   中文 Windows 上 cmd 自己的输出是 GBK，exec 默认按 UTF-8 解会全是乱码。
+       *   （这里试过 `chcp 65001` 前缀，没用：输出走管道时没有控制台，
+       *   cmd 内建命令照样按 OEM 代码页写字节。）
+       */
       child = exec(
         command,
         {
@@ -72,14 +79,15 @@ module.exports = {
           timeout: timeoutSec * 1000,
           maxBuffer: 4 * 1024 * 1024,
           windowsHide: true,
+          encoding: 'buffer',
           /* Windows 下 Node 默认用 cmd.exe，这就够了 */
           shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
         },
         (error, stdout, stderr) => {
           off()
           const parts = []
-          const out = String(stdout ?? '').trimEnd()
-          const err = String(stderr ?? '').trimEnd()
+          const out = encoding.decode(stdout).trimEnd()
+          const err = encoding.decode(stderr).trimEnd()
 
           if (out) parts.push(out)
           if (err) parts.push(`[stderr]\n${err}`)
