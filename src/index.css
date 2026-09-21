@@ -134,7 +134,7 @@
   --glass-inset: rgb(255 255 255 / 0.06);
   --glass-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
   /* 暗色下把背后压暗，保证玻璃上的文字仍然清楚 */
-  --glass-veil: brightness(0.55);
+  --glass-veil: brightness(0.72);
 
   /* ── 布局 ── */
   --topbar-h: 40px;
@@ -175,7 +175,7 @@
   --cta-fg: #212121;
   --cta-bg-hover: #ffffff;
 
-  --glass-veil: brightness(0.62);
+  --glass-veil: brightness(0.78);
 }
 
 /* ── 早期 spec 色板（保留对照用）─────────────────────────── */
@@ -201,7 +201,7 @@
   --cta-fg: #0e0f12;
   --cta-bg-hover: #ffffff;
 
-  --glass-veil: brightness(0.55);
+  --glass-veil: brightness(0.72);
 }
 
 /* ── 亮色 ─────────────────────────────────────────────────── */
@@ -244,7 +244,7 @@
   --glass-inset: rgb(255 255 255 / 0.6);
   --glass-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
   /* 亮色下把背后提亮 */
-  --glass-veil: brightness(1.15);
+  --glass-veil: brightness(1.06);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -342,20 +342,49 @@
    ══════════════════════════════════════════════════════════════ */
 
 @layer components {
-  /* 关闭态：纯色，1px 边框，不用阴影建立层级 */
+  /*
+   * 关闭态：纯色，1px 边框，不用阴影建立层级。
+   *
+   * ⚠️ 这段的声明曾经整块丢失过 —— 有人（我）把下面那个 :root 块插进了
+   * 选择器列表的中间。CSS 把 `a, b, :root { … }` 当成**一条合法规则**，
+   * 不报错，于是这条规则只剩下 --titlebar-right，三个 glass-* 变成完全透明。
+   * 加 CSS 变量请整块加，别插进别人的选择器列表里。
+   */
   .glass-subtle,
   .glass-medium,
   .glass-strong,
-  .glass,
-  /*
-   * 窗口右上角原生按钮（最小化 / 最大化 / 关闭）占的宽度。
-   *
-   * 用 Chromium 给的 titlebar-area-* 算：高 DPI 下按钮会变宽，写死 138px
-   * （Windows 100% 缩放的值）在 125% / 150% 下就让位不够、内容会被盖住。
-   * 拿不到这两个变量时（非 overlay 平台）算出 0，等于不让位。
-   */
+  .glass {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+  }
+
+  /* 侧栏 / 顶栏用 canvas 底色（两者在深色主题下几乎同色，亮色下有区分） */
+  .glass-subtle {
+    background: var(--bg-canvas);
+  }
+
   :root {
+    /*
+     * 窗口右上角原生按钮（最小化 / 最大化 / 关闭）占的宽度。
+     *
+     * 用 Chromium 给的 titlebar-area-* 算：高 DPI 下按钮会变宽，写死 138px
+     * （Windows 100% 缩放的值）在 125% / 150% 下就让位不够、内容会被盖住。
+     * 拿不到这两个变量时（非 overlay 平台）算出 0，等于不让位。
+     */
     --titlebar-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px));
+
+    /*
+     * 磨砂颗粒。
+     *
+     * 「磨砂」的质感一半来自模糊，另一半来自**细颗粒**——只有模糊的话，
+     * 得到的是「一块糊掉的半透明塑料」，不是砂面玻璃。颗粒用 feTurbulence
+     * 生成（内联 SVG，零外部资源），尺寸要小、透明度要低：放大看是一层砂，
+     * 缩小看只是让底色不再均匀。
+     *
+     * 定义在 :root 而不是各主题里 —— 它是质感不是颜色，四套主题共用一份。
+     */
+    --glass-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+    --glass-grain-size: 140px 140px;
   }
 
   /*
@@ -392,11 +421,21 @@
     background: var(--bg-canvas);
   }
 
-  /* ── 开启态 ── */
+  /*
+   * ── 开启态 ──
+   *
+   * 磨砂 = 三件事一起：**厚一点的底**（85~90%，不是 65~78%）、**更重的模糊**、
+   * **一层细颗粒**。早期版本底薄（65%）+ 模糊 16px + 没有颗粒，结果只像
+   * 「一块压暗的半透明板」，透得能看清后面的字在动 —— 那就是「太透」。
+   *
+   * 底色用 background-color + background-image（颗粒）两层：颗粒单独走
+   * background-image，才能在不动底色的前提下换颗粒大小/强度。
+   */
   [data-glass='on'] .glass-subtle {
-    background: color-mix(in srgb, var(--bg-canvas) 65%, transparent);
-    backdrop-filter: blur(16px) saturate(140%) var(--glass-veil);
-    -webkit-backdrop-filter: blur(16px) saturate(140%) var(--glass-veil);
+    background-color: color-mix(in srgb, var(--bg-canvas) 82%, transparent);
+    background-image: var(--glass-grain);
+    background-size: var(--glass-grain-size);
+    backdrop-filter: blur(24px) saturate(150%) var(--glass-veil);
     border-color: var(--glass-border);
     box-shadow:
       inset 0 1px 0 var(--glass-inset),
@@ -405,9 +444,10 @@
 
   [data-glass='on'] .glass-medium,
   [data-glass='on'] .glass {
-    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
-    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
-    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    background-color: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+    background-image: var(--glass-grain);
+    background-size: var(--glass-grain-size);
+    backdrop-filter: blur(36px) saturate(150%) var(--glass-veil);
     border-color: var(--glass-border);
     box-shadow:
       inset 0 1px 0 var(--glass-inset),
@@ -415,9 +455,10 @@
   }
 
   [data-glass='on'] .glass-strong {
-    background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
-    backdrop-filter: blur(32px) saturate(160%) var(--glass-veil);
-    -webkit-backdrop-filter: blur(32px) saturate(160%) var(--glass-veil);
+    background-color: color-mix(in srgb, var(--bg-surface) 91%, transparent);
+    background-image: var(--glass-grain);
+    background-size: var(--glass-grain-size);
+    backdrop-filter: blur(48px) saturate(170%) var(--glass-veil);
     border-color: var(--glass-border);
     box-shadow:
       inset 0 1px 0 var(--glass-inset),
@@ -426,9 +467,10 @@
 
   /* 侧栏 / 顶栏用 canvas 底色，不是 surface（参考实现那边两者几乎同色） */
   [data-glass='on'] .glass-panel {
-    background: color-mix(in srgb, var(--bg-canvas) 72%, transparent);
-    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
-    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    background-color: color-mix(in srgb, var(--bg-canvas) 88%, transparent);
+    background-image: var(--glass-grain);
+    background-size: var(--glass-grain-size);
+    backdrop-filter: blur(36px) saturate(150%) var(--glass-veil);
     border-color: var(--glass-border);
   }
 
@@ -446,9 +488,10 @@
   }
 
   [data-glass='on'] .acrylic-card {
-    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
-    backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
-    -webkit-backdrop-filter: blur(24px) saturate(140%) var(--glass-veil);
+    background-color: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+    background-image: var(--glass-grain);
+    background-size: var(--glass-grain-size);
+    backdrop-filter: blur(36px) saturate(150%) var(--glass-veil);
     border-color: var(--glass-border);
     box-shadow:
       inset 0 1px 0 var(--glass-inset),
@@ -526,36 +569,46 @@
     will-change: backdrop-filter;
   }
 
-  /* ── 回退 1：浏览器不支持 backdrop-filter ── */
+  /*
+   * ── 回退 1：浏览器不支持 backdrop-filter ──
+   *
+   * 没有模糊也要有磨砂感 —— 换成不透明的底 + 同一层颗粒。
+   * 不这么做的话这里就退回纯色，玻璃开关等于没开。
+   */
   @supports not (backdrop-filter: blur(1px)) {
     [data-glass='on'] .glass-subtle,
     [data-glass='on'] .glass-medium,
     [data-glass='on'] .glass-strong,
     [data-glass='on'] .glass,
-    [data-glass='on'] .glass-panel {
-      background: var(--bg-surface);
+    [data-glass='on'] .glass-panel,
+    [data-glass='on'] .acrylic-card {
+      background-color: var(--bg-surface);
+      background-image: var(--glass-grain);
+      background-size: var(--glass-grain-size);
       backdrop-filter: none;
-      -webkit-backdrop-filter: none;
     }
+    [data-glass='on'] .glass-subtle,
     [data-glass='on'] .glass-panel {
-      background: var(--bg-canvas);
+      background-color: var(--bg-canvas);
     }
   }
 
-  /* ── 回退 2：系统要求减少透明度 ── */
+  /* ── 回退 2：系统要求减少透明度（这时不该再有颗粒，越平越好）── */
   @media (prefers-reduced-transparency: reduce) {
     [data-glass='on'] .glass-subtle,
     [data-glass='on'] .glass-medium,
     [data-glass='on'] .glass-strong,
     [data-glass='on'] .glass,
-    [data-glass='on'] .glass-panel {
-      background: var(--bg-surface);
+    [data-glass='on'] .glass-panel,
+    [data-glass='on'] .acrylic-card {
+      background-color: var(--bg-surface);
+      background-image: none;
       backdrop-filter: none;
-      -webkit-backdrop-filter: none;
       box-shadow: none;
     }
+    [data-glass='on'] .glass-subtle,
     [data-glass='on'] .glass-panel {
-      background: var(--bg-canvas);
+      background-color: var(--bg-canvas);
     }
   }
 
@@ -565,14 +618,16 @@
     [data-glass='on'] .glass-medium,
     [data-glass='on'] .glass-strong,
     [data-glass='on'] .glass,
-    [data-glass='on'] .glass-panel {
-      background: var(--bg-surface);
+    [data-glass='on'] .glass-panel,
+    [data-glass='on'] .acrylic-card {
+      background-color: var(--bg-surface);
+      background-image: none;
       backdrop-filter: none;
-      -webkit-backdrop-filter: none;
       border-color: var(--text-primary);
     }
+    [data-glass='on'] .glass-subtle,
     [data-glass='on'] .glass-panel {
-      background: var(--bg-canvas);
+      background-color: var(--bg-canvas);
     }
   }
 }
