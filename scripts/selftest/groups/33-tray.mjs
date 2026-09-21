@@ -145,6 +145,18 @@ export async function run() {
   const icon = fake.trays[0]
   check('设了 tooltip（跟着品牌走）', icon.tooltip === brandName)
 
+  /*
+   * ★ 窗口标题也得跟着品牌走 —— 这条漂过：改名 Harbor 之后 `index.html` 的 <title>
+   *   还写着 Personal Agent，于是 OS 窗口标题、任务栏、Alt+Tab 里都是旧名
+   *   （截图探针读 document.title 时逮到的）。
+   */
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8')
+  check(
+    '★ 窗口标题（index.html）跟品牌一致',
+    html.includes(`<title>${brandName}</title>`),
+    (html.match(/<title>([^<]*)<\/title>/) ?? [])[1],
+  )
+
 
   const labels = (fake.menus[0]?.template ?? []).map((item) => item.label ?? `(${item.type})`)
   check('菜单里有「显示窗口」和「退出」', labels.includes('显示窗口') && labels.includes('退出'), labels.join(', '))
