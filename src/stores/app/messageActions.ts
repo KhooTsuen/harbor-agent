@@ -39,6 +39,19 @@ export function makeMessageActions(set: Setter) {
     removeMessage: (threadId: string, messageId: string) =>
       patchMessages(set, threadId, (messages) => messages.filter((m) => m.id !== messageId)),
 
+    /*
+     * 把这条**之后**的消息都删掉（不含这条）。
+     *
+     * 给「编辑并重新回答」用：改完问题后，后面那些回答已经和问题对不上了，
+     * 得先丢掉再重发 —— 否则会话里会留着一条答非所问的回复。
+     * 顺序保留，找不到这条 id 时**不动任何消息**（不能让一个笔误清空对话）。
+     */
+    removeMessagesAfter: (threadId: string, messageId: string) =>
+      patchMessages(set, threadId, (messages) => {
+        const at = messages.findIndex((m) => m.id === messageId)
+        return at < 0 ? messages : messages.slice(0, at + 1)
+      }),
+
     clearMessages: (threadId: string) => patchMessages(set, threadId, () => []),
   }
 }

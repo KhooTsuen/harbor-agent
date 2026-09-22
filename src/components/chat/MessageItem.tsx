@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Message } from '@/types'
 import { cn, clockTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
+import { useThreadStore } from '@/stores/useThreadStore'
+import { useUIStore } from '@/stores/useUIStore'
 import { useSmoothText } from '@/hooks/useSmoothText'
 import { fsReveal } from '@/lib/fsApi'
 import { CodeBlock } from './CodeBlock'
@@ -15,6 +16,8 @@ import { ThinkBlock } from './ProcessBlocks'
 import { ToolRunList } from './ToolRuns'
 import { activityLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
+import { SystemMessage } from './SystemMessage'
+import { MessageEditor } from './MessageEditor'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
@@ -29,15 +32,19 @@ export interface MessageItemProps {
   message: Message
   /** 是否显示悬停操作条 */
   showActions?: boolean
+  /** 这条后面还有没有别的消息 —— 用户消息的「编辑」要据此决定给不给「重新回答」出口 */
+  hasLater?: boolean
 }
 
-/** 助手消息上的操作条：复制 / 重新生成 */
-export function MessageItem({ message, showActions = true }: MessageItemProps) {
+/** 助手那条的操作条在 `message/AssistantActions`（复制 / 重新生成 / 赞踩 / 翻译）；用户这条是编辑 / 分支 */
+export function MessageItem({ message, showActions = true, hasLater = false }: MessageItemProps) {
   const editUserMessage = useAppStore((s) => s.editUserMessage)
+  const sendMessage = useThreadStore((s) => s.sendMessage)
+  /* 正在就地编辑这条用户消息 */
+  const [editing, setEditing] = useState(false)
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isStreaming = message.status === 'streaming'
-  const [summaryOpen, setSummaryOpen] = useState(false)
   const isError = message.status === 'error'
 
   /*
@@ -47,34 +54,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
   const smoothContent = useSmoothText(message.content ?? '', isStreaming)
 
   if (isSystem) {
-    /* 压缩点带摘要（挂在 reasoning 上），点一下能展开看摘要内容 */
-    if (message.reasoning) {
-      return (
-        <div className="flex flex-col items-center gap-1 py-1">
-          <button
-            type="button"
-            onClick={() => setSummaryOpen((v) => !v)}
-            aria-expanded={summaryOpen}
-            className="flex items-center gap-1.5 rounded-pill bg-bg-raised px-2.5 py-1 text-2xs text-fg-secondary transition-colors hover:text-fg-primary"
-          >
-            {summaryOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            {message.content}
-          </button>
-          {summaryOpen ? (
-            <div className="max-w-[70ch] whitespace-pre-wrap rounded border border-line-hairline bg-bg-surface/50 px-3 py-2 text-2xs leading-relaxed text-fg-tertiary">
-              {message.reasoning}
-            </div>
-          ) : null}
-        </div>
-      )
-    }
-    return (
-      <div className="flex justify-center py-1">
-        <span className="rounded-pill bg-bg-raised px-2.5 py-1 text-2xs text-fg-secondary">
-          {message.content}
-        </span>
-      </div>
-    )
+    return <SystemMessage message={message} />
   }
 
   return (
@@ -98,7 +78,25 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
               ))}
             </div>
           ) : null}
-          {message.content ? (
+          {editing ? (
+            <MessageEditor
+              initial={message.content}
+              hasLater={hasLater}
+              onCancel={() => setEditing(false)}
+              onSave={(text) => {
+                editUserMessage(message.threadId, message.id, text)
+                useUIStore.getState().showToast('success', '已修改这条消息')
+                setEditing(false)
+              }}
+              onSaveAndResend={(text) => {
+                editUserMessage(message.threadId, message.id, text)
+                /* 后面那些回答是按旧问题写的，留着会答非所问 —— 丢掉再重发 */
+                useAppStore.getState().removeMessagesAfter(message.threadId, message.id)
+                setEditing(false)
+                sendMessage(text)
+              }}
+            />
+          ) : message.content ? (
             <div className="rounded-md rounded-br-sm bg-bg-raised px-3.5 py-2 text-base leading-relaxed text-fg-primary">
               <p className="whitespace-pre-wrap break-words">{message.content}</p>
             </div>
@@ -107,11 +105,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
             <button
               type="button"
               className="text-2xs text-fg-tertiary hover:text-fg-primary"
-              onClick={() => {
-                const next = window.prompt('编辑这条消息', message.content)
-                if (next !== null && next.trim())
-                  editUserMessage(message.threadId, message.id, next.trim())
-              }}
+              onClick={() => setEditing(true)}
             >
               编辑
             </button>
@@ -122,6 +116,11 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
             >
               分支
             </button>
+            {message.edited ? (
+              <span className="text-2xs text-fg-tertiary" title="这条消息被改过">
+                已编辑
+              </span>
+            ) : null}
             <span className="pr-0.5 text-2xs text-fg-tertiary">{clockTime(message.timestamp)}</span>
           </div>
         </div>

@@ -68,6 +68,8 @@ export interface AppState {
   addMessage: (threadId: string, message: Message) => void
   updateMessage: (threadId: string, messageId: string, patch: Partial<Message>) => void
   removeMessage: (threadId: string, messageId: string) => void
+  /** 把这条**之后**的消息都删掉（不含这条）—— 「编辑并重新回答」先丢掉对不上的旧回答 */
+  removeMessagesAfter: (threadId: string, messageId: string) => void
   clearMessages: (threadId: string) => void
 
   /** 导入：合并线程与项目，磁盘模式下会写进 sessions/ */
