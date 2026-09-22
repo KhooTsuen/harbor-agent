@@ -35,6 +35,14 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.versions && stored.versions.length > 1 ? { edited: true } : {}),
     /* 只有快照、没写完（上次进程被打断）—— 界面要说一句，不然用户以为模型就写了这么多 */
     ...(stored.interrupted ? { interrupted: true } : {}),
+    /*
+     * 回答的「多版本」（内核按 answersKey + answersVersion 分好组了）：
+     * 界面靠它显示 ‹ n / N ›，切回答**不重跑**。
+     */
+    ...(stored.answersKey ? { answersKey: stored.answersKey } : {}),
+    ...(stored.answersVersion !== undefined ? { answersVersion: stored.answersVersion } : {}),
+    ...(stored.answerRecords?.length ? { answerRecords: stored.answerRecords } : {}),
+    ...(stored.answerIndex !== undefined ? { answerIndex: stored.answerIndex } : {}),
     ...(isError ? { errorText: stored.error } : {}),
   }
 }

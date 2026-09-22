@@ -135,10 +135,18 @@ export interface StoredMessage {
   partial?: boolean
   /** 读的一侧加上去的：这条只有快照、没有写完（界面据此说一句） */
   interrupted?: boolean
+  /** 读的一侧加上去的：这条提问的**全部**回答（含别的版本、含重生成过的） */
+  answerRecords?: StoredMessage[]
+  /** 读的一侧加上去的：当前显示的是该版本回答里的第几条（0 开始） */
+  answerIndex?: number
   /** 用户消息改过几版（同一条消息的多个版本，界面用 ‹ n / N › 切） */
   versions?: string[]
   /** 当前显示的是第几版（0 开始） */
   versionIndex?: number
+  /** 这条回答答的是哪条提问（提问的 key）+ 第几版；读会话时按它把同一次提问的
+      几个回答收成一条的多个版本（以前没有，编辑/重生成产生的回答会并排堆着） */
+  answersKey?: string
+  answersVersion?: number
   reasoning?: string
   toolCallId?: string
   toolName?: string

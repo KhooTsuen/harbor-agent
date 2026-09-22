@@ -8,6 +8,7 @@ import { Markdown } from './Markdown'
 import { StreamingText } from './StreamingText'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
+import { AnswerVersions } from './message/AnswerVersions'
 import { TerminalOutput } from './TerminalOutput'
 import { ThinkBlock } from './ProcessBlocks'
 import { ToolRunList } from './ToolRuns'
@@ -187,6 +188,9 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
                   className="mt-3 max-w-full rounded-base border border-line-hairline"
                 />
               ))}
+
+              {/* 这条提问有好几版回答时，回答下面也常显 ‹ n / N ›（切换不重跑） */}
+              {!isStreaming ? <AnswerVersions message={message} /> : null}
 
               {showActions && !isStreaming ? <AssistantActions message={message} /> : null}
             </div>

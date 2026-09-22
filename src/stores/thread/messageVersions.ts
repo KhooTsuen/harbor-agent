@@ -5,6 +5,7 @@ import { runMockTurn } from './mockTurn'
 import { getActiveThread, useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { useRealBackend } from '@/lib/backend'
+import { answersOfVersion, answerPatch, existingAnswersAfter, toAnswerRecord } from '@/lib/answers'
 
 /* ══════════════════════════════════════════════════════════════
    用户消息的「多版本」与从某条消息重跑
@@ -45,8 +46,37 @@ export function activateVersion(message: Message, index: number): Partial<Messag
 }
 
 export function makeVersionActions(set: TurnSetter, get: Getter) {
+  /**
+   * 把「这条提问现在显示第几版」写进磁盘。
+   *
+   * 必须写 —— 否则重开会话又回到最后一版（用户切到第 1 版、重开变回第 2 版）。
+   * 版本表一起带上，重开还能继续切。
+   */
+  function persistVersion(threadId: string, message: Message): void {
+    useAppStore.getState().persistMessage(threadId, {
+      role: 'user',
+      key: message.id,
+      content: message.content,
+      ts: message.timestamp,
+      ...(message.versions ? { versions: message.versions } : {}),
+      ...(message.versionIndex !== undefined ? { versionIndex: message.versionIndex } : {}),
+    } as never)
+  }
+
   /** 从某条消息往下重跑（先把它之后的消息丢掉），**不新增任何消息** */
-  function rerunFrom(threadId: string, messageId: string, text: string): void {
+  function rerunFrom(
+    threadId: string,
+    messageId: string,
+    text: string,
+    /**
+     * 被换掉的那条回答属于哪一版提问。
+     *
+     * ★ 一定要带上：内存里那条回答（`removeMessagesAfter` 之前抓下来的）没有
+     *   「答的是第几版」的标记，不标就会落到默认的第 0 版 —— 于是切回原来那一版时
+     *   找不到它、又跑一轮（真机上验证时就是这么发现的）。
+     */
+    seedVersion?: number,
+  ): void {
     if (get().sendingThreads.includes(threadId)) {
       useUIStore.getState().showToast('info', '正在生成', '等这一轮结束再改，不然会跟它抢上下文')
       return
@@ -54,26 +84,20 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     const app = useAppStore.getState()
     const thread = app.threads.find((t) => t.id === threadId)
     if (!thread) return
-    /*
-     * 落盘：同一 key 追加一条新记录，读的时候按 key 收敛成一条
-     * （不会变成"两条一样的提问"）；版本表一起带上，重启后还能切回去。
-     */
+    /* 落盘：同一 key 追加一条新记录，读的时候按 key 收敛成一条
+       （不会变成"两条一样的提问"）；版本表一起带上，重启后还能切回去。 */
     const edited = app.threads
       .find((t) => t.id === threadId)
       ?.messages.find((m) => m.id === messageId)
-    if (edited) {
-      app.persistMessage(threadId, {
-        role: 'user',
-        key: messageId,
-        content: edited.content,
-        ts: edited.timestamp,
-        ...(edited.versions ? { versions: edited.versions } : {}),
-        ...(edited.versionIndex !== undefined ? { versionIndex: edited.versionIndex } : {}),
-      } as never)
-    }
+    if (edited) persistVersion(threadId, edited)
+    /* 这条提问原来那条回答先抓下来（下一步就把它从列表里删掉了）——
+       它是「回答的历史版本」，切回去时要能拿出来，不能只剩磁盘上有 */
+    const previous = existingAnswersAfter(thread.messages, { key: messageId, version: 0 }).map(
+      (record) => (seedVersion === undefined ? record : { ...record, answersVersion: seedVersion }),
+    )
     /* 后面的回答是按旧内容写的，留着会答非所问 */
     app.removeMessagesAfter(threadId, messageId)
-    if (useRealBackend) void runElectronTurn(threadId, text, set, '')
+    if (useRealBackend) void runElectronTurn(threadId, text, set, '', previous)
     else void runMockTurn(threadId, text, set)
   }
 
@@ -85,21 +109,55 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
         .find((t) => t.id === threadId)
         ?.messages.find((m) => m.id === messageId)
       if (!message) return
+      /* 改之前那一版：被换掉的回答属于它 */
+      const wasVersion = message.versionIndex ?? 0
       app.updateMessage(threadId, messageId, pushVersion(message, text))
-      rerunFrom(threadId, messageId, text)
+      rerunFrom(threadId, messageId, text, wasVersion)
     },
 
-    /** 切到某一版（界面上 ‹ n / N ›）：换内容 + 重新回答那一版 */
+    /**
+     * 切到某一版提问（界面上 ‹ n / N ›）。
+     *
+     * ★ 那一版**回答过**就直接把它当年那条回答换上来 —— **不重跑**。
+     *   以前一律重跑，于是每切一次就多一个回答，堆在会话里（用户报的 bug）。
+     *   只有从没回答过的那一版才需要真跑一轮。
+     */
     activateUserVersion: (threadId: string, messageId: string, index: number) => {
       const app = useAppStore.getState()
-      const message = app.threads
-        .find((t) => t.id === threadId)
-        ?.messages.find((m) => m.id === messageId)
-      if (!message) return
+      const thread = app.threads.find((t) => t.id === threadId)
+      const message = thread?.messages.find((m) => m.id === messageId)
+      if (!thread || !message) return
       const patch = activateVersion(message, index)
       if (!patch) return
       app.updateMessage(threadId, messageId, patch)
-      rerunFrom(threadId, messageId, patch.content ?? '')
+      persistVersion(threadId, { ...message, ...patch })
+
+      const at = thread.messages.findIndex((m) => m.id === messageId)
+      const answer = thread.messages[at + 1]
+      const records = answersOfVersion(
+        answer?.answerRecords ?? (answer ? [toAnswerRecord(answer)] : []),
+        index,
+      )
+      if (answer && records.length) {
+        app.updateMessage(
+          threadId,
+          answer.id,
+          answerPatch(records[records.length - 1]!, records.length - 1),
+        )
+        return
+      }
+      rerunFrom(threadId, messageId, patch.content ?? '', index)
+    },
+
+    /** 切到这条提问的第几条回答（界面上回答下面的 ‹ n / N ›）—— 不重跑 */
+    activateAnswer: (threadId: string, messageId: string, index: number) => {
+      const app = useAppStore.getState()
+      const thread = app.threads.find((t) => t.id === threadId)
+      const message = thread?.messages.find((m) => m.id === messageId)
+      const records = answersOfVersion(message?.answerRecords, message?.answersVersion ?? 0)
+      const record = records[index]
+      if (!message || !record) return
+      app.updateMessage(threadId, messageId, answerPatch(record, index))
     },
 
     /**
@@ -127,7 +185,8 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
         }
       }
       if (!userText || !userId) return
-      rerunFrom(thread.id, userId, userText)
+      const question = thread.messages.find((m) => m.id === userId)
+      rerunFrom(thread.id, userId, userText, question?.versionIndex ?? 0)
     },
   }
 }

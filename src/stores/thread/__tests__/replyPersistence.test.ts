@@ -47,7 +47,15 @@ function seedThread(content: string, extra: Partial<Message> = {}): void {
   } as never)
 }
 
-function make(overrides: { content?: string; reasoning?: string; event?: string } = {}) {
+function make(
+  overrides: {
+    content?: string
+    reasoning?: string
+    event?: string
+    answersKey?: string
+    answersVersion?: number
+  } = {},
+) {
   let content = overrides.content ?? ''
   let reasoning = overrides.reasoning ?? ''
   let event = overrides.event ?? 'done'
@@ -55,6 +63,8 @@ function make(overrides: { content?: string; reasoning?: string; event?: string 
     threadId: 't1',
     messageId: 'msg_1',
     timestamp: 2,
+    ...(overrides.answersKey ? { answersKey: overrides.answersKey } : {}),
+    ...(overrides.answersVersion !== undefined ? { answersVersion: overrides.answersVersion } : {}),
     getContent: () => content,
     getReasoning: () => reasoning,
     getEventType: () => event,
@@ -152,5 +162,39 @@ describe('收尾落盘', () => {
     persistence.persistReply()
     expect(written).toHaveLength(1)
     expect(written[0].message.toolRuns).toHaveLength(1)
+  })
+})
+
+describe('★ 回答要标上「答的是哪条提问、第几版」', () => {
+  /*
+   * 用户报的 bug 根子就在这里：提问有多版本，回答却没标「我答的是哪一版」，
+   * 读会话时也就认不出「同一次提问的几次生成」，于是并排堆着。
+   * 这两个字段必须**真的落到磁盘记录上** —— 只在内存里带是没用的。
+   */
+  it('收尾那条带上 answersKey / answersVersion', () => {
+    /* ★ 必须自己种一条：persistReply 读的是 store 里那条消息，
+       不 seedThread 就是在赌"前面那个用例恰好留下了什么"（这个坑踩过好几次） */
+    seedThread('回答', { answersKey: 'u9', answersVersion: 1 })
+    const { persistence } = make({ answersKey: 'u9', answersVersion: 1 })
+    persistence.persistReply()
+    expect(written[0]).toBeDefined()
+    expect(written[0]!.message.answersKey).toBe('u9')
+    expect(written[0]!.message.answersVersion).toBe(1)
+  })
+
+  it('分段快照也带（只留快照时也得认得回来）', () => {
+    seedThread('长'.repeat(60))
+    const { persistence, setContent } = make({ answersKey: 'u9', answersVersion: 0 })
+    setContent('长'.repeat(60))
+    persistence.flushPartial()
+    expect(written[0]?.message.partial).toBe(true)
+    expect(written[0]?.message.answersKey).toBe('u9')
+  })
+
+  it('没有提问（比如首条就是助手）就不带这两个字段', () => {
+    seedThread('回答')
+    const { persistence } = make()
+    persistence.persistReply()
+    expect(written[0]?.message.answersKey).toBeUndefined()
   })
 })

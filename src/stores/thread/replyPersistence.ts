@@ -30,12 +30,23 @@ export function createReplyPersistence(opts: {
   /** 占位消息的 id —— 同一条回复的所有记录共用它当 key */
   messageId: string
   timestamp: number
+  /**
+   * 这一轮答的是哪条提问、第几版 —— 落盘时带上。
+   * 读会话时靠它把「同一次提问的几个回答」收成一条的多个版本
+   * （以前没有这个标记，编辑/重生成产生的回答会并排堆在会话里）。
+   */
+  answersKey?: string
+  answersVersion?: number
   getContent: () => string
   getReasoning: () => string
   /** 最后一个事件类型：只有 done / aborted 才值得存 */
   getEventType: () => string
 }): ReplyPersistence {
   const { threadId, messageId, timestamp, getContent, getReasoning, getEventType } = opts
+  const answer = {
+    ...(opts.answersKey ? { answersKey: opts.answersKey } : {}),
+    ...(opts.answersVersion !== undefined ? { answersVersion: opts.answersVersion } : {}),
+  }
   let lastFlushAt = 0
   let lastFlushLen = 0
 
@@ -60,6 +71,7 @@ export function createReplyPersistence(opts: {
         partial: true,
         content,
         ...(reasoning ? { reasoning } : {}),
+        ...answer,
         ts: timestamp,
       })
     },
@@ -91,6 +103,7 @@ export function createReplyPersistence(opts: {
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
         ...(final.citations?.length ? { citations: final.citations } : {}),
         ...(final.usage ? { usage: final.usage } : {}),
+        ...answer,
         ts: final.timestamp,
       }
       useAppStore.getState().persistMessage(threadId, message)

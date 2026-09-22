@@ -8,6 +8,7 @@
 const fs = require('node:fs')
 const { DIRS } = require('./paths.cjs')
 const { fileFor, safeTitle, readLines } = require('./session-io.cjs')
+const { groupAnswers } = require('./session-answers.cjs')
 
 /**
  * 把带 key 的记录收敛成一条。
@@ -36,20 +37,42 @@ function collapseByKey(messages) {
    * 代价：同一句话真的问了两遍、又改了后一条时，前一条会被吞掉 —— 这种情形
    * 两句话本来就长得一模一样，接受。
    */
-  const originalTexts = new Set()
-  for (const m of messages) {
+  /*
+   * ★ 只认「紧挨在这条带版本表的记录之前的最后一条无 key 用户记录」。
+   *
+   * 以前是「只要内容等于某条版本表的第 1 版就丢」—— 太宽了：同一句话**问了两遍**
+   * （两轮独立对话）时，前面那几轮的无 key 提问会被一起吃掉，它们的回答就失去了
+   * 归属，重新打开会话时并排堆在上一轮后面（真机上就是这么看见的）。
+   * 老会话里「编辑」产生的形态是 [旧提问(无 key), 旧回答, 新提问(带 key + 版本表)] ——
+   * 旧提问正好是**最后一条**无 key 用户记录，所以这条判据够用，又不会连坐前面的轮次。
+   */
+  const originalTexts = new Map()
+  for (let i = 0; i < messages.length; i += 1) {
+    const m = messages[i]
     if (m.role === 'user' && Array.isArray(m.versions) && m.versions.length > 1) {
-      originalTexts.add(String(m.versions[0] ?? ''))
+      const text = String(m.versions[0] ?? '')
+      if (text && !originalTexts.has(text)) originalTexts.set(text, i)
+    }
+  }
+  /* 每条带版本表的记录：在它之前、与它之间**没有别的用户记录**的那条无 key 提问才是旧版本 */
+  const superseded = new Set()
+  for (const [text, at] of originalTexts) {
+    for (let i = at - 1; i >= 0; i -= 1) {
+      const m = messages[i]
+      if (m.role !== 'user') continue
+      if (!m.key && String(m.content ?? '') === text) superseded.add(i)
+      break /* 只认最近的那一条用户记录 */
     }
   }
 
   const out = []
   const slot = new Map()
   const hasFinal = new Set()
-  for (const message of messages) {
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i]
     const key = typeof message.key === 'string' && message.key ? message.key : ''
     if (!key) {
-      if (message.role === 'user' && originalTexts.has(String(message.content ?? ''))) continue
+      if (superseded.has(i)) continue
       out.push(message)
       continue
     }
@@ -91,8 +114,9 @@ function list() {
     if (lines.length === 0) continue
 
     const meta = lines.find((l) => l.type === 'meta')
-    /* 计数要认「收敛后的条数」—— 不然一条流式回复会被算成十几条（每段快照一行） */
-    const messageCount = collapseByKey(lines.filter((l) => l.type === 'message')).length
+    /* 计数要认「收敛后的条数」—— 不然一条流式回复会被算成十几条（每段快照一行）；
+       也要认「认领后的条数」，不然同一次提问的几个回答会各算一条 */
+    const messageCount = groupAnswers(collapseByKey(lines.filter((l) => l.type === 'message'))).length
     const stat = fs.statSync(fileFor(id))
 
     items.push({
@@ -172,7 +196,7 @@ function load(id) {
     model: '',
     createdAt: Date.now(),
   }
-  const messages = collapseByKey(lines.filter((l) => l.type === 'message'))
+  const messages = groupAnswers(collapseByKey(lines.filter((l) => l.type === 'message')))
   /* 压缩点：每次压缩往文件里追加一条，保留历史（可以看压缩是怎么一路发生的） */
   const compacts = lines.filter((l) => l.type === 'compact')
   const stateEvents = lines.filter((l) => l.type === 'conversation_state')

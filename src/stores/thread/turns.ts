@@ -10,6 +10,8 @@ import { runPostTurnTasks } from './sceneTasks'
 import { handleStreamEvent, type StreamState } from './streamEvents'
 import { buildHistory } from './history'
 import { createReplyPersistence } from './replyPersistence'
+import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
+import type { StoredMessage } from '@/types/models-extra'
 
 /* ══════════════════════════════════════════════════════════════
    一轮对话的两条实现路径
@@ -95,6 +97,14 @@ export async function runElectronTurn(
   set: TurnSetter,
   /* AG-011：带这个就是「接着上次那条任务做」——主进程会复用原任务 */
   resumeTaskId = '',
+  /**
+   * 这一版**原来那条回答**（编辑 / 重新生成时，界面上刚被换掉的那条）。
+   *
+   * ★ 必须由调用方传：这些路会先 `removeMessagesAfter` 把它从消息列表里去掉，
+   *   等这里再去「提问后面找已有回答」就找不到了 —— 于是旧回答只剩磁盘上有，
+   *   要重开会话才切得回去（真机上就是这么发现的：编辑完「回答切换器」消失了）。
+   */
+  seedAnswers: StoredMessage[] = [],
 ): Promise<void> {
   /* AG-003：用户按下发送的时刻 —— 主进程的 TTFT 等等都是从这一刻开始算的 */
   const requestTime = Date.now()
@@ -110,6 +120,16 @@ export async function runElectronTurn(
   if (!thread) return
   const mode = thread.mode
 
+  /*
+   * 这一轮回答的是谁、以及这条提问**已经有的回答**。
+   *
+   * ★ 必须在 addMessage（占位消息）**之前**取：占位消息一加进去，
+   *   「这条提问下面已经有的回答」就变成它自己了 —— 重新生成时旧回答就丢了
+   *   （磁盘上有、内存里没有，得等重开会话才切得回去）。
+   */
+  const target = questionTargetOf(thread.messages)
+  const seed = seedAnswers.length ? seedAnswers : existingAnswersAfter(thread.messages, target)
+
   /* 流式消息：内容随真实事件逐步长出来 */
   const placeholder: Message = {
     id: uid('msg'),
@@ -121,6 +141,9 @@ export async function runElectronTurn(
     status: 'streaming',
     timestamp: Date.now(),
     toolRuns: [],
+    ...(target ? { answersKey: target.key, answersVersion: target.version } : {}),
+    /* 旧回答跟着一起走 —— 回答下面的 ‹ n / N › 靠它能切回去 */
+    ...(seed.length ? { answerRecords: seed, answerIndex: seed.length } : {}),
   }
   app.addMessage(threadId, placeholder)
   /*
@@ -169,6 +192,7 @@ export async function runElectronTurn(
     threadId,
     messageId: placeholder.id,
     timestamp: placeholder.timestamp,
+    ...(target ? { answersKey: target.key, answersVersion: target.version } : {}),
     getContent: () => content,
     getReasoning: () => reasoning,
     getEventType: () => lastEventType,

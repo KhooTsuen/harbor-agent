@@ -12,7 +12,7 @@ import type {
   ThreadMode,
   ThreadStatus,
 } from './index'
-import type { UsageBucket } from './models-extra'
+import type { StoredMessage, UsageBucket } from './models-extra'
 
 /* ══════════════════════════════════════════════════════════════
    对话相关的类型：消息 / 线程级设置 / 可恢复状态 / 线程
@@ -72,6 +72,20 @@ export interface Message {
   versions?: string[]
   /** 当前显示的是第几版（0 开始） */
   versionIndex?: number
+  /** 这条回答答的是哪条提问（提问消息 id）；老记录可能没有（读侧会补上来） */
+  answersKey?: string
+  /** 答的是第几版提问 */
+  answersVersion?: number
+  /**
+   * 同一次提问的**全部**回答（含其它版本、含重新生成过的）。
+   *
+   * 读会话时由内核按 (answersKey, answersVersion) 分组塞进来；本轮刚生成的回答
+   * 由 turns 那边把「被它取代的那条」也带进来（不然要等重开会话才切得回去）。
+   * 界面上是回答下面的 ‹ n / N ›：切换**不重跑**，直接换一条。
+   */
+  answerRecords?: StoredMessage[]
+  /** 当前显示的是该版本回答里的第几条（0 开始） */
+  answerIndex?: number
   /** 是否为「重新生成」产物 */
   regenerated?: boolean
   /** 父消息 id（重新生成时指向原消息） */

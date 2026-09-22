@@ -54,6 +54,8 @@ interface ThreadState {
   editAndRerun: (threadId: string, messageId: string, text: string) => void
   /** 切到某一版重新回答（界面上 ‹ n / N ›） */
   activateUserVersion: (threadId: string, messageId: string, index: number) => void
+  /** 切到这条提问的第几条回答（回答下面的 ‹ n / N ›）—— 不重跑 */
+  activateAnswer: (threadId: string, messageId: string, index: number) => void
   continueThread: () => void
 }
 
