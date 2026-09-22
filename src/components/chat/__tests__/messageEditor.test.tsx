@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -183,5 +185,42 @@ describe('保存并重新回答', () => {
     act(() => button('编辑')?.click())
     expect(button('保存并重新回答')).toBeTruthy()
     expect(container.textContent ?? '').toContain('后面的回复是按旧问题写的')
+  })
+})
+
+describe('编辑框的宽度', () => {
+  it('★ 宽度上限必须和下方输入框用同一个变量（用户要求：跟随对话框宽度）', () => {
+    /*
+     * jsdom 不做排版，宽度量不出来 —— 所以这里钉的是**关系**：
+     * 编辑框的上限和 Composer 的上限必须是同一个 CSS 变量。
+     * 谁哪天把它写死成 px 或者换成另一个值，这条会红。
+     */
+    const composer = readFileSync(join(__dirname, '..', 'Composer.tsx'), 'utf8').match(
+      /<div[^>]*data-composer-shell[^>]*>/,
+    )
+    const token = composer?.[0].match(/max-w-\[var\((--[a-z-]+)\)\]/)?.[1]
+    expect(token, '在 Composer 里没找到宽度上限变量').toBeTruthy()
+
+    render(userMessage())
+    act(() => button('编辑')?.click())
+    const root = container.querySelector('[data-message-editor="true"]')
+    /*
+     * ★ 下面这行**必须拼字符串**，不能写成模板字面量。
+     *
+     * Tailwind 会扫 src 下所有 ts/tsx（**连注释和测试一起扫**），把看着像类名的字面量
+     * 抽出来生成 CSS。模板里那个插值会被原样当成 CSS 值，而 lightningcss 解不了，
+     * 整个 vite build 直接报错（Unexpected token Delim）—— 后果很阴：
+     * 构建失败 → 应用还跑着旧代码 → 你以为改动没生效。
+     * 所以这句话本身也不能出现（它刚把我坑过第二次）。
+     */
+    const expected = ['max-w-[var(', token, ')]'].join('')
+    expect(root?.className ?? '').toContain(expected)
+  })
+
+  it('★ 编辑时外层要撑满（不然百分比会被当成 auto，编辑框缩成一条）', () => {
+    render(userMessage())
+    act(() => button('编辑')?.click())
+    const outer = container.querySelector('[data-message-editor="true"]')?.parentElement
+    expect(outer?.className ?? '').toContain('w-full')
   })
 })

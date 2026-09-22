@@ -35,25 +35,53 @@ export function MessageEditor({
   const [text, setText] = useState(initial)
   const areaRef = useRef<HTMLTextAreaElement>(null)
 
+  /*
+   * 跟着内容长高。
+   *
+   * ★ textarea 的 `rows` 数的是**换行符**，不是折行后的行数 —— 一条很长的单行消息
+   *   只会给 2 行高，剩下的在里面滚动，用户根本看不到“它已经换行了”（这正是
+   *   “输入到上限宽度不换行”那个报障的来源）。所以这里按 scrollHeight 设高度，
+   *   顶到 320px 左右就改成内部滚动。
+   */
+  const fitHeight = (): void => {
+    const el = areaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`
+  }
+
   /* 进来就聚焦，光标放末尾 —— 大多数人是要接着改，不是全选删掉 */
   useEffect(() => {
     const el = areaRef.current
     if (!el) return
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)
+    fitHeight()
   }, [])
 
   const trimmed = text.trim()
-  const lines = text.split('\n').length
 
   return (
-    <div className="flex w-full max-w-[78%] flex-col items-end gap-2" data-message-editor="true">
+    /*
+     * 宽度对齐**下方那个输入框**：同一个 `--content-max-width` 上限、同样居中。
+     *
+     * 以前写的是 `w-full max-w-[78%]` —— 百分比落在「单行收缩」的上下文里会被当成
+     * auto（父层只有 max-width、没有 w-full），于是编辑框被压成两百来像素的窄条，
+     * 看着像个输入提示框。现在父层在编辑时会撑满，宽度就顶到那个上限为止。
+     */
+    <div
+      className="mx-auto flex w-full max-w-[var(--content-max-width)] flex-col gap-2"
+      data-message-editor="true"
+    >
       <textarea
         ref={areaRef}
         value={text}
-        rows={Math.min(12, Math.max(2, lines))}
+        rows={2}
         aria-label="编辑这条消息"
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          setText(event.target.value)
+          fitHeight()
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault()
@@ -65,7 +93,7 @@ export function MessageEditor({
             onSave(trimmed)
           }
         }}
-        className="w-full resize-y rounded-md rounded-br-sm border bg-bg-raised px-3.5 py-2 text-base leading-relaxed text-fg-primary outline-none"
+        className="w-full resize-y break-words rounded-md border bg-bg-raised px-3.5 py-2 text-base leading-relaxed text-fg-primary outline-none"
       />
 
       <div className="flex flex-col items-end gap-1">

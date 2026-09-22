@@ -64,7 +64,7 @@ export function MessageItem({ message, showActions = true, hasLater = false }: M
       className={cn('group flex w-full flex-col', isUser ? 'items-end' : 'items-start')}
     >
       {isUser ? (
-        <div className="flex max-w-[78%] flex-col items-end gap-1">
+        <div className={cn('flex flex-col gap-1', editing ? 'w-full' : 'max-w-[78%] items-end')}>
           {/* 用户贴的图：贴在气泡上方，和聊天软件的习惯一致 */}
           {message.images && message.images.length > 0 ? (
             <div className="flex flex-wrap justify-end gap-2">
