@@ -132,12 +132,43 @@ export async function run() {
   taskCore.checkpoint(live.id, { label: '检查点 A' })
   taskCore.update(live.id, { status: 'paused', pausedAt: Date.now() })
 
-  check('能认出这条对话里没干完的任务', taskResume.activeForSession(live.sessionId)?.id === live.id)
+  /*
+   * ★ 用户报过：「发了一个新问题，结果它把之前没干完的任务接回去重跑、旧记录被覆盖」。
+   *   所以「接回」不再是无条件 —— paused 的任务要**明确说继续**才接回去。
+   */
+  check(
+    '★ 明确说「继续」时才认出这条对话里没干完的任务',
+    taskResume.activeForSession(live.sessionId, { continueIntent: true })?.id === live.id,
+  )
+  /*
+   * 只断言「没挑中那条暂停的」——**不断言返回 null**：
+   * 同一会话里可能还有 waiting_user 的任务（那是该接回的情形），
+   * 断言 null 等于在赌「目录恰好干净」，这个坑踩过好几次了。
+   */
+  check(
+    '★ 随口发个新问题不算「继续」—— 不许把这个暂停的任务拉起来',
+    taskResume.activeForSession(live.sessionId)?.id !== live.id,
+  )
   check('别的对话不受影响（查不到）', taskResume.activeForSession('别的会话') === null)
+
+  /* ★ 回归守卫：新问题必须新建一条，旧任务一个字都不能变 */
+  const beforeNewQuestion = JSON.stringify(taskCore.get(live.id))
+  const asNew = taskResume.openForRun({
+    goal: '顺便帮我看看今天的天气怎么样',
+    sessionId: live.sessionId,
+    workdir: '/tmp',
+  })
+  check('★ 发新问题 → 新建一条任务（不是接回旧的）', asNew.id !== live.id, asNew.id)
+  check(
+    '★ 旧任务原封不动（状态/计划/检查点都没被覆盖）',
+    JSON.stringify(taskCore.get(live.id)) === beforeNewQuestion,
+  )
+  taskCore.remove(asNew.id)
 
   const attached = taskResume.openForRun({
     goal: '不要第二步了，改成别的',
     sessionId: live.sessionId,
+    continueIntent: true,
     workdir: '/tmp',
   })
   check('★ 没带 resumeTaskId 也接回原任务（不是新建一条）', attached.id === live.id, attached.id)
@@ -202,7 +233,8 @@ export async function run() {
    */
   check(
     '★ 接回来的判断在 openForRun 之前（顺序不能反）',
-    runSrc.indexOf('activeForSession(sessionId)') < runSrc.indexOf('openForRun({ ...options'),
+    runSrc.indexOf('activeForSession(sessionId, { continueIntent })') <
+      runSrc.indexOf('openForRun({ ...options'),
   )
   check('★ 判断用接回的结果，不是用状态反推', runSrc.includes('Boolean(attached)'))
 
@@ -215,8 +247,8 @@ export async function run() {
 
   const resumeSrc = readFileSync(join(ROOT, 'electron/core/task-resume.cjs'), 'utf8')
   check(
-    '★ openForRun 会接回这条对话没干完的任务',
-    resumeSrc.includes('activeForSession(sessionId)'),
+    '★ openForRun 会接回这条对话没干完的任务（但由 continueIntent 把关）',
+    resumeSrc.includes('activeForSession(sessionId, { continueIntent })'),
   )
   check(
     '★ 界面上看得见「你改过方向」（记录用户修改）',
@@ -229,65 +261,6 @@ export async function run() {
    *   —— 因为 openForRun 内部会把任务 reopen 成 running，
    *   「它是不是接回来的」这个判断必须在那之前做。真跑一遍才照到。
    */
-  group('AG-043 / 真跑一遍（改方向落在原任务上）')
-  const llmModule = require(join(ROOT, 'electron/core/llm.cjs'))
-  const loopCore = require(join(ROOT, 'electron/core/loop.cjs'))
-  const credentialsCore = require(join(ROOT, 'electron/core/credentials.cjs'))
-  const { configModule } = require(join(ROOT, 'scripts/selftest/env.mjs'))
-  const originalChatStream = llmModule.chatStream
-  credentialsCore.set('provider:selftest-ag043', 'sk-selftest-ag043-123456')
-  const provider = {
-    id: 'selftest-ag043',
-    name: '自检供应商',
-    baseUrl: 'https://example.invalid/v1',
-    credentialRef: 'provider:selftest-ag043',
-    chatPath: '/chat/completions',
-    models: ['probe-model'],
-    enabled: true,
-  }
-  const config = {
-    ...configModule.get(),
-    activeProvider: provider,
-    providers: [provider],
-    assistant: { ...configModule.get().assistant, model: 'probe-model' },
-    budget: { maxSteps: 50, maxToolCalls: 100, maxRuntime: 1800, maxRetries: 3, maxTokens: 0 },
-    tools: { ...configModule.get().tools, permission: 'full' },
-    memory: { ...configModule.get().memory, autoWrite: 'off' },
-  }
-  const liveTask = newTask('跑着跑着被叫停的活')
-  taskCore.update(liveTask.id, { status: 'paused', pausedAt: Date.now() })
-  const emittedSteer = []
-  try {
-    llmModule.chatStream = async () => ({
-      content: '照你说的改。',
-      reasoning: '',
-      toolCalls: [],
-      usage: null,
-    })
-    const steerResult = await loopCore.run({
-      history: [{ role: 'user', content: '不要方案 A，改用方案 B' }],
-      config,
-      workdir: SANDBOX,
-      mode: 'pair',
-      goal: '不要方案 A，改用方案 B',
-      sessionId: liveTask.sessionId,
-      signal: new AbortController().signal,
-      emit: (event) => emittedSteer.push(event),
-      confirm: async () => true,
-    })
-    check('★ 接回的是原任务（不是新建）', steerResult.taskId === liveTask.id, steerResult.taskId)
-    const after = taskCore.get(liveTask.id)
-    check(
-      '★ 用户那句话被记进台账',
-      after.steering?.at(-1)?.text === '不要方案 A，改用方案 B',
-      JSON.stringify(after.steering),
-    )
-    check('记的是原话（复盘时最有用）', (after.steering ?? []).length === 1)
-  } finally {
-    llmModule.chatStream = originalChatStream
-    credentialsCore.remove('provider:selftest-ag043')
-  }
-
   for (const id of created) taskCore.remove(id)
   check(
     '测试任务已清理',

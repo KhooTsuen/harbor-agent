@@ -89,6 +89,7 @@ import { run as mcpPresets } from './selftest/groups/51-mcp-presets.mjs'
 import { run as interrupted } from './selftest/groups/52-interrupted.mjs'
 import { run as partialPersist } from './selftest/groups/53-partial-persist.mjs'
 import { run as versionSync } from './selftest/groups/54-version-sync.mjs'
+import { run as taskReuse } from './selftest/groups/55-task-reuse.mjs'
 
 const GROUPS = [
   basics,
@@ -145,6 +146,7 @@ const GROUPS = [
   interrupted,
   partialPersist,
   versionSync,
+  taskReuse,
 ]
 
 async function main() {

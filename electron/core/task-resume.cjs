@@ -85,19 +85,31 @@ function checkEnvironment(taskId) {
 }
 
 /**
- * 这条对话里最近那个**没干完**的任务（AG-043）。
+ * 这条对话里有没有「还等着你」的任务（AG-043）。
  *
  * 为什么要它：用户在执行中改方向时，渲染层**不会**带 resumeTaskId
  * （那是点「继续」才带的）。于是原来会**新建一条任务** —— 计划、进度、检查点
  * 全丢，而文档要的恰恰是「不重新执行无关步骤 / 保留原计划历史 / 从有效检查点继续」。
- * 所以：这条对话还有没干完的活，这轮就接回它。
+ *
+ * ★ 但「这条对话还有没干完的活就接回去」这个判断**太宽了** —— 用户报过一个很坑的现象：
+ *   「发了一个新问题，结果它没回答我，而是把之前那条没干完的任务接回去重跑了一遍，
+ *     旧任务的记录还被覆盖了」。因为以前是**无条件**复用最早一条未完成任务，
+ *   于是你在这条对话里发任何话都会被当成「接着那条任务做」。
+ * 所以现在分情况 —— 而且**只列 `reopen` 真的肯接的状态**：它要求 status 在 RESUMABLE 里，
+ * running 的任务本来就接不回来，把 running 写进来只会让「会不会接回」和实际决定不一致
+ * （loop-run 里的 `attached` 就是照这个函数判断的，它必须和 openForRun 的结果一致）：
+ *
+ *   · waiting_user —— 那一轮正停着等你回话，你这句话就是**回答** → 接回去
+ *   · paused       —— 停下过的，**只有你明确说「继续」才接回去**
+ *                     （`isContinueIntent` 会认出「继续 / 接着做」这类；
+ *                      发一个无关的新问题就该新建一条任务，而不是去覆盖旧的）
  */
-function activeForSession(sessionId) {
+function activeForSession(sessionId, { continueIntent = false } = {}) {
   if (!sessionId) return null
   return (
-    taskCore
-      .list({ limit: 50, sessionId })
-      .find((task) => RESUMABLE.has(task.status) || task.status === 'running') ?? null
+    taskCore.list({ limit: 50, sessionId }).find(
+      (task) => task.status === 'waiting_user' || (continueIntent && task.status === 'paused'),
+    ) ?? null
   )
 }
 
@@ -105,16 +117,22 @@ function activeForSession(sessionId) {
  * 起一次运行：能恢复就**复用原任务**，否则新建一条。
  * 把这段放在这里（而不是 loop.cjs）是因为它长了点 —— 那边已经贴 300 行上限。
  */
-function openForRun({ resumeTaskId = '', goal = '', sessionId = '', ...options }) {
+function openForRun({
+  resumeTaskId = '',
+  goal = '',
+  sessionId = '',
+  continueIntent = false,
+  ...options
+}) {
   const resumed = resumeTaskId ? reopen(resumeTaskId) : null
   if (resumed) return resumed
 
   /*
-   * AG-043：没带 resumeTaskId，但这条对话还有没干完的任务 → 接回它（不是新建）。
-   * 状态还是 running 的（正在跑）、或者 paused/waiting_user 的（停下等你说话）
-   * 都算「这条对话的活还没完」。
+   * AG-043：没带 resumeTaskId，但这条对话的活还没完 → 可能会接回它（不是新建）。
+   * ★ 要不要接回由 activeForSession 分情况判断 —— 见那里的注释：
+   *   随口发个新问题不能把旧任务拉起来重跑（真机上就是这么把旧任务覆盖掉的）。
    */
-  const live = activeForSession(sessionId)
+  const live = activeForSession(sessionId, { continueIntent })
   if (live) {
     const reopened = reopen(live.id)
     if (reopened) return reopened
