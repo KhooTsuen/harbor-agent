@@ -63,6 +63,19 @@ TDZ 错误就是这么「查不到」的。
   还顺带修了自己写的一个假绿：两个标记写成前缀关系（`boom` / `boom-uncaught`），
   另一个 handler 记的串里也含 `boom`，于是关掉一个照样过。
 
+### 顺手：发包脚本（`npm run release:zip`）
+
+发 v1.9.0 时顺手把打包固定下来了。两条必须守住的：
+
+- ★ **绝不能把 `data/` 打进发布包**：那是用户数据（会话、任务台账、日志），
+  还有 **`credentials.json`（API Key）** —— 开发机上那份 31MB 的测试残留里就有一把
+  真的 key，差点直接发出去。脚本里排除 + 打完再列一遍包内清单**校验**。
+- **包内版本要和 package.json 一致**：不一致说明打包前忘了 `npm run package`
+  （用户装完看到的版本号会和 Release 对不上）。
+
+用 Windows 自带的 bsdtar（`System32	ar.exe`，能做 zip；git-bash 里那个 GNU tar 不能），
+不引 npm 依赖。产物 `dist-portable/harbor-<版本>-win-x64.zip`，和往期资产名一致。
+
 ### 顺手
 
 - 日志文件名也按**本地日期**（以前 `toISOString()` 是 UTC，凌晨那份会叫「昨天」）
