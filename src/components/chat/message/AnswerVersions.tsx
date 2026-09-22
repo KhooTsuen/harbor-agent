@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Message } from '@/types'
-import { answersOfVersion } from '@/lib/answers'
+import { allAnswers, answersOfVersion } from '@/lib/answers'
 import { useThreadStore } from '@/stores/useThreadStore'
 
 /* ══════════════════════════════════════════════════════════════
@@ -17,7 +17,8 @@ import { useThreadStore } from '@/stores/useThreadStore'
 
 export function AnswerVersions({ message }: { message: Message }) {
   const activateAnswer = useThreadStore((s) => s.activateAnswer)
-  const records = answersOfVersion(message.answerRecords, message.answersVersion ?? 0)
+  /* ★ allAnswers：连「当前这条」一起算，否则 N 会少一个、索引还越界 */
+  const records = answersOfVersion(allAnswers(message), message.answersVersion ?? 0)
   if (records.length < 2) return null
   const index = Math.min(message.answerIndex ?? records.length - 1, records.length - 1)
 

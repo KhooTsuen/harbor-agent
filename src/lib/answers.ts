@@ -47,6 +47,25 @@ export function questionTargetOf(messages: Message[]): { key: string; version: n
 }
 
 /**
+ * 这条回答的**全部版本** = 它记着的那些 + **它自己**。
+ *
+ * ★ 「自己」必须放进去。本轮刚生成的那条回答，`answerRecords` 里只装了
+ *   被它取代的旧回答（seed），**它自己不在里面** —— 于是刚编辑完、再切回
+ *   刚生成的那一版时，代码以为「这版没回答过」，又跑一整轮
+ *   （用户报的「二度生成」就是这么来的：v1 → v0 → v1 来回切，每一步都重跑）。
+ *
+ * 按 key 去重：既能带上自己，又不会和内核分组的结果（那份本来就含自己）重复。
+ */
+export function allAnswers(message: Message): StoredMessage[] {
+  const out = [...(message.answerRecords ?? [])]
+  const self = toAnswerRecord(message)
+  const at = out.findIndex((r) => r.key === self.key)
+  if (at >= 0) out[at] = self
+  else out.push(self)
+  return out
+}
+
+/**
  * 这条提问后面已经有的回答（重新生成前先把旧的收着，别丢）。
  *
  * 从界面消息里凑出「落盘形状」的记录：优先用它自己带的 answerRecords
@@ -63,7 +82,8 @@ export function existingAnswersAfter(
     const m = messages[i]
     if (m?.role === 'user') break
     if (m?.role !== 'assistant' || !m.content) continue
-    return m.answerRecords?.length ? m.answerRecords : [toAnswerRecord(m)]
+    /* ★ 用 allAnswers：连它自己也带上 —— 不然连着编辑两次就会把中间那条丢掉 */
+    return allAnswers(m)
   }
   return []
 }

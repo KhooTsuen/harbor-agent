@@ -126,6 +126,34 @@ describe('切到没回答过的那一版', () => {
     expect(seedArg().map((r) => r.content)).toEqual(['答第二版'])
   })
 
+  it('★ 切回「刚生成的那一版」也不重跑（它自己不在 answerRecords 里 —— 用户报的就是这个）', () => {
+    /*
+     * 用户的原话：「编辑过之后再切来切去，又自己重新生成了一遍」。
+     * 真机日志：发送 → 编辑 → 之后又跑了**两轮**（v1 → v0 → v1 来回切，每步都重跑）。
+     * 根因：本轮刚生成的那条回答，answerRecords 里只装了被它取代的旧回答，
+     *       **它自己不在里面** → 切回它那一版时被当成「没回答过」。
+     */
+    seed([
+      msg({
+        id: 'u1',
+        role: 'user',
+        content: '第一版',
+        versions: ['第一版', '第二版'],
+        versionIndex: 0,
+      }),
+      msg({
+        id: 'a1',
+        content: '答第二版（刚生成的那条）',
+        answersKey: 'u1',
+        answersVersion: 1,
+        answerRecords: [{ role: 'assistant', key: 'a0', content: '答第一版', answersVersion: 0 }],
+      }),
+    ])
+    useThreadStore.getState().activateUserVersion('t1', 'u1', 1)
+    expect(calls().length).toBe(0) // ★ 修之前这里是 1（又跑一轮）
+    expect(useAppStore.getState().threads[0]!.messages[1]!.content).toBe('答第二版（刚生成的那条）')
+  })
+
   it('这一版已经回答过 → 一个模型请求都不发（换上那条就行）', () => {
     seed([
       msg({
@@ -138,6 +166,9 @@ describe('切到没回答过的那一版', () => {
       msg({
         id: 'a1',
         content: '答第二版',
+        answersKey: 'u1',
+        /* ★ 这条属于第 1 版 —— 不写就会被算成第 0 版（allAnswers 会把自己也算进去） */
+        answersVersion: 1,
         answerRecords: [
           { role: 'assistant', key: 'a0', content: '答第一版', answersVersion: 0 },
           { role: 'assistant', key: 'a1', content: '答第二版', answersVersion: 1 },

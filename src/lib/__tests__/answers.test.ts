@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  allAnswers,
   answersOfVersion,
   answerPatch,
   existingAnswersAfter,
@@ -73,13 +74,13 @@ describe('existingAnswersAfter', () => {
     expect(seed.map((r) => r.content)).toEqual(['旧回答'])
   })
 
-  it('已经有 answerRecords 时用它（重开会话后内核分好组的那份）', () => {
+  it('已经有 answerRecords 时用它，并且把「自己」也算上（不能只留旧的）', () => {
     const records = [record('一'), record('二')]
-    const seed = existingAnswersAfter([user({ id: 'u1' }), assistant({ answerRecords: records })], {
-      key: 'u1',
-      version: 0,
-    })
-    expect(seed.length).toBe(2)
+    const seed = existingAnswersAfter(
+      [user({ id: 'u1' }), assistant({ content: '我这条', answerRecords: records })],
+      { key: 'u1', version: 0 },
+    )
+    expect(seed.map((r) => r.content)).toEqual(['一', '二', '我这条'])
   })
 
   it('普通新一轮没有旧回答 → 空数组（不然会把上一轮的回答挂在这次上）', () => {
@@ -138,5 +139,31 @@ describe('toAnswerRecord', () => {
     )
     expect(r.toolRuns?.length).toBe(1)
     expect(r.citations?.length).toBe(1)
+  })
+})
+
+describe('allAnswers', () => {
+  it('★ 把「自己」也算进去（不然切回刚生成的那一版会以为没回答过、又跑一轮）', () => {
+    const list = allAnswers(
+      assistant({
+        id: 'a1',
+        content: '刚生成的',
+        answersKey: 'u1',
+        answersVersion: 1,
+        answerRecords: [{ role: 'assistant', key: 'a0', content: '旧的', answersVersion: 0 }],
+      }),
+    )
+    expect(list.map((r) => r.content)).toEqual(['旧的', '刚生成的'])
+  })
+
+  it('内核分组那份本来就含自己 → 按 key 去重，不会出现两条', () => {
+    const list = allAnswers(
+      assistant({
+        id: 'a0',
+        content: '自己',
+        answerRecords: [{ role: 'assistant', key: 'a0', content: '自己' }],
+      }),
+    )
+    expect(list.length).toBe(1)
   })
 })

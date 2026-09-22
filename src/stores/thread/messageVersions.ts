@@ -5,7 +5,7 @@ import { runMockTurn } from './mockTurn'
 import { getActiveThread, useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { useRealBackend } from '@/lib/backend'
-import { answersOfVersion, answerPatch, existingAnswersAfter, toAnswerRecord } from '@/lib/answers'
+import { answersOfVersion, allAnswers, answerPatch, existingAnswersAfter } from '@/lib/answers'
 
 /* ══════════════════════════════════════════════════════════════
    用户消息的「多版本」与从某条消息重跑
@@ -134,10 +134,8 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
 
       const at = thread.messages.findIndex((m) => m.id === messageId)
       const answer = thread.messages[at + 1]
-      const records = answersOfVersion(
-        answer?.answerRecords ?? (answer ? [toAnswerRecord(answer)] : []),
-        index,
-      )
+      /* ★ allAnswers：把「当前这条回答自己」也算上，否则切回刚生成的那一版会又跑一轮 */
+      const records = answersOfVersion(answer ? allAnswers(answer) : [], index)
       if (answer && records.length) {
         app.updateMessage(
           threadId,
@@ -154,7 +152,10 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       const app = useAppStore.getState()
       const thread = app.threads.find((t) => t.id === threadId)
       const message = thread?.messages.find((m) => m.id === messageId)
-      const records = answersOfVersion(message?.answerRecords, message?.answersVersion ?? 0)
+      const records = answersOfVersion(
+        message ? allAnswers(message) : [],
+        message?.answersVersion ?? 0,
+      )
       const record = records[index]
       if (!message || !record) return
       app.updateMessage(threadId, messageId, answerPatch(record, index))
