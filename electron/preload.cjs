@@ -7,174 +7,194 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
-/**
- * onEvent 只转发的通道。
- * 终端数据走单独的 onShellData —— 混在一起会让对话的事件回调收到终端分片，
- * 而两者的 payload 形状不一样。
- */
+/* onEvent 只转发这个通道。终端数据走 onShellData —— 混在一起形状对不上。 */
 const EVENTS = ['chat:event']
 
+/* ══════════════════════════════════════════════════════════════
+   ★ 所有 IPC 都从 `call()` 过 —— 唯一出入口。
+
+   这样「界面用了哪个功能」不用逐个埋点：现有通道全在网里，以后新加的也自动被记上。
+   只报通道名/成败/耗时，**不报参数**。
+
+   ★★ 必须留在**本文件**里：main.cjs 开的是 `sandbox: true`，沙箱化的 preload
+     **不允许 require 自己的模块** —— 拆到兄弟文件那次 require 一抛，整个 preload
+     作废（`window.workbench` 不存在、界面 IPC 全死）。真机探针逮到的。
+   ══════════════════════════════════════════════════════════════ */
+const stampNow = () =>
+  typeof performance !== 'undefined' ? performance.now() : Date.now()
+
+function report(entry) {
+  try {
+    /* send 不等回执：记日志不能给界面加延迟，也不能因为失败把功能弄挂 */
+    ipcRenderer.send('log:action', entry)
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function call(channel, ...args) {
+  const at = stampNow()
+  /* ★ 这里必须是 ipcRenderer.invoke：批量替换曾把这行也换成 call()，直接死递归 */
+  return ipcRenderer.invoke(channel, ...args).then(
+    (result) => {
+      report({ kind: 'ipc', name: channel, ok: true, ms: stampNow() - at })
+      return result
+    },
+    (error) => {
+      report({
+        kind: 'ipc',
+        name: channel,
+        ok: false,
+        ms: stampNow() - at,
+        detail: (error && error.message) || String(error),
+      })
+      throw error
+    },
+  )
+}
+
 const api = {
-  /* ── 应用 ─────────────────────────────────────────────── */
-  selfTest: () => ipcRenderer.invoke('app:selfTest'),
-  quitApp: () => ipcRenderer.invoke('app:quit'),
-  showWindow: () => ipcRenderer.invoke('app:showWindow'),
-  setTitleBar: (colors) => ipcRenderer.invoke('window:titleBar', colors),
+  selfTest: () => call('app:selfTest'),
+  quitApp: () => call('app:quit'),
+  showWindow: () => call('app:showWindow'),
+  setTitleBar: (colors) => call('window:titleBar', colors),
 
-  /* ── 配置 ─────────────────────────────────────────────── */
-  getConfig: () => ipcRenderer.invoke('config:get'),
-  patchConfig: (partial) => ipcRenderer.invoke('config:patch', partial),
-  resetConfig: () => ipcRenderer.invoke('config:reset'),
+  getConfig: () => call('config:get'),
+  patchConfig: (partial) => call('config:patch', partial),
+  resetConfig: () => call('config:reset'),
 
-  /* ── 供应商 ───────────────────────────────────────────── */
-  pingProvider: (providerId) => ipcRenderer.invoke('provider:ping', providerId),
-  listModels: (providerId) => ipcRenderer.invoke('provider:listModels', providerId),
+  pingProvider: (providerId) => call('provider:ping', providerId),
+  listModels: (providerId) => call('provider:listModels', providerId),
 
-  /* ── 工作目录 ─────────────────────────────────────────── */
-  getWorkdir: () => ipcRenderer.invoke('workdir:get'),
-  pickWorkdir: () => ipcRenderer.invoke('workdir:pick'),
+  getWorkdir: () => call('workdir:get'),
+  pickWorkdir: () => call('workdir:pick'),
   /** 只挑目录，不改全局默认（给单条对话挂目录用） */
-  chooseFolder: () => ipcRenderer.invoke('workdir:choose'),
+  chooseFolder: () => call('workdir:choose'),
 
-  /* ── 会话 ─────────────────────────────────────────────── */
-  listSessions: () => ipcRenderer.invoke('session:list'),
-  searchSessions: (query, limit) => ipcRenderer.invoke('session:search', query, limit),
-  listWorkdirs: () => ipcRenderer.invoke('session:workdirs'),
-  createSession: (options) => ipcRenderer.invoke('session:create', options),
-  loadSession: (id) => ipcRenderer.invoke('session:load', id),
-  appendMessage: (id, message) => ipcRenderer.invoke('session:append', id, message),
-  updateSessionMeta: (id, patch) => ipcRenderer.invoke('session:updateMeta', id, patch),
-  removeSession: (id) => ipcRenderer.invoke('session:remove', id),
-  removeAllSessions: () => ipcRenderer.invoke('session:removeAll'),
-  sessionToApiMessages: (id, limit) => ipcRenderer.invoke('session:toApiMessages', id, limit),
+  listSessions: () => call('session:list'),
+  searchSessions: (query, limit) => call('session:search', query, limit),
+  listWorkdirs: () => call('session:workdirs'),
+  createSession: (options) => call('session:create', options),
+  loadSession: (id) => call('session:load', id),
+  appendMessage: (id, message) => call('session:append', id, message),
+  updateSessionMeta: (id, patch) => call('session:updateMeta', id, patch),
+  removeSession: (id) => call('session:remove', id),
+  removeAllSessions: () => call('session:removeAll'),
+  sessionToApiMessages: (id, limit) => call('session:toApiMessages', id, limit),
 
-  /* ── 导出 ─────────────────────────────────────────────── */
-  saveText: (payload) => ipcRenderer.invoke('export:saveText', payload),
-  pickJson: () => ipcRenderer.invoke('import:pickJson'),
-  importSessions: (list) => ipcRenderer.invoke('session:import', list),
+  saveText: (payload) => call('export:saveText', payload),
+  pickJson: () => call('import:pickJson'),
+  importSessions: (list) => call('session:import', list),
   appendCompact: (id, summary, upTo) =>
-    ipcRenderer.invoke('session:appendCompact', id, summary, upTo),
+    call('session:appendCompact', id, summary, upTo),
 
-  /* ── 技能 ─────────────────────────────────────────────── */
-  listSkills: () => ipcRenderer.invoke('skills:list'),
-  createSkill: (name, description) => ipcRenderer.invoke('skills:create', name, description),
-  removeSkill: (id) => ipcRenderer.invoke('skills:remove', id),
-  openSkillsDir: () => ipcRenderer.invoke('skills:openDir'),
+  listSkills: () => call('skills:list'),
+  createSkill: (name, description) => call('skills:create', name, description),
+  removeSkill: (id) => call('skills:remove', id),
+  openSkillsDir: () => call('skills:openDir'),
 
-  /* ── 记忆 ─────────────────────────────────────────────── */
-  getMemory: () => ipcRenderer.invoke('memory:get'),
-  setMemory: (text) => ipcRenderer.invoke('memory:set', text),
-  clearMemory: () => ipcRenderer.invoke('memory:clear'),
+  getMemory: () => call('memory:get'),
+  setMemory: (text) => call('memory:set', text),
+  clearMemory: () => call('memory:clear'),
   /* 结构化记忆 */
-  memoryList: (options) => ipcRenderer.invoke('memory:list', options),
-  memorySearch: (query, options) => ipcRenderer.invoke('memory:search', { query, ...options }),
-  memoryAdd: (input) => ipcRenderer.invoke('memory:add', input),
-  memoryUpdate: (payload) => ipcRenderer.invoke('memory:update', payload),
-  memoryDisable: (id) => ipcRenderer.invoke('memory:disable', id),
-  memoryEnable: (id) => ipcRenderer.invoke('memory:enable', id),
-  memoryRemove: (id) => ipcRenderer.invoke('memory:remove', id),
+  memoryList: (options) => call('memory:list', options),
+  memorySearch: (query, options) => call('memory:search', { query, ...options }),
+  memoryAdd: (input) => call('memory:add', input),
+  memoryUpdate: (payload) => call('memory:update', payload),
+  memoryDisable: (id) => call('memory:disable', id),
+  memoryEnable: (id) => call('memory:enable', id),
+  memoryRemove: (id) => call('memory:remove', id),
 
-  /* ── 搜索 ─────────────────────────────────────────────── */
-  searchProviders: () => ipcRenderer.invoke('search:providers'),
-  testSearch: (override) => ipcRenderer.invoke('search:test', override),
+  searchProviders: () => call('search:providers'),
+  testSearch: (override) => call('search:test', override),
 
-  /* ── 诊断 ─────────────────────────────────────────────── */
-  diagnosticsCopy: () => ipcRenderer.invoke('diagnostics:copy'),
-  diagnosticsSave: () => ipcRenderer.invoke('diagnostics:save'),
-  diagnosticsOpenDir: () => ipcRenderer.invoke('diagnostics:openDir'),
+  diagnosticsCopy: () => call('diagnostics:copy'),
+  diagnosticsSave: () => call('diagnostics:save'),
+  diagnosticsOpenDir: () => call('diagnostics:openDir'),
 
-  /* ── 场景（标题 / 优化 / 翻译 / 建议 / OCR / 画图）───────── */
-  sceneSnapshot: () => ipcRenderer.invoke('scene:snapshot'),
-  sceneTitle: (messages) => ipcRenderer.invoke('scene:title', { messages }),
-  sceneOptimize: (text) => ipcRenderer.invoke('scene:optimize', { text }),
-  sceneTranslate: (text) => ipcRenderer.invoke('scene:translate', { text }),
-  sceneSuggest: (messages) => ipcRenderer.invoke('scene:suggest', { messages }),
-  sceneOcr: (imageDataUrl) => ipcRenderer.invoke('scene:ocr', { imageDataUrl }),
-  sceneImage: (prompt, size) => ipcRenderer.invoke('scene:image', { prompt, size }),
+  sceneSnapshot: () => call('scene:snapshot'),
+  sceneTitle: (messages) => call('scene:title', { messages }),
+  sceneOptimize: (text) => call('scene:optimize', { text }),
+  sceneTranslate: (text) => call('scene:translate', { text }),
+  sceneSuggest: (messages) => call('scene:suggest', { messages }),
+  sceneOcr: (imageDataUrl) => call('scene:ocr', { imageDataUrl }),
+  sceneImage: (prompt, size) => call('scene:image', { prompt, size }),
 
-  /* ── 文件系统 ─────────────────────────────────────────── */
-  fsWorkdir: () => ipcRenderer.invoke('fs:workdir'),
-  fsTree: (dir) => ipcRenderer.invoke('fs:tree', dir),
-  fsList: (dir) => ipcRenderer.invoke('fs:list', dir),
-  fsRead: (file) => ipcRenderer.invoke('fs:read', file),
-  fsReveal: (target) => ipcRenderer.invoke('fs:reveal', target),
-  fsPickAndRead: () => ipcRenderer.invoke('fs:pickAndRead'),
-  pickImageAsDataUrl: () => ipcRenderer.invoke('fs:pickImageAsDataUrl'),
+  fsWorkdir: () => call('fs:workdir'),
+  fsTree: (dir) => call('fs:tree', dir),
+  fsList: (dir) => call('fs:list', dir),
+  fsRead: (file) => call('fs:read', file),
+  fsReveal: (target) => call('fs:reveal', target),
+  fsPickAndRead: () => call('fs:pickAndRead'),
+  pickImageAsDataUrl: () => call('fs:pickImageAsDataUrl'),
 
-  /* ── 终端 ─────────────────────────────────────────────── */
-  shellCwd: () => ipcRenderer.invoke('shell:cwd'),
-  shellReset: () => ipcRenderer.invoke('shell:reset'),
-  shellRun: (payload) => ipcRenderer.invoke('shell:run', payload),
-  shellAbort: (requestId) => ipcRenderer.invoke('shell:abort', requestId),
+  shellCwd: () => call('shell:cwd'),
+  shellReset: () => call('shell:reset'),
+  shellRun: (payload) => call('shell:run', payload),
+  shellAbort: (requestId) => call('shell:abort', requestId),
 
-  /* ── 审计 / 授权 / 任务 / 改动事务 ─────────────────────── */
-  auditList: (options) => ipcRenderer.invoke('audit:list', options),
-  auditStats: (days) => ipcRenderer.invoke('audit:stats', days),
-  auditClear: () => ipcRenderer.invoke('audit:clear'),
-  auditPrune: () => ipcRenderer.invoke('audit:prune'),
-  riskClassify: (command) => ipcRenderer.invoke('risk:classify', command),
+  auditList: (options) => call('audit:list', options),
+  auditStats: (days) => call('audit:stats', days),
+  auditClear: () => call('audit:clear'),
+  auditPrune: () => call('audit:prune'),
+  riskClassify: (command) => call('risk:classify', command),
 
-  capabilityList: () => ipcRenderer.invoke('capability:list'),
-  capabilityGrant: (payload) => ipcRenderer.invoke('capability:grant', payload),
-  capabilityRevoke: (target) => ipcRenderer.invoke('capability:revoke', target),
-  capabilityRevokeAll: () => ipcRenderer.invoke('capability:revokeAll'),
+  capabilityList: () => call('capability:list'),
+  capabilityGrant: (payload) => call('capability:grant', payload),
+  capabilityRevoke: (target) => call('capability:revoke', target),
+  capabilityRevokeAll: () => call('capability:revokeAll'),
 
-  taskList: (options) => ipcRenderer.invoke('task:list', options),
-  taskUnfinished: () => ipcRenderer.invoke('task:unfinished'),
+  taskList: (options) => call('task:list', options),
+  taskUnfinished: () => call('task:unfinished'),
   /* AG-012：重启后的恢复清单 */
-  taskRecovery: () => ipcRenderer.invoke('task:recovery'),
-  taskGet: (id) => ipcRenderer.invoke('task:get', id),
-  taskDiagnose: (id) => ipcRenderer.invoke('task:diagnose', id),
-  taskUpdate: (payload) => ipcRenderer.invoke('task:update', payload),
+  taskRecovery: () => call('task:recovery'),
+  taskGet: (id) => call('task:get', id),
+  taskDiagnose: (id) => call('task:diagnose', id),
+  taskUpdate: (payload) => call('task:update', payload),
   /* 个人资料：名字进配置、头像存 data/avatars/ */
-  profileGet: () => ipcRenderer.invoke('profile:get'),
-  profileSetName: (name) => ipcRenderer.invoke('profile:setName', name),
-  profilePickAvatar: () => ipcRenderer.invoke('profile:pickAvatar'),
-  profileClearAvatar: () => ipcRenderer.invoke('profile:clearAvatar'),
-  taskRemove: (id) => ipcRenderer.invoke('task:remove', id),
-  taskRemoveMany: (options) => ipcRenderer.invoke('task:removeMany', options),
-  taskPurge: (sessionId) => ipcRenderer.invoke('task:purge', sessionId),
-  taskPauseRunning: () => ipcRenderer.invoke('task:pauseRunning'),
+  profileGet: () => call('profile:get'),
+  profileSetName: (name) => call('profile:setName', name),
+  profilePickAvatar: () => call('profile:pickAvatar'),
+  profileClearAvatar: () => call('profile:clearAvatar'),
+  taskRemove: (id) => call('task:remove', id),
+  taskRemoveMany: (options) => call('task:removeMany', options),
+  taskPurge: (sessionId) => call('task:purge', sessionId),
+  taskPauseRunning: () => call('task:pauseRunning'),
 
-  changesetList: (options) => ipcRenderer.invoke('changeset:list', options),
-  changesetGet: (id) => ipcRenderer.invoke('changeset:get', id),
-  changesetRollback: (id) => ipcRenderer.invoke('changeset:rollback', id),
-  changesetDiff: (payload) => ipcRenderer.invoke('changeset:diff', payload),
-  metricsRecent: (payload) => ipcRenderer.invoke('metrics:recent', payload),
+  changesetList: (options) => call('changeset:list', options),
+  changesetGet: (id) => call('changeset:get', id),
+  changesetRollback: (id) => call('changeset:rollback', id),
+  changesetDiff: (payload) => call('changeset:diff', payload),
+  metricsRecent: (payload) => call('metrics:recent', payload),
 
-  credentialsStatus: () => ipcRenderer.invoke('credentials:status'),
+  credentialsStatus: () => call('credentials:status'),
 
-  /* ── 真终端（PTY）─────────────────────────────────────── */
-  ptyStart: (payload) => ipcRenderer.invoke('pty:start', payload),
-  ptyWrite: (payload) => ipcRenderer.invoke('pty:write', payload),
-  ptyResize: (payload) => ipcRenderer.invoke('pty:resize', payload),
-  ptyStop: (payload) => ipcRenderer.invoke('pty:stop', payload),
-  ptyStopAll: () => ipcRenderer.invoke('pty:stopAll'),
-  ptyList: () => ipcRenderer.invoke('pty:list'),
+  ptyStart: (payload) => call('pty:start', payload),
+  ptyWrite: (payload) => call('pty:write', payload),
+  ptyResize: (payload) => call('pty:resize', payload),
+  ptyStop: (payload) => call('pty:stop', payload),
+  ptyStopAll: () => call('pty:stopAll'),
+  ptyList: () => call('pty:list'),
 
-  /* ── 用量统计 ─────────────────────────────────────────── */
-  statsSummary: () => ipcRenderer.invoke('stats:summary'),
-  statsReset: () => ipcRenderer.invoke('stats:reset'),
+  statsSummary: () => call('stats:summary'),
+  statsReset: () => call('stats:reset'),
 
-  /* ── 备份 ─────────────────────────────────────────────── */
-  backupList: () => ipcRenderer.invoke('backup:list'),
-  backupCreate: () => ipcRenderer.invoke('backup:create'),
-  backupRestore: (name) => ipcRenderer.invoke('backup:restore', name),
-  backupRemove: (name) => ipcRenderer.invoke('backup:remove', name),
-  backupOpen: () => ipcRenderer.invoke('backup:open'),
+  backupList: () => call('backup:list'),
+  backupCreate: () => call('backup:create'),
+  backupRestore: (name) => call('backup:restore', name),
+  backupRemove: (name) => call('backup:remove', name),
+  backupOpen: () => call('backup:open'),
 
-  /* ── MCP ──────────────────────────────────────────────── */
-  mcpStatus: () => ipcRenderer.invoke('mcp:status'),
-  mcpPresets: () => ipcRenderer.invoke('mcp:presets'),
-  mcpRestart: () => ipcRenderer.invoke('mcp:restart'),
+  mcpStatus: () => call('mcp:status'),
+  mcpPresets: () => call('mcp:presets'),
+  mcpRestart: () => call('mcp:restart'),
 
-  /* ── 对话 ─────────────────────────────────────────────── */
-  sendChat: (payload) => ipcRenderer.invoke('chat:send', payload),
-  abortChat: (requestId) => ipcRenderer.invoke('chat:abort', requestId),
+  sendChat: (payload) => call('chat:send', payload),
+  abortChat: (requestId) => call('chat:abort', requestId),
   /* AG-011：暂停（做完手上这步就往回走，不是立刻断） */
-  pauseChat: (requestId) => ipcRenderer.invoke('chat:pause', requestId),
-  confirmChat: (confirmId, approved) => ipcRenderer.invoke('chat:confirm', confirmId, approved),
-  compactChat: (payload) => ipcRenderer.invoke('chat:compact', payload),
+  pauseChat: (requestId) => call('chat:pause', requestId),
+  confirmChat: (confirmId, approved) => call('chat:confirm', confirmId, approved),
+  compactChat: (payload) => call('chat:compact', payload),
 
   /**
    * 订阅流式事件。返回取消订阅的函数。
@@ -195,11 +215,7 @@ const api = {
     return () => ipcRenderer.removeListener('shell:data', listener)
   },
 
-  /**
-   * 订阅 PTY 的两个事件（输出分片 / 进程退出）。
-   * 分开一个回调而不是两个：终端面板总是两个都要处理，
-   * 拆成两个订阅函数只会让调用方多写三行清理代码。
-   */
+  /* 订阅 PTY 两个事件（输出分片 / 退出）。合成一个回调：终端面板总是两个都要处理。 */
   onPtyEvent: (callback) => {
     const onData = (_event, payload) => callback({ type: 'data', ...payload })
     const onExit = (_event, payload) => callback({ type: 'exit', ...payload })
@@ -218,12 +234,8 @@ const api = {
     return () => ipcRenderer.removeListener('plugins:changed', handler)
   },
 
-  /**
-   * 订阅「生图完成 / 失败」。
-   *
-   * 生图是异步的：工具提交完就返回了，真正出图可能要好几分钟 ——
-   * 那时对话早就结束一轮了，所以靠主进程推事件回来把图片插进对话。
-   */
+  /* 订阅「生图完成 / 失败」。生图是异步的（提交完就返回，出图可能几分钟后），
+     那时这轮对话早结束了 —— 靠主进程推事件回来把图插进对话。 */
   onImageDone: (callback) => {
     const handler = (_event, payload) => callback(payload)
     ipcRenderer.on('image:ready', handler)
@@ -236,7 +248,6 @@ const api = {
     }
   },
 
-  /* ── 浏览器：让主进程的 `browse` 工具能驱动这个 webview ── */
 
   /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */
   onBrowserRequest: (callback) => {
@@ -245,15 +256,9 @@ const api = {
     return () => ipcRenderer.removeListener('browser:request', handler)
   },
 
-  /* ── AG-029：后台任务通知 ───────────────────────────── */
 
-  /**
-   * 一轮跑完了（主进程推）。
-   *
-   * **内容由主进程算好**（`core/task-notify.cjs`）：要不要弹系统通知是它决定的
-   * （窗口藏到托盘时渲染层会被节流，判不准），它把同一份文案推过来，
-   * 渲染层只负责「用户没在看这条对话就弹个应用内提示」。
-   */
+  /* 一轮跑完了（主进程推）。**文案由主进程算好**（要不要弹系统通知是它决定的，
+     藏到托盘时渲染层会被节流判不准）；渲染层只负责"用户没在看就弹个提示"。 */
   onTaskEnd: (callback) => {
     const handler = (_event, payload) => callback(payload)
     ipcRenderer.on('app:taskEnd', handler)
@@ -268,7 +273,19 @@ const api = {
   },
 
   /** 把浏览结果回给主进程（不回的话那边会一直等） */
-  browserResult: (id, result) => ipcRenderer.invoke('browser:result', { id, result }),
+  browserResult: (id, result) => call('browser:result', { id, result }),
+
+  /* 界面动作（点击了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
+  logAction: (entry) => report(entry),
+
+  /** 渲染层没被捕获的异常（window.onerror / unhandledrejection / ErrorBoundary） */
+  logError: (entry) => {
+    try {
+      ipcRenderer.send('log:error', entry)
+    } catch {
+      /* 忽略 */
+    }
+  },
 
   /** 渲染层可以据此判断「我是不是跑在 Electron 里」 */
   isElectron: true,

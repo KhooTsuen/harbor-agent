@@ -16,9 +16,51 @@
  * 依赖一律注入，这个文件自己不 require electron。
  */
 
+const log = require('./core/log.cjs')
+const actions = require('./core/log-actions.cjs')
+
+/**
+ * 慢调用阈值：超过它的成功调用也写一行主日志。
+ * 定 1 秒是因为「界面点了没反应」基本都发生在秒级；几百毫秒的那种属于正常。
+ */
+const SLOW_IPC_MS = 1000
+
+/**
+ * 把 `ipcMain.handle` 包一层 —— **所有通道的兜底**。
+ *
+ * 为什么要它：一个通道抛异常，以前渲染层会收到错误、弹个 toast，
+ * 而 `data/logs` 里**一个字都没有**（真机上就吃过这个亏：「消息发不出去」
+ * 却查不到任何线索）。包在这里是最省事、也最全的位置 —— 加新通道自动被包上。
+ *
+ * 记两份：成败/耗时进**动作流水**（机器看），失败和慢调用另外进**主日志**（人看）。
+ */
+function wrapInvokeHandlers(ipcMain) {
+  const raw = ipcMain.handle.bind(ipcMain)
+  ipcMain.handle = (channel, listener) =>
+    raw(channel, async (event, ...args) => {
+      const at = Date.now()
+      try {
+        const result = await listener(event, ...args)
+        const ms = Date.now() - at
+        actions.record({ kind: 'ipc', name: channel, ok: true, ms })
+        if (ms >= SLOW_IPC_MS) log.warn(`慢调用 ${channel}：${ms}ms`)
+        return result
+      } catch (error) {
+        const ms = Date.now() - at
+        const message = error instanceof Error ? error.message : String(error)
+        actions.record({ kind: 'ipc', name: channel, ok: false, ms, detail: message })
+        log.error(`通道失败 ${channel}（${ms}ms）：${message}`)
+        throw error
+      }
+    })
+}
+
 function registerHandlers(deps) {
   const { ipcMain, app, Notification, config, log, send, streams, getMainWindow } = deps
   const { currentWorkdir, resolveWorkdir } = deps.workdir
+
+  /* 先包一层，后面所有 register() 注册的通道都自动在网里 */
+  wrapInvokeHandlers(ipcMain)
 
   /* 窗口外观 + 显示/退出（见 handlers/window.cjs） */
   require('./handlers/window.cjs').register({
@@ -37,6 +79,7 @@ function registerHandlers(deps) {
     getMainWindow,
   })
 
+  require('./handlers/log.cjs').register({ ipcMain })
   require('./handlers/compact.cjs').register({ ipcMain })
   require('./handlers/chat.cjs').register({
     ipcMain,
@@ -70,4 +113,4 @@ function registerHandlers(deps) {
   return { notifier }
 }
 
-module.exports = { registerHandlers }
+module.exports = { registerHandlers, wrapInvokeHandlers }

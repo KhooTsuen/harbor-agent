@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { logError } from '@/lib/actionLog'
 
 /* ══════════════════════════════════════════════════════════════
    ErrorBoundary
@@ -26,7 +27,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[ErrorBoundary]', error, info.componentStack)
-    /* 这里可以接错误上报端点，先留空 */
+    /*
+     * 同时报到主进程 → 进 data/logs（以前只有 console.error，
+     * 打开 devtools 才看得见；用户报「这一块出错了」时日志里查不到任何线索）。
+     */
+    logError(
+      `ErrorBoundary${info.componentStack?.split(String.fromCharCode(10))[1]?.trim().slice(0, 30) ?? ''}`,
+      error,
+    )
   }
 
   override render(): ReactNode {

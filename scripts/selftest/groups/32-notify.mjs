@@ -208,7 +208,14 @@ export async function run() {
    * diagnostics / skills），所以纯 Node 里必须先把假 electron 挂上。
    */
   const registeredChannels = []
-  const recordingIpcMain = { handle: (channel) => registeredChannels.push(channel) }
+  /* 除了 handle，也要有 on（`log:action` / `log:error` 那类单向上报走 on）——
+     假的 ipcMain 少一个方法，整个 registerHandlers 就会在这里抛，
+     而真实 Electron 里两个都有。 */
+  const listenedChannels = []
+  const recordingIpcMain = {
+    handle: (channel) => registeredChannels.push(channel),
+    on: (channel) => listenedChannels.push(channel),
+  }
   const fakeElectron = {
     ipcMain: recordingIpcMain,
     BrowserWindow: class {},
@@ -245,6 +252,16 @@ export async function run() {
       getMainWindow: () => null,
       workdir: { currentWorkdir: () => '', resolveWorkdir: () => '' },
     })
+
+    /*
+     * 兜底日志两条通道走 `on`（单向上报，不等回执）——
+     * 这里真注册一遍、真断言，比在源码里 grep 一行字可靠。
+     */
+    check(
+      '兜底日志通道注册上了（log:action / log:error）',
+      ['log:action', 'log:error'].every((c) => listenedChannels.includes(c)),
+      listenedChannels.join(','),
+    )
   } finally {
     Module._load = originalLoad
   }

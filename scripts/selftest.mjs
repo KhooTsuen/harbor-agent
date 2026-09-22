@@ -92,6 +92,7 @@ import { run as versionSync } from './selftest/groups/54-version-sync.mjs'
 import { run as taskReuse } from './selftest/groups/55-task-reuse.mjs'
 import { run as answers } from './selftest/groups/56-answers.mjs'
 import { run as logging } from './selftest/groups/57-logging.mjs'
+import { run as actionLog } from './selftest/groups/58-actionlog.mjs'
 
 const GROUPS = [
   basics,
@@ -151,6 +152,7 @@ const GROUPS = [
   taskReuse,
   answers,
   logging,
+  actionLog,
 ]
 
 async function main() {

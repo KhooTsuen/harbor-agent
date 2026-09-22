@@ -14,6 +14,7 @@ const { DIRS, ensureDirs, auditNonC, markPackaged } = require('./core/paths.cjs'
 const log = require('./core/log.cjs')
 const config = require('./core/config.cjs')
 const bootCleanup = require('./boot-cleanup.cjs')
+const { installCrashGuard } = require('./crash-guard.cjs')
 const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
 const {
@@ -26,6 +27,9 @@ const {
 } = require('./tray.cjs')
 const windowState = require('./window-state.cjs')
 const windowChrome = require('./handlers/window.cjs')
+
+/* ★ 兜底要最早装：装晚了就抓不到启动阶段的异常 */
+installCrashGuard()
 const { registerHandlers } = require('./register-handlers.cjs')
 let trayNotifier = null
 const navigationPolicy = require('./navigation-policy.cjs')

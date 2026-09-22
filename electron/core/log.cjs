@@ -24,9 +24,13 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const { redact } = require('./redact.cjs')
 
+/** 本地日期的 `YYYY-MM-DD` —— 文件名也按本地走（写 UTC 的话，凌晨那份会叫「昨天」） */
+function dayStamp(date = new Date()) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 function logFile() {
-  const day = new Date().toISOString().slice(0, 10)
-  return path.join(DIRS.logs, `${day}.log`)
+  return path.join(DIRS.logs, `${dayStamp()}.log`)
 }
 
 const pad = (n, width = 2) => String(n).padStart(width, '0')
@@ -87,4 +91,5 @@ module.exports = {
   tagged,
   shortId,
   formatStamp,
+  dayStamp,
 }

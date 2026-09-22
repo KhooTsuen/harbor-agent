@@ -143,7 +143,7 @@ export async function run() {
 
   const preloadSrc = readCore('electron/preload.cjs')
   check('preload 暴露 pauseChat', preloadSrc.includes('pauseChat:'))
-  check('preload 的通道名对得上', preloadSrc.includes("invoke('chat:pause'"))
+  check('preload 的通道名对得上', preloadSrc.includes("call('chat:pause'"))
 
   /* ── 收尾 ─────────────────────────────────────────────── */
   for (const id of created) taskCore.remove(id)
