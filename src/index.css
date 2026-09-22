@@ -247,9 +247,46 @@
   --glass-veil: brightness(1.06);
 }
 
-/* ══════════════════════════════════════════════════════════════
-   基础
-   ══════════════════════════════════════════════════════════════ */
+/*
+ * 启动页：全屏 ASCII 场景 + 入场扫出
+ *
+ * 场景是一张 canvas（4K 网格 384x120 格，按屏幕宽度隔点取样）。
+ * 光束、水面波纹、云漂移都是 **字符** 在动 —— 见 `sceneAnim.ts`，
+ * 它每帧只重画变化的那几百格，不是叠一层渐变上去。
+ * 入场用 clip-path 自上而下扫出，是 GPU 合成的。
+ */
+.harbor-boot {
+  /* 场景没画出来之前的兜底底色，和 scene.b64 里记录的底色一致 */
+  background: rgb(8, 16, 30);
+  color: #dcecf4;
+}
+
+.harbor-boot-reveal {
+  animation-name: harbor-boot-reveal;
+  animation-timing-function: cubic-bezier(0.25, 0, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+.harbor-boot-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes harbor-boot-reveal {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harbor-boot-reveal {
+    animation: none;
+  }
+}
 
 @layer base {
   *,

@@ -108,6 +108,29 @@ export function AppearanceTab() {
         />
       </Row>
 
+      <Row label="ASCII 海岛质量" hint="只影响启动页海面动画；静态模式不在后台计算">
+        <Select
+          value={settings.asciiQuality}
+          onChange={(v) =>
+            updateSettings({ asciiQuality: v as 'high' | 'medium' | 'low' | 'static' })
+          }
+          options={[
+            { value: 'high', label: '高（60 FPS）' },
+            { value: 'medium', label: '中（30 FPS）' },
+            { value: 'low', label: '低（15 FPS）' },
+            { value: 'static', label: '静态' },
+          ]}
+        />
+      </Row>
+
+      <Row label="减少 ASCII 动态" hint="停掉海面计算；保留静态字符画和入场扫出">
+        <Switch
+          checked={settings.asciiReducedMotion}
+          onChange={(v) => updateSettings({ asciiReducedMotion: v })}
+          label="减少 ASCII 动态"
+        />
+      </Row>
+
       <Row label="打字机速度" hint="0 = 一次性显示整段回复">
         <Select
           value={String(settings.typewriterSpeed)}

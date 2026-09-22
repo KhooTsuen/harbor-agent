@@ -24,6 +24,8 @@ export const DEFAULT_SETTINGS: Settings = {
   /* 玻璃拟态默认关：实测参考实现没有毛玻璃，想看得自己开 */
   glassmorphism: false,
   animations: true,
+  asciiQuality: 'high',
+  asciiReducedMotion: false,
   sidebarWidth: LAYOUT.sidebar.default,
   rightPanelWidth: LAYOUT.rightPanel.default,
   sidebarCollapsed: false,
@@ -94,6 +96,11 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     taskScope: s.taskScope === 'all' ? 'all' : 'project',
     glassmorphism: s.glassmorphism === true,
     animations: s.animations !== false,
+    asciiQuality:
+      s.asciiQuality === 'medium' || s.asciiQuality === 'low' || s.asciiQuality === 'static'
+        ? s.asciiQuality
+        : 'high',
+    asciiReducedMotion: s.asciiReducedMotion === true,
     sidebarWidth: clamp(
       Number(s.sidebarWidth) || LAYOUT.sidebar.default,
       LAYOUT.sidebar.min,

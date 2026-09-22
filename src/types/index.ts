@@ -140,6 +140,7 @@ export interface Project {
 /* ── 设置 ──────────────────────────────────────────────────── */
 
 export type FontFamilyId = 'system' | 'yahei' | 'noto' | 'harmony' | 'custom'
+export type ASCIIQuality = 'high' | 'medium' | 'low' | 'static'
 
 export interface Settings {
   theme: ThemePreference
@@ -150,6 +151,10 @@ export interface Settings {
   customFontFamily: string
   glassmorphism: boolean
   animations: boolean
+  /** ASCII 海岛场景质量：只影响启动页，不影响 Agent */
+  asciiQuality: ASCIIQuality
+  /** 强制停掉 ASCII 场景的后台动画 */
+  asciiReducedMotion: boolean
   sidebarWidth: number
   rightPanelWidth: number
   sidebarCollapsed: boolean

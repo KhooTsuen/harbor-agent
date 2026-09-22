@@ -1,4 +1,6 @@
 import wordmarkArt from '@/assets/wordmark.txt?raw'
+
+/* 启动页的时间轴（毫秒）。入场扫出、字标重建、淡出都按它走 */
 export const BOOT_TIMING = {
   typingEnd: 3200,
   progressStart: 2200,
@@ -12,38 +14,18 @@ export const BOOT_TIMING = {
   total: 10000,
 } as const
 
-export const BOOT_COPY = [
-  'HARBOR // LOCAL AGENT SYSTEM',
-  '',
-  '> mounting local workspace ........ OK',
-  '> isolating tool runtime .......... OK',
-  '> restoring agent memory .......... OK',
-  '> calibrating inference core ...... OK',
-  '> mapping cognitive toolchain ..... 128 NODES',
-  '> synchronizing context lattice ... STABLE',
-  '> verifying human operator ........ PRESENT',
-].join('\n')
-
-export const EASTER_EGGS = [
-  'Cake Verification Module ... FAILED  //  Reason: Cake is a lie.',
-  'Weighted Companion Process ... STILL ALIVE.',
-  'Neurotoxin safeguards ... probably enabled.',
-] as const
-
 /*
  * 字标：`HARBOR` 的灰度点阵（489 列 × 43 行）。
  *
  * ★ 由 `scripts/generate-wordmark.py` 用系统字体渲染生成 —— 自己算的，
  *   不引用任何现成艺术字（以前那版是《Portal》的 Aperture 图形，公开前移除了）。
  *   手写过一版 5×7 的点阵，缩到屏幕上就一小坨，所以换成这个分辨率。
+ *
+ * 港湾夜景的场景画不在这里：它是 `scripts/generate-boot-scene.py` 生成的
+ * 数据（`src/assets/boot-scene/scene.b64`），运行时由 `bootScene.ts` 解码绘制。
  */
 const ART = wordmarkArt.replace(/^\s*\n/, '').replace(/\s+$/, '')
-const NOISE = '@.#%&+?:/\\<>[]{}01'
-
-export function typeBootCopy(elapsed: number): string {
-  const count = Math.floor((Math.max(0, elapsed) / BOOT_TIMING.typingEnd) * BOOT_COPY.length)
-  return BOOT_COPY.slice(0, Math.min(count, BOOT_COPY.length))
-}
+const NOISE = '@.#%&+?:/=*~-_01'
 
 export function progressValue(elapsed: number): number {
   const span = BOOT_TIMING.progressEnd - BOOT_TIMING.progressStart
@@ -61,37 +43,15 @@ function hash(index: number): number {
   return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff
 }
 
-export function codeStream(frame: number, rows = 28): string {
-  const operations = ['MOUNT', 'VERIFY', 'INDEX', 'ROUTE', 'CACHE', 'DECODE', 'LINK', 'SYNC']
-  return Array.from({ length: rows }, (_, row) => {
-    const index = row + frame
-    const address = Math.floor(hash(index * 13) * 0xffffff)
-      .toString(16)
-      .toUpperCase()
-      .padStart(6, '0')
-    const operation = operations[index % operations.length]
-    const channel = Math.floor(hash(index * 29) * 256)
-      .toString(16)
-      .toUpperCase()
-      .padStart(2, '0')
-    const signal = hash(index * 41) > 0.16 ? 'PASS' : 'RETRY'
-    return `0x${address}  ${operation.padEnd(6, ' ')}  CH-${channel}  ${signal}`
-  }).join('\n')
-}
-
-export function telemetry(frame: number): string {
-  const values = Array.from({ length: 8 }, (_, index) => {
-    const value = Math.floor(hash(frame + index * 101) * 4096)
-    return value.toString(16).toUpperCase().padStart(3, '0')
-  })
-  return `MEM ${values[0]}  IO ${values[1]}\nCTX ${values[2]}  NET ${values[3]}\nSIG ${values[4]}  AUX ${values[5]}\nLNK ${values[6]}  SYS ${values[7]}`
-}
-
 export function glitchLine(frame: number): string {
   const source = 'RECONSTRUCTING VISUAL IDENTITY // SIGNAL LOCK'
   return [...source]
     .map((character, index) => {
-      if (character === ' ' || hash(index + frame * 47) > 0.3) return character
+      /*
+       * 只让大约八分之一的字花掉。以前是 30% —— 整行读起来像乱码，
+       * 在安静夜色里太吵；偶尔闪一下才像信号不稳。
+       */
+      if (character === ' ' || hash(index + frame * 47) > 0.12) return character
       return NOISE[(index * 7 + frame * 11) % NOISE.length]
     })
     .join('')

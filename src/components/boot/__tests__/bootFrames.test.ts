@@ -1,36 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BOOT_COPY,
   BOOT_TIMING,
-  codeStream,
+  glitchLine,
   progressBar,
   progressValue,
   reconstructLogo,
-  telemetry,
-  typeBootCopy,
   COMPLETE_LOGO,
 } from '../bootFrames'
 
 /*
- * 启动页的每一块：文案逐字打出、进度条、代码流、遥测、字标重建。
+ * 启动页剩下这几块：进度条、故障行、点阵字标重建。
  *
- * 字标那条断言值得单说：它原来引用《Portal》里 Aperture 的 ASCII 图
- * （别人的美术，公开前移除了）。现在换成 `scripts/generate-wordmark.py`
- * 用系统字体渲染出来的灰度点阵 —— 断言里钉住"够宽够高"，
- * 因为中间我手写过一版 5×7 的，缩到屏幕上就一小坨，被用户退回来了。
+ * 港湾夜景的 ASCII 场景不在这里 —— 那是 `generate-boot-scene.py` 生成、
+ * `bootScene.ts` 解码的数据，测试在 `bootScene.test.ts`。
  */
 
 describe('boot sequence frames', () => {
   it('keeps the complete sequence at about ten seconds', () => {
     expect(BOOT_TIMING.total).toBeGreaterThanOrEqual(9000)
     expect(BOOT_TIMING.total).toBeLessThanOrEqual(12000)
-  })
-
-  it('types from empty text to the complete boot report', () => {
-    expect(typeBootCopy(0)).toBe('')
-    expect(typeBootCopy(BOOT_TIMING.typingEnd)).toBe(BOOT_COPY)
-    /* 第一行是产品名 —— 改品牌时别把启动页漏了 */
-    expect(BOOT_COPY.split('\n')[0]).toContain('HARBOR')
   })
 
   it('clamps progress and renders a stable-width bar', () => {
@@ -41,11 +29,14 @@ describe('boot sequence frames', () => {
     expect(bar).toHaveLength(progressBar(0, 20).length)
   })
 
-  it('generates moving code and telemetry streams with stable dimensions', () => {
-    expect(codeStream(0).split('\n')).toHaveLength(28)
-    expect(codeStream(0)).not.toBe(codeStream(7))
-    expect(telemetry(0).split('\n')).toHaveLength(4)
-    expect(telemetry(0)).not.toBe(telemetry(5))
+  it('glitch 行会变，而且永远是可打印 ASCII', () => {
+    const source = 'RECONSTRUCTING VISUAL IDENTITY // SIGNAL LOCK'
+    expect(glitchLine(0)).not.toBe(glitchLine(9))
+    expect(glitchLine(0)).toHaveLength(source.length)
+    /* 花掉的字也必须是可打印 ASCII —— 控制字符/图形块在界面上会变成方块 */
+    for (let frame = 0; frame < 60; frame += 1) {
+      expect(glitchLine(frame)).toMatch(/^[\x20-\x7E]+$/)
+    }
   })
 
   it('★ 字标是高分辨率点阵（自渲染，够宽够高、只有点阵字符）', () => {
