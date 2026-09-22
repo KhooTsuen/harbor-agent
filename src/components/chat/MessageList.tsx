@@ -118,6 +118,29 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   }, [])
 
   /*
+   * ★ 用户滚轮往上滚 → **立刻**解锁自动贴底。
+   *
+   * 不加这条的话，流式期间的“每帧兜底”会在你往上滚一点点后、下一帧（16ms）
+   * 又把你拽回底部 —— `distance` 永远到不了 onScroll 里那个 160px 的“离开”阈值，
+   * `pinned` 永远是 true，等于**根本滚不动**（用户报的“被固定到最底下”）。
+   *
+   * 只监听 `wheel` 而不是 `scroll`：程序自己写 `scrollTop` 不会触发 wheel，
+   * 所以能把「用户的滚动」和「我们自己的贴底」干净地区分开。
+   */
+  useEffect(() => {
+    const node = scrollerRef.current
+    if (!node) return
+    const onWheel = (event: WheelEvent): void => {
+      if (event.deltaY < 0 && pinnedRef.current) {
+        pinnedRef.current = false
+        setShowJump(true)
+      }
+    }
+    node.addEventListener('wheel', onWheel, { passive: true })
+    return () => node.removeEventListener('wheel', onWheel)
+  }, [])
+
+  /*
    * 贴底：盯**内容高度**，不盯消息条数。
    *
    * ⚠️ 这里曾经依赖 `[count]`（消息条数），注释还写着「只有真来了新消息才滚」。
