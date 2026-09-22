@@ -3,6 +3,7 @@ import { runElectronTurn } from '../turns'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import type { Message, Thread } from '@/types'
+import type { StoredMessage } from '@/types/models-extra'
 
 /* ══════════════════════════════════════════════════════════════
    接线：「编辑 / 重新生成 / 切到没回答过的那一版」时，**原来那条回答**要交给
@@ -57,7 +58,9 @@ function seed(messages: Message[]): void {
 }
 
 const calls = () => vi.mocked(runElectronTurn).mock.calls
-const seedArg = () => calls().at(-1)?.[4] ?? []
+/* 第 5 个参数现在是 opts（seedAnswers + reason）—— 查线上问题时加的 reason 也在这里 */
+const optsArg = () => calls().at(-1)?.[4] as { seedAnswers?: StoredMessage[]; reason?: string }
+const seedArg = () => optsArg()?.seedAnswers ?? []
 
 beforeEach(() => {
   vi.mocked(runElectronTurn).mockClear()
@@ -92,6 +95,15 @@ describe('编辑一条消息', () => {
 })
 
 describe('重新生成', () => {
+  it('★ 日志要能说出「这一轮是谁起的」（查线上问题时第一个要回答的）', () => {
+    seed([
+      msg({ id: 'u1', role: 'user', content: '一个问题' }),
+      msg({ id: 'a1', content: '回答', answersKey: 'u1', answersVersion: 0 }),
+    ])
+    useThreadStore.getState().regenerateMessage('a1')
+    expect(optsArg()?.reason).toBe('重新生成')
+  })
+
   it('★ 旧回答也交给新一轮（重新生成不该把上一版弄丢）', () => {
     seed([
       msg({ id: 'u1', role: 'user', content: '一个问题' }),

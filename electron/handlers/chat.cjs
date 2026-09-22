@@ -15,7 +15,6 @@ const bus = require('../core/events.cjs')
 const metrics = require('../core/metrics.cjs')
 const { createEmitter } = require('../core/chat-emit.cjs')
 const config = require('../core/config.cjs')
-const compact = require('../core/compact.cjs')
 const log = require('../core/log.cjs')
 
 /** confirmId -> resolve，等渲染层点「允许/拒绝」 */
@@ -50,6 +49,16 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
   ipcMain.handle('chat:send', async (_event, payload) => {
     const requestId = payload?.requestId ?? `req_${Date.now().toString(36)}`
     const rawHistory = Array.isArray(payload?.messages) ? payload.messages : []
+    const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId : ''
+    /*
+     * 这一轮是**怎么起来的**（渲染层给）：用户发送 / 点继续 / 编辑后重答 /
+     * 重新生成 / 切提问版本。
+     *
+     * ★ 加这个的原因是查一个 bug 查了四轮：日志里只看到「又跑了一轮」，
+     *   完全不知道是谁让它跑的（切版本？自动重试？还是用户自己发的），
+     *   只能靠时间戳猜。现在这一行直接说出来。
+     */
+    const reason = typeof payload?.reason === 'string' && payload.reason ? payload.reason : '未标注'
     const historyLimit = currentHistoryLimit()
     const history = historyLimit > 0 ? rawHistory.slice(-historyLimit) : []
     const mode = typeof payload?.mode === 'string' ? payload.mode : 'pair'
@@ -68,6 +77,16 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const phaseKey = (typeof payload?.taskId === 'string' && payload.taskId) || requestId
 
     /*
+     * ★ 这一行必须放在最后（history / mode / workdir / phaseKey 都算出来之后）。
+     *   第一版图省事写在函数开头 —— TDZ：`phaseKey`、`workdir` 都还没初始化，
+     *   结果 `chat:send` 直接抛 ReferenceError，**消息根本发不出去**，
+     *   而且日志里一个字都没有（因为就抛在这一行）。
+     *   真机探针逮到的；第 57 组自检里钉了顺序，改回去会红。
+     */
+    const here = log.tagged(`sess…${log.shortId(sessionId)} · ${log.shortId(phaseKey)}`)
+    here.info(`新一轮：来源=${reason} 历史=${history.length} 条 模式=${mode} 工作目录=${workdir}`)
+
+    /*
      * AG-003：开始记这条任务的时间线。
      * `requestTime` 由渲染层带过来 —— 那才是「用户按下发送」的时刻，
      * 拿主进程收到 IPC 的时间会少算一段网络/调度延迟。
@@ -83,6 +102,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
       metrics.finish(phaseKey)
       return { ok: false, error: '没有配置供应商' }
     }
+
+    /* 用时以「用户按下发送」为准（渲染层带来）；没带就退化成主进程收到的时间 */
+    const startedAt = Date.now()
 
     const controller = new AbortController()
     /*
@@ -134,7 +156,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           emit,
           confirm,
           /* 会话 id：审计、授权、任务记录都靠它串起来 */
-          sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+          sessionId,
           projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
           /*
            * 事件流的 key（和任务台账的 id 是两回事）。
@@ -146,7 +168,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
            * 还有没干完的活，长对话里就是「目标漂移」。
            */
           taskState: taskContext.buildTaskState({
-            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+            sessionId,
             taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
             /* AG-018：把用户这句话也交给它 —— 说「继续」时要明确告诉他“这是接着做” */
             userText: lastUserText(history),
@@ -168,19 +190,21 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           exhausted: result.exhausted === true,
         })
 
-        log.info(`对话完成：${result.turns} 轮，${result.toolRuns.length} 次工具调用`)
+        const spent = ((Date.now() - (payload?.requestTime || startedAt)) / 1000).toFixed(1)
+        here.info(`对话完成：${result.turns} 轮，${result.toolRuns.length} 次工具调用，用时 ${spent} 秒`)
       } catch (error) {
         const aborted = error instanceof Error && error.name === 'AbortError'
         if (aborted) {
           emit({ type: 'aborted' })
+          here.info('对话中止（用户按了停止 / 切走了）')
         } else {
           const message = error instanceof Error ? error.message : String(error)
           emit({ type: 'error', message })
-          log.error(`对话失败：${message}`)
+          here.error(`对话失败：${message}`)
         }
       } finally {
         /* AG-029：这轮结束（成功/失败/中断都走 finally）→ 交给主进程决定要不要通知 */
-        void taskEnd?.({ sessionId: payload?.sessionId ?? '' })
+        void taskEnd?.({ sessionId })
 
         /* AG-011：最后一段增量还在缓存里 —— 不冲掉就永远看不见了 */
         flush()
@@ -201,30 +225,6 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     })()
 
     return { ok: true, requestId }
-  })
-
-  /* ── 上下文压缩 ───────────────────────────────────────── */
-
-  ipcMain.handle('chat:compact', async (_event, payload) => {
-    /* 压缩可以单独配一个便宜的模型 —— 它只是把长内容揉成摘要 */
-    const scene = require('../core/scene.cjs')
-    const picked = scene.resolve('compact')
-    const provider = picked.provider
-    if (!provider) return { ok: false, error: '还没有配置供应商' }
-    if (!config.hasKey(provider)) return { ok: false, error: `${provider.name} 还没填 API Key` }
-
-    try {
-      const summary = await compact.summarize({
-        baseUrl: provider.baseUrl,
-        apiKey: config.providerKey(provider),
-        chatPath: provider.chatPath,
-        model: payload?.model || picked.model,
-        messages: Array.isArray(payload?.messages) ? payload.messages : [],
-      })
-      return { ok: true, summary }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
   })
 
   /* ── 中断 ─────────────────────────────────────────────── */

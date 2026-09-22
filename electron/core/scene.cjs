@@ -120,6 +120,7 @@ async function call(sceneId, { messages, maxTokens = 512, temperature = 0.3, sig
   }
 
   const result = await llm.chatStream({
+    label: `场景 ${sceneId}`,
     baseUrl: provider.baseUrl,
     apiKey: config.providerKey(provider),
     chatPath: provider.chatPath,

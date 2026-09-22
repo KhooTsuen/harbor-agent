@@ -76,6 +76,8 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
      *   找不到它、又跑一轮（真机上验证时就是这么发现的）。
      */
     seedVersion?: number,
+    /** 只给日志用：这一轮是编辑 / 重新生成 / 切版本触发的 */
+    reason = '用户发送',
   ): void {
     if (get().sendingThreads.includes(threadId)) {
       useUIStore.getState().showToast('info', '正在生成', '等这一轮结束再改，不然会跟它抢上下文')
@@ -97,8 +99,9 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     )
     /* 后面的回答是按旧内容写的，留着会答非所问 */
     app.removeMessagesAfter(threadId, messageId)
-    if (useRealBackend) void runElectronTurn(threadId, text, set, '', previous)
-    else void runMockTurn(threadId, text, set)
+    if (useRealBackend) {
+      void runElectronTurn(threadId, text, set, '', { seedAnswers: previous, reason })
+    } else void runMockTurn(threadId, text, set)
   }
 
   return {
@@ -112,7 +115,7 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       /* 改之前那一版：被换掉的回答属于它 */
       const wasVersion = message.versionIndex ?? 0
       app.updateMessage(threadId, messageId, pushVersion(message, text))
-      rerunFrom(threadId, messageId, text, wasVersion)
+      rerunFrom(threadId, messageId, text, wasVersion, '编辑后重答')
     },
 
     /**
@@ -144,7 +147,7 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
         )
         return
       }
-      rerunFrom(threadId, messageId, patch.content ?? '', index)
+      rerunFrom(threadId, messageId, patch.content ?? '', index, '切提问版本')
     },
 
     /** 切到这条提问的第几条回答（界面上回答下面的 ‹ n / N ›）—— 不重跑 */
@@ -187,7 +190,7 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       }
       if (!userText || !userId) return
       const question = thread.messages.find((m) => m.id === userId)
-      rerunFrom(thread.id, userId, userText, question?.versionIndex ?? 0)
+      rerunFrom(thread.id, userId, userText, question?.versionIndex ?? 0, '重新生成')
     },
   }
 }

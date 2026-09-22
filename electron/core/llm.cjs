@@ -57,6 +57,7 @@ function parseSseLine(line) {
  */
 async function chatStream(options) {
   const {
+    label,
     baseUrl,
     apiKey,
     chatPath,
@@ -100,7 +101,12 @@ async function chatStream(options) {
   }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
-  log.info(`请求模型 ${model} → ${url}`)
+  /*
+   * ★ 带用途标签：以前只写「请求模型」，于是**对话轮次**和**场景调用**
+   *   （起标题 / 生成建议）在日志里长得一模一样 —— 想数"到底跑了几轮"
+   *   只能去数「对话完成」，多一条少一条都看不出来。
+   */
+  log.info(`请求模型${label ? `[${label}]` : ''} ${model} → ${url}`)
 
   const response = await http.fetch(url, {
     method: 'POST',

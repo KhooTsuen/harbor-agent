@@ -198,7 +198,10 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     }
 
     if (useRealBackend) {
-      void runElectronTurn(threadId, raw, set, resumeTaskId ?? '')
+      /* 日志里说得清这一轮是谁起的：点「继续」还是真发了条消息 */
+      void runElectronTurn(threadId, raw, set, resumeTaskId ?? '', {
+        reason: resumeTaskId ? '点继续' : '用户发送',
+      })
     } else {
       void runMockTurn(threadId, raw, set)
     }

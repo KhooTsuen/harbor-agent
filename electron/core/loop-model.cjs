@@ -63,6 +63,8 @@ async function callModelInner(options, emit) {
       try {
         return await llm.chatStream({
           ...options,
+          /* 日志里能一眼分出「对话轮次」和「起标题/建议」那种场景调用 */
+          label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
           /*
            * provider 要整个传下去：请求体里的 extraBody / omitParams / streamUsage
            * 都是供应商级的（见 llm-body.cjs）。漏传的话——配置改了没反应，
@@ -118,6 +120,7 @@ async function callModelInner(options, emit) {
 
 async function selfReview({ config, provider, model, content, userText, signal }) {
   const review = await llm.chatStream({
+    label: '复核',
     provider,
     baseUrl: provider.baseUrl,
     apiKey: configCore.providerKey(provider),

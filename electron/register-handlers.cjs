@@ -37,6 +37,7 @@ function registerHandlers(deps) {
     getMainWindow,
   })
 
+  require('./handlers/compact.cjs').register({ ipcMain })
   require('./handlers/chat.cjs').register({
     ipcMain,
     config,

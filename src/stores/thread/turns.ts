@@ -97,15 +97,23 @@ export async function runElectronTurn(
   set: TurnSetter,
   /* AG-011：带这个就是「接着上次那条任务做」——主进程会复用原任务 */
   resumeTaskId = '',
-  /**
-   * 这一版**原来那条回答**（编辑 / 重新生成时，界面上刚被换掉的那条）。
-   *
-   * ★ 必须由调用方传：这些路会先 `removeMessagesAfter` 把它从消息列表里去掉，
-   *   等这里再去「提问后面找已有回答」就找不到了 —— 于是旧回答只剩磁盘上有，
-   *   要重开会话才切得回去（真机上就是这么发现的：编辑完「回答切换器」消失了）。
-   */
-  seedAnswers: StoredMessage[] = [],
+  opts: {
+    /**
+     * 这一版**原来那条回答**（编辑 / 重新生成时，界面上刚被换掉的那条）。
+     *
+     * ★ 必须由调用方传：这些路会先 `removeMessagesAfter` 把它从消息列表里去掉，
+     *   等这里再去「提问后面找已有回答」就找不到了 —— 于是旧回答只剩磁盘上有，
+     *   要重开会话才切得回去（真机上就是这么发现的：编辑完「回答切换器」消失了）。
+     */
+    seedAnswers?: StoredMessage[]
+    /**
+     * 这一轮是**怎么起来的**：用户发送 / 点继续 / 编辑后重答 / 重新生成 / 切提问版本。
+     * 只进日志 —— 查问题时「谁又跑了一轮」是第一个要回答的问题，靠时间戳猜太苦。
+     */
+    reason?: string
+  } = {},
 ): Promise<void> {
+  const seedAnswers = opts.seedAnswers ?? []
   /* AG-003：用户按下发送的时刻 —— 主进程的 TTFT 等等都是从这一刻开始算的 */
   const requestTime = Date.now()
   /*
@@ -260,6 +268,7 @@ export async function runElectronTurn(
       resumeTaskId,
       /* AG-003：让主进程能用真正的「按下发送」时刻算延迟 */
       requestTime,
+      ...(opts.reason ? { reason: opts.reason } : {}),
       mode,
       messages: history,
       sessionId: threadId,

@@ -91,6 +91,7 @@ import { run as partialPersist } from './selftest/groups/53-partial-persist.mjs'
 import { run as versionSync } from './selftest/groups/54-version-sync.mjs'
 import { run as taskReuse } from './selftest/groups/55-task-reuse.mjs'
 import { run as answers } from './selftest/groups/56-answers.mjs'
+import { run as logging } from './selftest/groups/57-logging.mjs'
 
 const GROUPS = [
   basics,
@@ -149,6 +150,7 @@ const GROUPS = [
   versionSync,
   taskReuse,
   answers,
+  logging,
 ]
 
 async function main() {
