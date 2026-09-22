@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Message } from '@/types'
-import { cn, clockTime } from '@/lib/utils'
-import { useAppStore } from '@/stores/useAppStore'
-import { useThreadStore } from '@/stores/useThreadStore'
-import { useUIStore } from '@/stores/useUIStore'
+import { cn } from '@/lib/utils'
 import { useSmoothText } from '@/hooks/useSmoothText'
 import { fsReveal } from '@/lib/fsApi'
 import { CodeBlock } from './CodeBlock'
@@ -17,7 +14,7 @@ import { ToolRunList } from './ToolRuns'
 import { activityLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
 import { SystemMessage } from './SystemMessage'
-import { MessageEditor } from './MessageEditor'
+import { UserMessage } from './message/UserMessage'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
@@ -32,16 +29,10 @@ export interface MessageItemProps {
   message: Message
   /** 是否显示悬停操作条 */
   showActions?: boolean
-  /** 这条后面还有没有别的消息 —— 用户消息的「编辑」要据此决定给不给「重新回答」出口 */
-  hasLater?: boolean
 }
 
 /** 助手那条的操作条在 `message/AssistantActions`（复制 / 重新生成 / 赞踩 / 翻译）；用户这条是编辑 / 分支 */
-export function MessageItem({ message, showActions = true, hasLater = false }: MessageItemProps) {
-  const editUserMessage = useAppStore((s) => s.editUserMessage)
-  const sendMessage = useThreadStore((s) => s.sendMessage)
-  /* 正在就地编辑这条用户消息 */
-  const [editing, setEditing] = useState(false)
+export function MessageItem({ message, showActions = true }: MessageItemProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isStreaming = message.status === 'streaming'
@@ -64,66 +55,7 @@ export function MessageItem({ message, showActions = true, hasLater = false }: M
       className={cn('group flex w-full flex-col', isUser ? 'items-end' : 'items-start')}
     >
       {isUser ? (
-        <div className={cn('flex flex-col gap-1', editing ? 'w-full' : 'max-w-[78%] items-end')}>
-          {/* 用户贴的图：贴在气泡上方，和聊天软件的习惯一致 */}
-          {message.images && message.images.length > 0 ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              {message.images.map((src) => (
-                <img
-                  key={src.slice(-32)}
-                  src={src}
-                  alt="我贴的图片"
-                  className="max-h-48 rounded-md border border-line-hairline"
-                />
-              ))}
-            </div>
-          ) : null}
-          {editing ? (
-            <MessageEditor
-              initial={message.content}
-              hasLater={hasLater}
-              onCancel={() => setEditing(false)}
-              onSave={(text) => {
-                editUserMessage(message.threadId, message.id, text)
-                useUIStore.getState().showToast('success', '已修改这条消息')
-                setEditing(false)
-              }}
-              onSaveAndResend={(text) => {
-                editUserMessage(message.threadId, message.id, text)
-                /* 后面那些回答是按旧问题写的，留着会答非所问 —— 丢掉再重发 */
-                useAppStore.getState().removeMessagesAfter(message.threadId, message.id)
-                setEditing(false)
-                sendMessage(text)
-              }}
-            />
-          ) : message.content ? (
-            <div className="rounded-md rounded-br-sm bg-bg-raised px-3.5 py-2 text-base leading-relaxed text-fg-primary">
-              <p className="whitespace-pre-wrap break-words">{message.content}</p>
-            </div>
-          ) : null}
-          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              type="button"
-              className="text-2xs text-fg-tertiary hover:text-fg-primary"
-              onClick={() => setEditing(true)}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              className="text-2xs text-fg-tertiary hover:text-fg-primary"
-              onClick={() => useAppStore.getState().branchThread(message.threadId, message.id)}
-            >
-              分支
-            </button>
-            {message.edited ? (
-              <span className="text-2xs text-fg-tertiary" title="这条消息被改过">
-                已编辑
-              </span>
-            ) : null}
-            <span className="pr-0.5 text-2xs text-fg-tertiary">{clockTime(message.timestamp)}</span>
-          </div>
-        </div>
+        <UserMessage message={message} />
       ) : (
         <div className="flex w-full flex-col">
           {isError ? (

@@ -29,6 +29,10 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.citations && stored.citations.length > 0 ? { citations: stored.citations } : {}),
     ...(stored.artifacts && stored.artifacts.length > 0 ? { artifacts: stored.artifacts } : {}),
     ...(stored.usage ? { usage: stored.usage } : {}),
+    /* 改过的消息：版本表跟着一起回来，重开还能在几版之间切 */
+    ...(stored.versions ? { versions: stored.versions } : {}),
+    ...(stored.versionIndex !== undefined ? { versionIndex: stored.versionIndex } : {}),
+    ...(stored.versions && stored.versions.length > 1 ? { edited: true } : {}),
     /* 只有快照、没写完（上次进程被打断）—— 界面要说一句，不然用户以为模型就写了这么多 */
     ...(stored.interrupted ? { interrupted: true } : {}),
     ...(isError ? { errorText: stored.error } : {}),

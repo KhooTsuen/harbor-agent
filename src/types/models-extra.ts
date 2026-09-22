@@ -135,6 +135,10 @@ export interface StoredMessage {
   partial?: boolean
   /** 读的一侧加上去的：这条只有快照、没有写完（界面据此说一句） */
   interrupted?: boolean
+  /** 用户消息改过几版（同一条消息的多个版本，界面用 ‹ n / N › 切） */
+  versions?: string[]
+  /** 当前显示的是第几版（0 开始） */
+  versionIndex?: number
   reasoning?: string
   toolCallId?: string
   toolName?: string

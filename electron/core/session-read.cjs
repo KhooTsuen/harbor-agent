@@ -25,12 +25,31 @@ const { fileFor, safeTitle, readLines } = require('./session-io.cjs')
  * 没有 key 的老记录各算一条，行为与以前一样。
  */
 function collapseByKey(messages) {
+  /*
+   * 兼容这次改动**之前**写下的用户记录：那时候用户消息没有 key，
+   * 而"编辑"会新增一条带 key + 版本表的记录（v1 就是原文）。
+   * 两者其实是同一条消息的两个版本，不去重的话老会话里会显示成两条一样的提问
+   * （用户报的就是这个现象）。
+   *
+   * 规则：无 key 的用户记录，只要它的内容等于某条带版本表记录的**第 1 版**，
+   * 而且它排在那条之前，就当同一条消息的旧版本丢掉。
+   * 代价：同一句话真的问了两遍、又改了后一条时，前一条会被吞掉 —— 这种情形
+   * 两句话本来就长得一模一样，接受。
+   */
+  const originalTexts = new Set()
+  for (const m of messages) {
+    if (m.role === 'user' && Array.isArray(m.versions) && m.versions.length > 1) {
+      originalTexts.add(String(m.versions[0] ?? ''))
+    }
+  }
+
   const out = []
   const slot = new Map()
   const hasFinal = new Set()
   for (const message of messages) {
     const key = typeof message.key === 'string' && message.key ? message.key : ''
     if (!key) {
+      if (message.role === 'user' && originalTexts.has(String(message.content ?? ''))) continue
       out.push(message)
       continue
     }

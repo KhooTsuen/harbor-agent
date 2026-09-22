@@ -232,11 +232,7 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
             </button>
           ) : null}
           {visibleMessages.map((message) => (
-            <MessageItem
-              key={message.id}
-              message={message}
-              hasLater={message !== messages[messages.length - 1]}
-            />
+            <MessageItem key={message.id} message={message} />
           ))}
           <div ref={bottomRef} className="h-px" />
         </div>

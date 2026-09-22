@@ -4,27 +4,35 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageItem } from '../MessageItem'
+import { runMockTurn } from '@/stores/thread/mockTurn'
+
+/*
+ * 「重跑」在测试环境里走的是 mock turn（没有真后端）。
+ * 直接盯这个接缝：**用它被调用时的参数**证明"切到哪一版就按哪一版重跑"。
+ * 比"多了一条助手消息"精确 —— 后者取决于 mock 的实现细节。
+ */
+vi.mock('@/stores/thread/mockTurn', () => ({
+  runMockTurn: vi.fn(async () => {}),
+}))
 import { useAppStore } from '@/stores/useAppStore'
-import { useThreadStore } from '@/stores/useThreadStore'
 import type { Message } from '@/types'
 
 /* ══════════════════════════════════════════════════════════════
-   编辑一条用户消息
+   编辑一条用户消息 / 同一条消息的多个版本
 
-   用户报的 bug：「对话里的『编辑』貌似只是个占位按钮，没有实际功能」。
-   根因是它走的是 **`window.prompt`** —— Electron 里根本没有 prompt()，
-   静默返回 null，于是点了等于没点。
+   用户报过两件事，这里都钉住：
 
-   所以这里第一条就是**回归守卫**：点「编辑」以后 `window.prompt` 一次都不许被调用，
-   同时真的出现一个可编辑的输入框。
+   ① 「编辑貌似只是个占位按钮」—— 根因是它走 **`window.prompt`**，
+      Electron 里没有 prompt()，静默返回 null，点了等于没点。
+   ② 「编辑好之后会有两个同样的提问过程」—— 根因是编辑后调了 `sendMessage`，
+      而 `sendMessage` 一定会**新增一条用户消息**，于是同一条提问出现两次。
+      现在改成：内容改在同一条消息上（多一个版本），然后**用现有历史重跑**。
 
-   为什么真渲染而不是源码守卫：这个项目反复踩过「断言到注释里的字」的坑
-   （把功能删掉、守卫照样绿）。
+   为什么真渲染而不是源码守卫：这个项目反复踩过「断言到注释里的字」的坑。
    ══════════════════════════════════════════════════════════════ */
 
 let container: HTMLDivElement
 let root: Root
-let sent: string[]
 
 const userMessage = (over: Partial<Message> = {}): Message => ({
   id: 'u1',
@@ -37,16 +45,6 @@ const userMessage = (over: Partial<Message> = {}): Message => ({
   ...over,
 })
 
-const reply: Message = {
-  id: 'a1',
-  threadId: 't1',
-  role: 'assistant',
-  content: '好，我分两步做',
-  kind: 'text',
-  status: 'sent',
-  timestamp: 2,
-}
-
 function seed(messages: Message[]): void {
   useAppStore.setState({
     activeThreadId: 't1',
@@ -54,9 +52,9 @@ function seed(messages: Message[]): void {
   } as never)
 }
 
-function render(message: Message, hasLater = false): void {
+function render(message: Message): void {
   act(() => {
-    root.render(<MessageItem message={message} hasLater={hasLater} />)
+    root.render(<MessageItem message={message} />)
   })
 }
 
@@ -76,18 +74,13 @@ function type(text: string): void {
   })
 }
 
+const messages = () => useAppStore.getState().threads[0].messages
+
 beforeEach(() => {
-  sent = []
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   seed([userMessage()])
-  /* 重发走的是普通发送链路 —— 这里拦住，只断言「发了什么」 */
-  useThreadStore.setState({
-    sendMessage: (override?: string) => {
-      sent.push(override ?? '')
-    },
-  } as never)
 })
 
 afterEach(() => {
@@ -104,24 +97,15 @@ describe('点「编辑」', () => {
     expect(prompt).not.toHaveBeenCalled()
   })
 
-  it('★ 真的出现一个带原文的编辑框，光标在末尾', () => {
+  it('★ 真的出现一个带原文的编辑框', () => {
     render(userMessage())
     act(() => button('编辑')?.click())
     const area = container.querySelector('textarea')
-    expect(area).toBeTruthy()
     expect(area?.value).toBe('把 README 的安装步骤改一下')
     expect(area?.getAttribute('aria-label')).toBe('编辑这条消息')
   })
 
-  it('取消按钮收起编辑框，内容不变', () => {
-    render(userMessage())
-    act(() => button('编辑')?.click())
-    act(() => button('取消')?.click())
-    expect(container.querySelector('textarea')).toBeFalsy()
-    expect(useAppStore.getState().threads[0].messages[0].content).toBe('把 README 的安装步骤改一下')
-  })
-
-  it('★ 按 Esc 也取消（不用去够按钮）', () => {
+  it('按 Esc 取消（不用去够按钮）', () => {
     render(userMessage())
     act(() => button('编辑')?.click())
     const area = container.querySelector('textarea') as HTMLTextAreaElement
@@ -129,27 +113,53 @@ describe('点「编辑」', () => {
       area.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(container.querySelector('textarea')).toBeFalsy()
+    expect(messages()[0].content).toBe('把 README 的安装步骤改一下')
   })
 })
 
-describe('保存（只改文字）', () => {
-  it('★ 改完的文字写回那条消息，并标上「已编辑」', () => {
+describe('保存（改内容 + 按新内容重新回答）', () => {
+  it('★ 只有一条用户消息 —— 不会再出现「两个同样的提问」', () => {
     render(userMessage())
     act(() => button('编辑')?.click())
     type('把 README 的安装步骤改成一行的')
     act(() => button('保存')?.click())
 
-    const saved = useAppStore.getState().threads[0].messages[0]
-    expect(saved.content).toBe('把 README 的安装步骤改成一行的')
-    expect(saved.edited).toBe(true)
-    expect(container.querySelector('textarea')).toBeFalsy()
+    const list = messages()
+    expect(list).toHaveLength(1)
+    expect(list[0].content).toBe('把 README 的安装步骤改成一行的')
+    expect(list.filter((m) => m.role === 'user')).toHaveLength(1)
   })
 
-  it('不改内容就点保存 → 内容还是原样（不该被清空）', () => {
+  it('★ 改成了同一条消息的第 2 版（可以切回去）', () => {
     render(userMessage())
     act(() => button('编辑')?.click())
+    type('把 README 的安装步骤改成一行的')
     act(() => button('保存')?.click())
-    expect(useAppStore.getState().threads[0].messages[0].content).toBe('把 README 的安装步骤改一下')
+
+    const saved = messages()[0]
+    expect(saved.versions).toEqual(['把 README 的安装步骤改一下', '把 README 的安装步骤改成一行的'])
+    expect(saved.versionIndex).toBe(1)
+    expect(saved.edited).toBe(true)
+  })
+
+  it('★ 保存要落盘（只改内存的话，重启后编辑就没了）', () => {
+    const written: Array<Record<string, unknown>> = []
+    useAppStore.setState({
+      persistMessage: (_id: string, m: never) => {
+        written.push(m as unknown as Record<string, unknown>)
+      },
+    } as never)
+    render(userMessage())
+    act(() => button('编辑')?.click())
+    type('改过之后的问题')
+    act(() => button('保存')?.click())
+
+    const user = written.find((m) => m.role === 'user')
+    expect(user, '保存时没有把用户消息写下去').toBeTruthy()
+    /* 带 key 才会在读的时候按 key 收敛成一条，而不是又冒出一条 */
+    expect(user?.key).toBe('u1')
+    expect(user?.content).toBe('改过之后的问题')
+    expect(user?.versions).toEqual(['把 README 的安装步骤改一下', '改过之后的问题'])
   })
 
   it('空白内容不许保存（按钮禁用）', () => {
@@ -158,33 +168,55 @@ describe('保存（只改文字）', () => {
     type('   ')
     expect(button('保存')?.disabled).toBe(true)
   })
-
-  it('★ 后面没有别的消息时，不给「保存并重新回答」（没什么可重来的）', () => {
-    render(userMessage(), false)
-    act(() => button('编辑')?.click())
-    expect(button('保存并重新回答')).toBeFalsy()
-  })
 })
 
-describe('保存并重新回答', () => {
-  it('★ 改文字 + 丢掉后面的旧回答 + 用新文字重发', () => {
-    seed([userMessage(), reply])
-    render(userMessage(), true)
-    act(() => button('编辑')?.click())
-    type('把 README 的安装步骤改成一行的')
-    act(() => button('保存并重新回答')?.click())
+describe('版本切换 ‹ n / N ›', () => {
+  const twoVersion = (): Message =>
+    userMessage({
+      content: '第二版的问题',
+      versions: ['第一版的问题', '第二版的问题'],
+      versionIndex: 1,
+      edited: true,
+    })
 
-    const messages = useAppStore.getState().threads[0].messages
-    expect(messages).toHaveLength(1)
-    expect(messages[0].content).toBe('把 README 的安装步骤改成一行的')
-    expect(sent).toEqual(['把 README 的安装步骤改成一行的'])
+  it('只有一版时不显示切换（没什么可切的）', () => {
+    render(userMessage())
+    expect(container.querySelector('[data-message-versions="true"]')).toBeFalsy()
   })
 
-  it('后面确实有内容时才出现这个出口，并说明会丢掉什么', () => {
-    render(userMessage(), true)
-    act(() => button('编辑')?.click())
-    expect(button('保存并重新回答')).toBeTruthy()
-    expect(container.textContent ?? '').toContain('后面的回复是按旧问题写的')
+  it('★ 多版时常显「2 / 2」，并且它不在悬停操作条里', () => {
+    render(twoVersion())
+    const nav = container.querySelector('[data-message-versions="true"]')
+    expect(nav?.textContent?.replace(/\s/g, '')).toBe('2/2')
+    /* 常显 = 没被 opacity-0 那一层包住 */
+    expect(nav?.closest('.opacity-0')).toBeNull()
+  })
+
+  it('★ 点「上一版」切回第一版', () => {
+    seed([twoVersion()])
+    render(messages()[0])
+    act(() => {
+      ;(container.querySelector('button[aria-label="上一版"]') as HTMLButtonElement)?.click()
+    })
+    const now = messages()[0]
+    expect(now.content).toBe('第一版的问题')
+    expect(now.versionIndex).toBe(0)
+    /* 真实链路里消息列表是从 store 重渲染的 —— 这里也照着做一次，再看界面 */
+    render(messages()[0])
+    expect(
+      container.querySelector('[data-message-versions="true"]')?.textContent?.replace(/\s/g, ''),
+    ).toBe('1/2')
+  })
+
+  it('已在第一版时「上一版」禁用，最后一版时「下一版」禁用', () => {
+    seed([userMessage({ content: 'a', versions: ['a', 'b'], versionIndex: 0 })])
+    render(messages()[0])
+    expect(
+      (container.querySelector('button[aria-label="上一版"]') as HTMLButtonElement)?.disabled,
+    ).toBe(true)
+    expect(
+      (container.querySelector('button[aria-label="下一版"]') as HTMLButtonElement)?.disabled,
+    ).toBe(false)
   })
 })
 
@@ -223,4 +255,21 @@ describe('编辑框的宽度', () => {
     const outer = container.querySelector('[data-message-editor="true"]')?.parentElement
     expect(outer?.className ?? '').toContain('w-full')
   })
+})
+
+it('★ 切版本会重新回答那一版（不是只换显示的文字）', () => {
+  seed([
+    userMessage({
+      content: '第二版的问题',
+      versions: ['第一版的问题', '第二版的问题'],
+      versionIndex: 1,
+      edited: true,
+    }),
+  ])
+  render(messages()[0])
+  act(() => {
+    ;(container.querySelector('button[aria-label="上一版"]') as HTMLButtonElement)?.click()
+  })
+  /* ★ 真的重跑了，而且用的是**那一版**的文字 */
+  expect(runMockTurn).toHaveBeenCalledWith('t1', '第一版的问题', expect.any(Function))
 })

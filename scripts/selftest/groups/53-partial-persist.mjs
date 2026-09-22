@@ -74,6 +74,32 @@ export async function run() {
     ])[1].content === '答',
   )
 
+
+  /* ── 老会话：这次改动之前写下的用户记录没有 key ── */
+  const legacyEdit = read.collapseByKey([
+    { role: 'user', content: '老记录里的问题' },
+    { role: 'assistant', content: '老回答' },
+    {
+      role: 'user',
+      key: 'msg_u9',
+      content: '改过的问题',
+      versions: ['老记录里的问题', '改过的问题'],
+      versionIndex: 1,
+    },
+  ])
+  check(
+    '★ 老的无 key 记录会被同一条消息的版本表认领（不然老会话里还是两条一样的提问）',
+    legacyEdit.filter((m) => m.role === 'user').length === 1,
+  )
+  check('留下的那条是改过之后的内容', legacyEdit.find((m) => m.role === 'user').content === '改过的问题')
+  check(
+    '不是这条消息的无关用户记录照旧保留',
+    read.collapseByKey([
+      { role: 'user', content: '另一个问题' },
+      { role: 'user', key: 'k', content: 'x', versions: ['别的原文', 'x'], versionIndex: 1 },
+    ]).filter((m) => m.role === 'user').length === 2,
+  )
+
   /* ── 走一遍真实文件（追加两段快照 + 收尾一条）── */
   const thread = session.create({ title: '分段落盘', workdir: ROOT })
   session.append(thread.id, { role: 'user', content: '帮我改 README', ts: Date.now() })
@@ -119,6 +145,27 @@ export async function run() {
     '★ 流式事件里真的调了 flushPartial（不是写了个没人用的函数）',
     /persistence\.flushPartial\(\)/.test(readCore('src/stores/thread/turns.ts')),
   )
+
+
+  /* ── 用户消息的「多版本」也要按 key 收敛（不然改一次就多一条提问）── */
+  const edited = session.create({ title: '编辑收敛', workdir: ROOT })
+  session.append(edited.id, { role: 'user', key: 'msg_u1', content: '第一版的问题', ts: Date.now() })
+  session.append(edited.id, {
+    role: 'user',
+    key: 'msg_u1',
+    content: '改过之后的问题',
+    versions: ['第一版的问题', '改过之后的问题'],
+    versionIndex: 1,
+    ts: Date.now(),
+  })
+  const reloaded = session.load(edited.id)
+  check('★ 用户消息改了之后重载只有一条（不是两条一样的提问）', reloaded.messages.length === 1)
+  check('★ 留下的是改过之后的内容', reloaded.messages[0].content === '改过之后的问题')
+  check(
+    '★ 版本表跟着落盘（重开还能切回去）',
+    Array.isArray(reloaded.messages[0].versions) && reloaded.messages[0].versionIndex === 1,
+  )
+  session.remove(edited.id)
 
   session.remove(thread.id)
   check('测试会话已清理', session.load(thread.id) === null)

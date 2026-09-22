@@ -9,6 +9,7 @@ import { createSession } from '@/lib/backend'
 import { adviseCompact, runCompact } from './thread/compact'
 import { tryHandleCommand } from './thread/commands'
 import { runMockTurn } from './thread/mockTurn'
+import { makeVersionActions } from './thread/messageVersions'
 import { getActiveThread, useAppStore } from './useAppStore'
 import { useUIStore } from './useUIStore'
 import { useConfigStore } from './useConfigStore'
@@ -49,6 +50,10 @@ interface ThreadState {
   /** AG-011：继续一条暂停的任务（复用原任务，不新建） */
   resumeTask: (taskId: string) => void
   regenerateMessage: (messageId: string) => void
+  /** 编辑并重新回答：同一条消息多一版（不再另发一条，避免出现两条同样的提问） */
+  editAndRerun: (threadId: string, messageId: string, text: string) => void
+  /** 切到某一版重新回答（界面上 ‹ n / N ›） */
+  activateUserVersion: (threadId: string, messageId: string, index: number) => void
   continueThread: () => void
 }
 
@@ -176,6 +181,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     useAppStore.getState().addMessage(threadId, userMessage)
     useAppStore.getState().persistMessage(threadId, {
       role: 'user',
+      /* ★ 带 key：编辑这条时会在同一 key 上追加新记录，读的时候收敛成一条
+         （不然「改一次就多一条提问」会从界面跑到磁盘上）。 */
+      key: userMessage.id,
       content: raw || '（图片）',
       ts: userMessage.timestamp,
     })
@@ -254,29 +262,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     if (current) get().sendMessage('继续刚才的任务，直接从当前状态往下做。')
   },
 
-  regenerateMessage: (messageId) => {
-    const app = useAppStore.getState()
-    const thread = getActiveThread(app)
-    if (!thread) return
-
-    const index = thread.messages.findIndex((m) => m.id === messageId)
-    if (index < 0) return
-
-    let userText = ''
-    for (let i = index - 1; i >= 0; i -= 1) {
-      const m = thread.messages[i]
-      if (m && m.role === 'user') {
-        userText = m.content
-        break
-      }
-    }
-    if (!userText) return
-
-    for (const m of thread.messages.slice(index)) {
-      useAppStore.getState().removeMessage(thread.id, m.id)
-    }
-    get().sendMessage(userText)
-  },
+  /* 多版本 / 从某条重跑 —— 实现与来由见 thread/messageVersions.ts */
+  ...makeVersionActions(set, get),
 }))
 
 /** 当前模式的元信息，供 UI 直接用 */
