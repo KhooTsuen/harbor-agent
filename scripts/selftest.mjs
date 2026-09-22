@@ -88,6 +88,7 @@ import { run as pathEncoding } from './selftest/groups/50-path-encoding.mjs'
 import { run as mcpPresets } from './selftest/groups/51-mcp-presets.mjs'
 import { run as interrupted } from './selftest/groups/52-interrupted.mjs'
 import { run as partialPersist } from './selftest/groups/53-partial-persist.mjs'
+import { run as versionSync } from './selftest/groups/54-version-sync.mjs'
 
 const GROUPS = [
   basics,
@@ -143,6 +144,7 @@ const GROUPS = [
   mcpPresets,
   interrupted,
   partialPersist,
+  versionSync,
 ]
 
 async function main() {
