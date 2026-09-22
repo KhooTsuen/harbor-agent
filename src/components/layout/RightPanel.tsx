@@ -17,6 +17,7 @@ import { StatePanel } from '@/components/chat/StatePanel'
 import { TaskCenter } from '@/components/chat/TaskCenter'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTaskStore } from '@/stores/useTaskStore'
@@ -68,17 +69,26 @@ export function RightPanel() {
    * 子组件（FileTree）收的是 Project，所以这里合成一个 ——
    * 为这点事改三四个组件的 props 不划算。
    */
-  const effectiveProject = useAppStore((s) => {
-    const active = s.threads.find((t) => t.id === s.activeThreadId)
-    if (!active) return null
-    const dir = active.workdir || s.workdir || ''
-    if (!dir) return null
-    /* 已经在 projects 里的目录直接用那一条（名字之类都是现成的） */
-    const known = s.projects.find((p) => p.path === dir)
-    if (known) return known
-    const name = dir.replace(/[\/]+/g, '/').split('/').filter(Boolean).pop() || dir
-    return { ...(s.projects[0] ?? EMPTY_PROJECT), id: `dir:${dir}`, path: dir, name }
-  })
+  /*
+   * ★ 这个 selector 会**合成一个新对象**（没挂目录时要现造一条）。zustand 默认用
+   *   `Object.is` 比结果 —— 于是每次 store 有任何变动都算「变了」，组件重渲染、
+   *   下面那个 `useEffect` 跟着又跑一遍 `fs:tree`…
+   *   真机上日志流水里就是这么现形的：`fs:tree` 同一秒成对出现、每次 60~700ms。
+   *   包一层 useShallow：只有那几个字段真的变了才算变。
+   */
+  const effectiveProject = useAppStore(
+    useShallow((s) => {
+      const active = s.threads.find((t) => t.id === s.activeThreadId)
+      if (!active) return null
+      const dir = active.workdir || s.workdir || ''
+      if (!dir) return null
+      /* 已经在 projects 里的目录直接用那一条（名字之类都是现成的） */
+      const known = s.projects.find((p) => p.path === dir)
+      if (known) return known
+      const name = dir.replace(/[\/]+/g, '/').split('/').filter(Boolean).pop() || dir
+      return { ...(s.projects[0] ?? EMPTY_PROJECT), id: `dir:${dir}`, path: dir, name }
+    }),
+  )
 
   const activeRightTab = useUIStore((s) => s.activeRightTab)
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
@@ -116,7 +126,8 @@ export function RightPanel() {
         if (isElectron) setTreeError(tree?.error ?? '真实工作目录读取失败')
       }
     })()
-  }, [effectiveProject])
+    /* 依赖写 path（原始值）：这个 effect 只用到路径，拿整个对象当依赖等于"随它变" */
+  }, [effectiveProject?.path])
 
   /* 桌面版失败时不能悄悄退回假文件树；浏览器预览才允许静态树。 */
   const fileTree =

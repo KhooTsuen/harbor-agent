@@ -144,7 +144,85 @@ export async function run() {
     sessionCore.remove(created.id)
   }
 
-  /* ── ⑥ 两条更新过的老判据（别改回去）───────────────────── */
+  /* ── ⑥ 后续几轮跟着「当时那一版」走 ───────────────────── */
+  /*
+   * 用户说的"树"那一层：编辑**中间**那条消息时，后面几轮是按旧内容写的。
+   * 以前前端直接删掉（重开会话又回来、还接在新回答后面）；
+   * 现在按「当前选中那一版」筛 —— 切回旧版本它们自己就回来了。
+   */
+  group('多版本 / 后续几轮跟着它当时那一版（不用分支 id）')
+  const withTail = (versionIndex) => [
+    user('q1', { versions: ['第一版', '第二版'], versionIndex }),
+    {
+      role: 'assistant',
+      key: 'a1',
+      content: '答当前版',
+      answersKey: 'q1',
+      answersVersion: versionIndex,
+    },
+    /* 后面这一轮是在 q1 **还是第 0 版**的时候发的 */
+    { role: 'user', key: 'q2', content: '后一轮的问题', parentKey: 'q1', parentVersion: 0 },
+    { role: 'assistant', key: 'a2', content: '后一轮的回答', answersKey: 'q2', answersVersion: 0 },
+  ]
+  const onV0 = groupAnswers(withTail(0))
+  check(
+    '选中第 0 版 → 后面那一轮在（它就是在这版之后发的）',
+    onV0.length === 4,
+    String(onV0.length),
+  )
+  check('后一轮的回答也在', onV0[3]?.content === '后一轮的回答')
+
+  const onV1 = groupAnswers(withTail(1))
+  check(
+    '★ 切到第 1 版 → 后面那一轮被筛掉（它是按旧版本写的）',
+    onV1.length === 2,
+    String(onV1.length),
+  )
+  check('★ 提问 + 它这一版的回答都留着', onV1[0]?.role === 'user' && onV1[1]?.answersVersion === 1)
+  check('★ 整轮一起筛：不会只剩提问、把回答孤零零留下', !onV1.some((m) => m.key === 'a2'))
+  /* ★ 光看 key 不够：被筛掉那一轮的回答可能被**误认领**成上一轮的（显示成答非所问） */
+  check(
+    '★ 露出来的是这一版自己的回答（不是被筛掉那轮的）',
+    onV1[1]?.content === '答当前版',
+    String(onV1[1]?.content),
+  )
+  check(
+    '切回第 0 版，那一轮原样回来（不是重新生成）',
+    groupAnswers(withTail(0))[3]?.content === '后一轮的回答',
+  )
+
+  /*
+   * ★ 老记录（回答**没带** answersKey）才真正需要「整轮一起筛」：
+   *   它的归属靠「前面最近那条提问」认领 —— 如果不把被筛掉那一轮的回答一起丢，
+   *   它会被误认领成**上一轮的**，界面上就是答非所问。
+   */
+  const legacyNoTag = groupAnswers([
+    user('q1', { versions: ['第一版', '第二版'], versionIndex: 1 }),
+    { role: 'assistant', key: 'a1', content: '答当前版', answersKey: 'q1', answersVersion: 1 },
+    { role: 'user', key: 'q2', content: '后一轮的问题', parentKey: 'q1', parentVersion: 0 },
+    { role: 'assistant', key: 'a2', content: '后一轮的回答' },
+  ])
+  check(
+    '★ 老回答没被误认领成上一轮的（不然显示成答非所问）',
+    legacyNoTag.length === 2,
+    String(legacyNoTag.length),
+  )
+  check(
+    '★ 露出来的还是这一版自己的回答',
+    legacyNoTag[1]?.content === '答当前版',
+    String(legacyNoTag[1]?.content),
+  )
+
+  /* 老记录（没有 parentKey）一律保留 —— 老会话行为不变 */
+  const legacyTail = groupAnswers([
+    user('q1', { versions: ['第一版', '第二版'], versionIndex: 1 }),
+    { role: 'assistant', key: 'a1', content: '答当前版', answersKey: 'q1', answersVersion: 1 },
+    { role: 'user', key: 'q2', content: '老会话的后续' },
+    { role: 'assistant', key: 'a2', content: '老会话的回答', answersKey: 'q2', answersVersion: 0 },
+  ])
+  check('★ 没有标记的老记录照旧全留', legacyTail.length === 4, String(legacyTail.length))
+
+  /* ── ⑦ 两条更新过的老判据（别改回去）───────────────────── */
   group('回答多版本 / 老兼容规则没有被放宽')
   const tightened = groupAnswers([
     { role: 'user', content: '同一句话' },

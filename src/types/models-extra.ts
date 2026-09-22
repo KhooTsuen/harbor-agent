@@ -147,6 +147,10 @@ export interface StoredMessage {
       几个回答收成一条的多个版本（以前没有，编辑/重生成产生的回答会并排堆着） */
   answersKey?: string
   answersVersion?: number
+  /** 这条接在哪条提问的哪一版后面。读会话时按当前选中的那一版筛 —— 编辑中间那条
+      消息后，后面几轮（按旧内容写的）会被收起来，切回旧版本它们自己就回来 */
+  parentKey?: string
+  parentVersion?: number
   reasoning?: string
   toolCallId?: string
   toolName?: string

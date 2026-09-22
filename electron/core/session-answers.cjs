@@ -43,13 +43,56 @@ const versionOf = (message) => {
 }
 
 /**
+ * 「后续几轮跟着它**当时那一版**走」。
+ *
+ * 编辑**中间**那条消息时，后面的对话是按旧内容写的 —— 留着会答非所问。
+ * 以前前端直接把它们从列表里删掉（`removeMessagesAfter`），代价是：
+ * 重开会话它们又回来了，而且接在**新**回答后面（看起来像"旧对话接错了地方"）。
+ *
+ * 现在写的一侧给用户记录标上「我接在哪条提问的哪一版后面」（`parentKey` /
+ * `parentVersion`），这里按**当前选中的那一版**筛：
+ * 选 v2 就只留挂在 v2 上的后续，切回 v1 它们全都回来 —— 不用分支 id。
+ * 没有这两个字段的老记录一律保留（老会话行为不变）。
+ *
+ * ★ 以**轮**为单位筛：提问和它的回答（以及工具记录）一起留或一起丢。
+ *   只按单条记录筛会漏 —— 助手记录没有 parentKey，前一条提问被筛掉之后
+ *   它的回答会孤零零留在列表里（写完第一版就是这个毛病）。
+ */
+function keepOnActivePath(messages) {
+  /* 每条提问「现在是第几版」= 该 key 最后一条版本记录里的 versionIndex */
+  const activeVersion = new Map()
+  for (const message of messages) {
+    const key = keyOf(message)
+    if (!key || !Array.isArray(message.versions)) continue
+    if (typeof message.versionIndex === 'number') activeVersion.set(key, message.versionIndex)
+  }
+
+  const out = []
+  let dropTurn = false
+  for (const message of messages) {
+    if (message.role === 'user') {
+      const parent = keyOf({ key: message.parentKey })
+      const active = parent ? activeVersion.get(parent) : undefined
+      dropTurn =
+        Boolean(parent) && active !== undefined && Number(message.parentVersion ?? 0) !== active
+      if (!dropTurn) out.push(message)
+      continue
+    }
+    if (dropTurn) continue
+    out.push(message)
+  }
+  return out
+}
+
+/**
  * @param {Array} messages collapseByKey 的产物（已按 key 收敛过）
  * @returns {Array} 提问后面紧跟**一条**回答；那条回答上带：
  *   · `answersKey` / `answersVersion`  它答的是谁、第几版
  *   · `answerRecords`                  这条提问的**全部**回答（含别的版本，界面切换用）
  *   · `answerIndex`                    当前显示的是那一版里的第几条
  */
-function groupAnswers(messages) {
+function groupAnswers(input) {
+  const messages = keepOnActivePath(input)
   const bySlot = new Map() // `${owner}#${version}` → 该版的回答（文件顺序）
   const byOwner = new Map() // owner → 该提问的全部回答（跨版本）
   const ownerOf = new Map() // 那条提问消息 → owner（两趟都用它，别拿下标算）
@@ -116,4 +159,4 @@ function groupAnswers(messages) {
   return out
 }
 
-module.exports = { groupAnswers, isNoiseAnswer }
+module.exports = { groupAnswers, keepOnActivePath, isNoiseAnswer }

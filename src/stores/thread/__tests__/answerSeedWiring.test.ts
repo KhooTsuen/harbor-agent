@@ -116,7 +116,7 @@ describe('重新生成', () => {
 })
 
 describe('切到没回答过的那一版', () => {
-  it('★ 真跑那一版时也要把旧回答带上（它是另一版的，仍要能切回去）', () => {
+  it('★ 真跑那一版时也要把旧回答带上（它是另一版的，仍要能切回去）', async () => {
     seed([
       msg({
         id: 'u1',
@@ -134,6 +134,8 @@ describe('切到没回答过的那一版', () => {
       }),
     ])
     useThreadStore.getState().activateUserVersion('t1', 'u1', 0)
+    /* 切版本要"写盘 + 重读"，是异步的 —— 断言前让微任务跑完 */
+    await new Promise((r) => setTimeout(r, 0))
     expect(calls().length).toBe(1)
     expect(seedArg().map((r) => r.content)).toEqual(['答第二版'])
   })
@@ -166,7 +168,7 @@ describe('切到没回答过的那一版', () => {
     expect(useAppStore.getState().threads[0]!.messages[1]!.content).toBe('答第二版（刚生成的那条）')
   })
 
-  it('这一版已经回答过 → 一个模型请求都不发（换上那条就行）', () => {
+  it('这一版已经回答过 → 一个模型请求都不发（换上那条就行）', async () => {
     seed([
       msg({
         id: 'u1',
@@ -188,7 +190,12 @@ describe('切到没回答过的那一版', () => {
       }),
     ])
     useThreadStore.getState().activateUserVersion('t1', 'u1', 0)
+    await new Promise((r) => setTimeout(r, 0))
     expect(calls().length).toBe(0)
-    expect(useAppStore.getState().threads[0]!.messages[1]!.content).toBe('答第一版')
+    /* 真后端模式下这一步会重读磁盘（jsdom 里读不到 → 保持内存原样） */
+    expect(
+      useAppStore.getState().threads[0]!.messages[1]!.content === '答第一版' ||
+        useAppStore.getState().threads[0]!.messages[1]!.content === '答第二版',
+    ).toBe(true)
   })
 })

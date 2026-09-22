@@ -121,9 +121,20 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     /**
      * 切到某一版提问（界面上 ‹ n / N ›）。
      *
-     * ★ 那一版**回答过**就直接把它当年那条回答换上来 —— **不重跑**。
-     *   以前一律重跑，于是每切一次就多一个回答，堆在会话里（用户报的 bug）。
-     *   只有从没回答过的那一版才需要真跑一轮。
+     * ★ 做两件事，顺序很重要：
+     *   ① 把「选了哪一版」写进磁盘（同一 key 追加一条版本记录）
+     *   ② **重新从磁盘读一遍这个会话**
+     *
+     * 为什么必须重读：编辑**中间**那条消息时，后面几轮（按旧内容写的）已经从界面上
+     * 撤掉了 —— 但它们**还在磁盘上**，带上"我接在哪一版后面"的标记。
+     * 重读之后内核按当前选中的那一版筛：切回旧版本，那几轮**自己就回来了**
+     * （用户说的"树"那一层）。不重读的话它们永远回不来（只能重开会话）。
+     *
+     * ★ 注意顺序：**先写盘、再重读**，中间不碰内存。`openFromDisk` 有个保护
+     *   ——「内存里还是调用前那个数组才允许覆盖」—— 我们没动内存，正好让它放行。
+     *
+     * ★ 那一版**回答过**就什么都不用做（重读之后它自己就在那儿了）；
+     *   只有从没回答过的那一版才真跑一轮（不然每切一次多一个回答，用户报的正是这个）。
      */
     activateUserVersion: (threadId: string, messageId: string, index: number) => {
       const app = useAppStore.getState()
@@ -132,22 +143,40 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       if (!thread || !message) return
       const patch = activateVersion(message, index)
       if (!patch) return
-      app.updateMessage(threadId, messageId, patch)
-      persistVersion(threadId, { ...message, ...patch })
-
-      const at = thread.messages.findIndex((m) => m.id === messageId)
-      const answer = thread.messages[at + 1]
-      /* ★ allAnswers：把「当前这条回答自己」也算上，否则切回刚生成的那一版会又跑一轮 */
-      const records = answersOfVersion(answer ? allAnswers(answer) : [], index)
-      if (answer && records.length) {
-        app.updateMessage(
-          threadId,
-          answer.id,
-          answerPatch(records[records.length - 1]!, records.length - 1),
-        )
+      /* 正在生成时别重读：会把流式那条抹掉（和 rerunFrom 一个道理） */
+      if (get().sendingThreads.includes(threadId)) {
+        useUIStore.getState().showToast('info', '正在生成', '等这一轮结束再切，不然会跟它抢上下文')
         return
       }
-      rerunFrom(threadId, messageId, patch.content ?? '', index, '切提问版本')
+      persistVersion(threadId, { ...message, ...patch })
+
+      if (!useRealBackend) {
+        /* 浏览器预览：没有磁盘可读，退回"换内容 + 有回答就换上" */
+        app.updateMessage(threadId, messageId, patch)
+        const at = thread.messages.findIndex((m) => m.id === messageId)
+        const answer = thread.messages[at + 1]
+        const records = answersOfVersion(answer ? allAnswers(answer) : [], index)
+        if (answer && records.length) {
+          app.updateMessage(
+            threadId,
+            answer.id,
+            answerPatch(records[records.length - 1]!, records.length - 1),
+          )
+          return
+        }
+        rerunFrom(threadId, messageId, patch.content ?? '', index, '切提问版本')
+        return
+      }
+
+      void (async () => {
+        await useAppStore.getState().openFromDisk(threadId)
+        const fresh = useAppStore.getState().threads.find((t) => t.id === threadId)
+        const at = fresh?.messages.findIndex((m) => m.id === messageId) ?? -1
+        const answer = at >= 0 ? fresh?.messages[at + 1] : undefined
+        const records = answersOfVersion(answer ? allAnswers(answer) : [], index)
+        if (answer && records.length) return
+        rerunFrom(threadId, messageId, patch.content ?? '', index, '切提问版本')
+      })()
     },
 
     /** 切到这条提问的第几条回答（界面上回答下面的 ‹ n / N ›）—— 不重跑 */
