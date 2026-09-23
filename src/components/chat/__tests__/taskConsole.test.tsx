@@ -191,4 +191,21 @@ describe('AG-042 / 控制台', () => {
     expect(byText('查看 Diff')).toBeTruthy()
     expect(byText('查看 Tool')).toBeTruthy()
   })
+
+  it('★ 用量分行（AG-044）：总数之外把入 / 出也说出来', () => {
+    draw(task({ status: 'running', tokens: 12_300, tokensIn: 8_100, tokensOut: 4_200 }))
+    act(() => byText('详情')?.click())
+    act(() => byPrefix('控制台')?.click())
+    expect(container.textContent).toContain('本任务 12.3k token（入 8.1k / 出 4.2k）')
+  })
+
+  it('★ 老任务只有总数 → 不编入 / 出（AG-044）', () => {
+    /* AG-044 之前建的任务没有 tokensIn/tokensOut —— 只能显示总数 */
+    draw(task({ status: 'completed', tokens: 42_000 }))
+    act(() => byText('详情')?.click())
+    act(() => byPrefix('控制台')?.click())
+    const text = container.textContent ?? ''
+    expect(text).toContain('本任务 42.0k token')
+    expect(text).not.toContain('（入')
+  })
 })

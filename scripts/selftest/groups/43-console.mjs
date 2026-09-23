@@ -171,14 +171,26 @@ export async function run() {
       JSON.stringify(tokensDuring),
     )
     check('★ 跑完 token 真的写进了台账（不是 0）', finished.tokens === 123, String(finished.tokens))
+    /*
+     * ★ 2026-09-23 改：这里原来断言「读不到的文件**重试过**」（retries >= 1）。
+     *
+     *   真机验收发现那是**浪费**：`read_file` 一个不存在的文件是**确定性失败**，
+     *   重试 4 次（1 + 默认 3）白花 ~3.5 秒，而且一万次也不会出现。
+     *   现在 `文件不存在` 单独成 `file_missing` 类（strategy `replan`，不进
+     *   `AUTO_STRATEGIES`）→ **不自动重试**，直接把话交给模型。
+     *
+     *   所以这条改成断言新行为。⚠️ 代价：本组**不再覆盖**「重试次数真的写进台账」
+     *   这条路径 —— 要补它得再加一个**可重试**的失败场景（只读工具 + retry 策略，
+     *   而且不能联网）。见 CHANGELOG 1.10.4 的「还没做」。
+     */
     check(
-      '★ 自动重试次数也写进去了（读不到的文件重试过）',
-      finished.retries >= 1,
+      '★ 读不到的文件**不**自动重试（file_missing → replan，重试也不会出现）',
+      finished.retries === 0 && emitted.filter((e) => e.type === 'agent.retrying').length === 0,
       `${finished.retries}（retrying 事件 ${emitted.filter((e) => e.type === 'agent.retrying').length} 个）`,
     )
     check(
       '这两项不在界面里编（值对得上事件）',
-      emitted.some((e) => e.type === 'agent.retrying'),
+      !emitted.some((e) => e.type === 'agent.retrying'),
     )
   } finally {
     llmModule.chatStream = originalChatStream

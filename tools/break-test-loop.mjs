@@ -3,7 +3,7 @@
  *
  * D2  工具返回 10MB 输出 → 截断生效吗、会不会撑爆
  * D3  工具抛异常 → 循环会继续还是整轮死掉
- * D7  权限确认框一直不点 → 会永久挂着吗
+ * D7  权限确认框一直不点 → 工具层自己超时按「拒绝」返回吗（8 秒内）
  * D8  用量闸 → 能不能真的拦住
  *
  *   node tools/break-test-loop.mjs
@@ -74,26 +74,40 @@ for (const [label, name, args] of [
 console.log('\n══ D7：权限确认框一直不点 ══')
 {
   /*
-   * 真实实现（handlers/chat.cjs 的 askUser）有个 CONFIRM_TIMEOUT_MS 超时，
-   * 到点 resolve(false)。这里模拟「永远不回」—— 看有没有兜底。
+   * 两层兜底，这条测的是**工具层**那层：
+   *   ① electron/core/tools/approval.cjs 的 `ctx.confirmTimeoutMs`（默认 10 分钟）
+   *   ② 真实界面 handlers/chat.cjs 的 CONFIRM_TIMEOUT_MS（5 分钟，到点 resolve(false)）
+   * ① 以前**根本不存在** —— confirm 永不 resolve 就等于把这轮工具调用永久挂起，
+   * 上层弹窗一旦没弹出来，工具层不会自己醒。
+   *
+   * 所以这里给一个永不 resolve 的 confirm + 1.5 秒的兜底超时，
+   * 期望：**1.5 秒左右**就按「拒绝」返回，而不是 8 秒还没动静。
    */
   const neverRespond = () => new Promise(() => {})
   const t0 = Date.now()
-  const race = await Promise.race([
+  const outcome = await Promise.race([
     tools
       .execute(
         'read_file',
         { path: join(ROOT, 'data', 'config.json') },
-        ctx({ confirm: neverRespond }),
+        ctx({ confirm: neverRespond, confirmTimeoutMs: 1500 }),
       )
-      .then(() => '工具返回了')
-      .catch((error) => `工具抛错：${String(error?.message ?? error).slice(0, 60)}`),
-    new Promise((r) =>
-      setTimeout(() => r('⚠️ 8 秒了还没动静（工具层自己没有超时，靠上层 askUser 兜）'), 8000),
-    ),
+      .then(
+        (out) => ({ how: 'returned', text: String(out) }),
+        (error) => ({ how: 'threw', text: String(error?.message ?? error) }),
+      ),
+    new Promise((r) => setTimeout(() => r({ how: 'hang', text: '' }), 8000)),
   ])
-  console.log(`  ${race}`)
-  console.log(`  耗时 ${Date.now() - t0}ms`)
+  const elapsed = Date.now() - t0
+  console.log(`  耗时 ${elapsed}ms`)
+  console.log(`  返回：${outcome.text.slice(0, 110).replace(/\s+/g, ' ')}`)
+  if (outcome.how === 'hang') {
+    console.log('  ⚠️ 8 秒了还没动静 —— 工具层没兜底，只能靠上层 askUser 救')
+  } else if (/拒绝/.test(outcome.text)) {
+    console.log('  ✓ 工具层自己兜住了：没等到答复就按「拒绝」返回（不挂死）')
+  } else {
+    console.log('  ? 返回的不是拒绝文本 —— 这条可能压根没走到确认（路径本来就允许）')
+  }
 }
 
 console.log('\n══ D8：用量闸 ══')

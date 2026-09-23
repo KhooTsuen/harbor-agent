@@ -23,6 +23,27 @@ function usageTotal(usage) {
 }
 
 /**
+ * 同一条 usage 拆成三个数：`{ total, input, output }`（AG-044）。
+ *
+ * 为什么要「入 / 出」：只记合计看不出贵在哪 —— 同样 1 万 token，
+ * 「每轮重发整个上下文」（入多）和「模型话多」（出多）是两种毛病，
+ * 修法完全不同（前者要压上下文 / 开缓存，后者要改提示词）。
+ *
+ * ★ 形状知识只留一份：字段名（`prompt_tokens` 也可能叫 `prompt`）在这里
+ *   和 `usageTotal` 说**同一个**规则。分头写就会漂 —— AG-042 那次把
+ *   `total_tokens` 读成 `total`，单测全绿、真机上用量永远是 0。
+ *
+ * @param {object} usage 可能是 `{prompt_tokens, completion_tokens, total_tokens}`
+ * @returns {{ total: number, input: number, output: number }}
+ */
+function usageParts(usage) {
+  if (!usage || typeof usage !== 'object') return { total: 0, input: 0, output: 0 }
+  const input = Number(usage.prompt_tokens ?? usage.prompt) || 0
+  const output = Number(usage.completion_tokens ?? usage.completion) || 0
+  return { total: usageTotal(usage), input, output }
+}
+
+/**
  * 每次任务的执行预算（AG-040）
  *
  * 文档给的五项：
@@ -175,4 +196,5 @@ module.exports = {
   pausePatch,
   format,
   usageTotal,
+  usageParts,
 }

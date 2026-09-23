@@ -22,6 +22,17 @@ export const LEVEL_LABEL: Record<RiskVerdict['level'], string> = {
   critical: '危险',
 }
 
+/*
+ * 完整说法。单独一张表是必要的：`LEVEL_LABEL.critical` 是「危险」，
+ * 调用处再拼一个「风险」就成了「危险风险」（真机上确实这么显示过）。
+ */
+export const LEVEL_FULL_LABEL: Record<RiskVerdict['level'], string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+  critical: '危险',
+}
+
 export const LEVEL_COLOR: Record<RiskVerdict['level'], string> = {
   low: colorOf('completed'),
   medium: colorOf('warning'),

@@ -74,13 +74,14 @@ async function run(options) {
    *   Token 一直显示「—」—— 因为它还没跑完。长任务恰恰是最需要看用量的时候。
    *   注意 base 要在**开始前**取：写进去的是 base + 本轮累计（不是每轮往上加）。
    */
-  const baseTokens = taskCore.get(task.id)?.tokens ?? 0
+  const baseUsage = usageBase(taskCore.get(task.id))
   const counters = { retries: 0 }
   const countingEmit = (event) => {
     if (event?.type === 'agent.retrying') counters.retries += 1
     if (event?.type === 'turn_end') {
       try {
-        taskCore.update(task.id, { tokens: baseTokens + budget.usageTotal(event.usage) })
+        /* AG-044：合计之外把「入 / 出」也记上（口径见 usagePatch） */
+        taskCore.update(task.id, usagePatch(baseUsage, event.usage))
       } catch (error) {
         log.warn(`记用量失败：${error instanceof Error ? error.message : error}`)
       }
@@ -124,10 +125,7 @@ async function run(options) {
 
     /* AG-042：收尾再写一次（token 用同一个 base 算，不是往上加） */
     try {
-      taskCore.update(task.id, {
-        tokens: baseTokens + budget.usageTotal(result.usage),
-        retries: counters.retries,
-      })
+      taskCore.update(task.id, { ...usagePatch(baseUsage, result.usage), retries: counters.retries })
     } catch (error) {
       log.warn(`记用量失败：${error instanceof Error ? error.message : error}`)
     }
@@ -143,6 +141,39 @@ async function run(options) {
       log.warn(`任务没跑完：${error instanceof Error ? error.message : error}`)
     }
     throw error
+  }
+}
+
+/**
+ * 台账里的用量基线：这次 run **开始前**已经记了多少（AG-044）。
+ *
+ * ★ 为什么要在开始前取：`turn_end` 的 usage 是**这次 run 的累计**，不是每轮的增量，
+ *   所以写进去的必须是 `base + 本轮累计`，而不是每轮往上加。
+ *   任务恢复（接着做）时 base > 0，得从它接着算 —— 从 0 重算的话，
+ *   每「继续」一次就把之前的用量抹掉一次（AG-042 用的是同一套算法）。
+ * 老任务没有 tokensIn / tokensOut（AG-044 之前建的）→ 当 0 看，界面只显示总数。
+ */
+function usageBase(record) {
+  const keep = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0)
+  return {
+    tokens: keep(record?.tokens),
+    input: keep(record?.tokensIn),
+    output: keep(record?.tokensOut),
+  }
+}
+
+/**
+ * 一条 usage → 要写进台账的三个数（合计 + 入 + 出）。
+ *
+ * 入 / 出（AG-044）取自上游的 `prompt_tokens` / `completion_tokens` ——
+ * 形状由 `budget.usageParts` 一处认（别在这儿再写一遍字段名）。
+ */
+function usagePatch(base, usage) {
+  const parts = budget.usageParts(usage)
+  return {
+    tokens: base.tokens + parts.total,
+    tokensIn: base.input + parts.input,
+    tokensOut: base.output + parts.output,
   }
 }
 

@@ -16,6 +16,8 @@ import { check, group } from '../harness.mjs'
      ② 老记录（没有 answersKey）用「它前面最近的那条提问」认领
      ③ 老记录里那种空回答（content 空、没有工具记录）不要露出来
      ④ 提问换版本时，取的是**那一版**的回答（不是最新的那条）
+
+   「用户选的是第几条回答」在第 60 组（60-answer-pick.mjs）。
    ══════════════════════════════════════════════════════════════ */
 
 const { groupAnswers } = require(join(ROOT, 'electron/core/session-answers.cjs'))

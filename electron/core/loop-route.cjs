@@ -13,6 +13,7 @@
  * 两个都从对话里现取 —— 不额外维护状态，就不会有状态不同步的问题。
  */
 
+const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const modeRouter = require('./mode-router.cjs')
 
@@ -40,8 +41,18 @@ function resolveRoute({ config, provider, options, emit }) {
     hasImages,
   })
 
-  const useProvider = routed.provider ?? provider
   const useModel = routed.model || config.assistant.model
+  /*
+   * ★ 模型定了之后，供应商要按**这个模型**再确认一次。
+   *
+   * 上游传进来的 provider 是 `activeProvider()` 挑的 —— 只认「第一个启用且有 key」，
+   * **不看模型**。配了多个供应商、而默认模型只属于靠后那个时，每一轮都会先把模型
+   * 发给一个根本不提供它的供应商：上游必然 400，然后降级（还会把模型名换成对方
+   * 的 `models[0]`，等于**悄悄换模型**）。真机验收实测到了这个。
+   *
+   * 路由（router）明确指定了供应商就听路由的；否则按模型挑。
+   */
+  const useProvider = routed.provider ?? configCore.providerForModel(useModel) ?? provider
 
   if (routed.role) {
     emit({

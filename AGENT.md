@@ -81,8 +81,8 @@ npm run package && (cd dist-portable/Harbor && ./Harbor.exe --self-test)
 - **`.cjs` 不参与 `tsc`。** 只跑 typecheck 等于没验内核。
   改 `electron/` 下的东西**必须**跑 `npm test`（脚本名叫 selftest，
   它直接 require 内核模块，不需要 Electron、不联网）。
-- **打包后必看 `channelsOk`。** `--self-test` 会清点 101 个 IPC 通道 ——
-  handler 注册块中间抛错时，后面的会**静默不注册**（窗口照开、只弹个错误框）。
+- **打包后必看 `channelsOk`。** `--self-test` 会清点 **115** 个 IPC 通道（清单在
+  `electron/ipc-channels.cjs` 的 `EXPECTED_CHANNELS`，加通道要同步那里）—— handler 注册块中间抛错时，后面的会**静默不注册**（窗口照开、只弹个错误框）。
   这条就是被真实踩中之后加的。
 - **测试全绿 ≠ 能用。** UI / 会话 / 发送 / 权限相关的改动，
   **必须真的走一遍**。这条不是"最好这样"—— 有过两次教训：一次是
@@ -126,7 +126,7 @@ electron/core/       内核（不依赖 Electron，可单独测）
   credentials.cjs      凭证库（safeStorage / DPAPI）
   redact.cjs           全局脱敏（记名 + 模式两道）
   capability.cjs       文件访问范围（默认只给工作目录）
-  risk.cjs             Shell 风险分级（低/中/高/危急）
+  risk.cjs             Shell 风险分级（低/中/高/危急）；模式表在 risk-patterns.cjs
   audit.cjs            工具调用审计
   task.cjs             任务 + 检查点 + 续做
   changeset.cjs        改动事务 + 整批回滚

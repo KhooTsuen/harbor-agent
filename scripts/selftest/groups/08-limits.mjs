@@ -16,6 +16,7 @@ export async function run() {
   const limits = require(join(ROOT, 'electron/core/limits.cjs'))
   const statsCore = require(join(ROOT, 'electron/core/stats.cjs'))
   const configCore = require(join(ROOT, 'electron/core/config.cjs'))
+  const credentialsCore = require(join(ROOT, 'electron/core/credentials.cjs'))
 
   group('用量闸')
 
@@ -103,7 +104,6 @@ export async function run() {
     /* ── ⑧ 真的会拦住 agent 循环 ── */
     const loopCore = require(join(ROOT, 'electron/core/loop.cjs'))
     const llmModule = require(join(ROOT, 'electron/core/llm.cjs'))
-    const credentialsCore = require(join(ROOT, 'electron/core/credentials.cjs'))
 
     /*
      * 要给循环一个**能用的**供应商配置。
@@ -178,6 +178,8 @@ export async function run() {
   } finally {
     /* 还回用户真实数据 */
     statsCore.reset()
+    /* F8：清掉本组造的假凭证，别让它在 data/credentials.json 里越攒越多 */
+    credentialsCore.remove('provider:selftest-budget')
     for (const [day, bucket] of Object.entries(statsBackup.byDay ?? {})) {
       for (let i = 0; i < (bucket.calls ?? 0); i += 1) {
         statsCore.record(

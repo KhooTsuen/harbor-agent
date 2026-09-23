@@ -15,8 +15,8 @@
  * 单元基准（`src/components/chat/__tests__/rendererPerf.test.tsx`）负责
  * 「别退化成 O(n²)」，这个脚本负责「真机上是不是真能看」。
  *
- * 前置：`npm run build && npm run package`，并且把 `dist-portable/PersonalAgent`
- * 拷一份到 `tmp/smooth-env/PersonalAgent`（见 README 的验证流程）。
+ * 前置：`npm run build && npm run package`，并且把 `dist-portable/Harbor`
+ * 拷一份到 `tmp/smooth-env/Harbor`（见 README 的验证流程）。
  */
 
 import { spawnSync } from 'node:child_process'
@@ -25,8 +25,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const ENV = join(ROOT, 'tmp/smooth-env/PersonalAgent')
-const EXE = join(ENV, 'PersonalAgent.exe')
+const ENV = join(ROOT, 'tmp/smooth-env/Harbor')
+const EXE = join(ENV, 'Harbor.exe')
 
 if (!existsSync(EXE)) {
   console.error(

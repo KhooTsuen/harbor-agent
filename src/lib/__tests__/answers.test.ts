@@ -5,6 +5,8 @@ import {
   answerPatch,
   existingAnswersAfter,
   questionTargetOf,
+  questionOf,
+  pickAnswer,
   toAnswerRecord,
 } from '@/lib/answers'
 import type { Message } from '@/types'
@@ -165,5 +167,58 @@ describe('allAnswers', () => {
       }),
     )
     expect(list.length).toBe(1)
+  })
+})
+
+describe('questionOf', () => {
+  it('★ 优先用回答身上的 answersKey（读会话时内核标的）', () => {
+    const q = user({ id: 'u1' })
+    const a = assistant({ id: 'a1', answersKey: 'u1' })
+    expect(questionOf([q, a], a)?.id).toBe('u1')
+  })
+
+  it('老记录没有 answersKey → 往上找最近的一条用户消息', () => {
+    const q = user({ id: 'u1' })
+    const a = assistant({ id: 'a1' })
+    expect(questionOf([q, a], a)?.id).toBe('u1')
+  })
+
+  it('★ 隔着好几轮时只认自己上面那条（不会认领到上一轮）', () => {
+    const q1 = user({ id: 'u1', content: '问一' })
+    const a1 = assistant({ id: 'a1' })
+    const q2 = user({ id: 'u2', content: '问二' })
+    const a2 = assistant({ id: 'a2' })
+    expect(questionOf([q1, a1, q2, a2], a2)?.id).toBe('u2')
+  })
+
+  it('会话第一条就是回答 → 找不到提问', () => {
+    const a = assistant({ id: 'a1' })
+    expect(questionOf([a], a)).toBeUndefined()
+  })
+
+  it('answersKey 指向的那条不在了 → 退回往上找', () => {
+    const q = user({ id: 'u1' })
+    const a = assistant({ id: 'a1', answersKey: '已经没了' })
+    expect(questionOf([q, a], a)?.id).toBe('u1')
+  })
+})
+
+describe('pickAnswer', () => {
+  it('★ 记下「这一版选了第几条」（切回答要落盘，不然重开跳回最新那条）', () => {
+    expect(pickAnswer(user({ id: 'u1' }), 0, 1).answerIndexByVersion).toEqual({ '0': 1 })
+  })
+
+  it('★ 按提问版本分开记：切到另一版再选，不会覆盖上一版的选择', () => {
+    const q = user({ id: 'u1', answerIndexByVersion: { '0': 1 } })
+    expect(pickAnswer(q, 1, 0).answerIndexByVersion).toEqual({ '0': 1, '1': 0 })
+  })
+
+  it('原来没有这个字段时从空对象开始（不炸）', () => {
+    expect(pickAnswer(user({ id: 'u1' }), 2, 3).answerIndexByVersion).toEqual({ '2': 3 })
+  })
+
+  it('相同版本再选一次 → 覆盖成新的（不是追加）', () => {
+    const q = user({ id: 'u1', answerIndexByVersion: { '0': 0 } })
+    expect(pickAnswer(q, 0, 2).answerIndexByVersion).toEqual({ '0': 2 })
   })
 })

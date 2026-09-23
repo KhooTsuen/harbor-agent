@@ -12,6 +12,17 @@ const errors = require('./errors.cjs')
 const perfMarks = require('./perf-marks.cjs')
 
 /**
+ * 这个供应商提供这个模型吗。
+ *
+ * `models` 为空 = 没声明支持哪些 → 当作「都能」（别因为没声明就不给用）。
+ */
+function servesModel(provider, model) {
+  const list = Array.isArray(provider?.models) ? provider.models : []
+  if (list.length === 0) return true
+  return list.includes(String(model ?? ''))
+}
+
+/**
  * 调模型，带**重试**与**降级**。
  *
  * 两层：
@@ -44,7 +55,17 @@ async function callModelInner(options, emit) {
   const candidates = [provider]
   if (fb.enabled) {
     const others = (config.providers ?? []).filter(
-      (p) => p.enabled && p.baseUrl && p.id !== provider.id && configCore.hasKey(p),
+      (p) =>
+        p.enabled &&
+        p.baseUrl &&
+        p.id !== provider.id &&
+        configCore.hasKey(p) &&
+        /*
+         * ★ 必须**真的提供这个模型**。以前只筛「启用 + 有 key」，
+         *   于是降级到不提供该模型的供应商，再拿它的 `models[0]` 顶上 ——
+         *   等于悄悄换了模型（用户以为在用 A，实际在用 B）。
+         */
+        servesModel(p, model),
     )
     if (others.length > 0) candidates.push(others[0])
   }
@@ -74,7 +95,15 @@ async function callModelInner(options, emit) {
           baseUrl: target.baseUrl,
           apiKey: configCore.providerKey(target),
           chatPath: target.chatPath,
-          model: index === 0 ? model : (target.models?.[0] ?? model),
+          /*
+           * ★ 降级**只换供应商，不换模型**。
+           *
+           * 以前这里是 `target.models?.[0]` —— 降级时悄悄把模型换掉
+           * （`gpt-5.6-sol` 会变成对方的第一个模型）。用户看到的只是
+           * 「回答风格怎么变了」。候选供应商上面已经筛过「它提供这个模型」，
+           * 所以这里保持同名是安全的。
+           */
+          model,
         })
       } catch (error) {
         const info = errors.classify(error)

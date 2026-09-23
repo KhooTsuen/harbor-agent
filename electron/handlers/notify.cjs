@@ -24,7 +24,7 @@ const taskCore = require('../core/task.cjs')
 const taskOutcome = require('../core/task-outcome.cjs')
 
 /** Windows 上不设这个，通知会挂在一个「electron.app.Electron」名下 */
-const APP_ID = 'com.personalagent.workbench'
+const APP_ID = 'dev.harbor.agent'
 
 const MAX_TITLE = 120
 const MAX_BODY = 400

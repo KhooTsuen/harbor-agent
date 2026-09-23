@@ -12,6 +12,8 @@ import type {
   TaskRecoveryItem,
   WorkbenchBridge,
 } from '@/types/backend'
+/* 审批中心的类型定义在 ApprovalHistory.tsx —— `src/types/` 已顶到 300 行红线，没往那儿塞 */
+import type { ApprovalEntry, ApprovalRevokeResult } from '@/components/settings/security/ApprovalHistory'
 
 /* ══════════════════════════════════════════════════════════════
    安全 / 可靠的桥包装
@@ -43,12 +45,7 @@ export async function auditList(options?: {
 
 export async function auditStats(days = 7): Promise<AuditStats> {
   if (!bridge?.auditStats) return EMPTY_STATS
-  try {
-    const result = await bridge.auditStats(days)
-    return result.stats ?? EMPTY_STATS
-  } catch {
-    return EMPTY_STATS
-  }
+  try { return (await bridge.auditStats(days)).stats ?? EMPTY_STATS } catch { return EMPTY_STATS }
 }
 
 export async function auditClear(): Promise<{ ok: boolean; removed: number }> {
@@ -75,40 +72,22 @@ export async function classifyCommand(
 
 export async function capabilityList(): Promise<CapabilityGrant[]> {
   if (!bridge?.capabilityList) return []
-  try {
-    const result = await bridge.capabilityList()
-    return result.grants ?? []
-  } catch {
-    return []
-  }
+  try { return (await bridge.capabilityList()).grants ?? [] } catch { return [] }
 }
 
 export async function capabilityRevoke(target: string): Promise<void> {
   if (!bridge?.capabilityRevoke) return
-  try {
-    await bridge.capabilityRevoke(target)
-  } catch {
-    /* 忽略 */
-  }
+  try { await bridge.capabilityRevoke(target) } catch { /* 忽略 */ }
 }
 
 export async function capabilityRevokeAll(): Promise<void> {
   if (!bridge?.capabilityRevokeAll) return
-  try {
-    await bridge.capabilityRevokeAll()
-  } catch {
-    /* 忽略 */
-  }
+  try { await bridge.capabilityRevokeAll() } catch { /* 忽略 */ }
 }
 
 export async function taskUnfinished(): Promise<TaskRecord[]> {
   if (!bridge?.taskUnfinished) return []
-  try {
-    const result = await bridge.taskUnfinished()
-    return result.tasks ?? []
-  } catch {
-    return []
-  }
+  try { return (await bridge.taskUnfinished()).tasks ?? [] } catch { return [] }
 }
 
 /**
@@ -145,15 +124,9 @@ export async function taskList(options?: {
 /** AG-037：最近几次的性能时间线（拿不到就给空数组，面板显示「还没有数据」） */
 export async function metricsRecent(limit = 5): Promise<PerfTimeline[]> {
   if (!bridge?.metricsRecent) return []
-  try {
-    const result = await bridge.metricsRecent({ limit })
-    return result.items ?? []
-  } catch {
-    return []
-  }
+  try { return (await bridge.metricsRecent({ limit })).items ?? [] } catch { return [] }
 }
 
-/** AG-035：诊断报告（读不出来时给一份空壳，界面显示「这个桌面版才有」） */
 /** AG-036：最近一批改动的 diff（取不到就给空壳，界面显示「还没有改动」） */
 export async function changesetDiff(sessionId = ''): Promise<ChangeSetDiff> {
   const empty: ChangeSetDiff = {
@@ -177,6 +150,7 @@ export async function changesetDiff(sessionId = ''): Promise<ChangeSetDiff> {
   }
 }
 
+/** AG-035：诊断报告（读不出来时给一份空壳，界面显示「这个桌面版才有」） */
 export async function taskDiagnose(id: string): Promise<TaskDiagnosis> {
   const empty: TaskDiagnosis = { title: '', status: '', conclusion: '', text: '' }
   if (!bridge?.taskDiagnose) return empty
@@ -296,4 +270,24 @@ export async function credentialsStatus(): Promise<CredentialsStatus | null> {
   } catch {
     return null
   }
+}
+
+/* 审批中心：桥上的两个新通道（`approvals:list` 读口 / `approvals:revoke` 撤销）。
+   类型定义在 ApprovalHistory.tsx —— `src/types/` 已顶到 300 行红线，没往那儿塞 */
+type ApprovalBridge = {
+  approvalsList?: (options?: { taskId?: string }) => Promise<{ ok: boolean; items: ApprovalEntry[] }>
+  approvalsRevoke?: (target: string) => Promise<ApprovalRevokeResult>
+}
+const approvalBridge = bridge as unknown as ApprovalBridge | undefined
+
+/** 最近审批（最新在前，带来源标记和「能不能撤」）。拿不到桥时给空数组 */
+export async function listApprovals(options?: { taskId?: string }): Promise<ApprovalEntry[]> {
+  if (!approvalBridge?.approvalsList) return []
+  try { return (await approvalBridge.approvalsList(options)).items ?? [] } catch { return [] }
+}
+
+/** 撤销一条审批：一次性审批撤不掉，`reason` 会说清楚为什么 */
+export async function revokeApproval(target: string): Promise<ApprovalRevokeResult> {
+  if (!approvalBridge?.approvalsRevoke) return { ok: false, reason: '浏览器预览里没有主进程' }
+  try { return await approvalBridge.approvalsRevoke(target) } catch { return { ok: false } }
 }

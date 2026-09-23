@@ -283,6 +283,7 @@ function askUser(requestId, request, emit) {
     emit({
       type: 'confirm_request',
       confirmId,
+      requestId: request.requestId ?? null,
       toolName: request.name,
       summary: request.summary,
       args: request.args,

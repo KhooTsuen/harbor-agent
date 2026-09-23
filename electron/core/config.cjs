@@ -238,6 +238,21 @@ function activeProvider() {
   return enabled.find((p) => hasKey(p)) ?? enabled[0] ?? null
 }
 
+/** 发**这个模型**时该用哪个供应商（activeProvider 不看模型）；models 为空 = 没声明 → 当作「都能」 */
+function providerForModel(model) {
+  const name = String(model ?? '').trim()
+  if (!name) return activeProvider()
+  const c = load()
+  const enabled = c.providers.filter((p) => p.enabled && p.baseUrl)
+  const pool = enabled.filter((p) => hasKey(p))
+  const candidates = pool.length > 0 ? pool : enabled
+  const serves = (p) => {
+    const list = Array.isArray(p.models) ? p.models : []
+    return list.length === 0 || list.includes(name)
+  }
+  return candidates.find(serves) ?? candidates[0] ?? null
+}
+
 /** 换供应商 / 删供应商时把密钥一起处理掉 */
 function removeProviderSecrets(provider) {
   if (provider?.credentialRef) credentials.remove(provider.credentialRef)
@@ -271,6 +286,7 @@ module.exports = {
   patch,
   forRenderer,
   activeProvider,
+  providerForModel,
   hasKey,
   providerKey,
   searchKey,

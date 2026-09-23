@@ -70,8 +70,15 @@ const KINDS = {
     retryable: false,
     strategy: 'reread',
     needsUser: false,
-    /* 两种情况归一类：读的时候不存在，或者读完之后被人改了 */
-    hint: '文件不存在，或者读完之后被改动了',
+    /* 只在「读完它之后被人改了」时走这条 —— 重读一遍是有意义的 */
+    hint: '文件读完之后被改动了',
+  },
+  /* 从 file_changed 拆出来的：不存在 ≠ 被改过 —— 前者重试也没用，故 replan 而非 reread */
+  file_missing: {
+    retryable: false,
+    strategy: 'replan',
+    needsUser: false,
+    hint: '文件不存在 —— 换个路径，或先看看目录里有什么，别重复读同一个',
   },
   permission: { retryable: false, strategy: 'ask', needsUser: true, hint: '权限不足' },
   /* AG-015 新增的三类 */
@@ -113,7 +120,7 @@ function fromCode(code) {
   }
   if (['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(text)) return 'timeout'
   if (text === 'ABORT_ERR') return 'aborted'
-  if (text === 'ENOENT') return 'file_changed'
+  if (text === 'ENOENT') return 'file_missing' /* 没有这个文件，不是被改过 */
   if (text === 'EACCES' || text === 'EPERM') return 'permission'
   return null
 }
@@ -142,7 +149,8 @@ const MESSAGE_RULES = [
   ],
   [/(timed? ?out|timeout)/i, 'timeout'],
   [/(socket hang up|fetch failed|network|econnreset|enotfound)/i, 'network'],
-  [/(old text|找不到这段原文|出现多次|file.*changed|文件不存在)/i, 'file_changed'],
+  [/文件不存在|不存在：|no such file|enoent/i, 'file_missing'], /* ★ 在前：更具体 */
+  [/(old text|找不到这段原文|出现多次|file.{0,12}changed|文件.{0,6}(被改|已改|变了))/i, 'file_changed'],
   [/(permission denied|eacces|没有权限|需要授权)/i, 'permission'],
   /* AG-015 新增三类：先具体后笼统，所以放在最后几条 */
   [/(\bmcp\b|json-?rpc|MCP 服务器)/i, 'mcp'],

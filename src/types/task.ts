@@ -86,6 +86,13 @@ export interface TaskRecord {
   loopHit?: LoopHit | null
   /** AG-042：控制台显示的「这一轮烧了多少 token / 自动重试了几次」 */
   tokens?: number
+  /**
+   * AG-044：token 分方向记（这次任务的**累计**）：
+   * `tokensIn` = 入（上游 `prompt_tokens`）、`tokensOut` = 出（`completion_tokens`）。
+   * AG-044 之前建的老任务没有这两个 —— 当「没分开记」看，别当成 0。
+   */
+  tokensIn?: number
+  tokensOut?: number
   retries?: number
   /** AG-043：用户在任务执行中改过方向的记录 */
   steering?: Array<{ at: number; text: string }>

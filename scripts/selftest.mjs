@@ -94,6 +94,12 @@ import { run as answers } from './selftest/groups/56-answers.mjs'
 import { run as logging } from './selftest/groups/57-logging.mjs'
 import { run as actionLog } from './selftest/groups/58-actionlog.mjs'
 import { run as selectorStability } from './selftest/groups/59-selector.mjs'
+import { run as answerPick } from './selftest/groups/60-answer-pick.mjs'
+import { run as destructive } from './selftest/groups/61-destructive.mjs'
+import { run as redactFields } from './selftest/groups/62-redact-fields.mjs'
+import { run as durableIntent } from './selftest/groups/63-durable-intent.mjs'
+import { run as approvalCenter } from './selftest/groups/64-approval-center.mjs'
+import { run as tokenBadge } from './selftest/groups/65-token-badge.mjs'
 
 const GROUPS = [
   basics,
@@ -155,6 +161,12 @@ const GROUPS = [
   logging,
   actionLog,
   selectorStability,
+  answerPick,
+  destructive,
+  redactFields,
+  durableIntent,
+  approvalCenter,
+  tokenBadge,
 ]
 
 async function main() {

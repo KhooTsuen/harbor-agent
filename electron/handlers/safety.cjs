@@ -14,6 +14,7 @@
 
 const audit = require('../core/audit.cjs')
 const capability = require('../core/capability.cjs')
+const approvals = require('../core/tools/approval.cjs')
 const task = require('../core/task.cjs')
 const diagnose = require('../core/task-diagnose.cjs')
 const metrics = require('../core/metrics.cjs')
@@ -26,6 +27,56 @@ const credentials = require('../core/credentials.cjs')
 const config = require('../core/config.cjs')
 const risk = require('../core/risk.cjs')
 const log = require('../core/log.cjs')
+
+/* ══════════════════════════════════════════════════════════════
+   审批中心（Approval Center）的零件
+
+   审批决定散在两处：任务台账里的 `permissions`（approval.cjs 写的）和
+   `data/capabilities.json` 里的路径授权。用户要看的是**一张表**，
+   所以在这里合成 —— 合成的活儿归主进程，界面不该自己拼两份数据。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 两个路径是不是同一个（Windows 大小写、尾部分隔符都得归一后再比） */
+function samePath(a, b) {
+  return capability.isInside(a, b) && capability.isInside(b, a)
+}
+
+/** 台账里的审批决定 → 审批中心的行（来源 `task`，撤不掉） */
+function approvalRows(taskId) {
+  if (!taskId) return []
+  return approvals.list({ taskId }).map((entry) => ({ ...entry, source: 'task', revocable: false }))
+}
+
+/** 永久路径授权 → 审批中心的行（来源 `capability`，**可以撤**） */
+function permanentGrantRows() {
+  return capability
+    .list()
+    .filter((grant) => grant.mode === 'permanent')
+    .map((grant) => ({
+      requestId: '',
+      kind: 'path',
+      name: grant.path,
+      at: Number(grant.grantedAt) || 0,
+      approved: true,
+      timedOut: false,
+      scope: 'permanent',
+      source: 'capability',
+      revocable: true,
+    }))
+}
+
+/**
+ * 没点名 taskId 时，取最近几条任务里**第一份有审批记录的**。
+ *
+ * 只认「最新那一条任务」的话，一个刚建的空任务（还没遇到要确认的操作）
+ * 就会把面板顶成空的 —— 用户会以为功能坏了。扫 5 条就够，不必翻账。
+ */
+function pickTaskWithApprovals() {
+  for (const record of task.list({ limit: 5 })) {
+    if ((task.get(record.id)?.permissions?.length ?? 0) > 0) return record.id
+  }
+  return task.list({ limit: 1 })[0]?.id ?? ''
+}
 
 function register({ ipcMain }) {
   /* ── 审计 ─────────────────────────────────────────────── */
@@ -90,6 +141,44 @@ function register({ ipcMain }) {
       ? payload.mode
       : 'permanent'
     return capability.grant(target, { mode, reason: payload.reason ?? '用户手动添加' })
+  })
+
+  /* ── 审批中心（Approval Center）───────────────────────── */
+
+  /*
+   * 审批的统一读口 —— 两处来源合成一张表：
+   *   · 任务台账里的审批决定（一次性/本会话，撤不回来）
+   *   · capabilities.json 里的**永久**路径授权（能撤，这才是重点）
+   * 每条带 `source` / `revocable`，界面不用自己猜哪一行能点「撤销」。
+   * `taskId` 不传时取最近一份有记录的（见 pickTaskWithApprovals）。
+   */
+  ipcMain.handle('approvals:list', (_event, options = {}) => {
+    const taskId = String(options?.taskId ?? '').trim() || pickTaskWithApprovals()
+    return {
+      ok: true,
+      taskId,
+      /* 最新在前：和 approval.list 一个口径，界面从上往下画就行 */
+      items: [...approvalRows(taskId), ...permanentGrantRows()].sort((a, b) => b.at - a.at),
+    }
+  })
+
+  /**
+   * 撤销一条审批。
+   * ★ 只有**永久**路径授权撤得掉：一次性审批早用掉了，撤无可撤 ——
+   *   这不是实现没做完，是语义。所以 `reason` 要把话说清楚，
+   *   否则用户只会看到「点了没反应」，以为按钮坏了。
+   */
+  ipcMain.handle('approvals:revoke', (_event, target) => {
+    const wanted = String(target ?? '').trim()
+    if (!wanted) return { ok: false, reason: '缺目标' }
+    const absolute = capability.realpath(wanted)
+    const grant = capability
+      .list()
+      .find((item) => item.mode === 'permanent' && samePath(item.path, absolute))
+    if (!grant) return { ok: false, reason: '一次性审批无法撤销，只能撤销永久授权' }
+    const result = capability.revoke(grant.path)
+    log.info(`审批中心撤销了一条永久授权：${grant.path}（移除 ${result.removed} 条）`)
+    return { ok: true, target: grant.path, removed: Number(result?.removed ?? 0) }
   })
 
   /* ── 任务 ─────────────────────────────────────────────── */

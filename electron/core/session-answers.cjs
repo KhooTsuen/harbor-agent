@@ -28,6 +28,8 @@
  *     其余作为「回答的历史版本」挂在同一条上（界面用 ‹ n / N › 切，切不重跑）
  *   · 老记录没有这两个字段 → 用「它前面最近的那条提问」认领，版本按**当时显示的那一版**算
  *     （老会话因此也能自动收好：那几个回答会变成同一条的可切换版本，而不是并排躺着）
+ *   · 用户选的是第几条回答，记在**提问记录**的 `answerIndexByVersion` 上
+ *     （按提问版本分开记）—— 否则重开会话会跳回最新那条（见 pickedIndex）
  */
 
 /** 老记录里 content 空、也没有工具记录的回答 —— 留着只是噪音（用户那份里就有一条） */
@@ -90,6 +92,7 @@ function keepOnActivePath(messages) {
  *   · `answersKey` / `answersVersion`  它答的是谁、第几版
  *   · `answerRecords`                  这条提问的**全部**回答（含别的版本，界面切换用）
  *   · `answerIndex`                    当前显示的是那一版里的第几条
+ *     （取提问记录上的 `answerIndexByVersion`，没记过就是最新那条）
  */
 function groupAnswers(input) {
   const messages = keepOnActivePath(input)
@@ -147,16 +150,35 @@ function groupAnswers(input) {
     if (message.role !== 'user') continue
     const owner = ownerOf.get(message)
     if (!owner || !byOwner.has(owner)) continue
-    const list = bySlot.get(`${owner}#${versionOf(message)}`)
+    const version = versionOf(message)
+    const list = bySlot.get(`${owner}#${version}`)
     if (!list?.length) continue
+    const at = pickedIndex(message, version, list.length)
     out.push({
-      ...list.at(-1),
+      ...list[at],
       /* 同一次提问的其它回答一起带上 —— 切版本 / 重新生成都不用重跑 */
       answerRecords: byOwner.get(owner) ?? list,
-      answerIndex: list.length - 1,
+      answerIndex: at,
     })
   }
   return out
+}
+
+/**
+ * 用户上次在这一版提问里选的是第几条回答。
+ *
+ * ★ 为什么要存：切回答（‹ n / N ›）本来就不重跑，但**选择本身**以前没落盘 ——
+ *   重开会话又跳回最新那条，用户选的那版白选了。记在**提问记录**上、
+ *   按提问版本分开存（`answerIndexByVersion`），所以切回哪一版就还是那一版的选择。
+ *
+ * 越界 / 没记过 / 老记录 → 一律退回「最新那条」，和以前的行为一致。
+ * （用户选过的那条被重新生成挤掉时也会越界，同样退回最新。）
+ */
+function pickedIndex(question, version, count) {
+  const picks = question?.answerIndexByVersion
+  if (!picks || typeof picks !== 'object') return count - 1
+  const want = Number(picks[String(version)])
+  return Number.isInteger(want) && want >= 0 && want < count ? want : count - 1
 }
 
 module.exports = { groupAnswers, keepOnActivePath, isNoiseAnswer }

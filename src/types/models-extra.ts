@@ -139,6 +139,7 @@ export interface StoredMessage {
   answerRecords?: StoredMessage[]
   /** 读的一侧加上去的：当前显示的是该版本回答里的第几条（0 开始） */
   answerIndex?: number
+  answerIndexByVersion?: Record<string, number> // 每个提问版本选了第几条回答（切回答的选择要落盘）
   /** 用户消息改过几版（同一条消息的多个版本，界面用 ‹ n / N › 切） */
   versions?: string[]
   /** 当前显示的是第几版（0 开始） */

@@ -26,9 +26,17 @@ export async function run() {
 
   /* ── 只读工具才能自动重试 ── */
   const netErr = errors.classify(new Error('fetch failed')) // strategy: retry
-  const changedErr = errors.classify(new Error('文件不存在')) // strategy: reread
+  /* ★ 注意：这里必须是「被改过」的措辞。「不存在」已经是另一类了（见下一条） */
+  const changedErr = errors.classify(new Error('file content changed')) // strategy: reread
+  const missingErr = errors.classify(new Error('文件不存在：a.txt')) // strategy: replan
   check('网络错误 + 只读工具 → 可以自动重试', errors.canAutoRecover(netErr, 'read_file') === true)
   check('文件被改 + 只读工具 → 可以', errors.canAutoRecover(changedErr, 'list_dir') === true)
+  check('文件被改的分类是 file_changed', changedErr.kind === 'file_changed', changedErr.kind)
+  check('文件不存在的分类是 file_missing', missingErr.kind === 'file_missing', missingErr.kind)
+  check(
+    '★ 文件**不存在** → **不**自动重试（重试一万次它也不会出现）',
+    errors.canAutoRecover(missingErr, 'read_file') === false,
+  )
 
   check(
     '★ 网络错误 + run_shell → **不许**自动重试（重跑命令=重复副作用）',

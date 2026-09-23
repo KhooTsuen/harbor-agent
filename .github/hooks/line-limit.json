@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "node tools/line-limit.mjs --quiet",
+        "timeout": 15
+      }
+    ]
+  }
+}

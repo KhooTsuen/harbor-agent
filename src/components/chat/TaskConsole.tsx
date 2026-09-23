@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
 import { labelOf, statusOfTask } from '@/lib/statusLanguage'
 import { elapsedMs, formatDuration, nextPlanStepOf } from './taskCenterModel'
+import { TaskTokenBadge } from './TaskTokenBadge'
 
 /* ══════════════════════════════════════════════════════════════
    控制台（AG-042）
@@ -85,6 +86,9 @@ export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
               </div>
             ))}
           </dl>
+
+          {/* AG-044：上面那行「Token」只是个总数，这里说清入 / 出各多少 */}
+          <TaskTokenBadge task={task} />
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {running ? (

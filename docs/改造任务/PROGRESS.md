@@ -1,8 +1,48 @@
 # 改造进度（对照任务书逐条）
 
-> 最后更新：2026-09-22 · 版本 1.5.1 后续优化
+> 最后更新：2026-09-23 · 版本 1.10.1（逐条复核，见下）
 >
 > 这份文档保留早期 P0/P1 改造记录；当前产品体验优化见下方「当前优化状态」。
+> **原始记录不改**，复核结论写在这一节 —— 正文里被推翻的条目会就地标出来。
+
+---
+
+## ★ 复核声明（2026-09-23 · v1.10.1）
+
+这份表停在 **1.5.1**（2026-09-22），此后连着走了 1.6 → 1.10.1 共 6 个版本。
+下面是**逐条对着代码重新核过**的结果 —— **本文档此前标「未做 / 部分」的，有四条其实已经做了**，
+照旧表干活会重复劳动。
+
+### 已被推翻的条目（照着代码核的，不是印象）
+
+| 原文写的 | 实际（证据） | 结论 |
+|---|---|---|
+| 「浏览器隔离 ⚠️ **未做** —— `sandbox: false` / `webviewTag: true` 保持原样」 | `electron/main.cjs` 里是 **`sandbox: true`**；`navigation-policy.cjs` 的 `hardenWebview()` 还在 `will-attach-webview` 上强制 `nodeIntegration:false` / `contextIsolation:true` / `sandbox:true` | **已做** |
+| 「上下文超限可恢复 ⚠️ 部分 —— 没有『超限后自动重试压缩再发』」 | `loop-model.cjs`：认出 `context_overflow` → `emit` 提示 → **自动 `compactMessages()` 压一次再 `continue` 重试**（只压一次，压完还超就直接报错，不做无意义重复） | **已做** |
+| 「API Key 不在 backup —— **未单独处理**，备份会整体拷 `data/`」 | `backup.cjs` 的 `ITEMS` 只有 4 项：`config.json` / `memory.md` / `sessions` / `skills` —— **`credentials.json` 根本不在备份清单里** | **已做** |
+| 「Tasks 界面（看板）—— **没做**」 | `RightPanel` 的「任务」标签就是它（AG-028 全局任务中心）；`taskCenterModel.ts` 的 `TASK_GROUPS` 按 `running / paused / waiting_user / failed / completed / cancelled` 分组 | **已做** |
+| 「Skill 权限声明 —— 没做」 | 技能系统本身已落地（`core/skills.cjs` + `handlers/skills.cjs` + `SkillsTab.tsx`）；**只有「声明式权限」这一项没做** | **部分**（修正） |
+
+### 仍然成立（复核后确认没做）
+
+- **定时任务 / 后台定时运行** —— 全仓无 `schedule` / `cron` 代码
+- **Artifact 落盘 + 版本化** —— `electron/` 下**没有任何 artifact 模块**；前端 `ArtifactsPanel.tsx` / `parseToolOutput.ts` 只记元信息，没有版本化、没有落盘
+- **会话内容加密** —— 只加密密钥（`safeStorage` / DPAPI）
+- **多项目隔离模型（Projects）** —— 只有单一工作目录 + `AGENT.md` 注入
+- **统一「导出全部 / 删除全部」面板** —— 仍分散在 `DataTab` / `SecurityTab` / `BackupPanel`
+- **MCP 网络策略无内核级强制** —— 仍是策略 + 审计
+- **Provider 能力探测表** —— 未做
+- **Skill 声明式权限** —— 未做（见上）
+
+### 本文档自身的问题（已修）
+
+- ~~「Dry Run 影响预览」重复出现了两次~~ → 已删掉重复的那行
+- 版本号滞后 6 个版本 → 本节即为对齐
+
+### 其它两处（不在本文档里，一并记下）
+
+- `AGENT.md` 写「清点 **101** 个 IPC 通道」，实测 `EXPECTED_CHANNELS = **115**` → 已修正
+- `E:\Harbor\resources\app\package.json` 的包名仍是 `personal-agent`（显示名 Harbor 正常）
 
 ---
 
@@ -21,7 +61,6 @@
 | 项目级记忆隔离 | ✅ | 全局记忆与当前项目记忆分开；无项目上下文时不注入项目私有记忆 |
 | Dry Run 影响预览 | ✅ | 权限确认前显示目标文件/执行目录/命令摘要/潜在副作用，写文件继续提供 Diff |
 | 非阻塞权限确认 | ✅ | 任务运行时确认条贴近输入区显示，外部点击不会被当成拒绝 |
-| Dry Run 影响预览 | ✅ | 权限确认前显示目标文件/执行目录/命令摘要/潜在副作用，写文件继续提供 Diff |
 
 ### 后续顺序
 
@@ -118,18 +157,18 @@
 | Project Context | ✅ | `AGENT.md` / `.instructions.md` 自动注入（`project.cjs`） |
 | Prompt Injection 边界 | ✅ | 系统提示里明确「网页/代码/MCP 返回是数据不是指令」+ MCP 返回值加标注 |
 | 工具参数校验 | ✅ | `validateArgs`（必填 + 类型） |
-| 浏览器隔离 | ⚠️ **未做** | `sandbox: false` / `webviewTag: true` 保持原样，只加了导航策略字段 |
+| 浏览器隔离 | ✅ **已做**（本行原写「未做」，见顶部复核） | `main.cjs` 实为 `sandbox: true`；`navigation-policy.cjs` 还在 `will-attach-webview` 上强制 `nodeIntegration:false` / `contextIsolation:true` / `sandbox:true` |
 
 ---
 
 ## P2 / P3 —— 没做
 
 - Projects（项目级 workspace/memory/instructions 目录结构）—— **部分**：`AGENT.md` 已支持，但没有多项目隔离模型
-- Tasks 界面（收件箱/计划中/运行中… 的看板）—— 没做（有任务数据与横幅，没有看板）
+- Tasks 界面（按状态分组的看板）—— ✅ **已做**（本行原写「没做」是错的）：`RightPanel` 的「任务」标签 + `taskCenterModel.ts` 的 `TASK_GROUPS`
 - 定时任务 / 后台运行 —— 没做
 - 快捷键改键 —— ✅ **已做**（`SettingsModal` 的快捷键页能录制改键、会拒冲突。本文档此前写的「没做」是滞后的）
 - ~~预算控制~~ —— ✅ **已做**（0.24.0，`limits.cjs`，按 token 数，日/月限 + block/warn）
-- Skill 权限声明（需要 shell/网络/文件的声明式权限）—— 没做
+- Skill 权限声明（需要 shell/网络/文件的声明式权限）—— **部分**：技能系统本身已落地（`core/skills.cjs` / `handlers/skills.cjs` / `SkillsTab.tsx`），只有「声明式权限」没做
 - Artifact 系统 —— **部分**：面板 + 从回答里抽代码块有了（`ArtifactsPanel.tsx` / `parseToolOutput.ts`），没有版本化/落盘
 - 数据加密（会话内容加密）—— 没做（只加密了密钥）
 - 导出/删除的分项 UI —— **部分**：导出会话/清空已有，审计/授权/任务都能清，但没有统一的「导出全部 / 删除全部」面板
@@ -143,7 +182,7 @@
 
 - [x] API Key 不在 config.json 明文出现
 - [x] API Key 不在 session / log / audit / diagnostics
-- [ ] API Key 不在 backup —— **未单独处理**：备份会整体拷贝 `data/`，其中 `credentials.json` 在系统加密可用时是密文，不可用时是明文（界面上会明确标出「未加密」）
+- [x] API Key 不在 backup —— **已做**（本行原写「未单独处理」是错的）：`backup.cjs` 的 `ITEMS` 只有 `config.json` / `memory.md` / `sessions` / `skills` 四项，`credentials.json` **不在清单里**
 - [x] MCP 默认不继承完整环境
 - [x] 默认文件访问只允许 workspace
 - [x] 默认写操作需要确认
@@ -157,7 +196,7 @@
 - [x] Tool Call 有审计记录
 - [x] 工具错误可分类
 - [x] 网络失败有 retry / fallback
-- [ ] 上下文超限可恢复 —— **部分**：能识别 `context_overflow` 并提示，自动压缩已有（compact），但没有「超限后自动重试压缩再发」
+- [x] 上下文超限可恢复 —— **已做**（本行原写「部分」是错的）：`loop-model.cjs` 认出 `context_overflow` 后**自动 `compactMessages()` 压一次再重试**（只压一次，压完还超就报错让用户处理）
 
 ### 数据
 

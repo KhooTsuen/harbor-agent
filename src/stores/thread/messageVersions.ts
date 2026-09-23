@@ -5,7 +5,14 @@ import { runMockTurn } from './mockTurn'
 import { getActiveThread, useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { useRealBackend } from '@/lib/backend'
-import { answersOfVersion, allAnswers, answerPatch, existingAnswersAfter } from '@/lib/answers'
+import {
+  answersOfVersion,
+  allAnswers,
+  answerPatch,
+  existingAnswersAfter,
+  questionOf,
+  pickAnswer,
+} from '@/lib/answers'
 
 /* ══════════════════════════════════════════════════════════════
    用户消息的「多版本」与从某条消息重跑
@@ -51,6 +58,9 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
    *
    * 必须写 —— 否则重开会话又回到最后一版（用户切到第 1 版、重开变回第 2 版）。
    * 版本表一起带上，重开还能继续切。
+   *
+   * ★ **整条替换**（读侧 collapseByKey 用后写的顶掉前一条），所以每个要留存的
+   *   字段都得带上 —— 漏一个就被抹掉。`answerIndexByVersion` 同理。
    */
   function persistVersion(threadId: string, message: Message): void {
     useAppStore.getState().persistMessage(threadId, {
@@ -60,6 +70,9 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       ts: message.timestamp,
       ...(message.versions ? { versions: message.versions } : {}),
       ...(message.versionIndex !== undefined ? { versionIndex: message.versionIndex } : {}),
+      ...(message.answerIndexByVersion
+        ? { answerIndexByVersion: message.answerIndexByVersion }
+        : {}),
     } as never)
   }
 
@@ -189,8 +202,20 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
         message?.answersVersion ?? 0,
       )
       const record = records[index]
-      if (!message || !record) return
+      if (!thread || !message || !record) return
+      /* 内存里换一条显示 —— 不新增消息、不重跑 */
       app.updateMessage(threadId, messageId, answerPatch(record, index))
+      /*
+       * ★ 选择要落盘（以前只有「选了哪一版提问」落了盘）。
+       *   不写的话重开会话又跳回最新那条 —— 用户选的那版白选了。
+       *   记在**提问**记录上、按提问版本分开存（见 lib/answers.ts 的 pickAnswer）；
+       *   读的一侧（内核 pickedIndex）按它决定露哪条。
+       */
+      const question = questionOf(thread.messages, message)
+      if (!question) return
+      const patch = pickAnswer(question, message.answersVersion ?? 0, index)
+      app.updateMessage(threadId, question.id, patch)
+      persistVersion(threadId, { ...question, ...patch })
     },
 
     /**

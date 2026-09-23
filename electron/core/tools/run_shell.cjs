@@ -3,9 +3,16 @@ const encoding = require('../shell-encoding.cjs')
 const { truncateMiddle } = require('./_shared.cjs')
 const { createSettler, killTree, onAbort } = require('../abort.cjs')
 
-/** 明显会毁掉人的命令，直接拒掉 */
+/**
+ * 明显会毁掉人的命令，**直接拒掉、没有「确认后放行」这一档**。
+ *
+ * 和 `risk.cjs` 的分级是两层：那边负责「分级 + 让用户确认」，这边是**最后一道**，
+ * 只管那些「agent 任何情况下都不该做」的（格式化磁盘、关机器、建账户）。
+ * 所以这里宁可和那边重复 —— 重复的代价是多写几行，漏掉的代价是不可挽回。
+ */
 const DANGEROUS = [
   /\brm\s+-rf\s+[\/~]/i,
+  /\brm\s+-rf\s+[a-z]:/i, // Windows 盘符：原来只挡了 / 和 ~
   /\brm\s+-rf\s+\*/i,
   /\bformat\s+[a-z]:/i,
   /\bmkfs\b/i,
@@ -17,6 +24,19 @@ const DANGEROUS = [
   />\s*\/dev\/sd[a-z]/i,
   /\bdel\s+\/[sf]\s+\/q\s+[a-z]:\\/i,
   /\brd\s+\/s\s+\/q\s+[a-z]:\\/i,
+  /* ── ↓ 2026-09-23 补：这张表原来只有 cmd / unix 写法，PowerShell 的同义命令一条都没拦到 ── */
+  /\b(Format-Volume|Clear-Disk|Initialize-Disk|Remove-Partition)\b/i,
+  /\b(Stop-Computer|Restart-Computer)\b/i,
+  /\bvssadmin\s+delete\s+shadows/i, // 卷影副本删了就真没得恢复了
+  /\bnet\s+user\s+\S+\s+[^\n]*\/add\b/i, // 建账户 = 拿下整台机器
+  /\bnet\s+(localgroup|group)\s+\S+\s+[^\n]*\/add\b/i,
+  /\b(New-LocalUser|Add-LocalGroupMember)\b/i,
+  /\bwmic\b[^\n]*\b(format|delete)\b/i,
+  /\bRemove-Item\b[^\n]*-Recurse\b[^\n]+\s(['"]?[a-zA-Z]:[\\/]?['"]?|\\{1,2}|\/)\s*$/i, // 递归删整个盘根 = rm -rf /
+  /\bRemove-Item\b[^\n]*-(?:Path|LiteralPath)\s+['"]?[a-zA-Z]:[\\/]?['"]?[^\n]*-Recurse\b/i, // -Path C:\ -Recurse 写法
+  /\bdd\s+if=.*of=[a-z]:[\\/]/i, // dd 往 Windows 盘上写
+  /\bfind\s+(\.|\/|[a-zA-Z]:)\s[^\n]*-delete\b/i, // `find . -delete`：实测原来判成 low 且静默执行
+  /\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\s+(\.|\/|[a-zA-Z]:)$/i,
 ]
 
 const MAX_OUTPUT = 8000

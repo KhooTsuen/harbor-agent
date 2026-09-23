@@ -74,6 +74,8 @@ function redact(input) {
 const PATTERNS = [
   /* Authorization / Bearer */
   [/(Bearer|Token)\s+[A-Za-z0-9._~+/-]{12,}=*/gi, `$1 ${PLACEHOLDER}`],
+  /* Authorization / Basic：字段规则的值组要求 ≥6 字符，`Basic` 只有 5 个，正好漏掉 */
+  [/\bBasic\s+[A-Za-z0-9+/=]{8,}\b/gi, `Basic ${PLACEHOLDER}`],
   /* 常见厂商前缀：OpenAI / Anthropic / GitHub / Google / Slack / AWS / HuggingFace */
   [/\b(sk|rk|pk|api|key|secret|token)[-_][A-Za-z0-9_-]{16,}\b/gi, PLACEHOLDER],
   [/\bsk-[A-Za-z0-9-]{20,}\b/g, PLACEHOLDER],
@@ -92,12 +94,29 @@ const PATTERNS = [
   ],
   /* URL 里的凭据  https://user:pass@host */
   [/(\bhttps?:\/\/[^\s/@:]+):[^\s/@]+@/gi, `$1:${PLACEHOLDER}@`],
-  /* 显式字段：api_key=xxx / "apiKey": "xxx" / apikey: xxx */
+  /*
+   * 显式字段：api_key=xxx / "apiKey": "xxx" / apikey: xxx / token: xxx
+   *
+   * 键名候选和下面 `SECRET_KEY`（结构化对象的键）**同一口径** —— 原来这里只有
+   * 7 个候选，实测 28 个常见字段名里有 13 个在**自由文本**里会漏，
+   * 而这些文本是要落盘的（日志 / 审计 jsonl），等于密钥原样写进文件。
+   *
+   * 裸 `token` / `secret` / `authorization` / `session` 这类宽词是**故意**放开的：
+   * 这里宁可多打几条码，也不许密钥落盘。代价见下方「已知取舍」。
+   */
   [
-    /((?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|pwd)["']?\s*[:=]\s*["']?)([^\s"',;&)\]}]{6,})/gi,
+    /((?:api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|access[_-]?key|auth[_-]?token|bearer[_-]?token|private[_-]?token|session[_-]?id|token|secret|password|passwd|pwd|credentials?|authorization|session)["']?\s*[:=]\s*["']?)([^\s"',;&)\]}]{6,})/gi,
     `$1${PLACEHOLDER}`,
   ],
 ]
+
+/*
+ * 已知取舍：上面这条规则会连**正常句子**一起打码，比如
+ * `token: 这是一段说明文字`（值够长且不含空格就会被换掉）。
+ * 判断标准是「宁可多打几条码」：日志/审计是落盘的，多打一行不影响使用，
+ * 少打一行就是明文密钥进了文件。真正需要免打码的场景请走 `remember()`
+ * 之外的显式白名单，别把这条规则改窄。
+ */
 
 function applyPatterns(text) {
   let out = text

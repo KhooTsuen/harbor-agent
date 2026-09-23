@@ -17,6 +17,8 @@ const EXPECTED_CHANNELS = [
   'app:quit',
   'app:selfTest',
   'app:showWindow',
+  'approvals:list',
+  'approvals:revoke',
   'audit:clear',
   'audit:list',
   'audit:prune',

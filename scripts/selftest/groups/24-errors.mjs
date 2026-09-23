@@ -30,6 +30,7 @@ export async function run() {
     'rate_limit',
     'permission',
     'file_changed',
+    'file_missing',
     'tool_failure',
     'context_overflow',
     'process_exit',

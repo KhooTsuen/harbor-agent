@@ -16,7 +16,8 @@ import {
 import { Row, SectionTitle } from '../parts'
 import { AuditPanel } from '../security/AuditPanel'
 import { GrantsPanel } from '../security/GrantsPanel'
-import { LEVEL_COLOR, LEVEL_LABEL, POLICY_OPTIONS, SCOPE_OPTIONS } from '../security/meta'
+import { ApprovalHistory } from '../security/ApprovalHistory'
+import { LEVEL_COLOR, LEVEL_FULL_LABEL, POLICY_OPTIONS, SCOPE_OPTIONS } from '../security/meta'
 import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
@@ -155,7 +156,7 @@ export function SecurityTab() {
             {probeResult ? (
               <span className="text-2xs">
                 <span style={{ color: LEVEL_COLOR[probeResult.verdict.level] }}>
-                  {LEVEL_LABEL[probeResult.verdict.level]}风险
+                  {LEVEL_FULL_LABEL[probeResult.verdict.level]}
                 </span>
                 <span className="text-fg-tertiary">
                   {' '}
@@ -173,6 +174,8 @@ export function SecurityTab() {
       </Row>
 
       <GrantsPanel grants={grants} onChange={() => void refresh()} />
+
+      <ApprovalHistory grants={grants} onChange={refresh} />
 
       <SectionTitle>审计日志</SectionTitle>
       <Row

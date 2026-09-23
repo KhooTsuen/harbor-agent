@@ -4,6 +4,20 @@
  * 直接调工具（不经界面）—— 测的是「工具层拦不拦」，和模型无关，
  * 所以这样最快也最可复现。
  *
+ * ★ 本脚本验证「危险命令**是否被拦住**」，但**绝不真执行任何命令**：
+ *   `confirm` 显式返回布尔 `false`（一律拒绝），`medium/high` 用默认 `ask`。
+ *   于是命令要么被硬阻断层拦下（critical / DANGEROUS → 「拦下」），
+ *   要么走到确认层被 stub 拒绝（high / medium → 「拒绝」）——
+ *   两条都是「没执行」，判定正则命中的就是「被拦住」这件事本身。
+ *
+ * ⚠️ 2026-09-23 的教训（两轮）：
+ *   ① 旧版 `confirm: () => ({ ok: true })` 是对象，approval.cjs 用 `=== true` 严格比较，
+ *     实际是「一律拒绝」，危险命令被确认层挡下却记成「🛡 拦住」→ 谎报。
+ *   ② 后来改成 `confirm: () => true`（一律同意）+ `high: 'allow'`，
+ *     结果 high 级命令（如 `Remove-Item -Recurse -Force C:\`）被强制确认后**真执行** → 地雷。
+ *   → 正解是**一律拒绝**：破坏性脚本只许「测拦截」，不许「真动手」。
+ *   要看「用户拒绝后会怎样」，用 tools/break-test-security3.mjs。
+ *
  *   node tools/break-test-security.mjs
  */
 
@@ -17,6 +31,9 @@ const tools = require(join(ROOT, 'electron/core/tools/index.cjs'))
 
 const workdir = join(ROOT, 'test-env/PersonalAgent/data/workspace')
 
+/** 确认层一律拒绝（布尔 false）—— 破坏性脚本绝不真执行 */
+const ALWAYS_DENY = false
+
 /** 全部放行 + 自动同意 —— 就是要看工具层自己拦不拦（不靠界面） */
 const ctx = {
   workdir,
@@ -25,8 +42,9 @@ const ctx = {
   log: { info() {}, warn() {}, error() {} },
   sessionId: 'break-test',
   taskId: 'break-test',
-  shellPolicy: { medium: 'allow', high: 'allow', critical: 'allow' },
-  confirm: async () => ({ ok: true, allowed: true }),
+  /* 三档都用默认（critical=block 硬阻断）；confirm 一律拒绝 → 绝不真执行 */
+  shellPolicy: { medium: 'ask', high: 'ask', critical: 'block' },
+  confirm: async () => ALWAYS_DENY,
 }
 
 let blocked = 0

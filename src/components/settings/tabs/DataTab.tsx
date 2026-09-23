@@ -81,7 +81,7 @@ export function DataTab() {
       version: 1,
       threads,
     }
-    const result = await saveText('personal-agent-export.json', JSON.stringify(payload, null, 2))
+    const result = await saveText('harbor-export.json', JSON.stringify(payload, null, 2))
     if (result.ok) showToast('success', '已导出', result.path ?? '')
     else if (!result.canceled) showToast('error', '导出失败', result.error)
   }

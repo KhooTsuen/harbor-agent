@@ -164,4 +164,41 @@ describe('切回答', () => {
     useThreadStore.getState().activateAnswer('t1', 'a1', 5)
     expect(current()[1]!.content).toBe('只有一个回答')
   })
+
+  it('★ 选择要写回**提问**记录（不然重开会话又跳回最新那条）', () => {
+    seed([
+      msg({ id: 'u1', role: 'user', content: '一个问题' }),
+      msg({
+        id: 'a1',
+        content: '第二遍',
+        answersKey: 'u1',
+        answersVersion: 0,
+        answerIndex: 1,
+        answerRecords: [
+          { role: 'assistant', key: 'a0', content: '第一遍', answersVersion: 0 },
+          { role: 'assistant', key: 'a1', content: '第二遍', answersVersion: 0 },
+        ],
+      }),
+    ])
+    useThreadStore.getState().activateAnswer('t1', 'a1', 0)
+    /* 按提问版本分开记 —— 内核读的时候按它决定露哪条（落盘那条由内核自检钉住） */
+    expect(current()[0]!.answerIndexByVersion).toEqual({ '0': 0 })
+  })
+
+  it('★ 老记录没有 answersKey → 往上找最近一条用户消息，一样写得进去', () => {
+    seed([
+      msg({ id: 'u1', role: 'user', content: '一个问题' }),
+      msg({
+        id: 'a1',
+        content: '第二遍',
+        answerIndex: 1,
+        answerRecords: [
+          { role: 'assistant', key: 'a0', content: '第一遍' },
+          { role: 'assistant', key: 'a1', content: '第二遍' },
+        ],
+      }),
+    ])
+    useThreadStore.getState().activateAnswer('t1', 'a1', 0)
+    expect(current()[0]!.answerIndexByVersion).toEqual({ '0': 0 })
+  })
 })

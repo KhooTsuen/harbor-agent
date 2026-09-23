@@ -12,6 +12,7 @@ const log = require('./log.cjs')
 const io = require('./task-io.cjs')
 const taskIndex = require('./task-index.cjs')
 const notes = require('./task-notes.cjs')
+const taskIntent = require('./task-intent.cjs') // 执行可判定：意图 / 结果两段落盘
 const {
   parsePlan,
   parsePlanBlock,
@@ -95,7 +96,7 @@ function create({
   return task
 }
 
-/** 打补丁（只允许白名单字段，防止手滑写坏结构） */
+/** 打补丁（只允许白名单字段，防止手滑写坏结构）—— ⚠️ 不在名单里的字段会被**静默丢掉**，加新字段记得先写进下面那个数组 */
 function update(id, patch) {
   const task = io.get(id)
   if (!task) return null
@@ -119,7 +120,7 @@ function update(id, patch) {
     'pauseDetail',
     'budgetHit',
     'loopHit',
-    'tokens',
+    'tokens', 'tokensIn', 'tokensOut',
     'retries',
     'pausedAt',
     'resumeCount',
@@ -133,7 +134,6 @@ function update(id, patch) {
 }
 
 /** 程序退出时把「还在跑」的任务标成暂停 —— 下次启动才认得出要续做
- *
  * 两个调用点，都是「进程里已经没有活着的循环了」：
  *   · exit    —— will-quit
  *   · startup —— 启动时扫上一轮的遗留。**强杀 / 崩溃退出时 will-quit 根本不会跑**，
@@ -186,7 +186,6 @@ function unfinished({ workdir = '' } = {}) {
 
 /**
  * 收尾：定状态与结果。
- *
  * 留在这一层（而不是 task-notes.cjs）是因为它是**状态转移**，不是往台账上
  * 记账 —— 「记了什么」去 notes，「现在是什么状态」在这一层。
  */
@@ -283,6 +282,7 @@ module.exports = {
   removeMany,
   removeBySession,
   ...notes,
+  ...taskIntent,
   STATUSES,
   create,
   update,

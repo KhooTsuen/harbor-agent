@@ -109,3 +109,34 @@ export function answerPatch(record: StoredMessage, index: number): Partial<Messa
     kind: 'text',
   }
 }
+
+/**
+ * 这条回答挂在哪条提问上。
+ *
+ * 回答身上有 `answersKey`（读会话时内核标的）就直接用；老记录没有就往上找
+ * 最近的一条用户消息。切回答时要把「选了第几条」写回**提问**记录，得先找到它。
+ */
+export function questionOf(messages: Message[], answer: Message): Message | undefined {
+  if (answer.answersKey) {
+    const hit = messages.find((m) => m.role === 'user' && m.id === answer.answersKey)
+    if (hit) return hit
+  }
+  const at = messages.findIndex((m) => m.id === answer.id)
+  for (let i = at - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === 'user') return messages[i]
+  }
+  return undefined
+}
+
+/**
+ * 记下「这一版提问选了第几条回答」。
+ *
+ * ★ 为什么要落盘：切回答本来就不重跑（内存里换一条显示就够了），但**选择本身**
+ *   以前没写 —— 重开会话又跳回最新那条。按提问版本分开记，所以切回哪一版，
+ *   就还是那一版的选择（内核 pickedIndex 按它决定露哪条）。
+ */
+export function pickAnswer(question: Message, version: number, index: number): Partial<Message> {
+  return {
+    answerIndexByVersion: { ...(question.answerIndexByVersion ?? {}), [String(version)]: index },
+  }
+}

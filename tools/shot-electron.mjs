@@ -19,7 +19,7 @@
  * --type 是验证「键盘 → PTY → 回显」这条回路用的：走 CDP 的
  * Input.dispatchKeyEvent（真键盘事件），不是直接改 DOM。
  *
- * 前置：先 npm run package（要有 dist-portable/PersonalAgent/PersonalAgent.exe）
+ * 前置：先 npm run package（要有 dist-portable/Harbor/Harbor.exe）
  */
 
 import { spawn } from 'node:child_process'
@@ -28,14 +28,14 @@ import { dirname, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
 /*
- * 用哪个便携版。默认 dist-portable/PersonalAgent —— 破坏性测试时要指向
+ * 用哪个便携版。默认 dist-portable/Harbor —— 破坏性测试时要指向
  * 隔离副本（test-env/），否则改的是副本、测的是真身，白测。
  * 也能用环境变量 PA_EXE（脚本里拼路径时比命令行方便）。
  */
 const EXE = resolve(
   process.env.PA_EXE ??
     process.argv.find((a) => a.startsWith('--exe='))?.slice(6) ??
-    resolve(ROOT, 'dist-portable', 'PersonalAgent', 'PersonalAgent.exe'),
+    resolve(ROOT, 'dist-portable', 'Harbor', 'Harbor.exe'),
 )
 const OUT_DIR = resolve(
   process.argv.find((a) => a.startsWith('--out='))?.slice(6) ?? 'shots/electron',

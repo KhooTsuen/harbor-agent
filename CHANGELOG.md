@@ -1,5 +1,265 @@
 # 更新日志
 
+## [1.11.0] — 2026-09-23 · 并行收尾批：脱敏补齐、确认超时、打包卫生、意图事务化
+
+按一份外部评审（ChatGPT 出的路线图）+ 本机实测漏洞清单，拆成 5 个互不碰文件的子代理
+并行做完，再统一集成。本轮 `npm run verify` 全绿：单测 653、自检 **1933**（+60）、构建通过。
+
+### 安全
+- **脱敏字段名补齐（F2）**：自由文本规则原来只覆盖 7 个字段名，28 个常见名里有 13 个会漏；
+  现在对齐结构化对象键的口径（裸 `token`/`secret`、`secret_key`、`access_key`、
+  `bearer_token`、`credential`、`private_token`、裸 `authorization`、`session` 等）。
+  顺带补了 `Authorization: Basic`（字段规则的值组要求 ≥6 字符，`Basic` 只有 5 个，正好漏）。
+  - 自检组 `62-redact-fields`（29 项）：用**中性键名**测 —— 不用 `sk-` 假密钥，那会被前缀规则救成假绿。
+- **工具层确认加超时（F3）**：`approval.cjs` 的 `ask()` 兜底 10 分钟（`ctx.confirmTimeoutMs` 可覆盖），
+  超时按拒绝、写台账 `timedOut: true`。以前确认框卡住工具会永久挂起。
+- **确认实体加 requestId（G2 切片）**：每次确认有稳定 id，新增 `list(ctx)`，并把 id 带进
+  `confirm_request` 事件（给 Approval Center 联表用）。
+
+### 打包与发布
+- **打包不再静默带凭证（F7）**：`build-portable.mjs` 覆盖 data 前把 `credentials.json`
+  隔离到 `data/backups/<时间戳>/`，打印醒目警告。
+- **Artifact manifest（G4）**：产物写入 `resources/app/build-info.json`
+  （version / platform / arch / electronVersion / nodePtyAbi / buildTime / gitCommit），接进打包必查清单。
+- **命名残留（F4）**：导出文件名 → `harbor-export.json`；包名、APP_ID 此前已是新名。
+  ⚠️ `namespace` 与 localStorage 键仍是 `personal-agent:*` —— 故意不动（迁移常量）。
+- **开发工具路径（F5）**：`shot-electron.mjs` 默认 EXE、`bench-renderer.mjs`、`import-rikkahub.py`
+  里的 `PersonalAgent` 路径统一改 `Harbor`。
+
+### Runtime
+- **工具执行可判定（G1）**：`run_shell` 执行**前**落「意图」（`commandHash` + `startedAt`，
+  `completed:false`），执行**后**落「结果」（`completed:true` + `ok`/`outcome`，成败都写）。
+  崩溃恢复时 `completed:false` 的意图 =「动过但结果不明」，不能当没跑过直接重跑。
+  - 新 `electron/core/task-intent.cjs`；自检组 `63-durable-intent`（31 项）锁顺序铁律。
+
+### 已知取舍
+- 意图目前**只覆盖 run_shell**（先做这一条）；老台账无 `intent` 的 step 按「不可判定」处理。
+- 确认超时默认 10 分钟，**故意宽于**界面层 5 分钟 —— 只在「上层彻底失灵」时该响，不该把用户泡杯咖啡判成超时。
+
+## [1.10.4] — 2026-09-23 · 权限：一批会毁掉机器的命令被判成「中风险」，而中风险可以配成静默放行
+
+这次改的是**权限**那条路。起因是例行排查时随手试了一下风险分级，结果在
+`permission: 'full'` + `shellPolicy: { medium: 'allow', high: 'allow', critical: 'block' }`
+这个**真实配置**下，下面这些命令**连问都不问就执行**：
+
+| 命令 | 原来判成 | 应该是 |
+|---|---|---|
+| `Format-Volume -DriveLetter C` | medium → 静默执行 | critical |
+| `Clear-Disk -Number 0 -RemoveData` | medium → 静默执行 | critical |
+| `net user x P@ss /add` / `net localgroup administrators x /add` | medium → 静默执行 | critical |
+| `python -c "…shutil.rmtree('E:/')"` | medium → 静默执行 | critical |
+| `Stop-Computer -Force` / `Restart-Computer -Force` | medium → 静默执行 | critical |
+| **`find . -delete`** | **low → 静默执行** | high |
+| `schtasks /delete` / `msiexec /i … /quiet` / `takeown /f …` | medium → 静默执行 | high |
+| `Set-ExecutionPolicy Bypass` | 无匹配 → medium | high |
+
+一次 21 条的探针测下来 **14 条判错**。根因不是「黑名单少写了几条」——那是补不完的，
+文件开头自己就写着这句话。真正的两个设计问题：
+
+**① 模式表全是 cmd / unix 写法，PowerShell 的同义命令一条都没覆盖。**
+`format c:` 拦得住，`Format-Volume` 拦不住；`shutdown /s` 拦得住，`Stop-Computer -Force` 拦不住
+（原正则要求参数带**斜杠**，而 PowerShell 用 `-Force`）；`schtasks /create` 有，
+`/delete` 没有。账户那几条则**完全没有** —— 而加一个管理员账户等于拿下整台机器。
+
+**② 只读白名单只审命令开头。** `LOW` 里全是 `^\s*(ls|dir|find|grep|…)`，
+只要开头对得上就整条按只读放行，后面跟什么参数压根不看 ——
+所以 **`find . -delete` 判成 low**，这条最吓人：静默、递归、不可恢复。
+
+### 改法
+
+- **拆出 `risk-patterns.cjs`**（`risk.cjs` 只留 `classify` / `decide` / `describe`）。
+  拆的理由很实际：这张表**还要继续长**，和逻辑挤在一起补 PowerShell 模式时直接顶到 300 行红线。
+- **补 20 余条模式**：PowerShell 磁盘 cmdlet、关机、账户操作、`find -delete/-exec`、
+  `schtasks /delete`、`msiexec /quiet`、`takeown`、`Set-ExecutionPolicy`、`wmic` 等。
+- **只读判定换语义**：光开头对不算，**整条都得像只读** ——
+  没有 shell 元字符（`| & ; < > \` $`）+ 参数里不带破坏性开关（`-delete` / `-exec` / `--remove`）。
+  开关表刻意只收**含义明确**的：`-r` / `-f` 这种同名不同义的绝不进去，
+  否则 `grep -r`、`ls -f` 被误伤 —— 误报多了用户会干脆把整个分级关掉。
+- **内联脚本从 medium 提到 high**。`python -c` / `node -e` 原来在 `OPAQUE` 里只升到 medium，
+  可它和 `iex`（`HIGH` 里那条「动态执行字符串（内容看不见）」）**是同一类行为**，
+  两个等级本身就是不一致 —— 而 medium 可以被配成静默放行。
+- **`decide()` 补上 high 的强制降级**。原来 `high: 'allow'` 时 `decide()` 返回 `allow`，
+  全靠 `tools/index.cjs` 里一条 `|| verdict.level === 'high'` 硬顶着 ——
+  于是设置页的风险试算显示「**直接执行**」，实际执行时却会弹确认框。**UI 在说谎。**
+  现在这档语义写进 `decide()` 自己：`allow` 的意思是「别每次都弹同一个框」，不是「一次都不弹」。
+- **`run_shell.cjs` 的硬阻断清单**补 PowerShell 同义命令（那张表原来也全是 cmd / unix 写法）。
+  它是**最后一道**，只管「agent 任何情况下都不该做」的，所以宁可和分级重复。
+
+### 顺手修掉的
+
+- 真机上 critical 显示成「**危险风险**」（`LEVEL_LABEL.critical` 是「危险」，调用处又拼了个「风险」）。
+  在 `meta.ts` 加 `LEVEL_FULL_LABEL` 作为完整说法的唯一来源，`AuditPanel` 那边的紧凑标签不受影响。
+
+### 验证
+
+- 全链路 `npm run verify`：typecheck 0 错 · lint 干净 · 545 个文件无超 300 行 · 单测 **653/653** · 内核自检 **1873/0**
+- 内核自检新增 `61-destructive.mjs` **58 项**，专盯这一批。它用的 `ctx` 正好就是
+  `permission: 'full'` + `medium: 'allow'` 那个真实配置，并断言「把 medium / high / critical
+  **全部**配成 allow 也不许出现 `action === 'allow'`」
+- 真机跑「设置 → 权限与安全 → 风险试算」，把便携版策略**改成用户真实的那套**再截图：
+  `find . -delete` → 高风险 · 先问我；`Format-Volume` / `net localgroup … /add` → 危险 · 拦下；
+  而 `npm install` 仍是中风险·直接执行、`grep -r` / `find -name` / `git status` 仍是低风险·直接执行
+  —— **治漏不能治成「什么都要问」**，所以「没治过头」和「治住了」一样是验收项
+- **真机验收 15/15 = 100%**，与改动前基线一致：T1 3/3（26.6s）、T2 3/3（33.6s）、
+  T3 3/3（33.7s）、T4 3/3（70.6s）、T5 3/3（22.6s）。
+  > 专门核对过：验收里唯一走 shell 的 T3/T5 跑的是 `node --test …`，它**改动前后都是 medium**
+  > （落到「没有匹配到已知的只读命令」那条兜底），所以不会被这次提级波及。
+  > T4 第 2 次 154.8s 是单次慢，不是失败（其余两次 ~28s）。
+
+## [1.10.3] — 2026-09-23 · 真机验收逮到的两个 bug：选错供应商 + 悄悄换模型
+
+阶段四「真实任务验收」第一次真跑（5 类任务 × 3 次，真模型、真文件、真命令），
+**15/15 通过**，但过程里逮到两个 bug —— 都是单测和自检**照不到**的那种。
+
+### ① 每一轮都先把模型发给一个根本不提供它的供应商（★ 主要问题）
+
+真机日志里**每一次模型调用**都长这样：
+
+```
+请求模型[对话 xxx] gpt-5.6-sol → https://api.deepseek.com/v1
+400: The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed gpt-5.6-sol
+模型降级：deepseek → provider-mud3otzr
+请求模型[对话 xxx] codex-auto-review → https://geekspace.cloud/v1   ← 模型名换了！
+```
+
+三处**都"不看模型"**：
+
+| # | 位置 | 原来怎么写的 |
+|---|---|---|
+| 1 | `config.cjs` 的 `activeProvider()` | 只挑「第一个启用且有 key 的」 |
+| 2 | `loop-model.cjs` 降级候选 | 只筛「启用 + 有 key + 不是自己」 |
+| 3 | `loop-model.cjs` 降级时的模型名 | `target.models?.[0]` → **换掉了模型** |
+
+后果：**请求数约 2×**（每轮白打一次 400，`title` / `suggest` 场景也一样），
+而且**用户以为在用 A 模型，实际在用 B** —— 直接违反 `docs/安全模型.md` 那句
+「换供应商要**明确告知**」。
+
+**改法**：
+- 新增 `config.providerForModel(model)`：按模型挑供应商（`models` 为空 = 没声明 → 当作"都能"）
+- `loop-route.cjs`：模型定了之后按模型重挑供应商（路由显式指定时以路由为准）
+- `loop-model.cjs`：降级候选**必须真提供这个模型**；降级**只换供应商，不换模型名**
+
+> 改的时候我自己写出了一个 **TDZ**（把 `useProvider` 放在 `useModel` 声明之前）——
+> 正是 `docs/踩坑记录.md` 里记过的那个坑，自查时抓到并改回来了。
+
+### ② 「文件不存在」被当成「读完之后被改过」，白白重试 4 次
+
+```
+06:16:02.329 工具 read_file 失败：文件不存在：...\calc.mjs
+06:16:02.837 工具 read_file 失败：文件不存在：...\calc.mjs
+06:16:03.847 工具 read_file 失败：文件不存在：...\calc.mjs
+06:16:05.854 工具 read_file 失败：文件不存在：...\calc.mjs
+```
+
+> ⚠️ **修正**：第一版 CHANGELOG 把这里写成了「`loopGuard` 只认 A-B-A-B、认不出 A-A-A-A」——
+> **那是错的**。`loop-guard.cjs` 早就有 `repeat` 检测（`REPEAT_LIMIT = 3`，自检里也有用例）。
+>
+> 真相：这 4 次**不是模型发的 4 个调用**，而是 `loop-tools.cjs` 的**自动重试循环**
+> （`maxRetries` 默认 3 → 最多 4 次尝试）重试了**同一个**调用。所以 `toolRuns` 里只有 1 条，
+> `loopGuard` 看到 1 条不报转圈 —— **它没做错**。
+
+**真正的问题在分类**：`errors.cjs` 把两种情况归成了一类（注释自己写着
+「两种情况归一类：读的时候不存在，或者读完之后被人改了」）→ 都走 `file_changed`
+的 `reread` 策略 → `canAutoRecover` 为真 → 于是**确定性失败也被重试 4 次**。
+
+但这两者的正确处置不同：
+
+| 情况 | 该怎么做 |
+|---|---|
+| 读的时候**不存在** | 直接把话交给模型（`replan`）—— 重试一万次它也不会出现 |
+| 读完之后**被改过** | 重新读（`reread`）—— 这正是 AG-016 的本意 |
+
+**本条只记录、未修**（改法是把它拆成 `file_missing` / `file_changed` 两类，
+要动 `errors.cjs` 的 `KINDS` + `classifyToolOutput` + 自检里那几条断言）。
+
+### 验收数据（真模型 · 产物级验收）
+
+| 任务 | 耗时（3 次） | 验收依据 |
+|---|---|---|
+| 只读答疑 | 31.2 / 21.6 / 35.1s | 两个文件都没被动 |
+| 单文件修改 | 29.3 / 26.8 / 24.7s | `multiply` 真的被改成 `a*b` |
+| 改完跑测试 | 45.0 / 40.1 / 30.7s | 文件改对 + 台账有 shell 步骤 |
+| 新建文件 | 23.1 / 23.1 / 29.1s | 文件内容含正确的中文「你好，」 |
+| 失败处理 | 20.1 / 21.6 / 20.1s | 失败被报告、没多建文件 |
+
+**验收看的是磁盘产物，不是模型的自我汇报。** 驱动在 `tmp_acc.mjs`（临时件）。
+
+### 验证
+
+内核自检 **1811 项 / 失败 0**（改了 `config.cjs` / `loop-route.cjs` / `loop-model.cjs` 之后重跑）。
+
+## [1.10.2] — 2026-09-23 · 把「还缺什么」说清楚：改进清单核实 + 三份缺的文档
+
+外部给了一份「从半成品到真正可用」的改进清单（阶段一~四）。**逐条对着代码核实**之后发现：
+**代码侧的核心闭环几乎全做完了**，缺的是「文档、矩阵、可预期性」。
+
+### ① `docs/improvement-checklist.md` —— 核实过的账，不是愿望单
+
+- 清单里 40 项，逐条给结论：**✅ 已做 26 / ⚠️ 部分 9 / ❌ 缺口 5**（另 2 项有意不做）
+- 每条都带证据（落在哪个文件），所以它同时回答两个问题：**还缺什么**、以及**别重复做什么**
+- 已做的举例：错误 15 类分类（`errors.cjs`）、指数退避重试、断点续跑（`task-resume.cjs`）、
+  改动事务整批撤、状态六分组（`taskCenterModel.ts`）、台账记参数（`task.model`/`budget`）
+- 真缺的举例：回退到**指定**检查点（现在只能整批撤）、提示词版本化、一致性检查、真实任务验收
+
+### ② `docs/架构.md` —— 一次对话经过哪些文件
+
+从「用户按发送」一路画到「事件回到渲染层」，含三层结构、内核模块表、`data/` 长相、
+以及几条**为什么这么定**的决策（内核为什么不 require electron、密钥为什么用 safeStorage、
+为什么要 ChangeSet 而不是逐文件回滚）。
+
+### ③ `docs/故障排查.md` —— **面向用户**，不是面向开发者
+
+`docs/踩坑记录.md` 是带报错堆栈的、给改代码的人看的；用它排查用户问题是错配。
+这份按**现象**组织（发消息没反应 / 凭证解密失败 / 终端打不开 / 任务停住 / 是不是在转圈），
+配一张**错误类型 → 你该做什么**的对照表（15 类），以及「数据在哪、怎么救」。
+
+### ④ README 补两张矩阵
+
+- **任务类型矩阵**：16 类任务 × 成熟度（🟢稳定 / 🟡可用 / 🔴实验性 / ⛔不做）
+- **平台支持矩阵**：Windows 完整验证过，macOS/Linux **「没验过」= 不为它背书**
+  （原来只有一句「只在 Windows 上完整验证过」，没有表格，容易被读成「支持 macOS」）
+
+### ⑤ 顺手修的滞后数字
+
+- `ci.yml` 里「内核自检（**1500+** 项）」→ 实际 **1811**（这条又是文档漂移，同一类问题这个月第三次）
+- 新增文档里的项数一律写「1800+」，**不再写死** —— 写死就会漂
+
+### 验证
+
+内核自检 **1811 项 / 失败 0**（含版本同步组）。纯文档改动，未触碰代码路径。
+
+## [1.10.1] — 2026-09-23 · 收掉 1.10.0 留下的尾巴：切回答的选择现在落盘了
+
+1.10.0 的「还没做」里列了两条，这是第一条 —— 切回答（`‹ n / N ›`）时**选了第几条**
+没落盘：重开会话又跳回最新那条。（「显示哪一版提问」一直是落盘的，只有回答这一侧漏了。）
+
+### 为什么以前会漏（两头都缺）
+
+- **写侧**：`activateAnswer` 只调了 `updateMessage`（改内存），**一个字都没往磁盘写** ——
+  而切提问版本那条路是有 `persistVersion` 的，回答这条没有。
+- **读侧**：`session-answers.cjs` 永远 `answerIndex: list.length - 1`。
+
+两头都缺，所以「重开必跳回最新」是必然的，不是偶发。
+
+### 改法
+
+- **写侧**：切回答时把选择写回**提问**记录 —— 新字段 `answerIndexByVersion`
+  （`{"0": 1}`，按提问版本分开存，所以切回哪一版就还是哪一版的选择）。
+  走和版本表同一条路：同一 key 追加一条，读侧按 key 收敛。
+- **读侧**：新增 `pickedIndex()` 认这个字段 —— 认不出 / 越界 / 老记录一律退回
+  「最新那条」，**老会话行为完全不变**。
+
+★ `persistVersion` 是**整条替换**（`collapseByKey` 用后写的顶掉前一条），所以每个要
+留存的字段都得带上 —— 漏一个就被抹掉，新字段同理。这次把 `answerIndexByVersion`
+一起加进了那个「整条」里。
+
+### 验证
+
+内核 **1811**（新第 60 组 11 项；它是从第 56 组拆出来的 —— 那边加了这一节就贴
+300 行上限了）、前端 **653**（+11：`answers.test.ts` 的 `questionOf` / `pickAnswer`、
+`answerSwitch.test.ts` 的「选择写回提问记录」）、typecheck 0 错误、lint 干净、超行 0。
+性能用例（3000 行 Markdown）单独跑 10/10 —— 它在全量跑里偶发超时是机器负载，不是这次改的。
+
 ## [1.10.0] — 2026-09-23 · 两件"已知问题"一起收掉：循环取目录树 + 编辑中间那条的后续几轮
 
 ### ① 循环取目录树（日志兜底网自己报出来的）
@@ -52,8 +312,8 @@ zustand 默认用 `Object.is` 比结果 —— 于是每次 store 有任何变�
 
 ### 还没做
 
-- 切回答（`‹ n / N ›` 里选第几条）的**选择**没有落盘：重开会话会回到最新那条
-  （显示哪一版提问是落盘的）
+- ~~切回答（`‹ n / N ›` 里选第几条）的**选择**没有落盘：重开会话会回到最新那条
+  （显示哪一版提问是落盘的）~~ → **1.10.1 已收掉**（`answerIndexByVersion`）
 - 行为上仍有一条：编辑中间那条之后，**当前版本**下那几轮是收起来的 ——
   这是设计（它们属于旧版本），切回去就能看见
 

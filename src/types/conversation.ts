@@ -86,6 +86,13 @@ export interface Message {
   answerRecords?: StoredMessage[]
   /** 当前显示的是该版本回答里的第几条（0 开始） */
   answerIndex?: number
+  /**
+   * 用户消息上：每个提问版本分别选了第几条回答（`{"0": 1}`）。
+   *
+   * 切回答不重跑，但选择要落盘 —— 不然重开会话又跳回最新那条。
+   * 界面上切的时候由 messageVersions.ts 写回提问记录。
+   */
+  answerIndexByVersion?: Record<string, number>
   /** 是否为「重新生成」产物 */
   regenerated?: boolean
   /** 父消息 id（重新生成时指向原消息） */
