@@ -10,6 +10,7 @@
  */
 
 const C = require('./config-defaults.cjs')
+const providerCaps = require('./provider-capabilities.cjs')
 
 function clampNumber(value, min, max, fallback) {
   const n = Number(value)
@@ -70,6 +71,9 @@ function normalizeProvider(raw, index) {
     /** DeepSeek strict 模式（Beta）：给每个 function 加 strict:true。
      *  只在 DeepSeek 官方 /beta 端点有效，中转站不认；默认关。 */
     strictTools: p.strictTools === true,
+    /* 用户手填的模型能力覆盖（按模型名分组）。**必须在白名单里**，否则改了被静默丢掉。
+       形状与优先级见 provider-capabilities.cjs —— 覆盖 > 内置预设 > 未知。 */
+    modelCapabilities: providerCaps.cleanOverrides(p.modelCapabilities),
   }
 }
 

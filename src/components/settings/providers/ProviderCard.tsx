@@ -6,6 +6,7 @@ import { listProviderModels } from '@/lib/providerApi'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { AdvancedPanel } from './AdvancedPanel'
+import { ModelCapabilityList } from './ModelCapabilityList'
 import { IconButton } from '@/components/ui/IconButton'
 import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
@@ -177,6 +178,9 @@ export function ProviderCard({ provider }: ProviderCardProps) {
             />
           </label>
         </div>
+
+        {/* 每个模型会什么（据预设与手填 —— 声明，不是实测） */}
+        <ModelCapabilityList models={provider.models} />
       </div>
 
       <div className="mt-3 flex items-center gap-2">

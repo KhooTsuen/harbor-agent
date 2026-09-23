@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
 import { labelOf, statusOfTask } from '@/lib/statusLanguage'
 import { elapsedMs, formatDuration, nextPlanStepOf } from './taskCenterModel'
+import { RunInspector } from './RunInspector'
 import { TaskTokenBadge } from './TaskTokenBadge'
 
 /* ══════════════════════════════════════════════════════════════
@@ -32,6 +33,8 @@ import { TaskTokenBadge } from './TaskTokenBadge'
 
 export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
   const [open, setOpen] = useState(false)
+  /* AG-048：Run Inspector 的显隐 —— 内容全在新组件里，这里只留一个开关 */
+  const [inspector, setInspector] = useState(false)
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
   const openBottomPanel = useUIStore((s) => s.openBottomPanel)
   const openSettings = useUIStore((s) => s.openSettings)
@@ -106,6 +109,9 @@ export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
                 </Button>
               </>
             ) : null}
+            <Button variant="ghost" size="sm" onClick={() => setInspector((value) => !value)}>
+              {inspector ? '收起详情' : '查看详情'}
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setActiveRightTab('diff')}>
               查看 Diff
             </Button>
@@ -122,6 +128,9 @@ export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
               </Button>
             ) : null}
           </div>
+
+          {/* AG-048：一屏看懂这次执行。纯展示，里面没有任何写操作 */}
+          {inspector ? <RunInspector task={task} now={now} /> : null}
         </div>
       ) : null}
     </div>

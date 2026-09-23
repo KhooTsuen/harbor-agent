@@ -1,7 +1,7 @@
 {
   "name": "harbor-agent",
   "private": true,
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "本地优先的个人 AI Agent 工作台：任务台账、计划与进度、可恢复、可暂停、数据全在本机",
   "license": "MIT",
   "type": "module",

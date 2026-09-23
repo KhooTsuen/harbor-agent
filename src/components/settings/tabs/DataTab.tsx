@@ -16,6 +16,7 @@ import { threadToMarkdown } from '@/lib/export'
 import { Button } from '@/components/ui/Button'
 import { Row, SectionTitle } from '../parts'
 import { BackupPanel } from './BackupPanel'
+import { DataPortPanel } from '../panels/DataPortPanel'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 数据与隐私
@@ -118,6 +119,13 @@ export function DataTab() {
 
   return (
     <div className="py-1">
+      {/*
+       * 统一的「导出全部 / 删除全部」放在最前面（AG 改进清单那一项）。
+       * 下面的单项导出/导入、清空对话、备份都留着 —— 它们做的是更窄的事
+       * （导一条 Markdown、只清会话），但不该再让人找不着「一次导走一份」。
+       */}
+      <DataPortPanel />
+
       <SectionTitle>导出 / 导入</SectionTitle>
 
       <Row label="导出当前对话" hint="转成 Markdown，含思考过程和工具调用记录">

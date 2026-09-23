@@ -103,6 +103,7 @@ import { run as tokenBadge } from './selftest/groups/65-token-badge.mjs'
 import { run as rollbackTo } from './selftest/groups/66-rollback-to.mjs'
 import { run as artifactGroup } from './selftest/groups/67-artifact.mjs'
 import { run as skillPerms } from './selftest/groups/68-skill-perms.mjs'
+import { run as providerCaps } from './selftest/groups/70-provider-caps.mjs'
 
 const GROUPS = [
   basics,
@@ -173,6 +174,7 @@ const GROUPS = [
   rollbackTo,
   artifactGroup,
   skillPerms,
+  providerCaps,
 ]
 
 async function main() {

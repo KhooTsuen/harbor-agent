@@ -19,6 +19,7 @@ import { NextSteps } from './composer/NextSteps'
 import { ComposerContextRow } from './composer/ContextRow'
 import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
+import { CapabilityWarning } from './composer/CapabilityWarning'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
 import { fsTree } from '@/lib/fsApi'
 import { useAgentActive } from '@/hooks/useAgentActive'
@@ -279,6 +280,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
 
         {/* 待发送的图片 */}
         <ImageAttachments />
+        {/* 这活当前模型干得了吗（据声明，不是实测） */}
+        <CapabilityWarning />
 
         {/* 输入框上方只放一样：任务刚跑完 → 下一步（AG-033）；平时 → 建议回复 */}
         <NextSteps />

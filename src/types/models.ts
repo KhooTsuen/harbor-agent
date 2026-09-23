@@ -8,10 +8,13 @@ import type {
 } from './safety'
 import type { SearchConfig } from './models-extra'
 import type { McpServerConfig } from './mcp'
+/* 模型能力（**声明，非探测**）：下面两个字段用它；再导出一次，调用方不用改 */
+import type { ModelCapabilities, ProviderCapabilityMatrix } from './model-caps'
 /* 搜索 / MCP 的类型在 models-extra.ts（这里再导出一次，调用方不用改） */
 export type { SearchConfig, ConversationSearchHit } from './models-extra'
 /* MCP 类型搬去了 ./mcp，这里再导出一次，调用方不用改 */
 export type { McpPreset, McpServerConfig, McpServerStatus } from './mcp'
+export type { CapabilityDim, ModelCapabilities, ModelCapabilityInfo, ProviderCapabilityMatrix } from './model-caps'
 
 import type { SceneMap } from './scenes'
 /* ChatEvent 里用到；转发给外部看是下面那个 export type 块的事 */
@@ -53,9 +56,7 @@ export interface ProviderConfig {
   hasKey: boolean
   /** 密钥在凭证库里的引用名 */
   credentialRef?: string
-  /**
-   * 直接 merge 进请求体的字段（优先级最高）—— 给中转站留的兜底，省得等我们改代码。
-   */
+  /** 直接 merge 进请求体的字段（优先级最高）—— 给中转站留的兜底，省得等我们改代码 */
   extraBody?: Record<string, unknown>
   /** 明确不要发的字段名（比如某些站点不认 temperature） */
   omitParams?: string[]
@@ -63,15 +64,15 @@ export interface ProviderConfig {
   streamUsage?: boolean
   /** DeepSeek strict 模式（Beta）：给每个 function 加 strict:true；仅 /beta 端点有效 */
   strictTools?: boolean
+  /** 用户手填的能力覆盖，按模型名分组（优先于内置预设）。维度见 @/types/model-caps */
+  modelCapabilities?: Record<string, Partial<ModelCapabilities>>
 }
 
 import type { CredentialsStatus } from './backend'
 
 export interface AppConfig {
   version: number
-  /**
-   * 只有内存里有：配置文件读不出来时的错误原因 —— 界面据此提示「配置损坏，已重置」。
-   */
+  /** 只有内存里有：配置文件读不出来时的错误原因 —— 界面据此提示「配置损坏，已重置」 */
   _loadWarning?: string
   general: {
     theme: 'default' | 'chatgpt' | 'spec' | 'light' | 'system'
@@ -135,6 +136,8 @@ export interface AppConfig {
   updatedAt: number
   /** 凭证库状态（主进程附带的，只读） */
   credentials?: CredentialsStatus
+  /** 模型能力矩阵（主进程附带的，只读）。是**声明**不是探测，详见 @/types/model-caps */
+  capabilities?: ProviderCapabilityMatrix
   brand?: { id: string; name: string; assistant: string; namespace: string; envFlag: string }
 }
 
