@@ -9,6 +9,7 @@ import {
   updateSessionMeta,
 } from '@/lib/backend'
 import { fetchMessagesFromDisk, fetchWorkspaceFromDisk, folderIdFor } from './app/disk'
+import { projectsBridgeReady, setProjectActive as persistProjectActive } from '@/lib/projectsApi'
 import { touch, type AppState } from './app/types'
 import { makeMessageActions } from './app/messageActions'
 import { makeThreadEditActions } from './app/threadEdits'
@@ -29,8 +30,8 @@ export const useAppStore = create<AppState>()(
 
       /* ── 项目 ─────────────────────────────────────────── */
 
-      /* 项目动作：见 app/projectActions.ts */
-      ...makeProjectActions(set),
+      /* 项目动作：见 app/projectActions.ts（要 get —— 置顶/归档得知道下一个值） */
+      ...makeProjectActions(set, get),
 
       createThread: (projectId, explicitWorkdir) => {
         /* projectId：没传=用当前选中；给了=放进那个文件夹；''=明确要单独对话 */
@@ -120,7 +121,15 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      setActiveProject: (id) => set({ activeProjectId: id }),
+      setActiveProject: (id) => {
+        set({ activeProjectId: id })
+        /* 顺手落盘（内核 activeId）—— 不写的话「上次在哪个项目」重启就丢 */
+        void persistProjectActive(id).then((result) => {
+          if (!result.ok && projectsBridgeReady()) {
+            useUIStore.getState().showToast('error', '切换工作项目没能保存', result.error)
+          }
+        })
+      },
 
       togglePinThread: (id) => {
         const pinned = get().threads.find((t) => t.id === id)?.pinned !== true
@@ -235,10 +244,10 @@ export const useAppStore = create<AppState>()(
         if (!useRealBackend) return
         const result = await fetchWorkspaceFromDisk()
         set((state) => ({
-          /* 每个有会话的工作目录 = 一个「对话文件夹」；没挂在目录上的在 threads 里 projectId 为空 */
+          /* 每个项目 = 侧栏一个文件夹；内核记着上次选中的是哪个（已失效则回退第一个） */
           projects: result.folders.map((f) => f.project),
           threads: result.threads,
-          activeProjectId: result.folders[0]?.project.id ?? '',
+          activeProjectId: result.activeId || (result.folders[0]?.project.id ?? ''),
           activeThreadId: result.threads.some((t) => t.id === state.activeThreadId)
             ? state.activeThreadId
             : (result.threads[0]?.id ?? ''),

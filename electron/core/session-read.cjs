@@ -9,6 +9,8 @@ const fs = require('node:fs')
 const { DIRS } = require('./paths.cjs')
 const { fileFor, safeTitle, readLines } = require('./session-io.cjs')
 const { groupAnswers } = require('./session-answers.cjs')
+/* 只借一个纯函数（id 形状），不借它的读写 —— 避免和 projects 那边成环 */
+const { dirIdFor } = require('./projects.cjs')
 
 /**
  * 把带 key 的记录收敛成一条。
@@ -128,6 +130,20 @@ function list() {
       reasoning: typeof meta?.reasoning === 'string' ? meta.reasoning : '',
       /** 老会话没有这个字段，返回空串（前端会补上） */
       workdir: typeof meta?.workdir === 'string' ? meta.workdir : '',
+      /*
+       * 属于哪个项目（一等实体，见 projects.cjs）。
+       *
+       * ★ **老会话没有这个字段** —— 不能为了统一就去重写全部聊天记录（那是几千个
+       *   文件的大规模改动，风险远大于收益）。所以这里按 workdir 现推：
+       *   结果与升级前的分组**逐字一致**（同一个 `dir:<workdir>`）。
+       *   新会话建的时候会把这个字段写进 meta（见 session-write.create）。
+       */
+      projectId:
+        typeof meta?.projectId === 'string' && meta.projectId
+          ? meta.projectId
+          : typeof meta?.workdir === 'string' && meta.workdir
+            ? dirIdFor(meta.workdir)
+            : '',
       threadSettings:
         meta?.threadSettings && typeof meta.threadSettings === 'object'
           ? meta.threadSettings

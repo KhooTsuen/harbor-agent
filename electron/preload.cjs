@@ -11,21 +11,19 @@ const { contextBridge, ipcRenderer } = require('electron')
 const EVENTS = ['chat:event']
 
 /* ══════════════════════════════════════════════════════════════
-   ★ 所有 IPC 都从 `call()` 过 —— 唯一出入口。
-
-   这样「界面用了哪个功能」不用逐个埋点：现有通道全在网里，以后新加的也自动被记上。
-   只报通道名/成败/耗时，**不报参数**。
+   ★ 所有 IPC 都从 `call()` 过 —— 唯一出入口。这样「界面用了哪个功能」不用逐个埋点：
+   现有通道全在网里，以后新加的也自动被记上。只报通道名/成败/耗时，**不报参数**。
 
    ★★ 必须留在**本文件**里：main.cjs 开的是 `sandbox: true`，沙箱化的 preload
      **不允许 require 自己的模块** —— 拆到兄弟文件那次 require 一抛，整个 preload
      作废（`window.workbench` 不存在、界面 IPC 全死）。真机探针逮到的。
    ══════════════════════════════════════════════════════════════ */
 const stampNow = () =>
-  typeof performance !== 'undefined' ? performance.now() : Date.now()
+  (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
 function report(entry) {
   try {
-    /* send 不等回执：记日志不能给界面加延迟，也不能因为失败把功能弄挂 */
+    /* send 不等回执：记日志不给界面加延迟，也不能因为失败把功能弄挂 */
     ipcRenderer.send('log:action', entry)
   } catch {
     /* 忽略 */
@@ -55,11 +53,8 @@ function call(channel, ...args) {
 
 /**
  * 订阅一条主进程推来的事件，返回退订函数。
- *
- * 为什么抽出来：下面 `on*` 里有 5 处是**一字不差**的
- * `const h = (_e,p) => cb(p); on(...); return () => remove(...)`。
- * 抄五遍的时候，「退订返回了吗」「监听器是同一个引用吗」这种问题就得逐个看 ——
- * 抽一处之后只剩一种写法可错。多通道且每个通道要包形状的（PTY）仍然自己写，不硬套。
+ * 抽出来是因为下面 `on*` 里有 5 处**一字不差**（抄五遍之后「退订返回了吗」得逐个看）；
+ * 多通道且每个通道要包形状的（PTY）仍然自己写，不硬套。
  */
 function subscribe(channel, callback) {
   const handler = (_event, payload) => callback(payload)
@@ -161,6 +156,11 @@ const api = {
   auditPrune: () => call('audit:prune'),
   riskClassify: (command) => call('risk:classify', command),
 
+  /* 项目（一等实体）：登记表落盘，改名的项目 id 不变 */
+  projectsList: () => call('projects:list'),
+  projectsSave: (input) => call('projects:save', input),
+  projectsRemove: (id) => call('projects:remove', id),
+  projectsSetActive: (id) => call('projects:setActive', id),
   /* 安全相关：网络策略（说明由内核生成，前端别重写）、会话内容加密（开着关会重写全部会话，先备份） */
   networkPolicy: () => call('security:network'),
   sessionCrypto: () => call('security:sessionCrypto'),

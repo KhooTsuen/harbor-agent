@@ -20,6 +20,25 @@ function create({
   threadSettings,
 } = {}) {
   const id = newId()
+  const dir = typeof workdir === 'string' ? workdir : ''
+  /*
+   * 属于哪个项目（一等实体，见 projects.cjs）。
+   *
+   * ★ 这里写进去之后，**项目就是显式的**，不再靠 workdir 现推。
+   *   `ensureFor` 保证登记项一定在（不存在就按目录建一条），并且**不会覆盖**
+   *   用户改过的名字/颜色 —— 它每次新建会话都会被调，顺手重置名字就白改了。
+   *   没有工作目录的会话（纯聊天）没有项目，projectId 留空。
+   */
+  let projectId = ''
+  if (dir) {
+    try {
+      projectId = require('./projects.cjs').ensureFor(dir)?.id ?? ''
+    } catch (error) {
+      /* 登记失败不该让「新建对话」失败 —— 但也不能一声不吭 */
+      log.warn(`登记项目失败（会话照常创建）：${error instanceof Error ? error.message : error}`)
+    }
+  }
+
   const meta = {
     type: 'meta',
     id,
@@ -32,7 +51,8 @@ function create({
      * 会话属于哪个工作目录。侧栏按它分组 —— 换了目录就只看那个目录的会话，
      * 否则一堆不相干的对话混在一起没法找。
      */
-    workdir: typeof workdir === 'string' ? workdir : '',
+    workdir: dir,
+    ...(projectId ? { projectId } : {}),
     ...(threadSettings && typeof threadSettings === 'object' ? { threadSettings } : {}),
     createdAt: Date.now(),
   }

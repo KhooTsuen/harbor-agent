@@ -49,7 +49,9 @@ export function SidebarHeader() {
             } else {
               const name = window.prompt('新项目名称', '')
               if (name?.trim()) {
-                createProject(name.trim(), `~/projects/${name.trim()}`)
+                /* 路径留空：内核新建的项目登记项没有目录，别编一个 `~/projects/x` 的假路径
+                   —— 那个假路径会被当成工作目录传给会话（真机上会去开一个不存在的目录） */
+                createProject(name.trim(), '')
                 showToast('success', '项目已创建', name.trim())
               }
             }

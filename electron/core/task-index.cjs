@@ -42,6 +42,17 @@ function summaryOf(task) {
     status: task.status ?? '',
     sessionId: task.sessionId ?? '',
     workdir: task.workdir ?? '',
+    /*
+     * 属于哪个项目（一等实体，见 projects.cjs）。
+     * 老任务没有这个字段 —— **按 workdir 现推**，与升级前的可见行为一致。
+     * 索引只是加速、不是真相源，所以这里推导就够了，不必回写几千个任务文件。
+     */
+    projectId:
+      typeof task.projectId === 'string' && task.projectId
+        ? task.projectId
+        : task.workdir
+          ? require('./projects.cjs').dirIdFor(task.workdir)
+          : '',
     title: task.title ?? '',
   }
 }

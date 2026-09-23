@@ -108,6 +108,7 @@ import { run as memoryExplain } from './selftest/groups/71-memory-explain.mjs'
 import { run as scheduleGroup } from './selftest/groups/72-schedule.mjs'
 import { run as netPolicyGroup } from './selftest/groups/73-net-policy.mjs'
 import { run as sessionCrypto } from './selftest/groups/74-session-crypto.mjs'
+import { run as projectsGroup } from './selftest/groups/75-projects.mjs'
 
 const GROUPS = [
   basics,
@@ -183,6 +184,7 @@ const GROUPS = [
   scheduleGroup,
   netPolicyGroup,
   sessionCrypto,
+  projectsGroup,
 ]
 
 async function main() {

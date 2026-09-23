@@ -43,6 +43,42 @@ export const SessionLineSchema = z.discriminatedUnion('type', [
   StoredMessageSchema.extend({ type: z.literal('message') }),
 ])
 
+/**
+ * 项目登记表里的一条（`data/projects.json` 的 items 元素）。
+ *
+ * 内核那边新建时字段是全的，但**用户可能手动改过这个文件**，所以全部走默认值：
+ * 少一个 `pinned` 不该让整个项目列表读不出来（`projects:list` 会因为这个文件
+ * 解析失败而返回空 → 侧栏所有项目一起消失）。
+ *
+ * ⚠️ 这里同时是渲染层 `ProjectRecord` 类型的来源（见 `types/projects.ts`）——
+ * 形状只写一份，才不会「校验放过了、类型却是另一套」。
+ */
+export const ProjectRecordSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().default(''),
+  description: z.string().default(''),
+  /** 内核叫 root，界面叫 path */
+  root: z.string().default(''),
+  branch: z.string().default('main'),
+  icon: z.string().default(''),
+  color: z.string().default(''),
+  pinned: z.boolean().default(false),
+  archived: z.boolean().default(false),
+  /** 跟着工作目录自动登记的 / 用户手建的 —— 界面据此决定空项目要不要显示 */
+  auto: z.boolean().default(true),
+  createdAt: z.number().default(0),
+  updatedAt: z.number().default(0),
+})
+
+/** zod 推断出来的登记项类型 —— 渲染层的 `ProjectRecord` 就是它（见 `types/projects.ts`） */
+export type ProjectRecord = z.infer<typeof ProjectRecordSchema>
+
+/** `projects:list` 的回执（`counts` 等用不上的字段被 zod 丢掉，不影响解析） */
+export const ProjectsPayloadSchema = z.object({
+  items: z.array(ProjectRecordSchema).default([]),
+  activeId: z.string().default(''),
+})
+
 /** 配置里的供应商 */
 export const ProviderSchema = z.object({
   id: z.string(),

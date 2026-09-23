@@ -115,6 +115,8 @@ function registerHandlers(deps) {
    */
   const schedules = require('./handlers/schedules.cjs')
   schedules.register({ ipcMain })
+  /* 项目（一等实体）：登记表在 data/projects.json，见 core/projects.cjs */
+  require('./handlers/projects.cjs').register({ ipcMain })
   /* 个人资料（头像 + 名字）—— 侧栏左下角那个圆 */
   require('./handlers/profile.cjs').register({ ipcMain })
 

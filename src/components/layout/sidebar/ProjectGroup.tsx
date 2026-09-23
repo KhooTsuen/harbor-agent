@@ -168,18 +168,27 @@ export function ProjectGroup({ project, threads, onDeleteThread, collapsed }: Pr
                 setMenuOpen(false)
                 askPermission({
                   kind: 'delete-project',
-                  title: '删除这个项目？',
-                  description: `「${project.name}」下的 ${threads.length} 条对话会一起删掉，不能撤销。`,
-                  confirmText: '删除',
+                  /*
+                   * ★ 这里是**移除登记**，不是「连对话一起删掉」。
+                   *
+                   * 旧文案写着「N 条对话会一起删掉」，而实际行为一直都不是 ——
+                   * 删的只是本地那一条，刷新之后对话又按工作目录回来了。现在
+                   * 项目是一等实体（落盘在 data/projects.json），行为明确成
+                   * 「只移除登记项」，所以文案必须跟着改成真话：
+                   * 对话和任务一条不少，只是暂时落在「未归类」下面。
+                   */
+                  title: '移除这个项目？',
+                  description: `「${project.name}」会从侧栏消失，但它的 ${threads.length} 条对话和任务都保留 —— 会显示在「未归类」下面。之后在那个目录里再新建对话，项目会重新出现。`,
+                  confirmText: '移除',
                   danger: true,
                   onConfirm: () => {
                     deleteProject(project.id)
-                    showToast('success', '项目已删除')
+                    showToast('success', '项目已移除', '对话和任务都还在')
                   },
                 })
               }}
             >
-              删除项目
+              移除项目
             </MenuItem>
           </Popover>
         </div>
