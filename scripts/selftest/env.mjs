@@ -64,6 +64,32 @@ function setupSandbox() {
 }
 
 /*
+ * 把测试建的任务删干净。
+ *
+ * ★ 为什么需要这个助手：`taskCore.removeSafe` **拒绝删在跑的任务**
+ *   （内核拦住幽灵任务，这是对的）—— 而测试里 `create` 出来的任务默认就是 running，
+ *   于是「finally 里删一下」看着做了，其实一条没删。
+ *   后果不是测试红，而是**数据目录里堆任务**：2026-09-24 查到 `data/tasks/` 里
+ *   堆了 647 个（582 个 `failed` 的「你好」+ 60 个 `selftest*`），
+ *   全是历次测试和探针留下的，用户真要看任务列表得翻过这些。
+ *
+ * 所以：先把状态改成 cancelled（测试的任务不可能真在跑），再删。
+ */
+function disposeTasks(ids) {
+  const left = []
+  for (const id of ids ?? []) {
+    const task = taskCore.get(String(id ?? ''))
+    if (!task) continue
+    if (task.status === 'running' || task.status === 'waiting_user') {
+      taskCore.update(id, { status: 'cancelled' })
+    }
+    const result = taskCore.removeSafe(id)
+    if (!result?.ok) left.push(id)
+  }
+  return left
+}
+
+/*
  * 工具执行用的公共上下文。
  *
  * 这是**跨测试组共享**的（01 里声明、03 里继续用）—— 原本它写在
@@ -90,6 +116,7 @@ export {
   ROOT,
   SANDBOX,
   setupSandbox,
+  disposeTasks,
   ctx,
   asked,
   createRequire,

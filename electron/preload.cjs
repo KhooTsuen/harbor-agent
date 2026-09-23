@@ -111,15 +111,13 @@ const api = {
   getMemory: () => call('memory:get'),
   setMemory: (text) => call('memory:set', text),
   clearMemory: () => call('memory:clear'),
-  /* 结构化记忆 */
-  memoryList: (options) => call('memory:list', options),
+  memoryList: (options) => call('memory:list', options), /* 结构化记忆；「为什么是它」见 core/memory-explain.cjs */
   memorySearch: (query, options) => call('memory:search', { query, ...options }),
   memoryAdd: (input) => call('memory:add', input),
   memoryUpdate: (payload) => call('memory:update', payload),
   memoryDisable: (id) => call('memory:disable', id),
   memoryEnable: (id) => call('memory:enable', id),
   memoryRemove: (id) => call('memory:remove', id),
-  /* 记忆可解释：上一轮注入账 + 逐条「为什么是它」（见 core/memory-explain.cjs） */
   memoryExplain: (options) => call('memory:explain', options),
 
   searchProviders: () => call('search:providers'),
@@ -161,11 +159,11 @@ const api = {
   projectsSave: (input) => call('projects:save', input),
   projectsRemove: (id) => call('projects:remove', id),
   projectsSetActive: (id) => call('projects:setActive', id),
-  /* 安全相关：网络策略（说明由内核生成，前端别重写）、会话内容加密（开着关会重写全部会话，先备份） */
+  taskPresets: () => call('presets:list'), /* ②-2：类型表来自内核（core/task-presets.cjs），前端不自己抄 */
+  /* 安全相关：网络策略（说明由内核生成，前端别重写）、会话加密（开/关会重写全部会话，先备份） */
   networkPolicy: () => call('security:network'),
   sessionCrypto: () => call('security:sessionCrypto'),
   setSessionCrypto: (enable) => call('security:setSessionCrypto', enable),
-
   capabilityList: () => call('capability:list'),
   capabilityGrant: (payload) => call('capability:grant', payload),
   capabilityRevoke: (target) => call('capability:revoke', target),

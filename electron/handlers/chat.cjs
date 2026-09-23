@@ -10,6 +10,7 @@
 
 const loop = require('../core/loop.cjs')
 const taskContext = require('../core/task-context.cjs')
+const bounds = require('../core/capability-bounds.cjs')
 const life = require('../core/lifecycle.cjs')
 const bus = require('../core/events.cjs')
 const metrics = require('../core/metrics.cjs')
@@ -21,27 +22,8 @@ const log = require('../core/log.cjs')
 const pendingConfirms = new Map()
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 
-function currentHistoryLimit() {
-  const value = Number(config.get().assistant.historyLimit)
-  return Number.isFinite(value) ? Math.max(0, Math.min(200, Math.floor(value))) : 20
-}
-
-/**
- * history 里最后一条用户消息的文字 —— 当作任务目标（任务标题）。
- * 内容可能是字符串，也可能是多模态数组（带图时），两种都认。
- */
-function lastUserText(history) {
-  for (let i = history.length - 1; i >= 0; i -= 1) {
-    const message = history[i]
-    if (message?.role !== 'user') continue
-    if (typeof message.content === 'string') return message.content.slice(0, 200)
-    if (Array.isArray(message.content)) {
-      const text = message.content.find((part) => part?.type === 'text')?.text
-      if (typeof text === 'string') return text.slice(0, 200)
-    }
-  }
-  return ''
-}
+/* 两个纯工具（history 长度上限、最后一句用户说了什么）搬去了 chat-parts.cjs */
+const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
 
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
   /* ── 发起一轮对话 ─────────────────────────────────────── */
@@ -141,6 +123,14 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
             detail: `继续任务 ${payload.resumeTaskId}`,
           })
         }
+
+        /*
+         * ②-5：这句话碰到能力边界了吗 —— 碰到了先说一声，但**不拦**。
+         * 放在跑之前（而不是跑完）：它的用处就是「别让用户等半天才发现这活不做」。
+         * 模式写得窄，宁可漏报也不吵（见 core/capability-bounds.cjs）。
+         */
+        const boundary = bounds.check(lastUserText(history))
+        if (boundary) emit({ type: 'boundary', ...boundary })
 
         const result = await loop.run({
           history,

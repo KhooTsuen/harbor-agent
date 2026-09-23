@@ -19,6 +19,7 @@
  */
 
 const taskOutcome = require('./task-outcome.cjs')
+const consistency = require('./task-consistency.cjs')
 
 /** 只留文件名 —— 报告是给人扫的，整条路径太长 */
 function short(file) {
@@ -124,6 +125,20 @@ function diagnose(task) {
       models.length > 1 ? `（换过 ${models.length - 1} 次：${models.join(' → ')}）` : ''
     }`,
   )
+  /*
+   * ②-1：提示词版本。
+   * 只在这一版**记过**的时候显示 —— 旧任务没这个字段，写「没有记录」是噪音。
+   * 它的用处：同一个任务前后表现不一样时，先看是不是换了提示词版本。
+   */
+  if (task.promptVersion) out.push(`提示词：${task.promptVersion}`)
+  /*
+   * ②-2：这份预算哪来的。
+   * 用户看到「轮数上限 60」而自己不记得设过 —— 这里得答得上来。
+   */
+  if (task.preset) {
+    const label = require('./task-presets.cjs').TYPES[task.preset]?.label ?? task.preset
+    out.push(`预算来源：按「${label}」这类任务的推荐值（可在任务卡片上改）`)
+  }
   if (task.workdir) out.push(`工作目录：${task.workdir}`)
 
   if (plan.length > 0) {
@@ -175,11 +190,42 @@ function diagnose(task) {
   )
   out.push(`恢复过：${task.resumeCount ?? 0} 次`)
 
+  /*
+   * ②-3：同一件事跑过第二遍吗 —— 有就把两份事实并排摆出来。
+   *
+   * 只回答「差在哪」，**不判断谁对**：差异大不等于有问题（第二次可能本来就做得更细）。
+   * 所以措辞是「对不上」，不是「有问题」。读不出可比对象就一个字都不写。
+   */
+  const prior = findPriorRun(task)
+  if (prior) {
+    const cmp = consistency.compare(prior.task, task, prior.score)
+    out.push('')
+    out.push(`这件事之前跑过一次（${consistency.whenAgo(prior.task.createdAt)}）：`)
+    if (cmp.divergent) {
+      for (const note of cmp.notes) out.push(`· ${note}`)
+    } else {
+      out.push('· 两次的结论、测试结果、改动范围都对得上')
+    }
+  }
+
   return {
     title: task.title || task.goal || '',
     status: task.status,
     conclusion: conclusionOf(task, outcome, next),
     text: out.join('\n'),
+  }
+}
+
+/** 找同一会话里跟这条最像的旧任务；找不到返回 null（找不到就别说） */
+function findPriorRun(task) {
+  const sessionId = String(task?.sessionId ?? '')
+  if (!sessionId) return null
+  try {
+    /* 惰性 require：task.cjs 不引这边，但少一层耦合总是好的 */
+    const tasks = require('./task.cjs').list({ sessionId, limit: 50 })
+    return consistency.findPrior(tasks, task)
+  } catch {
+    return null
   }
 }
 

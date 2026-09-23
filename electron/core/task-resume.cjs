@@ -19,6 +19,7 @@
 
 const fs = require('node:fs')
 const taskCore = require('./task.cjs')
+const taskPresets = require('./task-presets.cjs')
 
 /** 这两种状态都算「停下来了，可以接着做」 */
 const RESUMABLE = new Set(['paused', 'waiting_user'])
@@ -138,12 +139,21 @@ function openForRun({
     if (reopened) return reopened
   }
   /* AG-027：不传 title —— 让 create 从 goal 提炼（聊天句 ≠ 任务名） */
+  /*
+   * ②-2：新建任务时给一份**按任务类型**的推荐预算。
+   * 空对象 = 按用户自己的全局设置走（判定不确定、或用户已经调过预算）。
+   * 同时把「这份预算哪来的」记下来 —— 用户看到 60/120 时得知道不是自己设的。
+   */
+  const presetBudget = taskPresets.budgetFor(goal, options.config)
+  const hasPreset = Object.keys(presetBudget).length > 0
   return taskCore.create({
     goal,
     sessionId,
     projectId: options.projectId,
     workdir: options.workdir,
     mode: options.mode,
+    budget: presetBudget,
+    preset: hasPreset ? taskPresets.detect(goal).type : '',
   })
 }
 

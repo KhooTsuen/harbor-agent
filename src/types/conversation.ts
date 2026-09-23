@@ -126,6 +126,14 @@ export interface ThreadSettings {
    *   `file` / `shell` 两档仍然只是声明。见 `electron/core/skill-pin.cjs`。
    */
   pinnedSkill?: string
+  /**
+   * 这条对话自己的温度（②-2）。空 = 用全局的 `assistant.temperature`。
+   *
+   * ★ 只覆盖**温度**，不覆盖轮数 / 工具次数：那些按**每个任务的目标**自动给
+   *   （内核 `core/task-presets.cjs` 的 `budgetFor`），之后在任务卡片上改。
+   *   0 是合法温度，别用 `||` 兜底（会把 0 换掉）。
+   */
+  temperature?: number
 }
 
 export interface ConversationState {

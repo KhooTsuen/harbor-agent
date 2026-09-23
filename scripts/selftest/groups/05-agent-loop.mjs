@@ -11,6 +11,7 @@ import {
   ROOT,
   SANDBOX,
   configModule,
+  disposeTasks,
   join,
   memory,
   require,
@@ -18,6 +19,9 @@ import {
   taskCore,
   tools,
 } from '../env.mjs'
+
+/** 故意让模型挂的那一趟用的 sessionId（专用是为了兜底清理） */
+const LOOP_FAIL_SESSION = 'selftest-loop-fail'
 
 export async function run() {
   group('Agent 循环（冒烟）')
@@ -161,6 +165,13 @@ export async function run() {
         config: { ...loopConfig, fallback: { enabled: false, attempts: 0, retryOn: [] } },
         workdir: SANDBOX,
         mode: 'pair',
+        /*
+         * ★ 这一趟是**故意让模型挂**：循环里先建任务再执行，抛错之后 taskId 拿不到，
+         *   任务就留在数据目录里了（2026-09-24 查出来：data/tasks 里一条空 goal 的 failed
+         *   正是它）。所以给个专用 sessionId，好在 finally 里兜底清掉。
+         */
+        goal: '（自检）模型挂掉的那次',
+        sessionId: LOOP_FAIL_SESSION,
         signal: new AbortController().signal,
         emit: (e) => events.push(e.type),
         confirm: async () => true,
@@ -173,6 +184,8 @@ export async function run() {
   } finally {
     llmModule.chatStream = originalChatStream
     credentialsCore.remove('provider:selftest-loop')
+    /* 按专用 sessionId 兜底清一遍：上面那趟是抛错出来的，taskId 根本拿不到 */
+    disposeTasks(taskCore.list({ sessionId: LOOP_FAIL_SESSION }).map((item) => item.id))
   }
 
   /* ══════════════════════════════════════════════════════

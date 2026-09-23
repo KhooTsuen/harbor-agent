@@ -10,14 +10,17 @@ import { check, group } from '../harness.mjs'
 import {
   contextBuilderCore,
   conversationStateCore,
+  disposeTasks,
   join,
   memory,
   modeRouterCore,
   promptStackCore,
   readFileSync,
+  require,
   resolve,
   ROOT,
   skills,
+  taskCore,
   tools,
 } from '../env.mjs'
 
@@ -97,6 +100,59 @@ export async function run() {
   for (const [label, pattern] of Object.entries(requiredInPrompt)) {
     check(`提示里有「${label}」`, pattern.test(promptText))
   }
+
+  /* ══════════════════════════════════════════════════════
+     ②-1：提示词版本进台账
+
+     版本号早就有（`prompt-stack/1`），但这个数字**一直没人接** ——
+     改了提示词，跑过的任务里查不到当时用的是哪版，
+     「同一个任务为什么前后不一样」只能靠翻 CHANGELOG 猜。
+     ══════════════════════════════════════════════════════ */
+
+  group('②-1 / 提示词版本')
+  check(
+    '★ 版本号形如 prompt-stack/N',
+    /^prompt-stack\/\d+$/.test(promptStackCore.VERSION),
+    promptStackCore.VERSION,
+  )
+
+  const promptTask = taskCore.create({ goal: '②-1 版本记账测试', sessionId: 'selftest-02-1' })
+  check('新任务带（空的）版本字段', promptTask.promptVersion === '')
+  taskCore.recordPromptVersion(promptTask.id, promptStackCore.VERSION)
+  const recorded = taskCore.get(promptTask.id)
+  check('★ 记进台账', recorded.promptVersion === promptStackCore.VERSION, recorded.promptVersion)
+  check('同一版只留一条', recorded.promptVersions.length === 1)
+  taskCore.recordPromptVersion(promptTask.id, 'prompt-stack/99')
+  check(
+    '★ 中途换过版本也看得见',
+    taskCore.get(promptTask.id).promptVersions.join(' → ') ===
+      `${promptStackCore.VERSION} → prompt-stack/99`,
+    taskCore.get(promptTask.id).promptVersions.join(' → '),
+  )
+  check('空版本不写（别把 undefined 记成版本）', taskCore.recordPromptVersion(promptTask.id, '') === null)
+
+  const diagnoseCore = require(join(ROOT, 'electron/core/task-diagnose.cjs'))
+  /* ⚠️ diagnose 收的是**任务对象**，不是 id（传 id 会得到一份空报告，不报错） */
+  const promptDiag = diagnoseCore.diagnose(taskCore.get(promptTask.id))
+  check(
+    '★ 诊断报告里看得到提示词版本',
+    String(promptDiag.text).includes('提示词：prompt-stack/99'),
+    String(promptDiag.text)
+      .split('\n')
+      .filter((line) => line.startsWith('提示词：'))
+      .join(' / '),
+  )
+  /* 删得掉才好 —— 建出来是 running，removeSafe 会拒（见 env.mjs 的 disposeTasks） */
+  check(
+    '任务用完能删干净',
+    disposeTasks([promptTask.id]).length === 0 && taskCore.get(promptTask.id) === null,
+  )
+
+  /* 光有函数没用 —— 得钉住「循环真的会调它」 */
+  const loopSrcForPrompt = readFileSync(join(ROOT, 'electron/core/loop.cjs'), 'utf8')
+  check('★ 循环真的记（不是摆着不用）', loopSrcForPrompt.includes('recordPromptVersion('))
+  const assembleSrc = readFileSync(join(ROOT, 'electron/core/loop-prompt.cjs'), 'utf8')
+  check('★ 装配函数把版本交给循环', assembleSrc.includes('promptVersion: stack.version'))
 
   /*
    * ③ 顺序：**稳定区在前、易变区在后**。

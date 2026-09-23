@@ -12,9 +12,17 @@ const mcpPresets = require('../core/mcp-presets.cjs')
 const config = require('../core/config.cjs')
 const stats = require('../core/stats.cjs')
 const backup = require('../core/backup.cjs')
+const taskPresets = require('../core/task-presets.cjs')
 const log = require('../core/log.cjs')
 
 function register({ ipcMain }) {
+  /*
+   * 任务类型预设（②-2）：**只列出来**给界面用。
+   * 类型表、推荐值、判定全在 core/task-presets.cjs —— 前端不自己算也不自己抄，
+   * 两边各留一份必然漂开，而漂开之后没人知道该信哪个。
+   */
+  ipcMain.handle('presets:list', () => ({ ok: true, presets: taskPresets.list() }))
+
   /* ── 记忆 ─────────────────────────────────────────────── */
 
   /* 结构化记忆：列表 / 增改删 / 搜索 */

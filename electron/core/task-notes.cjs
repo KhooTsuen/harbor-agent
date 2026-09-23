@@ -130,11 +130,35 @@ function fail(id, error) {
   return task
 }
 
+/**
+ * 记下这次用的提示词版本（②-1）。
+ *
+ * 为什么值得单独记：提示词就是**代码**（改一句话就换一种行为），但它的改动
+ * 只在 CHANGELOG 里留痕 —— 代码里没有版本号，于是「同一个任务为什么前后表现
+ * 不一样」只能靠猜。记下版本之后，同一个 `prompt-stack/N` 的结果才谈得上横向比。
+ *
+ * 和 recordModel 一样：同一版只写一次盘。
+ */
+function recordPromptVersion(id, version) {
+  const task = io.get(id)
+  const tag = String(version ?? '').trim()
+  if (!task || !tag) return null
+  if (task.promptVersion === tag) return task
+
+  task.promptVersion = tag
+  /* 一个任务中途换了版本（比如升了版本再「继续」）也要看得见 */
+  task.promptVersions = [...new Set([...(task.promptVersions ?? []), tag])]
+  task.updatedAt = io.monotonicNow()
+  io.write(task)
+  return task
+}
+
 module.exports = {
   addStep,
   addChangedFile,
   addCommand,
   recordModel,
+  recordPromptVersion,
   addSteering,
   checkpoint,
   fail,

@@ -1,10 +1,13 @@
 import { useAppStore } from '@/stores/useAppStore'
+import { useConfigStore } from '@/stores/useConfigStore'
 import { Row, SectionTitle } from '../parts'
 import { SkillPinRow } from './SkillPinRow'
+import { TemperaturePresetRow } from './TemperaturePresetRow'
 
 export function ThreadSettingsTab() {
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
   const update = useAppStore((s) => s.updateThreadSettings)
+  const globalTemperature = useConfigStore((s) => s.config?.assistant.temperature ?? 0.7)
   if (!thread) return <p className="p-3 text-2xs text-fg-tertiary">没有打开的会话。</p>
   const settings = thread.settings ?? {}
   const toggle = (key: keyof typeof settings) =>
@@ -35,6 +38,13 @@ export function ThreadSettingsTab() {
       <SkillPinRow
         pinned={settings.pinnedSkill ?? ''}
         onPick={(id) => update(thread.id, { pinnedSkill: id })}
+      />
+
+      {/* 温度：按任务类型挑一档（类型表由内核给，见 core/task-presets.cjs） */}
+      <TemperaturePresetRow
+        temperature={settings.temperature}
+        globalTemperature={globalTemperature}
+        onPick={(value) => update(thread.id, { temperature: value })}
       />
 
       {(

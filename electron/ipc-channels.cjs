@@ -91,6 +91,8 @@ const EXPECTED_CHANNELS = [
   'projects:remove',
   'projects:save',
   'projects:setActive',
+  /* 任务类型预设（②-2）：只读，类型表由 core/task-presets.cjs 一处说了算 */
+  'presets:list',
   'pty:start',
   'pty:stop',
   'pty:stopAll',

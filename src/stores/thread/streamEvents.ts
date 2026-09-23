@@ -6,6 +6,7 @@ import { useTaskStore } from '../useTaskStore'
 import { useUIStore } from '../useUIStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
+import { handleNoticeEvent } from './noticeEvents'
 
 /* ══════════════════════════════════════════════════════════════
    流式聊天事件的处理
@@ -233,38 +234,14 @@ export function handleStreamEvent(
       return { handled: true }
     }
 
-    /* ── 提示类事件：不改消息，但要让用户看见 ── */
-    case 'budget': {
-      /* 拦住的情况不在这里提示 —— 那种会直接抛错，错误气泡里已经有原因了 */
-      if (event.blocked !== true && event.exceeded === true) {
-        useUIStore.getState().showToast('warning', '用量已到上限', String(event.message ?? ''))
-      }
-      return { handled: true }
-    }
-
-    case 'retry': {
-      useUIStore
-        .getState()
-        .showToast('warning', '正在重试', String(event.hint ?? '请求失败，稍后自动重试'))
-      return { handled: true }
-    }
-
-    case 'fallback': {
-      useUIStore
-        .getState()
-        .showToast('warning', '已换用一个供应商', `原因：${String(event.reason ?? '上一个不可用')}`)
-      return { handled: true }
-    }
-
-    case 'context_overflow': {
-      useUIStore.getState().showToast('info', '上下文太长', '用 /compact 压一下再继续，会比现在稳')
-      return { handled: true }
-    }
-
+    /* ── 提示类事件：不改消息，但要让用户看见（实现见 noticeEvents.ts）── */
+    case 'boundary':
+    case 'budget':
+    case 'retry':
+    case 'fallback':
+    case 'context_overflow':
     case 'review': {
-      if (event.status === 'started') {
-        useUIStore.getState().showToast('info', '正在复核这次回答', '复核完会给出结论')
-      }
+      handleNoticeEvent(event)
       return { handled: true }
     }
 

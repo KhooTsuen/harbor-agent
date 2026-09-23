@@ -31,70 +31,10 @@ const UNFINISHED = new Set(['running', 'waiting_user', 'paused'])
 /**
  * 建一条任务。
  *
- * @param {{ goal: string, sessionId?: string, projectId?: string, workdir?: string, mode?: string }} options
+ * 实现搬去了 `task-create.cjs`（那边是「一条刚出生的任务长什么样」的全部内容，
+ * 这里 312 行贴了上限）。这个门面留着，是因为外部全在调 `taskCore.create`。
  */
-function create({
-  goal,
-  sessionId = '',
-  projectId = '',
-  workdir = '',
-  mode = 'pair',
-  budget = {},
-} = {}) {
-  const task = {
-    id: io.newId(),
-    /* AG-027：任务名**不取聊天原句**，从里面提炼动作名；模型在计划块里给了 `# 名字` 会覆盖它 */
-    title: fallbackTitle(goal),
-    goal: String(goal ?? ''),
-    status: 'running',
-    mode,
-    sessionId,
-    projectId,
-    workdir,
-    /** 模型给出的计划（从回复里解析）；planVersions 是 AG-004 的版本历史（含当前版） */
-    plan: [],
-    planVersions: [],
-    /** 实际发生的事 —— 一次工具调用一条 */
-    steps: [],
-    checkpoints: [],
-    changedFiles: [],
-    commands: [],
-    changeSetId: '',
-    errors: [],
-    result: '',
-    /* AG-040：这个任务自己的执行预算覆盖（不填就用设置里的默认） */
-    budget: { ...budget },
-    /** 停下来的原因（'' | 'budget'）与细节（撞了哪一项）—— 界面据此说话 */
-    pauseReason: '',
-    pauseDetail: '',
-    /** 撞预算时的数字：{ reason, label, used, limit } */
-    budgetHit: null,
-    /** AG-041：转圈停下来时的证据：{ kind, period, count, samples } */
-    loopHit: null,
-    /** AG-042：控制台要显示的两个数字（这一轮烧了多少 token、自动重试了几次） */
-    tokens: 0,
-    retries: 0,
-    /** AG-043：用户在任务执行中改方向的记录 [{ at, text }]（原计划历史另有 planVersions） */
-    steering: [],
-    /* AG-012：重启恢复要用的四样 —— 下一步、停的时刻、恢复过几次、批过什么 */
-    nextAction: '',
-    permissions: [],
-    /*
-     * AG-035：是哪只手在干这个活。
-     * `models` 记**这个任务用过的**（按先后去重）—— 中途换过模型是
-     * 「怎么前后不一样了」的常见原因，诊断时要看得见。
-     */
-    model: '',
-    models: [],
-    pausedAt: 0,
-    resumeCount: 0,
-    createdAt: Date.now(),
-    updatedAt: io.monotonicNow(),
-    finishedAt: 0,
-  }
-  io.write(task)
-  return task
-}
+const { create } = require('./task-create.cjs')
 
 /** 打补丁（只允许白名单字段，防止手滑写坏结构）—— ⚠️ 不在名单里的字段会被**静默丢掉**，加新字段记得先写进下面那个数组 */
 function update(id, patch) {

@@ -108,7 +108,7 @@ function toolsSection() {
  *
  * @param {{ config: object, workdir: string, mode: string, history: Array,
  *           threadSettings: object, options: object }} input
- * @returns {{ messages: Array }}
+ * @returns {{ messages: Array, promptVersion: string }}
  */
 function buildPromptContext({ config, workdir, mode, history, threadSettings, options }) {
   /* AG-037：这段（提示词拼装 + 记忆召回 + 项目说明）自己计时，循环那边只管编排 */
@@ -215,7 +215,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   }
 
   perfMarks.mark(traceId, 'context', Date.now() - startedAt)
-  return { messages }
+  /* ②-1：把提示词版本一并交出去，循环那边记进任务台账 */
+  return { messages, promptVersion: stack.version }
 }
 
 module.exports = { buildPromptContext, buildFailureNote }

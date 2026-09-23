@@ -17,9 +17,7 @@ export type { McpPreset, McpServerConfig, McpServerStatus } from './mcp'
 export type { CapabilityDim, ModelCapabilities, ModelCapabilityInfo, ProviderCapabilityMatrix } from './model-caps'
 
 import type { SceneMap } from './scenes'
-/* ChatEvent 里用到；转发给外部看是下面那个 export type 块的事 */
-import type { DiffFile } from './index'
-import type { UsageBucket } from './models-extra'
+/* ChatEvent 那两样（DiffFile / UsageBucket）跟着它搬去了 ./chat-events */
 
 export * from './scenes'
 /* ══════════════════════════════════════════════════════════════
@@ -165,98 +163,12 @@ export interface SelfTestReport {
   config: AppConfig
 }
 
-export type ChatEvent =
-  | { requestId: string; type: 'mode'; mode: string; confidence: number; reason: string }
-  | {
-      requestId: string
-      type: 'route'
-      role: string
-      model: string
-      provider: string
-      reason: string
-    }
-  | { requestId: string; type: 'turn_start'; turn: number }
-  /* AG-004：模型给了新的一版计划（和上一版一样就不发） */
-  | { requestId: string; type: 'plan'; plan: string[]; version: number; reason: string }
-  | { requestId: string; type: 'turn_end'; turn: number; usage: Record<string, number> | null }
-  | { requestId: string; type: 'content'; text: string }
-  | { requestId: string; type: 'reasoning'; text: string }
-  | {
-      requestId: string
-      type: 'agent.tool.started'
-      toolCallId: string
-      name: string
-      args: Record<string, unknown>
-    }
-  | {
-      requestId: string
-      /* AG-002：成败写在事件名里，前端不用再读 ok；服务端仍会带 ok，两者一致 */
-      type: 'agent.tool.completed' | 'agent.tool.failed'
-      toolCallId: string
-      name: string
-      ok: boolean
-      result: string
-      ms?: number
-    }
-  | {
-      requestId: string
-      type: 'confirm_request'
-      confirmId: string
-      toolName: string
-      summary: string
-      args: Record<string, unknown>
-      kind?: string
-      risk?: { level?: string } | null
-      /** AG-036：会改成什么样 + 算不出时的说明（写文件类工具才有） */
-      diff?: DiffFile[] | null
-      diffNote?: string
-    }
-  | {
-      requestId: string
-      type: 'done'
-      content: string
-      reasoning: string
-      usage: UsageBucket | null
-      turns: number
-      exhausted: boolean
-    }
-  | { requestId: string; type: 'aborted' }
-  | { requestId: string; type: 'review'; status: 'started' | 'completed' }
-  | {
-      requestId: string
-      type: 'budget'
-      exceeded: boolean
-      blocked: boolean
-      level: 'day' | 'month' | null
-      used: number
-      limit: number
-      message: string
-    }
-  | { requestId: string; type: 'error'; message: string }
-  /* AG-001 + AG-002：生命周期事件。状态机每次转移推一条，事件名用标准名，
-     **每条都带 phase** —— 前端只读 phase、不解析事件名，将来改名不影响渲染层。
-     executing / responding 没有标准名，用 'phase' 发（它们是执行细节）。 */
-  | {
-      requestId: string
-      type:
-        | 'phase'
-        | 'agent.started'
-        | 'agent.thinking'
-        | 'agent.planning'
-        | 'agent.verification.started'
-        | 'agent.verification.completed'
-        | 'agent.waiting_user'
-        | 'agent.paused'
-        | 'agent.resumed'
-        | 'agent.retrying'
-        | 'agent.completed'
-        | 'agent.failed'
-        | 'agent.cancelled'
-      /** 相位名（和主进程 lifecycle.cjs 的 13 个状态一致） */
-      phase: string
-      from: string
-      detail?: string
-    }
+/*
+ * ChatEvent 搬去了 `./chat-events`（这个文件 315 行贴了上限，而那一整块
+ * 本来就是「一次对话推给界面的所有事件」，是个完整的东西）。
+ * 保留这行转发，是因为调用方全写 `@/types/models` —— 别去改它们。
+ */
+export type { ChatEvent } from './chat-events'
 
 /** 发出去的消息：带图时 content 是数组（多模态），否则是字符串 */
 export interface ChatSendPayload {

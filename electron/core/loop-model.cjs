@@ -10,6 +10,7 @@ const log = require('./log.cjs')
 const configCore = require('./config.cjs')
 const errors = require('./errors.cjs')
 const perfMarks = require('./perf-marks.cjs')
+const loopGuard = require('./loop-guard.cjs')
 
 /**
  * 这个供应商提供这个模型吗。
@@ -257,12 +258,8 @@ function exhaustedResult({ usage, toolRuns, maxTurns, budgetHit = null, loopHit 
       return `${budgetHit.message}
 （停下来等你决定：继续 / 停止 / 调整预算。）`
     if (loopHit) {
-      const what =
-        loopHit.kind === 'repeat'
-          ? `同一个调用连着来了 ${loopHit.count} 次`
-          : `这 ${loopHit.period} 个调用重复了 ${loopHit.count / loopHit.period} 遍`
-      return `检测到 Agent 可能陷入重复执行（${what}）。
-正在重新规划任务 —— 但连着几次还是转圈，先停下来问你。（继续 / 停止）`
+      /* 文案住在 loop-guard.cjs（和「对模型说的」那句挨着），这边只负责挑一句 */
+      return loopGuard.stopMessage(loopHit)
     }
     return `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`
   })()

@@ -1,5 +1,5 @@
 import { check, group } from '../harness.mjs'
-import { ROOT, SANDBOX, join, require } from '../env.mjs'
+import { ROOT, SANDBOX, disposeTasks, join, require, taskCore } from '../env.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    用量闸（预算）
@@ -11,6 +11,9 @@ import { ROOT, SANDBOX, join, require } from '../env.mjs'
 
    全部不联网：直接改配置 + 往统计里塞数字。
    ══════════════════════════════════════════════════════════════ */
+
+/** 这一组跑 loop 时用的 sessionId —— 专用是为了兜底清理，别再改回空串 */
+const LIMITS_SESSION = 'selftest-limits'
 
 export async function run() {
   const limits = require(join(ROOT, 'electron/core/limits.cjs'))
@@ -150,7 +153,8 @@ export async function run() {
         workdir: SANDBOX,
         mode: 'pair',
         goal: '你好',
-        sessionId: '',
+        /* ★ 给个**专用** sessionId，好让下面兜底清理 —— 见 finally 里的注释 */
+        sessionId: LIMITS_SESSION,
         signal: new AbortController().signal,
         emit: (e) => events.push(e),
         confirm: async () => true,
@@ -178,6 +182,15 @@ export async function run() {
   } finally {
     /* 还回用户真实数据 */
     statsCore.reset()
+    /*
+     * ★ 这一组会真的跑一次 loop，而 loop 里是**先建任务再执行** ——
+     *   超预算时抛错，taskId 根本拿不到，任务就留在数据目录里了。
+     *   2026-09-24 查出来：`data/tasks/` 里 582 条 `failed` 的「你好」全是这里攒的
+     *   （每次自检加一条，几年下来能堆成几千条）。
+     *   所以按这个专用 sessionId 兜底清一遍 —— 先标 cancelled 再删，
+     *   因为在跑的删不掉（见 env.mjs 的 disposeTasks）。
+     */
+    disposeTasks(taskCore.list({ sessionId: LIMITS_SESSION }).map((item) => item.id))
     /* F8：清掉本组造的假凭证，别让它在 data/credentials.json 里越攒越多 */
     credentialsCore.remove('provider:selftest-budget')
     for (const [day, bucket] of Object.entries(statsBackup.byDay ?? {})) {

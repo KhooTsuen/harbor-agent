@@ -100,6 +100,34 @@ export async function run() {
     repeatMessage.slice(0, 40),
   )
 
+  /* ── ③b 交给用户的那句话 ───────────────────────────────
+   * 它**原样出现在对话区**，用户读完要按「继续」或「停止」。
+   * 这段以前硬编码在 loop-model.cjs 里，只能跑满 12 轮才测得到 ——
+   * 结果是没有任何断言钉它，措辞改坏了测试照样全绿。
+   */
+  group('AG-041 / 交给用户的那句话')
+  const stop = guard.stopMessage(cycle)
+  check(
+    '★ 认出来了，但说「可能」（不把话说死）',
+    stop.includes('检测到 Agent 可能陷入重复执行'),
+    stop.slice(0, 60),
+  )
+  check('★ 说清重复的是什么', stop.includes('这 2 个调用重复了 3 遍'), stop)
+  check('★ 说清「已经试过、没成」', stop.includes('连着几次还是转圈'), stop)
+  check('★ 把两个选项写出来（用户据此决定）', stop.includes('（继续 / 停止）'), stop)
+  const stopRepeat = guard.stopMessage(guard.detect([A, A, A]))
+  check(
+    'repeat 的说法适合对用户说',
+    stopRepeat.includes('同一个调用连着来了 3 次'),
+    stopRepeat.slice(0, 60),
+  )
+  const modelSrc = readFileSync(join(ROOT, 'electron/core/loop-model.cjs'), 'utf8')
+  check(
+    '★ 循环真的用这句话（不是又抄了一份）',
+    modelSrc.includes('loopGuard.stopMessage('),
+    'loop-model.cjs 里找不到 loopGuard.stopMessage(',
+  )
+
   /* ── ④ 停下来交人 ───────────────────────────────────── */
   group('AG-041 / 超过阈值交给用户')
   const loopTask = taskCore.create({ goal: 'AG-041 转圈测试', sessionId: 'selftest-ag041' })

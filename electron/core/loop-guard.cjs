@@ -134,11 +134,34 @@ function nudgeMessage(detection) {
   ].join('\n')
 }
 
+/**
+ * 交给用户时那句话。
+ *
+ * 和 `nudgeMessage` 的分工：
+ *   · `nudgeMessage` 是**对模型**说的（喂回对话里让它改道）
+ *   · 这句是**对用户**说的 —— 它原样出现在对话区，用户读完要按「继续」或「停止」，
+ *     所以必须写清三件事：认出了什么、我试过什么、现在要他做什么决定。
+ *
+ * 以前这句硬编码在 `loop-model.cjs` 里，只能靠跑满 12 轮才能测到 ——
+ * 结果就是**它没被任何断言钉住**：改错了措辞，所有测试照样绿。
+ */
+function stopMessage(detection) {
+  const what =
+    detection.kind === 'repeat'
+      ? `同一个调用连着来了 ${detection.count} 次`
+      : `这 ${detection.period} 个调用重复了 ${detection.count / detection.period} 遍`
+  return [
+    `检测到 Agent 可能陷入重复执行（${what}）。`,
+    '正在重新规划任务 —— 但连着几次还是转圈，先停下来问你。（继续 / 停止）',
+  ].join('\n')
+}
+
 module.exports = {
   detect,
   signatureOf,
   signaturesOf,
   nudgeMessage,
+  stopMessage,
   stableArgs,
   WINDOW,
   REPEAT_LIMIT,

@@ -16,6 +16,7 @@ const taskResume = require('./task-resume.cjs')
 const taskContext = require('./task-context.cjs')
 const life = require('./lifecycle.cjs')
 const skillPin = require('./skill-pin.cjs')
+const taskPresets = require('./task-presets.cjs')
 const changeset = require('./changeset.cjs')
 /* run() 的形参也叫 config，模块得换名引 —— 否则 config.hasKey() 会在普通对象上调用。 */
 
@@ -78,14 +79,11 @@ async function runLoop(options) {
   if (options.taskId) taskCore.recordModel(options.taskId, useModel)
 
   /* 环境 / 工具清单 / 记忆 / 项目说明 / 分层系统提示 —— 见 loop-prompt.cjs */
-  const { messages } = buildPromptContext({
-    config,
-    workdir,
-    mode,
-    history,
-    threadSettings,
-    options,
+  const { messages, promptVersion } = buildPromptContext({
+    config, workdir, mode, history, threadSettings, options,
   })
+  /* ②-1：提示词版本也记进台账（和模型一样，是「为什么这次不一样」的线索） */
+  if (options.taskId) taskCore.recordPromptVersion(options.taskId, promptVersion)
 
   const ctx = {
     workdir,
@@ -169,7 +167,8 @@ async function runLoop(options) {
       model: useModel,
       messages,
       tools: tools.toApiSchema(),
-      temperature: config.assistant.temperature,
+      /* ②-2：温度可以在这条对话上单独设（任务类型预设），没设就用全局的 */
+      temperature: taskPresets.temperatureOf(threadSettings, config),
       topP: config.assistant.topP,
       maxTokens: config.assistant.maxTokens,
       /* 思考强度档位（thread 里选的 low/high/max）—— 以前这里漏了，档位从没传给模型 */

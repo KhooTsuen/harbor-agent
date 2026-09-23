@@ -109,6 +109,9 @@ import { run as scheduleGroup } from './selftest/groups/72-schedule.mjs'
 import { run as netPolicyGroup } from './selftest/groups/73-net-policy.mjs'
 import { run as sessionCrypto } from './selftest/groups/74-session-crypto.mjs'
 import { run as projectsGroup } from './selftest/groups/75-projects.mjs'
+import { run as taskPresets } from './selftest/groups/76-task-presets.mjs'
+import { run as consistencyGroup } from './selftest/groups/77-consistency.mjs'
+import { run as boundsGroup } from './selftest/groups/78-bounds.mjs'
 
 const GROUPS = [
   basics,
@@ -185,6 +188,9 @@ const GROUPS = [
   netPolicyGroup,
   sessionCrypto,
   projectsGroup,
+  taskPresets,
+  consistencyGroup,
+  boundsGroup,
 ]
 
 async function main() {
