@@ -16,6 +16,7 @@ const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
 const plugins = require('./plugins.cjs')
 const skills = require('./skills.cjs')
+const skillPin = require('./skill-pin.cjs')
 const memory = require('./memory.cjs')
 const project = require('./project.cjs')
 const perfMarks = require('./perf-marks.cjs')
@@ -183,8 +184,9 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     environment: environmentSection({ workdir, assistantName: config.assistant.name }),
     relevantMemory: assembled.systemContext.memory,
     projectInstructions: assembled.systemContext.project,
-    /* 技能与工具清单：模型得看得到「手边有什么」 */
-    skills: skillSection,
+    /* 技能与工具清单：模型得看得到「手边有什么」；
+       钉住的那个技能把**正文**也放进来（见 skill-pin.cjs），否则「钉」等于没钉 */
+    skills: [skillSection, skillPin.promptSection(threadSettings)].filter(Boolean).join('\n\n'),
     tools: toolsSection(),
     toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
     /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */

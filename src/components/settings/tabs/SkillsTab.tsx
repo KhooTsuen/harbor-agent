@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen, FileText, Plus, RefreshCw, Trash2 } from 'lucide-react'
-import type { SkillInfo } from '@/types/backend'
+import type { SkillRow } from '@/types/skills'
 import { createSkill, listSkills, openSkillsDir, removeSkill } from '@/lib/skillsApi'
 import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
@@ -22,34 +22,12 @@ import { Row, SectionTitle } from '../parts'
    **不要在渲染层再写一套权限词**，不然两处会漂。
    ══════════════════════════════════════════════════════════════ */
 
-interface SkillPermissionItem {
-  kind: string
-  value: string
-  label: string
-}
-
-interface SkillPermissions {
-  items: SkillPermissionItem[]
-  byKind: Record<string, string>
-  text: string
-}
-
-/**
- * 主进程 `skills.list()` 多带回来的两个字段。
- *
- * 为什么扩在这里：`types/models-extra.ts` 已经 300 行（行数红线），不能再动。
- * 两个字段都是可选的，所以 `SkillInfo[]` 直接赋值给 `SkillRow[]` 是合法的，不用断言。
- */
-type SkillRow = SkillInfo & {
-  permissions?: SkillPermissions | null
-  permissionError?: string | null
-}
-
 /**
  * 一个技能声明的权限（一行小字，不重做布局）。
  *
- * ⚠️ 这是**声明，不是强制** —— 见文件底部那段说明。界面上不能只显示「网络 禁止」
- * 就让人以为真拦住了，所以那行免责说明是必须的，不是装饰。
+ * ⚠️ `file` / `shell` 两档是**声明，不是强制**（`network` 那一档在用户把这个技能
+ * 钉到某次会话之后由内核强制执行，见 `core/skill-pin.cjs`）。界面上不能只显示
+ * 「网络 禁止」就让人以为真拦住了，所以文件底部那段免责说明是必须的，不是装饰。
  */
 function SkillPermissionLine({ skill }: { skill: SkillRow }) {
   const error = typeof skill.permissionError === 'string' ? skill.permissionError : ''
@@ -242,10 +220,16 @@ export function SkillsTab() {
       </Row>
 
       <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
-        技能里的权限是<span className="text-fg-secondary">声明，不是强制</span>：它只跟着技能清单进
-        系统提示、在这里给你看一眼，<span className="text-fg-secondary">拦不住任何一次工具调用</span>
-        —— 写了「不碰文件」，工具照样可能去写。真正拦人的门在工具层：权限档（只读 / 每次确认 /
-        完全）、文件范围、Shell 风险分级，都在「权限与安全」里配。
+        技能里的权限分两种：<span className="text-fg-secondary">file / shell 两档只是声明</span>
+        —— 它只跟着技能清单进系统提示、在这里给你看一眼，
+        <span className="text-fg-secondary">拦不住任何一次工具调用</span>
+        （写了「不碰文件」，工具照样可能去写）。
+        <span className="text-fg-secondary">network 那一档不一样</span>
+        ：在「设置 → 对话 → 本次会话」里把这个技能指定给某次会话之后，
+        它的网络声明由内核在发起网络请求前强制执行，`deny` 优先于全局网络设置，
+        而且这个会话的正文会一起进系统提示。
+        真正拦人的门始终在工具层：权限档（只读 / 每次确认 / 完全）、文件范围、
+        Shell 风险分级，都在「权限与安全」里配。
       </p>
 
       <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">

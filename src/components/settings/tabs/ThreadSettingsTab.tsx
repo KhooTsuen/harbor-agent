@@ -1,5 +1,6 @@
 import { useAppStore } from '@/stores/useAppStore'
 import { Row, SectionTitle } from '../parts'
+import { SkillPinRow } from './SkillPinRow'
 
 export function ThreadSettingsTab() {
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
@@ -8,9 +9,11 @@ export function ThreadSettingsTab() {
   const settings = thread.settings ?? {}
   const toggle = (key: keyof typeof settings) =>
     update(thread.id, { [key]: settings[key] === false })
+
   return (
     <div className="py-1">
       <SectionTitle>本次会话</SectionTitle>
+
       <Row label="回答深度" hint="只影响当前会话，不修改全局默认">
         <select
           value={settings.responseDepth ?? 'standard'}
@@ -27,6 +30,13 @@ export function ThreadSettingsTab() {
           <option value="deep">深入</option>
         </select>
       </Row>
+
+      {/* 钉技能：钉住之后它的 network 声明才**真的有触发点**（core/skill-pin.cjs） */}
+      <SkillPinRow
+        pinned={settings.pinnedSkill ?? ''}
+        onPick={(id) => update(thread.id, { pinnedSkill: id })}
+      />
+
       {(
         [
           ['allowNetwork', '联网'],
@@ -42,6 +52,7 @@ export function ThreadSettingsTab() {
           </label>
         </Row>
       ))}
+
       <Row label="临时对话" hint="临时对话不会写入长期记忆">
         <label className="flex items-center gap-2 text-xs text-fg-primary">
           <input type="checkbox" checked={thread.temporary === true} readOnly />

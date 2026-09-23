@@ -50,6 +50,10 @@ Desktop.ini
 NUL
 tmp_*
 *.tmp
+# 一次性排查脚本（`tmp-probe-*.js`、`tmp-verify.cjs` 这类）。
+# **这个坑犯过两次**：`tmp_*` 只匹配下划线，连字符的 `tmp-*` 一直是漏网的，
+# 于是验证脚本自己被 `git add -A` 一起提交了两次。宁可多写一条模式。
+tmp-*
 
 # Python 的字节码缓存。scripts/ 下的生成脚本被别的脚本 import 过之后
 # 会直接在仓库里建出 __pycache__/ —— 不忽略就会被 `git add -A` 带进去。

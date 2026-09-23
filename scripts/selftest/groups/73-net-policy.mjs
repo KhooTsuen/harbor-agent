@@ -1,5 +1,7 @@
 import { check, group } from '../harness.mjs'
 import { configModule, ctx, join, readFileSync, require, ROOT } from '../env.mjs'
+/* 零件：把技能钉到一次会话（见那个文件头，为什么单独一个文件） */
+import { runSkillPinChecks } from './73-net-policy-pin-parts.mjs'
 
 /*
    网络策略：把「声明」变成「强制」。钉住的是**语义**（后人最容易改坏的那些）：
@@ -201,8 +203,16 @@ export async function run() {
   check('技能的 network 声明读得出来', skillPerms.networkGrantOf({ permissions: { byKind: { network: 'deny' } } }) === 'deny')
   check('没声明 / 脏值 → null', skillPerms.networkGrantOf(null) === null && skillPerms.networkGrantOf({ permissions: { byKind: { network: 'denny' } } }) === null)
   const permsSrc = readFileSync(join(ROOT, 'electron/core/skill-permissions.cjs'), 'utf8')
-  check('★ 注释没把「技能网络声明」说成已经生效（执行点有，但还没触发它的入口）', /没有一处代码给 `ctx\.networkGrant` 赋值/.test(permsSrc))
-  check('★ 注释也没把整个 permissions 说成沙箱', /仍然\*\*只能说成「声明，不是强制」/.test(permsSrc))
+  /*
+   * 注释口径要和代码同步 —— 这两条以前钉的是「还没有触发入口」，
+   * 现在入口做出来了（把技能钉到会话，见 skill-pin.cjs），所以改成钉「说清了
+   * 什么时候生效、什么时候不生效」，而不是钉某一句具体的话。
+   */
+  check('★ 注释说清了触发入口（钉到会话才会赋值）', /skill-pin\.cjs/.test(permsSrc))
+  check('★ 注释也说清了「没钉的时候不赋值」', /没钉的时候不赋值/.test(permsSrc))
+  check('★ 注释没把整个 permissions 说成沙箱', /file \/ shell 两档仍然只是声明/.test(permsSrc))
+  /* 「钉到会话」那一节拆成零件了 —— 加完它本文件 366 行，破硬约束 #2 */
+  await runSkillPinChecks(netPolicy)
 
   group('网络策略 / MCP 启动门')
 

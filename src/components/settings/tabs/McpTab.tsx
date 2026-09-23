@@ -187,7 +187,7 @@ export function McpTab() {
                       </p>
                     ) : null}
 
-                    <ServerIsolation server={server} onChange={patchServer} />
+                    <ServerIsolation server={server} status={st} onChange={patchServer} onRestart={restart} />
                   </div>
                   <IconButton
                     label={server.enabled ? '停用' : '启用'}

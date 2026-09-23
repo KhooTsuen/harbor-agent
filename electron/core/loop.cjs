@@ -15,6 +15,7 @@ const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
 const taskContext = require('./task-context.cjs')
 const life = require('./lifecycle.cjs')
+const skillPin = require('./skill-pin.cjs')
 const changeset = require('./changeset.cjs')
 /* run() 的形参也叫 config，模块得换名引 —— 否则 config.hasKey() 会在普通对象上调用。 */
 
@@ -105,9 +106,8 @@ async function runLoop(options) {
     shellPolicy: config.tools.shellPolicy,
     fileScope: config.tools.fileScope,
     outputLimit: config.tools.outputLimit,
-    signal,
-    confirm,
-    log,
+    /* 技能钉到这次对话时，它的 network 声明会在这里生效（见 skill-pin.cjs） */
+    signal, confirm, log, ...skillPin.ctxGrant(threadSettings),
     granted: new Map() /* AG-013：「允许本次」的批准时刻，见 tools/approval.cjs */,
   }
 

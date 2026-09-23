@@ -31,6 +31,16 @@ export interface McpServerStatus {
   error: string
   toolCount: number
   tools: Array<{ name: string; description: string }>
+  /*
+   * 下面三个是 2026-09-24 网络策略落地时内核新加的（`core/mcp.cjs` 的 `status()`）。
+   * 可选项：老版本内核 / 假数据没有它们，界面得能处理 undefined。
+   */
+  /** 被网络策略拦下的理由（空 = 没被拦） */
+  blockedReason?: string
+  /** 如实反映「这份声明到底管住了多少」：`controlled` 兑现了，`uncontrolled` 没兑现 */
+  networkStatus?: 'controlled' | 'uncontrolled' | 'blocked'
+  /** 为什么是这个状态（人话，直接显示给用户） */
+  networkNote?: string
 }
 
 /** 内置预设（内核 mcp-presets.cjs 是唯一真相源；command 里的占位符已由内核填好） */

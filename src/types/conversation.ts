@@ -118,6 +118,14 @@ export interface ThreadSettings {
   useMemory?: boolean
   /** 思考强度（DeepSeek reasoning_effort）：low / high / max */
   reasoning?: ReasoningLevel
+  /**
+   * 本次会话指定的技能（技能 id，空 = 没指定）。
+   *
+   * ★ 钉住之后会多两件事：① 技能正文会进系统提示；
+   *   ② 它的 `network` 声明**变成强制**（内核发起网络动作前会比对）。
+   *   `file` / `shell` 两档仍然只是声明。见 `electron/core/skill-pin.cjs`。
+   */
+  pinnedSkill?: string
 }
 
 export interface ConversationState {
