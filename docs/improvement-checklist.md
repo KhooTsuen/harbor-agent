@@ -147,10 +147,22 @@
 
 ## 还没做（按建议顺序）
 
-1. **回退到指定检查点**（2.2）—— 现在只能整批撤。要动 `changeset` + 任务 UI
+1. ~~**回退到指定检查点**（2.2）~~ → ✅ **2026-09-24 已做（v1.12.0，AG-045）**：
+   `changeset:rollbackTo` + `changeset-rollback.cjs`，撤销检查点**之后**的改动。
+   判据是时间戳（`checkpoint.at` vs `files[].at`），界面请传 `at`（下标会随 50 条截断挪位）。
+   自检组 `66-rollback-to`（43 项）
 2. **提示词/工具描述版本化**（3.2）—— 给 `prompt-stack.cjs` 加版本号并记进台账
 3. **按任务类型预设参数**（3.2）—— 温度/轮数/工具上限的场景化默认值
 4. **一致性检查**（3.2）—— 同任务多次跑，结果差异过大时提示
 5. **转圈提示的文案守卫**（2.1）—— 补一条断言，钉住那句提示真的出现
 6. **真实任务验收**（4.1）—— 人要参与，建议照 `docs/试玩清单.md` 扩成 5–10 个场景
 7. **界面上超边界任务的提前提示**（3.1）
+
+## 2026-09-24 补做（改进清单 A 组前三项）
+
+| 项 | 产物 | 自检组 |
+|---|---|---|
+| **回退到指定检查点**（AG-045） | `changeset-rollback.cjs` + `changeset:rollbackTo` | `66-rollback-to`（43 项） |
+| **Artifact 内核落盘 + 版本化**（AG-046） | `core/artifact.cjs` + `handlers/artifact.cjs` + `artifactApi.ts` | `67-artifact` |
+| **Skill 权限声明**（AG-047） | `core/skill-permissions.cjs` + 设置页展示 | `68-skill-perms` |
+

@@ -1,5 +1,59 @@
 # 更新日志
 
+## [1.12.0] — 2026-09-24 · 补三处现有能力的缺口：回退到检查点、成果落盘、技能权限声明
+
+改进清单里「A. 代码/功能缺口」的前三项 —— 都是**现有能力的直接补全**，
+改动集中在已经跑通的模块，没有动数据模型。
+
+### ① 回退到指定检查点（AG-045）
+
+以前只有**整批撤**（`changeset:rollback`），要么全撤、要么不撤。
+现在能「回退到某个检查点」：撤销该检查点**之后**发生的文件改动，之前的原样留着。
+
+- 判据是**时间戳**：`checkpoint.at` 与改动快照的 `files[].at` —— 快照时刻晚于检查点 =
+  这次改动发生在检查点之后。`checkpointId` 优先吃 `at`（稳定），兜底吃数组下标。
+  ⚠️ 界面请统一传 `at`：`checkpoints` 只留最近 50 条，下标会随截断挪位。
+- 新 `electron/core/changeset-rollback.cjs` + `electron/handlers/changeset-rollback.cjs`
+  （新通道 `changeset:rollbackTo`）。`rollback(id)` 一行未动。
+- 几个刻意保守的地方：**跨检查点的事务**只撤后半、前半明说没动（进 `skipped`）——
+  拿旧快照撤前半会把更早的改动一起毁掉；检查点不存在/没有检查点**报错，不默默当成 0 号**；
+  同一毫秒时按「不在检查点之后」处理（宁可少撤，也不破坏「检查点之前不动」的承诺）。
+- 自检组 `66-rollback-to`（43 项）。
+
+### ② Artifact（成果）内核落盘 + 版本化（AG-046）
+
+按 `docs/改造任务/Artifact系统.md` 的**批次 ①②**做。以前那个「成果」面板是
+**只读的会话副产品**：关掉会话就没了，点开只有路径、看不到「它有几版」。
+
+- 新 `electron/core/artifact.cjs` + `electron/handlers/artifact.cjs`，落盘 `data/artifacts/`，
+  通道 `artifact:list / get / save / remove / reveal`。**同名多次 save = 新版本**。
+- 面板数据源改成优先读内核（`src/lib/artifactApi.ts`），**桥没接好就降级回前端内存汇总**
+  —— 桥没接好只该是「没有版本历史」，不该让面板白屏。
+- 自检组 `67-artifact`。
+
+### ③ Skill 权限声明（AG-047）
+
+Skill 是带 frontmatter 的 markdown，以前**没有权限声明**。现在支持：
+
+```yaml
+permissions:
+  - file: read
+  - shell: ask
+  - network: deny
+```
+
+- 词汇跟现有权限模型对齐（`capability.cjs` / `WRITE_TOOLS` / `risk.cjs`），没发明新词。
+- **未知种类或取值直接拒绝并给人话**（不是静默忽略）；`list()` 带出解析结果；
+  `buildPromptSection()` 把权限写进给模型看的说明；设置页每个技能显示它声明的边界。
+- ⚠️ **这是声明，不是强制** —— 代码注释和 UI 都写明了。真正的强制在 tools 的权限门。
+- 自检组 `68-skill-perms`。
+
+### 验证
+- 全链路 `npm run verify` 全绿：typecheck 0 错 · lint 干净 · 行数无超 · 单测 655 ·
+  内核自检 **2108 项 / 0 失败**（+120）· build 通过
+- 顺带修：自检组 66 里一句 `require('./x.cjs')` 字符串被「相对 require 路径都要存在」
+  那条静态检查误判成真 require → 改成只断言后半截
+
 ## [1.11.0] — 2026-09-23 · 并行收尾批：脱敏补齐、确认超时、打包卫生、意图事务化
 
 按一份外部评审（ChatGPT 出的路线图）+ 本机实测漏洞清单，拆成 5 个互不碰文件的子代理

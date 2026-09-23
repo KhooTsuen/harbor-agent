@@ -11,15 +11,81 @@ import { Row, SectionTitle } from '../parts'
 /* ══════════════════════════════════════════════════════════════
    设置 → 技能
 
-   技能 = `data/skills/<名字>/SKILL.md`。系统提示里只放「名字 + 什么时候用 + 路径」，
-   模型判断用得上时自己去读全文。
+   技能 = `data/skills/<名字>/SKILL.md`。系统提示里只放「名字 + 什么时候用 + 路径
+   + 权限声明」，模型判断用得上时自己去读全文。
 
    所以这一页的重点是让 description 写对 —— 它是唯一决定「这个技能会不会被想起来」
    的东西，界面上也这么标出来。
+
+   技能还能在 frontmatter 里写 `permissions:`（文件 / Shell / 网络）。词和标签都由
+   主进程算好（`electron/core/skill-permissions.cjs`），这里只负责摆出来 ——
+   **不要在渲染层再写一套权限词**，不然两处会漂。
    ══════════════════════════════════════════════════════════════ */
 
+interface SkillPermissionItem {
+  kind: string
+  value: string
+  label: string
+}
+
+interface SkillPermissions {
+  items: SkillPermissionItem[]
+  byKind: Record<string, string>
+  text: string
+}
+
+/**
+ * 主进程 `skills.list()` 多带回来的两个字段。
+ *
+ * 为什么扩在这里：`types/models-extra.ts` 已经 300 行（行数红线），不能再动。
+ * 两个字段都是可选的，所以 `SkillInfo[]` 直接赋值给 `SkillRow[]` 是合法的，不用断言。
+ */
+type SkillRow = SkillInfo & {
+  permissions?: SkillPermissions | null
+  permissionError?: string | null
+}
+
+/**
+ * 一个技能声明的权限（一行小字，不重做布局）。
+ *
+ * ⚠️ 这是**声明，不是强制** —— 见文件底部那段说明。界面上不能只显示「网络 禁止」
+ * 就让人以为真拦住了，所以那行免责说明是必须的，不是装饰。
+ */
+function SkillPermissionLine({ skill }: { skill: SkillRow }) {
+  const error = typeof skill.permissionError === 'string' ? skill.permissionError : ''
+  const permissions = skill.permissions
+  const items = permissions && Array.isArray(permissions.items) ? permissions.items : []
+
+  /* 写错了就说写错了 —— 不能装作没这回事（后端也是拒绝、不是忽略） */
+  if (error) {
+    return (
+      <p className="mt-1 text-2xs leading-relaxed text-danger">
+        权限声明无效，已按「没声明」处理：{error}
+      </p>
+    )
+  }
+
+  if (items.length === 0) {
+    return <p className="mt-1 text-2xs text-fg-tertiary">权限：没声明（按当前权限档走）</p>
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      <span className="text-2xs text-fg-tertiary">声明</span>
+      {items.map((item) => (
+        <span
+          key={item.kind}
+          className="rounded-sm bg-bg-surface px-1.5 py-0.5 text-2xs text-fg-secondary"
+        >
+          {item.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function SkillsTab() {
-  const [skills, setSkills] = useState<SkillInfo[]>([])
+  const [skills, setSkills] = useState<SkillRow[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -81,6 +147,7 @@ export function SkillsTab() {
                     {skill.id} · 正文 {skill.bodyLength} 字
                     {skill.bodyLength === 0 ? '（空壳，模型读了也没用）' : ''}
                   </p>
+                  <SkillPermissionLine skill={skill} />
                 </div>
                 <IconButton
                   label="删除这个技能"
@@ -175,8 +242,17 @@ export function SkillsTab() {
       </Row>
 
       <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
+        技能里的权限是<span className="text-fg-secondary">声明，不是强制</span>：它只跟着技能清单进
+        系统提示、在这里给你看一眼，<span className="text-fg-secondary">拦不住任何一次工具调用</span>
+        —— 写了「不碰文件」，工具照样可能去写。真正拦人的门在工具层：权限档（只读 / 每次确认 /
+        完全）、文件范围、Shell 风险分级，都在「权限与安全」里配。
+      </p>
+
+      <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
         技能正文<span className="text-fg-secondary">不会</span>一直占上下文：系统提示里只有名字和
         description，模型判断用得上时才去读全文。所以正文可以写详细一点。
+        权限写在 SKILL.md 开头的 frontmatter 里，比如 `permissions:` 下面写 `- file: read`、
+        `- shell: ask`、`- network: deny`。
       </p>
     </div>
   )

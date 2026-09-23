@@ -273,6 +273,8 @@ function register({ ipcMain }) {
     log.info(`用户回滚了一次改动：${id}（恢复 ${result.restored?.length ?? 0} 个文件）`)
     return result
   })
+  /* 「撤到某个检查点为止」单独一个文件（本文件已贴 300 行上限，见那边的头注释） */
+  require('./changeset-rollback.cjs').register({ ipcMain })
 
   /*
    * AG-036：右栏「审查」要看的「未提交的改动」。

@@ -100,6 +100,9 @@ import { run as redactFields } from './selftest/groups/62-redact-fields.mjs'
 import { run as durableIntent } from './selftest/groups/63-durable-intent.mjs'
 import { run as approvalCenter } from './selftest/groups/64-approval-center.mjs'
 import { run as tokenBadge } from './selftest/groups/65-token-badge.mjs'
+import { run as rollbackTo } from './selftest/groups/66-rollback-to.mjs'
+import { run as artifactGroup } from './selftest/groups/67-artifact.mjs'
+import { run as skillPerms } from './selftest/groups/68-skill-perms.mjs'
 
 const GROUPS = [
   basics,
@@ -167,6 +170,9 @@ const GROUPS = [
   durableIntent,
   approvalCenter,
   tokenBadge,
+  rollbackTo,
+  artifactGroup,
+  skillPerms,
 ]
 
 async function main() {

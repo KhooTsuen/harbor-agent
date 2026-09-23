@@ -106,6 +106,8 @@ function registerHandlers(deps) {
   require('./handlers/pty.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })
   /* 安全 / 可靠相关：审计、路径授权、任务、改动事务、凭证状态 */
   require('./handlers/safety.cjs').register({ ipcMain })
+  /* 成果（Artifact）：落盘 + 版本历史 + 打开文件，数据在 data/artifacts/ */
+  require('./handlers/artifact.cjs').register({ ipcMain })
   /* 个人资料（头像 + 名字）—— 侧栏左下角那个圆 */
   require('./handlers/profile.cjs').register({ ipcMain })
 

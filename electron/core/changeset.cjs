@@ -24,6 +24,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+/* 「撤到某个检查点为止」在单独一个文件里（它惰性 require 本模块，顶层不引用） */
+const { rollbackTo } = require('./changeset-rollback.cjs')
 
 function root() {
   return path.join(DIRS.data, 'changesets')
@@ -288,4 +290,7 @@ function prune(keep = 50) {
   return { ok: true, removed: stale.length }
 }
 
-module.exports = { begin, record, commit, rollback, list, get, readMeta, prune, root }
+module.exports = {
+  begin, record, commit, rollback, rollbackTo,
+  list, get, readMeta, writeMeta, prune, root,
+}

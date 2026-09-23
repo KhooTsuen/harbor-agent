@@ -164,7 +164,13 @@ const api = {
   changesetList: (options) => call('changeset:list', options),
   changesetGet: (id) => call('changeset:get', id),
   changesetRollback: (id) => call('changeset:rollback', id),
+  changesetRollbackTo: (payload) => call('changeset:rollbackTo', payload),
   changesetDiff: (payload) => call('changeset:diff', payload),
+  artifactList: (options) => call('artifact:list', options),
+  artifactGet: (id, version) => call('artifact:get', id, version),
+  artifactSave: (draft) => call('artifact:save', draft),
+  artifactRemove: (id) => call('artifact:remove', id),
+  artifactReveal: (id) => call('artifact:reveal', id),
   metricsRecent: (payload) => call('metrics:recent', payload),
 
   credentialsStatus: () => call('credentials:status'),
