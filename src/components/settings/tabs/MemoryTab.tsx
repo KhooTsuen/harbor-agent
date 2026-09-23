@@ -15,6 +15,7 @@ import {
 } from '@/lib/memoryApi'
 import { Button } from '@/components/ui/Button'
 import { Row, SectionTitle } from '../parts'
+import { MemoryExplainPanel } from '../panels/MemoryExplainPanel'
 import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
@@ -128,8 +129,17 @@ export function MemoryTab() {
     void refresh()
   }
 
+  /*
+   * 浏览器预览没有桥。记忆列表要整块干掉，但「记忆是怎么挑的」自己会说
+   * 「桥没接上」，留着它比整页空白有用。
+   */
   if (!memorySupported()) {
-    return <p className="p-3 text-2xs text-fg-tertiary">记忆列表需要桌面版。</p>
+    return (
+      <div className="flex flex-col gap-1 pb-6">
+        <MemoryExplainPanel projectId={projectId} />
+        <p className="p-3 text-2xs text-fg-tertiary">记忆列表需要桌面版。</p>
+      </div>
+    )
   }
 
   const memory = config?.memory
@@ -273,6 +283,8 @@ export function MemoryTab() {
       <p className="pt-3 text-2xs text-fg-tertiary">
         共 {items.length} 条（含已取代）。超过上限时会自动清理最旧的临时记忆。
       </p>
+
+      <MemoryExplainPanel projectId={projectId} />
     </div>
   )
 }

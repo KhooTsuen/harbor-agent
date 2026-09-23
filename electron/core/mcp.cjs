@@ -14,6 +14,7 @@
 
 const log = require('./log.cjs')
 const { McpConnection, PROTOCOL_VERSION } = require('./mcp-connection.cjs')
+const netGuard = require('./mcp-network-guard.cjs')
 
 /* ══════════════════════════════════════════════════════════════
    连接池
@@ -28,7 +29,8 @@ let lastFingerprint = ''
 function fingerprint(servers) {
   return JSON.stringify(
     servers
-      .map((s) => [s.id, s.command, s.args, s.env, s.enabled])
+      /* network / url / transport 也会决定「要不要拦」→ 必须进指纹，改了才重启 */
+      .map((s) => [s.id, s.command, s.args, s.env, s.enabled, s.network, s.url, s.transport])
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   )
 }
@@ -44,20 +46,42 @@ async function startAll(servers) {
   const enabled = (servers ?? []).filter((s) => s.enabled && s.command)
   if (enabled.length === 0) return status()
 
+  /*
+   * ★ 启动之前先过一遍网络策略（见 mcp-network-guard.cjs）：
+   * 「声明不给网络」却又要联网的服务器，这次不启动。
+   */
+  const { blocked } = netGuard.guardServers(enabled)
+
+  /*
+   * 被拦下的**也留在表里** —— 和「启动失败」一个待遇。
+   * 不留的话，设置页就显示不出「为什么它没起来」，那正是用户最想知道的。
+   */
+  for (const entry of blocked) {
+    const conn = new McpConnection(enabled.find((s) => s.id === entry.id))
+    conn.error = entry.reason
+    conn.blockedReason = entry.reason
+    connections.set(entry.id, conn)
+    log.warn(`MCP「${entry.id}」被网络策略拦下：${entry.reason}`)
+  }
+
+  const blockedIds = new Set(blocked.map((entry) => entry.id))
+
   await Promise.all(
-    enabled.map(async (server) => {
-      const conn = new McpConnection(server)
-      try {
-        await conn.start()
-        connections.set(server.id, conn)
-        log.info(`MCP「${server.id}」已连接，${conn.tools.length} 个工具`)
-      } catch (error) {
-        conn.error = error instanceof Error ? error.message : String(error)
-        /* 失败也留在表里 —— 设置页要显示「为什么没起来」 */
-        connections.set(server.id, conn)
-        log.warn(`MCP「${server.id}」启动失败：${conn.error}`)
-      }
-    }),
+    enabled
+      .filter((server) => !blockedIds.has(server.id))
+      .map(async (server) => {
+        const conn = new McpConnection(server)
+        try {
+          await conn.start()
+          connections.set(server.id, conn)
+          log.info(`MCP「${server.id}」已连接，${conn.tools.length} 个工具`)
+        } catch (error) {
+          conn.error = error instanceof Error ? error.message : String(error)
+          /* 失败也留在表里 —— 设置页要显示「为什么没起来」 */
+          connections.set(server.id, conn)
+          log.warn(`MCP「${server.id}」启动失败：${conn.error}`)
+        }
+      }),
   )
 
   return status()
@@ -69,14 +93,21 @@ function stopAll() {
 }
 
 function status() {
-  return [...connections.values()].map((conn) => ({
-    id: conn.id,
-    name: conn.config.name || conn.id,
-    alive: conn.alive,
-    error: conn.error,
-    toolCount: conn.tools.length,
-    tools: conn.tools.map((t) => ({ name: t.name, description: t.description })),
-  }))
+  return [...connections.values()].map((conn) => {
+    const net = netGuard.statusOf(conn.config)
+    return {
+      id: conn.id,
+      name: conn.config.name || conn.id,
+      alive: conn.alive,
+      error: conn.error,
+      toolCount: conn.tools.length,
+      tools: conn.tools.map((t) => ({ name: t.name, description: t.description })),
+      /* ── 2026-09-24 新增（上面那些老字段一个没动）── */
+      blockedReason: conn.blockedReason ?? '',
+      networkStatus: conn.blockedReason ? 'blocked' : net.status,
+      networkNote: net.note,
+    }
+  })
 }
 
 /** 所有 MCP 工具（展开成统一格式） */

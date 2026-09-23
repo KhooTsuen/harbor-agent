@@ -17,6 +17,7 @@ const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const store = require('./memory-store.cjs')
 const recall = require('./memory-recall.cjs')
+const explain = require('./memory-explain.cjs')
 
 /** 老文件的路径，仅用于迁移 */
 function legacyFile() {
@@ -179,4 +180,15 @@ module.exports = {
   TYPES: store.TYPES,
   SCOPES: store.SCOPES,
   SOURCES: store.SOURCES,
+  /*
+   * 上一轮注入账（为什么是这几条、每条多少分、分是怎么来的）。
+   *
+   * ★ 这是**进程内**状态，不落盘：重启后回到 `null`。界面必须能处理 null ——
+   *   不能假设「刚启动就有一份账」（自检组 71 钉住了「一条没注入时是结构完整的
+   *   空账」和「从没注入过是 null」两种情形）。
+   */
+  lastInjection: recall.lastInjection,
+  /* 单条打分的解释（同一套权重，见 memory-explain.cjs）—— 设置页逐条显示理由要用 */
+  explain: explain.explain,
+  explainSummary: explain.summarize,
 }

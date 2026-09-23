@@ -1,5 +1,7 @@
 const { exec } = require('node:child_process')
 const encoding = require('../shell-encoding.cjs')
+const netPolicy = require('../net-policy.cjs')
+const risk = require('../risk.cjs')
 const { truncateMiddle } = require('./_shared.cjs')
 const { createSettler, killTree, onAbort } = require('../abort.cjs')
 
@@ -41,8 +43,46 @@ const DANGEROUS = [
 
 const MAX_OUTPUT = 8000
 
+/**
+ * 网络策略这一关：**只会把 allow 变严，永远不会把 ask 变松**。
+ *
+ * 为什么不在这里弹确认：确认界面不在这个文件（在 `tools/index.cjs` 的 approval 流程），
+ * 这里弹不出来。所以 `ask` 只有一种安全做法 —— **先看上层到底会不会问**：
+ *   · 上层这一档会问（risk.decide → 'ask'）→ 交给它，用户照样看到确认框
+ *   · 上层这一档是静默放行（比如 shellPolicy.medium = 'allow'）→ **这里拦掉**，
+ *     否则就成了「网络策略说每次先问，结果没人被问就把请求发出去了」
+ *
+ * @returns {string} 空串 = 放行；非空 = 给用户看的拒绝理由
+ */
+function networkGuard(command, ctx) {
+  const decided = netPolicy.decide({ kind: 'shell', target: command, ctx })
+  if (decided.action === 'allow') return ''
+  if (decided.action === 'deny') {
+    return `这条命令要联网，被网络策略拦下了。\n原因：${decided.reason}\n命令：${command}`
+  }
+
+  let upper = ''
+  try {
+    const verdict = risk.classify(command)
+    const policy = ctx.shellPolicy ?? require('../config.cjs').get().tools.shellPolicy
+    const decidedUpper = risk.decide(verdict, policy)
+    if (risk.rank(verdict.level) >= risk.rank('medium') && decidedUpper.action === 'ask') return ''
+    upper = `上层风险分级这一档（${verdict.level}）不会问你（${decidedUpper.action}）`
+  } catch (error) {
+    upper = `读不到上层的风险策略（${error instanceof Error ? error.message : error}）`
+  }
+
+  return (
+    `这条命令要联网，网络策略要求「每次先问」，但这一层没有确认界面，${upper} ——\n` +
+    '为了不出现「没人被问就把请求发出去」，按拒绝处理。\n' +
+    `原因：${decided.reason}\n命令：${command}`
+  )
+}
+
 module.exports = {
   name: 'run_shell',
+  /* 自检直接调它（不必真发请求），见 scripts/selftest/groups/73-net-policy.mjs */
+  networkGuard,
   description:
     '在系统 shell 里跑一条命令并返回输出。工作目录默认是项目工作目录，可以用 cwd 指定别处。超时会自动杀掉。不要用它跑需要交互的命令。',
   parameters: {
@@ -66,6 +106,10 @@ module.exports = {
         )
       }
     }
+
+    /* ── 网络策略：内核级强制（见 net-policy.cjs）── */
+    const networkBlocked = networkGuard(command, ctx)
+    if (networkBlocked) throw new Error(networkBlocked)
 
     const cwd = args.cwd ? String(args.cwd) : ctx.workdir
     const timeoutSec = Math.min(600, Math.max(5, Number(args.timeout) || ctx.shellTimeout || 60))

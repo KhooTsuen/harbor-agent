@@ -7,6 +7,9 @@
  * 这里只有数据和枚举，没有逻辑。
  */
 
+const { NETWORK_MODES, SECURITY_DEFAULTS } = require('./config-security.cjs')
+const { MCP_ENV_ALLOWLIST } = require('./config-mcp-env.cjs')
+
 /* ══════════════════════════════════════════════════════════════
    品牌
    ══════════════════════════════════════════════════════════════ */
@@ -58,34 +61,7 @@ const SCENE_IDS = ['chat', 'title', 'prompt', 'translate', 'suggest', 'compact',
 /** 模型角色（路由器用） */
 const MODEL_ROLES = ['fast', 'reasoning', 'coding', 'vision', 'cheap']
 
-/**
- * MCP 默认环境变量白名单。
- *
- * 为什么非要留这几个：Windows 上少了 SystemRoot / windir，很多程序
- * **根本起不来**（加载 DLL 失败），报的错还和权限无关，极难排查。
- * 这几个是「让进程能跑」的最小集，不含任何密钥。
- */
-const MCP_ENV_ALLOWLIST = [
-  'PATH',
-  'PATHEXT',
-  'SystemRoot',
-  'SystemDrive',
-  'windir',
-  'COMSPEC',
-  'TEMP',
-  'TMP',
-  'USERPROFILE',
-  'HOME',
-  'APPDATA',
-  'LOCALAPPDATA',
-  'NUMBER_OF_PROCESSORS',
-  'PROCESSOR_ARCHITECTURE',
-  'ProgramFiles',
-  'ProgramData',
-  'LANG',
-  'LC_ALL',
-  'PYTHONIOENCODING',
-]
+/* MCP 的环境变量白名单在 config-mcp-env.cjs（连同「为什么一个都不能删」的说明） */
 
 /* ══════════════════════════════════════════════════════════════
    默认值
@@ -162,6 +138,12 @@ const DEFAULTS = {
     /** 单次工具输出上限（字节） */
     outputLimit: 2 * 1024 * 1024,
   },
+
+  /*
+   * 网络策略。默认值与**它管不到什么**的说明都在 `config-security.cjs` ——
+   * 这里只引进来（那段注释本该挨着默认值，挪走就会漂）。
+   */
+  security: SECURITY_DEFAULTS,
 
   scenes: {
     chat: { providerId: '', model: '' },
@@ -294,5 +276,7 @@ module.exports = {
   SCENE_IDS,
   MODEL_ROLES,
   MCP_ENV_ALLOWLIST,
+  NETWORK_MODES,
+  SECURITY_DEFAULTS,
   DEFAULTS,
 }

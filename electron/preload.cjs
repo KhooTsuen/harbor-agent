@@ -53,6 +53,26 @@ function call(channel, ...args) {
   )
 }
 
+/**
+ * 订阅一条主进程推来的事件，返回退订函数。
+ *
+ * 为什么抽出来：下面 `on*` 里有 5 处是**一字不差**的
+ * `const h = (_e,p) => cb(p); on(...); return () => remove(...)`。
+ * 抄五遍的时候，「退订返回了吗」「监听器是同一个引用吗」这种问题就得逐个看 ——
+ * 抽一处之后只剩一种写法可错。多通道且每个通道要包形状的（PTY）仍然自己写，不硬套。
+ */
+function subscribe(channel, callback) {
+  const handler = (_event, payload) => callback(payload)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
+}
+
+/** 一次订阅多条通道，退订也是一次撤完。同一形状的回调直接套 `subscribe` */
+function subscribeAll(channels, callback) {
+  const offs = channels.map((channel) => subscribe(channel, callback))
+  return () => offs.forEach((off) => off())
+}
+
 const api = {
   selfTest: () => call('app:selfTest'),
   quitApp: () => call('app:quit'),
@@ -104,6 +124,8 @@ const api = {
   memoryDisable: (id) => call('memory:disable', id),
   memoryEnable: (id) => call('memory:enable', id),
   memoryRemove: (id) => call('memory:remove', id),
+  /* 记忆可解释：上一轮注入账 + 逐条「为什么是它」（见 core/memory-explain.cjs） */
+  memoryExplain: (options) => call('memory:explain', options),
 
   searchProviders: () => call('search:providers'),
   testSearch: (override) => call('search:test', override),
@@ -139,6 +161,9 @@ const api = {
   auditPrune: () => call('audit:prune'),
   riskClassify: (command) => call('risk:classify', command),
 
+  /* 网络策略的当前值 + 「管得到 / 管不到什么」（说明由内核生成，前端别重写） */
+  networkPolicy: () => call('security:network'),
+
   capabilityList: () => call('capability:list'),
   capabilityGrant: (payload) => call('capability:grant', payload),
   capabilityRevoke: (target) => call('capability:revoke', target),
@@ -171,6 +196,16 @@ const api = {
   artifactSave: (draft) => call('artifact:save', draft),
   artifactRemove: (id) => call('artifact:remove', id),
   artifactReveal: (id) => call('artifact:reveal', id),
+  /*
+   * 定时任务（内核在 core/schedule-*.cjs，台账 data/schedules.json）。
+   * `runNow` 是**立刻返回**的 —— 一条任务可能跑几分钟，把 IPC 挂在那儿等，
+   * 渲染层只会看成「点了没反应」；进度去任务台账和那条专属会话里看。
+   */
+  schedulesList: () => call('schedules:list'),
+  schedulesSave: (input) => call('schedules:save', input),
+  schedulesRemove: (id) => call('schedules:remove', id),
+  schedulesToggle: (id, enabled) => call('schedules:toggle', id, enabled),
+  schedulesRunNow: (id) => call('schedules:runNow', id),
   metricsRecent: (payload) => call('metrics:recent', payload),
 
   credentialsStatus: () => call('credentials:status'),
@@ -206,20 +241,10 @@ const api = {
    * 订阅流式事件。返回取消订阅的函数。
    * 只转发白名单里的通道，别的通道一律丢掉。
    */
-  onEvent: (callback) => {
-    const listener = (_event, payload) => callback(payload)
-    for (const channel of EVENTS) ipcRenderer.on(channel, listener)
-    return () => {
-      for (const channel of EVENTS) ipcRenderer.removeListener(channel, listener)
-    }
-  },
+  onEvent: (callback) => subscribeAll(EVENTS, callback),
 
   /** 只订阅终端输出。和 onEvent 分开，免得终端数据混进对话流里 */
-  onShellData: (callback) => {
-    const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('shell:data', listener)
-    return () => ipcRenderer.removeListener('shell:data', listener)
-  },
+  onShellData: (callback) => subscribe('shell:data', callback),
 
   /* 订阅 PTY 两个事件（输出分片 / 退出）。合成一个回调：终端面板总是两个都要处理。 */
   onPtyEvent: (callback) => {
@@ -234,49 +259,24 @@ const api = {
   },
 
   /** 订阅插件热插拔事件（新增/删除插件时主进程通知） */
-  onPluginsChanged: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('plugins:changed', handler)
-    return () => ipcRenderer.removeListener('plugins:changed', handler)
-  },
+  onPluginsChanged: (callback) => subscribe('plugins:changed', callback),
 
   /* 订阅「生图完成 / 失败」。生图是异步的（提交完就返回，出图可能几分钟后），
      那时这轮对话早结束了 —— 靠主进程推事件回来把图插进对话。 */
-  onImageDone: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('image:ready', handler)
-    ipcRenderer.on('image:failed', handler)
-    ipcRenderer.on('image:progress', handler)
-    return () => {
-      ipcRenderer.removeListener('image:ready', handler)
-      ipcRenderer.removeListener('image:failed', handler)
-      ipcRenderer.removeListener('image:progress', handler)
-    }
-  },
+  onImageDone: (callback) =>
+    subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
 
 
   /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */
-  onBrowserRequest: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('browser:request', handler)
-    return () => ipcRenderer.removeListener('browser:request', handler)
-  },
+  onBrowserRequest: (callback) => subscribe('browser:request', callback),
 
 
   /* 一轮跑完了（主进程推）。**文案由主进程算好**（要不要弹系统通知是它决定的，
      藏到托盘时渲染层会被节流判不准）；渲染层只负责"用户没在看就弹个提示"。 */
-  onTaskEnd: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('app:taskEnd', handler)
-    return () => ipcRenderer.removeListener('app:taskEnd', handler)
-  },
+  onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
 
   /** 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
-  onNotificationClick: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('app:notificationClick', handler)
-    return () => ipcRenderer.removeListener('app:notificationClick', handler)
-  },
+  onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
 
   /** 把浏览结果回给主进程（不回的话那边会一直等） */
   browserResult: (id, result) => call('browser:result', { id, result }),

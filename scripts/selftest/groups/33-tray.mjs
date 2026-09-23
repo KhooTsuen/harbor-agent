@@ -213,7 +213,9 @@ export async function run() {
   check('★ 点 × 走的是「藏到托盘」而不是直接关', /event\.preventDefault\(\)[\s\S]{0,200}hideToTray\(win\)/.test(mainSrc))
   check('托盘拿到了通知器（提示复用同一套系统通知）', mainSrc.includes('notify: trayNotifier?.notify'))
   const handlersSrc = readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8')
-  check('注册清单把通知器交回去了', handlersSrc.includes('return { notifier }'))
+  /* 通知器**在**交回去的清单里就行 —— 清单里后来还多了别的东西（如 schedules），
+     钉死 `return { notifier }` 会把「多交一样」误判成「没交」。 */
+  check('注册清单把通知器交回去了', /return \{ notifier/.test(handlersSrc))
 
   /*
    * ★ 退出时托盘图标要消失（用户报过「退出后图标还挂着」）。

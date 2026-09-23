@@ -14,6 +14,7 @@ import {
   credentialsStatus,
 } from '@/lib/safetyApi'
 import { Row, SectionTitle } from '../parts'
+import { NetworkPolicyPanel } from '../panels/NetworkPolicyPanel'
 import { AuditPanel } from '../security/AuditPanel'
 import { GrantsPanel } from '../security/GrantsPanel'
 import { ApprovalHistory } from '../security/ApprovalHistory'
@@ -70,11 +71,15 @@ export function SecurityTab() {
     void refresh()
   }, [refresh])
 
-  /* 桌面版才有的面板：浏览器预览里提示一句，别让人以为是坏了 */
+  /* 桌面版才有的面板：浏览器预览里提示一句，别让人以为是坏了。
+     网络策略单独留着 —— 它会自己说明「桥没接上」。 */
   if (!creds && grants.length === 0 && entries.length === 0 && !busy) {
     return (
-      <div className="p-3 text-2xs text-fg-tertiary">
-        这些面板需要桌面版（浏览器预览没有主进程，看不到审计与授权记录）。
+      <div className="flex flex-col gap-1 pb-6">
+        <NetworkPolicyPanel />
+        <p className="p-3 text-2xs text-fg-tertiary">
+          其余面板需要桌面版（浏览器预览没有主进程，看不到审计与授权记录）。
+        </p>
       </div>
     )
   }
@@ -172,6 +177,8 @@ export function SecurityTab() {
           </div>
         </div>
       </Row>
+
+      <NetworkPolicyPanel />
 
       <GrantsPanel grants={grants} onChange={() => void refresh()} />
 

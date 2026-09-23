@@ -11,6 +11,7 @@
 
 const C = require('./config-defaults.cjs')
 const providerCaps = require('./provider-capabilities.cjs')
+const securityCfg = require('./config-security.cjs')
 
 function clampNumber(value, min, max, fallback) {
   const n = Number(value)
@@ -185,6 +186,12 @@ function normalize(raw) {
       },
       outputLimit: clampNumber(tools.outputLimit, 64_000, 16 * 1024 * 1024, 2 * 1024 * 1024),
     },
+
+    /*
+     * 网络策略。默认值 + 规范化 + 「管不到什么」的说明全在 `config-security.cjs`
+     * —— 那里是这一段唯一的真相源（含它为什么必须列进本白名单的理由）。
+     */
+    security: securityCfg.normalizeSecurity(g.security),
 
     scenes: Object.fromEntries(
       C.SCENE_IDS.map((id) => {

@@ -104,6 +104,9 @@ import { run as rollbackTo } from './selftest/groups/66-rollback-to.mjs'
 import { run as artifactGroup } from './selftest/groups/67-artifact.mjs'
 import { run as skillPerms } from './selftest/groups/68-skill-perms.mjs'
 import { run as providerCaps } from './selftest/groups/70-provider-caps.mjs'
+import { run as memoryExplain } from './selftest/groups/71-memory-explain.mjs'
+import { run as scheduleGroup } from './selftest/groups/72-schedule.mjs'
+import { run as netPolicyGroup } from './selftest/groups/73-net-policy.mjs'
 
 const GROUPS = [
   basics,
@@ -175,6 +178,9 @@ const GROUPS = [
   artifactGroup,
   skillPerms,
   providerCaps,
+  memoryExplain,
+  scheduleGroup,
+  netPolicyGroup,
 ]
 
 async function main() {

@@ -190,8 +190,10 @@ export async function run() {
   check('渲染层只订阅 taskEnd（不再自己盯相位）', hookSrc.includes('subscribeTaskEnd('))
   check('渲染层不再自己拼通知文案', !hookSrc.includes('endNotice'))
   const preloadSrc = readFileSync(join(ROOT, 'electron/preload.cjs'), 'utf8')
-  check('preload 订阅了 app:taskEnd', preloadSrc.includes("ipcRenderer.on('app:taskEnd'"))
-  check('preload 订阅了点击事件', preloadSrc.includes("ipcRenderer.on('app:notificationClick'"))
+  /* 只看「订没订这个通道」，不钉用哪个 API 订 —— 同类订阅已统一走 subscribe() 帮手，
+     钉死 `ipcRenderer.on(` 会让一次无害重构变红，那种红没有信息量。 */
+  check('preload 订阅了 app:taskEnd', /(?:ipcRenderer\.on|subscribe)\(\s*'app:taskEnd'/.test(preloadSrc))
+  check('preload 订阅了点击事件', /(?:ipcRenderer\.on|subscribe)\(\s*'app:notificationClick'/.test(preloadSrc))
   check(
     '★ 注册清单把通知器接到了对话收尾上（不是建了不用）',
     readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8').includes('taskEnd: notifier.onRunEnd'),

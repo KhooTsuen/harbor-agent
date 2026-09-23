@@ -36,6 +36,38 @@ function register({ ipcMain }) {
     }),
   }))
 
+  /**
+   * 「记忆为什么是这样」—— 设置页要显示的两样东西。
+   *
+   * ① `injected`：上一轮注入账（哪几条真的进了系统提示、各多少分、分是怎么来的）。
+   *    进程内状态、不落盘 → 刚启动时是 null，界面必须能处理。
+   * ② `items`：当前 active 记忆逐条打分的解释。检索**没开**（`memory.retrieve`
+   *    为 false）时全量注入，排序没有意义，所以那时返回空数组而不是编一个分数。
+   */
+  ipcMain.handle('memory:explain', (_event, options = {}) => {
+    const query = String(options?.query ?? '')
+    const last = memory.lastInjection()
+    const retrieveOn = config.get().memory.retrieve !== false
+    const items = retrieveOn
+      ? memory
+          .list({ status: 'active', projectId: options?.projectId ?? '' })
+          .map((item) => {
+            const scored = memory.explain(item, { query })
+            return {
+              id: item.id,
+              content: item.content,
+              type: item.type,
+              scope: item.scope,
+              score: scored.score,
+              reason: memory.explainSummary(scored),
+            }
+          })
+          .sort((a, b) => b.score - a.score)
+      : []
+
+    return { ok: true, injected: last, items, retrieveEnabled: retrieveOn }
+  })
+
   ipcMain.handle('memory:add', (_event, input) => {
     const result = memory.add(input ?? {})
     return result.ok ? { ok: true, item: result.item, stats: memory.stats() } : result
@@ -139,6 +171,25 @@ function register({ ipcMain }) {
     const result = await mcp.startAll(servers)
     log.info(`MCP 重启完成，${result.length} 个服务器`)
     return { ok: true, servers: result }
+  })
+
+  /**
+   * 网络策略：当前值 + 一段「管得到 / 管不到什么」的说明。
+   *
+   * `description` **由内核生成**（`net-policy.describePolicy`），不在前端拼 ——
+   * 那段话是交付内容的一部分：它说清了这个开关的边界，前端重写一遍就会漂，
+   * 而且漂的方向通常是「说得比实际强」。
+   */
+  ipcMain.handle('security:network', () => {
+    const netPolicy = require('../core/net-policy.cjs')
+    const stored = config.get().security?.network ?? {}
+    return {
+      ok: true,
+      mode: stored.mode ?? 'ask',
+      denyHosts: [...(stored.denyHosts ?? [])],
+      allowHosts: [...(stored.allowHosts ?? [])],
+      description: netPolicy.describePolicy(),
+    }
   })
 }
 

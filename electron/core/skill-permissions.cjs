@@ -19,11 +19,23 @@
  *   shell   对齐 `risk.cjs` / shellPolicy 的 allow / ask / block —— 这里写 deny 就是那边的 block
  *   network 对齐 MCP 的 network 策略 deny / ask / allow
  *
- * ⚠️ **这是声明，不是强制。** 解析出来的东西只去两个地方：系统提示（让模型知道这个技能
- * 自己的边界）和设置页（让用户看见）。**工具层不读它，所以它拦不住任何一次工具调用** ——
- * 真正拦人的门是 `tools/index.cjs` 的只读档 / 写入确认 / `allowNetwork`，以及
- * `capability.cjs` 的文件范围。要让它变强制，得让工具层按「当前生效的技能」收紧，
- * 现在**没做**。别在界面或文档里把它说成沙箱。
+ * ⚠️ **网络这一档有内核执行点，但目前还没有触发它的入口；file / shell 两档仍然只是声明。**
+ *
+ *   执行点在 `net-policy.cjs` 的 `decide()` 第 ① 条：内核**发起网络动作之前**
+ *   （`run_shell` 执行前、MCP 启动前）拿 `ctx.networkGrant` 比一遍，`deny` 优先于
+ *   全局设置 —— 自检组 73 把这条钉死了，接口是通的。
+ *
+ *   **但截至目前没有一处代码给 `ctx.networkGrant` 赋值。** 原因不是忘了接：运行时
+ *   技能只是一份**清单**（系统提示里只有名字 + 用途 + 路径，正文由模型按需去读），
+ *   **不存在「这次对话正在用哪个技能」这个概念**，也就没有「按哪个技能的声明收紧」
+ *   的依据。真要生效得先有「把技能钉到一次对话上」的入口 —— 那是另一件事，**没做**。
+ *
+ *   file / shell 两档本来就只是声明：解析出来的东西只去系统提示和设置页，工具层不读 ——
+ *   真正拦人的门是 `tools/index.cjs` 的只读档 / 写入确认 / `allowNetwork`，
+ *   以及 `capability.cjs` 的文件范围。
+ *
+ *   ⚠️ 所以界面上（`SkillsTab.tsx`）现在**仍然**只能说成「声明，不是强制」。别因为
+ *   内核里多了一条分支就提前把口径改强 —— 说到做不到正是这个项目反复付代价的地方。
  */
 
 /** 权限词汇表：label 给界面/提示词用，values 的键是唯一合法取值 */
@@ -133,4 +145,18 @@ function permissionLine(skill) {
   return skill.permissions.text
 }
 
-module.exports = { PERMISSION_KINDS, parsePermissions, permissionLine }
+/**
+ * 这个技能的网络声明，给**内核强制那一层**读（`net-policy.decide` 的 `ctx.networkGrant`）。
+ *
+ * 强制发生在**内核发起网络动作之前**（run_shell / MCP 启动 / webview），不在这里 ——
+ * 这里只负责把 SKILL.md 里那行 `network: deny|ask|allow` 读出来。
+ *
+ * @param {object|null} skill `skills.list()` 里的技能对象
+ * @returns {'deny'|'ask'|'allow'|null} 没声明 / 声明无效 → null（**不额外收紧**）
+ */
+function networkGrantOf(skill) {
+  const value = skill?.permissions?.byKind?.network
+  return value === 'deny' || value === 'ask' || value === 'allow' ? value : null
+}
+
+module.exports = { PERMISSION_KINDS, parsePermissions, permissionLine, networkGrantOf }

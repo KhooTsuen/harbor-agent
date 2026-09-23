@@ -269,7 +269,7 @@ if (!gotLock) {
 }
 
 /* 渲染层用到的处理器：清单在 register-handlers.cjs（那边能一眼看全注册了哪些通道） */
-trayNotifier = registerHandlers({
+const handlers = registerHandlers({
   ipcMain,
   app,
   Notification,
@@ -281,6 +281,11 @@ trayNotifier = registerHandlers({
   showWindow,
   getMainWindow: () => mainWindow,
   workdir: { currentWorkdir, resolveWorkdir },
-}).notifier
+})
+trayNotifier = handlers.notifier
+
+/* 定时任务心跳（30 秒一跳）。为什么放这儿起、以及「没人在场」的授权边界，
+   都写在 handlers/schedules.cjs 的 start() 上面。 */
+handlers.schedules.start()
 
 module.exports = { currentWorkdir, send }

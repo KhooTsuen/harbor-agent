@@ -108,11 +108,18 @@ function registerHandlers(deps) {
   require('./handlers/safety.cjs').register({ ipcMain })
   /* 成果（Artifact）：落盘 + 版本历史 + 打开文件，数据在 data/artifacts/ */
   require('./handlers/artifact.cjs').register({ ipcMain })
+  /*
+   * 定时任务：台账 CRUD + 立刻跑一次。
+   * 心跳（30 秒一跳）不在这里起 —— 它要等 app ready，由 main.cjs 调
+   * `handlers/schedules.cjs` 的 `start()`（同一处装配依赖，免得两套）。
+   */
+  const schedules = require('./handlers/schedules.cjs')
+  schedules.register({ ipcMain })
   /* 个人资料（头像 + 名字）—— 侧栏左下角那个圆 */
   require('./handlers/profile.cjs').register({ ipcMain })
 
   /* 交给 main.cjs：藏到托盘时用它给用户一句「我还在这儿」 */
-  return { notifier }
+  return { notifier, schedules }
 }
 
 module.exports = { registerHandlers, wrapInvokeHandlers }
