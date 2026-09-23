@@ -107,6 +107,8 @@ const EXPECTED_CHANNELS = [
   'search:providers',
   'search:test',
   'security:network',
+  'security:sessionCrypto',
+  'security:setSessionCrypto',
   'session:append',
   'session:appendCompact',
   'session:create',

@@ -15,6 +15,7 @@ import {
 } from '@/lib/safetyApi'
 import { Row, SectionTitle } from '../parts'
 import { NetworkPolicyPanel } from '../panels/NetworkPolicyPanel'
+import { SessionCryptoPanel } from '../panels/SessionCryptoPanel'
 import { AuditPanel } from '../security/AuditPanel'
 import { GrantsPanel } from '../security/GrantsPanel'
 import { ApprovalHistory } from '../security/ApprovalHistory'
@@ -77,6 +78,7 @@ export function SecurityTab() {
     return (
       <div className="flex flex-col gap-1 pb-6">
         <NetworkPolicyPanel />
+        <SessionCryptoPanel />
         <p className="p-3 text-2xs text-fg-tertiary">
           其余面板需要桌面版（浏览器预览没有主进程，看不到审计与授权记录）。
         </p>
@@ -179,6 +181,8 @@ export function SecurityTab() {
       </Row>
 
       <NetworkPolicyPanel />
+
+      <SessionCryptoPanel />
 
       <GrantsPanel grants={grants} onChange={() => void refresh()} />
 

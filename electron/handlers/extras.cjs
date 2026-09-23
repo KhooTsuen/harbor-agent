@@ -191,6 +191,79 @@ function register({ ipcMain }) {
       description: netPolicy.describePolicy(),
     }
   })
+
+  /**
+   * 会话内容加密：当前状态 + 盘上到底有多少行是密文。
+   *
+   * **数一遍真实文件**（而不是只报配置值）—— 配置说开着但盘上还是明文（比如上次
+   * 转换中途失败），用户必须能看见，否则就是「以为加密了、其实没加」。
+   */
+  ipcMain.handle('security:sessionCrypto', () => {
+    const sessionCrypto = require('../core/session-crypto.cjs')
+    const { DIRS } = require('../core/paths.cjs')
+    const fs = require('node:fs')
+    const path = require('node:path')
+
+    let files = 0
+    let encrypted = 0
+    let plain = 0
+    try {
+      for (const name of fs.readdirSync(DIRS.sessions)) {
+        if (!name.endsWith('.jsonl')) continue
+        files += 1
+        const text = fs.readFileSync(path.join(DIRS.sessions, name), 'utf8')
+        for (const line of text.split('\n')) {
+          if (!line.trim()) continue
+          if (line.startsWith(sessionCrypto.PREFIX)) encrypted += 1
+          else plain += 1
+        }
+      }
+    } catch (error) {
+      log.warn(`统计会话加密状态失败：${error instanceof Error ? error.message : error}`)
+    }
+
+    return {
+      ok: true,
+      enabled: sessionCrypto.isEnabled(),
+      key: sessionCrypto.keyInfo(),
+      files,
+      encrypted,
+      plain,
+    }
+  })
+
+  /**
+   * 开启 / 关闭会话内容加密，**并真的转换盘上的文件**（含先备份）。
+   *
+   * 转换会重写用户的全部会话，所以：
+   *   · 由用户显式点（不自动跑）
+   *   · 内核那边先备份，备份失败就中止，一个字节都不动
+   *   · 返回值里带备份名，界面要把它显示出来（出事时用户知道去哪找）
+   */
+  ipcMain.handle('security:setSessionCrypto', (_event, enable) => {
+    const sessionCrypto = require('../core/session-crypto.cjs')
+    const on = enable === true
+    const result = sessionCrypto.migrate({ enable: on })
+
+    /*
+     * ★ 转换**成功之后**才写配置。
+     *
+     * 顺序不能反：先写配置、再转换，万一转换中途失败，配置就说「开着」而盘上还是
+     * 明文 —— 之后新写的会话会被加密、老的仍是明文，用户以为全加密了。
+     * 失败时配置保持原样，用户重试就行。
+     */
+    if (result.ok) {
+      const stored = config.get().security ?? {}
+      config.patch({ security: { ...stored, encryptSessions: on } })
+    }
+
+    if (result.ok) {
+      log.info(`会话加密已${on ? '开启' : '关闭'}：${result.files} 个文件 / ${result.lines} 行`)
+    } else {
+      log.warn(`会话加密切换失败（配置未改动）：${result.error}`)
+    }
+    return result
+  })
 }
 
 module.exports = { register }

@@ -70,6 +70,12 @@ function hostList(value) {
 function normalizeSecurity(raw) {
   const network = obj(obj(raw).network)
   return {
+    /*
+     * 会话加密开关。**只认 `=== true`** —— 写别的（`'yes'`、`1`）一律当关。
+     * 这个开关决定「要不要重写用户的全部会话文件」，宁可因为写错而没加密，
+     * 也不要因为写错而把数据改了。
+     */
+    encryptSessions: obj(raw).encryptSessions === true,
     network: {
       /* 写错 / 缺失一律按 'ask'（fail-closed —— 绝不因为写错就放行） */
       mode: pick(str(network.mode) || 'ask', NETWORK_MODES, 'ask'),
@@ -82,6 +88,14 @@ function normalizeSecurity(raw) {
 
 /** `security` 段的默认值（形状与上面的规范化输出**必须**一致） */
 const SECURITY_DEFAULTS = {
+  /*
+   * 会话内容在磁盘上加密（逐行封印，见 `session-crypto.cjs`）。
+   *
+   * ⚠️ **默认 false，而且这个默认值是刻意的。** 开启会**重写用户已有的全部会话文件**
+   *    —— 按硬约束 #5，那是一次大规模数据改动。默认开等于用户升级一次就被静默重写了
+   *    全部聊天记录。所以做成显式开启，且开启时自动先备份。
+   */
+  encryptSessions: false,
   network: {
     /** 'allow' = 不问就放行；'ask' = 每次先问（默认）；'deny' = 一律不许 */
     mode: 'ask',

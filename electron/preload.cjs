@@ -161,8 +161,10 @@ const api = {
   auditPrune: () => call('audit:prune'),
   riskClassify: (command) => call('risk:classify', command),
 
-  /* 网络策略的当前值 + 「管得到 / 管不到什么」（说明由内核生成，前端别重写） */
+  /* 安全相关：网络策略（说明由内核生成，前端别重写）、会话内容加密（开着关会重写全部会话，先备份） */
   networkPolicy: () => call('security:network'),
+  sessionCrypto: () => call('security:sessionCrypto'),
+  setSessionCrypto: (enable) => call('security:setSessionCrypto', enable),
 
   capabilityList: () => call('capability:list'),
   capabilityGrant: (payload) => call('capability:grant', payload),
@@ -266,10 +268,8 @@ const api = {
   onImageDone: (callback) =>
     subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
 
-
   /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
-
 
   /* 一轮跑完了（主进程推）。**文案由主进程算好**（要不要弹系统通知是它决定的，
      藏到托盘时渲染层会被节流判不准）；渲染层只负责"用户没在看就弹个提示"。 */
