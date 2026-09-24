@@ -113,6 +113,13 @@ export async function run() {
       status: 'completed',
       changedFiles: [{ path: 'src/one.ts' }],
     })
+    /*
+     * ★ 隔开 5ms 再建第二条：`findPrior` 只认**严格更早**的 createdAt ——
+     *   同毫秒创建的两条互不算「之前」。CI（快的机器）真的踩到过：
+     *   2026-09-24 同一个提交 #56 绿、#57 红，本地 8ms 间隔全绿。
+     *   这里别赌机器速度。
+     */
+    await new Promise((resolve) => setTimeout(resolve, 5))
     const second = taskCore.create({ goal: '把设置页里的按钮对齐修一下', sessionId: 'selftest-02-3' })
     made.push(second.id)
     taskCore.update(second.id, {
