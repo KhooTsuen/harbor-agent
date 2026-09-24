@@ -47,7 +47,17 @@ export async function run() {
     '★ 前端那份也没被改（两处必须同一个写法）',
     readFileSync(join(ROOT, 'src/stores/app/folderIds.ts'), 'utf8').includes("`dir:${workdir}`"),
   )
-  check('canon：大小写与尾斜杠算同一个目录', paths.canon('E:\\Foo\\') === paths.canon('e:\\foo'))
+  /* canon 按平台分开处理（Windows 大小写不敏感、Linux 真的敏感）—— 断言也得分开写。
+     2026-09-24 之前这里只写了 Windows 那半边，本地全绿、CI（ubuntu）红两条。 */
+  check('canon：尾斜杠不算数', paths.canon('E:\\Foo\\') === paths.canon('E:\\Foo'))
+  check(
+    process.platform === 'win32'
+      ? 'canon：Windows 上大小写算同一个目录'
+      : 'canon：Linux 上大小写是两条目录',
+    process.platform === 'win32'
+      ? paths.canon('E:\\Foo') === paths.canon('e:\\foo')
+      : paths.canon('/Foo') !== paths.canon('/foo'),
+  )
   check('canon：空串与点号都归零', paths.canon('') === '' && paths.canon('.') === '')
   check('nameOf：取最后一段', paths.nameOf('E:\\work\\harbor') === 'harbor')
   check('nameOf：根目录整条路径', paths.nameOf('E:\\') === 'E:')
@@ -71,11 +81,13 @@ export async function run() {
     const auto = projects.ensureFor('E:\\work\\auto')
     check('★ ensureFor 自动登记，id 用 dir:', auto.id === 'dir:E:\\work\\auto')
     check('自动登记的 auto=true', auto.auto === true)
+    /* 变体写法也按平台选：Windows 上大小写+尾斜杠都该归一；Linux 上只有尾斜杠算同一个。 */
+    const sameDirVariant = process.platform === 'win32' ? 'e:\\WORK\\auto\\' : 'E:\\work\\auto\\'
     check(
       '同名目录不会登记两条',
       /* ⚠️ 比 **id**，不比对象引用 —— ensureFor 每次都重新读一遍文件，
          返回的是新对象，`===` 永远不成立（这一条第一次就是这么假红的）。 */
-      projects.ensureFor('e:\\WORK\\auto\\')?.id === auto.id,
+      projects.ensureFor(sameDirVariant)?.id === auto.id,
     )
     projects.update(auto.id, { name: '改过的名字', color: 'red' })
     const again = projects.ensureFor('E:\\work\\auto')
