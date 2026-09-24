@@ -53,7 +53,7 @@ jobs:
       - name: 前端单元测试
         run: npm run test:unit
 
-      - name: 内核自检（1800+ 项，不联网）
+      - name: 内核自检（不联网）
         run: node scripts/selftest.mjs
 
       - name: 构建渲染层

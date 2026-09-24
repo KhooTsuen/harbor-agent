@@ -81,7 +81,7 @@ npm run package && (cd dist-portable/Harbor && ./Harbor.exe --self-test)
 - **`.cjs` 不参与 `tsc`。** 只跑 typecheck 等于没验内核。
   改 `electron/` 下的东西**必须**跑 `npm test`（脚本名叫 selftest，
   它直接 require 内核模块，不需要 Electron、不联网）。
-- **打包后必看 `channelsOk`。** `--self-test` 会清点 **115** 个 IPC 通道（清单在
+- **打包后必看 `channelsOk`。** `--self-test` 会清点**每一个** IPC 通道（清单在
   `electron/ipc-channels.cjs` 的 `EXPECTED_CHANNELS`，加通道要同步那里）—— handler 注册块中间抛错时，后面的会**静默不注册**（窗口照开、只弹个错误框）。
   这条就是被真实踩中之后加的。
 - **测试全绿 ≠ 能用。** UI / 会话 / 发送 / 权限相关的改动，
