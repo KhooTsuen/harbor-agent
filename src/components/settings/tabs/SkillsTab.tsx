@@ -227,16 +227,15 @@ export function SkillsTab() {
         <span className="text-fg-secondary">network 那一档不一样</span>
         ：在「设置 → 对话 → 本次会话」里把这个技能指定给某次会话之后，
         它的网络声明由内核在发起网络请求前强制执行，`deny` 优先于全局网络设置，
-        而且这个会话的正文会一起进系统提示。
-        真正拦人的门始终在工具层：权限档（只读 / 每次确认 / 完全）、文件范围、
-        Shell 风险分级，都在「权限与安全」里配。
+        而且这个会话的正文会一起进系统提示。 真正拦人的门始终在工具层：权限档（只读 / 每次确认 /
+        完全）、文件范围、 Shell 风险分级，都在「权限与安全」里配。
       </p>
 
       <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
         技能正文<span className="text-fg-secondary">不会</span>一直占上下文：系统提示里只有名字和
-        description，模型判断用得上时才去读全文。所以正文可以写详细一点。
-        权限写在 SKILL.md 开头的 frontmatter 里，比如 `permissions:` 下面写 `- file: read`、
-        `- shell: ask`、`- network: deny`。
+        description，模型判断用得上时才去读全文。所以正文可以写详细一点。 权限写在 SKILL.md 开头的
+        frontmatter 里，比如 `permissions:` 下面写 `- file: read`、 `- shell: ask`、`- network:
+        deny`。
       </p>
     </div>
   )

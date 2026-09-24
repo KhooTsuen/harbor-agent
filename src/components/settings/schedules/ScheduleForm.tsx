@@ -104,10 +104,7 @@ export function ScheduleForm({
         />
       </Row>
 
-      <Row
-        label="时间"
-        hint={`最小间隔 ${minIntervalMinutes} 分钟。本地时间，跟着你电脑的钟走`}
-      >
+      <Row label="时间" hint={`最小间隔 ${minIntervalMinutes} 分钟。本地时间，跟着你电脑的钟走`}>
         <div className="flex w-full items-center gap-2">
           <Select
             value={mode}
@@ -153,12 +150,7 @@ export function ScheduleForm({
       </Row>
 
       <Row label="工作目录" hint="留空 = 用默认工作目录。填了但目录不存在，内核会按留空处理">
-        <Field
-          value={workdir}
-          onChange={setWorkdir}
-          aria-label="工作目录"
-          placeholder="留空即可"
-        />
+        <Field value={workdir} onChange={setWorkdir} aria-label="工作目录" placeholder="留空即可" />
       </Row>
 
       <div className="flex flex-col gap-1.5">

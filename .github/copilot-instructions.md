@@ -27,10 +27,10 @@
 ## 改完要跑
 
 ```bash
-npm run verify          # typecheck → lint → 行数红线 → 单测 → 内核自检 → 构建
+npm run verify          # typecheck → lint → 格式 → 行数红线 → 单测 → 内核自检 → 构建
 ```
 
-`AGENT.md` 里那条链是纯文本，这里是**一条命令**。另外：
+`AGENT.md` 里那条链是纯文本，这里是**一条命令**（步骤与 CI 逐项对齐）。另外：
 
 ```bash
 node tools/line-limit.mjs --all        # 看哪些文件快贴到 300 行了（含 --code-only 开关）

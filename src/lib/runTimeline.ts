@@ -111,7 +111,9 @@ export function buildRunTimeline(task: TaskRecord): RunTimelineEntry[] {
 
   for (const error of task.errors ?? []) {
     const message = text(error?.message)
-    entries.push(entryOf(timeOf(error?.at), 'error', firstLine(message) || '执行出错', message, false))
+    entries.push(
+      entryOf(timeOf(error?.at), 'error', firstLine(message) || '执行出错', message, false),
+    )
   }
 
   for (const checkpoint of task.checkpoints ?? []) {

@@ -72,12 +72,7 @@ describe('AG-048 / 三类数据合成一条线', () => {
         checkpoints: [{ at: 2000, label: '同刻的检查点', note: '' }],
       }),
     )
-    expect(entries.map((entry) => entry.detail)).toEqual([
-      'a · 1ms',
-      'b · 1ms',
-      '同刻的错',
-      '',
-    ])
+    expect(entries.map((entry) => entry.detail)).toEqual(['a · 1ms', 'b · 1ms', '同刻的错', ''])
     /* 再跑一次，顺序一模一样 —— 不能抖 */
     const again = buildRunTimeline(
       task({

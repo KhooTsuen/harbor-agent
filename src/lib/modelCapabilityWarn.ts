@@ -1,8 +1,4 @@
-import type {
-  CapabilityDim,
-  ModelCapabilityInfo,
-  ProviderCapabilityMatrix,
-} from '@/types/backend'
+import type { CapabilityDim, ModelCapabilityInfo, ProviderCapabilityMatrix } from '@/types/backend'
 
 /* ══════════════════════════════════════════════════════════════
    「这个模型干得了这活吗」—— 提前警告用的纯函数

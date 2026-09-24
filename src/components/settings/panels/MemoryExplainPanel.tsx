@@ -107,8 +107,8 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
         </>
       ) : (
         <p className="px-2 py-1 text-2xs leading-relaxed text-fg-tertiary">
-          这次启动后还没跑过对话，所以还没有注入记录。这本账是进程内的、不落盘，
-          重启就清空 —— 跑一轮对话再回来看这里。
+          这次启动后还没跑过对话，所以还没有注入记录。这本账是进程内的、不落盘， 重启就清空 ——
+          跑一轮对话再回来看这里。
         </p>
       )}
 
@@ -116,19 +116,20 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
 
       {!retrieveEnabled ? (
         <p className="-mt-1 mb-1 flex gap-1.5 rounded-base border border-line-subtle px-3 py-2 text-2xs leading-relaxed text-fg-secondary">
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" style={{ color: colorOf('warning') }} />
+          <AlertTriangle
+            size={12}
+            className="mt-0.5 shrink-0"
+            style={{ color: colorOf('warning') }}
+          />
           <span>
             检索关了，现在是<strong className="text-fg-primary">全量注入</strong>
-            ，所以没有排序和理由 —— 条数多了会稀释上下文。
-            （这一档没有界面开关，在 config.json 的 memory.retrieve。）
+            ，所以没有排序和理由 —— 条数多了会稀释上下文。 （这一档没有界面开关，在 config.json 的
+            memory.retrieve。）
           </span>
         </p>
       ) : (
         <>
-          <Row
-            label="试算一句提问"
-            hint="看这句话会让哪些记忆排上来。只算分，不改任何东西。"
-          >
+          <Row label="试算一句提问" hint="看这句话会让哪些记忆排上来。只算分，不改任何东西。">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <input
                 value={query}
@@ -140,12 +141,7 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
                 spellCheck={false}
                 className="w-full min-w-0 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
               />
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={busy}
-                onClick={() => void load(query)}
-              >
+              <Button variant="secondary" size="sm" loading={busy} onClick={() => void load(query)}>
                 试算
               </Button>
               <Button
@@ -173,7 +169,8 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
           )}
 
           <p className="px-1 text-2xs leading-relaxed text-fg-tertiary">
-            分数高的排在上面。条数没超过上限时内核其实是<strong className="text-fg-secondary">全量注入</strong>
+            分数高的排在上面。条数没超过上限时内核其实是
+            <strong className="text-fg-secondary">全量注入</strong>
             （顺序按最近更新在前）—— 那时分数只是算给你看，没参与挑选。
           </p>
         </>

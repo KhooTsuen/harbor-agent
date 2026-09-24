@@ -84,8 +84,7 @@ export function NetworkPolicyPanel() {
       <>
         <SectionTitle>网络策略</SectionTitle>
         <p className="px-2 py-1 text-2xs text-fg-tertiary">
-          当前版本没接上这个桥（security:network），所以这里改不了 ——
-          其余设置不受影响，照常可以改。
+          当前版本没接上这个桥（security:network），所以这里改不了 —— 其余设置不受影响，照常可以改。
         </p>
       </>
     )
@@ -170,9 +169,7 @@ export function NetworkPolicyPanel() {
 
       <Row
         label="保存"
-        hint={
-          !loaded ? '正在读当前值…' : dirty ? '有没保存的改动。' : '当前值和磁盘上的一致。'
-        }
+        hint={!loaded ? '正在读当前值…' : dirty ? '有没保存的改动。' : '当前值和磁盘上的一致。'}
       >
         <div className="flex items-center gap-2">
           <Button

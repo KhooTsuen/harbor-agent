@@ -92,9 +92,9 @@ export function SessionCryptoPanel() {
 
       {state ? (
         <p className="px-2 py-1 text-2xs leading-relaxed text-fg-secondary">
-          盘上现在有 <span className="text-fg-primary">{state.files}</span> 个会话文件：
-          已加密 <span className="text-fg-primary">{state.encrypted}</span> 行、
-          明文 <span className="text-fg-primary">{state.plain}</span> 行。
+          盘上现在有 <span className="text-fg-primary">{state.files}</span> 个会话文件： 已加密{' '}
+          <span className="text-fg-primary">{state.encrypted}</span> 行、 明文{' '}
+          <span className="text-fg-primary">{state.plain}</span> 行。
         </p>
       ) : null}
 
@@ -103,7 +103,11 @@ export function SessionCryptoPanel() {
           className="mx-2 mb-1 flex gap-1.5 rounded-base border px-3 py-2 text-2xs leading-relaxed text-fg-secondary"
           style={{ borderColor: colorOf('warning') }}
         >
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" style={{ color: colorOf('warning') }} />
+          <AlertTriangle
+            size={12}
+            className="mt-0.5 shrink-0"
+            style={{ color: colorOf('warning') }}
+          />
           <span>
             开关是开着的，但盘上还有明文行 —— 上一次转换没跑完（可能中途失败）。
             再点一次开关（关掉再打开）会重新转换一遍。

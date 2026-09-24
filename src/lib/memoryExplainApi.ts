@@ -56,10 +56,7 @@ type RawEntry = {
 }
 
 type MemoryExplainBridge = {
-  memoryExplain?: (options?: {
-    query?: string
-    projectId?: string
-  }) => Promise<{
+  memoryExplain?: (options?: { query?: string; projectId?: string }) => Promise<{
     ok?: boolean
     injected?: unknown
     items?: unknown

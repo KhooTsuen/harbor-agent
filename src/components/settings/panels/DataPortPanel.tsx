@@ -149,8 +149,8 @@ export function DataPortPanel() {
       <p className="-mt-1 mb-1 flex gap-1.5 rounded-base border border-[color-mix(in_srgb,var(--error)_35%,transparent)] px-3 py-2 text-2xs leading-relaxed text-fg-secondary">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         <span>
-          每档点下去都会先自动备份一份才开始删；备份不成功就不删。
-          但自动备份只含 {BACKUP_COVERS.join(' / ')}，不含 {BACKUP_MISSES.join('、')} ——
+          每档点下去都会先自动备份一份才开始删；备份不成功就不删。 但自动备份只含{' '}
+          {BACKUP_COVERS.join(' / ')}，不含 {BACKUP_MISSES.join('、')} ——
           想给自己留后路，先点上面的「导出全部」。
         </span>
       </p>
@@ -214,7 +214,12 @@ export function DataPortPanel() {
             </Button>
           </div>
         ) : (
-          <Button variant="danger" size="sm" icon={<Trash2 size={13} />} onClick={() => setArmed(true)}>
+          <Button
+            variant="danger"
+            size="sm"
+            icon={<Trash2 size={13} />}
+            onClick={() => setArmed(true)}
+          >
             删除全部
           </Button>
         )}

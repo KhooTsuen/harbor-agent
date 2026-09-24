@@ -86,7 +86,9 @@ const TEXT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
 ]
 
 /** 复检用：去掉 /g（带 lastIndex 的正则 .test 会串味） */
-const CHECK_PATTERNS = TEXT_PATTERNS.map(([pattern]) => new RegExp(pattern.source, pattern.flags.replace('g', '')))
+const CHECK_PATTERNS = TEXT_PATTERNS.map(
+  ([pattern]) => new RegExp(pattern.source, pattern.flags.replace('g', '')),
+)
 
 /** 只报「有几个字符」，不报值 —— 和内核 redact.cjs 一个措辞 */
 function maskField(value: unknown): string {
@@ -149,7 +151,8 @@ function findLeak(node: unknown, path: string): string {
     for (const [key, item] of Object.entries(node as Record<string, unknown>)) {
       const here = `${path}.${key}`
       const value = typeof item === 'string' ? item : ''
-      if (SECRET_KEY.test(key) && !REFERENCE_KEYS.has(key) && value && value !== MASKED_SECRET) return here
+      if (SECRET_KEY.test(key) && !REFERENCE_KEYS.has(key) && value && value !== MASKED_SECRET)
+        return here
       const hit = findLeak(item, here)
       if (hit) return hit
     }
@@ -232,7 +235,9 @@ export async function buildExportPayload(): Promise<ExportPayload> {
     '密钥不在这个包里，也拿不到：credentials.json 只有主进程能读，这条链路上没有它的入口。',
   ]
   if (sessionsResult.truncated > 0) {
-    notes.push(`会话超过 ${MAX_SESSIONS} 条，这次只装了前 ${MAX_SESSIONS} 条（差 ${sessionsResult.truncated} 条）。`)
+    notes.push(
+      `会话超过 ${MAX_SESSIONS} 条，这次只装了前 ${MAX_SESSIONS} 条（差 ${sessionsResult.truncated} 条）。`,
+    )
   }
   if (tasks.length >= MAX_TASKS) notes.push(`任务台账只装了最近 ${MAX_TASKS} 条。`)
   if (!config) notes.push('读不到配置（浏览器预览没有主进程），config 为空。')
@@ -277,7 +282,8 @@ export async function exportAll(): Promise<ExportOutcome> {
   const raw: unknown = await buildExportPayload()
   const scrubbed = scrubForExport(raw)
   const payload = scrubbed.value as ExportPayload
-  if (scrubbed.masked > 0) payload.notes = [...payload.notes, `按脱敏规则改了 ${scrubbed.masked} 处疑似密钥。`]
+  if (scrubbed.masked > 0)
+    payload.notes = [...payload.notes, `按脱敏规则改了 ${scrubbed.masked} 处疑似密钥。`]
 
   const leak = findSecretLikeValue(payload)
   if (leak) return { ok: false, error: `导出内容里还有未打码的疑似密钥（${leak}），已拒绝落盘` }

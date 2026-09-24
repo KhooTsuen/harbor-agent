@@ -14,7 +14,12 @@ import type { ModelCapabilities, ProviderCapabilityMatrix } from './model-caps'
 export type { SearchConfig, ConversationSearchHit } from './models-extra'
 /* MCP 类型搬去了 ./mcp，这里再导出一次，调用方不用改 */
 export type { McpPreset, McpServerConfig, McpServerStatus } from './mcp'
-export type { CapabilityDim, ModelCapabilities, ModelCapabilityInfo, ProviderCapabilityMatrix } from './model-caps'
+export type {
+  CapabilityDim,
+  ModelCapabilities,
+  ModelCapabilityInfo,
+  ProviderCapabilityMatrix,
+} from './model-caps'
 
 import type { SceneMap } from './scenes'
 /* ChatEvent 那两样（DiffFile / UsageBucket）跟着它搬去了 ./chat-events */

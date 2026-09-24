@@ -96,11 +96,7 @@ export function SchedulesPanel() {
       return
     }
     /* ★ 内核不 await，所以这里只能说「已开始」。说成「跑完了」就是骗人 */
-    showToast(
-      'info',
-      '已开始，这里不会等它跑完',
-      '去右侧「任务」或那条专属会话里看进度和结果。',
-    )
+    showToast('info', '已开始，这里不会等它跑完', '去右侧「任务」或那条专属会话里看进度和结果。')
     await refresh()
   }
 
@@ -206,10 +202,7 @@ export function SchedulesPanel() {
           }}
         />
       ) : (
-        <Row
-          label="新的定时任务"
-          hint="名字、时间、提示词、授权上限 —— 建完可以随时改"
-        >
+        <Row label="新的定时任务" hint="名字、时间、提示词、授权上限 —— 建完可以随时改">
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -239,7 +232,10 @@ function ScheduleTruths() {
   return (
     <ul className="flex flex-col gap-1 py-2">
       {TRUTHS.map((text) => (
-        <li key={text} className="flex items-start gap-1.5 text-2xs leading-relaxed text-fg-secondary">
+        <li
+          key={text}
+          className="flex items-start gap-1.5 text-2xs leading-relaxed text-fg-secondary"
+        >
           <CalendarClock size={11} className="mt-0.5 shrink-0 text-fg-tertiary" />
           <span>{text}</span>
         </li>

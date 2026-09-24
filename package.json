@@ -24,8 +24,9 @@
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src --ext .ts,.tsx",
+    "check:format": "prettier --check \"src/**/*.{ts,tsx}\"",
     "check:lines": "node tools/line-limit.mjs",
-    "verify": "npm run typecheck && npm run lint && npm run check:lines && npm run test:unit && npm test && npm run build",
+    "verify": "npm run typecheck && npm run lint && npm run check:format && npm run check:lines && npm run test:unit && npm test && npm run build",
     "acceptance": "node tools/acceptance.mjs"
   },
   "dependencies": {

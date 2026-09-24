@@ -43,9 +43,7 @@ export function GrantPicker({
             onClick={() => onChange(id)}
             className={cn(
               'rounded-base border px-3 py-2 text-left transition-colors duration-fast',
-              active
-                ? 'border-line-focus bg-bg-raised'
-                : 'border-line-hairline hover:bg-bg-hover',
+              active ? 'border-line-focus bg-bg-raised' : 'border-line-hairline hover:bg-bg-hover',
             )}
           >
             <p className="text-dense text-fg-primary">
@@ -69,9 +67,7 @@ export function GrantPicker({
           className={`flex items-start gap-1.5 rounded-base border px-3 py-2 text-2xs leading-relaxed text-fg-secondary ${STATUS_CLASS.warning.border}`}
         >
           <AlertTriangle size={12} className={`mt-0.5 shrink-0 ${STATUS_CLASS.warning.text}`} />
-          <span>
-            即使是这一档，高风险命令和系统级改动仍然会被拒 —— 没人在场，没人能批准。
-          </span>
+          <span>即使是这一档，高风险命令和系统级改动仍然会被拒 —— 没人在场，没人能批准。</span>
         </p>
       ) : null}
     </div>

@@ -72,11 +72,11 @@
 改完至少跑：
 
 ```bash
-npm run typecheck && npm run lint && npm run test:unit && npm test && npm run build
+npm run verify   # 链：typecheck → lint → 格式 → 行数红线 → 单测 → 内核自检 → 构建
 npm run package && (cd dist-portable/Harbor && ./Harbor.exe --self-test)
 ```
 
-**三条必须知道的事：**
+**四条必须知道的事：**
 
 - **`.cjs` 不参与 `tsc`。** 只跑 typecheck 等于没验内核。
   改 `electron/` 下的东西**必须**跑 `npm test`（脚本名叫 selftest，
@@ -101,12 +101,15 @@ npm run package && (cd dist-portable/Harbor && ./Harbor.exe --self-test)
 - **看不到的就说看不到。** 渲染效果、别人的机器、真实网络行为 ——
   没观察到就不要断言。声明的每一件事，要么指得住一个可跑的验证，
   要么指得住一次实际观察。
+- **本地绿 ≠ CI 绿。** `npm run verify` 的步骤要和 CI **逐项对齐** ——
+  曾经差一步 `prettier`（CI 有、本地没有）：CI 从 v1.11.0 起连红 **13 次**，
+  没有任何人发现，最后是被用户看见的。动过 CI 步骤就回来同步 `verify`。
 
 ---
 
 ## 已经踩过的坑（别重复踩）
 
-**完整清单在 [`docs/踩坑记录.md`](docs/踩坑记录.md)** —— 十条，每条带真实报错信息。
+**完整清单在 [`docs/踩坑记录.md`](docs/踩坑记录.md)** —— 十九条，每条带真实报错信息。
 改代码前扫一眼，能省掉几次返工。
 
 最常踩的三条：

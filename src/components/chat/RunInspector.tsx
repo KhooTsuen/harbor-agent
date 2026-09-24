@@ -112,7 +112,9 @@ export function RunInspector({ task, now }: { task: TaskRecord; now: number }) {
                 <span className="shrink-0 text-2xs text-fg-tertiary">{KIND_TEXT[entry.kind]}</span>
                 <span className="min-w-0 flex-1 truncate text-2xs" title={tip}>
                   <span className="text-fg-primary">{entry.title}</span>
-                  {entry.detail ? <span className="text-fg-tertiary"> · {entry.detail}</span> : null}
+                  {entry.detail ? (
+                    <span className="text-fg-tertiary"> · {entry.detail}</span>
+                  ) : null}
                 </span>
               </li>
             )

@@ -81,7 +81,12 @@ async function wipeMemory(): Promise<WipeOutcome> {
 async function wipeAudit(): Promise<WipeOutcome> {
   if (!useRealBackend) return bridgeMissing()
   const result = await auditClear()
-  return { ok: result.ok, removed: result.removed, skipped: 0, error: result.ok ? undefined : '清空审计失败' }
+  return {
+    ok: result.ok,
+    removed: result.removed,
+    skipped: 0,
+    error: result.ok ? undefined : '清空审计失败',
+  }
 }
 
 export interface WipeTier {

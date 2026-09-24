@@ -54,9 +54,7 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.answerRecords?.length ? { answerRecords: stored.answerRecords } : {}),
     ...(stored.answerIndex !== undefined ? { answerIndex: stored.answerIndex } : {}),
     /* 用户选过第几条回答 —— 带着它，切换 / 重开都停在同一个选择上 */
-    ...(stored.answerIndexByVersion
-      ? { answerIndexByVersion: stored.answerIndexByVersion }
-      : {}),
+    ...(stored.answerIndexByVersion ? { answerIndexByVersion: stored.answerIndexByVersion } : {}),
     ...(isError ? { errorText: stored.error } : {}),
   }
 }

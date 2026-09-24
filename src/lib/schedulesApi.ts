@@ -18,9 +18,7 @@
    ══════════════════════════════════════════════════════════════ */
 
 /** 时间：每 N 分钟，或每天某个钟点 */
-export type ScheduleWhen =
-  | { type: 'interval'; minutes: number }
-  | { type: 'daily'; at: string }
+export type ScheduleWhen = { type: 'interval'; minutes: number } | { type: 'daily'; at: string }
 
 /** 授权上限三档 */
 export type ScheduleGrantId = 'readonly' | 'workspace' | 'full'

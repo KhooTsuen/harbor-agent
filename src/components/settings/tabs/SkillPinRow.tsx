@@ -19,13 +19,7 @@ import { Row } from '../parts'
      写宽了等于骗用户给权限。
    ══════════════════════════════════════════════════════════════ */
 
-export function SkillPinRow({
-  pinned,
-  onPick,
-}: {
-  pinned: string
-  onPick: (id: string) => void
-}) {
+export function SkillPinRow({ pinned, onPick }: { pinned: string; onPick: (id: string) => void }) {
   const [skills, setSkills] = useState<SkillRow[]>([])
 
   useEffect(() => {
@@ -69,9 +63,7 @@ export function SkillPinRow({
           ))}
         </select>
 
-        {pinned ? (
-          <p className="text-2xs leading-relaxed text-fg-secondary">{grantText}</p>
-        ) : null}
+        {pinned ? <p className="text-2xs leading-relaxed text-fg-secondary">{grantText}</p> : null}
 
         {gone ? (
           <p className="text-2xs leading-relaxed text-fg-tertiary">

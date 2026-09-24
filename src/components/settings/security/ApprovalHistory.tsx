@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { useUIStore } from '@/stores/useUIStore'
 import { colorOf } from '@/lib/statusLanguage'
 import { clockTime } from '@/lib/utils'
-import { listApprovals, revokeApproval } from '@/lib/safetyApi'
+import { listApprovals, revokeApproval } from '@/lib/approvalApi'
 import { SectionTitle } from '../parts'
 
 /* ══════════════════════════════════════════════════════════════

@@ -50,11 +50,13 @@ export function artifactBridgeReady(): boolean {
 }
 
 /** 列成果；拿不到（没桥 / 内核报错）返回 null，调用方降级 */
-export async function artifactList(options: {
-  taskId?: string
-  sessionId?: string
-  limit?: number
-} = {}): Promise<ArtifactRecord[] | null> {
+export async function artifactList(
+  options: {
+    taskId?: string
+    sessionId?: string
+    limit?: number
+  } = {},
+): Promise<ArtifactRecord[] | null> {
   if (typeof bridge?.artifactList !== 'function') return null
   try {
     const result = await bridge.artifactList(options)
@@ -72,7 +74,9 @@ export async function artifactGet(
   if (typeof bridge?.artifactGet !== 'function') return null
   try {
     const result = await bridge.artifactGet(id, version)
-    return result?.ok && result.artifact ? { artifact: result.artifact, content: result.content ?? '' } : null
+    return result?.ok && result.artifact
+      ? { artifact: result.artifact, content: result.content ?? '' }
+      : null
   } catch {
     return null
   }
@@ -89,7 +93,8 @@ export async function artifactSave(draft: {
   threadId?: string
   sourceMessageId?: string
 }): Promise<{ ok: boolean; artifact?: ArtifactRecord; error?: string }> {
-  if (typeof bridge?.artifactSave !== 'function') return { ok: false, error: '当前环境不支持成果落盘' }
+  if (typeof bridge?.artifactSave !== 'function')
+    return { ok: false, error: '当前环境不支持成果落盘' }
   try {
     return await bridge.artifactSave(draft)
   } catch (error) {
@@ -98,7 +103,8 @@ export async function artifactSave(draft: {
 }
 
 export async function artifactRemove(id: string): Promise<{ ok: boolean; error?: string }> {
-  if (typeof bridge?.artifactRemove !== 'function') return { ok: false, error: '当前环境不支持成果落盘' }
+  if (typeof bridge?.artifactRemove !== 'function')
+    return { ok: false, error: '当前环境不支持成果落盘' }
   try {
     return await bridge.artifactRemove(id)
   } catch (error) {
