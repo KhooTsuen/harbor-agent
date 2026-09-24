@@ -36,6 +36,7 @@ export default function App() {
       {mainMounted ? <MainApp /> : null}
       {booting ? (
         <BootSequence
+          ready={bootstrapReady}
           skipping={skipping}
           onSkip={skipBoot}
           onPrepare={prepareMain}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BOOT_EXIT,
   BOOT_TIMING,
+  bootExitAt,
   glitchLine,
   progressBar,
   progressValue,
@@ -19,6 +21,22 @@ describe('boot sequence frames', () => {
   it('keeps the complete sequence at about ten seconds', () => {
     expect(BOOT_TIMING.total).toBeGreaterThanOrEqual(9000)
     expect(BOOT_TIMING.total).toBeLessThanOrEqual(12000)
+  })
+
+  it('★ 就绪驱动的收尾：早早就绪就别等满 10 秒', () => {
+    /* 还没就绪 → 播完整段（老行为，慢启动时画面要盖得住） */
+    expect(bootExitAt(null)).toBe(BOOT_TIMING.total)
+    /* 0.3 秒就绪 → 按最短停留收尾，不是 10 秒 */
+    expect(bootExitAt(300)).toBe(BOOT_EXIT.graceMs)
+    expect(bootExitAt(0)).toBeGreaterThanOrEqual(BOOT_EXIT.graceMs)
+    /* 就绪得晚一点 → 就绪时刻 + 一拍 */
+    expect(bootExitAt(2000)).toBe(2000 + BOOT_EXIT.tailMs)
+    /* 再晚也不能超过整段长度 */
+    expect(bootExitAt(999999)).toBe(BOOT_TIMING.total)
+    /* 结果稳定（tick 可能同一毫秒调多次） */
+    expect(bootExitAt(2000)).toBe(bootExitAt(2000))
+    /* 淡出一整段必须在收尾之前排得下 */
+    expect(BOOT_EXIT.tailMs).toBeGreaterThan(BOOT_TIMING.total - BOOT_TIMING.fadeStart)
   })
 
   it('clamps progress and renders a stable-width bar', () => {

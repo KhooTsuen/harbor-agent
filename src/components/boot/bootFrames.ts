@@ -15,6 +15,27 @@ export const BOOT_TIMING = {
 } as const
 
 /*
+ * 就绪驱动的收尾（README roadmap 那条：「把启动页的时长改成跟着真的就绪走」）。
+ *
+ * 实测后端 0.25 秒级就绪，而整段动画是 10 秒 —— 于是每次启动都白等近 10 秒。
+ * 现在：就绪了就早点收；没就绪就照旧把整段播完（还不行就停在最后一帧等）。
+ *
+ *   · graceMs —— 最少站住这么久。低于这个数，画面刚出来就走，看着像闪屏
+ *   · tailMs   —— 就绪之后再停一拍，然后淡出（淡出占最后 600ms，见 fadeStart→total）
+ */
+export const BOOT_EXIT = { graceMs: 1500, tailMs: 1200 } as const
+
+/**
+ * 这一趟什么时候收尾。
+ *
+ * @param readyAtMs 就绪发生在启动后的第几毫秒；还没就绪传 null
+ */
+export function bootExitAt(readyAtMs: number | null): number {
+  if (readyAtMs === null || !Number.isFinite(readyAtMs)) return BOOT_TIMING.total
+  return Math.min(BOOT_TIMING.total, Math.max(BOOT_EXIT.graceMs, readyAtMs + BOOT_EXIT.tailMs))
+}
+
+/*
  * 字标：`HARBOR` 的灰度点阵（489 列 × 43 行）。
  *
  * ★ 由 `scripts/generate-wordmark.py` 用系统字体渲染生成 —— 自己算的，
