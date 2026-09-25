@@ -104,7 +104,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
   return (
     <div
       className={cn(
-        'group relative flex items-center gap-xs rounded-small px-2 py-1.5',
+        'relative flex items-center gap-xs rounded-small px-2 py-1.5',
         'cursor-pointer transition-colors duration-fast',
         active ? 'bg-accent-subtle text-fg-primary' : 'text-fg-secondary hover:bg-bg-hover',
       )}
@@ -172,10 +172,11 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
       </span>
 
       {/*
-        操作槽：位置与占地**恒定**（w-7 × h-4），悬停只做透明度渐显。
+        操作槽：按钮**常显**，位置与占地恒定（w-7 × h-4）。
         ⚠️ 两条红线，别再往回改：
-        · 不许挂 hidden / group-hover:flex —— 那会让「悬停换内容」：时间与模式
-          藏起来、按钮顶出来，鼠标扫过列表时整行右半边跳来跳去（用户报过两次）；
+        · 不许挂任何悬停门（悬停才 flex / 悬停才显形 / 悬停才变透明）——「悬停换内容」
+          与「悬停才冒按钮」都让整行右半边跳来跳去（用户报过三次；2026-09-26 的
+          最终要求：这个按钮**一直显示**）；
         · 不许让它决定行高 —— 里面的 IconButton 是 28px，比文字行高（~20px）高，
           钉 h-4 后多出来的高度上下对称溢出（行有 6px 内边距兜着，真机复核在行内）。
       */}
@@ -188,7 +189,6 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
           trigger={({ toggle }) => (
             <span
               role="presentation"
-              className="opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100"
               onClick={(e) => {
                 e.stopPropagation()
                 toggle()
