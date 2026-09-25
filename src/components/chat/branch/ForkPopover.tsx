@@ -30,7 +30,8 @@ export function ForkPopover({
       side={side}
       align={align}
       trigger={children}
-      className="w-80"
+      /* 宽度固定 20rem；窄窗口时不让它横向溢出视口 */
+      className="w-80 max-w-[calc(100vw-16px)]"
     >
       <ForkMenuList
         fork={fork}
@@ -43,7 +44,14 @@ export function ForkPopover({
   )
 }
 
-/** 菜单里的分支列表（单独导出是为了测试能直接渲染） */
+/**
+ * 菜单里的分支列表（单独导出是为了测试能直接渲染）。
+ *
+ * ★ 尺寸有上限（2026-09-25 用户定的规格，截图里的红框）：列表区最高 18rem（288px）——
+ *   重复重新生成会产生很多版本，不限高的话菜单会顶出屏幕；超出的部分**滚动查看**
+ *   （全局滚动条样式，实测宽 10px、能滚到底）。改大/改小前先想一遍：它朝上弹时
+ *   还要放得下。overscroll-contain：滚到尽头别把后面的聊天记录一起带着滚。
+ */
 export function ForkMenuList({
   fork,
   onPick,
@@ -53,7 +61,7 @@ export function ForkMenuList({
 }) {
   return (
     <div
-      className="flex max-h-72 flex-col overflow-y-auto p-1"
+      className="flex max-h-72 flex-col overflow-y-auto overscroll-contain p-1"
       role="menu"
       aria-label={`${fork.name}的 ${fork.total} 条分支`}
       data-fork-menu={fork.level}

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getForkPoints } from '@/lib/branchPath'
 import { BranchBreadcrumb } from '../BranchBreadcrumb'
 import { ForkBadge } from '../ForkBadge'
+import { ForkMenuList } from '../ForkPopover'
 import { AnswerVersions } from '@/components/chat/message/AnswerVersions'
 import { UserMessage } from '@/components/chat/message/UserMessage'
 import { switchBranch } from '@/stores/thread/branchSwitch'
@@ -152,5 +153,40 @@ describe('层级指示器（验收 e）', () => {
   it('e · 提问旁边挂着 L 标（UserMessage 里）', () => {
     render(<UserMessage message={multiFork()[0]!} fork={forks[0]} />)
     expect(container.querySelector('[data-fork-badge="1"]')).toBeTruthy()
+  })
+})
+
+describe('重复生成很多版本时：菜单限高 + 滚动（用户定过的规格）', () => {
+  /* 15 条版本 = 重复重新生成的样子 —— 列表区必须带上限与纵向滚动，别把菜单撑出屏幕 */
+  const manyFork = (): ReturnType<typeof getForkPoints>[number] => {
+    const records = Array.from({ length: 14 }, (_, i) => ({
+      role: 'assistant' as const,
+      key: `mb${i + 1}`,
+      content: `第 ${i + 1} 条回答（探针）—— 重复生成后的版本`,
+      answersVersion: 0,
+      ts: i,
+    }))
+    const messages = [
+      msg({ id: 'mq', role: 'user', content: '重复生成很多次', timestamp: 0 }),
+      msg({
+        id: 'ma',
+        content: '第 15 条回答（自己）',
+        answersKey: 'mq',
+        answersVersion: 0,
+        answerIndex: 14,
+        answerRecords: records,
+        timestamp: 1,
+      }),
+    ]
+    return getForkPoints(messages)[0]!
+  }
+
+  it('列表区带高度上限（18rem）+ 纵向滚动 + 滚到尽头不带动外层', () => {
+    render(<ForkMenuList fork={manyFork()} onPick={() => {}} />)
+    const menu = container.querySelector('[data-fork-menu="1"]')!
+    expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(15)
+    expect(menu.className).toContain('max-h-72')
+    expect(menu.className).toContain('overflow-y-auto')
+    expect(menu.className).toContain('overscroll-contain')
   })
 })
