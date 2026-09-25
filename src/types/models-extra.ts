@@ -124,17 +124,18 @@ export interface StoredMessage {
   content: string
   ts?: number
   /**
-   * 同一段回复的身份（渲染层那条占位消息的 id）。
-   *
-   * 流式过程中会**分段落盘**（`partial: true`），收尾时再追加一条完整的 ——
-   * 同一个 key 可能对应文件里好几行，读的一侧按它收敛成一条。老记录没有这个字段，
-   * 各算各的。
+   * 同一段回复的身份（渲染层那条占位消息的 id）。分段落盘（`partial: true`）
+   * 与收尾那条共用它 —— 同一 key 可能对应好几行，读侧按它收敛成一条。
    */
   key?: string
   /** 这是流式过程中的快照，不是最终结果（进程被中断时它就是你最后看到的内容） */
   partial?: boolean
   /** 读的一侧加上去的：这条只有快照、没有写完（界面据此说一句） */
   interrupted?: boolean
+  /** 收尾落盘时标上：这条是被用户中止的（读侧映射成 interrupted —— 按钮据此说「重试」） */
+  aborted?: boolean
+  /** 这条回答是「重新生成」来的：指向被替代的那条回答（磁盘 key）—— 台账对账 / 对比两次生成用 */
+  regeneratedFrom?: string
   /** 读的一侧加上去的：这条提问的**全部**回答（含别的版本、含重生成过的） */
   answerRecords?: StoredMessage[]
   /** 读的一侧加上去的：当前显示的是该版本回答里的第几条（0 开始） */
@@ -144,8 +145,7 @@ export interface StoredMessage {
   versions?: string[]
   /** 当前显示的是第几版（0 开始） */
   versionIndex?: number
-  /** 这条回答答的是哪条提问（提问的 key）+ 第几版；读会话时按它把同一次提问的
-      几个回答收成一条的多个版本（以前没有，编辑/重生成产生的回答会并排堆着） */
+  /** 这条回答答的是哪条提问（key）+ 第几版：读侧按它把同一次提问的多个回答收成一条 */
   answersKey?: string
   answersVersion?: number
   /** 这条接在哪条提问的哪一版后面。读会话时按当前选中的那一版筛 —— 编辑中间那条

@@ -10,6 +10,7 @@ import { runPostTurnTasks } from './sceneTasks'
 import { handleStreamEvent, type StreamState } from './streamEvents'
 import { buildHistory } from './history'
 import { createReplyPersistence } from './replyPersistence'
+import { drainPendingRegen } from './regenQueue'
 import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
 import type { StoredMessage } from '@/types/models-extra'
 
@@ -106,11 +107,12 @@ export async function runElectronTurn(
      *   要重开会话才切得回去（真机上就是这么发现的：编辑完「回答切换器」消失了）。
      */
     seedAnswers?: StoredMessage[]
-    /**
-     * 这一轮是**怎么起来的**：用户发送 / 点继续 / 编辑后重答 / 重新生成 / 切提问版本。
-     * 只进日志 —— 查问题时「谁又跑了一轮」是第一个要回答的问题，靠时间戳猜太苦。
-     */
+    /** 这一轮是怎么起来的（只进日志）：用户发送 / 点继续 / 编辑后重答 / 重新生成 / 重试 */
     reason?: string
+    /** 「重新生成」的关联：被替代那条的磁盘 key —— 落盘记 regeneratedFrom，发给主进程挂台账 */
+    regeneratedFrom?: string
+    /** 重新生成的是不是最后一轮（只有它是，旧台账 / 旧事务才一定属于它） */
+    regenerateIsLast?: boolean
   } = {},
 ): Promise<void> {
   const seedAnswers = opts.seedAnswers ?? []
@@ -152,6 +154,7 @@ export async function runElectronTurn(
     ...(target ? { answersKey: target.key, answersVersion: target.version } : {}),
     /* 旧回答跟着一起走 —— 回答下面的 ‹ n / N › 靠它能切回去 */
     ...(seed.length ? { answerRecords: seed, answerIndex: seed.length } : {}),
+    ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
   }
   app.addMessage(threadId, placeholder)
   /*
@@ -201,6 +204,7 @@ export async function runElectronTurn(
     messageId: placeholder.id,
     timestamp: placeholder.timestamp,
     ...(target ? { answersKey: target.key, answersVersion: target.version } : {}),
+    ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
     getContent: () => content,
     getReasoning: () => reasoning,
     getEventType: () => lastEventType,
@@ -214,6 +218,7 @@ export async function runElectronTurn(
     off()
     activeRequests.delete(threadId)
     set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
+    drainPendingRegen(threadId)
     /* AG-025：这条跑完了，自动发排队的下一条 */
     drainQueued(threadId)
   }
@@ -269,6 +274,9 @@ export async function runElectronTurn(
       /* AG-003：让主进程能用真正的「按下发送」时刻算延迟 */
       requestTime,
       ...(opts.reason ? { reason: opts.reason } : {}),
+      ...(opts.regeneratedFrom
+        ? { regenerateOf: opts.regeneratedFrom, regenerateIsLast: opts.regenerateIsLast === true }
+        : {}),
       mode,
       messages: history,
       sessionId: threadId,

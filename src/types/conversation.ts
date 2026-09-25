@@ -104,6 +104,14 @@ export interface Message {
   answerIndexByVersion?: Record<string, number>
   /** 是否为「重新生成」产物 */
   regenerated?: boolean
+  /**
+   * 这条回答是从哪条重新生成来的（被替代那条回答的**磁盘 key**）。
+   *
+   * ★ 重新生成不新增提问：新回答与旧的是**同一次提问的两个回答**（界面用 ‹ n / N › 切，
+   *   数据落在 answerRecords / answersVersion）。这个字段只记「重来的源头」——
+   *   任务台账对账、界面「对比两次生成」都靠它找到旧的那条。
+   */
+  regeneratedFrom?: string
   /** 父消息 id（重新生成时指向原消息） */
   parentId?: string
 }

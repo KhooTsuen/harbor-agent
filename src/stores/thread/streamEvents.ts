@@ -222,7 +222,8 @@ export function handleStreamEvent(
     }
 
     case 'aborted': {
-      state.patch({ status: 'sent', content: state.content })
+      /* ★ 标上 interrupted：这是「被中止」的那条 —— 操作条据此把「重新生成」换成「重试」 */
+      state.patch({ status: 'sent', content: state.content, interrupted: true })
       state.finish()
       return { handled: true }
     }

@@ -22,6 +22,12 @@ export function AssistantActions({ message }: { message: Message }) {
   const [copied, setCopied] = useState(false)
   const [translation, setTranslation] = useState('')
   const [translating, setTranslating] = useState(false)
+  /*
+   * 被中止 / 出错的回复 → 语义是「重试」（试着把同一目标跑完）
+   * 正常回复 → 「重新生成」（换个写法再来一版）
+   */
+  const retry =
+    message.interrupted === true || message.status === 'error' || message.kind === 'error'
 
   /** 再点一次收起译文；没翻过就去翻 */
   async function translate(): Promise<void> {
@@ -91,8 +97,8 @@ export function AssistantActions({ message }: { message: Message }) {
         </button>
         <button
           type="button"
-          aria-label="重新生成"
-          title="重新生成"
+          aria-label={retry ? '重试' : '重新生成'}
+          title={retry ? '重试（这条没跑完 / 出错了，试着把同一目标完成）' : '重新生成'}
           onClick={() => regenerate(message.id)}
           className="rounded p-1 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
         >

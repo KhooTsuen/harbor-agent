@@ -25,6 +25,10 @@ function create({
   mode = 'pair',
   budget = {},
   preset = '',
+  /** 重新生成：被替代的那条台账 id（新记录指向它 —— 台账对账 / 连续重试计数用） */
+  regeneratedFrom = '',
+  /** 重新生成的用量基线 {steps, toolCalls, tokens}：预算从这里接着算，不从 0 重来（见 budget.carryOf） */
+  budgetCarry = null,
 } = {}) {
   const task = {
     id: io.newId(),
@@ -76,6 +80,17 @@ function create({
     /* ②-1：这次用的是哪版提示词（形如 `prompt-stack/1`）。提示词也是代码，改它就会改行为 */
     promptVersion: '',
     promptVersions: [],
+    /**
+     * 重新生成（新功能）：
+     *   regeneratedFrom —— 重做的是哪条任务（'' = 不是重新生成）；
+     *   budgetCarry     —— 旧任务的用量基线（预算**不重置**，从它接着算）；
+     *   supersededBy    —— 反过来：这条被后来的哪条重新生成替代了（'' = 没被替代）。
+     */
+    regeneratedFrom,
+    budgetCarry,
+    supersededBy: '',
+    /** 累计轮数（每轮 = 一次模型调用）；重新生成时从 budgetCarry.steps 接着数 */
+    turns: 0,
     pausedAt: 0,
     resumeCount: 0,
     createdAt: Date.now(),

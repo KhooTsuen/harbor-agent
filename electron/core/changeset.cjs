@@ -6,18 +6,13 @@
  *   开始 → 记录每个文件改动**之前**的内容 → 运行结束提交
  *                                        ↘ 验证失败 → 一键回滚
  *
- * 为什么必须是「一次事务」而不是「一个个文件」：
- * 模型改三个文件做一件事，第二个文件改错了 —— 这时只撤销第二个文件
- * 反而把代码留在一个更糟的中间状态。要撤就整批撤。
+ * 为什么整批：模型改三个文件做一件事，第二个改错了 —— 只撤第二个会把代码留在更糟的中间态。
  *
  * 存储：`data/changesets/<id>/`
  *   meta.json          谁、什么时候、改了哪些文件
  *   files/0001.snap    改动前的内容（原文）
  *
- * 三个限制，都写在这里而不是事后解释：
- *   · 超大文件不快照（maxFileBytes）—— 快照一个 2GB 的日志没有意义
- *   · 文件数有上限（maxFiles）
- *   · 新建的文件回滚 = 删掉它；**被删的文件回滚 = 重建**
+ * 三个限制：文件太大不快照（maxFileBytes）/ 文件数上限（maxFiles）/ 新建的回滚=删掉、被删的回滚=重建
  */
 
 const fs = require('node:fs')
@@ -177,12 +172,8 @@ function commit(id, { verified = null } = {}) {
 }
 
 /**
- * 回滚。
- *
- * 三类情况都要处理：
- *   ① 改过的文件 → 写回快照
- *   ② 新建的文件 → 删掉
- *   ③ 没快照的（太大）→ 明确告诉用户这几个没恢复
+ * 回滚。三类都要处理：
+ * ① 改过的 → 写回快照 ② 新建的 → 删掉 ③ 没快照的（太大）→ 明确告诉用户
  */
 function rollback(id) {
   const meta = readMeta(id)
@@ -227,6 +218,16 @@ function rollback(id) {
   return { ok: true, restored, removed, failed }
 }
 
+/** 盖「被重新生成替代」标记：事务本体不动、不自动回滚，只是让审查面板能看出它是旧一版的 */
+function markSuperseded(id, byTaskId = '') {
+  const meta = readMeta(id)
+  if (!meta) return { ok: false, error: '事务不存在' }
+  meta.supersededBy = String(byTaskId)
+  meta.supersededAt = Date.now()
+  writeMeta(id, meta)
+  return { ok: true }
+}
+
 /** 列出事务（新的在前） */
 function list({ limit = 20, taskId = '', sessionId = '' } = {}) {
   let names = []
@@ -252,6 +253,8 @@ function list({ limit = 20, taskId = '', sessionId = '' } = {}) {
       finishedAt: meta.finishedAt,
       fileCount: meta.files.length,
       files: meta.files.map((f) => f.path),
+      /* 被重新生成替代了（指向新任务 id；'' = 没被替代） */
+      supersededBy: meta.supersededBy ?? '',
     })
     if (out.length >= limit) break
   }
@@ -291,6 +294,6 @@ function prune(keep = 50) {
 }
 
 module.exports = {
-  begin, record, commit, rollback, rollbackTo,
+  begin, record, commit, rollback, rollbackTo, markSuperseded,
   list, get, readMeta, writeMeta, prune, root,
 }

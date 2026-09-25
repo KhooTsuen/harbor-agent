@@ -47,6 +47,10 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.versions && stored.versions.length > 1 ? { edited: true } : {}),
     /* 只有快照、没写完（上次进程被打断）—— 界面要说一句，不然用户以为模型就写了这么多 */
     ...(stored.interrupted ? { interrupted: true } : {}),
+    /* 被中止的回复（落盘时标了 aborted）也按 interrupted 显示 —— 操作条据此说「重试」 */
+    ...(stored.aborted ? { interrupted: true } : {}),
+    /* 重新生成出来的回答：记住它是从哪条重来的 */
+    ...(stored.regeneratedFrom ? { regeneratedFrom: stored.regeneratedFrom } : {}),
     /*
      * 回答的「多版本」（内核按 answersKey + answersVersion 分好组了）：
      * 界面靠它显示 ‹ n / N ›，切回答**不重跑**。

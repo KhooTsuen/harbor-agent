@@ -115,6 +115,7 @@ import { run as consistencyGroup } from './selftest/groups/77-consistency.mjs'
 import { run as boundsGroup } from './selftest/groups/78-bounds.mjs'
 import { run as llmStream } from './selftest/groups/79-llm-stream.mjs'
 import { run as handlersGroup } from './selftest/groups/80-handlers.mjs'
+import { run as regenGroup } from './selftest/groups/81-regen.mjs'
 
 const GROUPS = [
   basics,
@@ -196,6 +197,7 @@ const GROUPS = [
   boundsGroup,
   llmStream,
   handlersGroup,
+  regenGroup,
 ]
 
 async function main() {

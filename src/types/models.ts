@@ -188,6 +188,15 @@ export interface ChatSendPayload {
   sessionId?: string
   /** AG-011：接着哪条暂停的任务做 —— 主进程会**复用那条任务**，不新建 */
   resumeTaskId?: string
+  /** 这一轮是**怎么起来的**（只进日志）：用户发送 / 点继续 / 编辑后重答 / 重新生成 / 重试 / 补一版回答 */
+  reason?: string
+  /**
+   * 「重新生成」的关联：被重新生成的那条回答的磁盘 key。
+   * 主进程据此把新任务挂上 `regeneratedFrom`、给旧改动事务盖「被替代」标记。
+   */
+  regenerateOf?: string
+  /** 被重新生成的是不是**最后一轮**（只有它是，旧台账 / 旧事务才一定属于它；逐字来自 renderer 的判定） */
+  regenerateIsLast?: boolean
   projectId?: string
   temporary?: boolean
   threadSettings?: {

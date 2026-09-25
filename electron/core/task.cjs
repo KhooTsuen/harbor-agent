@@ -62,6 +62,11 @@ function update(id, patch) {
     'loopHit',
     'tokens', 'tokensIn', 'tokensOut',
     'retries',
+    /* 重新生成（新功能）：台账关联 + 预算继承 + 被替代标记 + 累计轮数 */
+    'regeneratedFrom',
+    'budgetCarry',
+    'supersededBy',
+    'turns',
     'pausedAt',
     'resumeCount',
   ]) {

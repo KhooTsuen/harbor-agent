@@ -147,16 +147,40 @@ function check({ budget, startedAt = 0, steps = 0, toolCalls = 0, tokens = 0, no
 }
 
 /**
+ * 重新生成的用量基线：旧任务已经消耗了多少 —— 新任务**从这里接着算**。
+ *
+ * 三项对应任务预算里的轮数 / 工具调用 / token：
+ *   steps     ← 旧任务累计轮数（`turns`）
+ *   toolCalls ← 旧任务台账里跑过的工具条数（`steps` 数组，一次调用一条）
+ *   tokens    ← 旧任务累计 token
+ *
+ * ★ maxRuntime **不继承**：它是墙上时钟，跨任务累计没有意义（新 run 从 0 计），
+ *   继承它会让「重新生成」一开局就撞时长上限。
+ * ★ 旧任务三项都是 0（没消耗）→ 返回 null，调用方不用区分空对象。
+ */
+function carryOf(task) {
+  if (!task) return null
+  const steps = Number(task.turns) || 0
+  const toolCalls = Array.isArray(task.steps) ? task.steps.length : 0
+  const tokens = Number(task.tokens) || 0
+  if (steps <= 0 && toolCalls <= 0 && tokens <= 0) return null
+  return { steps, toolCalls, tokens }
+}
+
+/**
  * 轮次边界查一次账 —— 字段名由预算这边认，循环只要把计数递进来。
  * （放这里是为了让 `loop.cjs` 少几行：那边贴着 300 行上限。）
+ *
+ * `carry` = 重新生成时继承的基线（carryOf 的产物）：三项各加上再查 ——
+ * 这样「旧任务烧到 80% → 重新生成」会从 80% 继续，而不重置为 0。
  */
-function atTurnBoundary({ plan, startedAt, turn, toolRuns, usage }) {
+function atTurnBoundary({ plan, startedAt, turn, toolRuns, usage, carry = null }) {
   return check({
     budget: plan,
     startedAt,
-    steps: turn,
-    toolCalls: toolRuns?.length ?? 0,
-    tokens: usageTotal(usage),
+    steps: turn + (Number(carry?.steps) || 0),
+    toolCalls: (toolRuns?.length ?? 0) + (Number(carry?.toolCalls) || 0),
+    tokens: usageTotal(usage) + (Number(carry?.tokens) || 0),
   })
 }
 
@@ -193,6 +217,7 @@ module.exports = {
   resolve,
   check,
   atTurnBoundary,
+  carryOf,
   pausePatch,
   format,
   usageTotal,

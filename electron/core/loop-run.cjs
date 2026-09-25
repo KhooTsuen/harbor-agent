@@ -10,6 +10,7 @@ const log = require('./log.cjs')
 const life = require('./lifecycle.cjs')
 const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
+const taskRegen = require('./task-regen.cjs')
 const changeset = require('./changeset.cjs')
 const budget = require('./budget.cjs')
 const taskContext = require('./task-context.cjs')
@@ -47,7 +48,32 @@ async function run(options) {
     ? null
     : taskResume.activeForSession(sessionId, { continueIntent })
 
-  const task = taskResume.openForRun({ ...options, goal, sessionId, continueIntent })
+  /*
+   * 重新生成（新功能）：渲染层带了 `regenerateOf`（被替代那条回答的磁盘 key）。
+   * 只有「重做的是最后一轮」才认（regenerateLast）—— 只有那时「本会话最近
+   * 一条任务」才一定属于被重做的那一轮；更早轮次对不上，宁可不关联也不连错。
+   */
+  const regenerating = Boolean(options.regenerateOf) && options.regenerateLast === true
+  const prevTask = regenerating ? taskRegen.previousForSession(sessionId) : null
+  const carry = prevTask ? budget.carryOf(prevTask) : null
+
+  const task = taskResume.openForRun({
+    ...options,
+    goal,
+    sessionId,
+    continueIntent,
+    regenerateFrom: prevTask?.id ?? '',
+    budgetCarry: carry,
+  })
+  /* 旧台账 / 旧改动事务盖「被替代」标记（事务本体不自动撤 —— 审查面板手动整批回滚） */
+  if (prevTask) {
+    const linked = taskRegen.link(prevTask, task.id)
+    if (linked.changeSetId) {
+      log.info(
+        `重新生成：旧改动事务 ${linked.changeSetId} 已隔离（被 ${task.id} 替代，不自动回滚）`,
+      )
+    }
+  }
   const session = changeset.begin({ taskId: task.id, sessionId, title: task.title })
   const changeSetId = session.ok ? session.id : ''
 
@@ -75,13 +101,21 @@ async function run(options) {
    *   注意 base 要在**开始前**取：写进去的是 base + 本轮累计（不是每轮往上加）。
    */
   const baseUsage = usageBase(taskCore.get(task.id))
+  /*
+   * 轮数基线：「预算不重置」的另一半（另一半在 budget.carryOf）。
+   * 重新生成 → 从旧任务接着数（carry.steps）；接管 / 恢复 → 从本任务已有的接着数。
+   */
+  const turnsBase = Math.max(Number(task.turns) || 0, Number(carry?.steps) || 0)
   const counters = { retries: 0 }
   const countingEmit = (event) => {
     if (event?.type === 'agent.retrying') counters.retries += 1
     if (event?.type === 'turn_end') {
       try {
-        /* AG-044：合计之外把「入 / 出」也记上（口径见 usagePatch） */
-        taskCore.update(task.id, usagePatch(baseUsage, event.usage))
+        /* AG-044：合计之外把「入 / 出」也记上（口径见 usagePatch）；轮数也累计（重新生成时从它继承） */
+        taskCore.update(task.id, {
+          ...usagePatch(baseUsage, event.usage),
+          turns: turnsBase + (Number(event.turn) || 0),
+        })
       } catch (error) {
         log.warn(`记用量失败：${error instanceof Error ? error.message : error}`)
       }

@@ -234,7 +234,7 @@ export async function run() {
   check(
     '★ 接回来的判断在 openForRun 之前（顺序不能反）',
     runSrc.indexOf('activeForSession(sessionId, { continueIntent })') <
-      runSrc.indexOf('openForRun({ ...options'),
+      runSrc.indexOf('taskResume.openForRun('),
   )
   check('★ 判断用接回的结果，不是用状态反推', runSrc.includes('Boolean(attached)'))
 

@@ -37,6 +37,11 @@ export function createReplyPersistence(opts: {
    */
   answersKey?: string
   answersVersion?: number
+  /**
+   * 这条回答是「重新生成」来的：指向被替代的那条回答（磁盘 key）。
+   * 分段快照与收尾那条都带上 —— 进程被强杀后重开，也知道它是从哪条重来的。
+   */
+  regeneratedFrom?: string
   getContent: () => string
   getReasoning: () => string
   /** 最后一个事件类型：只有 done / aborted 才值得存 */
@@ -46,6 +51,7 @@ export function createReplyPersistence(opts: {
   const answer = {
     ...(opts.answersKey ? { answersKey: opts.answersKey } : {}),
     ...(opts.answersVersion !== undefined ? { answersVersion: opts.answersVersion } : {}),
+    ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
   }
   let lastFlushAt = 0
   let lastFlushLen = 0
@@ -103,6 +109,8 @@ export function createReplyPersistence(opts: {
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
         ...(final.citations?.length ? { citations: final.citations } : {}),
         ...(final.usage ? { usage: final.usage } : {}),
+        /* 被中止的那条：落盘标上 aborted —— 重开会话后「重试」文案还能回来 */
+        ...(type === 'aborted' ? { aborted: true } : {}),
         ...answer,
         ts: final.timestamp,
       }

@@ -2,9 +2,11 @@ import type { Message } from '@/types'
 import type { TurnSetter } from './turns'
 import { runElectronTurn } from './turns'
 import { runMockTurn } from './mockTurn'
-import { getActiveThread, useAppStore } from '../useAppStore'
+import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { useRealBackend } from '@/lib/backend'
+import { makeRegenerate } from './regenerate'
+import { setRegenRunner } from './regenQueue'
 import {
   answerVersionRerun,
   findQuestion,
@@ -42,6 +44,8 @@ type Getter = () => {
     versions: string[] | undefined,
     index: number,
   ) => void
+  /** 「先停掉、收尾后再跑」的排队重新生成会回调它（同上，定义在本文件的返回对象里） */
+  regenerateMessage: (messageId: string) => void
 }
 
 /** 记一版新文字：第一次编辑时把原文也补进版本表，之后每次往后追 */
@@ -74,8 +78,10 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
      *   找不到它、又跑一轮（真机上验证时就是这么发现的）。
      */
     seedVersion?: number,
-    /** 只给日志用：这一轮是编辑 / 重新生成 / 切版本触发的 */
+    /** 只给日志用：这一轮是编辑 / 重新生成 / 重试 / 补一版回答触发的 */
     reason = '用户发送',
+    /** 重新生成的附加信息：旧回答的磁盘 key + 是不是最后一轮（见 regenerate.ts） */
+    extra: { regeneratedFrom?: string; regenerateIsLast?: boolean } = {},
   ): void {
     if (get().sendingThreads.includes(threadId)) {
       useUIStore.getState().showToast('info', '正在生成', '等这一轮结束再改，不然会跟它抢上下文')
@@ -98,7 +104,12 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     /* 后面的回答是按旧内容写的，留着会答非所问 */
     app.removeMessagesAfter(threadId, messageId)
     if (useRealBackend) {
-      void runElectronTurn(threadId, text, set, '', { seedAnswers: previous, reason })
+      void runElectronTurn(threadId, text, set, '', {
+        seedAnswers: previous,
+        reason,
+        ...(extra.regeneratedFrom ? { regeneratedFrom: extra.regeneratedFrom } : {}),
+        ...(extra.regenerateIsLast ? { regenerateIsLast: true } : {}),
+      })
     } else void runMockTurn(threadId, text, set)
   }
 
@@ -253,32 +264,20 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     },
 
     /**
-     * 重新生成这条回答。
+     * 重新生成 / 重试 —— 实现搬去 `thread/regenerate.ts`；流式中止、排队收尾、
+     * 连续重试提示、台账关联（regeneratedFrom）都在那边。
      *
-     * 从「这条回答」往前找到最近的那句用户消息，把两者之后的消息都丢掉再重跑。
-     * ★ 以前它调 `sendMessage(userText)` —— 那是「用户又说了句话」，
-     *   会把用户那句**再复制一份**（和编辑那边同一个 bug）。
+     * ★ 实现**不在模块初始化时取**（不用 `...spread`）：messageVersions 在
+     *   useThreadStore ↔ turns 的循环里，初始化期取 regenerate / regenQueue 的
+     *   导出会 TDZ（真踩过：直接 import 本文件的测试报 '__vite_ssr_import_6__
+     *   before initialization'）。放到调用期取，两个绑定都已初始化。
      */
     regenerateMessage: (messageId: string) => {
-      const app = useAppStore.getState()
-      const thread = getActiveThread(app)
-      if (!thread) return
-      const index = thread.messages.findIndex((m) => m.id === messageId)
-      if (index < 0) return
-
-      let userText = ''
-      let userId = ''
-      for (let i = index - 1; i >= 0; i -= 1) {
-        const m = thread.messages[i]
-        if (m && m.role === 'user') {
-          userText = m.content
-          userId = m.id
-          break
-        }
-      }
-      if (!userText || !userId) return
-      const question = thread.messages.find((m) => m.id === userId)
-      rerunFrom(thread.id, userId, userText, question?.versionIndex ?? 0, '重新生成')
+      /* 排队的重新生成由 turns.finish 放行；注入回去的就是本文件的 regenerateMessage */
+      setRegenRunner((id) => get().regenerateMessage(id))
+      makeRegenerate(get, (t, q, x, v, r, e) => rerunFrom(t, q, x, v, r, e)).regenerateMessage(
+        messageId,
+      )
     },
   }
 }

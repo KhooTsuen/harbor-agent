@@ -34,11 +34,9 @@ const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute } = require('./loop-route.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-/*
- * 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50，那项负责
- * 「停下来问你」），这个 200 只防「预算设成不限而模型抽风」。★ 两个机制不能做同一件事：
- * 第一版这里设成 50，结果「轮数到顶」总被 for 条件先拦下，预算检查没机会带 budgetHit。
- */
+/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）；这个 200
+   只防「预算设成不限而模型抽风」。第一版设成 50 → 「轮数到顶」总被 for 先拦下，预算检查
+   没机会带 budgetHit。★ 两个机制不能做同一件事。 */
 const MAX_TURNS = 200
 
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
@@ -119,8 +117,10 @@ async function runLoop(options) {
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
   life.mark('preparing', traceKey(options))
 
-  /* AG-040：这次任务的预算（内置默认 ← 设置 ← 任务自己的覆盖） */
-  const plan = budget.resolve(config, taskCore.get(options.taskId) ?? null)
+  /* AG-040：任务预算（内置默认 ← 设置 ← 任务自己的覆盖）；carry = 重新生成继承的用量基线（预算不重置） */
+  const taskRecord = taskCore.get(options.taskId) ?? null
+  const plan = budget.resolve(config, taskRecord)
+  const carry = taskRecord?.budgetCarry ?? null
   const startedAt = Date.now()
 
   for (; turn < MAX_TURNS; turn += 1) {
@@ -148,7 +148,7 @@ async function runLoop(options) {
     }
 
     /* AG-040：轮次边界查一次预算（每轮开头 = 上一轮工具已跑完，不会停在改了一半的状态） */
-    const hit = budget.atTurnBoundary({ plan, startedAt, turn, toolRuns, usage: totalUsage })
+    const hit = budget.atTurnBoundary({ plan, startedAt, turn, toolRuns, usage: totalUsage, carry })
     if (hit.exceeded) {
       emit({ type: 'budget', ...hit, blocked: false })
       /* 同上：撞预算也是「停下来了」，不是「还挂着在等你确认」 */

@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   listeners: [] as Array<(event: Record<string, unknown>) => void>,
-  sent: null as { requestId: string; requestTime?: number } | null,
+  sent: null as ({ requestId: string; requestTime?: number } & Record<string, unknown>) | null,
   abortCalled: 0,
 }))
 
@@ -31,7 +31,9 @@ vi.mock('@/lib/backend', async (importOriginal) => {
         if (index >= 0) h.listeners.splice(index, 1)
       }
     },
-    sendChat: async (payload: { requestId: string; requestTime?: number }) => {
+    sendChat: async (
+      payload: { requestId: string; requestTime?: number } & Record<string, unknown>,
+    ) => {
       h.sent = payload
       return { ok: true, requestId: payload.requestId }
     },
@@ -204,5 +206,20 @@ describe('runElectronTurn', () => {
     await pending
 
     expect(h.listeners.length).toBe(0)
+  })
+
+  it('★ 重新生成：payload 要带 regenerateOf / regenerateIsLast（主进程挂台账、标旧事务用）', async () => {
+    const threadId = useAppStore.getState().activeThreadId
+    const pending = runElectronTurn(threadId, 'hi', () => {}, '', {
+      reason: '重新生成',
+      regeneratedFrom: 'dk-old',
+      regenerateIsLast: true,
+    })
+    await vi.waitFor(() => expect(h.sent).not.toBeNull())
+    expect(h.sent?.regenerateOf).toBe('dk-old')
+    expect(h.sent?.regenerateIsLast).toBe(true)
+    expect(h.sent?.reason).toBe('重新生成')
+    emitFromBackend({ type: 'done', content: 'ok' })
+    await pending
   })
 })

@@ -51,4 +51,15 @@ describe('磁盘 → 界面', () => {
     expect(m.kind).toBe('error')
     expect(m.errorText).toBe('供应商 401')
   })
+
+  it('★ aborted（被用户中止）也映射成 interrupted —— 操作条据此说「重试」', () => {
+    const m = storedToUi({ ...base, aborted: true }, 't1')
+    expect(m.interrupted).toBe(true)
+  })
+
+  it('★ regeneratedFrom 带上去（对比两次生成 / 台账对账要知道它从哪条重来）', () => {
+    const m = storedToUi({ ...base, regeneratedFrom: 'dk-old' }, 't1')
+    expect(m.regeneratedFrom).toBe('dk-old')
+    expect('regeneratedFrom' in storedToUi(base, 't1')).toBe(false)
+  })
 })

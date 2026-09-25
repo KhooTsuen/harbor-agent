@@ -1,7 +1,9 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, GitCompare } from 'lucide-react'
 import type { Message } from '@/types'
 import { allAnswers, answersOfVersion } from '@/lib/answers'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { RegenCompare } from './RegenCompare'
 
 /* ══════════════════════════════════════════════════════════════
    回答的 ‹ n / N ›
@@ -17,6 +19,7 @@ import { useThreadStore } from '@/stores/useThreadStore'
 
 export function AnswerVersions({ message }: { message: Message }) {
   const activateAnswer = useThreadStore((s) => s.activateAnswer)
+  const [comparing, setComparing] = useState(false)
   /* ★ allAnswers：连「当前这条」一起算，否则 N 会少一个、索引还越界 */
   const records = answersOfVersion(allAnswers(message), message.answersVersion ?? 0)
   if (records.length < 2) return null
@@ -48,6 +51,20 @@ export function AnswerVersions({ message }: { message: Message }) {
       >
         <ChevronRight size={12} />
       </button>
+      {/* 两版以上才给「对比——重新生成过两次时就该看这个」 */}
+      <button
+        type="button"
+        aria-label="对比两次生成"
+        title="对比两次生成（输出 / 工具调用 / 文件改动）"
+        onClick={() => setComparing(true)}
+        className="ml-1 flex items-center gap-0.5 rounded-sm px-1 py-0.5 transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
+      >
+        <GitCompare size={11} />
+        对比
+      </button>
+      {comparing ? (
+        <RegenCompare records={records} index={index} onClose={() => setComparing(false)} />
+      ) : null}
     </div>
   )
 }

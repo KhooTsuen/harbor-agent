@@ -29,6 +29,9 @@ export function toAnswerRecord(message: Message): StoredMessage {
     ...(message.usage ? { usage: message.usage } : {}),
     ...(message.answersKey ? { answersKey: message.answersKey } : {}),
     ...(message.answersVersion !== undefined ? { answersVersion: message.answersVersion } : {}),
+    /* 重新生成对账 / 中止标记：切回答、重新生成收集旧回答时都要原样带上 */
+    ...(message.regeneratedFrom ? { regeneratedFrom: message.regeneratedFrom } : {}),
+    ...(message.interrupted ? { aborted: true } : {}),
   }
 }
 
@@ -104,6 +107,9 @@ export function answerPatch(record: StoredMessage, index: number): Partial<Messa
     toolRuns: record.toolRuns ?? [],
     citations: record.citations ?? [],
     ...(record.usage ? { usage: record.usage } : {}),
+    /* 切到（或切回）一条被中止的回答：按钮仍该说「重试」；重生成的来源也跟着走 */
+    ...(record.aborted ? { interrupted: true } : {}),
+    ...(record.regeneratedFrom ? { regeneratedFrom: record.regeneratedFrom } : {}),
     answerIndex: index,
     status: 'sent',
     kind: 'text',

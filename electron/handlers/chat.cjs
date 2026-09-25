@@ -143,6 +143,10 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           /* AG-011：带这个就是「接着上次那条任务做」——循环会复用原任务，
              而不是新建一条（不然「不重复已完成步骤」无从谈起） */
           resumeTaskId: typeof payload?.resumeTaskId === 'string' ? payload.resumeTaskId : '',
+          /* 重新生成：被替代那条回答的磁盘 key + 是否最后一轮
+             （挂台账 regeneratedFrom / 标旧改动事务，见 core/task-regen.cjs） */
+          regenerateOf: typeof payload?.regenerateOf === 'string' ? payload.regenerateOf : '',
+          regenerateLast: payload?.regenerateIsLast === true,
           emit,
           confirm,
           /* 会话 id：审计、授权、任务记录都靠它串起来 */

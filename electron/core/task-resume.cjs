@@ -123,6 +123,10 @@ function openForRun({
   goal = '',
   sessionId = '',
   continueIntent = false,
+  /** 重新生成：新任务挂上它（被替代的台账 id，`` = 不是重新生成） */
+  regenerateFrom = '',
+  /** 重新生成：从旧任务继承的用量基线（见 budget.carryOf） */
+  budgetCarry = null,
   ...options
 }) {
   const resumed = resumeTaskId ? reopen(resumeTaskId) : null
@@ -132,8 +136,11 @@ function openForRun({
    * AG-043：没带 resumeTaskId，但这条对话的活还没完 → 可能会接回它（不是新建）。
    * ★ 要不要接回由 activeForSession 分情况判断 —— 见那里的注释：
    *   随口发个新问题不能把旧任务拉起来重跑（真机上就是这么把旧任务覆盖掉的）。
+   * ★ 重新生成**必须新建**（regenerateFrom 非空时跳过接回）：它要独立成
+   *   一条台账（`regeneratedFrom` 指向被重做的那条）——接回旧任务就把
+   *   「两条记录」抹成一条了（验收 f 要的就是两条）。
    */
-  const live = activeForSession(sessionId, { continueIntent })
+  const live = regenerateFrom ? null : activeForSession(sessionId, { continueIntent })
   if (live) {
     const reopened = reopen(live.id)
     if (reopened) return reopened
@@ -154,6 +161,8 @@ function openForRun({
     mode: options.mode,
     budget: presetBudget,
     preset: hasPreset ? taskPresets.detect(goal).type : '',
+    regeneratedFrom: regenerateFrom,
+    budgetCarry,
   })
 }
 
