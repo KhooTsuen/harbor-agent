@@ -14,6 +14,7 @@ import { BulkSelectList } from './sidebar/BulkSelectList'
 import { SidebarPanes } from './sidebar/SidebarPanes'
 import { SidebarHeader } from './sidebar/SidebarHeader'
 import { CollapsedSidebar } from './sidebar/CollapsedSidebar'
+import { SidebarBranchTree } from './sidebar/SidebarBranchTree'
 import { useBulkSelect } from '@/hooks/useBulkSelect'
 
 /* ══════════════════════════════════════════════════════════════
@@ -153,6 +154,9 @@ export function Sidebar({ loading = false }: SidebarProps) {
           />
         </>
       )}
+
+      {/* 当前对话的分支树（可折叠）—— 放底部，不挤线程列表 */}
+      <SidebarBranchTree />
 
       {/* 底部 */}
       <footer className="flex items-center gap-1 border-t border-line-hairline px-2 py-2">

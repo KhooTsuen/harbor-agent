@@ -15,7 +15,7 @@
  *   scripts/selftest/groups/04-…                 可靠性（任务/回滚/错误分类/路由）
  *   scripts/selftest/groups/05-…                 Agent 循环冒烟 + 会话目录分组
  *   scripts/selftest/groups/06-…                 系统提示内容回归 / 状态 / 预算 / 意图路由
-*   scripts/selftest/groups/07-…                请求体适配（中转站兼容）；（流式/看门狗在 79-llm-stream.mjs）
+ *   scripts/selftest/groups/07-…                请求体适配（中转站兼容）；（流式/看门狗在 79-llm-stream.mjs）
  *   scripts/selftest/groups/08-…                 用量闸（预算）
  *   scripts/selftest/groups/09-…                 浏览器正文清洗 / 导航策略 / browse 工具
  *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
@@ -117,6 +117,7 @@ import { run as llmStream } from './selftest/groups/79-llm-stream.mjs'
 import { run as handlersGroup } from './selftest/groups/80-handlers.mjs'
 import { run as regenGroup } from './selftest/groups/81-regen.mjs'
 import { run as taskIsolationGroup } from './selftest/groups/82-task-isolation.mjs'
+import { run as branchPathGroup } from './selftest/groups/83-branch-path.mjs'
 
 const GROUPS = [
   basics,
@@ -200,6 +201,7 @@ const GROUPS = [
   handlersGroup,
   regenGroup,
   taskIsolationGroup,
+  branchPathGroup,
 ]
 
 async function main() {

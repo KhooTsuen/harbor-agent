@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight, GitCompare } from 'lucide-react'
 import type { Message } from '@/types'
+import type { ForkPoint } from '@/lib/branchPath'
 import { allAnswers, answersOfVersion } from '@/lib/answers'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { ForkBadge } from '@/components/chat/branch/ForkBadge'
 import { RegenCompare } from './RegenCompare'
 
 /* ══════════════════════════════════════════════════════════════
@@ -17,7 +19,7 @@ import { RegenCompare } from './RegenCompare'
    它得让人一眼看到「这个回答有好几版」。
    ══════════════════════════════════════════════════════════════ */
 
-export function AnswerVersions({ message }: { message: Message }) {
+export function AnswerVersions({ message, fork }: { message: Message; fork?: ForkPoint }) {
   const activateAnswer = useThreadStore((s) => s.activateAnswer)
   const [comparing, setComparing] = useState(false)
   /* ★ allAnswers：连「当前这条」一起算，否则 N 会少一个、索引还越界 */
@@ -51,6 +53,7 @@ export function AnswerVersions({ message }: { message: Message }) {
       >
         <ChevronRight size={12} />
       </button>
+      {fork ? <ForkBadge fork={fork} /> : null}
       {/* 两版以上才给「对比——重新生成过两次时就该看这个」 */}
       <button
         type="button"

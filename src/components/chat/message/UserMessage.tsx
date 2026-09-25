@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Message } from '@/types'
+import type { ForkPoint } from '@/lib/branchPath'
 import { cn, clockTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { ForkBadge } from '@/components/chat/branch/ForkBadge'
 import { MessageEditor } from '../MessageEditor'
 
 /* ══════════════════════════════════════════════════════════════
@@ -18,7 +20,7 @@ import { MessageEditor } from '../MessageEditor'
      编辑一次是**同一条消息**多一版，不是多出一条一模一样的提问。
    ══════════════════════════════════════════════════════════════ */
 
-export function UserMessage({ message }: { message: Message }) {
+export function UserMessage({ message, fork }: { message: Message; fork?: ForkPoint }) {
   const [editing, setEditing] = useState(false)
   const editAndRerun = useThreadStore((s) => s.editAndRerun)
   const activateUserVersion = useThreadStore((s) => s.activateUserVersion)
@@ -85,6 +87,7 @@ export function UserMessage({ message }: { message: Message }) {
           >
             <ChevronRight size={12} />
           </button>
+          {fork ? <ForkBadge fork={fork} /> : null}
         </div>
       ) : null}
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Message } from '@/types'
+import type { ForkPoint } from '@/lib/branchPath'
 import { cn } from '@/lib/utils'
 import { useSmoothText } from '@/hooks/useSmoothText'
 import { fsReveal } from '@/lib/fsApi'
@@ -30,10 +31,12 @@ export interface MessageItemProps {
   message: Message
   /** 是否显示悬停操作条 */
   showActions?: boolean
+  /** 这条消息在路径上的分叉点（有分叉才会传）—— 用户消息/回答旁边显示 L 标 */
+  fork?: ForkPoint
 }
 
-/** 助手那条的操作条在 `message/AssistantActions`（复制 / 重新生成 / 赞踩 / 翻译）；用户这条是编辑 / 分支 */
-export function MessageItem({ message, showActions = true }: MessageItemProps) {
+/** 助手那条的操作条在 `message/AssistantActions`（复制 / 重新生成 / 赞戴 / 翻译）；用户这条是编辑 / 分支 */
+export function MessageItem({ message, showActions = true, fork }: MessageItemProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isStreaming = message.status === 'streaming'
@@ -56,7 +59,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
       className={cn('group flex w-full flex-col', isUser ? 'items-end' : 'items-start')}
     >
       {isUser ? (
-        <UserMessage message={message} />
+        <UserMessage message={message} fork={fork} />
       ) : (
         <div className="flex w-full flex-col">
           {isError ? (
@@ -190,7 +193,7 @@ export function MessageItem({ message, showActions = true }: MessageItemProps) {
               ))}
 
               {/* 这条提问有好几版回答时，回答下面也常显 ‹ n / N ›（切换不重跑） */}
-              {!isStreaming ? <AnswerVersions message={message} /> : null}
+              {!isStreaming ? <AnswerVersions message={message} fork={fork} /> : null}
 
               {showActions && !isStreaming ? <AssistantActions message={message} /> : null}
             </div>

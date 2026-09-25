@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
+import { getForkPoints, type ForkPoint } from '@/lib/branchPath'
 import { MessageItem } from './MessageItem'
+import { BranchBreadcrumb } from './branch/BranchBreadcrumb'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { EMPTY_THREAD_PROMPTS } from '@/constants'
@@ -80,6 +82,9 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
     () => (hiddenCount > 0 ? messages.slice(-tailCount) : messages),
     [messages, tailCount, hiddenCount],
   )
+  /* 分支路径：一次算好（面包屑 + 每条消息的 L 标都查这一份，别各自扫全表） */
+  const forks = useMemo(() => getForkPoints(messages), [messages])
+  const forkMap = useMemo(() => new Map<string, ForkPoint>(forks.map((f) => [f.id, f])), [forks])
 
   /*
    * 用户往上滚了就取消「自动贴底」，滚回底部再恢复。
@@ -242,48 +247,51 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
-      <div ref={scrollerRef} className="h-full overflow-y-auto">
-        <div ref={attachContent} className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5">
-          {hiddenCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => setTailCount((value) => value + TAIL_STEP)}
-              className="mx-auto rounded-pill border border-line-hairline px-3 py-1 text-2xs text-fg-tertiary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
-            >
-              载入更早的 {Math.min(TAIL_STEP, hiddenCount)} 条（还有 {hiddenCount} 条）
-            </button>
-          ) : null}
-          {visibleMessages.map((message) => (
-            <MessageItem key={message.id} message={message} />
-          ))}
-          <div ref={bottomRef} className="h-px" />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <BranchBreadcrumb forks={forks} />
+      <div className="relative min-h-0 flex-1">
+        <div ref={scrollerRef} className="h-full overflow-y-auto">
+          <div ref={attachContent} className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5">
+            {hiddenCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setTailCount((value) => value + TAIL_STEP)}
+                className="mx-auto rounded-pill border border-line-hairline px-3 py-1 text-2xs text-fg-tertiary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
+              >
+                载入更早的 {Math.min(TAIL_STEP, hiddenCount)} 条（还有 {hiddenCount} 条）
+              </button>
+            ) : null}
+            {visibleMessages.map((message) => (
+              <MessageItem key={message.id} message={message} fork={forkMap.get(message.id)} />
+            ))}
+            <div ref={bottomRef} className="h-px" />
+          </div>
         </div>
-      </div>
 
-      {/*
-       * 「回到底部」。
-       *
-       * 只在**用户自己往上滚了**（pinned 为 false）的时候出现 —— 正在往上翻历史时，
-       * Agent 还在后面写，得要个东西告诉他「后面有新的」。
-       *
-       * 不用额外判断「是不是在流式」：不流式时内容高度不变，用户不滚就永远不会
-       * 离开底部。
-       */}
-      {showJump ? (
-        <button
-          type="button"
-          onClick={() => {
-            const sc = scrollerRef.current
-            if (sc) sc.scrollTop = sc.scrollHeight
-            pinnedRef.current = true
-            setShowJump(false)
-          }}
-          className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-pill border border-line-hairline bg-bg-raised px-3 py-1.5 text-2xs text-fg-secondary shadow-lg transition-colors hover:text-fg-primary"
-        >
-          ↓ 回到底部
-        </button>
-      ) : null}
+        {/*
+         * 「回到底部」。
+         *
+         * 只在**用户自己往上滚了**（pinned 为 false）的时候出现 —— 正在往上翻历史时，
+         * Agent 还在后面写，得要个东西告诉他「后面有新的」。
+         *
+         * 不用额外判断「是不是在流式」：不流式时内容高度不变，用户不滚就永远不会
+         * 离开底部。
+         */}
+        {showJump ? (
+          <button
+            type="button"
+            onClick={() => {
+              const sc = scrollerRef.current
+              if (sc) sc.scrollTop = sc.scrollHeight
+              pinnedRef.current = true
+              setShowJump(false)
+            }}
+            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-pill border border-line-hairline bg-bg-raised px-3 py-1.5 text-2xs text-fg-secondary shadow-lg transition-colors hover:text-fg-primary"
+          >
+            ↓ 回到底部
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
