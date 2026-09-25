@@ -3,10 +3,12 @@
  *
  * 围着同一件事：**让模型知道任务进行到哪了**。三块：
  *
- *   ① 注入文本 —— 把未完成任务组装成一段话，填进提示的 `taskState` 层。
+ *   ① 注入文本 —— 把**本会话**未完成的任务组装成一段话，填进提示的 `taskState` 层。
  *      那个层一直空着（`loop-prompt.cjs` 里写着 `options.taskState ?? ''`，
  *      但全仓库没人传值），所以任务只活在界面上（侧栏黄点、横幅），
  *      模型自己压根不知道有未完成的活 —— 长对话里这就是「目标漂移」。
+ *      ★ 严格按 sessionId 隔离：别的会话的任务**不进这条对话的提示**（曾经兜底注入过，
+ *        导致「B 会继续执行 A 的任务」——见 buildTaskState 里的注释）。
  *
  *   ② 计划完整性 —— 计划正文算个指纹存在任务里。注入前重算，对不上就
  *      只报「对不上」不注入内容。防的是工具结果、并行会话或某个 bug 把
@@ -63,16 +65,23 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
     return ''
   }
 
-  /* 当前会话的任务优先；然后才是全局还开着的 */
-  const mine = tasks.filter((task) => sessionId && task.sessionId === sessionId)
-  const others = tasks.filter((task) => !mine.includes(task))
-  const ordered = [
-    ...mine.slice(0, MAX_TASKS),
-    ...others.slice(0, Math.max(0, MAX_TASKS - mine.length)),
-  ]
-  /* 新活的第一轮（一条未完成任务都没有）：必须带上「本轮请求」——
+  /*
+   * ★ 严格按会话隔离：只看**本会话**的未完成任务。
+   *
+   * 以前是「本会话优先 + 其他会话兜底（others）」—— 于是 A 里中断的任务会被
+   * 塞进**每一条**对话的提示里（还带着「接着计划里第一条没 [x] 的往下做」的
+   * 指令），在 B 里模型就开始干 A 的活 —— bug：任务状态像全局共享的。
+   * 别的对话的活不由这里代管：要接着做，回那条对话，或者点任务中心的「继续」。
+   */
+  const mine = sessionId ? tasks.filter((task) => task.sessionId === sessionId) : []
+  const ordered = mine.slice(0, MAX_TASKS)
+
+  /* 新活的第一轮（本会话一条未完成任务都没有）：必须带上「本轮请求」——
      只说通用规矩模型不照做，真机实测过（缘由写在 task-hint.cjs）。 */
   if (ordered.length === 0) return taskHint.freshRequest(userText)
+
+  /* 哪条是「当前」：优先显式 taskId，否则最近更新的那条（unfinished 已按 updatedAt 降序） */
+  const currentId = taskId || ordered[0]?.id || ''
 
   /* 诊断用：确认「用户在说继续」这条真的被认出来了（taskState 不落盘） */
   if (steering.isContinueIntent(userText)) {
@@ -81,7 +90,7 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
 
   const blocks = []
   for (const task of ordered) {
-    const isCurrent = task.id === taskId || (sessionId && task.sessionId === sessionId)
+    const isCurrent = task.id === currentId
     const head = `${isCurrent ? '▶' : '·'} [${task.status}] ${task.title || '(无标题)'}`
     const lines = [head]
     if (task.goal) lines.push(`  目标：${String(task.goal).slice(0, 160)}`)

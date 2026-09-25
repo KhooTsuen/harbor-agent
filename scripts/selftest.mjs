@@ -116,6 +116,7 @@ import { run as boundsGroup } from './selftest/groups/78-bounds.mjs'
 import { run as llmStream } from './selftest/groups/79-llm-stream.mjs'
 import { run as handlersGroup } from './selftest/groups/80-handlers.mjs'
 import { run as regenGroup } from './selftest/groups/81-regen.mjs'
+import { run as taskIsolationGroup } from './selftest/groups/82-task-isolation.mjs'
 
 const GROUPS = [
   basics,
@@ -198,6 +199,7 @@ const GROUPS = [
   llmStream,
   handlersGroup,
   regenGroup,
+  taskIsolationGroup,
 ]
 
 async function main() {
