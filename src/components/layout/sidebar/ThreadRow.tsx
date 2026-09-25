@@ -170,7 +170,15 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
         {relativeTime(thread.updatedAt)}
       </span>
 
-      <div className="hidden shrink-0 group-hover:flex group-focus-within:flex">
+      {/*
+        悬停才出现的操作槽。
+        ⚠️ h-4 + items-center 不是装饰，是防「悬停行变高」的：里面的 IconButton
+        是 28px，比本行的文字行高（text-dense 14px × 1.43 ≈ 20px）高 —— 让它
+        照常参与布局，悬停时行会从 32px 涨到 40px（真机 212×32 → 212×40 量过），
+        鼠标扫过整片列表会一跳一跳。钉成 1rem 后它不再决定行高，
+        按钮多出来的高度上下对称溢出（行有 6px 内边距兜着，探针复核仍在行内）。
+      */}
+      <div className="hidden h-4 shrink-0 items-center group-hover:flex group-focus-within:flex">
         <Popover
           open={menuOpen}
           onOpenChange={setMenuOpen}
