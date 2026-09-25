@@ -1,7 +1,7 @@
 {
   "name": "harbor-agent",
   "private": true,
-  "version": "1.20.0-beta.10",
+  "version": "1.20.0-beta.11",
   "description": "本地优先的个人 AI Agent 工作台：任务台账、计划与进度、可恢复、可暂停、数据全在本机",
   "license": "MIT",
   "type": "module",
@@ -30,6 +30,7 @@
     "acceptance": "node tools/acceptance.mjs"
   },
   "dependencies": {
+    "@floating-ui/react": "^0.27.20",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "clsx": "^2.1.1",
