@@ -273,7 +273,11 @@ function askUser(requestId, request, emit) {
     emit({
       type: 'confirm_request',
       confirmId,
-      requestId: request.requestId ?? null,
+      /*
+       * 审批 id（`approve_…`）**不能叫 requestId** —— 那是**对话的** requestId，
+       * 两者同名会被上层展开覆盖，渲染层就收不到这条确认了（见 chat-emit.cjs）。
+       */
+      approvalId: request.requestId ?? null,
       toolName: request.name,
       summary: request.summary,
       args: request.args,

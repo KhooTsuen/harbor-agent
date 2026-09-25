@@ -14,6 +14,7 @@
 const http = require('./http.cjs')
 const log = require('./log.cjs')
 const { onAbort } = require('./abort.cjs')
+const { createIdleGuard } = require('./llm-idle.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
 const plugins = require('./plugins.cjs')
 
@@ -50,6 +51,7 @@ function parseSseLine(line) {
  * @param {number} [options.temperature]
  * @param {number} [options.maxTokens]
  * @param {AbortSignal} [options.signal]
+ * @param {number} [options.idleTimeoutMs] 空闲超时毫秒数（默认 45 秒；测试里给短值）
  * @param {(text: string) => void} [options.onContent]
  * @param {(text: string) => void} [options.onReasoning]
  * @param {(calls: Array) => void} [options.onToolCalls]
@@ -108,12 +110,36 @@ async function chatStream(options) {
    */
   log.info(`请求模型${label ? `[${label}]` : ''} ${model} → ${url}`)
 
-  const response = await http.fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
+  /*
+   * 空闲看门狗：上游「一个字节都不回来」时别无限等下去（见 llm-idle.cjs）。
+   * 它同时管两个阶段：等响应头（中止 fetch）与读流（掐掉 read）。
+   */
+  const idle = createIdleGuard(options.idleTimeoutMs)
+  let reader = null
+  idle.onFire(() => {
+    log.warn(`空闲看门狗触发：${idle.message}`)
+    void reader?.cancel().catch(() => {})
   })
+  const guardedSignal = signal ? AbortSignal.any([signal, idle.signal]) : idle.signal
+
+  idle.arm()
+  let response
+  try {
+    /* 与看门狗赛跑：响应头不回来也能掐掉（不依赖底层 abort 是否生效） */
+    response = await idle.race(
+      http.fetchStream(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: guardedSignal,
+      }),
+    )
+  } catch (error) {
+    idle.stop()
+    if (idle.timedOut() && !signal?.aborted) throw new Error(idle.message)
+    throw error
+  }
+  idle.stop()
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
@@ -122,7 +148,7 @@ async function chatStream(options) {
   }
   if (!response.body) throw new Error('上游没有返回流式响应体')
 
-  const reader = response.body.getReader()
+  reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
 
   /*
@@ -149,7 +175,17 @@ async function chatStream(options) {
       offAbort()
       throw new DOMException('aborted', 'AbortError')
     }
-    const { done, value } = await reader.read()
+    idle.arm()
+    let step
+    try {
+      step = await idle.race(reader.read())
+    } catch (error) {
+      idle.stop()
+      if (idle.timedOut() && !signal?.aborted) throw new Error(idle.message)
+      throw error
+    }
+    idle.stop()
+    const { done, value } = step
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
@@ -224,6 +260,8 @@ async function chatStream(options) {
    * 否则中断会被当成「上游返回了空内容」报出去。再查一次 signal，把真话抛出来。
    */
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+  /* 看门狗掐掉的流同样是「被取消的 read」—— 这里把真正的原因报出来 */
+  if (idle.timedOut()) throw new Error(idle.message)
 
   const toolCalls = [...toolCallMap.entries()]
     .sort((a, b) => a[0] - b[0])

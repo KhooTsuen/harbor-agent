@@ -10,6 +10,8 @@ import { ROOT, join, require } from '../env.mjs'
    为什么要有这一组：用户要接 OpenRouter 和硅基流动，
    两家的模型名都带 `vendor/` 前缀（`openai/o3-mini`、
    `deepseek-ai/DeepSeek-R1`），参数写法又和官方端点不一样。
+
+   返回来的流（SSE 解析 / 流内错误 / 空闲看门狗）在 79-llm-stream.mjs。
    ══════════════════════════════════════════════════════════════ */
 
 export async function run() {
@@ -191,109 +193,4 @@ export async function run() {
     buildUrl('https://a.b/v1', 'chat/completions') === 'https://a.b/v1/chat/completions',
   )
   check('不传 chatPath 时用默认', buildUrl('https://a.b/v1').endsWith('/chat/completions'))
-
-  /* ══════════════════════════════════════════════════════════
-     流内错误 —— 这一组是**用户报的故障**补来的
-
-     OpenRouter 会在 HTTP 200 的正常流里发错误：
-       data: {"error":{"code":402,"message":"Insufficient credits"}}
-     原来的代码走 `if (!delta) continue` 把它静默吃掉了，
-     症状是「回答空白、不报任何错」。
-     ══════════════════════════════════════════════════════════ */
-
-  group('流内错误 / OpenRouter')
-
-  const llm = require(join(ROOT, 'electron/core/llm.cjs'))
-  const originalFetch = globalThis.fetch
-
-  /** 造一个假的 SSE 响应（把若干 data 行当一个流吐出来） */
-  function fakeStream(lines) {
-    return {
-      ok: true,
-      status: 200,
-      body: new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder()
-          for (const line of lines) controller.enqueue(encoder.encode(`${line}\n\n`))
-          controller.close()
-        },
-      }),
-    }
-  }
-
-  try {
-    /* ① 正常流仍然能解析（别把好的搞坏了） */
-    globalThis.fetch = async () =>
-      fakeStream([
-        ': OPENROUTER PROCESSING',
-        'data: {"choices":[{"delta":{"content":"你"}}]}',
-        'data: {"choices":[{"delta":{"reasoning_content":"想"}}]}',
-        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
-        'data: [DONE]',
-      ])
-    const ok = await llm.chatStream({ baseUrl: 'https://x/y', model: 'm', messages: [] })
-    check('常规流照旧能解析出内容', ok.content === '你', ok.content)
-    check('保活注释 `: OPENROUTER PROCESSING` 被忽略（不报错）', true)
-    check('硅基流动的 reasoning_content 能读出来', ok.reasoning === '想', ok.reasoning)
-
-    /* ② ★ 流里的错误必须抛出来 */
-    globalThis.fetch = async () =>
-      fakeStream([
-        ': OPENROUTER PROCESSING',
-        'data: {"error":{"code":402,"message":"Insufficient credits. Add more using..."}}',
-      ])
-    let thrown = null
-    try {
-      await llm.chatStream({ baseUrl: 'https://x/y', model: 'm', messages: [] })
-    } catch (error) {
-      thrown = error
-    }
-    check('★ 流内错误会被抛出（以前是静默空白）', thrown !== null)
-    check(
-      '★ 错误里带上上游原文',
-      String(thrown?.message ?? '').includes('Insufficient credits'),
-      String(thrown?.message),
-    )
-    check(
-      '★ 错误里带上 code',
-      String(thrown?.message ?? '').includes('402'),
-      String(thrown?.message),
-    )
-
-    /* ③ 收完流什么都没有 → 也要给出说得通的错 */
-    globalThis.fetch = async () => fakeStream(['data: [DONE]'])
-    let empty = null
-    try {
-      await llm.chatStream({ baseUrl: 'https://x/y', model: 'm', messages: [] })
-    } catch (error) {
-      empty = error
-    }
-    check('★ 上游什么都没返回时也会报错（不是空气泡）', empty !== null)
-    check(
-      '错误里带上了模型名，方便排查',
-      String(empty?.message ?? '').includes('m'),
-      String(empty?.message),
-    )
-
-    /* ④ 上游 HTTP 错误照旧 */
-    globalThis.fetch = async () => ({
-      ok: false,
-      status: 429,
-      statusText: 'Too Many Requests',
-      text: async () => 'rate limited',
-    })
-    let httpErr = null
-    try {
-      await llm.chatStream({ baseUrl: 'https://x/y', model: 'm', messages: [] })
-    } catch (error) {
-      httpErr = error
-    }
-    check(
-      'HTTP 错误照旧抛出来（含状态码和原文）',
-      String(httpErr?.message ?? '').includes('429') &&
-        String(httpErr?.message ?? '').includes('rate limited'),
-    )
-  } finally {
-    globalThis.fetch = originalFetch
-  }
 }

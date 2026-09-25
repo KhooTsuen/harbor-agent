@@ -109,7 +109,7 @@ npm run package && (cd dist-portable/Harbor && ./Harbor.exe --self-test)
 
 ## 已经踩过的坑（别重复踩）
 
-**完整清单在 [`docs/踩坑记录.md`](docs/踩坑记录.md)** —— 二十一条，每条带真实报错信息。
+**完整清单在 [`docs/踩坑记录.md`](docs/踩坑记录.md)** —— 二十二条，每条带真实报错信息。
 改代码前扫一眼，能省掉几次返工。
 
 最常踩的三条：

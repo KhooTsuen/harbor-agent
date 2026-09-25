@@ -15,7 +15,7 @@
  *   scripts/selftest/groups/04-…                 可靠性（任务/回滚/错误分类/路由）
  *   scripts/selftest/groups/05-…                 Agent 循环冒烟 + 会话目录分组
  *   scripts/selftest/groups/06-…                 系统提示内容回归 / 状态 / 预算 / 意图路由
- *   scripts/selftest/groups/07-…                 请求体适配（中转站兼容）/ 流内错误
+*   scripts/selftest/groups/07-…                请求体适配（中转站兼容）；（流式/看门狗在 79-llm-stream.mjs）
  *   scripts/selftest/groups/08-…                 用量闸（预算）
  *   scripts/selftest/groups/09-…                 浏览器正文清洗 / 导航策略 / browse 工具
  *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
@@ -24,7 +24,8 @@
  *   scripts/selftest/groups/13-…                 generate_image 工具
  *   scripts/selftest/groups/14-…                 任务台账注入 / 完整性 / 完成门禁
  *   scripts/selftest/groups/15-…                 AG-001 生命周期状态机
- *   scripts/selftest/groups/13-…                 generate_image 工具（提交即返回）
+ *   scripts/selftest/groups/79-…                 LLM 流式 / 看门狗
+ *   scripts/selftest/groups/80-…                 内核 handler 真调（目录选择：点了没作用的按钮）
  *
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
  *
@@ -112,6 +113,8 @@ import { run as projectsGroup } from './selftest/groups/75-projects.mjs'
 import { run as taskPresets } from './selftest/groups/76-task-presets.mjs'
 import { run as consistencyGroup } from './selftest/groups/77-consistency.mjs'
 import { run as boundsGroup } from './selftest/groups/78-bounds.mjs'
+import { run as llmStream } from './selftest/groups/79-llm-stream.mjs'
+import { run as handlersGroup } from './selftest/groups/80-handlers.mjs'
 
 const GROUPS = [
   basics,
@@ -191,6 +194,8 @@ const GROUPS = [
   taskPresets,
   consistencyGroup,
   boundsGroup,
+  llmStream,
+  handlersGroup,
 ]
 
 async function main() {

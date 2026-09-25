@@ -138,6 +138,44 @@ export async function run() {
   check('高危在界面上有区别（标题带「高风险」）', evSrc.includes('高风险'))
   check('把 kind 和 risk 传给了界面', evSrc.includes('event.kind') && evSrc.includes('event.risk'))
 
+  /* ══════════════════════════════════════════════════════════
+     回归：确认事件必须**还带着对话的 requestId**
+
+     `confirm_request` 的载荷里本来就有个 `requestId`（审批 id `approve_…`）。
+     若 emit 把它展开在对话 requestId 之后，渲染层按 requestId 过滤时
+     （turns.ts：不匹配就 return）会**把整条确认丢掉** —— 界面永远不弹权限条，
+     用户只能干等到超时被当作拒绝。2026-09-25 真机抓到的：事件明明到了
+     渲染层，权限条就是不出现。
+     ══════════════════════════════════════════════════════════ */
+  const chatSrc = readCore('electron/handlers/chat.cjs')
+  const emitSrc2 = readCore('electron/core/chat-emit.cjs')
+  const { createEmitter } = require(join(ROOT, 'electron/core/chat-emit.cjs'))
+  const sent = []
+  const em = createEmitter({
+    requestId: 'req_chat',
+    phaseKey: 'task_probe',
+    send: (channel, payload) => sent.push({ channel, payload }),
+  })
+  let emitErr = null
+  try {
+    /* 故意让载荷自己带一个 requestId（模拟审批 id 撞车） */
+    em.emit({ type: 'confirm_request', confirmId: 'cfm_x', requestId: 'approve_9', summary: 's' })
+  } catch (error) {
+    emitErr = error
+  }
+  const ev = sent.find((x) => x.payload?.type === 'confirm_request')
+  check('发确认事件不抛错', emitErr === null)
+  check('★ confirm_request 发出去了', !!ev)
+  check('★ 它的 requestId 还是**对话的**（没被审批 id 顶掉）', ev?.payload?.requestId === 'req_chat')
+  check(
+    '★ chat-emit 把对话 requestId 写在展开之后（顺序反了就是这个 bug）',
+    emitSrc2.includes("{ ...event, requestId }"),
+  )
+  check(
+    '★ askUser 不再拿 requestId 转发审批 id',
+    !/requestId: request\.requestId/.test(chatSrc) && chatSrc.includes('approvalId: request.requestId'),
+  )
+
   taskCore.remove(t.id)
   check('测试任务已清理', taskCore.get(t.id) === null)
 }

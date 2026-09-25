@@ -48,7 +48,7 @@ ipcMain.handle('workdir:get', () => currentWorkdir())
  * 这个是「这条对话挂在哪个目录」—— 给单条对话挂目录不该顺手改全局设置。
  */
 ipcMain.handle('workdir:choose', async () => {
-  const picked = await dialog.showOpenDialog(mainWindow, {
+  const picked = await dialog.showOpenDialog(windowState.get(), {
     title: '选择这个对话的工作目录',
     properties: ['openDirectory', 'createDirectory'],
   })
@@ -57,7 +57,7 @@ ipcMain.handle('workdir:choose', async () => {
 })
 
 ipcMain.handle('workdir:pick', async () => {
-  const picked = await dialog.showOpenDialog(mainWindow, {
+  const picked = await dialog.showOpenDialog(windowState.get(), {
     title: '选择工作目录',
     properties: ['openDirectory', 'createDirectory'],
   })

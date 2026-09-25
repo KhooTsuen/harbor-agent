@@ -35,7 +35,15 @@ function createEmitter({ requestId, phaseKey, send }) {
       return
     }
     batcher.flush()
-    send('chat:event', { requestId, ...event })
+    /*
+     * ⚠️ `requestId` 必须放在**最后**。事件本身也可能带一个 requestId
+     * （`confirm_request` 携带的是审批 id `approve_…`，见 tools/approval.cjs），
+     * 展开写在后面会把对话的 requestId **顶掉** —— 渲染层是按 requestId 过滤的
+     * （turns.ts：`event.requestId !== requestId` 就 return），一顶掉整条确认
+     * 事件就被丢掉，**界面永远不弹权限条**，用户只能等到 5 分钟超时被当成拒绝。
+     * 2026-09-25 真机抓到的：事件到了渲染层，权限条就是不出现。
+     */
+    send('chat:event', { ...event, requestId })
   }
 
   return { emit, flush: batcher.flush }

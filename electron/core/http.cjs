@@ -47,4 +47,20 @@ function fetch(input, init) {
   return impl()(input, init)
 }
 
-module.exports = { fetch }
+/**
+ * 流式对话专用：走 Node 的 undici（全局 fetch）。
+ *
+ * 为什么不用 net.fetch：2026-09-25 真机验收发现 —— net.fetch 的响应体在流**卡住**时
+ * 会把主线程一起拖死（`reader.read()` 同步阻塞，45 秒的空闲看门狗 `setTimeout`
+ * 根本没机会响，整个主进程几分钟零日志、任务永远「运行中」）。undici 的 `read()`
+ * 是真的异步：流卡住时事件循环照跑，看门狗能按时把挂住的请求报成可重试的 timeout。
+ *
+ * 代价：undici 不读系统代理（见上面 net.fetch 的说明）——挂代理的用户若要保留代理，
+ * 请自己配 undici dispatcher，或把这里换回 net.fetch。探活类短请求（ping / listModels）
+ * 仍走 net.fetch，不受影响。
+ */
+function fetchStream(input, init) {
+  return globalThis.fetch(input, init)
+}
+
+module.exports = { fetch, fetchStream }

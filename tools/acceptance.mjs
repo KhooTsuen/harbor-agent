@@ -21,8 +21,9 @@
  * 产物：控制台摘要 + `acc-report.json`（逐轮明细）+ `acc-live.txt`（实时日志）。
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { buildCases, prepareSandbox } from './acceptance-cases.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1] ?? fallback
@@ -33,83 +34,10 @@ const DATA = join(APP, 'data')
 const SANDBOX = join(DATA, 'workspace')
 const PORT = Number(arg('port', '9338'))
 const RUNS = Number(arg('runs', '3'))
-/** 只清自己这几个文件，别动工作目录里其它东西 */
-const MINE = ['calc.mjs', 'calc.test.mjs', 'greet.mjs', 'nosuch.test.mjs']
-
+const ONLY = arg('only', '')
+const INSPECT = process.argv.includes('--inspect')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const now = () => Date.now()
-const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
-
-const CALC = `export function add(a, b) {
-  return a + b
-}
-
-/* BUG（故意留的）：应该返回 a * b */
-export function multiply(a, b) {
-  return a + b
-}
-`
-const CALC_TEST = `import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { add, multiply } from './calc.mjs'
-
-test('add', () => assert.equal(add(2, 3), 5))
-test('multiply', () => assert.equal(multiply(2, 3), 6))
-`
-const FIXED = /multiply[\s\S]{0,100}return\s+a\s*\*\s*b/
-
-function resetSandbox() {
-  mkdirSync(SANDBOX, { recursive: true })
-  for (const f of MINE) rmSync(join(SANDBOX, f), { force: true })
-  writeFileSync(join(SANDBOX, 'calc.mjs'), CALC)
-  writeFileSync(join(SANDBOX, 'calc.test.mjs'), CALC_TEST)
-}
-
-/** 任务集：每类一档能力，verify 只看磁盘产物 */
-const TASKS = [
-  {
-    id: 'T1-只读答疑',
-    prompt: '读一下工作目录里的 calc.mjs 和 calc.test.mjs，用一句话说清这个模块导出什么、测试测了什么。不要修改任何文件。',
-    verify: () => {
-      const ok = read(join(SANDBOX, 'calc.mjs')) === CALC && read(join(SANDBOX, 'calc.test.mjs')) === CALC_TEST
-      return { pass: ok, detail: ok ? '只读任务，两个文件都没被动' : '只读任务却改了文件' }
-    },
-  },
-  {
-    id: 'T2-单文件修改',
-    prompt: '工作目录里 calc.mjs 的 multiply 函数是错的（现在返回 a+b，应该是 a*b）。请把它改对，改完不要跑测试。',
-    verify: () => {
-      const ok = FIXED.test(read(join(SANDBOX, 'calc.mjs')))
-      return { pass: ok, detail: ok ? 'multiply 已改成 a*b' : '没改对' }
-    },
-  },
-  {
-    id: 'T3-改完跑测试',
-    prompt: 'calc.mjs 的 multiply 是错的（返回 a+b，应为 a*b）。先改对，然后运行 node --test calc.test.mjs 验证，把测试结果告诉我。',
-    verify: () => {
-      const ok = FIXED.test(read(join(SANDBOX, 'calc.mjs')))
-      return { pass: ok, detail: ok ? 'multiply 已改对（有没有真跑测试看台账）' : '没改对' }
-    },
-    needShell: true,
-  },
-  {
-    id: 'T4-新建文件',
-    prompt: '在工作目录新建 greet.mjs，导出一个函数 greet(name)，返回字符串「你好，」拼上 name（注意是中文逗号）。只建这一个文件。',
-    verify: () => {
-      const src = read(join(SANDBOX, 'greet.mjs'))
-      const ok = /greet/.test(src) && /你好，|你好,/.test(src)
-      return { pass: ok, detail: ok ? 'greet.mjs 已建且内容正确' : src ? '内容不对' : '文件没建' }
-    },
-  },
-  {
-    id: 'T5-失败处理',
-    prompt: '运行 node --test 这个目录里不存在的文件 nosuch.test.mjs，然后用一句话说明失败原因。不要新建任何文件。',
-    verify: () => {
-      const extra = MINE.filter((f) => !['calc.mjs', 'calc.test.mjs'].includes(f) && existsSync(join(SANDBOX, f)))
-      return { pass: extra.length === 0, detail: extra.length === 0 ? '失败被正确报告、没多建文件' : `多建了：${extra.join(', ')}` }
-    },
-  },
-]
 
 class Cdp {
   constructor(ws) {
@@ -137,11 +65,20 @@ class Cdp {
 const newest = (dir, ext) => {
   if (!existsSync(dir)) return null
   const list = readdirSync(dir)
-    .filter((f) => f.endsWith(ext))
+    .filter((f) => f.endsWith(ext) && !f.startsWith('_'))
     .map((f) => ({ f, m: statSync(join(dir, f)).mtimeMs }))
     .sort((a, b) => b.m - a.m)
   return list[0]?.f ?? null
 }
+
+/* 任务集与沙箱在 acceptance-cases.mjs；这边只管驱动（起应用、发消息、等结束、统计） */
+const TASKS = buildCases({
+  sandbox: SANDBOX,
+  newestSession: () => {
+    const file = newest(join(DATA, 'sessions'), '.jsonl')
+    return file ? join(DATA, 'sessions', file) : ''
+  },
+})
 
 const report = []
 let cdp = null
@@ -152,7 +89,11 @@ const app = (() => {
   } catch {
     /* 没有就算了 */
   }
-  return spawn(EXE, [`--remote-debugging-port=${PORT}`], { cwd: APP, stdio: 'ignore' })
+  return spawn(
+    EXE,
+    [`--remote-debugging-port=${PORT}`, ...(INSPECT ? ['--inspect=9229'] : [])],
+    { cwd: APP, stdio: 'ignore' },
+  )
 })()
 
 const ev = async (expr) => {
@@ -190,8 +131,9 @@ try {
   console.log(`验收就绪 · ${TASKS.length} 个任务 × ${RUNS} 次 → ${APP}\n`)
 
   for (const task of TASKS) {
+    if (ONLY && !task.id.includes(ONLY)) continue
     for (let run = 1; run <= RUNS; run += 1) {
-      resetSandbox()
+      prepareSandbox(SANDBOX)
       const t0 = now()
       await ev(`(function(){const b=[...document.querySelectorAll('button')].find(x=>/^新建对话/.test((x.getAttribute('aria-label')||x.title||'')));if(b)b.click();return !!b})()`)
       await sleep(1300)
