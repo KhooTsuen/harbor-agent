@@ -95,7 +95,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
             }
           }}
           aria-label="重命名线程"
-          className="w-full rounded-small border border-line-focus bg-bg-raised px-2 py-1 text-dense text-fg-primary outline-none"
+          className="w-full rounded-small border border-line-focus bg-bg-input px-2 py-1 text-dense text-fg-primary outline-none"
         />
       </div>
     )
@@ -106,7 +106,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
       className={cn(
         'group relative flex items-center gap-xs rounded-small px-2 py-1.5',
         'cursor-pointer transition-colors duration-fast',
-        active ? 'bg-bg-raised text-fg-primary' : 'text-fg-secondary hover:bg-bg-hover',
+        active ? 'bg-accent-subtle text-fg-primary' : 'text-fg-secondary hover:bg-bg-hover',
       )}
       onClick={() => setActiveThread(thread.id)}
       role="button"

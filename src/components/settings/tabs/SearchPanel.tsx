@@ -82,7 +82,7 @@ export function SearchPanel() {
             void patchSearch({ provider: e.target.value })
             setResult(null)
           }}
-          className="w-full rounded-base border border-line-hairline bg-bg-surface px-2.5 py-1.5 text-dense text-fg-primary focus:border-line-focus focus:outline-none"
+          className="w-full rounded-base border border-line-hairline bg-bg-input px-2.5 py-1.5 text-dense text-fg-primary focus:border-line-focus focus:outline-none"
         >
           {(providers.length > 0
             ? providers

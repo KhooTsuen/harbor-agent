@@ -27,34 +27,34 @@ import { colorOf } from '@/lib/statusLanguage'
        ResizeObserver 会自然触发一次 fit。
    ══════════════════════════════════════════════════════════════ */
 
-/** 从应用主题的 CSS 变量取色，终端跟着主题走 */
+/** 从应用主题的 CSS 变量取色，终端跟着主题走（fallback 与 Primer 深色映射一致） */
 function readTheme(): ITheme {
   const style = getComputedStyle(document.documentElement)
   const v = (name: string, fallback: string): string =>
     style.getPropertyValue(name).trim() || fallback
 
   return {
-    background: v('--bg-canvas', '#101010'),
-    foreground: v('--text-primary', '#f8f8f8'),
-    cursor: v('--text-primary', '#f8f8f8'),
-    cursorAccent: v('--bg-canvas', '#101010'),
-    selectionBackground: v('--border-strong', 'rgba(255,255,255,0.14)'),
-    black: v('--bg-canvas', '#101010'),
-    brightBlack: v('--text-tertiary', '#6b6b6b'),
-    red: v('--diff-remove', '#ff3b30'),
-    brightRed: v('--diff-remove', '#ff3b30'),
-    green: v('--diff-add', '#34c759'),
-    brightGreen: v('--diff-add', '#34c759'),
-    yellow: v('--accent-yellow', '#f5a623'),
-    brightYellow: v('--accent-yellow', '#f5a623'),
-    blue: v('--accent-blue', '#6b7cf7'),
-    brightBlue: v('--info', '#4a9eff'),
-    magenta: v('--accent-purple', '#a78bfa'),
-    brightMagenta: v('--accent-purple', '#a78bfa'),
-    cyan: v('--accent-green', '#10a37f'),
-    brightCyan: v('--accent-green', '#10a37f'),
-    white: v('--text-secondary', '#9a9a9a'),
-    brightWhite: v('--text-primary', '#f8f8f8'),
+    background: v('--bg-canvas', '#0d1117'),
+    foreground: v('--text-primary', '#f0f6fc'),
+    cursor: v('--text-primary', '#f0f6fc'),
+    cursorAccent: v('--bg-canvas', '#0d1117'),
+    selectionBackground: v('--border-strong', '#3d444d'),
+    black: v('--bg-canvas', '#0d1117'),
+    brightBlack: v('--text-tertiary', '#818b98'),
+    red: v('--diff-remove', '#f85149'),
+    brightRed: v('--diff-remove', '#f85149'),
+    green: v('--diff-add', '#3fb950'),
+    brightGreen: v('--diff-add', '#3fb950'),
+    yellow: v('--accent-yellow', '#d29922'),
+    brightYellow: v('--accent-yellow', '#d29922'),
+    blue: v('--accent-blue', '#4493f8'),
+    brightBlue: v('--info', '#4493f8'),
+    magenta: v('--accent-purple', '#ab7df8'),
+    brightMagenta: v('--accent-purple', '#ab7df8'),
+    cyan: v('--accent-green', '#3fb950'),
+    brightCyan: v('--accent-green', '#3fb950'),
+    white: v('--text-secondary', '#9198a1'),
+    brightWhite: v('--text-primary', '#f0f6fc'),
   }
 }
 

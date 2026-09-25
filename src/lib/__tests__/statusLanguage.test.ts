@@ -119,12 +119,15 @@ describe('AG-031 / 状态语言表', () => {
     const distinct = ['completed', 'failed', 'warning', 'neutral'] as const
     expect(new Set(distinct.map((status) => colorOf(status))).size).toBe(distinct.length)
     /*
-     * 有意共用颜色的两对（措辞与图标区分得开）：
-     *   paused / retrying 共用警告色（都是「停着，但没死」）
-     *   running / waiting 共用强调色（都是「活着」）
+     * 有意共用颜色的三组（措辞与图标区分得开）：
+     *   retrying / waiting 共用警告色（重试中、等确认 —— 都要人看一眼）
+     *   paused / cancelled / neutral 共用灰（停着，且不是问题）
+     *   running 独占强调蓝
      */
-    expect(colorOf('paused')).toBe(colorOf('warning'))
-    expect(colorOf('running')).toBe(colorOf('waiting'))
+    expect(colorOf('waiting')).toBe(colorOf('warning'))
+    expect(colorOf('paused')).toBe(colorOf('neutral'))
+    expect(colorOf('running')).toBe('var(--accent-blue)')
+    expect(colorOf('waiting')).not.toBe(colorOf('running'))
   })
 
   it('同一种语义在任何页面拿到同一个颜色', () => {

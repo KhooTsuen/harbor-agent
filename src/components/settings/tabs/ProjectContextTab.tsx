@@ -54,7 +54,7 @@ export function ProjectContextTab() {
           onChange={(e) => setInstructions(e.target.value)}
           rows={12}
           placeholder="# 项目规则 —— 测试命令、目录约定、不可修改的文件……"
-          className="w-full resize-y rounded-sm border border-line-subtle bg-bg-raised px-2.5 py-2 font-mono text-xs text-fg-primary focus:border-line-focus focus:outline-none"
+          className="w-full resize-y rounded-sm border border-line-subtle bg-bg-input px-2.5 py-2 font-mono text-xs text-fg-primary focus:border-line-focus focus:outline-none"
         />
       </Row>
       <div className="flex justify-end">

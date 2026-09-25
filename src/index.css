@@ -57,6 +57,19 @@
   --bg-raised: #2a2a2a;
   --bg-hover: #262626;
   --bg-overlay: rgb(0 0 0 / 0.5);
+  /* Primer 主题新增（映射见 styles/theme-primer-dark.css）：输入控件底 / 按下档 */
+  --bg-input: #21262d;
+  --bg-active: #30363d;
+
+  /*
+   * 透明度变体的通道值（Tailwind 的 `bg-bg-raised/40` 类走 <alpha-value>，
+   * 见 tailwind.config.js 顶部说明）—— 改背景色时这两个数要跟着改。
+   */
+  --bg-canvas-rgb: 16 16 16; /* #101010 */
+  --bg-surface-rgb: 32 32 32; /* #202020 */
+  --bg-raised-rgb: 42 42 42; /* #2a2a2a */
+  --bg-hover-rgb: 38 38 38; /* #262626 */
+  --danger-rgb: 255 59 48; /* #ff3b30（--error） */
 
   --text-primary: #f8f8f8;
   --text-secondary: #9a9a9a;
@@ -153,6 +166,15 @@
   --bg-raised: #383838;
   --bg-hover: #343434;
   --bg-overlay: rgb(0 0 0 / 0.5);
+  --bg-input: #343434;
+  --bg-active: #383838;
+
+  /* 透明度变体的通道值（<alpha-value>） */
+  --bg-canvas-rgb: 33 33 33; /* #212121 */
+  --bg-surface-rgb: 47 47 47; /* #2f2f2f */
+  --bg-raised-rgb: 56 56 56; /* #383838 */
+  --bg-hover-rgb: 52 52 52; /* #343434 */
+  --danger-rgb: 255 59 48; /* #ff3b30 */
 
   --text-primary: #ececec;
   --text-secondary: #b4b4b4;
@@ -187,6 +209,15 @@
   --bg-surface: #202123;
   --bg-raised: #2a2b2e;
   --bg-hover: #26272a;
+  --bg-input: #26272a;
+  --bg-active: #2a2b2e;
+
+  /* 透明度变体的通道值（<alpha-value>） */
+  --bg-canvas-rgb: 14 15 18; /* #0e0f12 */
+  --bg-surface-rgb: 32 33 35; /* #202123 */
+  --bg-raised-rgb: 42 43 46; /* #2a2b2e */
+  --bg-hover-rgb: 38 39 42; /* #26272a */
+  --danger-rgb: 255 59 48; /* #ff3b30 */
 
   --text-primary: #f5f7fa;
   --text-secondary: #9ea1aa;
@@ -214,6 +245,15 @@
   --bg-raised: #f1f1f1;
   --bg-hover: #ededed;
   --bg-overlay: rgb(0 0 0 / 0.32);
+  --bg-input: #ffffff;
+  --bg-active: #f1f1f1;
+
+  /* 透明度变体的通道值（<alpha-value>） */
+  --bg-canvas-rgb: 249 249 249; /* #f9f9f9 */
+  --bg-surface-rgb: 255 255 255; /* #ffffff */
+  --bg-raised-rgb: 241 241 241; /* #f1f1f1 */
+  --bg-hover-rgb: 237 237 237; /* #ededed */
+  --danger-rgb: 255 59 48; /* #ff3b30 */
 
   --text-primary: #0d0d0d;
   --text-secondary: #5d5d5d;

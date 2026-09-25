@@ -150,7 +150,7 @@ export function SecurityTab() {
             onChange={(e) => setProbe(e.target.value)}
             placeholder="例如：rm -rf ./build"
             spellCheck={false}
-            className="w-full rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5 font-mono text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+            className="w-full rounded-sm border border-line-subtle bg-bg-input px-2 py-1.5 font-mono text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
           />
           <div className="flex items-center gap-2">
             <Button
@@ -287,7 +287,7 @@ function PolicySelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as PolicyAction)}
-      className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-dense text-fg-primary focus:border-line-focus focus:outline-none"
+      className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-dense text-fg-primary focus:border-line-focus focus:outline-none"
     >
       {POLICY_OPTIONS.map((option) => (
         <option key={option.value} value={option.value}>

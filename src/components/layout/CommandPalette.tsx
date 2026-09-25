@@ -173,7 +173,7 @@ export function CommandPalette() {
 
   return (
     <Modal open={open} onClose={() => setOpen(false)} title="命令面板" width="md">
-      <div className="flex items-center gap-2 rounded border border-line-subtle bg-bg-elevated px-2.5 py-2 focus-within:border-line-focus">
+      <div className="flex items-center gap-2 rounded border border-line-subtle bg-bg-input px-2.5 py-2 focus-within:border-line-focus">
         <Search size={15} className="shrink-0 text-fg-tertiary" />
         <input
           autoFocus

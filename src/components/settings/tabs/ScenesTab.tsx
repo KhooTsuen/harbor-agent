@@ -84,7 +84,7 @@ export function ScenesTab() {
                   void patchScene(scene.id, { providerId: providerId ?? '', model: model ?? '' })
                 }}
                 aria-label={`${scene.label}用哪个模型`}
-                className="mt-2.5 w-full rounded-base border border-line-hairline bg-bg-surface px-2.5 py-1.5 font-mono text-2xs text-fg-primary focus:border-line-focus focus:outline-none"
+                className="mt-2.5 w-full rounded-base border border-line-hairline bg-bg-input px-2.5 py-1.5 font-mono text-2xs text-fg-primary focus:border-line-focus focus:outline-none"
               >
                 <option value="">
                   {scene.id === 'image'
@@ -176,7 +176,7 @@ export function ScenesTab() {
           max={5}
           value={config?.fallback?.attempts ?? 2}
           onChange={(e) => void patchFallback({ attempts: Number(e.target.value) || 0 })}
-          className="w-20 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 font-mono text-dense text-fg-primary focus:outline-none"
+          className="w-20 rounded-sm border border-line-subtle bg-bg-input px-2 py-1 font-mono text-dense text-fg-primary focus:outline-none"
         />
       </Row>
 

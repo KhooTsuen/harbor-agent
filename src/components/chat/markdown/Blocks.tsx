@@ -51,7 +51,9 @@ function ListItemView({
           style={item.checked ? { background: 'var(--accent-blue)' } : undefined}
           aria-hidden
         >
-          {item.checked ? <Check size={10} className="text-white" strokeWidth={3} /> : null}
+          {item.checked ? (
+            <Check size={10} className="text-fg-on-emphasis" strokeWidth={3} />
+          ) : null}
         </span>
       )}
 

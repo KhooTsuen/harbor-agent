@@ -1,5 +1,45 @@
 # 更新日志
 
+## [1.20.0-beta.12] — 2026-09-25 · 主题：GitHub Primer 深色配色（两层变量）+ 组件去硬编码
+
+> 旧主题靠灰阶分层，层级感弱、没有视觉焦点。这版把**默认主题**换成 GitHub Primer
+> 深色色板：底层保留 Primer 原始变量（`bg-default` / `fg-muted`…），上层沿用 Harbor
+> 语义名（`bg-canvas` / `text-primary`…）做映射 —— 组件不改变量名，只换变量定义。
+
+### 做了什么
+
+- 新增 `src/styles/theme-primer-dark.css`（Primer 原始层 + Harbor 映射层 + `data-color-mode` 明暗开关）；
+  `index.html` 静态挂 `data-color-mode="dark"`，`useApplyAppearance` 按主题维护
+- 深色关键值：#0d1117 同色三栏（层次靠边框/浮层）· 输入 #21262d · 卡片 #151b23 ·
+  发送按钮 #1f6feb（hover #4493f8）· 危险 #f85149 · 需确认 #d29922
+- 语义补全：`--bg-input` / `--bg-active` / `--accent-subtle` / `--accent-border` /
+  `--cta-bg-hover` / `--fg-on-emphasis`；活跃会话项与分支树高亮走 accent-subtle，
+  版本切换器活跃态走 accent-border，分叉徽标统一 `text-accent`
+- **任务状态色对齐需求表**（statusLanguage）：需确认（waiting）改黄、已暂停改灰（--text-muted）
+- **修掉一个存量的静默失效**：Tailwind 3 对纯 `var(--x)` 颜色会静默丢弃 `/NN` 透明度 ——
+  全仓 30+ 处 `bg-bg-raised/40`、`bg-bg-base/95`、`border-danger/40` 其实一直没生效。
+  5 个颜色改走 `rgb(var(--x-rgb) / <alpha-value>)` 通道模式（组件零改动、类名照旧；
+  通道值定义在各主题，改背景色时 `-rgb` 要跟着改）
+- 组件去硬编码：发送按钮原来蓝底直写、输入控件统一 `bg-bg-input`、30+ 个组件/钩子
+  清掉内置调色板类与十六进制色值
+
+### 验证
+
+- 单测 88 文件 / 759 项 ✓（含主题 13 例：挂载 / 两层映射 / 自引用与同名冲突两个 CSS 陷阱 /
+  通道值齐备 / 无硬编码扫描）
+- 真机探针（无模型夹具，beta.12 便携版）：
+  · 三栏同色 #0d1117（主区是透明容器，向上取证明）· 发送按钮有内容时 #1f6feb、hover 规则 → #4493f8
+  · 输入框 #21262d vs 卡片 #151b23 · 危险按钮 #f85149 + 40% 红边框 · 活跃项/分支树 accent-subtle
+  · 五种任务圆点：完成绿 / 失败红 / 暂停灰（启动归一化是设计行为）＋ **运行时改写的
+    运行中蓝 #4493f8、需确认黄 #d29922**
+  · 切浅色再切回：属性与底色正确恢复；对比度 深 17.39 / 浅 18.46（text-primary，AA 4.5 ✓）
+- 内核自检 2658/0 · `test:app` 137 通道 ✓
+
+### 说明
+
+- `--bg-overlay`（Modal 遮罩）与 Primer 浮层色同名不同义 —— 主题文件不收录后者
+- chatgpt / spec 两个历史对照主题保留原样；浅色主题维持原语义值（未换 Primer 浅色）
+
 ## [1.20.0-beta.11] — 2026-09-25 · 修复：浮层不跟随滚动 / 不随缩放 / 锚点滚走还挂着
 
 > 对话里点开某个菜单（分叉菜单、L 标弹层…）后滚动对话：面板像钉在屏幕上，

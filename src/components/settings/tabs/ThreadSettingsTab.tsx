@@ -25,7 +25,7 @@ export function ThreadSettingsTab() {
               responseDepth: e.target.value as 'concise' | 'standard' | 'detailed' | 'deep',
             })
           }
-          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-xs text-fg-primary"
+          className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-xs text-fg-primary"
         >
           <option value="concise">简洁</option>
           <option value="standard">标准</option>

@@ -79,7 +79,7 @@ export function MessageEditor({ initial, onSave, onCancel }: MessageEditorProps)
             onSave(trimmed)
           }
         }}
-        className="w-full resize-y break-words rounded-md border bg-bg-raised px-3.5 py-2 text-base leading-relaxed text-fg-primary outline-none"
+        className="w-full resize-y break-words rounded-md border bg-bg-input px-3.5 py-2 text-base leading-relaxed text-fg-primary outline-none"
       />
 
       <div className="flex flex-col items-end gap-1">

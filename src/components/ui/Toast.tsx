@@ -58,7 +58,7 @@ function ToastCard({ toast }: { toast: Toast }) {
               hideToast(toast.id)
               toast.action?.onClick()
             }}
-            className="mt-1.5 rounded-sm border border-line-subtle bg-bg-raised px-2 py-0.5 text-2xs text-fg-primary transition-colors duration-fast hover:bg-bg-hover"
+            className="mt-1.5 rounded-sm border border-line-subtle bg-bg-raised px-2 py-0.5 text-2xs text-fg-primary transition-colors duration-fast hover:bg-bg-active"
           >
             {toast.action.label}
           </button>

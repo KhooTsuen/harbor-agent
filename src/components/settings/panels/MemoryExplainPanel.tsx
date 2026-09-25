@@ -139,7 +139,7 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
                 }}
                 placeholder="例如：这次改动的接口要兼容旧版本吗"
                 spellCheck={false}
-                className="w-full min-w-0 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+                className="w-full min-w-0 rounded-sm border border-line-subtle bg-bg-input px-2 py-1.5 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
               />
               <Button variant="secondary" size="sm" loading={busy} onClick={() => void load(query)}>
                 试算

@@ -48,7 +48,7 @@ export function BulkSelectList({ threads, selected, onToggle }: BulkSelectListPr
                 style={on ? { background: 'var(--accent-blue)' } : undefined}
                 aria-hidden="true"
               >
-                {on ? <Check size={10} style={{ color: '#fff' }} /> : null}
+                {on ? <Check size={10} style={{ color: 'var(--fg-on-emphasis)' }} /> : null}
               </span>
               <span className="min-w-0 flex-1 truncate" title={thread.title}>
                 {thread.title}

@@ -5,18 +5,17 @@ import { cn } from '@/lib/utils'
 /* ══════════════════════════════════════════════════════════════
    Button
 
-   注意 primary 的取色：主按钮是**白底黑字**，不是彩色。
-   这是从三张不同截图里反复确认过的。
+   注意 primary 的取色：走 `--cta-*` 主题变量 —— Primer 深色下是
+   蓝底白字（accent-emphasis），浅色 / chatgpt / spec 主题各有自己的值。
    ══════════════════════════════════════════════════════════════ */
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'glass'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    'bg-fg-primary text-fg-inverse hover:bg-white active:bg-white/90 border border-transparent',
+  primary: 'bg-cta text-cta-fg hover:bg-cta-hover active:bg-cta-hover border border-transparent',
   secondary:
-    'bg-bg-raised text-fg-primary hover:bg-bg-hover active:bg-bg-raised border border-line-subtle',
+    'bg-bg-raised text-fg-primary hover:bg-bg-active active:bg-bg-active border border-line-subtle',
   ghost:
     'bg-transparent text-fg-secondary hover:bg-bg-hover hover:text-fg-primary border border-transparent',
   danger:

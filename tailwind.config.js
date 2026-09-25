@@ -16,22 +16,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        /* ── 新语义名（推荐）── */
-        canvas: 'var(--bg-canvas)',
-        surface: 'var(--bg-surface)',
-        raised: 'var(--bg-raised)',
+        /*
+         * 想用透明度修饰（如 bg-bg-raised/40）的颜色必须写成
+         * `rgb(var(--x-rgb) / <alpha-value>)` —— Tailwind 3 对纯 `var(--x)` 颜色
+         * 会把 `/NN` **静默丢掉**（类不生成也不报错）。2026-09-25 主题轮发现
+         * 存量 30+ 处这类背景一直没生效；通道值在各主题的 index.css / 主题文件里。
+         */
+        canvas: 'rgb(var(--bg-canvas-rgb) / <alpha-value>)',
+        surface: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+        raised: 'rgb(var(--bg-raised-rgb) / <alpha-value>)',
 
         bg: {
-          canvas: 'var(--bg-canvas)',
-          surface: 'var(--bg-surface)',
-          raised: 'var(--bg-raised)',
-          hover: 'var(--bg-hover)',
+          canvas: 'rgb(var(--bg-canvas-rgb) / <alpha-value>)',
+          surface: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+          raised: 'rgb(var(--bg-raised-rgb) / <alpha-value>)',
+          hover: 'rgb(var(--bg-hover-rgb) / <alpha-value>)',
           overlay: 'var(--bg-overlay)',
+          /* Primer 层：输入控件底比卡片亮一档（#21262d vs #151b23）；active 是按下/更亮档 */
+          input: 'var(--bg-input)',
+          active: 'var(--bg-active)',
           /* 旧名，指向同一批变量 */
-          base: 'var(--bg-canvas)',
-          elevated: 'var(--bg-surface)',
-          card: 'var(--bg-surface)',
-          glass: 'var(--bg-surface)',
+          base: 'rgb(var(--bg-canvas-rgb) / <alpha-value>)',
+          elevated: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+          card: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+          glass: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
         },
 
         fg: {
@@ -39,6 +47,8 @@ export default {
           secondary: 'var(--text-secondary)',
           tertiary: 'var(--text-tertiary)',
           inverse: 'var(--text-inverse)',
+          /* 色彩强调底（accent/danger…）上的前景文字 */
+          'on-emphasis': 'var(--fg-on-emphasis)',
         },
 
         line: {
@@ -57,7 +67,8 @@ export default {
         error: 'var(--error)',
         success: 'var(--success)',
         warning: 'var(--warning)',
-        danger: 'var(--error)',
+        /* danger 要支持 /NN（Button 的 hover:bg-danger/10 等）—— 走通道模式 */
+        danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
         info: 'var(--text-secondary)',
 
         /*
@@ -66,6 +77,13 @@ export default {
          * 转圈图标一直是继承父级颜色（AG-027 给「当前步骤」加实心 ● 时发现的）。
          */
         accent: 'var(--accent-blue)',
+        /* Primer 层的强调衍生（名字保持扁平键，避免动上面那条字符串断言） */
+        'accent-hover': 'var(--accent-hover)',
+        'accent-subtle': 'var(--accent-subtle)',
+        'accent-border': 'var(--accent-border)',
+
+        /* 完成/分叉语义色（Primer done，紫） */
+        done: 'var(--done)',
 
         /* 主按钮（反色） */
         cta: {

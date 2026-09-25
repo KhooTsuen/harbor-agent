@@ -30,21 +30,21 @@ export interface ColorScheme {
 /**
  * 暗色。
  *
- * canvas 用 #101010 而不是规范给的 #212121 —— 前者是**从 23 张同类界面
- * 截图里量出来的**（#0e0e0e~#101010 占 36%~73%），后者偏亮。
- * 需要规范原值的话，切到 `chatgpt` 主题。
+ * 2026-09-25 起换成 **GitHub Primer** 色板（两层映射的实现见
+ * `src/styles/theme-primer-dark.css`）。这里保留的是一份参考快照，
+ * 运行时以 CSS 变量为准；chatgpt 主题才是旧「规范基准」的对照。
  */
 export const DARK: ColorScheme = {
-  bgCanvas: '#101010',
-  bgSurface: '#202020',
-  bgRaised: '#2a2a2a',
-  bgHover: '#262626',
-  textPrimary: '#f8f8f8',
-  textSecondary: '#9a9a9a',
-  textTertiary: '#6b6b6b',
-  borderHairline: 'rgba(255,255,255,0.08)',
-  borderStrong: 'rgba(255,255,255,0.14)',
-  borderFocus: '#ededed',
+  bgCanvas: '#0d1117',
+  bgSurface: '#151b23',
+  bgRaised: '#21262d',
+  bgHover: '#21262d',
+  textPrimary: '#f0f6fc',
+  textSecondary: '#9198a1',
+  textTertiary: '#818b98',
+  borderHairline: '#212830',
+  borderStrong: '#3d444d',
+  borderFocus: '#4493f8',
 }
 
 /** 说明：亮色主题 */
@@ -80,11 +80,11 @@ export const CHATGPT_DARK: ColorScheme = {
  * **只允许用在 Diff / 错误 / 成功三处**，不做装饰。
  */
 export const SEMANTIC = {
-  diffAdd: '#34c759',
-  diffRemove: '#ff3b30',
-  error: '#ff3b30',
-  success: '#10a37f',
-  warning: '#f5a623',
+  diffAdd: '#3fb950',
+  diffRemove: '#f85149',
+  error: '#f85149',
+  success: '#3fb950',
+  warning: '#d29922',
 } as const
 
 /* ── 字体 ──────────────────────────────────────────────────── */

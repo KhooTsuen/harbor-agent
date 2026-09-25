@@ -63,9 +63,14 @@ export const STATUS_META: Record<UiStatus, StatusMeta> = {
   completed: { label: '已完成', color: SUCCESS, icon: CheckCircle2 },
   warning: { label: '需要注意', color: WARNING, icon: AlertTriangle },
   failed: { label: '失败', color: DANGER, icon: XCircle },
-  paused: { label: '已暂停', color: WARNING, icon: PauseCircle },
+  /*
+   * Primer 主题轮（2026-09-25）按需求 #5 定了任务状态色：
+   *   运行中 = 强调蓝 · 已完成 = 绿 · 需确认（waiting）黄 · 失败红
+   *   已暂停 = 灰（--text-muted）—— 「停着」不是警告，不再和 warning 共用
+   */
+  paused: { label: '已暂停', color: MUTED, icon: PauseCircle },
   retrying: { label: '重试中', color: WARNING, icon: RefreshCw },
-  waiting: { label: '等待中', color: ACCENT, icon: Clock3 },
+  waiting: { label: '等待中', color: WARNING, icon: Clock3 },
   cancelled: { label: '已取消', color: MUTED, icon: Ban },
   neutral: { label: '', color: MUTED, icon: CircleDot },
 }

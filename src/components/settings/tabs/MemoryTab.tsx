@@ -159,7 +159,7 @@ export function MemoryTab() {
           onChange={(e) =>
             void patchMemory({ autoWrite: e.target.value as 'auto' | 'ask' | 'off' })
           }
-          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-dense text-fg-primary focus:outline-none"
+          className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-dense text-fg-primary focus:outline-none"
         >
           <option value="ask">先问我（推荐）</option>
           <option value="auto">让它自己记</option>
@@ -173,14 +173,14 @@ export function MemoryTab() {
           max={50}
           value={memory?.injectLimit ?? 12}
           onChange={(e) => void patchMemory({ injectLimit: Number(e.target.value) || 12 })}
-          className="w-20 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 font-mono text-dense text-fg-primary focus:outline-none"
+          className="w-20 rounded-sm border border-line-subtle bg-bg-input px-2 py-1 font-mono text-dense text-fg-primary focus:outline-none"
         />
       </Row>
 
       <SectionTitle>记忆列表</SectionTitle>
 
       <div className="flex items-center gap-2 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-line-subtle bg-bg-input px-2 py-1.5">
           <Search size={13} className="shrink-0 text-fg-tertiary" />
           <input
             value={query}
@@ -215,12 +215,12 @@ export function MemoryTab() {
             if (e.key === 'Enter') void add()
           }}
           placeholder="手动加一条，例如：回答用简体中文，代码注释也用中文"
-          className="min-w-0 flex-1 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+          className="min-w-0 flex-1 rounded-sm border border-line-subtle bg-bg-input px-2 py-1.5 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
         />
         <select
           value={memoryScope}
           onChange={(e) => setMemoryScope(e.target.value as 'global' | 'project')}
-          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-dense text-fg-primary focus:outline-none"
+          className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-dense text-fg-primary focus:outline-none"
           disabled={memoryScope === 'project' && !projectId}
           aria-label="记忆归属"
         >

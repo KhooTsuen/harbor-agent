@@ -1,0 +1,182 @@
+/* ══════════════════════════════════════════════════════════════
+   GitHub Primer 主题（两层结构）
+
+   ① 底层 —— Primer 原始变量：--bg-default / --fg-muted / --accent-emphasis …
+      命名保持 Primer 原样，值取自 GitHub Primer 色板（2026 深色/浅色两套），
+      **不要在这里发明新颜色**。
+   ② 上层 —— Harbor 语义变量：--bg-canvas / --text-primary / --accent-blue …
+      组件只认识这一层；换主题只改这里的映射，组件零改动。
+
+   生效方式：html[data-color-mode='dark'][data-theme='default']
+     · data-color-mode 由 useApplyAppearance 维护（theme=light → light，其余 → dark）；
+       index.html 里静态也写了一份，启动早期（React 挂载前）就能命中。
+     · data-theme='default'（默认主题）才应用 Primer；chatgpt / spec 两个历史色板
+       主题保留原样 —— 它们的作用是「对照」，不该被一起换掉。
+     · 浅色主题：本文件提供 Primer 浅色**底层**变量；Harbor 浅色语义值（index.css
+       里的 [data-theme='light']）不受影响。
+
+   ⚠️ 三条注意事项（都是真会踩的）：
+     · **底层与上层同名时不能写 `--x: var(--x)`**（自引用 = 变量在任何地方都失效）。
+       --bg-inset / --border-subtle / --accent-subtle 就属于「同名共享」：值直接
+       沿用底层的，不要在映射区重复声明。
+     · Harbor 的 --bg-overlay 是「遮罩」语义（Modal 在用），和 Primer 的
+       --bg-overlay（浮层色）**同名不同义** —— 本文件干脆不收录 Primer 的
+       这个变量（否则按加载顺序会把各主题的遮罩顶掉），遮罩值只在
+       index.css 和映射区里声明。
+     · :root 在这里给的是 Primer 浅色变量（官方做法），运行时 html 始终带
+       data-color-mode（index.html 静态 + useApplyAppearance 动态），
+       dark / light 块会正确覆盖它。
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── ① Primer 原始变量 · 浅色 ─────────────────────────────── */
+
+:root,
+[data-color-mode='light'] {
+  color-scheme: light;
+  --bg-default: #ffffff;
+  --bg-muted: #f6f8fa;
+  --bg-subtle: #f6f8fa;
+  --bg-inset: #f6f8fa;
+  --fg-default: #1f2328;
+  --fg-muted: #59636e;
+  --fg-subtle: #6e7781;
+  --fg-on-emphasis: #ffffff;
+  --border-default: #d1d9e0;
+  --border-muted: #d8dee4;
+  --border-subtle: #eaeef2;
+  --accent-fg: #0969da;
+  --accent-emphasis: #0969da;
+  --accent-muted: #ddf4ff;
+  --accent-subtle: #ddf4ff;
+  --success-fg: #1a7f37;
+  --success-emphasis: #1f883d;
+  --success-muted: #dafbe1;
+  --attention-fg: #9a6700;
+  --attention-emphasis: #bf8700;
+  --attention-muted: #fff8c5;
+  --severe-fg: #bc4c00;
+  --severe-emphasis: #bc4c00;
+  --severe-muted: #ffebe9;
+  --danger-fg: #d1242f;
+  --danger-emphasis: #cf222e;
+  --danger-muted: #ffebe9;
+  --done-fg: #8250df;
+  --done-emphasis: #8250df;
+  --done-muted: #fbefff;
+
+  /*
+   * 由底层派生的通用变量（全模式可用）。
+   * --accent-border 用 accent-fg 的 40% 透明版 —— accent-muted 在浅色下
+   * 几乎和背景同色，当边框看不清。
+   */
+  --accent-hover: var(--accent-emphasis);
+  --accent-border: rgb(9 105 218 / 0.4);
+  --done: var(--done-fg);
+  --severe: var(--severe-fg);
+}
+
+/* ── ② Primer 原始变量 · 深色 ─────────────────────────────── */
+
+[data-color-mode='dark'] {
+  color-scheme: dark;
+
+  --bg-default: #0d1117;
+  --bg-muted: #151b23;
+  --bg-subtle: #151b23;
+  --bg-inset: #010409;
+  --fg-default: #f0f6fc;
+  --fg-muted: #9198a1;
+  --fg-subtle: #818b98;
+  --fg-on-emphasis: #ffffff;
+  --border-default: #3d444d;
+  --border-muted: #3d444d;
+  --border-subtle: #212830;
+  --accent-fg: #4493f8;
+  --accent-emphasis: #1f6feb;
+  --accent-muted: #388bfd66;
+  --accent-subtle: #388bfd26;
+  --success-fg: #3fb950;
+  --success-emphasis: #238636;
+  --success-muted: #2ea04366;
+  --attention-fg: #d29922;
+  --attention-emphasis: #9e6a03;
+  --attention-muted: #bb800926;
+  --severe-fg: #db6d28;
+  --severe-emphasis: #bd561d;
+  --severe-muted: #db6d2826;
+  --danger-fg: #f85149;
+  --danger-emphasis: #da3633;
+  --danger-muted: #f8514926;
+  --done-fg: #ab7df8;
+  --done-emphasis: #8957e5;
+  --done-muted: #8957e526;
+
+  /* 由底层派生的通用变量 —— --accent-muted 本身就带 40% 透明，能当边框用 */
+  --accent-hover: var(--accent-fg);
+  --accent-border: var(--accent-muted);
+  --done: var(--done-fg);
+  --severe: var(--severe-fg);
+}
+
+/* ── ③ Harbor 语义映射 · 默认主题（= Primer 深色）─────────── */
+
+[data-theme='default'][data-color-mode='dark'] {
+  /* 背景层：侧栏 / 主区 / 右栏同色（bg-default），层次靠边框和浮层 */
+  --bg-canvas: var(--bg-default);
+  --bg-surface: var(--bg-muted);
+  --bg-raised: #21262d;
+  --bg-hover: #21262d;
+  --bg-active: #30363d;
+  --bg-input: #21262d;
+  /* 遮罩语义（Modal），保持中性黑，不跟随 Primer 浮层色 */
+  --bg-overlay: rgb(0 0 0 / 0.5);
+
+  /* 透明度变体的通道值（Tailwind <alpha-value>；见 tailwind.config.js 顶部说明） */
+  --bg-canvas-rgb: 13 17 23; /* #0d1117 */
+  --bg-surface-rgb: 21 27 35; /* #151b23 */
+  --bg-raised-rgb: 33 38 45; /* #21262d */
+  --bg-hover-rgb: 33 38 45; /* #21262d */
+  --danger-rgb: 248 81 73; /* #f85149 */
+
+  /* 文字 */
+  --text-primary: var(--fg-default);
+  --text-secondary: var(--fg-muted);
+  --text-tertiary: var(--fg-subtle);
+  --text-inverse: var(--bg-default);
+
+  /* 边框：分隔靠 border-subtle，强调靠 accent */
+  --border-hairline: var(--border-subtle);
+  --border-strong: var(--border-default);
+  --border-focus: var(--accent-fg);
+
+  /* 强调：--accent = 主按钮/强调底；--accent-blue = 文字/链接/选中（更亮） */
+  --accent: var(--accent-emphasis);
+  --accent-active: #1858c4;
+  --cta-bg: var(--accent-emphasis);
+  --cta-fg: var(--fg-on-emphasis);
+  --cta-bg-hover: var(--accent-fg);
+
+  /* 语义色：只用于状态（见 statusLanguage.ts），不做装饰 */
+  --error: var(--danger-fg);
+  --danger: var(--danger-fg);
+  --danger-hover: #ff6b63;
+  --danger-active: #d63d36;
+  --success: var(--success-fg);
+  --success-hover: #4ac95c;
+  --warning: var(--attention-fg);
+  --warning-hover: #e3a92e;
+  --info: var(--accent-fg);
+  --info-hover: #79b8ff;
+
+  /* Diff */
+  --diff-add: var(--success-fg);
+  --diff-remove: var(--danger-fg);
+  --diff-add-bg: rgb(63 185 80 / 0.15);
+  --diff-remove-bg: rgb(248 81 73 / 0.15);
+
+  /* 代码高亮 */
+  --accent-blue: var(--accent-fg);
+  --accent-green: var(--success-fg);
+  --accent-yellow: var(--attention-fg);
+  --accent-purple: var(--done-fg);
+}

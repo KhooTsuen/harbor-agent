@@ -53,7 +53,7 @@ export function SkillPinRow({ pinned, onPick }: { pinned: string; onPick: (id: s
         <select
           value={pinned}
           onChange={(e) => onPick(e.target.value)}
-          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-xs text-fg-primary"
+          className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-xs text-fg-primary"
         >
           <option value="">不指定</option>
           {skills.map((s) => (

@@ -128,7 +128,7 @@ export function AdvancedPanel({ provider }: { provider: ProviderConfig }): React
               rows={4}
               spellCheck={false}
               placeholder={'{\n  "provider": { "order": ["DeepInfra"] }\n}'}
-              className="w-full resize-y rounded-small border border-line-hairline bg-bg-raised px-2 py-1.5 font-mono text-2xs leading-relaxed text-fg-primary outline-none focus:border-line-strong"
+              className="w-full resize-y rounded-small border border-line-hairline bg-bg-input px-2 py-1.5 font-mono text-2xs leading-relaxed text-fg-primary outline-none focus:border-line-strong"
             />
           </label>
 

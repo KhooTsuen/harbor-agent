@@ -21,7 +21,7 @@ export function ForkBadge({ fork }: { fork: ForkPoint }) {
           title={`第 ${fork.level} 层分叉：这个位置有 ${fork.total} 条分支`}
           onClick={toggle}
           data-fork-badge={fork.level}
-          className="flex items-center gap-0.5 rounded-sm px-1 py-0.5 tabular-nums text-2xs text-fg-tertiary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
+          className="flex items-center gap-0.5 rounded-sm px-1 py-0.5 tabular-nums text-2xs text-accent transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
         >
           <GitFork size={11} />L{fork.level} · {fork.total}
         </button>

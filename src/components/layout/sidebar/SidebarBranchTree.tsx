@@ -103,7 +103,7 @@ function TreeFork({
               data-branch-node={option.current ? 'active' : 'idle'}
               className={cn(
                 'flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-2xs transition-colors duration-fast hover:bg-bg-hover',
-                option.current ? 'bg-bg-hover/60 text-fg-primary' : 'text-fg-tertiary',
+                option.current ? 'bg-accent-subtle text-fg-primary' : 'text-fg-tertiary',
               )}
             >
               <span

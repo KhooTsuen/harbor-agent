@@ -145,7 +145,7 @@ export function ScheduleForm({
           rows={6}
           aria-label="定时任务提示词"
           placeholder="比如：检查 data/logs 里昨天的日志，把报错行汇总成一段话，写进 data/artifacts/。"
-          className="w-full resize-y rounded-sm border border-line-subtle bg-bg-raised px-2.5 py-2 text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+          className="w-full resize-y rounded-sm border border-line-subtle bg-bg-input px-2.5 py-2 text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
         />
       </Row>
 

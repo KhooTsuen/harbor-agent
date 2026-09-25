@@ -75,7 +75,7 @@ export function UserMessage({ message, fork }: { message: Message; fork?: ForkPo
           >
             <ChevronLeft size={12} />
           </button>
-          <span className="tabular-nums">
+          <span className="rounded-sm border border-accent-border bg-accent-subtle px-1 tabular-nums text-fg-primary">
             {versionIndex + 1} / {versions.length}
           </span>
           <button

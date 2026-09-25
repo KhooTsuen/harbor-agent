@@ -41,7 +41,10 @@ export function AnswerVersions({ message, fork }: { message: Message; fork?: For
       >
         <ChevronLeft size={12} />
       </button>
-      <span className="tabular-nums" title="这条提问有好几个回答，可以来回切（切换不会重新生成）">
+      <span
+        className="rounded-sm border border-accent-border bg-accent-subtle px-1 tabular-nums text-fg-primary"
+        title="这条提问有好几个回答，可以来回切（切换不会重新生成）"
+      >
         {index + 1} / {records.length}
       </span>
       <button

@@ -190,7 +190,7 @@ export function DataPortPanel() {
               onChange={(event) => setWord(event.target.value)}
               placeholder={`打出「${WIPE_CONFIRM_WORD}」`}
               spellCheck={false}
-              className="w-40 rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+              className="w-40 rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
             />
             <Button
               variant="danger"

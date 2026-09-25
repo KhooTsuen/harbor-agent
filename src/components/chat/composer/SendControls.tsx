@@ -53,7 +53,7 @@ export function SendControls({
               aria-label="排队发送"
               className={cn(
                 'grid size-8 place-items-center rounded-full transition-colors duration-fast',
-                'bg-accent-blue text-white hover:bg-blue-500',
+                'bg-accent text-fg-on-emphasis hover:bg-accent-hover',
               )}
             >
               <ArrowUp size={16} strokeWidth={2.5} />
@@ -73,7 +73,7 @@ export function SendControls({
         aria-label="发送消息"
         className={cn(
           'grid size-8 place-items-center rounded-full transition-colors duration-fast',
-          'bg-fg-primary text-fg-inverse hover:bg-white',
+          'bg-cta text-cta-fg hover:bg-cta-hover',
           'disabled:cursor-not-allowed disabled:bg-bg-raised disabled:text-fg-tertiary',
         )}
       >

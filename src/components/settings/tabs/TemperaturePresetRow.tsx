@@ -60,7 +60,7 @@ export function TemperaturePresetRow({
         <select
           value={typeof temperature === 'number' ? String(temperature) : ''}
           onChange={(e) => onPick(e.target.value === '' ? undefined : Number(e.target.value))}
-          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1 text-xs text-fg-primary"
+          className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-xs text-fg-primary"
         >
           <option value="">自动（用全局的 {globalTemperature}）</option>
           {presets.map((item) => (

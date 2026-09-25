@@ -69,7 +69,9 @@ export function PermissionDialog() {
               confirmedRef.current = false
             }}
             className={
-              permission?.danger === true ? '!bg-danger !text-white hover:!bg-danger/90' : undefined
+              permission?.danger === true
+                ? '!bg-danger !text-fg-on-emphasis hover:!bg-danger/90'
+                : undefined
             }
           >
             {permission?.confirmText ?? '确定'}

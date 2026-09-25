@@ -137,7 +137,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
         <PermissionBar />
         <div
           className={cn(
-            'glass-panel relative rounded-md border bg-bg-elevated transition-colors duration-fast',
+            'glass-panel relative rounded-md border bg-bg-input transition-colors duration-fast',
             'border-line-subtle focus-within:border-line-focus',
             tooLong && 'border-danger',
           )}

@@ -73,7 +73,7 @@ export function ProjectGroup({ project, threads, onDeleteThread, collapsed }: Pr
             }
           }}
           aria-label="重命名项目"
-          className="w-full rounded-small border border-line-focus bg-bg-raised px-2 py-1 text-xs font-medium text-fg-primary outline-none"
+          className="w-full rounded-small border border-line-focus bg-bg-input px-2 py-1 text-xs font-medium text-fg-primary outline-none"
         />
       </div>
     )

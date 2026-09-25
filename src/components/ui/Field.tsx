@@ -28,7 +28,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
       className={cn(
         // w-full 是刻意的：设置页把它放在 justify-end 的容器里（开关靠右），
         // 没有 w-full 的话输入框会被压成内容宽。要窄的传 className 覆盖。
-        'flex w-full items-center gap-2 rounded border border-line-subtle bg-bg-elevated px-2.5 py-1.5',
+        'flex w-full items-center gap-2 rounded border border-line-subtle bg-bg-input px-2.5 py-1.5',
         'transition-colors duration-fast focus-within:border-line-focus',
         className,
       )}
@@ -66,14 +66,14 @@ export function Select({ value, options, onChange, className, ...rest }: SelectP
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        'w-full appearance-none rounded border border-line-subtle bg-bg-elevated px-2.5 py-1.5',
+        'w-full appearance-none rounded border border-line-subtle bg-bg-input px-2.5 py-1.5',
         'text-sm text-fg-primary transition-colors duration-fast focus:border-line-focus focus:outline-none',
         className,
       )}
       {...rest}
     >
       {options.map((option) => (
-        <option key={option.value} value={option.value} className="bg-bg-elevated text-fg-primary">
+        <option key={option.value} value={option.value} className="bg-bg-input text-fg-primary">
           {option.label}
         </option>
       ))}
@@ -108,7 +108,7 @@ export function Switch({ checked, onChange, label, disabled = false }: SwitchPro
     >
       <span
         className={cn(
-          'absolute size-3.5 rounded-full bg-white transition-transform duration-fast',
+          'absolute size-3.5 rounded-full bg-fg-on-emphasis transition-transform duration-fast',
           checked ? 'translate-x-[18px]' : 'translate-x-[3px]',
         )}
         style={{ boxShadow: '0 1px 2px rgb(0 0 0 / 0.35)' }}

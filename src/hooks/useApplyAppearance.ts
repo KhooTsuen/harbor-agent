@@ -30,7 +30,14 @@ export function useApplyAppearance(): void {
     }
 
     function apply(): void {
-      root.dataset.theme = resolveTheme()
+      const resolved = resolveTheme()
+      root.dataset.theme = resolved
+      /*
+       * data-color-mode 是「明暗模式」总开关：Primer 主题（styles/theme-primer-dark.css）
+       * 按它选 深色/浅色 两套底层变量。chatgpt / spec 历史主题同样归入 dark ——
+       * 它们自己的语义值优先，Primer 只提供通用的底层变量。
+       */
+      root.dataset.colorMode = resolved === 'light' ? 'light' : 'dark'
       syncTitleBar()
     }
 
@@ -42,8 +49,8 @@ export function useApplyAppearance(): void {
     function syncTitleBar(): void {
       const style = getComputedStyle(root)
       void window.workbench?.setTitleBar({
-        color: style.getPropertyValue('--bg-canvas').trim() || '#101010',
-        symbolColor: style.getPropertyValue('--text-primary').trim() || '#f8f8f8',
+        color: style.getPropertyValue('--bg-canvas').trim() || '#0d1117',
+        symbolColor: style.getPropertyValue('--text-primary').trim() || '#f0f6fc',
       })
     }
 

@@ -84,7 +84,7 @@ export function ModelField({ value, onChange, providers }: ModelFieldProps) {
           aria-label="模型名"
           aria-invalid={problem !== null}
           className={cn(
-            'min-w-0 flex-1 rounded-base border bg-bg-surface px-2.5 py-1.5 font-mono text-dense text-fg-primary',
+            'min-w-0 flex-1 rounded-base border bg-bg-input px-2.5 py-1.5 font-mono text-dense text-fg-primary',
             'placeholder:text-fg-tertiary focus:outline-none',
             problem ? STATUS_CLASS.warning.border : 'border-line-hairline focus:border-line-focus',
           )}

@@ -243,7 +243,7 @@ export function ModelPicker({
                       placeholder="搜模型"
                       aria-label="搜索模型"
                       spellCheck={false}
-                      className="w-full rounded-sm border border-line-subtle bg-bg-raised/60 py-1 pl-6 pr-2 text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+                      className="w-full rounded-sm border border-line-subtle bg-bg-input py-1 pl-6 pr-2 text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
                     />
                   </div>
                 </div>
