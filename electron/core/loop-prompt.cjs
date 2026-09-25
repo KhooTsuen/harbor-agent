@@ -25,6 +25,10 @@ const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, WORK_RULES, BROWSER_GUIDE } 
 const contextBuilder = require('./context-builder.cjs')
 const conversationState = require('./conversation-state.cjs')
 const sessionCore = require('./session.cjs')
+const contextDiag = require('./context-diag.cjs')
+const templates = require('./templates.cjs')
+const taskNotes = require('./task-notes.cjs')
+const taskHint = require('./task-hint.cjs')
 
 /* ══════════════════════════════════════════════════════════
    系统提示词
@@ -53,7 +57,20 @@ const sessionCore = require('./session.cjs')
 function buildFailureNote({ done = [], failed = [] } = {}) {
   const lines = []
   if (done.length > 0) lines.push(`本轮已完成：${done.join('、')}`)
-  for (const item of failed) lines.push(`失败：${item.name} —— ${item.hint || '原因不明'}`)
+  for (const item of failed) {
+    /* 结构化失败摘要（token 优化 §六）：error_kind / 目标 / 重试次数 —— 不重注全文 */
+    const bits = [`失败：${item.name}`]
+    if (item.target) bits.push(`目标=${String(item.target).slice(0, 120)}`)
+    if (item.kind) bits.push(`error_kind=${item.kind}`)
+    if (item.retryCount) bits.push(`retry_count=${item.retryCount}`)
+    bits.push(item.hint || '原因不明')
+    lines.push(bits.join(' · '))
+    if (item.partial?.changed || item.partial?.created) {
+      lines.push(
+        `  ⚠ ${item.partial.path} ${item.partial.created ? '已被创建' : '可能已被部分修改'} —— 重试前先 read_file 看现场，不要盲目重来`,
+      )
+    }
+  }
   lines.push('请**针对失败的那一步调整做法**（换参数、换工具，或先把原因查清楚），')
   lines.push('**已经成功的不必重做** —— 从失败的那一步接着往下走。')
   return `[上一轮执行情况]\n${lines.join('\n')}`
@@ -114,6 +131,15 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   /* AG-037：这段（提示词拼装 + 记忆召回 + 项目说明）自己计时，循环那边只管编排 */
   const startedAt = Date.now()
   const traceId = String(options?.traceId || options?.taskId || '')
+  /* 这轮用户说了什么 —— 模板匹配 / 记忆召回的查询词共用 */
+  const lastUserText = (() => {
+    const list = options?.history ?? history ?? []
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const m = list[i]
+      if (m?.role === 'user' && typeof m.content === 'string' && m.content.trim()) return m.content
+    }
+    return ''
+  })()
   /* 技能清单：只给名字 + 用途 + 路径，正文让模型自己按需读 */
   let skillSection = ''
   try {
@@ -160,10 +186,16 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   }
   state = conversationState.update(state, history)
 
-  /* CE-003：按预算选择近期消息，系统层仍保持独立可调试。 */
+  /* CE-003：按预算选择近期消息，系统层仍保持独立可调试。
+     token 优化：软预算时把「记忆」配额减半（先砍低相关记忆，不砍验证与安全）。 */
+  const baseBudget = config.context?.budget
+  const softBudget =
+    options.budgetSoft === true && baseBudget
+      ? { ...baseBudget, memory: Math.max(1, Math.floor((Number(baseBudget.memory) || 5) / 2)) }
+      : baseBudget
   const assembled = contextBuilder.assemble({
     maxTokens: config.assistant.maxTokens,
-    budget: config.context?.budget,
+    budget: softBudget,
     memory: memorySection,
     project: projectSection,
     conversationState: conversationState.prompt(state),
@@ -177,6 +209,22 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
    * 现在 `scripts/selftest.mjs` 里有一组「系统提示内容回归」盯着这些，
    * 少一块就会红。别再靠「看着没问题」。
    */
+  /* 任务模板建议（token 优化 §七）：只在「新任务开跑」时给，不抢已有计划的位。
+     ⚠️ TOK-P2-004：不能判「taskState 非空」—— 新活第一轮注入的
+     「本轮请求（还没立任务）」段也是非空（chat.cjs 的 freshRequest 兜底）。
+     用 taskHint.isFreshTaskState 等值判断，见 task-hint.cjs 的注释。 */
+  const templateHit = taskHint.isFreshTaskState(options.taskState, lastUserText)
+    ? templates.match(lastUserText)
+    : null
+  const templateHint = templateHit ? templates.hintOf(templateHit) : ''
+  if (templateHit && options.taskId) {
+    try {
+      taskNotes.recordTemplate(options.taskId, templateHit)
+    } catch {
+      /* 记不上不影响对话 */
+    }
+  }
+
   const stack = promptStack.build({
     assistantName: config.assistant.name,
     responseDepth: threadSettings.responseDepth ?? config.assistant.responseDepth ?? 'standard',
@@ -191,7 +239,7 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
     /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */
     browserGuide: BROWSER_GUIDE,
-    taskState: options.taskState ?? '',
+    taskState: [options.taskState ?? '', templateHint].filter(Boolean).join('\n\n'),
     conversationState: assembled.systemContext.conversationState,
     userPreferences: '',
     retrievedContext: '',
@@ -205,6 +253,22 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     ? `${config.assistant.systemPrompt}\n\n${stack.message.content}`
     : stack.message.content
 
+  /* 三层诊断（token 优化）：hash + 「稳定前缀变了没、变在哪层」—— 只进台账与日志 */
+  const diag = contextDiag.diagnose(stack.layers, {
+    sessionId: options.sessionId ?? '',
+    promptVersion: stack.version,
+  })
+  if (diag.stablePrefixChanged) {
+    log.warn(`稳定前缀发生变化：${diag.stablePrefixChangeReason || 'unknown'}（任务 ${options.taskId ?? '-'}）`)
+  }
+  if (options.taskId) {
+    try {
+      taskNotes.recordPromptDiag(options.taskId, diag)
+    } catch {
+      /* 诊断写不进不影响对话 */
+    }
+  }
+
   const messages = [{ role: 'system', content: systemPrompt }, ...assembled.messages]
   if (options.sessionId) {
     try {
@@ -216,7 +280,7 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
 
   perfMarks.mark(traceId, 'context', Date.now() - startedAt)
   /* ②-1：把提示词版本一并交出去，循环那边记进任务台账 */
-  return { messages, promptVersion: stack.version }
+  return { messages, promptVersion: stack.version, diag }
 }
 
 module.exports = { buildPromptContext, buildFailureNote }

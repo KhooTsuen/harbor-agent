@@ -2,7 +2,7 @@ const { exec } = require('node:child_process')
 const encoding = require('../shell-encoding.cjs')
 const netPolicy = require('../net-policy.cjs')
 const risk = require('../risk.cjs')
-const { truncateMiddle } = require('./_shared.cjs')
+const { truncateWithLog } = require('./_shared.cjs')
 const { createSettler, killTree, onAbort } = require('../abort.cjs')
 
 /**
@@ -164,7 +164,7 @@ module.exports = {
             parts.push('[退出码 0]')
           }
 
-          finish(truncateMiddle(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT))
+          finish(truncateWithLog(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT, '命令输出超出上限'))
         },
       )
     })

@@ -250,6 +250,16 @@ const DEFAULTS = {
     maxRuntime: 1800,
     maxRetries: 3,
     maxTokens: 100000,
+    /** 软阈值（0~1，token 优化）：到比例就提醒模型省着点；0 = 关闭 */
+    softRatio: 0.8,
+  },
+
+  /**
+   * 缓存相关（token 优化）。
+   * prewarm = 启动后发一次「只带稳定前缀」的预热请求（默认**关**：会产生真实费用）。
+   */
+  cache: {
+    prewarm: false,
   },
 
   limits: {

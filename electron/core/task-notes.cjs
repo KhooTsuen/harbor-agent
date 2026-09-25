@@ -153,6 +153,57 @@ function recordPromptVersion(id, version) {
   return task
 }
 
+/**
+ * 记分层诊断（token 优化）：每次 buildPromptContext 算出来的三层 hash 与「稳定前缀变了没」。
+ * 只留最近 20 条（每条 ~600B）—— 够追「哪一轮前缀变了、变在哪一层」，不把台账吹大。
+ */
+function recordPromptDiag(id, diag) {
+  const task = io.get(id)
+  if (!task || !diag || typeof diag !== 'object') return null
+  task.promptDiag = {
+    at: diag.at ?? Date.now(),
+    stablePrefixHash: diag.stablePrefixHash ?? '',
+    lowFrequencyHash: diag.lowFrequencyHash ?? '',
+    dynamicContextHash: diag.dynamicContextHash ?? '',
+    stablePrefixChanged: diag.stablePrefixChanged === true,
+    stablePrefixChangeReason: String(diag.stablePrefixChangeReason ?? '').slice(0, 200),
+    contextTokensByLayer: diag.contextTokensByLayer ?? {},
+  }
+  const ring = Array.isArray(task.promptDiags) ? task.promptDiags : []
+  ring.push({ at: task.promptDiag.at, stablePrefixHash: task.promptDiag.stablePrefixHash, low: task.promptDiag.lowFrequencyHash, changed: task.promptDiag.stablePrefixChanged, reason: task.promptDiag.stablePrefixChangeReason })
+  task.promptDiags = ring.slice(-20)
+  task.updatedAt = io.monotonicNow()
+  io.write(task)
+  return task
+}
+
+/** 记命中的任务模板（阶段 4）—— 复盘时按 template_id@version 归组比较 */
+function recordTemplate(id, hit) {
+  const task = io.get(id)
+  if (!task || !hit?.id) return null
+  task.templateId = String(hit.id)
+  task.templateVersion = Number(hit.version) || 1
+  task.updatedAt = io.monotonicNow()
+  io.write(task)
+  return task
+}
+
+/** 工具调用统计（阶段 2）：调用数 / 无效（重复+参数不合法）/ 重复 / 缓存命中 */
+function bumpToolStats(id, delta = {}) {
+  const task = io.get(id)
+  if (!task) return null
+  const cur = task.toolStats ?? { calls: 0, invalid: 0, duplicates: 0, cacheHits: 0 }
+  task.toolStats = {
+    calls: (Number(cur.calls) || 0) + (Number(delta.calls) || 0),
+    invalid: (Number(cur.invalid) || 0) + (Number(delta.invalid) || 0),
+    duplicates: (Number(cur.duplicates) || 0) + (Number(delta.duplicates) || 0),
+    cacheHits: (Number(cur.cacheHits) || 0) + (Number(delta.cacheHits) || 0),
+  }
+  task.updatedAt = io.monotonicNow()
+  io.write(task)
+  return task
+}
+
 module.exports = {
   addStep,
   addChangedFile,
@@ -162,4 +213,7 @@ module.exports = {
   addSteering,
   checkpoint,
   fail,
+  recordPromptDiag,
+  recordTemplate,
+  bumpToolStats,
 }

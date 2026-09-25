@@ -23,8 +23,10 @@ function statsFile() {
 }
 
 function emptyBucket() {
-  /* cached：命中 prompt 缓存的 token 数（命中部分便宜很多） */
-  return { prompt: 0, completion: 0, total: 0, calls: 0, cached: 0 }
+  /* cached：命中 prompt 缓存的 token 数（命中部分便宜很多）
+     cacheMiss：服务端**显式给的**未命中数（DeepSeek 的 prompt_cache_miss_tokens）——
+                没给就保持 0，但报告侧一律按「不可计算」处理（见 token-metrics.cjs） */
+  return { prompt: 0, completion: 0, total: 0, calls: 0, cached: 0, cacheMiss: 0 }
 }
 
 function emptyData() {
@@ -87,6 +89,7 @@ function addInto(bucket, usage) {
    */
   bucket.cached +=
     Number(usage.prompt_cache_hit_tokens) || Number(usage.prompt_tokens_details?.cached_tokens) || 0
+  bucket.cacheMiss += Number(usage.prompt_cache_miss_tokens) || 0
   bucket.calls += 1
 }
 

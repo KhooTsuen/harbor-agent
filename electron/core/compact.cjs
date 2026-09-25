@@ -129,9 +129,17 @@ function rebuild(history, summary, keepTail = 6) {
   const list = Array.isArray(history) ? history : []
   const system = list.filter((m) => m.role === 'system')
   const rest = list.filter((m) => m.role !== 'system')
+  /*
+   * 冻结摘要的**版本关系**（token 优化）：不原地重写，每次压缩新增一个带版本号的块。
+   * 旧格式（无版本号）也认 —— 计数不依赖格式。
+   */
+  const prior = list.filter(
+    (m) => m.role === 'user' && /^【之前对话的摘要/.test(String(m.content ?? '')),
+  ).length
+  const version = prior + 1
   return [
     ...system,
-    { role: 'user', content: `【之前对话的摘要】\n${summary}` },
+    { role: 'user', content: `【之前对话的摘要 v${version}】\n${summary}` },
     ...rest.slice(-keepTail),
   ]
 }

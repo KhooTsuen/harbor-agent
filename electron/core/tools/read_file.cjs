@@ -30,6 +30,14 @@ module.exports = {
     const cached = fileCache.get(file)
     const text = cached.hit ? cached.content : readTextFile(file)
     if (!cached.hit) fileCache.put(file, { content: text, source: 'read_file' })
+    /* 缓存命中计数（token 优化指标）：记进任务台账的 toolStats */
+    if (cached.hit && ctx?.taskId) {
+      try {
+        require('../task-notes.cjs').bumpToolStats(ctx.taskId, { cacheHits: 1 })
+      } catch {
+        /* 记不上不影响读 */
+      }
+    }
 
     const lines = text.split('\n')
     const offset = Math.max(1, Number(args.offset) || 1)

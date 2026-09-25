@@ -13,6 +13,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu } =
 const { DIRS, ensureDirs, auditNonC, markPackaged } = require('./core/paths.cjs')
 const log = require('./core/log.cjs')
 const config = require('./core/config.cjs')
+const prewarm = require('./core/prewarm.cjs')
 const bootCleanup = require('./boot-cleanup.cjs')
 const { installCrashGuard } = require('./crash-guard.cjs')
 const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
@@ -250,6 +251,8 @@ if (!gotLock) {
       .then(() => log.info('MCP 初始化完成'))
     pluginWatcher.install({ send }) // 插件热插拔：监听 data/plugins/，增删自动重扫 + 通知前端
     imageHandler.register({ send }) // 生图出图后：落盘 + 写会话 + 通知前端（见 handlers/image.cjs）
+    /* token 优化：启动预热（默认关；config.cache.prewarm=true 才发一次「只带稳定前缀」的请求） */
+    void prewarm.maybeRun()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -4,11 +4,7 @@
  * 只做流式。理由：这个 UI 处处依赖「边生成边显示」——
  * 折叠的思考、打字机、可中断，全都建立在流上。
  *
- * 支持：
- *   - SSE 解析（正确处理跨 chunk 的半行）
- *   - 流式 reasoning（DeepSeek 的 reasoning_content / OpenAI 的 reasoning）
- *   - 工具调用（流式拼 arguments）
- *   - AbortSignal 中断
+ * 支持：SSE 解析（跨 chunk 半行）/ 流式 reasoning / 工具调用 / AbortSignal 中断。
  */
 
 const http = require('./http.cjs')
@@ -17,6 +13,7 @@ const { onAbort } = require('./abort.cjs')
 const { createIdleGuard } = require('./llm-idle.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
 const plugins = require('./plugins.cjs')
+const metrics = require('./token-metrics.cjs')
 
 /**
  * 把 baseUrl 和 chatPath 拼成完整地址。
@@ -78,6 +75,9 @@ async function chatStream(options) {
   } = options
 
   const url = buildUrl(baseUrl, chatPath)
+  const startedAt = Date.now()
+  /* 首字节时间（TTFT）：第一个有内容的 delta 到达的耗时（token 优化指标） */
+  let ttftMs = null
   /* 请求体的构造（含模型族适配、供应商级覆盖）见 llm-body.cjs */
   const body = buildChatBody({
     model,
@@ -103,11 +103,7 @@ async function chatStream(options) {
   }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
-  /*
-   * ★ 带用途标签：以前只写「请求模型」，于是**对话轮次**和**场景调用**
-   *   （起标题 / 生成建议）在日志里长得一模一样 —— 想数"到底跑了几轮"
-   *   只能去数「对话完成」，多一条少一条都看不出来。
-   */
+  /* ★ 带用途标签：没有它，「对话轮次」和「起标题/建议」在日志里长得一模一样 */
   log.info(`请求模型${label ? `[${label}]` : ''} ${model} → ${url}`)
 
   /*
@@ -151,12 +147,7 @@ async function chatStream(options) {
   reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
 
-  /*
-   * AG-010：`signal` 传给了 fetch，但**打断不了已经在等的 `reader.read()`** ——
-   * 它要等上游把下一个 chunk 发过来才醒。模型思考时 chunk 间隔好几秒，
-   * 实测点了停止又拖了 8136ms 才进 cancelled（用户看到的是「停止没反应」）。
-   * 所以：中断时主动把流撤掉，让它立刻 done。
-   */
+  /* AG-010：fetch 的 signal 打断不了已在等的 read()（实测拖过 8 秒）—— 中断时主动撤流 */
   const offAbort = onAbort(signal, () => {
     void reader.cancel().catch(() => {})
   })
@@ -205,14 +196,8 @@ async function chatStream(options) {
       const chunk = parsed.json
 
       /*
-       * ★ 上游可能**在正常流里发错误**（HTTP 200，data 里却是 error）。
-       *
-       * OpenRouter 就是这样：额度不够时发
-       *   data: {"error":{"code":402,"message":"Insufficient credits..."}}
-       * 这行没有 choices，原来的代码走 `if (!delta) continue` 静默跳过 ——
-       * 症状是**回答空白、不报任何错**，比 500 难查得多。
-       *
-       * 这条是被真实踩中之后加的（用户报「OpenRouter 点了没反应」）。
+       * ★ 上游可能在**正常流里发错误**（HTTP 200，data 却是 error）：OpenRouter
+       * 额度不够就发 {"error":{...}} —— 以前静默跳过，症状是回答空白且不报错。
        */
       if (chunk?.error) {
         const info = chunk.error
@@ -228,6 +213,7 @@ async function chatStream(options) {
 
       const delta = choice?.delta
       if (!delta) continue
+      if (ttftMs === null) ttftMs = Date.now() - startedAt
 
       /* 思考内容：不同厂商字段名不一样 */
       const reasoningDelta = delta.reasoning_content ?? delta.reasoning
@@ -282,7 +268,23 @@ async function chatStream(options) {
   if (toolCalls.length > 0) onToolCalls?.(toolCalls)
   if (usage) onUsage?.(usage)
 
-  return { content, reasoning, toolCalls, usage, finishReason }
+  /* 每请求指标落盘（只记数字与 hash，不记内容）；写不进去不影响请求 */
+  try {
+    metrics.logLlm({
+      label,
+      model,
+      providerId: provider?.id ?? '',
+      trace: options.traceId ?? '',
+      retryIndex: Number(options.retryIndex) || 0,
+      usage,
+      ttftMs,
+      latencyMs: Date.now() - startedAt,
+    })
+  } catch {
+    /* 指标失败不阻塞 */
+  }
+
+  return { content, reasoning, toolCalls, usage, finishReason, ttftMs, latencyMs: Date.now() - startedAt }
 }
 
 const probe = require('./llm-probe.cjs')

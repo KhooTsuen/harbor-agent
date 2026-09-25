@@ -7,6 +7,7 @@ import { check, group } from '../harness.mjs'
    文档的五项：maxSteps 50 / maxToolCalls 100 / maxRuntime 1800 /
    maxRetries 3 / maxTokens 100000，达到之后给
    **[继续] [停止] [调整预算]**。
+   软阈值 softRatio 0.8：用到 80% 先提醒一次（只提醒、不阻断）。
 
    三条设计决定，都在这一组里钉住：
 
@@ -28,15 +29,19 @@ export async function run() {
   /* ── ① 默认值与三层来源 ─────────────────────────────── */
   group('AG-040 / 预算从哪来')
   check(
-    '文档的五项默认值',
-    JSON.stringify(budget.DEFAULTS) ===
-      JSON.stringify({
-        maxSteps: 50,
-        maxToolCalls: 100,
-        maxRuntime: 1800,
-        maxRetries: 3,
-        maxTokens: 100000,
-      }),
+    '文档的五项默认值（逐项比对，softRatio 单列在下一项）',
+    budget.DEFAULTS.maxSteps === 50 &&
+      budget.DEFAULTS.maxToolCalls === 100 &&
+      budget.DEFAULTS.maxRuntime === 1800 &&
+      budget.DEFAULTS.maxRetries === 3 &&
+      budget.DEFAULTS.maxTokens === 100000,
+    JSON.stringify(budget.DEFAULTS),
+  )
+  check(
+    '软阈值默认 0.8（提醒不阻断），且 resolve 会把它夹在 0–1',
+    budget.DEFAULTS.softRatio === 0.8 &&
+      budget.resolve({ budget: { softRatio: 5 } }, null).softRatio === 1 &&
+      budget.resolve({ budget: { softRatio: -1 } }, null).softRatio === 0,
     JSON.stringify(budget.DEFAULTS),
   )
 

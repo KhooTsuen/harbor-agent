@@ -32,7 +32,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  *           toolRuns: Array, emit: Function, turn: number }} input
  * @returns {Promise<{ touched: boolean }>}
  */
-async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, emit, turn }) {
+async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolRuns, emit, turn }) {
   let touchedFiles = false
   /* AG-017：本轮的成败名单 —— 结尾要拿它给模型一句「进度对照」 */
   const doneNames = []
@@ -208,4 +208,5 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
   return { touched: touchedFiles }
 }
 
-module.exports = { executeToolCalls }
+/* token 优化：默认走 tool-runner 的并行执行器；本文件的串行实现保留作回退/对照 */
+module.exports = { ...require('./tool-runner.cjs'), executeToolCallsSerial }

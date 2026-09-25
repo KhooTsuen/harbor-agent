@@ -264,13 +264,19 @@ function normalize(raw) {
     /*
      * 用量闸。token 数用 clampNumber 兜底（负数、乱填都打回 0 = 不限）。
      */
-    /* AG-040：任务预算（0 = 不限；坏值退回默认） */
+    /* AG-040：任务预算（0 = 不限；坏值退回默认）；softRatio = 软阈值（0~1） */
     budget: {
       maxSteps: Math.round(clampNumber(budgetRaw.maxSteps, 0, 10_000, 50)),
       maxToolCalls: Math.round(clampNumber(budgetRaw.maxToolCalls, 0, 1_000_000, 100)),
       maxRuntime: Math.round(clampNumber(budgetRaw.maxRuntime, 0, 86400, 1800)),
       maxRetries: Math.round(clampNumber(budgetRaw.maxRetries, 0, 20, 3)),
       maxTokens: Math.round(clampNumber(budgetRaw.maxTokens, 0, 1_000_000_000, 100000)),
+      softRatio: Math.min(1, Math.max(0, clampNumber(budgetRaw.softRatio, 0, 1, 0.8))),
+    },
+
+    /* token 优化：预热默认关（会产生真实请求与费用） */
+    cache: {
+      prewarm: bool(obj(g.cache).prewarm, false),
     },
 
     limits: {

@@ -112,6 +112,8 @@ async function runLoop(options) {
   let turn = 0
   /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
   let gateSeen = {}
+  /* 预算软阈值只提醒一次（token 优化 §八） */
+  let softNoted = false
   /* AG-041：重复执行顶回去几次（超过阈值就停下来问用户） */
   let loopNudges = 0
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
@@ -135,9 +137,7 @@ async function runLoop(options) {
     const loopHit = loopGuard.detect(loopGuard.signaturesOf(toolRuns))
     if (loopHit.looping && loopNudges >= LOOP_NUDGE_LIMIT) {
       emit({ type: 'loop', ...loopHit, handedOver: true })
-      /* ★ 用 paused 不用 waiting_user（AG-043 真机）：后者在渲染层算「还在跑」
-         （AG-011 为权限确认定的），而这里 run 已结束 —— 用它 Composer 会一直
-         显示「停止生成」，用户没法直接打字说「改成别的」。 */
+      /* ★ 用 paused 不用 waiting_user（AG-043 真机）—— 后者渲染层算「还在跑」 */
       life.mark('paused', traceKey(options))
       return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, loopHit })
     }
@@ -154,6 +154,11 @@ async function runLoop(options) {
       /* 同上：撞预算也是「停下来了」，不是「还挂着在等你确认」 */
       life.mark('paused', traceKey(options))
       return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, budgetHit: hit })
+    }
+    /* 软阈值（token 优化 §八）：只提醒、不阻断 —— 优先保验证与安全，砍解释与重复读 */
+    if (hit.soft === true && !softNoted) {
+      softNoted = true
+      messages.push({ role: 'user', content: budget.softNote(hit) })
     }
     /* 用量闸（全局，按天/月）：调模型**之前**查账（唯一能真省钱的位置） */
     limits.enforce(emit)
@@ -173,8 +178,7 @@ async function runLoop(options) {
       maxTokens: config.assistant.maxTokens,
       /* 思考强度档位（thread 里选的 low/high/max）—— 以前这里漏了，档位从没传给模型 */
       reasoningEffort: threadSettings.reasoning,
-      /* AG-037 埋点顺手逮到的：callModel 里一直写着 `emit?.(…)` 报重试/降级/上下文超限，
-         而调用方**从来没把 emit 传进来** —— 那些提示在界面上从未出现过（AG-016 要求告知用户） */
+      /* AG-037：以前 emit 从没传进来过 —— 重试/降级/超限提示在界面上从未出现过 */
       traceId: traceKey(options),
       emit,
       signal,
@@ -288,10 +292,7 @@ async function runLoop(options) {
   return exhaustedResult({ usage: totalUsage, toolRuns, maxTurns: MAX_TURNS })
 }
 
-/*
- * `run` 现在住在 loop-run.cjs（那边还管任务与事务的开始/收尾）。
- * 惰性 require 破循环：loop-run 要用这里的 runLoop，这里要用那边的 run。
- */
+/* `run` 住在 loop-run.cjs；惰性 require 破循环（loop-run 要用这里的 runLoop） */
 module.exports = {
   run: (...args) => require('./loop-run.cjs').run(...args),
   runLoop,

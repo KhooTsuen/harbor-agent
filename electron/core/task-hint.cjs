@@ -44,4 +44,28 @@ function ledgerFormatLine() {
   return `做完一步就把那一条标成 \`[x]\`：${PLAN_FORMAT}任务名只在第一次生效，之后保持稳定。`
 }
 
-module.exports = { PLAN_FORMAT, freshRequest, ledgerFormatLine }
+/**
+ * taskState 是不是「新活第一轮」那段（而不是带计划的台账）？
+ *
+ * ★ TOK-P2-004（真机电池实测）：别用「taskState 非空」当「有任务在跑」——
+ *   `chat.cjs` 的 buildTaskState 在**一条未完成任务都没有**时也会兜底返回
+ *   `freshRequest()`（那是「这活要立任务」的必要注入）。于是
+ *   「非空 ⇒ 跳过模板建议」的条件在真机上**永远成立**，
+ *   模板层一次都没送出去过（电池 30 个任务、0 命中）。
+ *
+ * 调用两边的「用户那句话」修剪口径可能不同（chat.cjs 的 lastUserText
+ * 会先 `slice(0,200)`），所以原样与 slice(0,200) 两种都认。
+ */
+function isFreshTaskState(taskState, goal) {
+  const t = String(taskState ?? '').trim()
+  if (!t) return true
+  /*
+   * 两个候选都按**原样**算：chat 侧是「先 slice(0,200) 再进 freshRequest」，
+   * 我们手里是完整原话 —— 前后空格会把两种修剪顺序切出不同的前 200 字符，
+   * 所以 raw 与 raw.slice(0,200) 各试一次（freshRequest 内部还会 trim）。
+   */
+  const raw = String(goal ?? '')
+  return t === freshRequest(raw).trim() || t === freshRequest(raw.slice(0, 200)).trim()
+}
+
+module.exports = { PLAN_FORMAT, freshRequest, ledgerFormatLine, isFreshTaskState }

@@ -26,11 +26,7 @@ function servesModel(provider, model) {
 /**
  * 调模型，带**重试**与**降级**。
  *
- * 两层：
- *   ① 同一个供应商重试 N 次（指数退避）—— 网络抖一下不该让整轮对话失败
- *   ② 还不行就换一个配好的供应商 —— 但要**明确告诉用户**，
- *      不能默默换模型继续（那会变成「怎么回答风格变了」这种莫名其妙的体验）
- *
+ * 两层：①同供应商重试 N 次（指数退避）；②换供应商继续，但要明确告诉用户。
  * 三种情况一律不重试：用户中断、认证失败（重试一万次还是 401）、
  * 上下文超限（该压缩，不是该重发）。
  */
@@ -61,11 +57,7 @@ async function callModelInner(options, emit) {
         p.baseUrl &&
         p.id !== provider.id &&
         configCore.hasKey(p) &&
-        /*
-         * ★ 必须**真的提供这个模型**。以前只筛「启用 + 有 key」，
-         *   于是降级到不提供该模型的供应商，再拿它的 `models[0]` 顶上 ——
-         *   等于悄悄换了模型（用户以为在用 A，实际在用 B）。
-         */
+        /* ★ 必须真的提供这个模型：以前筛选漏了这步，降级会悄悄换掉模型 */
         servesModel(p, model),
     )
     if (others.length > 0) candidates.push(others[0])
@@ -83,10 +75,12 @@ async function callModelInner(options, emit) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
 
       try {
-        return await llm.chatStream({
+        const result = await llm.chatStream({
           ...options,
           /* 日志里能一眼分出「对话轮次」和「起标题/建议」那种场景调用 */
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
+          /* 每请求指标里记第几次尝试（0 = 首次）—— 指标写不写得进不影响请求 */
+          retryIndex: attempt,
           /*
            * provider 要整个传下去：请求体里的 extraBody / omitParams / streamUsage
            * 都是供应商级的（见 llm-body.cjs）。漏传的话——配置改了没反应，
@@ -96,16 +90,11 @@ async function callModelInner(options, emit) {
           baseUrl: target.baseUrl,
           apiKey: configCore.providerKey(target),
           chatPath: target.chatPath,
-          /*
-           * ★ 降级**只换供应商，不换模型**。
-           *
-           * 以前这里是 `target.models?.[0]` —— 降级时悄悄把模型换掉
-           * （`gpt-5.6-sol` 会变成对方的第一个模型）。用户看到的只是
-           * 「回答风格怎么变了」。候选供应商上面已经筛过「它提供这个模型」，
-           * 所以这里保持同名是安全的。
-           */
+          /* ★ 降级只换供应商、不换模型（候选上面已筛过「它提供这个模型」） */
           model,
         })
+        result.retryCount = attempt
+        return result
       } catch (error) {
         const info = errors.classify(error)
         lastError = error
@@ -278,10 +267,18 @@ function exhaustedResult({ usage, toolRuns, maxTurns, budgetHit = null, loopHit 
 function mergeUsage(a, b) {
   if (!a) return b
   if (!b) return a
+  /* 缓存字段也要累计（token 优化）：只合三个总数会把命中数据丢掉 */
+  const cacheHit =
+    (Number(a.prompt_cache_hit_tokens) || 0) + (Number(b.prompt_cache_hit_tokens) || 0)
+  const cacheMiss =
+    (Number(a.prompt_cache_miss_tokens) || 0) + (Number(b.prompt_cache_miss_tokens) || 0)
   return {
     prompt_tokens: (a.prompt_tokens ?? 0) + (b.prompt_tokens ?? 0),
     completion_tokens: (a.completion_tokens ?? 0) + (b.completion_tokens ?? 0),
     total_tokens: (a.total_tokens ?? 0) + (b.total_tokens ?? 0),
+    ...(cacheHit > 0 || cacheMiss > 0
+      ? { prompt_cache_hit_tokens: cacheHit, prompt_cache_miss_tokens: cacheMiss }
+      : {}),
   }
 }
 

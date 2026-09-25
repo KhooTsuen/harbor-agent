@@ -99,12 +99,36 @@ function normalizeNewlines(text) {
   return text.replace(/\r\n/g, '\n')
 }
 
-/** 把过长的输出截断，保留头尾 */
-function truncateMiddle(text, maxChars = 12000) {
-  if (text.length <= maxChars) return text
+/** 把过长的输出截断，保留头尾 —— 截断处带标准标记（token 优化 §三） */
+function truncateMiddle(text, maxChars = 12000, reason = '超出单次输出上限') {
+  const src = String(text ?? '')
+  if (src.length <= maxChars) return src
   const head = Math.floor(maxChars * 0.6)
   const tail = maxChars - head
-  return `${text.slice(0, head)}\n\n…（中间省略 ${text.length - maxChars} 字符）…\n\n${text.slice(-tail)}`
+  const omittedChars = src.length - maxChars
+  const originalBytes = Buffer.byteLength(src, 'utf8')
+  return `${src.slice(0, head)}\n\n[截断] omitted_chars=${omittedChars} · original_bytes=${originalBytes} · reason=${reason}\n\n${src.slice(-tail)}`
+}
+
+/**
+ * 截断 + 完整输出落盘（token 优化 §三：命令输出要保原始日志路径）。
+ * 落盘失败不影响截断本身。
+ */
+function truncateWithLog(text, maxChars = 8000, reason = '超出上限') {
+  const src = String(text ?? '')
+  if (src.length <= maxChars) return src
+  let file = ''
+  try {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const { DIRS } = require('../paths.cjs')
+    fs.mkdirSync(DIRS.logs, { recursive: true })
+    file = path.join(DIRS.logs, `tool-output-${Date.now()}.log`)
+    fs.writeFileSync(file, src, 'utf8')
+  } catch {
+    file = ''
+  }
+  return truncateMiddle(src, maxChars, `${reason}${file ? `（完整输出：${file}）` : ''}`)
 }
 
 module.exports = {
@@ -115,5 +139,6 @@ module.exports = {
   withLineNumbers,
   normalizeNewlines,
   truncateMiddle,
+  truncateWithLog,
   MAX_READ_BYTES,
 }
