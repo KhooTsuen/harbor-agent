@@ -20,7 +20,12 @@ import type { StoredMessage } from '@/types/models-extra'
 export function toAnswerRecord(message: Message): StoredMessage {
   return {
     role: 'assistant',
-    key: message.id,
+    /*
+     * ★ 用**磁盘 key**：重读会给内存消息换新 uid（`storedToUi` 里是 `uid('msg')`），
+     *   用 uid 的话和内核挂上来的记录（key = 磁盘 key）对不上 —— 台账里明明有
+     *   「自己」这一条，allAnswers 还会再补一遍，版本数重开后就多一个（N+1）。
+     */
+    key: message.diskKey ?? message.id,
     content: message.content,
     ts: message.timestamp,
     ...(message.reasoning ? { reasoning: message.reasoning } : {}),
@@ -57,14 +62,19 @@ export function questionTargetOf(messages: Message[]): { key: string; version: n
  *   刚生成的那一版时，代码以为「这版没回答过」，又跑一整轮
  *   （用户报的「二度生成」就是这么来的：v1 → v0 → v1 来回切，每一步都重跑）。
  *
- * 按 key 去重：既能带上自己，又不会和内核分组的结果（那份本来就含自己）重复。
+ * ★ 但台账里**已经有自己**时不再覆盖：「自己」是跟着 `message.content` 走的
+ *   （切到别的回答它就被改成那条的内容），覆盖会把这一版的原文弄丢 ——
+ *   切走再切回来，第 N 版显示的是别的版本的内容。
+ *   在切换前把「自己」定格进台账的是 `messageVersions.ts` 的 activateAnswer。
+ *
+ * 按 key 去重（key = 磁盘 key）：既能补上自己，又不会和内核分组的结果
+ * （那份本来就含自己）重复。
  */
 export function allAnswers(message: Message): StoredMessage[] {
   const out = [...(message.answerRecords ?? [])]
   const self = toAnswerRecord(message)
   const at = out.findIndex((r) => r.key === self.key)
-  if (at >= 0) out[at] = self
-  else out.push(self)
+  if (at < 0) out.push(self)
   return out
 }
 

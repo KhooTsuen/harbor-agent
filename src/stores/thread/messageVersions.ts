@@ -20,6 +20,7 @@ import {
   existingAnswersAfter,
   questionOf,
   pickAnswer,
+  toAnswerRecord,
 } from '@/lib/answers'
 
 /* ══════════════════════════════════════════════════════════════
@@ -71,11 +72,10 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     messageId: string,
     text: string,
     /**
-     * 被换掉的那条回答属于哪一版提问。
-     *
-     * ★ 一定要带上：内存里那条回答（`removeMessagesAfter` 之前抓下来的）没有
-     *   「答的是第几版」的标记，不标就会落到默认的第 0 版 —— 于是切回原来那一版时
-     *   找不到它、又跑一轮（真机上验证时就是这么发现的）。
+     * 被换掉的那条回答属于哪一版提问。 ★ 只给**没有标记**的旧记录补标——
+     * 已标过的一律保持原样。以前是无条件重标：在 B（第 1 版）下重新生成时，
+     * A（第 0 版）的每条回答全被改成「第 1 版」→ B 的切换器把 A 的版本一起
+     * 数进去（用户报的 1/8、1/9），切回 A 又一条都找不到。
      */
     seedVersion?: number,
     /** 只给日志用：这一轮是编辑 / 重新生成 / 重试 / 补一版回答触发的 */
@@ -97,9 +97,14 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       ?.messages.find((m) => m.id === messageId)
     if (edited) persistVersion(threadId, edited)
     /* 这条提问原来那条回答先抓下来（下一步就把它从列表里删掉了）——
-       它是「回答的历史版本」，切回去时要能拿出来，不能只剩磁盘上有 */
+       它是「回答的历史版本」，切回去时要能拿出来，不能只剩磁盘上有。
+       ★ 版本标记**只补缺、不重贴**：每条回答属于哪一版是它生成时就定下的，
+         重贴会把别的版本的回答吞进当前版（见 seedVersion 的注释）。 */
     const previous = existingAnswersAfter(thread.messages, { key: messageId, version: 0 }).map(
-      (record) => (seedVersion === undefined ? record : { ...record, answersVersion: seedVersion }),
+      (record) =>
+        seedVersion === undefined || record.answersVersion !== undefined
+          ? record
+          : { ...record, answersVersion: seedVersion },
     )
     /* 后面的回答是按旧内容写的，留着会答非所问 */
     app.removeMessagesAfter(threadId, messageId)
@@ -248,8 +253,18 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
       )
       const record = records[index]
       if (!thread || !message || !record) return
+      /*
+       * ★ 切走之前先把「自己」定格进台账（原文 = 现在显示的内容）。
+       *   不定格的话，「自己」跟着 message.content 走：切到别的回答会把它盖成
+       *   那条的内容，再切回来第 N 版显示的就是别版 —— 三个版本里有一个的原文丢了。
+       *   （allAnswers 只在台账里没有自己时才补记，所以定格必须发生在这里。）
+       */
+      const self = toAnswerRecord(message)
+      const inLedger = (message.answerRecords ?? []).some((r) => r.key === self.key)
+      const next: Partial<Message> = answerPatch(record, index)
+      if (!inLedger) next.answerRecords = [...(message.answerRecords ?? []), self]
       /* 内存里换一条显示 —— 不新增消息、不重跑 */
-      app.updateMessage(threadId, messageId, answerPatch(record, index))
+      app.updateMessage(threadId, messageId, next)
       /*
        * ★ 选择要落盘（以前只有「选了哪一版提问」落了盘）。
        *   不写的话重开会话又跳回最新那条 —— 用户选的那版白选了。

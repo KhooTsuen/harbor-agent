@@ -243,4 +243,33 @@ export async function run() {
     tightened.filter((m) => m.role === 'user').length === 2,
     String(tightened.filter((m) => m.role === 'user').length),
   )
+
+  /* ── ⑧ 版本标签互不污染（用户报：B 的重新生成和 A 的合并）──────── */
+  /*
+   * 场景：A 下重新生成 5 次（6 条，第 0 版）→ 编辑成 B → B 下重新生成 2 次。
+   * 磁盘上每条记录写的时候都带着自己的 answersVersion；分组时必须**逐条保留**，
+   * 不能按「当前版本」重新贴 —— 重贴 = 把 A 的回答吞进 B（1/8、1/9），
+   * 切回 A 又一条都不剩。
+   */
+  group('回答多版本 / 各版的条数互不污染（写盘时就定下，分组原样保留）')
+  const mixed = groupAnswers([
+    user('q1', { versions: ['A 内容', 'B 内容'], versionIndex: 1 }),
+    ...[1, 2, 3, 4, 5, 6].map((n) =>
+      answer(`ka${n}`, `A 的第 ${n} 条回答`, { answersKey: 'q1', answersVersion: 0 }),
+    ),
+    answer('kb1', 'B 的第 1 条回答', { answersKey: 'q1', answersVersion: 1 }),
+    answer('kb2', 'B 的第 2 条回答', { answersKey: 'q1', answersVersion: 1 }),
+    answer('kb3', 'B 的第 3 条回答', { answersKey: 'q1', answersVersion: 1 }),
+  ])
+  check('当前是 B → 露出 B 的最新一条', mixed[1]?.content === 'B 的第 3 条回答')
+  const labels = (mixed[1]?.answerRecords ?? []).map((r) => r.answersVersion).join(',')
+  check('★ 标签逐条保留（0×6 + 1×3，不是按当前版统一重贴）', labels === '0,0,0,0,0,0,1,1,1', labels)
+  check(
+    '★ B 的可切条数 = 3',
+    (mixed[1]?.answerRecords ?? []).filter((r) => r.answersVersion === 1).length === 3,
+  )
+  check(
+    '★ A 的可切条数 = 6（切回 A 时都在）',
+    (mixed[1]?.answerRecords ?? []).filter((r) => r.answersVersion === 0).length === 6,
+  )
 }
