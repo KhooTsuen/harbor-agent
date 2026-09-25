@@ -287,6 +287,125 @@
   --glass-veil: brightness(1.06);
 }
 
+/* ── 夜航（彩蛋解锁：连点左上角品牌标 5 次）──────────────────
+   深蓝黑底 + 琥珀色 CTA / 柔和蓝强调：比 default 更暗、更安静。
+   双属性选择器（data-theme + data-color-mode）是为了压过
+   styles/theme-primer-dark.css 里 [data-color-mode='dark'] 的通用覆盖 ——
+   同优先级时靠加载顺序，双属性更稳、不赌文件顺序。 */
+[data-theme='night'][data-color-mode='dark'] {
+  color-scheme: dark;
+
+  --bg-canvas: #090c12;
+  --bg-surface: #10151d;
+  --bg-raised: #171e29;
+  --bg-hover: #171e29;
+  --bg-active: #202a38;
+  --bg-input: #171e29;
+  --bg-overlay: rgb(0 0 0 / 0.55);
+
+  --text-primary: #e6edf3;
+  --text-secondary: #97a3b4;
+  --text-tertiary: #6e7d8f;
+  --text-inverse: #090c12;
+
+  --border-hairline: #1d2530;
+  --border-strong: #2c3846;
+  --border-focus: #e3b341;
+
+  --diff-add: #3fb950;
+  --diff-remove: #f85149;
+  --diff-add-bg: rgb(63 185 80 / 0.15);
+  --diff-remove-bg: rgb(248 81 73 / 0.15);
+  --error: #f85149;
+  --success: #3fb950;
+  --warning: #d29922;
+
+  /* 强调：CTA 用琥珀（夜航的灯），链接/选中用柔和蓝 */
+  --accent-blue: #79c0ff;
+  --accent-hover: #a5d6ff;
+  --accent-border: rgb(227 179 65 / 0.45);
+  --accent-subtle: rgb(227 179 65 / 0.16);
+  --cta-bg: #d29922;
+  --cta-fg: #16120a;
+  --cta-bg-hover: #e3b341;
+
+  --glass-veil: brightness(0.6);
+
+  /* 透明度变体的通道值（Tailwind <alpha-value>，见 tailwind.config.js 顶部说明） */
+  --bg-canvas-rgb: 9 12 18; /* #090c12 */
+  --bg-surface-rgb: 16 21 29; /* #10151d */
+  --bg-raised-rgb: 23 30 41; /* #171e29 */
+  --bg-hover-rgb: 23 30 41; /* #171e29 */
+  --danger-rgb: 248 81 73; /* #f85149 */
+}
+
+/* ── 开屏灯塔（状态灯 + 彩蛋，设计文档 §11）─────────────────
+   低对比、慢周期（≥8s）；三个停止条件都在这里收口：
+   窗口失焦（.harbor-paused）、设置里关动效、系统减少动态。 */
+.harbor-beam {
+  animation: harbor-beam 12s ease-in-out infinite;
+}
+.harbor-beam-fast {
+  animation-duration: 8s;
+}
+.harbor-beam-alert {
+  animation-duration: 2.6s;
+}
+@keyframes harbor-beam {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.harbor-lamp-pulse {
+  animation: harbor-lamp 2.6s ease-in-out infinite;
+}
+@keyframes harbor-lamp {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+.harbor-sweep {
+  animation: harbor-sweep 1.6s ease-out 1 both;
+}
+@keyframes harbor-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  45% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+.harbor-paused .harbor-beam,
+.harbor-paused .harbor-lamp-pulse,
+.harbor-paused .harbor-sweep {
+  animation-play-state: paused;
+}
+[data-animations='off'] .harbor-beam,
+[data-animations='off'] .harbor-lamp-pulse,
+[data-animations='off'] .harbor-sweep {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .harbor-beam,
+  .harbor-lamp-pulse,
+  .harbor-sweep {
+    animation: none;
+  }
+}
+
 /*
  * 启动页：全屏 ASCII 场景 + 入场扫出
  *

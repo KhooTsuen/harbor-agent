@@ -273,7 +273,7 @@ export async function run() {
    * 少一条都会在这里变红（而不是等用户点到那个按钮才发现没反应）。
    *
    *   · app:selfTest / config:*  → main.cjs 里直接注册（自检要用）
-   *   · workdir:*                → handlers/workdir.cjs 在模块加载时自己注册
+   *   · workdir:* → handlers/workdir.cjs；workspace:scan / task:testStatus → handlers/workspace.cjs
    */
   const elsewhere = [
     'app:selfTest',
@@ -283,6 +283,8 @@ export async function run() {
     'workdir:get',
     'workdir:choose',
     'workdir:pick',
+    'workspace:scan',
+    'task:testStatus',
   ]
   const missing = channels.EXPECTED_CHANNELS.filter((c) => !registeredChannels.includes(c))
   check(

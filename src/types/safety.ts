@@ -295,6 +295,6 @@ export interface SafetyBridge extends TaskBridge, ProfileBridge {
 }
 
 import type { DiffFile } from './index'
-import type { TaskBridge, TaskDiagnosis, TaskRecord, TaskRecoveryItem } from './task'
+import type { TaskBridge } from './task'
 
-export type { TaskDiagnosis, TaskRecord, TaskRecoveryItem }
+export type { TaskDiagnosis, TaskRecord, TaskRecoveryItem, TestStatusInfo } from './task'

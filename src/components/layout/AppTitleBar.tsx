@@ -1,8 +1,11 @@
+import { useRef } from 'react'
 import { Loader2, PanelBottom, PanelLeft, PanelRight, Play, Square } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { useEggStore } from '@/stores/useEggStore'
 import { BRAND_NAME } from '@/constants'
+import { createBrandClickState, registerBrandClick } from '@/lib/nightVoyage'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { IconButton } from '@/components/ui/IconButton'
@@ -54,6 +57,29 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
   const lastAssistant = [...(thread?.messages ?? [])].reverse().find((m) => m.role === 'assistant')
   const activity = activityLabel(lastAssistant?.toolRuns ?? [], thread?.phase)
 
+  /*
+   * 夜航彩蛋（设计文档 §13.3）：连点品牌标 5 次（2 秒窗口）→
+   * 夜航主题 ↔ 默认来回切。计时规则在 lib/nightVoyage.ts（纯函数），
+   * 这里只管副作用：改设置 + 灯塔扫一次 + toast。
+   */
+  const brandClicks = useRef(createBrandClickState())
+  const onBrandClick = (): void => {
+    const { state, fired } = registerBrandClick(brandClicks.current, Date.now())
+    brandClicks.current = state
+    if (!fired) return
+    const settings = useSettingsStore.getState()
+    const goingNight = settings.settings.theme !== 'night'
+    settings.updateSettings({ nightUnlocked: true, theme: goingNight ? 'night' : 'default' })
+    useEggStore.getState().bumpSweep()
+    useUIStore
+      .getState()
+      .showToast(
+        'info',
+        goingNight ? '夜航模式已启用' : '夜航模式已关闭',
+        goingNight ? '灯塔已点亮。再连点 5 次可以换回来。' : '已回到默认主题',
+      )
+  }
+
   /* AG-036：和右栏「审查」读同一份（改动事务里算出来的），不再各算一套 */
   const diffs = useTaskStore((s) => s.diff)?.files ?? []
   const { additions, deletions } = sumDiff(diffs)
@@ -73,15 +99,23 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
         </IconButton>
       </Tooltip>
 
-      <span
-        aria-hidden="true"
-        className="grid size-5 shrink-0 place-items-center rounded-small bg-bg-raised font-mono text-2xs font-semibold text-fg-primary"
+      {/* 品牌标：也是夜航彩蛋的点击位（按钮 = titlebar 里自动 no-drag，见 index.css） */}
+      <button
+        type="button"
+        onClick={onBrandClick}
+        aria-label={BRAND_NAME}
+        className="flex shrink-0 items-center gap-1.5 rounded-small"
       >
-        ⌘
-      </span>
-      <span className="hidden shrink-0 text-dense font-semibold text-fg-primary sm:inline">
-        {BRAND_NAME}
-      </span>
+        <span
+          aria-hidden="true"
+          className="grid size-5 place-items-center rounded-small bg-bg-raised font-mono text-2xs font-semibold text-fg-primary"
+        >
+          ⌘
+        </span>
+        <span className="hidden text-dense font-semibold text-fg-primary sm:inline">
+          {BRAND_NAME}
+        </span>
+      </button>
 
       {/* 当前对话标题。它是状态不是标题，所以用次级色、不上大字号 */}
       <h1 className="min-w-0 flex-1 truncate px-2 text-dense text-fg-secondary">

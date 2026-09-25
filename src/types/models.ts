@@ -78,7 +78,7 @@ export interface AppConfig {
   /** 只有内存里有：配置文件读不出来时的错误原因 —— 界面据此提示「配置损坏，已重置」 */
   _loadWarning?: string
   general: {
-    theme: 'default' | 'chatgpt' | 'spec' | 'light' | 'system'
+    theme: 'default' | 'chatgpt' | 'spec' | 'light' | 'night' | 'system'
     glassmorphism: boolean
     animations: boolean
     fontScale: number

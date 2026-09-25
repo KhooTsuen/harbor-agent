@@ -146,12 +146,14 @@ const EXPECTED_CHANNELS = [
   'task:purge',
   'task:remove',
   'task:removeMany',
+  'task:testStatus',
   'task:unfinished',
   'task:update',
   'window:titleBar',
   'workdir:choose',
   'workdir:get',
   'workdir:pick',
+  'workspace:scan',
 ]
 
 module.exports = { EXPECTED_CHANNELS }

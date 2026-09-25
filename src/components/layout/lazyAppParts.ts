@@ -24,6 +24,9 @@ export const Onboarding = lazy(async () => ({
 export const ImageLightbox = lazy(async () => ({
   default: (await import('@/components/chat/ImageLightbox')).ImageLightbox,
 }))
+export const HarborStatsModal = lazy(async () => ({
+  default: (await import('@/components/dialogs/HarborStatsModal')).HarborStatsModal,
+}))
 
 /** Essential workspace chunks load under the opaque boot layer. */
 export async function preloadWorkspaceUi(): Promise<void> {

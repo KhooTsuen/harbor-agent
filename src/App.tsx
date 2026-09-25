@@ -67,7 +67,6 @@ function MainApp() {
   const activeRightTab = useUIStore((s) => s.activeRightTab)
 
   const sendMessage = useThreadStore((s) => s.sendMessage)
-  const setInput = useThreadStore((s) => s.setInput)
 
   /* AG-042：底部面板开合搬进 store（任务行的「查看 Tool」要能打开它），初值取上次的状态 */
   const bottomOpen = useUIStore((s) => s.bottomPanelOpen)
@@ -244,13 +243,8 @@ function MainApp() {
               打开应用不再先看到一条黄条。
             */}
             <Suspense fallback={<div className="min-h-0 flex-1" />}>
-              <MessageList
-                messages={messages}
-                onSuggestion={(text) => {
-                  setInput(text)
-                  sendMessage(text)
-                }}
-              />
+              {/* 空对话时 MessageList 自己渲染开屏（launch/LaunchScreen.tsx） */}
+              <MessageList messages={messages} />
             </Suspense>
           </ErrorBoundary>
 

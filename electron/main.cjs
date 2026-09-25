@@ -17,6 +17,8 @@ const bootCleanup = require('./boot-cleanup.cjs')
 const { installCrashGuard } = require('./crash-guard.cjs')
 const { runSelfTest, runScreenshot } = require('./selftest-report.cjs')
 const { currentWorkdir, resolveWorkdir } = require('./handlers/workdir.cjs')
+/* 开屏数据源（workspace:scan / task:testStatus）—— 自注册 handler，引一下就行 */
+require('./handlers/workspace.cjs')
 const {
   setupTray,
   destroyTray,

@@ -7,7 +7,8 @@
 
 /* ── 主题与外观 ─────────────────────────────────────────────── */
 
-export type ThemeName = 'default' | 'chatgpt' | 'spec' | 'light'
+/* night（夜航）是彩蛋解锁的深色主题：连点左上角品牌标 5 次出现 */
+export type ThemeName = 'default' | 'chatgpt' | 'spec' | 'light' | 'night'
 export type ThemePreference = ThemeName | 'system'
 export type ToggleState = 'on' | 'off'
 /* 终端只在底栏（Ctrl+J）—— 右栏不再有终端标签，免得同一个东西两处入口 */
@@ -188,6 +189,16 @@ export interface Settings {
    * 任务本身带 workdir，过滤在主进程做 —— 这里只决定要不要传。
    */
   taskScope: 'project' | 'all'
+  /* ── 开屏的「性格层」与彩蛋（设计文档 §23）── */
+  /**
+   * 性格层（欢迎语/吐槽句）开关。关掉后开屏只保留状态层与动作层 ——
+   * 重要的话不靠随机文案说，见 docs/Agent开屏与彩蛋设计方案.md §23.8。
+   */
+  persona: boolean
+  /** 夜航主题解锁过（连点品牌标 5 次）。解锁后外观里会多出这个主题选项 */
+  nightUnlocked: boolean
+  /** 「航道畅通」触发过几次（只记次数，不记内容） */
+  greenRuns: number
 }
 
 export type SettingsPatch = Partial<Settings>

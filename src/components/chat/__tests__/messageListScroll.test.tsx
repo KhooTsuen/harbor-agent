@@ -50,7 +50,7 @@ afterEach(() => {
 
 function render(messages: Message[]): void {
   act(() => {
-    root.render(<MessageList messages={messages} onSuggestion={() => {}} />)
+    root.render(<MessageList messages={messages} />)
   })
 }
 

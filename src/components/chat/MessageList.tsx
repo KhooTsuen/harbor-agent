@@ -3,9 +3,7 @@ import type { Message } from '@/types'
 import { getForkPoints, type ForkPoint } from '@/lib/branchPath'
 import { MessageItem } from './MessageItem'
 import { BranchBreadcrumb } from './branch/BranchBreadcrumb'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { Button } from '@/components/ui/Button'
-import { EMPTY_THREAD_PROMPTS } from '@/constants'
+import { LaunchScreen } from './launch/LaunchScreen'
 
 /* ══════════════════════════════════════════════════════════════
    MessageList
@@ -17,15 +15,13 @@ import { EMPTY_THREAD_PROMPTS } from '@/constants'
 
 export interface MessageListProps {
   messages: readonly Message[]
-  /** 空状态下的建议提示 */
-  onSuggestion: (text: string) => void
 }
 
 /* AG-038：一次渲染多少条 / 点一次「载入更早」多给多少条 */
 const INITIAL_TAIL = 200
 const TAIL_STEP = 300
 
-export function MessageList({ messages, onSuggestion }: MessageListProps) {
+export function MessageList({ messages }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   /*
@@ -217,33 +213,8 @@ export function MessageList({ messages, onSuggestion }: MessageListProps) {
   }, [isStreaming])
 
   if (messages.length === 0) {
-    /*
-      justify-evenly 而不是 center：空白在「上 / 图与卡片之间 / 下」三等分，
-      图自然靠上、卡片自然靠下 —— 就是标注里「下移到这个位置」那个效果。
-      center + 固定 gap 做不到这件事：居中会吃掉一半位移。
-    */
-    return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-evenly overflow-y-auto px-6 py-8">
-        <EmptyState
-          title="想让 Agent 做什么？"
-          description="描述你想要的改动，或者贴一段代码问为什么。左侧可以同时开多个线程并行跑。"
-          action={
-            <div className="flex max-w-xl flex-wrap justify-center gap-2">
-              {EMPTY_THREAD_PROMPTS.map((prompt) => (
-                <Button
-                  key={prompt}
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onSuggestion(prompt)}
-                >
-                  {prompt}
-                </Button>
-              ))}
-            </div>
-          }
-        />
-      </div>
-    )
+    /* 开屏（设计文档 §5）：状态层 + 性格层 + 灯塔，见 launch/LaunchScreen.tsx */
+    return <LaunchScreen />
   }
 
   return (

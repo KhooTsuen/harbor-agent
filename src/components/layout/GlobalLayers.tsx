@@ -5,8 +5,10 @@ import { ToastViewport } from '@/components/ui/Toast'
 import { useImageLightbox } from '@/stores/useImageLightbox'
 import { useUIStore } from '@/stores/useUIStore'
 import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
+import { HarborEggs } from './HarborEggs'
 import {
   CommandPalette,
+  HarborStatsModal,
   ImageLightbox,
   Onboarding,
   SettingsModal,
@@ -36,6 +38,7 @@ export interface GlobalLayersProps {
 export function GlobalLayers({ config, showOnboarding }: GlobalLayersProps) {
   const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
+  const harborStatsOpen = useUIStore((s) => s.harborStatsOpen)
   const lightboxOpen = useImageLightbox((s) => s.images.length > 0)
 
   return (
@@ -44,10 +47,13 @@ export function GlobalLayers({ config, showOnboarding }: GlobalLayersProps) {
         {showOnboarding ? <Onboarding config={config ?? PREVIEW_CONFIG} /> : null}
         {commandPaletteOpen ? <CommandPalette /> : null}
         {settingsOpen ? <SettingsModal /> : null}
+        {harborStatsOpen ? <HarborStatsModal /> : null}
         {lightboxOpen ? <ImageLightbox /> : null}
       </Suspense>
       <PermissionDialog />
       <ToastViewport />
+      {/* 状态彩蛋（「航道畅通」）—— 监听任务结束事件，只认真实退出码 */}
+      <HarborEggs />
     </ErrorBoundary>
   )
 }

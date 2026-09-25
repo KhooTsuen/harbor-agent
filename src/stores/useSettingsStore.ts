@@ -45,12 +45,20 @@ export const DEFAULT_SETTINGS: Settings = {
   lastBottomPanelOpen: false,
   /* 默认与已上线行为一致：有项目时只看当前项目的任务 */
   taskScope: 'project',
+  /* ★ 开屏性格层默认开；夜航主题默认没解锁；航道畅通计数从 0 起 */
+  persona: true,
+  nightUnlocked: false,
+  greenRuns: 0,
 }
 
 function normalize(input: Partial<Settings> | undefined): Settings {
   const s = input ?? {}
   const theme =
-    s.theme === 'chatgpt' || s.theme === 'spec' || s.theme === 'light' || s.theme === 'system'
+    s.theme === 'chatgpt' ||
+    s.theme === 'spec' ||
+    s.theme === 'light' ||
+    s.theme === 'night' ||
+    s.theme === 'system'
       ? s.theme
       : 'default'
   const mode =
@@ -94,6 +102,9 @@ function normalize(input: Partial<Settings> | undefined): Settings {
         : 'diff',
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,
     taskScope: s.taskScope === 'all' ? 'all' : 'project',
+    persona: s.persona !== false,
+    nightUnlocked: s.nightUnlocked === true,
+    greenRuns: Math.max(0, Math.floor(Number(s.greenRuns) || 0)),
     glassmorphism: s.glassmorphism === true,
     animations: s.animations !== false,
     asciiQuality:

@@ -118,6 +118,7 @@ import { run as handlersGroup } from './selftest/groups/80-handlers.mjs'
 import { run as regenGroup } from './selftest/groups/81-regen.mjs'
 import { run as taskIsolationGroup } from './selftest/groups/82-task-isolation.mjs'
 import { run as branchPathGroup } from './selftest/groups/83-branch-path.mjs'
+import { run as launchSummaryGroup } from './selftest/groups/84-launch-summary.mjs'
 
 const GROUPS = [
   basics,
@@ -202,6 +203,7 @@ const GROUPS = [
   regenGroup,
   taskIsolationGroup,
   branchPathGroup,
+  launchSummaryGroup,
 ]
 
 async function main() {

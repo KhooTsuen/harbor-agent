@@ -65,7 +65,13 @@ export interface TaskRecord {
   steps: Array<{ at: number; tool: string; ok: boolean; ms: number; summary: string }>
   checkpoints: Array<{ at: number; label: string; note: string }>
   changedFiles: Array<{ path: string; at: number }>
-  commands: Array<{ command: string; result: string; at: number }>
+  commands: Array<{
+    command: string
+    result: string
+    at: number
+    /* AG-034：退出码判读（true/false；读不出来 null/缺省）—— 内核 addCommand 时就存好了 */
+    exitOk?: boolean | null
+  }>
   changeSetId: string
   errors: Array<{ at: number; message: string }>
   result: string
@@ -133,6 +139,18 @@ export type TaskRecoveryItem = TaskRecord & {
  * 注意 `taskRemove` / `taskRemoveMany` 的 `skipped` —— 正在跑 / 等确认的任务
  * 永远删不掉（界面不给按钮，内核也会拦），那个数字就是「想删但没删」的条数。
  */
+/** 最近一次测试的结论（只回结论，不回日志） */
+export interface TestStatusInfo {
+  ok: boolean
+  found: boolean
+  tests: 'none' | 'passed' | 'failed' | 'unknown'
+  /** 最后一条测试命令（给「查看测试结果」用） */
+  command?: string
+  /** 这条命令什么时候跑的（ms） */
+  at?: number
+  taskId?: string
+}
+
 export interface TaskBridge {
   taskList: (options?: {
     limit?: number
@@ -149,6 +167,12 @@ export interface TaskBridge {
     workdir?: string
   }) => Promise<{ ok: boolean; items: TaskRecoveryItem[] }>
   taskGet: (id: string) => Promise<{ ok: boolean; task: TaskRecord | null }>
+  /**
+   * 最近的测试结论（开屏摘要 / 「航道畅通」彩蛋共用）。
+   * 判据在内核（core/task-outcome.cjs 的 isTestCommand + 台账里的 exitOk），
+   * 渲染层不自己猜 —— 没跑过就是 found:false。
+   */
+  taskTestStatus: (options?: { workdir?: string }) => Promise<TestStatusInfo>
   /** AG-035：把台账读成一段人能读的报告（只读，不改任务） */
   taskDiagnose: (id: string) => Promise<{ ok: boolean; diagnosis: TaskDiagnosis }>
   taskUpdate: (payload: { id: string; patch: Record<string, unknown> }) => Promise<{

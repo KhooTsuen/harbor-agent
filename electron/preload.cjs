@@ -85,6 +85,7 @@ const api = {
   pickWorkdir: () => call('workdir:pick'),
   /** 只挑目录，不改全局默认（给单条对话挂目录用） */
   chooseFolder: () => call('workdir:choose'),
+  workspaceScan: (dir) => call('workspace:scan', dir),
 
   listSessions: () => call('session:list'),
   searchSessions: (query, limit) => call('session:search', query, limit),
@@ -176,6 +177,7 @@ const api = {
   taskGet: (id) => call('task:get', id),
   taskDiagnose: (id) => call('task:diagnose', id),
   taskUpdate: (payload) => call('task:update', payload),
+  taskTestStatus: (options) => call('task:testStatus', options),
   /* 个人资料：名字进配置、头像存 data/avatars/ */
   profileGet: () => call('profile:get'),
   profileSetName: (name) => call('profile:setName', name),

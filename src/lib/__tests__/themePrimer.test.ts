@@ -92,8 +92,14 @@ describe('Primer 主题 / 两层映射', () => {
       '--danger-rgb',
     ]) {
       const inIndex = indexCss.split(name).length - 1
-      expect(inIndex, `index.css 里 ${name} 应有 4 份（四套主题）`).toBe(4)
+      expect(
+        inIndex,
+        `index.css 里 ${name} 应有 5 份（default / chatgpt / spec / light / night）`,
+      ).toBe(5)
     }
+    /* 夜航（彩蛋主题）单独钉：双属性选择器才能压过 Primer 的 [data-color-mode='dark'] */
+    expect(indexCss).toContain("[data-theme='night'][data-color-mode='dark']")
+    expect(indexCss).toContain('--cta-bg: #d29922')
     /* 默认主题（Primer 深色）的通道值必须单独出现在主题文件的映射块里 */
     expect(themeCss).toContain('--bg-raised-rgb: 33 38 45')
     expect(themeCss).toContain('--danger-rgb: 248 81 73')

@@ -46,6 +46,13 @@ export function tryHandleCommand(raw: string): boolean {
     return true
   }
 
+  /* 彩蛋：/harbor —— 本地统计面板（数据来自任务台账，见 HarborStatsModal） */
+  if (raw === '/harbor') {
+    threadStore.clearInput()
+    ui.openHarborStats()
+    return true
+  }
+
   if (raw === '/clear') {
     threadStore.clearInput()
     const current = getActiveThread(app)

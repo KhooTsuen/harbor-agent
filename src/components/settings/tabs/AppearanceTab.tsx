@@ -83,7 +83,22 @@ export function AppearanceTab() {
             { value: 'spec', label: 'Spec（早期色板）' },
             { value: 'light', label: '亮色' },
             { value: 'system', label: '跟随系统' },
+            /* 夜航是彩蛋解锁的 —— 没解锁就不出现，免得显得像缺了一个主题 */
+            ...(settings.nightUnlocked ? [{ value: 'night', label: 'Night（夜航）' }] : []),
           ]}
+        />
+      </Row>
+
+      <SectionTitle>开屏</SectionTitle>
+
+      <Row
+        label="欢迎语"
+        hint="开屏的一句性格文案（可随机，可关）。工作区状态、任务和按钮始终显示，不受它影响"
+      >
+        <Switch
+          checked={settings.persona}
+          onChange={(v) => updateSettings({ persona: v })}
+          label="开屏欢迎语"
         />
       </Row>
 

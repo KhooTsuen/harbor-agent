@@ -44,6 +44,11 @@ interface UIState {
    */
   nextSteps: { threadId: string; outcome: TaskOutcome } | null
 
+  /** 彩蛋：/harbor 本地统计面板 */
+  harborStatsOpen: boolean
+  openHarborStats: () => void
+  closeHarborStats: () => void
+
   toggleRightPanel: () => void
   setRightPanelVisible: (visible: boolean) => void
   setActiveRightTab: (tab: RightTab) => void
@@ -81,6 +86,10 @@ export const useUIStore = create<UIState>((set) => ({
   bottomPanelView: 'log',
   toasts: [],
   nextSteps: null,
+  harborStatsOpen: false,
+
+  openHarborStats: () => set({ harborStatsOpen: true }),
+  closeHarborStats: () => set({ harborStatsOpen: false }),
 
   toggleRightPanel: () => set((s) => ({ rightPanelVisible: !s.rightPanelVisible })),
   setRightPanelVisible: (visible) => set({ rightPanelVisible: visible }),

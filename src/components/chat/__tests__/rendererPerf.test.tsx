@@ -79,18 +79,8 @@ const report = (label: string, ms: number, nodes: number, extra = ''): void => {
 
 describe('AG-038 / 1000 条消息', () => {
   it('★ 1000 条消息只渲染最近一批（渐增渲染）', () => {
-    const small = render(
-      <MessageList
-        messages={Array.from({ length: 50 }, () => message())}
-        onSuggestion={() => {}}
-      />,
-    )
-    const big = render(
-      <MessageList
-        messages={Array.from({ length: 1000 }, () => message())}
-        onSuggestion={() => {}}
-      />,
-    )
+    const small = render(<MessageList messages={Array.from({ length: 50 }, () => message())} />)
+    const big = render(<MessageList messages={Array.from({ length: 1000 }, () => message())} />)
     const rendered = () => container.querySelectorAll('[data-message-id]').length
     report('50 条', small.ms, small.nodes)
     report('1000 条', big.ms, big.nodes, `真的画了 ${rendered()} 条`)
@@ -117,7 +107,7 @@ describe('AG-038 / 1000 条消息', () => {
 
   it('★ 1000 条里滚动一次不该重排整棵树（耗时随数据线性，不退化成平方）', () => {
     const messages = Array.from({ length: 1000 }, () => message())
-    render(<MessageList messages={messages} onSuggestion={() => {}} />)
+    render(<MessageList messages={messages} />)
     const scroller =
       container.querySelector('[data-message-scroller]') ?? container.firstElementChild
 
@@ -243,8 +233,8 @@ describe('AG-038 / 大型 Task Timeline', () => {
 
 describe('AG-038 / 渲染器基线（跨版本对比用）', () => {
   it('空列表与一条消息的基线', () => {
-    const empty = render(<MessageList messages={[]} onSuggestion={() => {}} />)
-    const one = render(<MessageList messages={[message()]} onSuggestion={() => {}} />)
+    const empty = render(<MessageList messages={[]} />)
+    const one = render(<MessageList messages={[message()]} />)
     report('空列表', empty.ms, empty.nodes)
     report('一条消息', one.ms, one.nodes, `每条 ${one.nodes - empty.nodes} 个节点`)
     expect(one.nodes).toBeGreaterThan(empty.nodes)
