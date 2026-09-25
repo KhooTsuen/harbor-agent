@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { clamp, languageFromName, relativeTime, truncate } from '@/lib/utils'
+import { clamp, cn, languageFromName, relativeTime, truncate } from '@/lib/utils'
 
 describe('utils', () => {
+  it('cn 保留自定义字号类（tailwind-merge 默认会把 dense/meta 当颜色吞掉）', () => {
+    expect(cn('text-dense', 'text-fg-primary')).toBe('text-dense text-fg-primary')
+    expect(cn('text-meta leading-relaxed', 'text-fg-tertiary')).toBe(
+      'text-meta leading-relaxed text-fg-tertiary',
+    )
+    /* 两个字号同时出现时，后写的仍然覆盖前一个 */
+    expect(cn('text-dense', 'text-meta')).toBe('text-meta')
+  })
+
   it('clamp 夹取数值', () => {
     expect(clamp(5, 0, 10)).toBe(5)
     expect(clamp(-5, 0, 10)).toBe(0)

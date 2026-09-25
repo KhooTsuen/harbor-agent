@@ -50,7 +50,7 @@ export function BudgetLimit(): React.ReactElement | null {
         />
         <span>
           用量超过上限就停下
-          <span className="ml-1.5 text-2xs text-fg-tertiary">
+          <span className="ml-1.5 text-dense text-fg-tertiary">
             （在调模型之前查一次账，这是唯一能真正省钱的位置）
           </span>
         </span>

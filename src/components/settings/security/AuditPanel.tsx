@@ -12,7 +12,7 @@ import { colorOf } from '@/lib/statusLanguage'
 
 export function AuditPanel({ entries }: { entries: AuditEntry[] }) {
   if (entries.length === 0) {
-    return <p className="py-2 text-2xs text-fg-tertiary">还没有记录。</p>
+    return <p className="py-2 text-dense text-fg-tertiary">还没有记录。</p>
   }
 
   return (

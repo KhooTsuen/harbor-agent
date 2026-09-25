@@ -135,9 +135,9 @@ export function MemoryTab() {
    */
   if (!memorySupported()) {
     return (
-      <div className="flex flex-col gap-1 pb-6">
+      <div className="flex flex-col gap-2 pb-6">
         <MemoryExplainPanel projectId={projectId} />
-        <p className="p-3 text-2xs text-fg-tertiary">记忆列表需要桌面版。</p>
+        <p className="p-3 text-dense text-fg-tertiary">记忆列表需要桌面版。</p>
       </div>
     )
   }
@@ -145,9 +145,9 @@ export function MemoryTab() {
   const memory = config?.memory
 
   return (
-    <div className="flex flex-col gap-1 pb-6">
+    <div className="flex flex-col gap-2 pb-6">
       <SectionTitle>当前项目</SectionTitle>
-      <p className="px-2 py-1 text-2xs text-fg-tertiary">
+      <p className="px-2 py-1 text-dense text-fg-tertiary">
         {project
           ? `项目记忆会绑定到「${project.name}」，其他项目不会注入。`
           : '当前没有选中的项目。项目记忆需要先选择工作目录。'}
@@ -189,7 +189,7 @@ export function MemoryTab() {
             className="min-w-0 flex-1 bg-transparent text-dense text-fg-primary placeholder:text-fg-tertiary focus:outline-none"
           />
         </div>
-        <label className="flex shrink-0 items-center gap-1.5 text-2xs text-fg-secondary">
+        <label className="flex shrink-0 items-center gap-1.5 text-dense text-fg-secondary">
           <input
             type="checkbox"
             checked={showSuperseded}
@@ -233,13 +233,13 @@ export function MemoryTab() {
       </div>
 
       {busy && items.length === 0 ? (
-        <p className="py-2 text-2xs text-fg-tertiary">读取中…</p>
+        <p className="py-2 text-dense text-fg-tertiary">读取中…</p>
       ) : items.length === 0 ? (
-        <p className="py-2 text-2xs text-fg-tertiary">
+        <p className="py-2 text-dense text-fg-tertiary">
           还没有记忆。说「记住……」或者在上面手动加一条。
         </p>
       ) : (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-1.5">
           {items.map((item) => (
             <li
               key={item.id}
@@ -280,7 +280,7 @@ export function MemoryTab() {
         </ul>
       )}
 
-      <p className="pt-3 text-2xs text-fg-tertiary">
+      <p className="pt-3 text-dense text-fg-tertiary">
         共 {items.length} 条（含已取代）。超过上限时会自动清理最旧的临时记忆。
       </p>
 

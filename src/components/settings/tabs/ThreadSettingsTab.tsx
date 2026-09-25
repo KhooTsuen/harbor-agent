@@ -8,7 +8,7 @@ export function ThreadSettingsTab() {
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
   const update = useAppStore((s) => s.updateThreadSettings)
   const globalTemperature = useConfigStore((s) => s.config?.assistant.temperature ?? 0.7)
-  if (!thread) return <p className="p-3 text-2xs text-fg-tertiary">没有打开的会话。</p>
+  if (!thread) return <p className="p-3 text-dense text-fg-tertiary">没有打开的会话。</p>
   const settings = thread.settings ?? {}
   const toggle = (key: keyof typeof settings) =>
     update(thread.id, { [key]: settings[key] === false })

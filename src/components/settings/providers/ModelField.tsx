@@ -130,7 +130,7 @@ export function ModelField({ value, onChange, providers }: ModelFieldProps) {
 
             <div className="min-h-0 flex-1 overflow-y-auto p-1" style={{ maxHeight: '15rem' }}>
               {filtered.length === 0 ? (
-                <p className="px-2 py-3 text-center text-2xs text-fg-tertiary">
+                <p className="px-2 py-3 text-center text-dense text-fg-tertiary">
                   {groups.length === 0 ? '还没有配置模型清单' : '没有匹配的模型'}
                 </p>
               ) : (

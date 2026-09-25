@@ -40,7 +40,7 @@ export function SessionCryptoPanel() {
     return (
       <>
         <SectionTitle>会话内容加密</SectionTitle>
-        <p className="px-2 py-1 text-2xs text-fg-tertiary">
+        <p className="px-2 py-1 text-dense text-fg-tertiary">
           当前版本没接上这个桥（security:sessionCrypto），所以看不到加密状态。
           会话本身的读写不受影响。
         </p>
@@ -91,7 +91,7 @@ export function SessionCryptoPanel() {
       </Row>
 
       {state ? (
-        <p className="px-2 py-1 text-2xs leading-relaxed text-fg-secondary">
+        <p className="px-2 py-1 text-dense leading-relaxed text-fg-secondary">
           盘上现在有 <span className="text-fg-primary">{state.files}</span> 个会话文件： 已加密{' '}
           <span className="text-fg-primary">{state.encrypted}</span> 行、 明文{' '}
           <span className="text-fg-primary">{state.plain}</span> 行。
@@ -100,7 +100,7 @@ export function SessionCryptoPanel() {
 
       {mismatch ? (
         <p
-          className="mx-2 mb-1 flex gap-1.5 rounded-base border px-3 py-2 text-2xs leading-relaxed text-fg-secondary"
+          className="mx-2 mb-1 flex gap-1.5 rounded-base border px-3 py-2 text-dense leading-relaxed text-fg-secondary"
           style={{ borderColor: colorOf('warning') }}
         >
           <AlertTriangle

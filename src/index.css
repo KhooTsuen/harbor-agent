@@ -575,7 +575,8 @@
   }
 
   .settings-section-hint {
-    font-size: 11px;
+    /* 下限跟规格对齐（dense 档 13px）；11/12 是 [过渡] 遗留档，新写的别再往下加 */
+    font-size: 13px;
     line-height: 1.5;
     color: var(--text-tertiary);
   }

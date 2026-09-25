@@ -153,7 +153,8 @@ export function Row({
         <p
           onClick={focusField}
           className={cn(
-            'text-dense',
+            /* 标签走 meta 档、说明走 dense 档 —— dense 是规格允许的最小档，说明文字不再用 [过渡] 的 12px */
+            'text-meta',
             danger ? 'text-[var(--error)]' : 'text-fg-primary',
             /* 有输入框可聚焦时才给「能点」的样子；开关类不给，免得诱导 */
             hasField(children) && 'cursor-text',
@@ -161,7 +162,7 @@ export function Row({
         >
           {label}
         </p>
-        {hint ? <p className="mt-0.5 text-2xs leading-relaxed text-fg-tertiary">{hint}</p> : null}
+        {hint ? <p className="mt-0.5 text-dense leading-relaxed text-fg-tertiary">{hint}</p> : null}
       </div>
       {/* 限一个上限：设置弹窗很宽，不限的话输入框会被拉成一条横跨半屏的长条 */}
       {/*
@@ -197,7 +198,7 @@ export function SectionCard({
   return (
     <section className="flex flex-col gap-1.5">
       <SectionTitle>{title}</SectionTitle>
-      {hint ? <p className="-mt-1 mb-1 text-2xs leading-relaxed text-fg-tertiary">{hint}</p> : null}
+      {hint ? <p className="mb-1 text-dense leading-relaxed text-fg-tertiary">{hint}</p> : null}
       <div
         className={cn(
           'flex flex-col gap-1.5',

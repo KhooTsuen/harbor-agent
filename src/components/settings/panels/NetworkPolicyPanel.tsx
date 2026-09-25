@@ -83,7 +83,7 @@ export function NetworkPolicyPanel() {
     return (
       <>
         <SectionTitle>网络策略</SectionTitle>
-        <p className="px-2 py-1 text-2xs text-fg-tertiary">
+        <p className="px-2 py-1 text-dense text-fg-tertiary">
           当前版本没接上这个桥（security:network），所以这里改不了 —— 其余设置不受影响，照常可以改。
         </p>
       </>
@@ -121,7 +121,7 @@ export function NetworkPolicyPanel() {
   return (
     <>
       <SectionTitle>网络策略</SectionTitle>
-      <p className="-mt-1 mb-1 px-1 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="px-1 text-dense leading-relaxed text-fg-tertiary">
         命令行里的 curl、要联网的 MCP 服务器、应用自己发的请求 —— 这三个口子都先按这里的规则裁决。
       </p>
 
@@ -138,7 +138,7 @@ export function NetworkPolicyPanel() {
               />
               <span>
                 <span className="text-dense text-fg-primary">{option.label}</span>
-                <span className="ml-1.5 text-2xs text-fg-tertiary">{option.hint}</span>
+                <span className="ml-1.5 text-dense text-fg-tertiary">{option.hint}</span>
               </span>
             </label>
           ))}

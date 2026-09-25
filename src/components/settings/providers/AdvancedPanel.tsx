@@ -76,7 +76,7 @@ export function AdvancedPanel({ provider }: { provider: ProviderConfig }): React
             />
             <span>
               让上游返回用量
-              <span className="ml-1.5 text-2xs text-fg-tertiary">
+              <span className="ml-1.5 text-dense text-fg-tertiary">
                 （不认 stream_options 的站点会 400，那时关掉它）
               </span>
             </span>
@@ -91,7 +91,7 @@ export function AdvancedPanel({ provider }: { provider: ProviderConfig }): React
             />
             <span>
               DeepSeek strict 模式
-              <span className="ml-1.5 text-2xs text-fg-tertiary">
+              <span className="ml-1.5 text-dense text-fg-tertiary">
                 （给工具参数加 strict 校验，仅 DeepSeek 官方
                 <code className="text-2xs">/beta</code> 端点有效：要把 Base URL 改成
                 .../beta；中转站别开）

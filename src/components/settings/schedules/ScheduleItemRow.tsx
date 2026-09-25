@@ -58,7 +58,7 @@ export function ScheduleItemRow({
             ) : null}
           </div>
 
-          <p className="mt-1 text-2xs leading-relaxed text-fg-secondary">
+          <p className="mt-1 text-dense leading-relaxed text-fg-secondary">
             {item.whenText} · 下次 {nextRunText(item.nextRunAt)} · 上次{' '}
             {lastRunText(item.lastRunAt)}
           </p>

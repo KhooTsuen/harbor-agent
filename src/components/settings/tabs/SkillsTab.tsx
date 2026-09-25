@@ -37,14 +37,14 @@ function SkillPermissionLine({ skill }: { skill: SkillRow }) {
   /* 写错了就说写错了 —— 不能装作没这回事（后端也是拒绝、不是忽略） */
   if (error) {
     return (
-      <p className="mt-1 text-2xs leading-relaxed text-danger">
+      <p className="mt-1 text-dense leading-relaxed text-danger">
         权限声明无效，已按「没声明」处理：{error}
       </p>
     )
   }
 
   if (items.length === 0) {
-    return <p className="mt-1 text-2xs text-fg-tertiary">权限：没声明（按当前权限档走）</p>
+    return <p className="mt-1 text-dense text-fg-tertiary">权限：没声明（按当前权限档走）</p>
   }
 
   return (
@@ -98,11 +98,11 @@ export function SkillsTab() {
   }
 
   return (
-    <div className="py-1">
+    <div className="flex flex-col gap-2 py-1">
       <SectionTitle>技能</SectionTitle>
 
       {loading ? (
-        <p className="py-3 text-2xs text-fg-tertiary">读取中…</p>
+        <p className="py-3 text-dense text-fg-tertiary">读取中…</p>
       ) : skills.length === 0 ? (
         <p className="py-3 text-dense leading-relaxed text-fg-secondary">
           还没有技能。技能是一份 Markdown 操作手册，写一次之后每次遇到同类任务模型都能照着做。
@@ -118,7 +118,7 @@ export function SkillsTab() {
                 <FileText size={14} className="mt-0.5 shrink-0 text-fg-tertiary" />
                 <div className="min-w-0 flex-1">
                   <p className="text-dense text-fg-primary">{skill.name}</p>
-                  <p className="mt-0.5 text-2xs leading-relaxed text-fg-secondary">
+                  <p className="mt-0.5 text-dense leading-relaxed text-fg-secondary">
                     {skill.description}
                   </p>
                   <p className="mt-1 font-mono text-2xs text-fg-tertiary">
@@ -219,7 +219,7 @@ export function SkillsTab() {
         </Button>
       </Row>
 
-      <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="mt-3 border-t border-line-hairline pt-3 text-dense leading-relaxed text-fg-tertiary">
         技能里的权限分两种：<span className="text-fg-secondary">file / shell 两档只是声明</span>
         —— 它只跟着技能清单进系统提示、在这里给你看一眼，
         <span className="text-fg-secondary">拦不住任何一次工具调用</span>
@@ -231,7 +231,7 @@ export function SkillsTab() {
         完全）、文件范围、 Shell 风险分级，都在「权限与安全」里配。
       </p>
 
-      <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="mt-3 border-t border-line-hairline pt-3 text-dense leading-relaxed text-fg-tertiary">
         技能正文<span className="text-fg-secondary">不会</span>一直占上下文：系统提示里只有名字和
         description，模型判断用得上时才去读全文。所以正文可以写详细一点。 权限写在 SKILL.md 开头的
         frontmatter 里，比如 `permissions:` 下面写 `- file: read`、 `- shell: ask`、`- network:

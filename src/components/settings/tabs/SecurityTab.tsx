@@ -79,7 +79,7 @@ export function SecurityTab() {
       <div className="flex flex-col gap-1 pb-6">
         <NetworkPolicyPanel />
         <SessionCryptoPanel />
-        <p className="p-3 text-2xs text-fg-tertiary">
+        <p className="p-3 text-dense text-fg-tertiary">
           其余面板需要桌面版（浏览器预览没有主进程，看不到审计与授权记录）。
         </p>
       </div>
@@ -107,7 +107,7 @@ export function SecurityTab() {
               />
               <span>
                 <span className="text-dense text-fg-primary">{option.label}</span>
-                <span className="ml-1.5 text-2xs text-fg-tertiary">{option.hint}</span>
+                <span className="ml-1.5 text-dense text-fg-tertiary">{option.hint}</span>
               </span>
             </label>
           ))}

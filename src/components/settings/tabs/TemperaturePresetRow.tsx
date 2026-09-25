@@ -71,12 +71,12 @@ export function TemperaturePresetRow({
         </select>
 
         {custom ? (
-          <p className="text-2xs leading-relaxed text-fg-tertiary">
+          <p className="text-dense leading-relaxed text-fg-tertiary">
             这条对话现在是 {temperature}，不是上面任何一档（可能是之前设的、或预设调过数值）。
           </p>
         ) : null}
 
-        <p className="text-2xs leading-relaxed text-fg-tertiary">
+        <p className="text-dense leading-relaxed text-fg-tertiary">
           轮数上限 / 工具调用次数不在这里 —— 它们按每个任务的目标自动给（任务卡片上能改）。
         </p>
       </div>

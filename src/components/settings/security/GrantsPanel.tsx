@@ -21,7 +21,7 @@ export function GrantsPanel({
   const showToast = useUIStore((s) => s.showToast)
 
   if (grants.length === 0) {
-    return <p className="py-2 text-2xs text-fg-tertiary">还没有放过任何工作目录之外的路径。</p>
+    return <p className="py-2 text-dense text-fg-tertiary">还没有放过任何工作目录之外的路径。</p>
   }
 
   const MODE_LABEL = { permanent: '永久', session: '本会话', once: '一次性' } as const

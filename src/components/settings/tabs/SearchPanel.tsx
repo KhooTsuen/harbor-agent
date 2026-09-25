@@ -40,7 +40,7 @@ export function SearchPanel() {
 
   if (!config || !search) {
     return (
-      <p className="py-3 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="py-3 text-dense leading-relaxed text-fg-tertiary">
         当前运行在浏览器预览环境，联网搜索配置请在桌面版中使用。
       </p>
     )
@@ -99,7 +99,7 @@ export function SearchPanel() {
             </option>
           ))}
         </select>
-        <span className="mt-1 block text-2xs text-fg-tertiary">
+        <span className="mt-1 block text-dense text-fg-tertiary">
           DuckDuckGo 免费但要看网络能不能通；Tavily 质量好要 Key；国内建议博查。
         </span>
       </label>

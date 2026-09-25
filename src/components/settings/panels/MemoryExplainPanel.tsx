@@ -70,7 +70,7 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
     return (
       <>
         <SectionTitle>记忆是怎么挑的</SectionTitle>
-        <p className="px-2 py-1 text-2xs text-fg-tertiary">
+        <p className="px-2 py-1 text-dense text-fg-tertiary">
           当前版本没接上这个桥（memory:explain），所以看不到打分和理由 ——
           记忆本身的增删停用不受影响。
         </p>
@@ -88,17 +88,17 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
 
       {injected ? (
         <>
-          <p className="px-2 text-2xs text-fg-secondary">
+          <p className="px-2 text-dense text-fg-secondary">
             注入了 {injected.injected.length} 条 / 本轮上限 {injected.budget} 条，当时共有{' '}
             {injected.total} 条可用
             {injected.at ? `（${timeOf(injected.at)}）` : ''}。
           </p>
           {injected.injected.length === 0 ? (
-            <p className="px-2 py-1 text-2xs text-fg-tertiary">
+            <p className="px-2 py-1 text-dense text-fg-tertiary">
               上一轮一条都没进来 —— 当时可能还没有记忆，或者这次对话根本没带提问。
             </p>
           ) : (
-            <ul className="flex flex-col gap-1 py-1">
+            <ul className="flex flex-col gap-1.5 py-1">
               {injected.injected.map((entry) => (
                 <ScoreRow key={entry.id} entry={entry} />
               ))}
@@ -106,7 +106,7 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
           )}
         </>
       ) : (
-        <p className="px-2 py-1 text-2xs leading-relaxed text-fg-tertiary">
+        <p className="px-2 py-1 text-dense leading-relaxed text-fg-tertiary">
           这次启动后还没跑过对话，所以还没有注入记录。这本账是进程内的、不落盘， 重启就清空 ——
           跑一轮对话再回来看这里。
         </p>
@@ -115,7 +115,7 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
       <SectionTitle>现在这批为什么会 / 不会被选中</SectionTitle>
 
       {!retrieveEnabled ? (
-        <p className="-mt-1 mb-1 flex gap-1.5 rounded-base border border-line-subtle px-3 py-2 text-2xs leading-relaxed text-fg-secondary">
+        <p className="flex gap-1.5 rounded-base border border-line-subtle px-3 py-2 text-dense leading-relaxed text-fg-secondary">
           <AlertTriangle
             size={12}
             className="mt-0.5 shrink-0"
@@ -157,18 +157,18 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
           </Row>
 
           {items.length === 0 ? (
-            <p className="px-2 py-1 text-2xs text-fg-tertiary">
+            <p className="px-2 py-1 text-dense text-fg-tertiary">
               没有生效中的记忆，所以没东西可挑。去上面的列表里加一条。
             </p>
           ) : (
-            <ul className="flex flex-col gap-1 py-1">
+            <ul className="flex flex-col gap-1.5 py-1">
               {items.map((entry) => (
                 <ScoreRow key={entry.id} entry={entry} />
               ))}
             </ul>
           )}
 
-          <p className="px-1 text-2xs leading-relaxed text-fg-tertiary">
+          <p className="px-1 text-dense leading-relaxed text-fg-tertiary">
             分数高的排在上面。条数没超过上限时内核其实是
             <strong className="text-fg-secondary">全量注入</strong>
             （顺序按最近更新在前）—— 那时分数只是算给你看，没参与挑选。
@@ -176,7 +176,7 @@ export function MemoryExplainPanel({ projectId }: { projectId: string }) {
         </>
       )}
 
-      <p className="pt-3 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="pt-3 text-dense leading-relaxed text-fg-tertiary">
         分数由这几项加起来：范围 + 类型 + 重要度 + 可信度 + 新鲜度 + 与本次提问的重合度。
         具体权重只在内核（electron/core/memory-explain.cjs），这里不复制一份数字 ——
         复制了就会和内核算出来的分对不上。
@@ -198,7 +198,7 @@ function ScoreRow({ entry }: { entry: MemoryScoreEntry }) {
           分数 {entry.score.toFixed(1)}
         </span>
       </div>
-      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-fg-tertiary">
+      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-dense text-fg-tertiary">
         <span>{tag}</span>
         <span>{entry.reason || '内核没给理由'}</span>
       </p>

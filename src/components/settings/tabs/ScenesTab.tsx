@@ -44,7 +44,7 @@ export function ScenesTab() {
 
   if (!config) {
     return (
-      <p className="py-3 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="py-3 text-dense leading-relaxed text-fg-tertiary">
         当前运行在浏览器预览环境；场景模型与路由配置请在桌面版中使用。
       </p>
     )
@@ -73,7 +73,7 @@ export function ScenesTab() {
                 <Icon size={14} className="mt-0.5 shrink-0 text-fg-tertiary" />
                 <div className="min-w-0 flex-1">
                   <p className="text-dense text-fg-primary">{scene.label}</p>
-                  <p className="mt-0.5 text-2xs leading-relaxed text-fg-tertiary">{scene.hint}</p>
+                  <p className="mt-0.5 text-dense leading-relaxed text-fg-tertiary">{scene.hint}</p>
                 </div>
               </div>
 
@@ -105,7 +105,7 @@ export function ScenesTab() {
                 ))}
               </select>
 
-              <p className="mt-1.5 text-2xs text-fg-tertiary">
+              <p className="mt-1.5 text-dense text-fg-tertiary">
                 {scene.requirement ? (
                   <span style={{ color: colorOf('warning') }}>⚠ {scene.requirement}</span>
                 ) : chosen.providerId && chosen.model ? (

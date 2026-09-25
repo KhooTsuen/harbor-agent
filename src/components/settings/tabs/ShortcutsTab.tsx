@@ -54,7 +54,7 @@ export function ShortcutsTab() {
   return (
     <>
       <SectionTitle>快捷键</SectionTitle>
-      <p className="mb-2 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="mb-2 text-dense leading-relaxed text-fg-tertiary">
         点击任意键位即可录制新的组合键；按 Esc 取消。冲突键位会被拒绝。
       </p>
       {/* 每组一条小标签，每个键位各自一块板 —— 和「每个子选项一块」同一套语言 */}

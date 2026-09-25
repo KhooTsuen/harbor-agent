@@ -27,7 +27,7 @@ function StatCard({ label, value, hint }: { label: string; value: number; hint?:
     <div className="rounded-base border border-line-hairline bg-bg-raised/30 px-3 py-2.5">
       <div className="text-2xs text-fg-tertiary">{label}</div>
       <div className="mt-0.5 font-mono text-lg leading-tight text-fg-primary">{n(value)}</div>
-      {hint ? <div className="mt-0.5 text-2xs text-fg-tertiary">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-dense text-fg-tertiary">{hint}</div> : null}
     </div>
   )
 }
@@ -67,7 +67,7 @@ export function UsageTab() {
     void refresh()
   }, [])
 
-  if (loading) return <p className="py-4 text-2xs text-fg-tertiary">读取中…</p>
+  if (loading) return <p className="py-4 text-dense text-fg-tertiary">读取中…</p>
   if (!data) return null
 
   const maxDay = Math.max(...data.days.map((d) => d.total), 0)

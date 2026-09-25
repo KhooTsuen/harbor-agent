@@ -99,7 +99,7 @@ export function ApprovalHistory({
     <>
       <SectionTitle hint="最近确认过什么 · 哪些权限还能收回">审批记录</SectionTitle>
       {rows.length === 0 ? (
-        <p className="py-2 text-2xs text-fg-tertiary">还没有需要你确认的操作。</p>
+        <p className="py-2 text-dense text-fg-tertiary">还没有需要你确认的操作。</p>
       ) : (
         <div className="flex flex-col gap-0.5 py-1">
           {rows.map((entry) => (

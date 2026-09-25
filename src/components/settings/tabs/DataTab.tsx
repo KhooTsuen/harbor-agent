@@ -118,7 +118,8 @@ export function DataTab() {
   }
 
   return (
-    <div className="py-1">
+    /* gap-2 = 和 .settings-body 同一个节奏；包层不带 gap 的话卡片会贴成一片 */
+    <div className="flex flex-col gap-2 py-1">
       {/*
        * 统一的「导出全部 / 删除全部」放在最前面（AG 改进清单那一项）。
        * 下面的单项导出/导入、清空对话、备份都留着 —— 它们做的是更窄的事
@@ -214,7 +215,7 @@ export function DataTab() {
         </Button>
       </Row>
 
-      <p className="mt-3 border-t border-line-hairline pt-3 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="mt-3 border-t border-line-hairline pt-3 text-dense leading-relaxed text-fg-tertiary">
         数据都存在软件目录的 <span className="font-mono">data/</span> 下：
         <span className="font-mono">sessions/</span>（对话）、
         <span className="font-mono">config.json</span>

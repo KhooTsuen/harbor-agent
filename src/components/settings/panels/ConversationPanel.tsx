@@ -26,7 +26,7 @@ export function ConversationPanel(): React.ReactElement {
 
       <div>
         <SectionTitle>项目上下文</SectionTitle>
-        <p className="py-1 text-2xs leading-relaxed text-fg-tertiary">
+        <p className="py-1 text-dense leading-relaxed text-fg-tertiary">
           下面两项是**覆盖**：只在当前项目 / 当前这条对话里生效，不动上面的全局默认。
         </p>
         <ProjectContextTab />

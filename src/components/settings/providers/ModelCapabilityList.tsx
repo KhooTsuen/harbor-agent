@@ -54,10 +54,10 @@ export function ModelCapabilityList({ models }: ModelCapabilityListProps) {
           <ModelRow key={model} model={model} info={matrix.models[model]} labels={matrix.labels} />
         ))}
       </div>
-      <p className="mt-1.5 text-2xs leading-relaxed text-fg-tertiary/80" title={matrix.note}>
+      <p className="mt-1.5 text-dense leading-relaxed text-fg-tertiary/80" title={matrix.note}>
         {matrix.note}
       </p>
-      <p className="text-2xs leading-relaxed text-fg-tertiary/80">
+      <p className="text-dense leading-relaxed text-fg-tertiary/80">
         预设不对？在 data/config.json 里给这个模型加 modelCapabilities 就能覆盖（手填优先于预设）
       </p>
     </div>

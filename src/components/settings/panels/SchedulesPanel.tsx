@@ -138,10 +138,10 @@ export function SchedulesPanel() {
 
   if (!ready) {
     return (
-      <div className="py-1">
+      <div className="flex flex-col gap-2 py-1">
         <SectionTitle hint="关掉应用就不跑了">定时任务</SectionTitle>
         <ScheduleTruths />
-        <p className="py-2 text-2xs leading-relaxed text-fg-tertiary">
+        <p className="py-2 text-dense leading-relaxed text-fg-tertiary">
           这里读不到内核（浏览器预览没有主进程），定时任务在这个环境里用不了 ——
           打开桌面版才有这一页。别的设置不受影响。
         </p>
@@ -152,14 +152,14 @@ export function SchedulesPanel() {
   const items = snapshot?.items ?? []
 
   return (
-    <div className="py-1">
+    <div className="flex flex-col gap-2 py-1">
       <SectionTitle hint="关掉应用就不跑了">定时任务</SectionTitle>
       <ScheduleTruths />
 
       {loading ? (
-        <p className="py-3 text-2xs text-fg-tertiary">读取中…</p>
+        <p className="py-3 text-dense text-fg-tertiary">读取中…</p>
       ) : snapshot === null ? (
-        <p className="py-3 text-2xs leading-relaxed text-fg-tertiary">
+        <p className="py-3 text-dense leading-relaxed text-fg-tertiary">
           列表读不出来（内核没返回）。不影响别的功能，可以点「刷新」再试一次。
         </p>
       ) : items.length === 0 ? (
@@ -234,7 +234,7 @@ function ScheduleTruths() {
       {TRUTHS.map((text) => (
         <li
           key={text}
-          className="flex items-start gap-1.5 text-2xs leading-relaxed text-fg-secondary"
+          className="flex items-start gap-1.5 text-dense leading-relaxed text-fg-secondary"
         >
           <CalendarClock size={11} className="mt-0.5 shrink-0 text-fg-tertiary" />
           <span>{text}</span>

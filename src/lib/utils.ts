@@ -1,9 +1,19 @@
 import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { extendTailwindMerge } from 'tailwind-merge'
+
+/*
+ * tailwind-merge 不认识 tailwind.config.js 里自定义的字号名（meta / body / title / dense），
+ * 会把 `text-dense` 当成一种「颜色类」—— 后面跟着 `text-fg-primary` 时被覆盖掉。
+ * 症状是「写了字号却不生效」：元素吃的是继承值（真机上量过：Row 标签写着 text-dense，
+ * 实际渲染 15px 继承值）。名字必须和 tailwind.config.js 的 fontSize 保持一致。
+ */
+const mergeClassNames = extendTailwindMerge({
+  extend: { classGroups: { 'font-size': [{ text: ['meta', 'body', 'title', 'dense'] }] } },
+})
 
 /** 合并 className：clsx 处理条件，tailwind-merge 解决冲突 */
 export function cn(...inputs: ClassValue[]): string {
-  return twMerge(clsx(inputs))
+  return mergeClassNames(clsx(inputs))
 }
 
 /** 唯一 id（不依赖 crypto，环境里没有也能跑） */

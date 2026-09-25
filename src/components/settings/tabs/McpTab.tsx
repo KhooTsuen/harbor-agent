@@ -126,7 +126,7 @@ export function McpTab() {
   }
 
   return (
-    <div className="py-1">
+    <div className="flex flex-col gap-2 py-1">
       <SectionTitle>MCP 服务器</SectionTitle>
 
       <p className="py-2 text-dense leading-relaxed text-fg-secondary">
@@ -177,7 +177,7 @@ export function McpTab() {
                       {server.command} {server.args.join(' ')}
                     </p>
                     {st?.error ? (
-                      <p className="mt-1 break-words text-2xs" style={{ color: 'var(--error)' }}>
+                      <p className="mt-1 break-words text-dense" style={{ color: 'var(--error)' }}>
                         {st.error}
                       </p>
                     ) : null}
@@ -229,11 +229,11 @@ export function McpTab() {
               <li key={preset.id} className="acrylic-card flex items-start gap-2 p-2">
                 <div className="min-w-0 flex-1">
                   <span className="text-dense text-fg-primary">{preset.name}</span>
-                  <p className="mt-0.5 text-2xs text-fg-secondary">{preset.description}</p>
+                  <p className="mt-0.5 text-dense text-fg-secondary">{preset.description}</p>
                   <p className="mt-1 truncate font-mono text-2xs text-fg-tertiary">
                     {preset.command}
                   </p>
-                  <p className="mt-0.5 text-2xs text-fg-tertiary">
+                  <p className="mt-0.5 text-dense text-fg-tertiary">
                     {preset.needs === 'bundled-node'
                       ? '用应用自带的 Node 跑，不必先装 Node'
                       : '需要系统装了 Node（走 npx）'}

@@ -127,7 +127,7 @@ export function DataPortPanel() {
         hint="会话 / 任务台账 / 记忆 / 配置 / 技能打包成一个 JSON。密钥不在里面 —— 这条链路上读不到它"
       >
         <div className="flex items-center gap-2">
-          <span className="text-2xs text-fg-tertiary">{summary}</span>
+          <span className="text-dense text-fg-tertiary">{summary}</span>
           <Button
             variant="secondary"
             size="sm"
@@ -139,14 +139,14 @@ export function DataPortPanel() {
           </Button>
         </div>
       </Row>
-      <p className="-mt-1 px-1 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="px-1 text-dense leading-relaxed text-fg-tertiary">
         <ShieldCheck size={11} className="mr-1 inline" />
         导出内容会先按脱敏规则过一遍（密钥字段、`sk-` 这类前缀一律打码），
         落盘前再复检一次；还有没打码的疑似密钥就不落盘。
       </p>
 
       <SectionTitle>删除（分档，删前必先自动备份）</SectionTitle>
-      <p className="-mt-1 mb-1 flex gap-1.5 rounded-base border border-[color-mix(in_srgb,var(--error)_35%,transparent)] px-3 py-2 text-2xs leading-relaxed text-fg-secondary">
+      <p className="flex gap-1.5 rounded-base border border-[color-mix(in_srgb,var(--error)_35%,transparent)] px-3 py-2 text-dense leading-relaxed text-fg-secondary">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         <span>
           每档点下去都会先自动备份一份才开始删；备份不成功就不删。 但自动备份只含{' '}
@@ -224,7 +224,7 @@ export function DataPortPanel() {
           </Button>
         )}
       </Row>
-      <p className="-mt-1 px-1 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="px-1 text-dense leading-relaxed text-fg-tertiary">
         删除范围：{WIPE_TIERS.map((tier) => tier.label).join('、')}。
         密钥库（credentials.json）不在删除范围内 —— API Key 不会被这套操作带走。
       </p>

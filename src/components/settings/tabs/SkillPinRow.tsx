@@ -63,7 +63,9 @@ export function SkillPinRow({ pinned, onPick }: { pinned: string; onPick: (id: s
           ))}
         </select>
 
-        {pinned ? <p className="text-2xs leading-relaxed text-fg-secondary">{grantText}</p> : null}
+        {pinned ? (
+          <p className="text-dense leading-relaxed text-fg-secondary">{grantText}</p>
+        ) : null}
 
         {gone ? (
           <p className="text-2xs leading-relaxed text-fg-tertiary">
