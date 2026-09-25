@@ -15,25 +15,14 @@ export const BOOT_TIMING = {
 } as const
 
 /*
- * 就绪驱动的收尾（README roadmap 那条：「把启动页的时长改成跟着真的就绪走」）。
+ * 整段完整播放，不再按「就绪」提前收尾（2026-09-26 按用户要求改回）。
  *
- * 实测后端 0.25 秒级就绪，而整段动画是 10 秒 —— 于是每次启动都白等近 10 秒。
- * 现在：就绪了就早点收；没就绪就照旧把整段播完（还不行就停在最后一帧等）。
- *
- *   · graceMs —— 最少站住这么久。低于这个数，画面刚出来就走，看着像闪屏
- *   · tailMs   —— 就绪之后再停一拍，然后淡出（淡出占最后 600ms，见 fadeStart→total）
+ * v1.19 时曾改成就绪驱动的早收尾 —— 后端 0.25 秒级就绪，于是动画被砍到
+ * ~2 秒就淡出，字标重建（5.6s 起）那一整段永远播不到；用户看到的就是
+ * 「启动动画被跳过了」。现在整段 10 秒完整播放：
+ *   · 想快：播放中点击任意处跳过（BootSequence 的 onMouseDown → useBootGate.skipBoot）
+ *   · 不想看：外观页关掉「启动动画」——启动层一帧都不渲染（App 层判定）
  */
-export const BOOT_EXIT = { graceMs: 1500, tailMs: 1200 } as const
-
-/**
- * 这一趟什么时候收尾。
- *
- * @param readyAtMs 就绪发生在启动后的第几毫秒；还没就绪传 null
- */
-export function bootExitAt(readyAtMs: number | null): number {
-  if (readyAtMs === null || !Number.isFinite(readyAtMs)) return BOOT_TIMING.total
-  return Math.min(BOOT_TIMING.total, Math.max(BOOT_EXIT.graceMs, readyAtMs + BOOT_EXIT.tailMs))
-}
 
 /*
  * 字标：`HARBOR` 的灰度点阵（489 列 × 43 行）。

@@ -23,10 +23,11 @@ let root: Root
 let gate: ReturnType<typeof useBootGate>
 
 let ready = true
+let enabled = true
 
 /** 渲染成 "booting:mainMounted:skipping"，读字符串比逐个对对象属性可靠 */
 function Probe(): ReactElement {
-  const current = useBootGate(ready)
+  const current = useBootGate(ready, enabled)
   gate = current
   return (
     <span data-testid="gate">{`${current.booting}:${current.mainMounted}:${current.skipping}`}</span>
@@ -40,6 +41,7 @@ function state(): string {
 beforeEach(() => {
   vi.useFakeTimers()
   ready = true
+  enabled = true
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -101,5 +103,19 @@ describe('useBootGate', () => {
     /* 正常走完（没点跳过）也应该能结束 */
     act(() => gate.finishBoot())
     expect(state()).toBe('false:true:false')
+  })
+
+  it('★ 关掉启动动画：主界面直接上，启动层一帧都不渲染', () => {
+    enabled = false
+    act(() => root.render(<Probe />))
+    expect(state()).toBe('false:true:false')
+  })
+
+  it('关掉后再点跳过也不受影响（没有残留的启动层、不排定时器）', () => {
+    enabled = false
+    act(() => root.render(<Probe />))
+    act(() => gate.skipBoot())
+    expect(state()).toBe('false:true:false')
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

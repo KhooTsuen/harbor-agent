@@ -24,6 +24,8 @@ export const DEFAULT_SETTINGS: Settings = {
   /* 玻璃拟态默认关：实测参考实现没有毛玻璃，想看得自己开 */
   glassmorphism: false,
   animations: true,
+  /* 启动动画默认开（完整启动页）；关掉后跳过启动页直接进主界面 */
+  bootAnimation: true,
   asciiQuality: 'high',
   asciiReducedMotion: false,
   sidebarWidth: LAYOUT.sidebar.default,
@@ -107,6 +109,7 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     greenRuns: Math.max(0, Math.floor(Number(s.greenRuns) || 0)),
     glassmorphism: s.glassmorphism === true,
     animations: s.animations !== false,
+    bootAnimation: s.bootAnimation !== false,
     asciiQuality:
       s.asciiQuality === 'medium' || s.asciiQuality === 'low' || s.asciiQuality === 'static'
         ? s.asciiQuality

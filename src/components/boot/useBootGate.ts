@@ -4,12 +4,22 @@ const EXIT_FADE_MS = 180
 
 type ExitMode = 'none' | 'natural' | 'skip'
 
-export function useBootGate(ready = true) {
-  const [mainMounted, setMainMounted] = useState(false)
-  const [booting, setBooting] = useState(true)
+export function useBootGate(ready = true, enabled = true) {
+  const [mainMounted, setMainMounted] = useState(!enabled)
+  const [booting, setBooting] = useState(enabled)
   const [skipping, setSkipping] = useState(false)
   const [exitMode, setExitMode] = useState<ExitMode>('none')
   const exitRequestedRef = useRef(false)
+
+  /*
+   * 关掉启动动画（外观页的开关）：不等就绪、启动层一帧都不渲染 ——
+   * 主界面直接上。首帧由 useState 的初始值兑住，这里管的是中途改开关。
+   */
+  useEffect(() => {
+    if (enabled) return
+    setMainMounted(true)
+    setBooting(false)
+  }, [enabled])
 
   const prepareMain = useCallback(() => {
     if (ready) setMainMounted(true)
@@ -28,7 +38,7 @@ export function useBootGate(ready = true) {
   }, [])
 
   useEffect(() => {
-    if (!ready || exitMode === 'none') return
+    if (!enabled || !ready || exitMode === 'none') return
     setMainMounted(true)
 
     if (exitMode === 'natural') {

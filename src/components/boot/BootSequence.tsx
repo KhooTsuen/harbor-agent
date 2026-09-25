@@ -1,14 +1,7 @@
 import { BRAND_NAME } from '@/constants'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import sceneData from '@/assets/boot-scene/scene.b64?raw'
-import {
-  BOOT_TIMING,
-  bootExitAt,
-  glitchLine,
-  progressBar,
-  progressValue,
-  reconstructLogo,
-} from './bootFrames'
+import { BOOT_TIMING, glitchLine, progressBar, progressValue, reconstructLogo } from './bootFrames'
 import { loadBootScene, paintBootScene, sceneStride, type BootScene } from './bootScene'
 import { createOceanAnimator } from './oceanAnimator'
 import { useSettingsStore } from '@/stores/useSettingsStore'
@@ -24,19 +17,17 @@ interface BootSequenceProps {
 
 const FRAME_INTERVAL = 1000 / 20
 const SKIP_FADE_MS = 180
-/* 场景自上而下扫出的时长（**上限** —— 收尾早了会跟着缩短，见下） */
+/* 场景自上而下扫出的时长 */
 const REVEAL_MS = 2400
 
 export function BootSequence({ ready, skipping, onSkip, onPrepare, onDone }: BootSequenceProps) {
   const [elapsed, setElapsed] = useState(0)
   /*
-   * 这一趟什么时候收尾 —— 由「真的就绪」决定（见 bootFrames 的 BOOT_EXIT）。
+   * 整段动画完整播完（约 10 秒）才收尾 —— 2026-09-26 起不再按就绪提前收。
+   * 想快就点任意处跳过；不想看就在外观页关掉「启动动画」。
    * tick 在 rAF 闭包里跑，直接读 props 会拿到旧值，所以用 ref 中转。
    */
-  const [exitAt, setExitAt] = useState<number>(BOOT_TIMING.total)
   const readyRef = useRef(ready)
-  const readyAtRef = useRef<number | null>(null)
-  const exitAtRef = useRef<number>(BOOT_TIMING.total)
   const [scene, setScene] = useState<BootScene | null>(null)
   const settings = useSettingsStore((state) => state.settings)
   const [systemReducedMotion, setSystemReducedMotion] = useState(false)
@@ -68,21 +59,14 @@ export function BootSequence({ ready, skipping, onSkip, onPrepare, onDone }: Boo
     let lastPaint = 0
 
     const tick = (now: number): void => {
-      /* 就绪的那一刻记下来，按它算这一趟什么时候收尾 */
-      if (readyRef.current && readyAtRef.current === null) {
-        readyAtRef.current = now - startedAt
-        exitAtRef.current = bootExitAt(readyAtRef.current)
-        setExitAt(exitAtRef.current)
-      }
-      const end = exitAtRef.current
-      const nextElapsed = Math.min(now - startedAt, end)
-      if (nextElapsed - lastPaint >= FRAME_INTERVAL || nextElapsed === end) {
+      const nextElapsed = Math.min(now - startedAt, BOOT_TIMING.total)
+      if (nextElapsed - lastPaint >= FRAME_INTERVAL || nextElapsed === BOOT_TIMING.total) {
         setElapsed(nextElapsed)
         lastPaint = nextElapsed
       }
       /* 主界面越早挂越好：它要在淡出之前画好。就绪了就直接挂，不必干等到 9 秒 */
       if (readyRef.current || nextElapsed >= BOOT_TIMING.prepareMain) prepareOnce()
-      if (nextElapsed >= end) {
+      if (nextElapsed >= BOOT_TIMING.total) {
         finishOnce()
         return
       }
@@ -172,12 +156,10 @@ export function BootSequence({ ready, skipping, onSkip, onPrepare, onDone }: Boo
   const logoProgress =
     (elapsed - BOOT_TIMING.logoStart) / (BOOT_TIMING.logoComplete - BOOT_TIMING.logoStart)
   const logo = reconstructLogo(logoProgress, Math.floor(elapsed / 120))
-  /* 淡出占收尾前的最后 600ms（和原来 9.4s→10s 那段一样长）—— 收尾提前，它就跟着提前 */
+  /* 淡出占最后 600ms（9.4s → 10s）—— 动画整段播完再走 */
   const fadeMs = BOOT_TIMING.total - BOOT_TIMING.fadeStart
-  const fadeFrom = exitAt - fadeMs
-  const fadeOpacity = elapsed >= fadeFrom ? 1 - (elapsed - fadeFrom) / fadeMs : 1
-  /* 扫出跟着收尾缩短，让「扫完」刚好接上「淡出」—— 别把没扫完的画面淡掉 */
-  const revealMs = Math.min(REVEAL_MS, Math.max(400, fadeFrom))
+  const fadeOpacity =
+    elapsed >= BOOT_TIMING.fadeStart ? 1 - (elapsed - BOOT_TIMING.fadeStart) / fadeMs : 1
 
   return (
     <div
@@ -195,7 +177,7 @@ export function BootSequence({ ready, skipping, onSkip, onPrepare, onDone }: Boo
       <div
         className="harbor-boot-reveal absolute inset-0"
         style={{
-          animationDuration: `${revealMs}ms`,
+          animationDuration: `${REVEAL_MS}ms`,
           animationPlayState: scene ? 'running' : 'paused',
         }}
       >

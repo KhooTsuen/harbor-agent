@@ -92,6 +92,17 @@ export function AppearanceTab() {
       <SectionTitle>开屏</SectionTitle>
 
       <Row
+        label="启动动画"
+        hint="完整的启动页（约 10 秒）。播放中点任意处可跳过；关掉后直接进主界面"
+      >
+        <Switch
+          checked={settings.bootAnimation}
+          onChange={(v) => updateSettings({ bootAnimation: v })}
+          label="启动动画"
+        />
+      </Row>
+
+      <Row
         label="欢迎语"
         hint="开屏的一句性格文案（可随机，可关）。工作区状态、任务和按钮始终显示，不受它影响"
       >

@@ -28,8 +28,11 @@ import { useApplyAppearance } from '@/hooks/useApplyAppearance'
 
 export default function App() {
   const bootstrapReady = useAppBootstrap()
-  const { mainMounted, booting, skipping, prepareMain, finishBoot, skipBoot } =
-    useBootGate(bootstrapReady)
+  const bootAnimation = useSettingsStore((s) => s.settings.bootAnimation)
+  const { mainMounted, booting, skipping, prepareMain, finishBoot, skipBoot } = useBootGate(
+    bootstrapReady,
+    bootAnimation,
+  )
 
   return (
     <>
