@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runElectronTurn } from '../turns'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { useUIStore } from '@/stores/useUIStore'
 import type { Message, Thread } from '@/types'
 import type { StoredMessage } from '@/types/models-extra'
 
@@ -116,7 +117,7 @@ describe('重新生成', () => {
 })
 
 describe('切到没回答过的那一版', () => {
-  it('★ 真跑那一版时也要把旧回答带上（它是另一版的，仍要能切回去）', async () => {
+  it('★ 切版本本身不跑；点「补一版回答」才跑，旧回答要跟着这一轮走', async () => {
     seed([
       msg({
         id: 'u1',
@@ -136,7 +137,15 @@ describe('切到没回答过的那一版', () => {
     useThreadStore.getState().activateUserVersion('t1', 'u1', 0)
     /* 切版本要"写盘 + 重读"，是异步的 —— 断言前让微任务跑完 */
     await new Promise((r) => setTimeout(r, 0))
+    /* ★ 修之前这里直接 rerunFrom（calls=1）；现在只弹提示，点不点由用户决定 */
+    expect(calls().length).toBe(0)
+    const toast = useUIStore.getState().toasts[0]
+    expect(toast?.title).toBe('这一版还没有回答过')
+
+    /* 用户明确点了才真跑 —— 而且旧回答（另一版的）要交给这一轮带走 */
+    toast?.action?.onClick()
     expect(calls().length).toBe(1)
+    expect(optsArg()?.reason).toBe('补一版回答')
     expect(seedArg().map((r) => r.content)).toEqual(['答第二版'])
   })
 

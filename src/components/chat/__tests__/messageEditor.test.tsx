@@ -15,6 +15,7 @@ vi.mock('@/stores/thread/mockTurn', () => ({
   runMockTurn: vi.fn(async () => {}),
 }))
 import { useAppStore } from '@/stores/useAppStore'
+import { useUIStore } from '@/stores/useUIStore'
 import type { Message } from '@/types'
 
 /* ══════════════════════════════════════════════════════════════
@@ -80,6 +81,7 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  useUIStore.setState({ toasts: [] })
   seed([userMessage()])
 })
 
@@ -257,7 +259,7 @@ describe('编辑框的宽度', () => {
   })
 })
 
-it('★ 切版本会重新回答那一版（不是只换显示的文字）', () => {
+it('★ 切版本只换显示；点「补一版回答」才真的重答那一版', () => {
   seed([
     userMessage({
       content: '第二版的问题',
@@ -270,6 +272,14 @@ it('★ 切版本会重新回答那一版（不是只换显示的文字）', () 
   act(() => {
     ;(container.querySelector('button[aria-label="上一版"]') as HTMLButtonElement)?.click()
   })
-  /* ★ 真的重跑了，而且用的是**那一版**的文字 */
+  /* ★ 只换文字，不跑（以前这里直接重跑 —— 用户报的「切个版本又自己输出一轮」） */
+  expect(runMockTurn).not.toHaveBeenCalled()
+  expect(messages()[0].content).toBe('第一版的问题')
+  /* 没回答过这一版 → 弹提示；用户点了才真跑，而且用的是**那一版**的文字 */
+  const toast = useUIStore.getState().toasts[0]
+  expect(toast?.title).toBe('这一版还没有回答过')
+  act(() => {
+    toast?.action?.onClick()
+  })
   expect(runMockTurn).toHaveBeenCalledWith('t1', '第一版的问题', expect.any(Function))
 })

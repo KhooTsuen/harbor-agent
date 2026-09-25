@@ -55,6 +55,13 @@ interface ThreadState {
   editAndRerun: (threadId: string, messageId: string, text: string) => void
   /** 切到某一版重新回答（界面上 ‹ n / N ›） */
   activateUserVersion: (threadId: string, messageId: string, index: number) => void
+  /** 补一版回答：给没回答过的那一版提问跑一轮（提示按钮调的，点了才跑） */
+  answerVersion: (
+    threadId: string,
+    text: string,
+    versions: string[] | undefined,
+    index: number,
+  ) => void
   /** 切到这条提问的第几条回答（回答下面的 ‹ n / N ›）—— 不重跑 */
   activateAnswer: (threadId: string, messageId: string, index: number) => void
   continueThread: () => void
@@ -182,7 +189,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       ...(images.length > 0 ? { images } : {}),
     }
     useAppStore.getState().addMessage(threadId, userMessage)
-    /* 这条接在哪条提问的哪一版后面（读会话时按当前那一版筛："树"那一层）。
+    /* 这条接在哪条提问的哪一版后面（读会话时按当前那一版筛"树"那一层）。
        ★ 要在 addMessage 之前取 —— 加进去以后「最近一条提问」就是它自己了。 */
     const parent = questionTargetOf(thread?.messages ?? [])
     useAppStore.getState().persistMessage(threadId, {
@@ -217,9 +224,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const current = getActiveThread(useAppStore.getState())
     if (!current) return
     /*
-     * AG-011：必须给**即时**反馈。
-     * 暂停是「做完手上这步再停」—— 那一轮可能是模型流式 + 一条长命令，
-     * 几十秒都正常。不给提示的话用户会以为按钮坏了（真机测过：30 秒没动静）。
+     * AG-011：必须给**即时**反馈。暂停是「做完手上这步再停」—— 那一轮可能
+     * 模型流式 + 一条长命令，几十秒都正常；不给提示会以为按钮坏了（实测 30 秒没动静）。
      */
     useUIStore.getState().showToast('info', '正在暂停', '做完手上这一步就会停下来')
     pauseActiveRequest(current.id)
@@ -227,12 +233,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
   resumeTask: (taskId: string) => {
     /*
-     * AG-011：把一条暂停的任务接着做。
-     *
-     * 走的是普通发送链路（就当成用户说了一句话）—— 这样历史、事件、
-     * 生命周期全部照旧，不用另造一套。区别只在多带一个 resumeTaskId，
-     * 主进程看到它就**复用原任务**（steps/plan/changedFiles 都还在），
-     * 而不是新建一条从零开始的任务。
+     * AG-011：把一条暂停的任务接着做。走普通发送链路（当成用户说了一句话）——
+     * 历史、事件、生命周期全照旧；区别只在多带 resumeTaskId，主进程看到它就
+     * **复用原任务**（steps/plan/changedFiles 都在），而不是新建。
      */
     if (!taskId) return
     get().sendMessage('继续刚才的任务，从上次停下的地方接着做，别重复已经完成的步骤。', taskId)

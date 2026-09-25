@@ -6,6 +6,12 @@ import { getActiveThread, useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { useRealBackend } from '@/lib/backend'
 import {
+  answerVersionRerun,
+  findQuestion,
+  offerAnswerVersion,
+  persistVersion,
+} from './versionLookup'
+import {
   answersOfVersion,
   allAnswers,
   answerPatch,
@@ -17,23 +23,25 @@ import {
 /* ══════════════════════════════════════════════════════════════
    用户消息的「多版本」与从某条消息重跑
 
-   为什么要有这个东西：编辑一条已经发出去的消息时，以前的做法是
-   **改文字 + 再发一条新消息**（`sendMessage` 一定会 `addMessage`）——
-   结果是会话里出现**两条一模一样的提问**（用户报的正是这个）。
-   另一处同源的问题：`regenerateMessage` 删掉助手那条之后同样调 `sendMessage`，
-   于是用户那句也被复制了一份。
+   历史：编辑已发出的消息，以前是「改文字 + 再发一条」（sendMessage 一定 addMessage）
+   → 会话里出现两条一模一样的提问；regenerateMessage 同源（复制用户那句）。
+   根因：sendMessage 是「用户又说了句话」，不是「用现有历史重跑」。这里改直调
+   runElectronTurn（它不看传入文本，历史从 store 读），一条消息都不新增。
 
-   根因是同一个：**`sendMessage` 是「用户又说了句话」，不是「用现有历史重跑」**。
-   这里改成后者 —— 直接调 `runElectronTurn`（它本来就不看传进去的文本，
-   历史是从 store 里读的），一个消息都不会新增。
-
-   顺带把「改过几版」记在同一条消息上（`versions` / `versionIndex`）：
-   编辑一次 = 多一个版本，界面上是 `‹ 2 / 2 ›` 切换，而不是多出一条消息。
-   切版本时重新回答那一版 —— 否则回答还是按旧版本写的，就成了答非所问。
+   「改过几版」记在同一条消息上（versions/versionIndex）：编辑一次 = 多一版，
+   界面是 `‹ 2 / 2 ›` 切换。★ 切版本本身**不重跑**；没回答过的那一版只弹提示，
+   点「补一版回答」才跑（细节见 versionLookup.ts）。
    ══════════════════════════════════════════════════════════════ */
 
 type Getter = () => {
   sendingThreads: string[]
+  /** 提示里的「补一版回答」按钮会回调它（定义在本文件的返回对象里） */
+  answerVersion: (
+    threadId: string,
+    text: string,
+    versions: string[] | undefined,
+    index: number,
+  ) => void
 }
 
 /** 记一版新文字：第一次编辑时把原文也补进版本表，之后每次往后追 */
@@ -53,29 +61,6 @@ export function activateVersion(message: Message, index: number): Partial<Messag
 }
 
 export function makeVersionActions(set: TurnSetter, get: Getter) {
-  /**
-   * 把「这条提问现在显示第几版」写进磁盘。
-   *
-   * 必须写 —— 否则重开会话又回到最后一版（用户切到第 1 版、重开变回第 2 版）。
-   * 版本表一起带上，重开还能继续切。
-   *
-   * ★ **整条替换**（读侧 collapseByKey 用后写的顶掉前一条），所以每个要留存的
-   *   字段都得带上 —— 漏一个就被抹掉。`answerIndexByVersion` 同理。
-   */
-  function persistVersion(threadId: string, message: Message): void {
-    useAppStore.getState().persistMessage(threadId, {
-      role: 'user',
-      key: message.id,
-      content: message.content,
-      ts: message.timestamp,
-      ...(message.versions ? { versions: message.versions } : {}),
-      ...(message.versionIndex !== undefined ? { versionIndex: message.versionIndex } : {}),
-      ...(message.answerIndexByVersion
-        ? { answerIndexByVersion: message.answerIndexByVersion }
-        : {}),
-    } as never)
-  }
-
   /** 从某条消息往下重跑（先把它之后的消息丢掉），**不新增任何消息** */
   function rerunFrom(
     threadId: string,
@@ -117,6 +102,23 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     } else void runMockTurn(threadId, text, set)
   }
 
+  /**
+   * 「这一版还没有回答过」的提示 + 一键补答。
+   *
+   * ★ 这里**只是提示**：切版本 / 切会话只负责换显示，跑不跑由用户点
+   *   （真机日志：以前切版本会直接 rerunFrom，连点四次切换 = 四次 chat:send）。
+   *   提示本体在 `versionLookup.ts`；这里只把按钮接到本文件的 `answerVersion`。
+   */
+  function offerAnswer(
+    threadId: string,
+    text: string,
+    versions: string[] | undefined,
+    index: number,
+  ): void {
+    const onConfirm = () => get().answerVersion(threadId, text, versions, index)
+    offerAnswerVersion(onConfirm)
+  }
+
   return {
     /** 编辑并重新回答：同一条消息多加一版，然后按新内容重跑 */
     editAndRerun: (threadId: string, messageId: string, text: string) => {
@@ -132,22 +134,17 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     },
 
     /**
-     * 切到某一版提问（界面上 ‹ n / N ›）。
+     * 切到某一版提问（界面上 ‹ n / N ›）—— 只换显示，**不跑生成**。
      *
-     * ★ 做两件事，顺序很重要：
-     *   ① 把「选了哪一版」写进磁盘（同一 key 追加一条版本记录）
-     *   ② **重新从磁盘读一遍这个会话**
+     * ★ 顺序要紧：① 把「选了哪一版」写盘（同一 key 追加版本记录）
+     *   ② **重读这个会话**。为什么必须重读：编辑中间那条时，后面几轮（按旧内容
+     *   写的）被撤下界面但**还在磁盘上**（带"接在哪一版后面"的标记）；重读后内核
+     *   按选中版本筛，切回旧版本那几轮**自己就回来了**，不重读永远回不来。
+     *   先写盘、再重读、中间不碰内存 —— openFromDisk 的覆盖保护正好放行。
      *
-     * 为什么必须重读：编辑**中间**那条消息时，后面几轮（按旧内容写的）已经从界面上
-     * 撤掉了 —— 但它们**还在磁盘上**，带上"我接在哪一版后面"的标记。
-     * 重读之后内核按当前选中的那一版筛：切回旧版本，那几轮**自己就回来了**
-     * （用户说的"树"那一层）。不重读的话它们永远回不来（只能重开会话）。
-     *
-     * ★ 注意顺序：**先写盘、再重读**，中间不碰内存。`openFromDisk` 有个保护
-     *   ——「内存里还是调用前那个数组才允许覆盖」—— 我们没动内存，正好让它放行。
-     *
-     * ★ 那一版**回答过**就什么都不用做（重读之后它自己就在那儿了）；
-     *   只有从没回答过的那一版才真跑一轮（不然每切一次多一个回答，用户报的正是这个）。
+     * ★ 回答过的那一版：重读后它自己就在，什么都不用做。
+     * ★ 没回答过的：只弹提示（以前直接 rerunFrom，真机连点四次切换 = 四次
+     *   chat:send，用户点完 4 秒后又慌忙点「停止生成」）。点不点由用户决定。
      */
     activateUserVersion: (threadId: string, messageId: string, index: number) => {
       const app = useAppStore.getState()
@@ -177,19 +174,56 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
           )
           return
         }
-        rerunFrom(threadId, messageId, patch.content ?? '', index, '切提问版本')
+        /* 没回答过也不自动跑 —— 和真后端同一规矩：点提示里的按钮才跑 */
+        offerAnswer(threadId, patch.content ?? '', message.versions, index)
         return
       }
 
+      /*
+       * ★ 重读之后**不能按 id 找** —— 重读会给每条消息换一个新 uid
+       *   （`storedToUi` 里是 `uid('msg')`），老 id 一定找不到；找不到会被
+       *   当成「这一版没回答过」而误跑一轮（真机日志里就是这么连续跑起来的）。
+       *   按签名找回；找不回就什么都不做（宁可不动，也不能误跑）。
+       */
       void (async () => {
         await useAppStore.getState().openFromDisk(threadId)
         const fresh = useAppStore.getState().threads.find((t) => t.id === threadId)
-        const at = fresh?.messages.findIndex((m) => m.id === messageId) ?? -1
-        const answer = at >= 0 ? fresh?.messages[at + 1] : undefined
-        const records = answersOfVersion(answer ? allAnswers(answer) : [], index)
-        if (answer && records.length) return
-        rerunFrom(threadId, messageId, patch.content ?? '', index, '切提问版本')
+        if (!fresh) return
+        const at = fresh.messages.findIndex((m) => m.id === messageId)
+        const direct = at >= 0 ? fresh.messages[at] : undefined
+        const question =
+          direct ??
+          findQuestion(
+            fresh.messages,
+            patch.content ?? '',
+            message.versions,
+            index,
+            message.timestamp,
+          )
+        if (!question) return
+        const answer = fresh.messages[fresh.messages.indexOf(question) + 1]
+        const records =
+          answer && answer.role === 'assistant' ? answersOfVersion(allAnswers(answer), index) : []
+        if (records.length) return
+        offerAnswer(threadId, patch.content ?? '', question.versions, index)
       })()
+    },
+
+    /**
+     * 给某一版提问「补一版回答」—— 由提示里的按钮调用，**只有用户点了才跑**。
+     *
+     * ★ 具体执行在 `versionLookup.ts` 的 `answerVersionRerun`：重新按签名找一遍。
+     */
+    answerVersion: (
+      threadId: string,
+      text: string,
+      versions: string[] | undefined,
+      index: number,
+    ) => {
+      answerVersionRerun(threadId, text, versions, index, (questionId) =>
+        /* rerunFrom 里还有「正在生成」守卫：不会跟正在跑的这轮抢上下文 */
+        rerunFrom(threadId, questionId, text, undefined, '补一版回答'),
+      )
     },
 
     /** 切到这条提问的第几条回答（界面上回答下面的 ‹ n / N ›）—— 不重跑 */

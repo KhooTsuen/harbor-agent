@@ -29,6 +29,8 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
   const isError = Boolean(stored.error)
   return {
     id: uid('msg'),
+    /* 磁盘 key 原样带着走：写版本记录时要写回它（不能写重读后的新 uid） */
+    ...(typeof stored.key === 'string' && stored.key ? { diskKey: stored.key } : {}),
     threadId,
     role: stored.role === 'tool' ? 'system' : stored.role,
     content: stored.content,

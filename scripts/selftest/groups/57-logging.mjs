@@ -99,8 +99,8 @@ export async function run() {
   )
   const mvSrc = readFileSync(join(ROOT, 'src/stores/thread/messageVersions.ts'), 'utf8')
   check(
-    '编辑 / 重新生成 / 切版本各自标注',
-    ['编辑后重答', '重新生成', '切提问版本'].every((r) => mvSrc.includes(r)),
+    '编辑 / 重新生成 / 补一版回答各自标注（切版本本身不跑，没有「切提问版本」这一说）',
+    ['编辑后重答', '重新生成', '补一版回答'].every((r) => mvSrc.includes(r)),
   )
   const storeSrc = readFileSync(join(ROOT, 'src/stores/useThreadStore.ts'), 'utf8')
   check('点「继续」和用户发送分得开', storeSrc.includes("resumeTaskId ? '点继续' : '用户发送'"))

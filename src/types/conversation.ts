@@ -23,6 +23,15 @@ import type { StoredMessage, UsageBucket } from './models-extra'
 
 export interface Message {
   id: string
+  /**
+   * 这条消息在**磁盘上的 key**（重读时内核给的原样 id）。
+   *
+   * ★ 内存里的 `id` 每次打开会话都会被重新生成（`storedToUi` 里是 `uid('msg')`）；
+   *   写版本记录时必须写回磁盘 key，不然同一个提问会以新 key 再写一条 ——
+   *   重读后显示成两个提问副本、回答也对不上（真机验证逮到的）。
+   *   本轮新发的消息还没上过盘，没有这个字段，用 `id` 兑底。
+   */
+  diskKey?: string
   threadId: string
   role: MessageRole
   content: string
