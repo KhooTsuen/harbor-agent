@@ -166,19 +166,20 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
         ) : null}
       </span>
 
-      <span className="shrink-0 font-mono text-2xs text-fg-tertiary group-hover:hidden">
+      {/* 时间：悬停时也保持可见 —— 不许用悬停把信息换掉（2026-09-26 用户反馈） */}
+      <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
         {relativeTime(thread.updatedAt)}
       </span>
 
       {/*
-        悬停才出现的操作槽。
-        ⚠️ h-4 + items-center 不是装饰，是防「悬停行变高」的：里面的 IconButton
-        是 28px，比本行的文字行高（text-dense 14px × 1.43 ≈ 20px）高 —— 让它
-        照常参与布局，悬停时行会从 32px 涨到 40px（真机 212×32 → 212×40 量过），
-        鼠标扫过整片列表会一跳一跳。钉成 1rem 后它不再决定行高，
-        按钮多出来的高度上下对称溢出（行有 6px 内边距兜着，探针复核仍在行内）。
+        操作槽：位置与占地**恒定**（w-7 × h-4），悬停只做透明度渐显。
+        ⚠️ 两条红线，别再往回改：
+        · 不许挂 hidden / group-hover:flex —— 那会让「悬停换内容」：时间与模式
+          藏起来、按钮顶出来，鼠标扫过列表时整行右半边跳来跳去（用户报过两次）；
+        · 不许让它决定行高 —— 里面的 IconButton 是 28px，比文字行高（~20px）高，
+          钉 h-4 后多出来的高度上下对称溢出（行有 6px 内边距兜着，真机复核在行内）。
       */}
-      <div className="hidden h-4 shrink-0 items-center group-hover:flex group-focus-within:flex">
+      <div className="flex h-4 w-7 shrink-0 items-center justify-center">
         <Popover
           open={menuOpen}
           onOpenChange={setMenuOpen}
@@ -187,6 +188,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
           trigger={({ toggle }) => (
             <span
               role="presentation"
+              className="opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100"
               onClick={(e) => {
                 e.stopPropagation()
                 toggle()
@@ -274,7 +276,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
       </div>
 
       <Tooltip content={mode ? `模式：${mode.label}` : '模式'} side="right">
-        <span className="hidden shrink-0 text-2xs text-fg-tertiary group-hover:hidden lg:inline">
+        <span className="hidden shrink-0 text-2xs text-fg-tertiary lg:inline">
           {mode?.label.slice(0, 1)}
         </span>
       </Tooltip>
