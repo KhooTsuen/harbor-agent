@@ -159,11 +159,26 @@ export function ResizeHandle({
         vertical ? 'h-px w-full cursor-row-resize' : 'w-px cursor-col-resize',
       )}
     >
-      {/* 视觉上只有 1px，但热区有 7px，好点 */}
+      {/*
+        视觉上只有 1px，热区是**不对称**的：左侧 1px、右侧 12px（DEF-UI-04）。
+
+        为什么不对称：本应用所有滚动条都长在容器的**右缘**——无论左栏还是右栏手柄，
+        它的左边都紧贴着某个容器的右缘（聊天区 / 侧栏的滚动条都在那儿），
+        右边则是容器的左缘（没有滚动条）。热区若向两侧各扩 12px，会把整条滚动条盖住：
+        真机实测过——滚动条 10px 被 25px 热区全覆盖，光标变 col-resize，
+        想拖滚动条结果拖的是面板宽度。
+
+        为什么带 z-10：面板内容里有 relative 元素，默认会画在 z-auto 的定位元素之上 ——
+        不加 z 的话右侧那 12px 热区被盖住、形同虚设（真机命中测试验证过），
+        抓手就只剩线的左右 1px，太难点中。
+
+        ⚠️ 别改回对称（-left-3 -right-3）—— 会重新盖住邻居的滚动条。
+        垂直方向（上/下）的两侧邻居都没滚动条，维持 ±12px、不动 z。
+      */}
       <span
         className={cn(
           'absolute',
-          vertical ? 'inset-x-0 -top-3 -bottom-3' : 'inset-y-0 -left-3 -right-3',
+          vertical ? 'inset-x-0 -top-3 -bottom-3' : 'inset-y-0 -left-px -right-3 z-10',
         )}
       />
       <span
