@@ -36,7 +36,35 @@
 | `main.cjs` | 启动时挂 `prewarm.maybeRun()`（默认不做事） |
 | `config-defaults.cjs` / `config-normalize.cjs` | 新配置：`budget.softRatio`（0~1，默认 0.8）、`cache.prewarm`（默认 false） |
 | `loop-tools.cjs` | 串行实现改名 `executeToolCallsSerial` 保留作回退/对照；默认导出 `tool-runner` 的执行器 |
+| `task-hint.cjs` | 新增 `isFreshTaskState`（模板守卫从「taskState 非空」改为等值判断 —— 修 TOK-P2-004，模板层曾在真机恒短路） |
 | `scripts/selftest/groups/85-token-opt.mjs` | 新自检组：覆盖上述全部新模块与接线（不联网） |
+
+### 请求组装流程图（优化前 → 优化后）
+
+```mermaid
+flowchart TB
+  subgraph BEFORE["优化前"]
+    A1[历史消息] --> B1[context-builder 按预算截取]
+    B1 --> C1[prompt-stack 拼系统提示<br/>无 hash / 稳定层被冲掉只能猜]
+    C1 --> D1[请求发出<br/>usage 只留三个总数，缓存字段丢弃]
+    D1 --> E1{有工具调用？}
+    E1 -- 是 --> F1[loop-tools 全串行<br/>截断无标记 / 失败注记为自由文本]
+    F1 --> D1
+    E1 -- 否 --> G1[结束：无逐请求指标]
+  end
+  subgraph AFTER["优化后"]
+    A2[历史消息] --> B2[context-builder 按预算截取<br/>软预算 → 记忆配额减半]
+    B2 --> C2[prompt-stack 拼系统提示<br/>context-diag：三层 hash + 快照 + 变化原因]
+    C2 --> D2[请求发出：llm.cjs 记 TTFT / 重试序 / 缓存字段<br/>→ token-metrics.jsonl]
+    D2 --> E2{有工具调用？}
+    E2 -- 是 --> F2[tool-scheduler 分批：连续只读 → 并行<br/>tool-runner：部分成功检测 / 结构化失败 / 调用统计]
+    F2 --> D2
+    E2 -- 否 --> G2[结束：台账 task-notes<br/>promptDiag / templateId / toolStats]
+  end
+```
+
+- 两侧共用同一条装配链（`loop-prompt` → `context-builder` + `prompt-stack`）；优化新增的是**观测与执行策略**，不改消息语义。
+- 发送前：模板建议注入任务状态层（仅在「新活第一轮」，队列见 `task-hint.isFreshTaskState`）；稳定前缀意外变化时 `log.warn` 写变化层名。
 
 ## 二、三层上下文与稳定前缀
 
