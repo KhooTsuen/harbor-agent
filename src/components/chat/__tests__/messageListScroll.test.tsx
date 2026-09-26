@@ -9,12 +9,12 @@ import type { Message } from '@/types'
 
    用户报：「正文消息生成中的时候没办法用鼠标上下滑动，被固定到了最底下」。
 
-   根因：流式期间有一层「每帧兜底」的 rAF —— 它只要看到没贴底就把 scrollTop
-   拽回底部。用户往上滚一点点，16ms 后又被拽回，`distance` 永远到不了 onScroll
-   里的离开阈值（160px），于是 pinned 永远是 true，等于滚不动。
+   现在这层是显式状态机（`hooks/useAutoScroll.ts`）：滚轮往上 → 立刻 FREE，
+   而 FREE 的含义是「程序一行都不写」—— 被拽回在机制上就不可能发生。
+   这里钉的是它最外层的那条链路：滚轮往上 → 按钮出现 → 点按钮 → 回去。
 
-   修法是：用户滚轮往上（deltaY < 0）就**立刻**解锁（pinned=false），
-   并把「回到底部」按钮亮出来。这里钉的就是「滚轮往上 → 按钮出现」这条链路。
+   注：jsdom 没有布局（scrollHeight/clientHeight 恒为 0），所以「向下滚」在
+   这里等价于「已经在真正的底」—— 按迁移规则 3 仍是 FOLLOW、按钮不出现。
    ══════════════════════════════════════════════════════════════ */
 
 let container: HTMLDivElement
@@ -55,7 +55,7 @@ function render(messages: Message[]): void {
 }
 
 describe('流式期间往上滚', () => {
-  it('★ 滚轮往上（deltaY < 0）→ 解锁贴底，出现「回到底部」按钮', () => {
+  it('★ 滚轮往上（deltaY < 0）→ 进入 FREE，出现「回到底部」按钮', () => {
     render([streamingMsg])
     expect(container.textContent ?? '').not.toContain('回到底部')
 
@@ -68,7 +68,7 @@ describe('流式期间往上滚', () => {
     expect(container.textContent ?? '').toContain('回到底部')
   })
 
-  it('滚轮往下（deltaY > 0）不解锁（用户只是往下看）', () => {
+  it('滚轮往下：已经在真正的底（≤4px）→ 仍是 FOLLOW，按钮不出现', () => {
     render([streamingMsg])
     const scroller = container.querySelector('div.overflow-y-auto')
     act(() => {
@@ -77,7 +77,7 @@ describe('流式期间往上滚', () => {
     expect(container.textContent ?? '').not.toContain('回到底部')
   })
 
-  it('★ 点「回到底部」重新贴底，按钮收起', () => {
+  it('★ 点「回到底部」回 FOLLOW，按钮收起', () => {
     render([streamingMsg])
     const scroller = container.querySelector('div.overflow-y-auto')
     act(() => {

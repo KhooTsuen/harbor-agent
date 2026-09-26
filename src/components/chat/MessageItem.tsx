@@ -6,7 +6,7 @@ import { useSmoothText } from '@/hooks/useSmoothText'
 import { fsReveal } from '@/lib/fsApi'
 import { CodeBlock } from './CodeBlock'
 import { Markdown } from './Markdown'
-import { StreamingText } from './StreamingText'
+import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
 import { AnswerVersions } from './message/AnswerVersions'
@@ -88,13 +88,13 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                 <div>
                   {isStreaming ? (
                     /*
-                     * ★ 流式中：像思考链一样纯文本直接流，只给行首标记染色。
+                     * ★ 流式中：实时 Markdown（增量解析 + 稳定块不再重渲）。
                      *
-                     * 原则：**不做块重排**（块重排就是「写完一段被覆盖重写」的根源），
-                     * 每行独立渲染，`##` `-` ``` 染成浅色但不改变结构。
-                     * 写完最后一刻才交给 <Markdown> 做真正的块渲染。
+                     * 稳定块（空行之后的那些）解析一次就不动了，只有尾巴重渲；
+                     * 残缺的半行降级成纯文本，避免「先像段落、写完变列表」的横跳。
+                     * 写完的消息仍然走 <Markdown>（整篇解析，一次到位）。
                      */
-                    <StreamingText text={smoothContent} />
+                    <StreamingMarkdown text={smoothContent} />
                   ) : (
                     <Markdown text={message.content} />
                   )}

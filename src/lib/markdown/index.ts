@@ -10,6 +10,16 @@ export { parseFenceInfo } from './blocks'
 export { parseInline, plainText, extractImageUrls } from './inline'
 export { parseBlocks } from './blocks'
 export { isTableSeparator, splitRow } from './table'
+/* 流式增量解析（AG-021/AG-022）—— 渲染层从这里取，别从深路径 require */
+export {
+  EMPTY_CACHE,
+  findStablePoint,
+  parseIncremental,
+  isIncompleteLine,
+  splitPendingLine,
+  type IncrementalResult,
+  type StableCache,
+} from './incremental'
 
 /**
  * 有没有值得解析的 Markdown 记号。

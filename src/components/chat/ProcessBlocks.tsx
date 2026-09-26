@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useSmoothText } from '@/hooks/useSmoothText'
+import { useScrollGuard } from './scrollGuard'
 
 /* ══════════════════════════════════════════════════════════════
    过程可见性
@@ -16,6 +17,11 @@ import { useSmoothText } from '@/hooks/useSmoothText'
 
 export function ThinkBlock({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const [open, setOpen] = useState(false)
+  /*
+   * 迁移规则 4：用户点开/折叠思考块（= 他自己动了布局）→ 直接 FREE。
+   * 以前是 hold()：锁两帧、期间按高度差补偿那套推断逻辑 —— 已经删掉了。
+   */
+  const guard = useScrollGuard()
   /*
    * AG-023：思考链也要平滑。
    *
@@ -33,7 +39,10 @@ export function ThinkBlock({ text, streaming = false }: { text: string; streamin
     <div className="mb-2">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v)
+          guard?.enterFree()
+        }}
         aria-expanded={open}
         className="flex items-center gap-1.5 text-2xs text-fg-tertiary transition-colors hover:text-fg-secondary"
       >

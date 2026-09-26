@@ -247,7 +247,7 @@ function MainApp() {
             */}
             <Suspense fallback={<div className="min-h-0 flex-1" />}>
               {/* 空对话时 MessageList 自己渲染开屏（launch/LaunchScreen.tsx） */}
-              <MessageList messages={messages} />
+              <MessageList messages={messages} conversationId={activeThreadId} />
             </Suspense>
           </ErrorBoundary>
 

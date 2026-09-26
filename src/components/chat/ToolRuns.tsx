@@ -6,6 +6,7 @@ import type { ToolRunRecord } from '@/types'
 import { cn } from '@/lib/utils'
 import { AGENT_ACTIONS as ACTIONS, runningOf, verbOf } from '@/lib/agentActivity'
 import { colorOf, statusOfTool } from '@/lib/statusLanguage'
+import { useScrollGuard } from './scrollGuard'
 
 /* ══════════════════════════════════════════════════════════════
    工具调用列表
@@ -74,6 +75,8 @@ export function groupRuns(runs: readonly ToolRunRecord[]): ToolGroup[] {
 
 export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
   const [open, setOpen] = useState(false)
+  /* 展开/折叠 = 迁移规则 4（自己去动布局）→ FREE，别动用户的视图 */
+  const guard = useScrollGuard()
   if (runs.length === 0) return null
   const running = runs.some((run) => run.output === '' && run.ms === undefined)
   const failed = runs.some((run) => !run.ok && run.ms !== undefined)
@@ -92,7 +95,10 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
     <div className="mb-2 rounded-sm border border-line-subtle bg-bg-base/40">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setOpen((value) => !value)
+          guard?.enterFree()
+        }}
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-2xs text-fg-secondary hover:bg-bg-hover"
       >
@@ -139,6 +145,7 @@ export function ToolRunList({ runs }: { runs: readonly ToolRunRecord[] }) {
 /** 一组同名调用：「读取 5 个文件」，展开才看每条 */
 function ToolGroupRow({ group }: { group: ToolGroup }) {
   const [open, setOpen] = useState(false)
+  const guard = useScrollGuard()
   const [verb, unit] = ACTIONS[group.name] ?? [group.name, '次']
   const hidden = Math.max(0, group.runs.length - MAX_VISIBLE_RUNS)
 
@@ -146,7 +153,10 @@ function ToolGroupRow({ group }: { group: ToolGroup }) {
     <div className="rounded-sm border border-line-subtle bg-bg-base/40">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setOpen((value) => !value)
+          guard?.enterFree()
+        }}
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-2 py-1 text-left text-2xs hover:bg-bg-hover"
       >
@@ -183,6 +193,7 @@ function ToolGroupRow({ group }: { group: ToolGroup }) {
 
 function ToolRunRow({ run }: { run: ToolRunRecord }) {
   const [open, setOpen] = useState(false)
+  const guard = useScrollGuard()
   const running = run.output === '' && run.ms === undefined
   const hasOutput = run.output.trim().length > 0
   /* 工具输出里可能带图片（生图、下载图之类）—— 单独抠出来渲染 */
@@ -192,7 +203,11 @@ function ToolRunRow({ run }: { run: ToolRunRecord }) {
     <div className="rounded-sm border border-line-subtle bg-bg-base/40">
       <button
         type="button"
-        onClick={() => hasOutput && setOpen((v) => !v)}
+        onClick={() => {
+          if (!hasOutput) return
+          setOpen((v) => !v)
+          guard?.enterFree()
+        }}
         aria-expanded={hasOutput ? open : undefined}
         className={cn(
           'flex w-full items-center gap-2 px-2 py-1.5 text-left text-2xs',
