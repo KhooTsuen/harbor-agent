@@ -120,6 +120,7 @@ import { run as taskIsolationGroup } from './selftest/groups/82-task-isolation.m
 import { run as branchPathGroup } from './selftest/groups/83-branch-path.mjs'
 import { run as launchSummaryGroup } from './selftest/groups/84-launch-summary.mjs'
 import { run as tokenOptGroup } from './selftest/groups/85-token-opt.mjs'
+import { run as visionGroup } from './selftest/groups/86-vision.mjs'
 
 const GROUPS = [
   basics,
@@ -206,6 +207,7 @@ const GROUPS = [
   branchPathGroup,
   launchSummaryGroup,
   tokenOptGroup,
+  visionGroup,
 ]
 
 async function main() {

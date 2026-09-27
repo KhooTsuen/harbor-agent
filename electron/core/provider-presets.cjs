@@ -104,6 +104,21 @@ const PRESETS = [
   { id: 'deepseek-vl', test: /^deepseek.*vl/,
     caps: { chat: true, streaming: true, vision: true },
     note: 'DeepSeek-VL 系：能读图；工具调用没查到明确说法，留成未知' },
+  /*
+   * V4 系（flash / v4-pro）**已经能读图了** —— 以前的宽规则 `/^deepseek/` 把它
+   * 当成纯文本，于是用户一贴图就弹「这张图会失败」的警告，哪怕模型其实看得见。
+   * 这条必须放在 `deepseek-chat` **前面**（match 按顺序取第一条命中的）。
+   *
+   * 2026-09-28 真机复现确认：同一天用户报「DeepSeek 支持多模态了还说看不见图」，
+   * 那次的**真正原因在内核**（图片被上下文预算切掉了，见 context-builder.cjs），
+   * 这条预设只是把「本来能读图却被告知读不了」的另一半补齐。
+   *
+   * 声明口径照旧：以官方文档为准，用户可在「设置 → 供应商 → 模型能力」里覆盖。
+   */
+  { id: 'deepseek-v4-vision', test: /^deepseek-(flash|v4)/,
+    caps: { chat: true, streaming: true, tool_call: true, vision: true, structured_output: true,
+      attachments: false, context_window: 128_000, max_output: 8_192 },
+    note: 'DeepSeek V4 系（flash / v4-pro）：支持读图；附件维度没查到明确说法，留成未知' },
   { id: 'deepseek-chat', test: /^deepseek/,
     caps: { chat: true, streaming: true, tool_call: true, vision: false, structured_output: true,
       attachments: false, context_window: 65_536, max_output: 8_192 },

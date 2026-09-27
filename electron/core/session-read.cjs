@@ -9,6 +9,8 @@ const fs = require('node:fs')
 const { DIRS } = require('./paths.cjs')
 const { fileFor, safeTitle, readLines } = require('./session-io.cjs')
 const { groupAnswers } = require('./session-answers.cjs')
+/* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
+const { textOf } = require('./message-text.cjs')
 /* 只借一个纯函数（id 形状），不借它的读写 —— 避免和 projects 那边成环 */
 const { dirIdFor } = require('./projects.cjs')
 
@@ -228,6 +230,26 @@ function load(id) {
  * （回放容易让历史变得又长又乱，而且不同厂商对 tool 消息的校验不一样）。
  * 需要「模型看到自己之前做了什么」时，让工具结果以摘要形式留在内容里。
  */
+
+/** 这条记录里有可用的图片吗（用户带图提问时，图片是单独存的一个数组） */
+const hasImages = (m) => Array.isArray(m.images) && m.images.some((x) => typeof x === 'string' && x)
+
+/**
+ * 一条记录 → 发给模型的内容。
+ *
+ * ★ 带图的消息必须还原成**多模态数组**。以前这里只发 `content`（文字），
+ *   于是「恢复任务」时模型只看得到「（图片）」这种占位文字 —— 和
+ *   `src/stores/thread/history.ts` 里那条规则是同一件事，两边都得说。
+ */
+function contentOf(m) {
+  const images = Array.isArray(m.images) ? m.images.filter((x) => typeof x === 'string' && x) : []
+  if (images.length === 0) return textOf(m.content)
+  return [
+    ...(textOf(m.content).trim() ? [{ type: 'text', text: m.content }] : []),
+    ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
+  ]
+}
+
 function toApiMessages(id, limit = 20) {
   const data = load(id)
   if (!data) return []
@@ -235,8 +257,8 @@ function toApiMessages(id, limit = 20) {
   const usable = data.messages.filter(
     (m) =>
       (m.role === 'user' || m.role === 'assistant') &&
-      typeof m.content === 'string' &&
-      m.content.trim(),
+      /* 只有图片、没有文字的那条也算可用 —— 不然「光发一张图」在这条链路上会整条消失 */
+      (typeof m.content === 'string' && m.content.trim() ? true : hasImages(m)),
   )
 
   /* 压缩点之后的消息才逐条带；之前的用摘要代替 */
@@ -255,8 +277,8 @@ ${lastCompact.summary}`,
     })
   }
   for (const m of sliced) {
-    let content = m.content
-    if (m.role === 'assistant' && Array.isArray(m.toolRuns) && m.toolRuns.length > 0) {
+    let content = contentOf(m)
+    if (m.role === 'assistant' && typeof content === 'string' && Array.isArray(m.toolRuns) && m.toolRuns.length > 0) {
       const replay = m.toolRuns
         .map(
           (tool) =>

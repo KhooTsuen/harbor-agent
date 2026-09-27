@@ -10,6 +10,8 @@
  */
 
 const config = require('../core/config.cjs')
+/* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
+const { textOf } = require('../core/message-text.cjs')
 
 /** 会话注入给模型的历史条数上限（设置里可调，夹在 0–200） */
 function currentHistoryLimit() {
@@ -25,11 +27,8 @@ function lastUserText(history) {
   for (let i = history.length - 1; i >= 0; i -= 1) {
     const message = history[i]
     if (message?.role !== 'user') continue
-    if (typeof message.content === 'string') return message.content.slice(0, 200)
-    if (Array.isArray(message.content)) {
-      const text = message.content.find((part) => part?.type === 'text')?.text
-      if (typeof text === 'string') return text.slice(0, 200)
-    }
+    const text = textOf(message.content)
+    if (text) return text.slice(0, 200)
   }
   return ''
 }

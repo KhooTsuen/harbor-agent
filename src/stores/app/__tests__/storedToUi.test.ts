@@ -62,4 +62,19 @@ describe('磁盘 → 界面', () => {
     expect(m.regeneratedFrom).toBe('dk-old')
     expect('regeneratedFrom' in storedToUi(base, 't1')).toBe(false)
   })
+
+  /* ── 带图提问（2026-09-28 真机事故） ──────────────────────────
+     用户贴了一张图，重开会话就只剩「（图片）」这行占位字：缩略图没了，
+     「恢复任务」时模型也收不到画面。落盘侧见 `thread/userRecord.ts`，
+     这里是**读回侧** —— 两边都补齐才闭环。 */
+  it('★ images 要还原（不然重开会话图片就"消失"了，只剩占位文字）', () => {
+    const png = 'data:image/png;base64,AAAA'
+    const m = storedToUi({ ...base, role: 'user', content: '（图片）', images: [png] }, 't1')
+    expect(m.images).toEqual([png])
+  })
+
+  it('没图时不要凭空给一个空数组（老会话不受影响）', () => {
+    expect('images' in storedToUi(base, 't1')).toBe(false)
+    expect('images' in storedToUi({ ...base, images: [] }, 't1')).toBe(false)
+  })
 })

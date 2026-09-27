@@ -118,6 +118,61 @@
 另外会话行标题只剩 93/212px（时间 32 + 动作位 28 + 「标」12 等尾部槽位占 119px），
 而「动作常驻」是用户之前明确要的，所以没动。
 
+### 追加（同日）：带图提问不再被预算切坏 —— 「支持多模态了，它还说看不见图」
+
+用户 2026-09-28 的报法：「DeepSeek flash 现已支持多模态，但它依然说没办法看图」，
+并且要求「整个软件里排查同类情况」。
+
+**根因（有真机证据，不是猜的）**：翻用户自己那条会话
+（`E:\Harbor\data\sessions\sess_muk6ue18khi5o.jsonl`）能看到**模型自己的推理原文**：
+
+> the image data is truncated ("[…上下文已按预算裁剪…]") — so I actually cannot see the image content
+
+也就是说：模型没撒谎，它收到的就是一**半张图**。带图消息的 `content` 是**多模态数组**
+（`[{type:'text'},{type:'image_url',image_url:{url:'data:image/png;base64,iVBOR…'}}]`），
+而 `electron/core/context-builder.cjs` 的预算裁剪把每条消息 `JSON.stringify` 成字符串再按字符切 ——
+一张 20 万字符的 base64 被切到剩 3646 字符，**只剩 JPEG 文件头**。
+
+同一类「图片没被当数据」的地方还有三处，一并修了：
+
+| 位置 | 原来 | 现在 |
+|---|---|---|
+| `context-builder.cjs`（出事故处） | 数组压成字符串再切 | **只切文本，图片块整块留**；图片按固定 800 字符成本占预算（不按 base64 真长算，否则一张图挤没整个对话） |
+| `session-read.cjs` → `toApiMessages` | 只发 `content` 文字 | 从 `images` 还原多模态数组（「恢复任务」时模型才收得到画面） |
+| `stores/useThreadStore.ts` → 落盘 | **不写 `images`** | 写（抽成 `thread/userRecord.ts`，那文件贴 300 行红线了）；读侧 `stores/app/disk.ts` 的 `storedToUi` 同步还原 |
+| `conversation-state.cjs` | 只认字符串 content → 带图提问整条跳过，「当前焦点」退回上一条无关旧消息 | 取多模态里的 `text` 部分 |
+| `provider-presets.cjs` | `deepseek-flash` 命中宽规则 `/^deepseek/` → `vision:false` | 单独一条 `deepseek-v4-vision`（`flash` / `v4` 系）声明 `vision:true` —— 以前一贴图就弹「会失败」的警告 |
+
+**验证（这次没敢只看测试）**：
+
+- **真机端到端跑了一遍**（`tmp/perf/probe-vision-e2e.cjs`，跑在隔离副本上，走的真凭证 + 真 `deepseek-flash`）：
+  真往输入框**贴**一张「左半红、右半蓝」的 PNG（构造真 `ClipboardEvent`）→ 点发送 →
+  渲染层拼多模态 → 内核预算裁剪（**出事故那一步**）→ 真模型。结果：
+  **模型答「红色、蓝色」** —— 它真的看见了。
+  会话文件里也落了 `images`（data URL 1402 字符）；再**切走切回**、以及**整个页面 reload 后重开**，
+  图都还在（消息区 192px 宽，`tmp/perf/probe-vision-reopen.cjs` 专门验这两步）。
+- **内核单步**（`tmp/perf/probe-vision.cjs`，只造历史过一遍 `contextBuilder.assemble`）：
+  装配结果里 data URL 与原文**逐字符相等**、无裁剪标记。
+  ⚠️ 它**不能**代替上面那条：真 API Key 在 `safeStorage`（DPAPI）里，开发版 electron 解不开
+  正式安装写的凭证 —— 所以"发真请求"这一环必须跑装好的 Harbor。
+- **新增 21 条内核自检断言**（5 组，`scripts/selftest/groups/86-vision.mjs`）：
+  图片不被切 / 文字照旧被切 / 纯图消息不消失 / 五张图顶满预算时"丢文字留图" / base64 不进状态摘要 /
+  会话落盘读回 / 恢复任务的请求 / 能力声明 / **文本口径只有一处实现**（`message-text.cjs`）。
+  ⚠️ 以前 `context-builder.cjs` 在 `selftest/env.mjs` 里 require 了却**一条断言都没有** ——
+  这就是它能一路溜到真机的原因。
+- **新增单测**：`stores/thread/__tests__/userRecord.test.ts` 7 条（落盘 4 + 发送 3）、
+  `stores/app/__tests__/storedToUi.test.ts` 补 2 条（读回）。
+- `npm run verify` 全链（105 文件 / 907 项）+ `npm run test:app`（139 通道 0 缺失）。
+
+**已知不做**（如实记下，别当已完成）：
+
+- **老会话里的图回不来**：那时候根本没往磁盘写 `images`，只有「（图片）」这行占位字 ——
+  重开那些会话仍然看不到图（新发的图正常）。
+- **不压缩图片尺寸**：原图多大就发多大。超大图（几 MB）可能被供应商自己拒；
+  要"自动缩到长边 1568px"得等下一轮（那需要图像处理，本仓库不轻易引原生依赖）。
+- **能力仍是「声明」不是「探测」**（见 `provider-capabilities.cjs` 的 NOTE）：
+  `vision:true` 是按官方说明 + 用户实测填的，用户可在「设置 → 供应商 → 模型能力」里覆盖。
+
 ## [1.20.0-beta.22] — 2026-09-27 · 60 帧性能优化：长会话滚动 30→60fps、切换对话 4.3s→0.14s、长会话流式不再卡死
 
 > 一句话：真机十场景从「长会话滚动 P95 50ms ／ 全量渲染 116ms ／ 切换对话一次 3.8 秒主线程阻塞 ／

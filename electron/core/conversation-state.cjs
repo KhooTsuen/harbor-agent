@@ -1,6 +1,9 @@
 /** CE-002：轻量、可恢复的 Conversation State。
  * 这是增量启发式状态，不调用模型，不阻塞主回答；未来可替换为专用 state updater。
  */
+/* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
+const { textOf } = require('./message-text.cjs')
+
 const EMPTY = () => ({
   topic: '',
   goal: '',
@@ -26,8 +29,10 @@ function unique(list, max = 12) {
 
 function update(previous, messages = []) {
   const state = { ...EMPTY(), ...(previous || {}) }
-  const users = messages.filter((m) => m.role === 'user' && typeof m.content === 'string')
-  const last = users.at(-1)?.content ?? ''
+  /* ★ 用 textOf 而不是「只要字符串」：带图提问以前整条被跳过，于是
+     「当前焦点」会退回再上一条无关的旧消息，模型下一轮就找错了焦点。 */
+  const users = messages.filter((m) => m.role === 'user' && textOf(m.content))
+  const last = textOf(users.at(-1)?.content ?? '')
   if (last) {
     state.currentFocus = clean(last, 240)
     if (!state.topic) state.topic = clean(last, 120)
@@ -38,7 +43,7 @@ function update(previous, messages = []) {
     state.constraints = unique([...state.constraints, ...constraints.map((x) => clean(x))])
     state.nextStep = clean(last, 180)
   }
-  const all = messages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n')
+  const all = messages.map((m) => textOf(m.content)).filter(Boolean).join('\n')
   state.entities = unique(
     [...state.entities, ...(all.match(/[A-Za-z_][A-Za-z0-9_.-]{2,}/g) ?? [])],
     20,
