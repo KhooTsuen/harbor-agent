@@ -13,7 +13,15 @@ function register({ ipcMain }) {
     /* 压缩可以单独配一个便宜的模型 —— 它只是把长内容揉成摘要 */
     const scene = require('../core/scene.cjs')
     const picked = scene.resolve('compact')
-    const provider = picked.provider
+    /*
+     * 会话自己选了模型就听会话的 —— 但**供应商要按这个模型再挑一次**：
+     * 压缩场景默认是「activeProvider + 便宜模型」那套，会话模型属于另一个供应商时
+     * 会把模型名发给不提供它的上游（400）。
+     */
+    const requestedModel = typeof payload?.model === 'string' ? payload.model.trim() : ''
+    const provider = requestedModel
+      ? config.providerForModel(requestedModel) ?? picked.provider
+      : picked.provider
     if (!provider) return { ok: false, error: '还没有配置供应商' }
     if (!config.hasKey(provider)) return { ok: false, error: `${provider.name} 还没填 API Key` }
 

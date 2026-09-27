@@ -2,24 +2,13 @@
    会话 / 统计 / 文件 / 终端 的类型
 
    从 models.ts 拆出来的 —— 那边加了安全相关字段之后过 300 行了。
+   用量统计那一组（桶 + 闸门状态）又拆去了 `./stats`，这里再导出一次，
+   从这儿 import 的调用方不用改；本文件自己也要用它（StoredMessage.usage）。
    ══════════════════════════════════════════════════════════════ */
 
-export interface UsageBucket {
-  prompt: number
-  completion: number
-  total: number
-  calls: number
-  /** 命中 prompt 缓存的 token 数（命中部分便宜很多） */
-  cached: number
-}
+import type { UsageBucket } from './stats'
 
-export interface StatsSummary {
-  since: number
-  total: UsageBucket
-  days: Array<UsageBucket & { day: string }>
-  models: Array<UsageBucket & { model: string }>
-  file: string
-}
+export type { LimitsGateState, StatsSummary, UsageBucket } from './stats'
 
 export interface BackupInfo {
   name: string

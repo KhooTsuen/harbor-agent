@@ -11,6 +11,7 @@ const mcp = require('../core/mcp.cjs')
 const mcpPresets = require('../core/mcp-presets.cjs')
 const config = require('../core/config.cjs')
 const stats = require('../core/stats.cjs')
+const limits = require('../core/limits.cjs')
 const backup = require('../core/backup.cjs')
 const taskPresets = require('../core/task-presets.cjs')
 const log = require('../core/log.cjs')
@@ -140,10 +141,19 @@ function register({ ipcMain }) {
 
   /* ── 用量统计 ─────────────────────────────────────────── */
 
-  ipcMain.handle('stats:summary', () => stats.summary())
+  /*
+   * 用量和**闸门的真实状态**一起给界面。
+   *
+   * 分开给不行：界面拿「上限」和「今天用了多少」自己算一遍，就会出现
+   * 两份日期口径（limits.cjs 的注释里记着这个坑：曾经错开，闸门永远算成 0）。
+   * 判定在内核里做，界面只负责把它说出来 —— 包括「开着但等于不限」这种状态。
+   */
+  const summaryWithGate = () => ({ ...stats.summary(), gate: limits.gateState() })
+
+  ipcMain.handle('stats:summary', () => summaryWithGate())
   ipcMain.handle('stats:reset', () => {
     const result = stats.reset()
-    return { ...result, summary: stats.summary() }
+    return { ...result, summary: summaryWithGate() }
   })
 
   /* ── 备份 ─────────────────────────────────────────────── */

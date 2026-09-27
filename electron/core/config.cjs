@@ -20,9 +20,7 @@ const providerCaps = require('./provider-capabilities.cjs')
 let cache = null
 
 /**
- * 把老版本遗留下来的明文密钥搬进凭证库。
- *
- * 只做搬运，不做删除判断 —— 搬完清空原字段，落盘时就不会再写出去。
+ * 把老版本遗留下来的明文密钥搬进凭证库（只搬运，不判断：搬完就清空原字段）。
  * @returns {{ moved: number, refs: string[] }}
  */
 function migrateLegacySecrets(cfg) {
@@ -237,12 +235,14 @@ function activeProvider() {
   return enabled.find((p) => hasKey(p)) ?? enabled[0] ?? null
 }
 
-/** 发**这个模型**时该用哪个供应商（activeProvider 不看模型）；models 为空 = 没声明 → 当作「都能」 */
-function providerForModel(model) {
+/**
+ * 发**这个模型**时该用哪个供应商（`activeProvider` 不看模型）；models 为空 = 没声明 → 当作「都能」。
+ * `cfg` 可选：调用方手里已有配置（如会话级模型注入后的那份）就传进来，保证两边同一份。
+ */
+function providerForModel(model, cfg = load()) {
   const name = String(model ?? '').trim()
   if (!name) return activeProvider()
-  const c = load()
-  const enabled = c.providers.filter((p) => p.enabled && p.baseUrl)
+  const enabled = cfg.providers.filter((p) => p.enabled && p.baseUrl)
   const pool = enabled.filter((p) => hasKey(p))
   const candidates = pool.length > 0 ? pool : enabled
   const serves = (p) => {

@@ -114,6 +114,43 @@ describe('runElectronTurn', () => {
     await pending
   })
 
+  /*
+   * ★ 2026-09-28 用户报的 bug：新建对话里选了 gpt，实际还是跑全局的 deepseek-flash。
+   * 原因链有三处断点，这是**第一处**：选择器只把模型写进 thread.model，
+   * 发送时却根本没带上它 —— 后面两处（内核读不读、按模型挑供应商）在
+   * 内核自检 87-model-choice 里锁。这里锁住「渲染层真的发了」这一环，
+   * 否则链子头一断，后面怎么修都白搭。
+   */
+  it('★ 会话自己选的模型要跟着请求发给内核', async () => {
+    const threadId = useAppStore.getState().activeThreadId
+    useAppStore.getState().setThreadModel(threadId, 'gpt-5.6-sol')
+
+    const pending = runElectronTurn(threadId, 'hi', () => {})
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(h.sent?.model).toBe('gpt-5.6-sol')
+
+    emitFromBackend({ type: 'done', content: '好' })
+    await pending
+  })
+
+  it('没选模型时不带这个字段（内核照旧用全局默认）', async () => {
+    const threadId = useAppStore.getState().activeThreadId
+    /* resetAll 给的那条线程自带默认模型 —— 这里要的正是「一条都没选」的状态 */
+    useAppStore.getState().setThreadModel(threadId, '')
+    const pending = runElectronTurn(threadId, 'hi', () => {})
+    await Promise.resolve()
+    await Promise.resolve()
+
+    /* 带空串会把内核里的模型名弄脏，所以这里是「整个字段都不出现」 */
+    expect(h.sent).not.toBeNull()
+    expect('model' in (h.sent ?? {})).toBe(false)
+
+    emitFromBackend({ type: 'done', content: '好' })
+    await pending
+  })
+
   it('主进程推 failed → 前端记下 phase（不再自己猜 status）', async () => {
     const threadId = useAppStore.getState().activeThreadId
     /*

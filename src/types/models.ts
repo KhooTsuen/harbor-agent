@@ -35,6 +35,7 @@ export * from './scenes'
 export type {
   UsageBucket,
   StatsSummary,
+  LimitsGateState,
   BackupInfo,
   SkillInfo,
   SessionSummary,

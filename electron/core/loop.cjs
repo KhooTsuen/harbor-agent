@@ -31,7 +31,7 @@ const {
 } = require('./loop-model.cjs')
 const { buildPromptContext } = require('./loop-prompt.cjs')
 const { executeToolCalls } = require('./loop-tools.cjs')
-const { resolveRoute } = require('./loop-route.cjs')
+const { resolveRoute, providerForRun } = require('./loop-route.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
 /* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）；这个 200
@@ -58,10 +58,8 @@ function traceKey(options) {
 async function runLoop(options) {
   const { history, config, workdir, mode, signal, emit, confirm } = options
   const threadSettings = options.threadSettings ?? {}
-  const provider = config.activeProvider ? config.activeProvider : configCore.activeProvider()
-
-  if (!provider) throw new Error('没有可用的供应商')
-  if (!configCore.hasKey(provider)) throw new Error(`${provider.name} 还没填 API Key`)
+  /* 「这次跑该用哪个供应商」按**模型**挑（含 key 检查）—— 见 loop-route.providerForRun */
+  const provider = providerForRun(config)
 
   const {
     userText,

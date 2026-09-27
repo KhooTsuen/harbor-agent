@@ -247,6 +247,13 @@ export async function runElectronTurn(
         ? { regenerateOf: opts.regeneratedFrom, regenerateIsLast: opts.regenerateIsLast === true }
         : {}),
       mode,
+      /*
+       * ★ 这条会话自己选的模型**必须发出去**（2026-09-28 用户报的 bug）：
+       *   选择器只写了 thread.model（也落了会话 meta），而内核那边以前从不读它 ——
+       *   于是「新建对话里选了 gpt，实际还是跑全局的 deepseek-flash」。
+       *   空串/没选 = 交给内核用全局默认，保持原行为。
+       */
+      ...(thread?.model ? { model: thread.model } : {}),
       messages: history,
       sessionId: threadId,
       projectId: thread?.projectId,

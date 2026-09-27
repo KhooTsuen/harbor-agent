@@ -17,8 +17,29 @@ const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const modeRouter = require('./mode-router.cjs')
 
-/** @returns {{ userText: string, provider: object, model: string }} */
-function resolveRoute({ config, provider, options, emit }) {
+/**
+ * 这次跑该用哪个供应商：
+ *   `activeProvider()` 只看「第一个启用且有 key」，**不看模型** —— 会话级换了模型
+ *   （或全局默认模型属于另一个供应商）时，拿它去查 key / 发请求都会错：
+ *   要么误报「还没填 Key」，要么把模型名发给不提供它的上游（400）。
+ * 所以先按**模型**挑一个，再查 key。
+ */
+function providerForRun(config) {
+  /*
+   * `config.activeProvider` 有两种形状：真实配置上是**函数**，而各处的测试夹具/探针
+   * 直接塞一个**供应商对象**（旧写法 `config.activeProvider ? config.activeProvider : …`
+   * 靠三元把这个差异吞掉了）。这里显式兼容，别让夹具一传对象就炸。
+   */
+  const raw = config.activeProvider
+  const base = typeof raw === 'function' ? raw() : raw || configCore.activeProvider()
+  if (!base) throw new Error('没有可用的供应商')
+  /* 传 config 进去：会话级模型是注入到这份配置里的，两边必须看同一份 */
+  const provider = configCore.providerForModel(config.assistant.model, config) ?? base
+  if (!configCore.hasKey(provider)) throw new Error(`${provider.name} 还没填 API Key`)
+  return provider
+}
+
+/** @returns {{ userText: string, provider: object, model: string }} */function resolveRoute({ config, provider, options, emit }) {
   /*
    * 路由：不同活儿派不同模型。关掉时（默认）就是始终用 assistant.model。
    * 判定依据是「最后一条用户消息」和「有没有带图」。
@@ -67,4 +88,4 @@ function resolveRoute({ config, provider, options, emit }) {
   return { userText, provider: useProvider, model: useModel }
 }
 
-module.exports = { resolveRoute }
+module.exports = { resolveRoute, providerForRun }

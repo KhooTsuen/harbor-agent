@@ -1,11 +1,8 @@
 /**
  * 对话 IPC
  *
- * 这是「界面」和「agent 循环」之间的那层。
- * 它负责：
- *   · 装配 loop 需要的上下文（配置、工作目录、模式）
- *   · 把 loop 吐出来的事件转成渲染层能懂的消息
- *   · 用 Promise 把「写操作确认」变成一次 IPC 往返
+ * 这是「界面」和「agent 循环」之间的那层。它负责：装配 loop 需要的上下文（配置、工作目录、模式）、
+ * 把 loop 吐出来的事件转成渲染层能懂的消息、用 Promise 把「写操作确认」变成一次 IPC 往返。
  */
 
 const loop = require('../core/loop.cjs')
@@ -17,13 +14,12 @@ const metrics = require('../core/metrics.cjs')
 const { createEmitter } = require('../core/chat-emit.cjs')
 const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
+const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
+const { withRequestedModel } = require('../core/model-select.cjs')
 
 /** confirmId -> resolve，等渲染层点「允许/拒绝」 */
 const pendingConfirms = new Map()
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
-
-/* 两个纯工具（history 长度上限、最后一句用户说了什么）搬去了 chat-parts.cjs */
-const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
 
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
   /* ── 发起一轮对话 ─────────────────────────────────────── */
@@ -34,10 +30,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId : ''
     /*
      * 这一轮是**怎么起来的**（渲染层给）：用户发送 / 点继续 / 编辑后重答 /
-     * 重新生成 / 切提问版本。
-     *
-     * ★ 加这个的原因是查一个 bug 查了四轮：日志里只看到「又跑了一轮」，
-     *   完全不知道是谁让它跑的（切版本？自动重试？还是用户自己发的），
+     * 重新生成 / 切提问版本。加它的原因是查一个 bug 查了四轮：日志里只看到
+     * 「又跑了一轮」，完全不知道是谁让它跑的（切版本？自动重试？还是用户自己发的），
      *   只能靠时间戳猜。现在这一行直接说出来。
      */
     const reason = typeof payload?.reason === 'string' && payload.reason ? payload.reason : '未标注'
@@ -46,7 +40,15 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const mode = typeof payload?.mode === 'string' ? payload.mode : 'pair'
 
     const current = config.get()
-    const provider = config.activeProvider()
+    /* ★ 会话自己选的模型要盖过全局 —— 来由与口径见 core/model-select.cjs */
+    const picked = withRequestedModel(current, payload?.model)
+    const effective = picked.config
+    /*
+     * 预检：「有没有可用的供应商」。**按这个模型挑**（会话里可能选的是别家的模型）；
+     * `activeProvider` 是 config **模块**上的函数，配置对象里没有这个字段 ——
+     * 把它当配置对象的方法调，真机直接 TypeError（消息发不出去，而自检全绿）。
+     */
+    const provider = config.providerForModel(effective.assistant.model) ?? config.activeProvider()
     /*
      * 优先用这条会话自己的工作目录（侧栏里每条对话可以挂不同目录）。
      * 没挂 / 目录已经不存在 → 回落到默认工作目录。
@@ -66,7 +68,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
      *   真机探针逮到的；第 57 组自检里钉了顺序，改回去会红。
      */
     const here = log.tagged(`sess…${log.shortId(sessionId)} · ${log.shortId(phaseKey)}`)
-    here.info(`新一轮：来源=${reason} 历史=${history.length} 条 模式=${mode} 工作目录=${workdir}`)
+    here.info(
+      `新一轮：来源=${reason} 历史=${history.length} 条 模式=${mode} 工作目录=${workdir} 模型=${effective.assistant.model}${picked.scoped ? '（会话级）' : '（全局默认）'}`,
+    )
 
     /*
      * AG-003：开始记这条任务的时间线。
@@ -126,25 +130,22 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
         /*
          * ②-5：这句话碰到能力边界了吗 —— 碰到了先说一声，但**不拦**。
-         * 放在跑之前（而不是跑完）：它的用处就是「别让用户等半天才发现这活不做」。
-         * 模式写得窄，宁可漏报也不吵（见 core/capability-bounds.cjs）。
+         * 放在跑之前：用处就是「别让用户等半天才发现这活不做」（见 core/capability-bounds.cjs）。
          */
         const boundary = bounds.check(lastUserText(history))
         if (boundary) emit({ type: 'boundary', ...boundary })
 
         const result = await loop.run({
           history,
-          config: current,
+          config: effective,
           workdir,
           mode,
           signal: controller.signal,
           /* AG-011：让循环能问「用户是不是请求暂停了」 */
           controls: { pauseRequested: () => pause.requested },
-          /* AG-011：带这个就是「接着上次那条任务做」——循环会复用原任务，
-             而不是新建一条（不然「不重复已完成步骤」无从谈起） */
+          /* AG-011：带这个就是「接着上次那条任务做」——循环会复用原任务 */
           resumeTaskId: typeof payload?.resumeTaskId === 'string' ? payload.resumeTaskId : '',
-          /* 重新生成：被替代那条回答的磁盘 key + 是否最后一轮
-             （挂台账 regeneratedFrom / 标旧改动事务，见 core/task-regen.cjs） */
+          /* 重新生成：被替代那条回答的磁盘 key + 是否最后一轮（见 core/task-regen.cjs） */
           regenerateOf: typeof payload?.regenerateOf === 'string' ? payload.regenerateOf : '',
           regenerateLast: payload?.regenerateIsLast === true,
           emit,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Field } from '@/components/ui/Field'
@@ -18,25 +18,68 @@ import { Field } from '@/components/ui/Field'
 
 const n = (v: number): string => v.toLocaleString('zh-CN')
 
+/** 输入框里的文字 → token 数（只留数字，空 = 0 = 不限） */
+const toTokens = (text: string): number =>
+  Math.max(0, Math.round(Number(text.replace(/[^\d]/g, '')) || 0))
+
 export function BudgetLimit(): React.ReactElement | null {
   const config = useConfigStore((s) => s.config)
   const patchLimits = useConfigStore((s) => s.patchLimits)
 
   const limits = config?.limits
-  /* 输入框要能打「1」这种中间状态，所以本地存草稿，失焦才写回配置 */
+  /* 输入框要能打「1」这种中间状态，所以本地存草稿 */
   const [daily, setDaily] = useState('')
   const [monthly, setMonthly] = useState('')
+  /*
+   * ★ 写回配置**不靠失焦**（真机踩到的）：
+   *   原来只挂 onBlur —— 填完直接点 X / 按 Esc 关面板时，blur 不一定来
+   *   （设置面板是隐藏不是卸载），那个值就**永远不提交**。
+   *   用户看到的是「填了、看着也在，重新打开又空了」—— 和这个月栽的
+   *   「写了不生效」是同一类病，所以改成「改一下就排一次提交」，失焦只是提前触发。
+   */
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  /* 草稿的镜像：卸载那一刻的闭包读不到最新 state，只能靠 ref */
+  const draft = useRef({ daily: '', monthly: '' })
 
   useEffect(() => {
     setDaily(limits?.dailyTokens ? String(limits.dailyTokens) : '')
     setMonthly(limits?.monthlyTokens ? String(limits.monthlyTokens) : '')
   }, [limits?.dailyTokens, limits?.monthlyTokens])
 
+  useEffect(() => {
+    const slot = timer
+    return () => {
+      clearTimeout(slot.current)
+      /* 防抖还没到点就把面板关了 → 关之前把草稿补交一次 */
+      const { daily: d, monthly: m } = draft.current
+      if (d) void patchLimits({ dailyTokens: toTokens(d) })
+      if (m) void patchLimits({ monthlyTokens: toTokens(m) })
+    }
+    /* 只在卸载时跑：草稿从 ref 读，patchLimits 是稳定的 store 动作 */
+  }, [patchLimits])
+
   if (!config || !limits) return null
 
   function commit(key: 'dailyTokens' | 'monthlyTokens', text: string): void {
-    const value = Math.max(0, Math.round(Number(text.replace(/[^\d]/g, '')) || 0))
-    void patchLimits({ ...limits, [key]: value })
+    const value = toTokens(text)
+    /*
+     * **只交这一个字段**：另一个字段交给 store 按最新配置合进来。
+     * 以前是整个 `limits` 交上去的，两个框先后失焦时会拿旧快照把先填的写回去。
+     */
+    void patchLimits(key === 'dailyTokens' ? { dailyTokens: value } : { monthlyTokens: value })
+  }
+
+  /** 改一下就排一次提交（防抖）；失焦 / 关面板都只是「提前触发」 */
+  function schedule(key: 'dailyTokens' | 'monthlyTokens', text: string): void {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => commit(key, text), 700)
+  }
+
+  function edit(key: 'dailyTokens' | 'monthlyTokens', text: string): void {
+    draft.current[key === 'dailyTokens' ? 'daily' : 'monthly'] = text
+    if (key === 'dailyTokens') setDaily(text)
+    else setMonthly(text)
+    schedule(key, text)
   }
 
   return (
@@ -46,7 +89,7 @@ export function BudgetLimit(): React.ReactElement | null {
           type="checkbox"
           className="mt-0.5"
           checked={limits.enabled}
-          onChange={(e) => void patchLimits({ ...limits, enabled: e.target.checked })}
+          onChange={(e) => void patchLimits({ enabled: e.target.checked })}
         />
         <span>
           用量超过上限就停下
@@ -65,7 +108,7 @@ export function BudgetLimit(): React.ReactElement | null {
               </span>
               <Field
                 value={daily}
-                onChange={setDaily}
+                onChange={(value) => edit('dailyTokens', value)}
                 onBlur={() => commit('dailyTokens', daily)}
                 placeholder="比如 2000000"
                 inputMode="numeric"
@@ -78,7 +121,7 @@ export function BudgetLimit(): React.ReactElement | null {
               </span>
               <Field
                 value={monthly}
-                onChange={setMonthly}
+                onChange={(value) => edit('monthlyTokens', value)}
                 onBlur={() => commit('monthlyTokens', monthly)}
                 placeholder="比如 30000000"
                 inputMode="numeric"
@@ -93,7 +136,6 @@ export function BudgetLimit(): React.ReactElement | null {
               type="button"
               onClick={() =>
                 void patchLimits({
-                  ...limits,
                   onExceed: limits.onExceed === 'block' ? 'warn' : 'block',
                 })
               }

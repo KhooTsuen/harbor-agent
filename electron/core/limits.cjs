@@ -127,6 +127,38 @@ function check({ now = new Date() } = {}) {
 }
 
 /**
+ * 给界面看的一份「闸门现在到底管不管事」。
+ *
+ * ★ 为什么必须有这个：`enabled: true` 而两个上限都是 **0**（0 = 不限）时，
+ *   闸门其实一点都不拦。但界面上它显示成「勾上了、两个输入框空着」——
+ *   用户很容易以为已经设了限制、在受保护，实际什么也没拦住。
+ *   用户原话：「看似可用但实际无法正常使用」。
+ *
+ * 判定**只能有一份**：界面不许自己拿配置和统计再算一遍（日期口径错开的坑见上）。
+ *
+ * @returns {{ enabled: boolean, dailyTokens: number, monthlyTokens: number,
+ *            onExceed: string, today: number, month: number,
+ *            exceeded: boolean, level: 'day' | 'month' | null, idle: boolean }}
+ */
+function gateState(now = new Date()) {
+  const limits = limitsFromConfig()
+  const info = check({ now })
+  const enabled = limits.enabled === true
+  return {
+    enabled,
+    dailyTokens: limits.dailyTokens,
+    monthlyTokens: limits.monthlyTokens,
+    onExceed: limits.onExceed,
+    today: info.today,
+    month: info.month,
+    exceeded: info.exceeded,
+    level: info.level,
+    /* 开着却一个上限都没填 —— 等于没开，界面必须把这个状态直说出来 */
+    idle: enabled && !(limits.dailyTokens > 0) && !(limits.monthlyTokens > 0),
+  }
+}
+
+/**
  * 闸门的判定结果 + 记一笔日志。
  *
  * @returns {{ blocked: boolean, message: string, info: object }}
@@ -152,4 +184,4 @@ function enforce(emit) {
   if (gate.blocked) throw new Error(gate.message)
 }
 
-module.exports = { DEFAULTS, check, guard, enforce, usage, dayKey, monthKey }
+module.exports = { DEFAULTS, check, guard, enforce, usage, gateState, dayKey, monthKey }

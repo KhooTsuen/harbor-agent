@@ -1,5 +1,5 @@
 import { check, group } from '../harness.mjs'
-import { ROOT, SANDBOX, disposeTasks, join, require, taskCore } from '../env.mjs'
+import { ROOT, SANDBOX, disposeTasks, join, readFileSync, require, taskCore } from '../env.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    用量闸（预算）
@@ -83,6 +83,59 @@ export async function run() {
     setLimits({ enabled: true, dailyTokens: 0, monthlyTokens: 0 })
     seedToday(999999)
     check('★ 开着但两个上限都是 0 → 不拦（0 表示不限）', limits.check().exceeded === false)
+
+    /* ══════════════════════════════════════════════════════════
+       ⑤-2 给界面看的「真实状态」（gateState）
+
+       用户 2026-09-28 报的：「关于用量限制，现在还是那种看似可用但实际
+       无法正常使用的状态」。内核判定本身是对的，问题在**界面说不出
+       现在的真实状态** —— `enabled: true` + 上限 0 显示成「勾上了、
+       两个框空着」，看着像在保护，实际一个请求都不拦。
+
+       所以状态只能由这里（内核算）给出，而且「开着但等于不限」必须是个
+       显式字段 —— 界面拿到 true 就得直说。
+       ══════════════════════════════════════════════════════════ */
+    setLimits({ enabled: true, dailyTokens: 0, monthlyTokens: 0 })
+    seedToday(12345)
+    const idle = limits.gateState()
+    check('★ 开着但上限为 0 → idle=true（界面据此说「等于没开闸」）', idle.idle === true, JSON.stringify(idle))
+    check('idle 时仍然如实报今天/本月用量', idle.today === 12345 && idle.month >= 12345, JSON.stringify(idle))
+    check('gateState 里带着两个上限的原始值（界面要显示）', idle.dailyTokens === 0 && idle.monthlyTokens === 0)
+    check('enabled 如实反映开关', idle.enabled === true && idle.exceeded === false)
+
+    setLimits({ enabled: true, dailyTokens: 1000, monthlyTokens: 0 })
+    seedToday(400)
+    const running = limits.gateState()
+    check('★ 设了上限就不是 idle（界面该显示「还剩多少」）', running.idle === false)
+    check('gateState 把已用 / 上限都给出来', running.today === 400 && running.dailyTokens === 1000)
+
+    setLimits({ enabled: true, dailyTokens: 100, monthlyTokens: 0, onExceed: 'warn' })
+    seedToday(500)
+    const hit = limits.gateState()
+    check('★ 超了要说得出超的是哪一道 + 是拦还是只提示', hit.exceeded === true && hit.level === 'day' && hit.onExceed === 'warn', JSON.stringify(hit))
+
+    setLimits({ enabled: false, dailyTokens: 100, monthlyTokens: 100 })
+    seedToday(500)
+    check('关着的时候 idle 不成立（界面说的是「闸门没开」）', limits.gateState().idle === false)
+
+    /* ── ⑤-3 四个接口点：状态只有一份，界面不许自己算 ── */
+    const extrasSrc = readFileSync(join(ROOT, 'electron/handlers/extras.cjs'), 'utf8')
+    check('★ 用量统计里带上闸门状态（gate: limits.gateState()）', extrasSrc.includes('gate: limits.gateState()'))
+    const usageTextSrc = readFileSync(join(ROOT, 'src/lib/usageGate.ts'), 'utf8')
+    check(
+      '★ 渲染层只负责措辞，不自己算日期 / 不自己判「超没超」',
+      !/new Date|getMonth|getFullYear/.test(usageTextSrc),
+    )
+    const usageTabSrc = readFileSync(join(ROOT, 'src/components/settings/tabs/UsageTab.tsx'), 'utf8')
+    check('★ 用量页把闸门状态摆出来（<GateStatus gate={data.gate} />）', usageTabSrc.includes('<GateStatus gate={data.gate} />'))
+    /* 改完上限要重拉：否则数字旁边挂的还是旧的那句 */
+    check('改上限会静默重拉一次统计', usageTabSrc.includes('refresh(gateOn !== undefined)'))
+
+    /* ── ⑤-4 改上限不许拿旧快照把别的字段写回去 ── */
+    const budgetSrc = readFileSync(join(ROOT, 'src/components/settings/tabs/BudgetLimit.tsx'), 'utf8')
+    check('★ 提交上限时不再整个 limits 交上去（会写回旧值）', !budgetSrc.includes('patchLimits({ ...limits'))
+    const configStoreSrc = readFileSync(join(ROOT, 'src/stores/useConfigStore.ts'), 'utf8')
+    check('★ store 用最新配置来合 limits', configStoreSrc.includes('limits: { ...get().config?.limits, ...patch }'))
 
     /* ── ⑥ 口径要和 stats 对得上 ── */
     statsCore.reset()

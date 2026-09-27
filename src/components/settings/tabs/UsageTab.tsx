@@ -3,8 +3,10 @@ import { BarChart3, RotateCcw } from 'lucide-react'
 import type { StatsSummary, UsageBucket } from '@/types/backend'
 import { statsReset, statsSummary } from '@/lib/extrasApi'
 import { formatCount, formatTokens } from '@/lib/format'
+import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { BudgetLimit } from './BudgetLimit'
+import { GateStatus } from './GateStatus'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Row, SectionTitle } from '../parts'
@@ -57,15 +59,28 @@ export function UsageTab() {
   const askPermission = useUIStore((s) => s.askPermission)
   const showToast = useUIStore((s) => s.showToast)
 
-  async function refresh(): Promise<void> {
-    setLoading(true)
+  /*
+   * 闸门那几行字（「今天已用 X / 上限 Y」）是**内核**算的，跟着 summary 一起下来。
+   * 所以改完上限得重新拉一次 —— 不然刚填的数字旁边还挂着旧的那句，
+   * 又成了「看着是新的、其实是旧的」（这个 bug 的同类）。
+   *
+   * 拆成基本类型当依赖：配置对象每改一处都会换引用，否则会白拉好几次。
+   */
+  const gateOn = useConfigStore((s) => s.config?.limits.enabled)
+  const dailyTokens = useConfigStore((s) => s.config?.limits.dailyTokens)
+  const monthlyTokens = useConfigStore((s) => s.config?.limits.monthlyTokens)
+  const onExceed = useConfigStore((s) => s.config?.limits.onExceed)
+
+  async function refresh(quiet = false): Promise<void> {
+    if (!quiet) setLoading(true)
     setData(await statsSummary())
     setLoading(false)
   }
 
   useEffect(() => {
-    void refresh()
-  }, [])
+    /* 改上限触发的是**静默**重拉：整页闪一下「读取中」反而看不清数字变没变 */
+    void refresh(gateOn !== undefined)
+  }, [gateOn, dailyTokens, monthlyTokens, onExceed])
 
   if (loading) return <p className="py-4 text-dense text-fg-tertiary">读取中…</p>
   if (!data) return null
@@ -78,6 +93,8 @@ export function UsageTab() {
     <div className="py-1">
       <SectionTitle>用量闸（预算）</SectionTitle>
       <BudgetLimit />
+      {/* 开关下面立刻说清楚「现在到底限不限、还剩多少」—— 别再让人猜 */}
+      <GateStatus gate={data.gate} />
 
       <SectionTitle>用量</SectionTitle>
 

@@ -104,7 +104,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   },
 
   patchLimits: async (patch) => {
-    const config = await pushConfig({ limits: patch })
+    /*
+     * ★ 用**最新**配置来合，不用调用方手里那份快照。
+     *
+     * 踩过：两个上限输入框先后失焦，各自把手里的 `limits` 快照整个交上来 ——
+     * 后交的那份快照里另一个字段还是旧值，于是**先填的那个字段被写回去了**。
+     * 用户看到的是「填了、也保存了，回头一看又空了」。
+     */
+    const config = await pushConfig({ limits: { ...get().config?.limits, ...patch } })
     if (config) set({ config })
   },
 
