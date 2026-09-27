@@ -85,6 +85,13 @@ export interface AppState {
   workdir: string
   setWorkdir: (dir: string) => void
 
+  /**
+   * 正在从磁盘读某个会话的消息（= openFromDisk 的 await 期间）。
+   * 界面据此判断「空数组」到底是「刚建的空对话」还是「正在读」——
+   * 后者不能去渲染开屏（开屏要跑一串 IPC 扫描，几十毫秒后又整个丢掉）。
+   */
+  loadingThreadId: string | null
+
   /* ── 磁盘模式（Electron）─────────────────────────────────
    * 浏览器里这些全是空操作，数据和以前一样走内存 + localStorage。
    */

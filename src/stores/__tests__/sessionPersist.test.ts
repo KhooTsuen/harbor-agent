@@ -53,6 +53,7 @@ vi.mock('@/lib/backend', async (importOriginal) => {
 import { useAppStore } from '@/stores/useAppStore'
 import { runElectronTurn } from '@/stores/thread/turns'
 import { useThreadStore } from '../useThreadStore'
+import { mergeThreads } from '../app/diskActions'
 
 function emitFromBackend(event: Record<string, unknown>): void {
   const requestId = h.sent?.requestId ?? ''
@@ -150,6 +151,27 @@ describe('会话读回 / openFromDisk', () => {
     expect(thread?.messages.map((m) => m.content)).toContain('磁盘上的')
   })
 
+  it('★ 读盘期间挂 loadingThreadId，读完清掉（界面据此画骨架而不是开屏）', async () => {
+    /* 得挑一条内存里还没有消息的会话 —— 已经有消息的不会去读，也就没有 loading */
+    const threadId = useAppStore.getState().createThread()
+    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.messages).toEqual([])
+
+    const pending = useAppStore.getState().openFromDisk(threadId)
+
+    /* 还没读回来：这时候 messages 是空数组，界面必须能区分「正在读」和「空对话」 */
+    expect(useAppStore.getState().loadingThreadId).toBe(threadId)
+
+    h.pendingLoad?.({ messages: [{ role: 'user', content: '磁盘上的', ts: 1 }] })
+    await pending
+    expect(useAppStore.getState().loadingThreadId).toBeNull()
+    expect(
+      useAppStore
+        .getState()
+        .threads.find((t) => t.id === threadId)
+        ?.messages.map((m) => m.content),
+    ).toContain('磁盘上的')
+  })
+
   it('★ 读盘期间新加的消息不能被覆盖（点「继续」就是这条）', async () => {
     const threadId = useAppStore.getState().activeThreadId
     const pending = useAppStore.getState().openFromDisk(threadId)
@@ -178,8 +200,29 @@ describe('会话读回 / 接线守卫', () => {
   })
 
   it('★ 覆盖前要比内存里的数组还是不是原来那个', () => {
-    const src = readFileSync(join(SRC, 'stores/useAppStore.ts'), 'utf8')
+    const src = readFileSync(join(SRC, 'stores/app/diskActions.ts'), 'utf8')
     expect(src).toMatch(/current\.messages !== before\?\.messages/)
+  })
+
+  it('★ 刷新工作区不把已读会话的消息清空（否则界面闪开屏 + 读回来被守卫丢掉）', () => {
+    const src = readFileSync(join(SRC, 'stores/app/diskActions.ts'), 'utf8')
+    /* 元数据重建时必须走 mergeThreads，不能直接 threads: result.threads */
+    expect(src).toMatch(/threads: mergeThreads\(state\.threads, result\.threads\)/)
+    expect(src).not.toMatch(/threads: result\.threads,/)
+  })
+
+  it('mergeThreads：留住内存里的消息、新会话照常进来、没消息的会话不造假', () => {
+    const withMsgs = { id: 'a', messages: [{ id: 'm1' }] } as never
+    const blank = { id: 'b', messages: [] } as never
+    const freshA = { id: 'a', messages: [], title: '新标题' } as never
+    const freshB = { id: 'b', messages: [] } as never
+    const freshC = { id: 'c', messages: [] } as never
+
+    const merged = mergeThreads([withMsgs, blank], [freshA, freshB, freshC])
+    expect(merged[0].messages).toBe((withMsgs as { messages: unknown[] }).messages)
+    expect((merged[0] as { title?: string }).title).toBe('新标题')
+    expect(merged[1].messages).toEqual([])
+    expect(merged[2].id).toBe('c')
   })
 
   it('★ 收尾时调用落盘，而且只在一处收尾', () => {

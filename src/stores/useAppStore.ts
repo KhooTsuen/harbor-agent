@@ -8,12 +8,13 @@ import {
   importSessions,
   updateSessionMeta,
 } from '@/lib/backend'
-import { fetchMessagesFromDisk, fetchWorkspaceFromDisk, folderIdFor } from './app/disk'
+import { folderIdFor } from './app/disk'
 import { projectsBridgeReady, setProjectActive as persistProjectActive } from '@/lib/projectsApi'
 import { touch, type AppState } from './app/types'
 import { makeMessageActions } from './app/messageActions'
 import { makeThreadEditActions } from './app/threadEdits'
 import { makeProjectActions } from './app/projectActions'
+import { makeDiskActions } from './app/diskActions'
 import { appPersistOptions } from './app/persistOptions'
 import { mergeImport } from '@/lib/migrations'
 import { useConfigStore } from './useConfigStore'
@@ -28,11 +29,15 @@ export const useAppStore = create<AppState>()(
       threads: useRealBackend ? [] : DEFAULT_THREADS,
       activeProjectId: useRealBackend ? '' : (DEFAULT_PROJECTS[0]?.id ?? ''),
       activeThreadId: useRealBackend ? '' : (DEFAULT_THREADS[0]?.id ?? ''),
+      loadingThreadId: null,
 
-      /* ── 项目 ─────────────────────────────────────────── */
+      /* ── 项目 ─────────────────────────────────── */
 
       /* 项目动作：见 app/projectActions.ts（要 get —— 置顶/归档得知道下一个值） */
       ...makeProjectActions(set, get),
+
+      /* 磁盘读写（loadFromDisk / openFromDisk）：见 app/diskActions.ts */
+      ...makeDiskActions(set, get),
 
       createThread: (projectId, explicitWorkdir) => {
         /* projectId：没传=用当前选中；给了=放进那个文件夹；''=明确要单独对话 */
@@ -232,6 +237,7 @@ export const useAppStore = create<AppState>()(
           threads: DEFAULT_THREADS,
           activeProjectId: DEFAULT_PROJECTS[0]?.id ?? '',
           activeThreadId: DEFAULT_THREADS[0]?.id ?? '',
+          loadingThreadId: null,
         }),
 
       workdir: '',
@@ -241,43 +247,7 @@ export const useAppStore = create<AppState>()(
         await get().loadFromDisk()
       },
 
-      loadFromDisk: async () => {
-        if (!useRealBackend) return
-        const result = await fetchWorkspaceFromDisk()
-        set((state) => ({
-          /* 每个项目 = 侧栏一个文件夹；内核记着上次选中的是哪个（已失效则回退第一个） */
-          projects: result.folders.map((f) => f.project),
-          threads: result.threads,
-          activeProjectId: result.activeId || (result.folders[0]?.project.id ?? ''),
-          activeThreadId: result.threads.some((t) => t.id === state.activeThreadId)
-            ? state.activeThreadId
-            : (result.threads[0]?.id ?? ''),
-        }))
-      },
-
-      openFromDisk: async (id) => {
-        if (!useRealBackend) return
-        set({ activeThreadId: id })
-        /*
-         * 卡住「读回来的时候把刚加的消息盖掉」这个真 bug：
-         *
-         * 这条 `await` 期间用户完全可能已经发消息了 —— `resumeTask`（点「继续」）
-         * 就是 setActiveThread 紧接着 sendMessage，中间没有等待。
-         * 读回来直接 set 就会把刚插进去的用户消息 + 流式占位一起抹掉，
-         * 界面上就是「点继续以后对话一片空白，但 Agent 其实在跑」。
-         *
-         * 判据：内存里还是**调用前那个数组**（没人动过）才允许覆盖。
-         * 注意不能用「长度是不是 0」—— 并发删消息也照样能把数组改成别的。
-         */
-        const before = get().threads.find((t) => t.id === id)
-        const messages = await fetchMessagesFromDisk(id)
-        if (!messages) return
-        const current = get().threads.find((t) => t.id === id)
-        if (!current || current.messages !== before?.messages) return
-        set((state) => ({
-          threads: state.threads.map((t) => (t.id === id ? { ...t, messages } : t)),
-        }))
-      },
+      /* loadFromDisk / openFromDisk 已挪到 app/diskActions.ts（那边还要管 loadingThreadId） */
 
       persistMessage: (id, message) => {
         if (useRealBackend) void appendToDisk(id, message)

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { getForkPoints, type ForkPoint } from '@/lib/branchPath'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import { useAppStore } from '@/stores/useAppStore'
 import { MessageItem } from './MessageItem'
 import { BranchBreadcrumb } from './branch/BranchBreadcrumb'
 import { LaunchScreen } from './launch/LaunchScreen'
+import { MessageSkeleton } from './MessageSkeleton'
 import { ScrollGuardContext } from './scrollGuard'
 
 /* ══════════════════════════════════════════════════════════════
@@ -22,7 +24,7 @@ export interface MessageListProps {
 }
 
 /* AG-038：一次渲染多少条 / 点一次「载入更早」多给多少条 / 后台自动补到多少条 */
-const INITIAL_TAIL = 12
+const INITIAL_TAIL = 6
 const TAIL_STEP = 24
 /*
  * 渲染窗口的上限。**这个数字是功能性的，不是拍头**：
@@ -60,6 +62,10 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
    *
    * 为什么是「最近 N 条」而不是「前 N 条」：聊天默认看的是最新的，
    * 而且流式追加的永远是末尾 —— 截前 N 条会让新消息根本进不了视野。
+   *
+   * 为什么首屏是 6 不是 12（2026-09-27 真机改的）：**首屏这一次是唯一改不了大小的一坨**
+   * （后面的片都能按实测代价自适应），真机量过：性能夹具里 12 条 ≈ 9.9k 节点，
+   * 一次提交带出 **70–107ms 长任务**（切千条会话那次卡顿就是它）。降到 6 条 = 一半节点。
    */
   const [tailCount, setTailCount] = useState(INITIAL_TAIL)
   /*
@@ -70,7 +76,7 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
    * 解析并不慢，贵在建节点与随之而来的 layout/paint（同一个会话里解析 5000 字
    * 只 14ms，渲染要 1574ms）。
    *
-   * 所以不再一口气建完：先画最近 12 条，剩下的**一片一片**补，每片的目标耗时
+   * 所以不再一口气建完：先画最近 6 条，剩下的**一片一片**补，每片的目标耗时
    * 是 SLICE_BUDGET_MS。片大小按**上一片的真实间隔**自适应 —— 注意不能只量
    * React 的 commit：真机第一次改的时候就是这么量的，结果量到 4ms 却触发了
    * 600ms 长任务（浏览器在 commit 之后才做 layout/paint）。所以这里量的是
@@ -78,7 +84,8 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
    */
   /* 想画到多少条（自动补的上限，或用户点「载入更早」之后的目标） */
   const [want, setWant] = useState(AUTO_TAIL_LIMIT)
-  const sliceRef = useRef({ size: 6, at: 0 })
+  /* 起始片大小也压小：第一片不参与自适应（还没量过代价），起始就是 6 会把第一片变成第二个大提交 */
+  const sliceRef = useRef({ size: 3, at: 0 })
   const hiddenCount = Math.max(0, count - tailCount)
   const visibleMessages = useMemo(
     () => (hiddenCount > 0 ? messages.slice(-tailCount) : messages),
@@ -91,7 +98,7 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
    */
   useEffect(() => {
     setWant(AUTO_TAIL_LIMIT)
-    sliceRef.current = { size: 6, at: 0 }
+    sliceRef.current = { size: 3, at: 0 }
     setTailCount(INITIAL_TAIL)
   }, [conversationId])
 
@@ -120,8 +127,15 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
   const forkMap = useMemo(() => new Map<string, ForkPoint>(forks.map((f) => [f.id, f])), [forks])
   /* 后台还在补：这时候不给「载入更早」按钮（它补完才有意义，免得一闪一闪） */
   const autoGrowing = tailCount < Math.min(want, count)
+  /*
+   * 消息正在从磁盘读（openFromDisk 的 await 期间，messages 还是空数组）：
+   * 这跟「刚建的空对话」长得一模一样 —— 但绝不能当成后者去渲染开屏，
+   * 开屏要跑一串 IPC 扫描 + 画灯塔，然后马上被真消息顶掉（真机量到那一次就是切换卡顿）。
+   */
+  const loading = useAppStore((s) => s.loadingThreadId === conversationId)
 
   if (messages.length === 0) {
+    if (loading) return <MessageSkeleton />
     /* 开屏（设计文档 §5）：状态层 + 性格层 + 灯塔，见 launch/LaunchScreen.tsx */
     return <LaunchScreen />
   }
