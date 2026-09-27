@@ -123,10 +123,7 @@ export interface StoredMessage {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   ts?: number
-  /**
-   * 同一段回复的身份（渲染层那条占位消息的 id）。分段落盘（`partial: true`）
-   * 与收尾那条共用它 —— 同一 key 可能对应好几行，读侧按它收敛成一条。
-   */
+  /** 同一段回复的身份（渲染层那条占位消息的 id）。分段快照与收尾那条共用它，读侧按它收敛成一条 */
   key?: string
   /** 这是流式过程中的快照，不是最终结果（进程被中断时它就是你最后看到的内容） */
   partial?: boolean
@@ -148,10 +145,11 @@ export interface StoredMessage {
   /** 这条回答答的是哪条提问（key）+ 第几版：读侧按它把同一次提问的多个回答收成一条 */
   answersKey?: string
   answersVersion?: number
-  /** 这条接在哪条提问的哪一版后面。读会话时按当前选中的那一版筛 —— 编辑中间那条
-      消息后，后面几轮（按旧内容写的）会被收起来，切回旧版本它们自己就回来 */
+  /** 这条接在哪条提问的哪一版后面（编辑中间那条之后，后面几轮按旧内容写的会被收起来，切回旧版本又回来） */
   parentKey?: string
   parentVersion?: number
+  /** 用户带图提问：图片的 data URL。**必须落盘** —— 不存的话重开会话只剩「（图片）」那行字，画面就没了 */
+  images?: string[]
   reasoning?: string
   toolCallId?: string
   toolName?: string

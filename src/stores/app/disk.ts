@@ -38,6 +38,9 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     status: isError ? 'error' : 'sent',
     timestamp: stored.ts ?? Date.now(),
     ...(stored.toolRuns && stored.toolRuns.length > 0 ? { toolRuns: stored.toolRuns } : {}),
+    /* 用户带的图：**必须还原**。丢了的话重开会话看不到缩略图，「恢复任务」时
+       模型也收不到画面 —— 只剩「（图片）」这行占位字（2026-09-28 真机复现） */
+    ...(stored.images && stored.images.length > 0 ? { images: stored.images } : {}),
     ...(stored.citations && stored.citations.length > 0 ? { citations: stored.citations } : {}),
     ...(stored.artifacts && stored.artifacts.length > 0 ? { artifacts: stored.artifacts } : {}),
     ...(stored.usage ? { usage: stored.usage } : {}),

@@ -11,6 +11,7 @@ import { tryHandleCommand } from './thread/commands'
 import { runMockTurn } from './thread/mockTurn'
 import { makeVersionActions } from './thread/messageVersions'
 import { questionTargetOf } from '@/lib/answers'
+import { userRecord } from './thread/userRecord'
 import { getActiveThread, useAppStore } from './useAppStore'
 import { useUIStore } from './useUIStore'
 import { useConfigStore } from './useConfigStore'
@@ -192,15 +193,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     /* 这条接在哪条提问的哪一版后面（读会话时按当前那一版筛"树"那一层）。
        ★ 要在 addMessage 之前取 —— 加进去以后「最近一条提问」就是它自己了。 */
     const parent = questionTargetOf(thread?.messages ?? [])
-    useAppStore.getState().persistMessage(threadId, {
-      role: 'user',
-      /* ★ 带 key：编辑这条时会在同一 key 上追加新记录，读的时候收敛成一条
-         （不然「改一次就多一条提问」会从界面跑到磁盘上）。 */
-      key: userMessage.id,
-      content: raw || '（图片）',
-      ts: userMessage.timestamp,
-      ...(parent ? { parentKey: parent.key, parentVersion: parent.version } : {}),
-    })
+    /* 落盘形态（含图片）见 thread/userRecord.ts —— 那里面记着「为什么必须带 images」 */
+    useAppStore.getState().persistMessage(threadId, userRecord(userMessage, parent))
     get().clearInput()
 
     if (wasUntitled) {

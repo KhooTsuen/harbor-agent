@@ -10,12 +10,14 @@
 
 const scene = require('../core/scene.cjs')
 const log = require('../core/log.cjs')
+/* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
+const { textOf } = require('../core/message-text.cjs')
 
 /** 把最近几条对话拼成一段可读的文本，给「起标题 / 建议」用 */
 function digest(messages, limit = 6) {
   return (messages ?? [])
     .slice(-limit)
-    .map((m) => `${m.role === 'user' ? '用户' : '助手'}：${String(m.content ?? '').slice(0, 800)}`)
+    .map((m) => `${m.role === 'user' ? '用户' : '助手'}：${textOf(m.content).slice(0, 800)}`)
     .join('\n')
 }
 

@@ -20,6 +20,8 @@ const scene = require('./scene.cjs')
 const log = require('./log.cjs')
 const fileCache = require('./file-cache.cjs')
 const searchCache = require('./search-cache.cjs')
+/* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
+const { textOf } = require('./message-text.cjs')
 
 /** 日志最多带这么多行 —— 再多用户复制也费劲 */
 const LOG_LINES = 120
@@ -163,7 +165,8 @@ function lastTurnStructure() {
       bits.push(`token=${tokens ?? '?'}`)
     }
 
-    const text = String(m.content ?? '')
+    /* 带图消息的 content 是多模态数组 —— 直接 String() 会渲染成 [object Object] */
+    const text = textOf(m.content)
       .replace(/\s+/g, ' ')
       .slice(0, MESSAGE_PREVIEW)
     lines.push(`${bits.join(' ')} ${text}${text.length >= MESSAGE_PREVIEW ? '…' : ''}`)
