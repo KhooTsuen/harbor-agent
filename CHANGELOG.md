@@ -173,6 +173,41 @@
 - **能力仍是「声明」不是「探测」**（见 `provider-capabilities.cjs` 的 NOTE）：
   `vision:true` 是按官方说明 + 用户实测填的，用户可在「设置 → 供应商 → 模型能力」里覆盖。
 
+### 追加（同日）：贴图不再因为格式被拒 —— BMP 自动转 PNG，长边压到 2048
+
+用户接着报的真机 400（上一节的图能看见了，这次是发不出去）：
+
+> messages[11].image[0]: You have uploaded an unsupported image. Please make sure your image is
+> valid and has one of the following formats: webp, png, jpeg, and gif.
+
+根因很朴素：**Windows 剪贴板里的截图经常是 BMP**（`image/bmp`），而「选图片」那条路**也允许 `.bmp`**
+（`fs:pickImageAsDataUrl` 的 filters 里就写着 bmp）—— 两条路都**原样**把 base64 发出去，上游当然不认。
+（和上一节「模型说看不见图」是两回事：那次是内核把 base64 按字符切坏了。）
+
+新增 `src/lib/imageNormalize.ts`，贴图与选图**两条路都过一遍**：
+
+- **格式**：不在白名单（webp / png / jpeg / gif）里的 —— bmp、tiff、avif、heic、ico、svg —— 转成 PNG；
+  照片系（jpeg/jpg）继续用 JPEG，别把照片转成 PNG 反而变大。
+- **尺寸**：长边 > 2048 等比缩小。原图直发一次就是几十万 token，也容易撞「单图请求体过大」。
+- **合规的原样透传**：不重新编码（重编码掉画质、还可能变大）—— 这条有测试盯着。
+- 转换用的是**浏览器自己的解码能力**（`createImageBitmap` + canvas 编码）：这个仓库不轻易引原生依赖，
+  而 Chromium 本来就能解 BMP / ICO / AVIF，比引一个图像库覆盖面还宽。解不开的（TIFF / HEIC）
+  **当场给人话**，而不是发出去挨拒 —— 「TIFF 这个格式解不开（常见于 TIFF / HEIC），先转成 PNG 或 JPG 再发」。
+- 转过了会**提示一声**（「图片已转换 · bmp → png」）：静默改用户的东西比不改更糟。
+- 顺手把 `Composer.tsx` 里那段贴图逻辑搬进 `useComposerAttachments`（那个文件贴着 300 行红线）。
+
+**验证**：
+
+- 16 条单测（`src/lib/__tests__/imageNormalize.test.ts`）：白名单透传 / BMP→PNG / 超长边只压长边 /
+  mime 大小写与带参数都认 / 解不开给人话 / 超 30MB **连解码都不做** / 转完把 ImageBitmap 还回去 /
+  data URL→Blob（base64 与百分号编码）/ 扩展名兜底识别。
+- 真机（`tmp/perf/probe-image-format.cjs`）：往输入框贴一张 **3.6MB 的真 BMP**（和剪贴板给的一模一样）→
+  缩略图已经是 `data:image/png`、提示条写出「bmp → png」、**真模型答「红色，蓝色」**、
+  会话文件里落的是 png 且不含 bmp。
+
+**已知边界**（如实记下）：不重压 JPEG 质量（只看长边）；GIF 动图原样发（模型看到哪一帧由上游决定）；
+TIFF / HEIC 仍然解不了 —— 但会明确告诉你转一下，而不是发出去被拒。
+
 ## [1.20.0-beta.22] — 2026-09-27 · 60 帧性能优化：长会话滚动 30→60fps、切换对话 4.3s→0.14s、长会话流式不再卡死
 
 > 一句话：真机十场景从「长会话滚动 P95 50ms ／ 全量渲染 116ms ／ 切换对话一次 3.8 秒主线程阻塞 ／
