@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, FolderPlus, MessageSquarePlus, Plus } from 'lucide-react'
+import { ChevronDown, FolderPlus, Plus } from 'lucide-react'
 import type { Thread } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
@@ -105,15 +105,12 @@ export function SidebarPanes({ folderList, looseThreads, onDeleteThread }: Sideb
           <span className="text-2xs uppercase tracking-wide text-fg-tertiary">对话文件夹</span>
           <span className="text-2xs text-fg-tertiary">{folderList.length || ''}</span>
           <div className="ml-auto flex items-center gap-0.5">
-            <Tooltip content="新建对话（放进第一个文件夹）">
-              <IconButton
-                label="新建对话"
-                size={28}
-                onClick={() => newThread(folderList[0]?.project.id ?? '')}
-              >
-                <MessageSquarePlus size={13} />
-              </IconButton>
-            </Tooltip>
+            {/*
+              这里原来还有一个「新建对话（放进第一个文件夹）」的按钮 —— 已去掉：
+              它是「单独对话还是主路」那会儿的遗留，指向的是「folderList[0]」这个随手挑的文件夹，
+              语义模糊（放哪个文件夹？为什么是第一个？），而且和下面「单独对话」那一栏的「新建单独对话」
+              职责重叠。现在这一栏只留一个入口：「新建对话并指定目录」——目录选定，归属自然就定了。
+            */}
             <Tooltip content="新建对话并指定目录">
               <IconButton
                 label="新建对话并指定目录"
