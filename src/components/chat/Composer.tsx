@@ -91,7 +91,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
     }
   }, [project?.path])
 
-  const { attachImage, pickImage, attachFile, insertImageMessage } = useComposerAttachments()
+  const { attachFromClipboard, pickImage, attachFile, insertImageMessage } =
+    useComposerAttachments()
 
   /* 当前会话的模式 / 模型 / 推理档位，缺省时回退到全局配置 */
   const mode = thread?.mode ?? 'pair'
@@ -171,19 +172,9 @@ export function Composer({ onFocusRequest }: ComposerProps) {
             }}
             onFocus={onFocusRequest}
             onPaste={(e) => {
-              /* 截图直接 Ctrl+V 贴进来 —— 这是最常用的一条路 */
-              const files = Array.from(e.clipboardData.files).filter((f) =>
-                f.type.startsWith('image/'),
-              )
-              if (files.length === 0) return
-              e.preventDefault()
-              for (const file of files) {
-                const reader = new FileReader()
-                reader.onload = () => {
-                  if (typeof reader.result === 'string') attachImage(reader.result)
-                }
-                reader.readAsDataURL(file)
-              }
+              /* 截图直接 Ctrl+V 贴进来 —— 这是最常用的一条路。
+                 格式/尺寸归整在 hook 里（剪贴板经常给 BMP，上游只收 4 种格式） */
+              if (attachFromClipboard(e)) e.preventDefault()
             }}
             onKeyDown={(e) => {
               if (completionsOpen && (e.key === 'Escape' || e.key === 'Tab')) {
