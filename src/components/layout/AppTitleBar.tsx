@@ -145,30 +145,34 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
       ) : null}
 
       {/*
-        右边这四个**故意不挂 Tooltip**，也要把 IconButton 自带的 title 置空。
+        右边这四个**故意不挂提示**：`hint=""` 就是「不要提示」（提示实现里空文案
+        直接不渲染）。
 
-        它们紧贴原生窗口按钮，提示往下弹会正好落在右栏那排标签
-       （审查 / 终端 / 文件…）上，两块字叠在一起，比没提示难看得多。
+        为什么不挂：它们紧贴原生窗口按钮，提示往下弹会正好落在右栏那排标签
+        （审查 / 终端 / 文件…）上，两块字叠在一起，比没提示难看得多。
         图标本身够清楚，无障碍靠 aria-label（IconButton 的 label），不受影响。
+
+        （前身写的是 title="" —— 那时 IconButton 自己会设原生 title，靠空 title 压掉它；
+       现在提示由 IconButton 自己渲染，得用 hint 表达同一个意思。）
       */}
       <div className="flex shrink-0 items-center gap-0.5">
         {sending ? (
-          <IconButton label="停止生成" title="" size={28} onClick={stopGeneration}>
+          <IconButton label="停止生成" hint="" size={28} onClick={stopGeneration}>
             <Square size={13} fill="currentColor" />
           </IconButton>
         ) : (
-          <IconButton label="继续" title="" size={28} onClick={() => sendMessage('继续')}>
+          <IconButton label="继续" hint="" size={28} onClick={() => sendMessage('继续')}>
             <Play size={13} />
           </IconButton>
         )}
 
-        <IconButton label="切换底部面板" title="" size={28} onClick={onToggleBottomPanel}>
+        <IconButton label="切换底部面板" hint="" size={28} onClick={onToggleBottomPanel}>
           <PanelBottom size={15} />
         </IconButton>
 
         <IconButton
           label="切换右侧面板"
-          title=""
+          hint=""
           size={28}
           active={rightPanelVisible}
           onClick={toggleRightPanel}

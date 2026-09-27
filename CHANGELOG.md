@@ -63,6 +63,46 @@
   只用装饰色 / 路径归一与缩短 / 空路径不显示那行），`folderGrouping.test.tsx` 补一条
   「表头能看到路径」。
 
+### 追加（同日）：提示（tooltip）统一成一套 —— 不再叠两个框、不再被容器裁掉
+
+用户接着报的两件（截图）：① 侧栏贴边的按钮，提示**被裁掉半截**（「新建对话并指定…」）；
+② 「单独对话」那个 `+`，悬停时**两个框叠在一起**。并说明「整个软件里都会有类似情况」。
+
+**两个根因（都不是样式没调好，是机制不对）：**
+
+- **②两个框**：`IconButton` 自己设了原生 `title={label}`，而它外面又包着样式化提示 ——
+  **两套提示一起弹**（原生灰框 + 应用样式框）。全项目扫了一遍：`<Tooltip>` 30 处，
+  其中 **24 处包着「自带 title 的按钮」（23 个 IconButton + 1 个 Button）**，另有
+  **35 个单独用的 IconButton** 只靠原生 title（样式和其它地方不一致）。
+- **①被裁**：提示原是「绝对定位在触发器旁边的 span」——落在侧栏那种 `overflow-y-auto`
+  滚动容器里就被切。这与 beta.11 修 Popover 时踩的是同一个坑。
+
+**现在只有一套提示（`src/components/ui/useTooltip.tsx`，样式/定位/关闭规则的唯一来源）：**
+
+- 走 floating-ui：`strategy: 'fixed'` + `offset(6)` + `flip` + `shift(padding 8)`
+  （贴边的按钮也不会把提示挤出屏幕）+ `autoUpdate`（滚动/尺寸变化跟着走）。
+- **portal 到 `document.body`**：祖先链上没有任何能裁它的容器（真机断言：父节点是 body、
+  无裁剪祖先、无「把 fixed 关进盒子」的 transform/filter/contain 祖先）。
+- 算坐标前 `visibility: hidden`（照 Popover 的做法，避免从角上跳过来）。
+- `IconButton` **不再设原生 title**：子元素是 IconButton 时，`Tooltip` 把文案当作 `hint`
+  递进去，由它自己渲染那唯一的提示 —— **24 个调用点一行都不用改**（`<Tooltip>` 包着写照旧）。
+  `hint` 比 `label` 长的 12 处（如 `新建对话（Ctrl+N）`）现在真能看到长文案了；
+  原先 9 处文案与 label 相同的，行为不变。
+- 顶栏那四个**故意不弹提示**的按钮（贴着原生窗口按钮，弹下来会压住右栏标签）：
+  `title=""` → `hint=""`（提示实现里空文案直接不渲染），语义更直白。
+- 关闭出口三条都留着：鼠标移开、**窗口失焦/切后台**、Esc（`useDismiss`）。
+
+**验证：**
+
+- 新增 `components/ui/__tests__/tooltip.test.tsx` 9 条：一个按钮**只有一个** `[role=tooltip]`、
+  按钮**没有**原生 `title` 属性（有它就会多弹一个灰框）、提示挂在 body 上（不在滚动容器里）、
+  `visibility: visible` + `position: fixed` 且坐标已写入、`hint` 优先于 `label`、
+  `hint=""` 即不出提示、`onClick` 不被提示的 props 吃掉、移开/失焦关掉、通用分支（非 IconButton）也挂 body。
+- 真机（隔离副本 + CDP **真鼠标**悬停三个现场）**10 项检查 × 3 处全过、0 失败**：
+  侧栏表头「新建对话并指定目录」（截图 1 的裁切案例）、「单独对话」`+`（截图 2 的重复案例）、
+  会话行「更多操作」（在 `overflow-y-auto` 里）。截图：`shots/electron/tooltip-fix-*.png`。
+- `npm run verify` 全链（898 条单测 / 104 个文件）+ `npm run test:app`（139 通道 0 缺失）。
+
 ## [1.20.0-beta.22] — 2026-09-27 · 60 帧性能优化：长会话滚动 30→60fps、切换对话 4.3s→0.14s、长会话流式不再卡死
 
 > 一句话：真机十场景从「长会话滚动 P95 50ms ／ 全量渲染 116ms ／ 切换对话一次 3.8 秒主线程阻塞 ／

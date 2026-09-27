@@ -1,14 +1,23 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
-import { cn } from '@/lib/utils'
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from 'react'
+import { IconButton } from './IconButton'
+import { useTooltip, type TooltipSide } from './useTooltip'
 
 /* ══════════════════════════════════════════════════════════════
-   Tooltip
+   Tooltip —— 悬停 / 聚焦时的说明（定位与关闭规则在 useTooltip）
 
-   自己写的轻量版：hover / focus 时显示，纯 CSS 定位，不引第三方库。
-   为了可访问性，用 aria-describedby 关联。
+   ★ 子元素是 `IconButton` 时，**把提示交给它自己渲染**（这里不再套壳）。
+
+   为什么（用户 2026-09-28 报的「两个提示叠一起」）：IconButton 自带
+   `title={label}`（原生提示），外面再包一个样式化提示 → 悬停时**两个一起弹**。
+   现在 IconButton 不再设原生 title，由它自己渲染这一个（挂到 body、不被裁切），
+   这里只把文案递过去（`hint`）。
+   调用点**一行都不用改**：`<Tooltip content="…"><IconButton …/></Tooltip>`
+   照旧写着，行为统一到一套提示上。
+
+   其它元素走下面的通用分支（外面套一个 inline-flex 的 span 当锚点）。
    ══════════════════════════════════════════════════════════════ */
 
-export type TooltipSide = 'top' | 'bottom' | 'left' | 'right'
+export type { TooltipSide }
 
 export interface TooltipProps {
   content: ReactNode
@@ -17,58 +26,39 @@ export interface TooltipProps {
   className?: string
 }
 
-const SIDE_CLASS: Record<TooltipSide, string> = {
-  top: 'bottom-full left-1/2 -translate-x-1/2 mb-1.5',
-  bottom: 'top-full left-1/2 -translate-x-1/2 mt-1.5',
-  left: 'right-full top-1/2 -translate-y-1/2 mr-1.5',
-  right: 'left-full top-1/2 -translate-y-1/2 ml-1.5',
-}
-
 export function Tooltip({ content, side = 'bottom', children, className }: TooltipProps) {
-  const id = useId()
-  const [open, setOpen] = useState(false)
-
-  /*
-   * 光靠 mouseleave 关不干净：窗口失焦、或者鼠标移到网页盖不到的地方（原生按钮、
-   * 拖拽区）时，网页侧就收不到 mouseleave 了，提示会一直挂着。
-   * 所以再加两个出口。
-   */
-  useEffect(() => {
-    const close = () => setOpen(false)
-    window.addEventListener('blur', close)
-    document.addEventListener('visibilitychange', close)
-    return () => {
-      window.removeEventListener('blur', close)
-      document.removeEventListener('visibilitychange', close)
-    }
-  }, [])
+  /* 交给子元素自己渲染（判断用组件本身，不做字符串匹配） */
+  if (isValidElement(children) && children.type === IconButton) {
+    return cloneElement(children as ReactElement<{ hint?: ReactNode }>, { hint: content })
+  }
 
   return (
+    <TooltipAnchor content={content} side={side} className={className}>
+      {children}
+    </TooltipAnchor>
+  )
+}
+
+function TooltipAnchor({
+  content,
+  side,
+  className,
+  children,
+}: {
+  content: ReactNode
+  side: TooltipSide
+  className?: string
+  children: ReactNode
+}) {
+  const tip = useTooltip(content, side, className)
+  return (
     <span
+      ref={tip.setReference}
+      {...tip.getReferenceProps({ 'aria-describedby': tip.describedBy })}
       className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
     >
-      <span aria-describedby={open ? id : undefined} className="inline-flex">
-        {children}
-      </span>
-      {open && content ? (
-        <span
-          id={id}
-          role="tooltip"
-          className={cn(
-            'pointer-events-none absolute z-dropdown whitespace-nowrap',
-            'rounded-sm border border-line-subtle bg-bg-elevated px-2 py-1',
-            'text-2xs text-fg-primary shadow-mid animate-fade-in',
-            SIDE_CLASS[side],
-            className,
-          )}
-        >
-          {content}
-        </span>
-      ) : null}
+      {children}
+      {tip.floating}
     </span>
   )
 }
