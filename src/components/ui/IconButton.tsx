@@ -53,7 +53,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
           className,
         )}
         {...rest}
-        {...tip.getReferenceProps({ 'aria-label': label, 'aria-describedby': tip.describedBy })}
+        {...tip.getReferenceProps({ 'aria-label': label })}
       >
         {children}
       </button>
