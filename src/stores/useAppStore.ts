@@ -14,6 +14,7 @@ import { touch, type AppState } from './app/types'
 import { makeMessageActions } from './app/messageActions'
 import { makeThreadEditActions } from './app/threadEdits'
 import { makeProjectActions } from './app/projectActions'
+import { appPersistOptions } from './app/persistOptions'
 import { mergeImport } from '@/lib/migrations'
 import { useConfigStore } from './useConfigStore'
 import { useUIStore } from './useUIStore'
@@ -287,10 +288,8 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: 'personal-agent:app',
-      version: 1,
-      /* Electron 的真实磁盘是唯一数据源，不从旧 localStorage 恢复演示数据。 */
-      skipHydration: useRealBackend,
+      /* 持久化选项（含 partialize —— 别把整份状态写进 localStorage）：见 app/persistOptions.ts */
+      ...appPersistOptions,
     },
   ),
 )
