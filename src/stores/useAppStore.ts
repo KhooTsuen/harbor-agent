@@ -1,23 +1,21 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { DEFAULT_PROJECTS, DEFAULT_THREADS, makeEmptyThread } from '@/lib/mock'
-import { uid } from '@/lib/utils'
+import { DEFAULT_PROJECTS, DEFAULT_THREADS } from '@/lib/mock'
 import {
   appendMessage as appendToDisk,
   useRealBackend,
   importSessions,
   updateSessionMeta,
 } from '@/lib/backend'
-import { folderIdFor } from './app/disk'
 import { projectsBridgeReady, setProjectActive as persistProjectActive } from '@/lib/projectsApi'
 import { touch, type AppState } from './app/types'
 import { makeMessageActions } from './app/messageActions'
 import { makeThreadEditActions } from './app/threadEdits'
 import { makeProjectActions } from './app/projectActions'
 import { makeDiskActions } from './app/diskActions'
+import { makeThreadFolderActions } from './app/threadFolders'
 import { appPersistOptions } from './app/persistOptions'
 import { mergeImport } from '@/lib/migrations'
-import { useConfigStore } from './useConfigStore'
 import { useUIStore } from './useUIStore'
 export { getActiveProject, getActiveThread, sortThreads } from './app/selectors'
 
@@ -39,53 +37,8 @@ export const useAppStore = create<AppState>()(
       /* 磁盘读写（loadFromDisk / openFromDisk）：见 app/diskActions.ts */
       ...makeDiskActions(set, get),
 
-      createThread: (projectId, explicitWorkdir) => {
-        /* projectId：没传=用当前选中；给了=放进那个文件夹；''=明确要单独对话 */
-        const pid = projectId === undefined ? get().activeProjectId : projectId
-        const project = get().projects.find((p) => p.id === pid)
-        /* 显式给的目录优先（可能是还没建文件夹的新目录） */
-        const workdir = explicitWorkdir !== undefined ? explicitWorkdir : (project?.path ?? '')
-
-        const build = (id?: string) => {
-          const configuredModel = useConfigStore.getState().config?.assistant.model
-          return {
-            ...makeEmptyThread(pid),
-            ...(id ? { id } : {}),
-            workdir,
-            ...(configuredModel ? { model: configuredModel } : {}),
-          }
-        }
-
-        /* 磁盘模式：先用 pending id 占位，第一次发送时才落文件 */
-        if (useRealBackend) {
-          const id = uid('pending')
-          set((s) => ({ threads: [build(id), ...s.threads], activeThreadId: id }))
-          return id
-        }
-
-        const thread = build()
-        set((s) => ({ threads: [thread, ...s.threads], activeThreadId: thread.id }))
-        return thread.id
-      },
-
-      /* 换一条对话的工作目录（挂到文件夹 / 换文件夹 / 摘掉 ''）。
-         磁盘模式下要同时改会话文件 meta —— 分组是从磁盘读的。 */
-      setThreadWorkdir: async (threadId, workdir) => {
-        const project = get().projects.find((p) => p.path === workdir)
-
-        set((s) => ({
-          threads: s.threads.map((t) =>
-            t.id === threadId
-              ? { ...t, workdir, projectId: workdir ? (project?.id ?? folderIdFor(workdir)) : '' }
-              : t,
-          ),
-        }))
-
-        if (useRealBackend && !threadId.startsWith('pending_')) {
-          await updateSessionMeta(threadId, { workdir })
-          await get().loadFromDisk()
-        }
-      },
+      /* 新建对话 / 挂到目录（归属规则在这里）：见 app/threadFolders.ts */
+      ...makeThreadFolderActions(set, get),
 
       replaceThreadId: (pendingId, realId) =>
         set((s) => ({
