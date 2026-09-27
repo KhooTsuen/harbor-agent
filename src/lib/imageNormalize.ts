@@ -1,113 +1,31 @@
+import {
+  MAX_INPUT_BYTES,
+  dataUrlToBytes,
+  fitInside,
+  mimeOf,
+  planFor,
+  probeSize,
+  type NormalizedImage,
+} from './imageFormat'
+
 /* ══════════════════════════════════════════════════════════════
-   图片进模型之前的**格式与尺寸归整**
+   真去把图**转掉**（canvas 那一层）
 
-   为什么要有它（2026-09-28 真机报错）：用户贴了一张图，上游直接 400 ——
+   判定（该不该转、缩到多少）在 `imageFormat.ts`；这里只负责执行：
 
-     messages[11].image[0]: You have uploaded an unsupported image.
-     Please make sure your image is valid and has one of the following
-     formats: webp, png, jpeg, and gif.
-
-   根因很朴素：**Windows 剪贴板里的截图经常是 BMP**（`image/bmp`），而「选图片」
-   那条路也允许 `.bmp`（`fs:pickImageAsDataUrl` 的 filters 里就写着 bmp）。
-   我们两条路都原样发出去，上游当然不认。（这和「模型说看不见图」是两回事 ——
-   那次是内核把 base64 按字符切坏了，见 docs/踩坑记录.md。）
-
-   这一层只做两件事，别的都不碰：
-
-     · **格式**：不在白名单里的（bmp / tiff / avif / heic / ico / svg…）转成 PNG
-     · **尺寸**：长边超过 `MAX_EDGE` 就等比缩小（原图直发一次就是几十万 token，
-       而且很容易撞上「单图请求体过大」）
-
-   白名单里、尺寸也合规的**原样透传** —— 不重新编码（重编码掉画质，还可能变大）。
-
-   ★ 转换用的是**浏览器自己的解码能力**（`createImageBitmap` + canvas 编码）：
-     这个仓库不轻易引原生依赖，而 Chromium 本来就能解 BMP / ICO / AVIF，
-     比引一个图像库覆盖面还宽。TIFF / HEIC 它解不了 → **在这里就明确报错**，
-     而不是发出去被上游拒（用户至少知道该怎么办）。
+     · 转换用的是**浏览器自己的解码能力**（`createImageBitmap` + canvas 编码）：
+       这个仓库不轻易引原生依赖，而 Chromium 本来就能解 BMP / ICO / AVIF，
+       比引一个图像库覆盖面还宽。TIFF / HEIC 解不了 → **在这里就明确报错**，
+       而不是发出去被上游拒（用户至少知道该怎么办）。
+     · 顺序很重要（用户 2026-09-28 真机：14200×7104 的旧图）：
+         ① 先**读文件头** —— 合规就直接透传（不解码，零风险）
+         ② 要缩就把目标尺寸**交给解码器**（一亿像素整张读进内存会爆）
+         ③ 让解码器缩过之后**必须重新编码** —— 像素已经不是原图了
+     · 编解码器可注入：jsdom 里没有 canvas，单测用假的替换（真机那条路由
+       `tmp/perf/probe-image-format.cjs` / `probe-huge-history.cjs` 走一遍）。
    ══════════════════════════════════════════════════════════════ */
 
-/** 上游收的格式（报错原文里列的那四个） */
-export const SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
-
-/** 长边上限。够看清截图里的字，又不至于让一次请求几十万 token */
-export const MAX_EDGE = 2048
-
-/** 解码前先按**原始体积**拦一道：BMP 是未压缩的，屏幕截图能到几十 MB */
-export const MAX_INPUT_BYTES = 30 * 1024 * 1024
-
-/** 不支持时转成什么：照片继续用 JPEG（体积小），其余用 PNG（无损，截图里的字清楚） */
-const FALLBACK_FOR = (sourceType: string): string =>
-  /jpe?g/i.test(sourceType) ? 'image/jpeg' : 'image/png'
-
-export interface ImageShape {
-  type: string
-  width: number
-  height: number
-  bytes: number
-}
-
-export interface ImagePlan {
-  mode: 'passthrough' | 'convert'
-  /** 目标 mime（passthrough 时与输入一致） */
-  type: string
-  width: number
-  height: number
-  /** 人话原因，用于提示/日志（例：「bmp → png」/「4096×2304 → 2048×1152」） */
-  reason: string
-}
-
-/** 缩放后的尺寸（等比，长边不超过 maxEdge；本来就小就原样） */
-export function fitInside(
-  width: number,
-  height: number,
-  maxEdge = MAX_EDGE,
-): {
-  width: number
-  height: number
-} {
-  const longest = Math.max(width, height)
-  if (longest <= maxEdge) return { width, height }
-  const scale = maxEdge / longest
-  return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
-  }
-}
-
-/**
- * 该原样发还是该转（**纯函数**，单测盯的就是它）。
- * 传进来的 type 可能带参数（`image/png;charset=…`）或大小写不一，这里统一归一。
- */
-export function planFor(input: ImageShape): ImagePlan {
-  const sourceType = String(input.type || '')
-    .toLowerCase()
-    .split(';')[0]
-    .trim()
-  const supported = SUPPORTED_IMAGE_TYPES.includes(sourceType)
-  const target = fitInside(input.width, input.height)
-  const shrunk = target.width !== input.width || target.height !== input.height
-  if (!supported) {
-    const type = FALLBACK_FOR(sourceType)
-    const ext = sourceType.replace('image/', '') || '未知'
-    return {
-      mode: 'convert',
-      type,
-      ...target,
-      reason: `${ext} → ${type.replace('image/', '')}${shrunk ? `，并缩到 ${target.width}×${target.height}` : ''}`,
-    }
-  }
-  if (shrunk) {
-    return {
-      mode: 'convert',
-      type: sourceType,
-      ...target,
-      reason: `${input.width}×${input.height} → ${target.width}×${target.height}`,
-    }
-  }
-  return { mode: 'passthrough', type: sourceType, ...target, reason: '原样' }
-}
-
-/* ── 解码 / 编码能力（真机走 canvas；单测注入假的，jsdom 里没有 canvas） ── */
+export type { ImagePlan, NormalizedImage } from './imageFormat'
 
 export interface DecodedImage {
   width: number
@@ -118,7 +36,8 @@ export interface DecodedImage {
 }
 
 export interface ImageCodecs {
-  decode: (blob: Blob) => Promise<DecodedImage>
+  /** 解码；给了 `resize` 就在解码时直接缩（**别先整张解出来再缩** —— 一亿像素会吃几百 MB） */
+  decode: (blob: Blob, resize?: { width: number; height: number }) => Promise<DecodedImage>
   encode: (
     image: DecodedImage,
     width: number,
@@ -130,10 +49,16 @@ export interface ImageCodecs {
 }
 
 export const browserCodecs: ImageCodecs = {
-  async decode(blob) {
-    /* 失败的话抛的是浏览器的话（如「The source image could not be decoded」），
-       上层会用下面的 readableError 翻成人话 */
-    const bitmap = await createImageBitmap(blob)
+  async decode(blob, resize) {
+    /* 失败时抛的是浏览器自己的话（如「The source image could not be decoded」），
+       上层会翻成人话 */
+    const bitmap = resize
+      ? await createImageBitmap(blob, {
+          resizeWidth: Math.max(1, Math.round(resize.width)),
+          resizeHeight: Math.max(1, Math.round(resize.height)),
+          resizeQuality: 'high',
+        })
+      : await createImageBitmap(blob)
     return {
       width: bitmap.width,
       height: bitmap.height,
@@ -166,61 +91,96 @@ export const browserCodecs: ImageCodecs = {
   },
 }
 
-export interface NormalizedImage {
-  dataUrl: string
-  /** 有没有动过（没动就是原样透传） */
-  changed: boolean
-  reason: string
-}
+/** 交给 Blob 时把 Uint8Array 的泛型收窄回 ArrayBuffer（TS 5.7 起 Uint8Array 带泛型参数） */
+const toBlob = (bytes: Uint8Array, type: string): Blob =>
+  new Blob(
+    [bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer],
+    { type },
+  )
 
-/** data URL → Blob（「选图片」那条路给回来的是 data URL） */
-export function dataUrlToBlob(dataUrl: string): Blob {
-  const [head, body = ''] = String(dataUrl).split(',')
-  const type = /data:([^;]+)/.exec(head)?.[1] ?? 'application/octet-stream'
-  if (!/;base64/i.test(head)) return new Blob([decodeURIComponent(body)], { type })
-  const binary = atob(body)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type })
+/** 不合规的图给一句**人话**（而不是把浏览器的报错原样甩给用户） */
+function readableError(type: string, cause: unknown): Error {
+  const ext = (type || '未知格式').replace('image/', '')
+  return new Error(
+    `${ext.toUpperCase()} 这个格式解不开（常见于 TIFF / HEIC），先转成 PNG 或 JPG 再发`,
+    {
+      cause,
+    },
+  )
 }
 
 /**
- * 归整一张图：该透传就透传，该转就转。
- * 体积超限、或浏览器都解不开的格式 → 抛**人话**错误，调用点直接提示用户。
+ * 归整一张图（字节进，data URL 出）。
+ * 体积超限 / 浏览器也解不开 → 抛**人话**错误，调用点直接提示用户。
  */
-export async function normalizeImage(
-  blob: Blob,
+export async function normalizeImageBytes(
+  bytes: Uint8Array,
+  declaredType: string,
   codecs: ImageCodecs = browserCodecs,
 ): Promise<NormalizedImage> {
-  if (blob.size > MAX_INPUT_BYTES) {
-    throw new Error(`图片太大（${(blob.size / 1024 / 1024).toFixed(1)}MB），换一张或先压一下再发`)
-  }
-  if (blob.size === 0) throw new Error('这张图是空的')
-
-  let decoded: DecodedImage
-  try {
-    decoded = await codecs.decode(blob)
-  } catch {
-    const ext = String(blob.type || '').replace('image/', '') || '未知格式'
+  if (bytes.byteLength > MAX_INPUT_BYTES) {
     throw new Error(
-      `${ext.toUpperCase()} 这个格式解不开（常见于 TIFF / HEIC），先转成 PNG 或 JPG 再发`,
+      `图片太大（${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB），换一张或先压一下再发`,
     )
   }
+  if (bytes.byteLength === 0) throw new Error('这张图是空的')
+
+  const type = mimeOf(declaredType, bytes)
+  const probed = probeSize(bytes)
+  /* 看得懂头又不超尺寸 —— 最省的一条路：不碰解码器 */
+  if (probed) {
+    const quick = planFor({
+      type,
+      width: probed.width,
+      height: probed.height,
+      bytes: bytes.byteLength,
+    })
+    if (quick.mode === 'passthrough') {
+      const blob = toBlob(bytes, type)
+      return { dataUrl: await codecs.toDataUrl(blob), changed: false, reason: quick.reason }
+    }
+  }
+
+  const blob = toBlob(bytes, type)
+  const resizeHint = probed ? fitInside(probed.width, probed.height) : null
+  const resized =
+    Boolean(resizeHint && probed) &&
+    (resizeHint!.width !== probed!.width || resizeHint!.height !== probed!.height)
+
+  let decodeError: unknown = null
+  let decoded: DecodedImage | null = null
+  if (resized) {
+    try {
+      decoded = await codecs.decode(blob, resizeHint!)
+    } catch (error) {
+      decodeError = error
+    }
+  }
+  if (!decoded) {
+    try {
+      decoded = await codecs.decode(blob)
+    } catch (error) {
+      decodeError = error
+    }
+  }
+  if (!decoded) throw readableError(type, decodeError)
 
   try {
     const plan = planFor({
-      type: blob.type,
+      type,
       width: decoded.width,
       height: decoded.height,
-      bytes: blob.size,
+      bytes: bytes.byteLength,
     })
-    if (plan.mode === 'passthrough') {
+    /* 解出来发现本来就合规（比如头里有大 EXIF、没读到尺寸）→ 透传，不重编码 */
+    if (plan.mode === 'passthrough' && !resized) {
       return { dataUrl: await codecs.toDataUrl(blob), changed: false, reason: plan.reason }
     }
+    /* 缩过的走这里：像素已经变了，必须编码（尺寸用解码器实际给的那个） */
     const encoded = await codecs.encode(
       decoded,
-      plan.width,
-      plan.height,
+      plan.mode === 'passthrough' ? decoded.width : plan.width,
+      plan.mode === 'passthrough' ? decoded.height : plan.height,
       plan.type,
       plan.type === 'image/jpeg' ? 0.92 : undefined,
     )
@@ -230,16 +190,51 @@ export async function normalizeImage(
   }
 }
 
-/** 「选图片」那条路：给回来的是 data URL */
+/** 归整一个 Blob（剪贴板给的 File 就是 Blob） */
+export async function normalizeImage(
+  blob: Blob,
+  codecs: ImageCodecs = browserCodecs,
+): Promise<NormalizedImage> {
+  const whole = new Uint8Array(await blob.arrayBuffer())
+  return normalizeImageBytes(whole, blob.type, codecs)
+}
+
+/*
+ * 归整过的图放这儿，同一张只洗一次。几 MB 的字符串算哈希比转换还贵，
+ * 所以按「mime + 长度 + 头尾」做指纹。
+ */
+const CACHE_CHARS = 24 * 1024 * 1024
+const convertedCache = new Map<string, string>()
+let cachedChars = 0
+
+const fingerprint = (dataUrl: string): string =>
+  `${dataUrl.slice(0, 40)}|${dataUrl.length}|${dataUrl.slice(-24)}`
+
+/** 只给测试用：清掉缓存 */
+export function clearImageCache(): void {
+  convertedCache.clear()
+  cachedChars = 0
+}
+
+/**
+ * 归整一段 data URL（两个入口都走它）。
+ *
+ * 贴图那条路传进来的是**刚贴的图**；发送前的「最后一米」传的是**要发出去的历史里的图** ——
+ * 后者才是用户 2026-09-28 那次 400 的根因：旧会话里那张 14200×7104 会跟着每条新消息
+ * 一起发出去，而以前只在「贴进来那一刻」洗。
+ */
 export async function normalizeDataUrl(
   dataUrl: string,
   codecs: ImageCodecs = browserCodecs,
 ): Promise<NormalizedImage> {
-  return normalizeImage(dataUrlToBlob(dataUrl), codecs)
-}
-
-/** 剪贴板里这个文件像不像图（有的来源不给 type，只能看扩展名） */
-export function looksLikeImage(file: { type?: string; name?: string }): boolean {
-  if (String(file.type ?? '').startsWith('image/')) return true
-  return /\.(png|jpe?g|webp|gif|bmp|avif|ico|tiff?|heic)$/i.test(String(file.name ?? ''))
+  const cached = convertedCache.get(fingerprint(dataUrl))
+  if (cached) return { dataUrl: cached, changed: true, reason: '这条已经洗过了' }
+  const parsed = dataUrlToBytes(dataUrl)
+  if (!parsed) throw new Error('这张图读不出来（data URL 坏了），重新贴一张')
+  const result = await normalizeImageBytes(parsed.bytes, parsed.type, codecs)
+  if (result.changed && cachedChars + result.dataUrl.length <= CACHE_CHARS) {
+    convertedCache.set(fingerprint(dataUrl), result.dataUrl)
+    cachedChars += result.dataUrl.length
+  }
+  return result
 }
