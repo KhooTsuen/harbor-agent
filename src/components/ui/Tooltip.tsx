@@ -52,11 +52,7 @@ function TooltipAnchor({
 }) {
   const tip = useTooltip(content, side, className)
   return (
-    <span
-      ref={tip.setReference}
-      {...tip.getReferenceProps({ 'aria-describedby': tip.describedBy })}
-      className="relative inline-flex"
-    >
+    <span ref={tip.setReference} {...tip.getReferenceProps()} className="relative inline-flex">
       {children}
       {tip.floating}
     </span>

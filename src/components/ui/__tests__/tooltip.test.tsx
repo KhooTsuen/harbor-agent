@@ -42,10 +42,13 @@ let root: Root
 const tips = (): HTMLElement[] =>
   Array.from(document.body.querySelectorAll<HTMLElement>('[role="tooltip"]'))
 
-/** 悬停：floating-ui 直接在元素上挂原生 mouseenter / mouseleave（绕过 React 合成） */
+/**
+ * 悬停：派发 **mouseover**（React 的 `onMouseEnter` 是从 mouseover 合成的）。
+ * 懒挂载下「有没有被碰过」靠 React 事件判断，所以这里不能用原生 mouseenter。
+ */
 async function hover(el: Element): Promise<void> {
   await act(async () => {
-    el.dispatchEvent(new MouseEvent('mouseenter'))
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }))
   })
   await act(async () => {
     await Promise.resolve()
@@ -125,6 +128,9 @@ describe('① 一个按钮只有一个提示（不再和原生 title 打架）',
     /* ★ 原生 title 必须没有 —— 有它就会多弹一个灰框 */
     expect(btn.getAttribute('title')).toBeNull()
     expect(btn.getAttribute('aria-label')).toBe('新建单独对话')
+    /* ★ 碰它之前不许有任何浮层机器/关联（列表里几百个按钮都各挂一套的话，切会话会变慢） */
+    expect(tips()).toHaveLength(0)
+    expect(btn.getAttribute('aria-describedby')).toBeNull()
 
     await hover(btn)
     expect(tips()).toHaveLength(1)

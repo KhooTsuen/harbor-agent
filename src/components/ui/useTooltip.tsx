@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useId, useState, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   autoUpdate,
@@ -80,16 +80,91 @@ export const TooltipBox = forwardRef<
  *
  * 用法：
  *   const tip = useTooltip('说明')
- *   <button ref={tip.setReference} {...tip.getReferenceProps({ 'aria-describedby': tip.describedBy })} />
+ *   <button ref={tip.setReference} {...tip.getReferenceProps({ 'aria-label': label })} />
  *   {tip.floating}
+ *
+ * ★ 这个 hook 本身**必须便宜**：列表里一个会话行就有一两个 IconButton，
+ * 侧栏一屏就几十个 —— 每个都挂一套 floating-ui 的话，切会话的挂载开销肉眼可见
+ * （2026-09-28 实测：千条会话切换 251/263ms → 323/337ms，长任务 80ms → 117/145ms）。
+ * 所以 floating-ui 那一套被挪到 `TooltipFloating` 里，**悬停 / 聚焦到它了才挂**。
+ * 代价只有「第一次悬停晚一帧出提示」（upb 16ms，看不出来），换来满列表零开销。
  */
 export function useTooltip(content: ReactNode, side: TooltipSide = 'bottom', className?: string) {
-  const [open, setOpen] = useState(false)
   const id = useId()
+  /** 触发器元素（ref 回调拿；拿到之前浮层不挂） */
+  const [reference, setNode] = useState<HTMLElement | null>(null)
+  /** 被悬停 / 聚焦过没有 —— 一旦碰过就保持挂载，连续悬停不会反复装卸 */
+  const [armed, setArmed] = useState(false)
+
+  const setReference = useCallback((node: HTMLElement | null) => setNode(node), [])
+
+  /* 带着调用点自己的同事件处理（有人传了 onMouseEnter 也不能丢） */
+  const chain = (mine: () => void, theirs: unknown) => (event: unknown) => {
+    mine()
+    if (typeof theirs === 'function') (theirs as (e: unknown) => void)(event)
+  }
+
+  const getReferenceProps = (extra: Record<string, unknown> = {}) => ({
+    ...extra,
+    onMouseEnter: chain(() => setArmed(true), extra.onMouseEnter),
+    onFocus: chain(() => setArmed(true), extra.onFocus),
+    /** 挂上就带上：读屏器会把提示读出来 */
+    'aria-describedby': armed ? id : undefined,
+  })
+
+  const floating =
+    armed && reference ? (
+      <TooltipFloating
+        reference={reference}
+        content={content}
+        side={side}
+        className={className}
+        id={id}
+        onClosed={() => setArmed(false)}
+      />
+    ) : null
+
+  return {
+    open: armed,
+    setReference,
+    getReferenceProps,
+    describedBy: armed ? id : undefined,
+    floating,
+  }
+}
+
+/**
+ * 浮层机器（floating-ui + portal）——**只在悬停/聚焦之后才挂**，见 `useTooltip`。
+ *
+ * 挂上时就已经是「开着」的（父级已经看到悬停/聚焦了），所以初始 `open = true`；
+ * 之后鼠标移开 / 失焦 / Esc / 点外面 全交给 `useInteractions`。关掉就自我卸载
+ * （`onClosed`），下次再碰再挂。
+ */
+export function TooltipFloating({
+  reference,
+  content,
+  side,
+  className,
+  id,
+  onClosed,
+}: {
+  reference: HTMLElement
+  content: ReactNode
+  side: TooltipSide
+  className?: string
+  id: string
+  onClosed: () => void
+}) {
+  const [open, setOpen] = useState(true)
 
   const { refs, x, y, isPositioned, context } = useFloating({
     open,
-    onOpenChange: setOpen,
+    /* 先卸载再回调 —— 关掉就不要这套机器了 */
+    onOpenChange: (next) => {
+      setOpen(next)
+      if (!next) onClosed()
+    },
+    elements: { reference },
     placement: side,
     strategy: 'fixed',
     whileElementsMounted: autoUpdate,
@@ -100,7 +175,7 @@ export function useTooltip(content: ReactNode, side: TooltipSide = 'bottom', cla
     ],
   })
 
-  const { getReferenceProps, getFloatingProps } = useInteractions([
+  const { getFloatingProps } = useInteractions([
     useHover(context),
     useFocus(context),
     useDismiss(context),
@@ -111,42 +186,32 @@ export function useTooltip(content: ReactNode, side: TooltipSide = 'bottom', cla
    * 不关会一直挂在那儿（手写版就有这一条，别丢）。
    */
   useEffect(() => {
-    const close = (): void => setOpen(false)
+    const close = (): void => onClosed()
     window.addEventListener('blur', close)
     document.addEventListener('visibilitychange', close)
     return () => {
       window.removeEventListener('blur', close)
       document.removeEventListener('visibilitychange', close)
     }
-  }, [])
+  }, [onClosed])
 
-  const floating =
-    open && content
-      ? createPortal(
-          <TooltipBox
-            id={id}
-            ref={refs.setFloating}
-            floatingProps={getFloatingProps()}
-            className={className}
-            style={{
-              position: 'fixed',
-              left: x,
-              top: y,
-              visibility: isPositioned ? 'visible' : 'hidden',
-            }}
-          >
-            {content}
-          </TooltipBox>,
-          document.body,
-        )
-      : null
+  if (!open || !content) return null
 
-  return {
-    open,
-    setReference: refs.setReference,
-    getReferenceProps,
-    /** 开着的时候给触发器带上：读屏器会把提示读出来 */
-    describedBy: open ? id : undefined,
-    floating,
-  }
+  return createPortal(
+    <TooltipBox
+      id={id}
+      ref={refs.setFloating}
+      floatingProps={getFloatingProps()}
+      className={className}
+      style={{
+        position: 'fixed',
+        left: x,
+        top: y,
+        visibility: isPositioned ? 'visible' : 'hidden',
+      }}
+    >
+      {content}
+    </TooltipBox>,
+    document.body,
+  )
 }
