@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { FOLDER_ACCENTS, folderAccentOf, folderPathHint } from '@/constants/folders'
+import {
+  FOLDER_ACCENTS,
+  folderAccentOf,
+  folderHoverTitle,
+  folderPathHint,
+} from '@/constants/folders'
 
 /* ══════════════════════════════════════════════════════════════
    对话文件夹的「身份」：颜色稳定 + 路径提示
@@ -68,5 +73,23 @@ describe('文件夹路径提示', () => {
   it('UNC 长路径也能缩（前缀不参与缩短）', () => {
     expect(folderPathHint('\\\\server\\share\\team\\demo')).toBe('\\\\server\\share\\team\\demo')
     expect(folderPathHint('\\\\server\\share\\team\\demo\\deep\\here')).toBe('…\\deep\\here')
+  })
+})
+
+describe('文件名行悬停提示', () => {
+  it('★ 名字 + 路径两行都给（名字被省略号截了能读到全名）', () => {
+    expect(folderHoverTitle('CodexWorkbench', 'E:\\CodexWorkbench')).toBe(
+      'CodexWorkbench\nE:\\CodexWorkbench',
+    )
+  })
+
+  it('名字和路径一样就不重复', () => {
+    expect(folderHoverTitle('E:\\Harbor', 'E:\\Harbor')).toBe('E:\\Harbor')
+  })
+
+  it('缺一个就把另一个给出来', () => {
+    expect(folderHoverTitle('', 'E:\\Harbor')).toBe('E:\\Harbor')
+    expect(folderHoverTitle('Harbor', '')).toBe('Harbor')
+    expect(folderHoverTitle('  ', '  ')).toBe('')
   })
 })

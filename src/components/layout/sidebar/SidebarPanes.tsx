@@ -6,7 +6,7 @@ import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { chooseFolder } from '@/lib/backend'
 import { clamp, cn } from '@/lib/utils'
-import { folderAccentOf, folderPathHint } from '@/constants/folders'
+import { folderAccentOf, folderHoverTitle, folderPathHint } from '@/constants/folders'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
@@ -216,6 +216,8 @@ function FolderSection({
    */
   const accent = project.color || folderAccentOf(project.id)
   const pathHint = folderPathHint(project.path)
+  /* 悬停给「名字 + 路径」：侧栏一窄名字就被省略号截掉，只给路径的话名字就没处读了 */
+  const hoverTitle = folderHoverTitle(project.name, project.path)
 
   return (
     <div className="pb-0.5">
@@ -225,7 +227,7 @@ function FolderSection({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          title={project.path}
+          title={hoverTitle}
         >
           <ChevronDown
             size={13}

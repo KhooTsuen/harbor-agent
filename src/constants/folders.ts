@@ -63,3 +63,20 @@ export function folderPathHint(path: string, max = 30): string {
   const head = /^[a-zA-Z]:$/.test(segments[0]) ? `${segments[0]}\\` : ''
   return `${head}…\\${segments.slice(-2).join('\\')}`
 }
+
+/**
+ * 文件夹行悬停时显示的文字（原生 title，两行）。
+ *
+ * 为什么要有它：侧栏一窄，名字就被省略号截掉（`CodexWorkbe…`），而那一行的
+ * title 原来只给**路径** —— 于是名字截了就没有任何一个地方能读到全名。
+ * 这里两样都给：名字在上、路径在下（原生 title 里的 `\n` 就是换行）。
+ *
+ * 名字和路径重复时（`name` 就是最后一段目录名）只留一份，不啰嗦。
+ */
+export function folderHoverTitle(name: string, path: string): string {
+  const n = String(name ?? '').trim()
+  const p = String(path ?? '').trim()
+  if (!p) return n
+  if (!n || n === p) return p
+  return `${n}\n${p}`
+}
