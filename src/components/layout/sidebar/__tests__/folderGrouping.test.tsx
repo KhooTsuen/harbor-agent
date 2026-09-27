@@ -60,6 +60,8 @@ describe('侧栏渲染 / 新对话落在哪一栏', () => {
     expect(section('对话文件夹').textContent).toContain('归属检查专用标题')
     /* 分组名取目录最后一段（folderIdFor → fallbackProjectFor 的命名规则） */
     expect(section('对话文件夹').textContent).toContain('ui-check')
+    /* ★ 文件夹表头要能看出是哪个目录（用户报「两个文件夹看不出区别」） */
+    expect(section('对话文件夹').textContent).toContain('E:\\proj\\ui-check')
     expect(section('单独对话').textContent).not.toContain('归属检查专用标题')
   })
 

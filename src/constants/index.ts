@@ -1,6 +1,7 @@
 export * from './scenes'
 export * from './fonts'
 export * from './design'
+export * from './folders'
 import type { ModelOption, ReasoningLevel, ShortcutDef, ThreadMode } from '@/types'
 
 /* ══════════════════════════════════════════════════════════════
