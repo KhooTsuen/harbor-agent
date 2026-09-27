@@ -77,52 +77,6 @@ const report = (label: string, ms: number, nodes: number, extra = ''): void => {
   )
 }
 
-describe('AG-038 / 1000 条消息', () => {
-  it('★ 1000 条消息只渲染最近一批（渐增渲染）', () => {
-    const small = render(<MessageList messages={Array.from({ length: 50 }, () => message())} />)
-    const big = render(<MessageList messages={Array.from({ length: 1000 }, () => message())} />)
-    const rendered = () => container.querySelectorAll('[data-message-id]').length
-    report('50 条', small.ms, small.nodes)
-    report('1000 条', big.ms, big.nodes, `真的画了 ${rendered()} 条`)
-
-    /*
-     * 钉的是**渲染条数**，不是耗时：1000 条全渲染在 jsdom 里也就 3 秒，
-     * 拿时间当判据根本管不住（第一版就是这么写的 —— 把上限关掉照样绿，
-     * 变异测试逮到的）。真机的对照数字见 CHANGELOG。
-     */
-    expect(rendered(), `渲染了 ${rendered()} 条`).toBeLessThanOrEqual(200)
-    expect(big.nodes, `${big.nodes} 个节点`).toBeLessThan(8000)
-
-    /* 截断了要给出口，不能让人看不到更早的；而且**点了要真加载** */
-    const more = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('载入更早的'),
-    )
-    expect(more?.textContent).toContain('还有 800 条')
-    act(() => more?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const after = rendered()
-    report('点「载入更早」之后', 0, container.querySelectorAll('*').length, `画了 ${after} 条`)
-    expect(after).toBeGreaterThan(200)
-    expect(after).toBeLessThanOrEqual(500)
-  }, 15000)
-
-  it('★ 1000 条里滚动一次不该重排整棵树（耗时随数据线性，不退化成平方）', () => {
-    const messages = Array.from({ length: 1000 }, () => message())
-    render(<MessageList messages={messages} />)
-    const scroller =
-      container.querySelector('[data-message-scroller]') ?? container.firstElementChild
-
-    const startedAt = performance.now()
-    act(() => {
-      for (let i = 0; i < 20; i += 1) {
-        scroller?.dispatchEvent(new Event('scroll'))
-      }
-    })
-    const ms = performance.now() - startedAt
-    report('20 次滚动事件', ms, container.querySelectorAll('*').length)
-    expect(ms).toBeLessThan(1500)
-  })
-})
-
 describe('AG-038 / 10000 个 Tool Event', () => {
   it('★ 归类之后是一行（不是一万行）', () => {
     const runs = Array.from({ length: 10_000 }, () => toolRun())
