@@ -2,17 +2,23 @@
    锚点：量「视野顶那条内容被推下去多少」
 
    FREE 的补偿量就是这个位移量（末尾长高 → 0，视野上方长高 → 等于长高量）。
-   锚点本身是**浏览器命中测试**的结果（`elementFromPoint`，取内容列水平中心），
-   环境不支持时退化成按 children 二分下钻（children 在文档序上单调）。
+
+   锚点用**按 children 二分下钻**取：从内容容器往下走，每层找「bottom 越过视野顶」
+   的那个孩子（children 在文档序上单调），直到叶子或到深度上限。
+
+   为什么不用 `elementFromPoint`：真机 CPU Profile 量过 —— 14 万节点的长会话里，
+   它每次要 **~12ms**（命中测试要穿过整棵树），而滚动事件每帧都来一次：
+   于是长会话滚动稳定跑到 30fps（P50 33.3ms），这是纯自己造成的开销。
+   二分下钻只读 ~深度×log2(孩子数) 个 rect（实测每帧 <0.2ms），而且更贴切：
+   它落到**块级**元素上（段落/代码块），而不是行内的某个 span ——
+   块级元素在 layout 变化时不容易被换掉，当参照物更稳。
 
    为什么不用 `newScrollHeight - oldScrollHeight`：那个差值把「末尾长高」也
    算进去了，照它补就变成每来一段流式内容把用户往下推一段。
-   ══════════════════════════════════════════════════════════════ */
+   ════════════════════════════════════════════════════════════ */
 
 /** 锚点下钻的最大层数（防病态结构里空转） */
 const ANCHOR_MAX_DEPTH = 12
-/** 命中测试点离容器顶的距离（太贴边会落在边框/内边距上） */
-const HIT_OFFSET_Y = 6
 /** 往上找备胎的最大层数 / 备胎总数上限（都带一次几何读取，别贪） */
 const MAX_BACKSTOP_DEPTH = 8
 const MAX_BACKSTOPS = 8
@@ -42,18 +48,8 @@ export function docOffset(sc: HTMLElement, el: Element): number {
   return el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop
 }
 
-/** 视野顶那个元素（尽量深，尽量贴住那段文字） */
+/** 视野顶那个元素（尽量深，尽量贴住那段文字）—— 二分下钻，不碰命中测试 */
 export function pickAnchor(sc: HTMLElement, content: HTMLElement): Element | null {
-  const box = content.getBoundingClientRect()
-  try {
-    const hit = document.elementFromPoint(
-      box.left + box.width / 2,
-      sc.getBoundingClientRect().top + HIT_OFFSET_Y,
-    )
-    if (hit && hit !== sc && content.contains(hit)) return hit
-  } catch {
-    /* 环境不支持 elementFromPoint（如 jsdom）→ 走下面的树走 */
-  }
   const line = sc.getBoundingClientRect().top + 1
   let node: Element = content
   for (let depth = 0; depth < ANCHOR_MAX_DEPTH; depth += 1) {
