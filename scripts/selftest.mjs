@@ -122,6 +122,7 @@ import { run as launchSummaryGroup } from './selftest/groups/84-launch-summary.m
 import { run as tokenOptGroup } from './selftest/groups/85-token-opt.mjs'
 import { run as visionGroup } from './selftest/groups/86-vision.mjs'
 import { run as modelChoiceGroup } from './selftest/groups/87-model-choice.mjs'
+import { run as browserWaitGroup } from './selftest/groups/88-browser-wait.mjs'
 
 const GROUPS = [
   basics,
@@ -210,6 +211,7 @@ const GROUPS = [
   tokenOptGroup,
   visionGroup,
   modelChoiceGroup,
+  browserWaitGroup,
 ]
 
 async function main() {

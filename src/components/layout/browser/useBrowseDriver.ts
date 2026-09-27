@@ -2,6 +2,16 @@ import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
 import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from './scripts'
+import {
+  BROWSE_BUDGET_MS,
+  Budget,
+  readPage,
+  runScript,
+  waitForDomReady,
+  waitForElement,
+  waitForLoad,
+  type WebviewElement,
+} from './browseWait'
 
 /* ══════════════════════════════════════════════════════════════
    执行 Agent 的浏览请求（真正操作 webview 的那一半）
@@ -11,73 +21,12 @@ import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from '
 
    分两半是因为：接请求的地方必须**一直挂着**（不然没人接），
    而操作 webview 必须等 BrowserTab 挂载（切过去才有元素）。
+
+   ★ 全部等待共享一条总预算（见 `browseWait.ts`）：主进程等 45 秒，
+     这条预算是 30 秒 —— 渲染层**必须**先回话。真机踩过：三段等待各管各的，
+     相加 48 秒 > 45 秒，于是慢页面一律被判成「界面没有在 45 秒内回应」，
+     而那句话是错的（界面在干活，只是还没读完）。
    ══════════════════════════════════════════════════════════════ */
-
-interface WebviewElement extends HTMLElement {
-  getURL?: () => string
-  executeJavaScript?: (code: string) => Promise<unknown>
-  loadURL?: (url: string) => Promise<void>
-}
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-/** 等元素真的出现（切标签后 React 渲染有一帧延迟） */
-async function waitForElement<T>(get: () => T | null, timeoutMs: number): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const value = get()
-    if (value) return value
-    await sleep(80)
-  }
-  return null
-}
-
-/**
- * 等 webview 可用。
- *
- * ⚠️ 踩过：webview 刚插进 DOM 时**还不能调方法**，会报
- * 「The WebView must be attached to the DOM and the dom-ready event
- *  emitted before this method can be called」。所以必须先等 `dom-ready`。
- *
- * 已经在 DOM 上的（复用老标签）直接返回，不用白等。
- */
-function waitForDomReady(view: WebviewElement, timeoutMs: number): Promise<void> {
-  try {
-    if (view.getURL?.()) return Promise.resolve()
-  } catch {
-    /* 还没挂上，走下面的等待 */
-  }
-
-  return new Promise((resolve) => {
-    let settled = false
-    const done = (): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      view.removeEventListener('dom-ready', done)
-      resolve()
-    }
-    const timer = setTimeout(done, timeoutMs)
-    view.addEventListener('dom-ready', done)
-  })
-}
-
-function waitForLoad(view: WebviewElement, timeoutMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    let settled = false
-    const done = (): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      view.removeEventListener('did-finish-load', done)
-      view.removeEventListener('did-fail-load', done)
-      resolve()
-    }
-    const timer = setTimeout(done, timeoutMs)
-    view.addEventListener('did-finish-load', done)
-    view.addEventListener('did-fail-load', done)
-  })
-}
 
 /**
  * 消费 store 里的 pending 请求。
@@ -115,60 +64,71 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         void window.workbench?.browserResult?.(pending!.id, result)
       }
 
-      /* 等 webview 挂上（切到浏览器标签后才会有） */
-      const view = await waitForElement(() => webviewRef.current, 12_000)
+      /* 等 webview 挂上（切到浏览器标签后才会有）—— 跟后面几步共用同一条预算 */
+      const budget = new Budget()
+      const view = await waitForElement(() => webviewRef.current, budget)
       if (!alive) return
       if (!view) {
-        reply({ ok: false, error: '浏览器标签没能打开，读不了网页' })
+        reply({
+          ok: false,
+          error: `等浏览器标签出来超时（已等 ${Math.round(BROWSE_BUDGET_MS / 1000)} 秒）。右侧那个「浏览器」标签手动点开一下，再让我读。`,
+        })
         clearPending()
         return
       }
 
       try {
         /* ① 先等它可用 —— 不等的话调任何方法都会报「must be attached to the DOM」 */
-        await waitForDomReady(view, 15_000)
+        await waitForDomReady(view, budget)
         if (!alive) return
 
         /* snapshot：读当前页面的可交互元素，不导航 */
         if (pending!.action === 'snapshot') {
-          const raw = (await view.executeJavaScript?.(SNAPSHOT_SCRIPT)) as
-            Record<string, unknown> | undefined
+          const out = await runScript<Record<string, unknown>>(view, SNAPSHOT_SCRIPT, budget)
           if (!alive) return
-          reply({ ok: true, snapshot: raw })
+          if (!out.ok) reply({ ok: false, error: out.error })
+          else reply({ ok: true, snapshot: out.value })
           return
         }
 
         /* click：按索引点击当前页面的元素（不导航） */
         if (pending!.action === 'click') {
-          const raw = (await view.executeJavaScript?.(clickScript(toIndex(pending!.index)))) as
-            { ok?: boolean; error?: string; clicked?: string } | undefined
+          const out = await runScript<{ ok?: boolean; error?: string; clicked?: string }>(
+            view,
+            clickScript(toIndex(pending!.index)),
+            budget,
+          )
           if (!alive) return
-          if (raw?.ok) reply({ ok: true, click: raw.clicked ?? '' })
-          else reply({ ok: false, error: String(raw?.error ?? '点击失败') })
+          if (!out.ok) reply({ ok: false, error: out.error })
+          else if (out.value?.ok) reply({ ok: true, click: out.value.clicked ?? '' })
+          else reply({ ok: false, error: String(out.value?.error ?? '点击失败') })
           return
         }
 
         /* type：按索引往输入框打字（不导航） */
         if (pending!.action === 'type') {
-          const raw = (await view.executeJavaScript?.(
+          const out = await runScript<{
+            ok?: boolean
+            error?: string
+            typed?: string
+            into?: string
+            password?: boolean
+            needsConfirm?: boolean
+          }>(
+            view,
             typeScript(
               toIndex(pending!.index),
               String(pending!.text ?? ''),
               Boolean(pending!.pressEnter),
               pending!.authorized === true,
             ),
-          )) as
-            | {
-                ok?: boolean
-                error?: string
-                typed?: string
-                into?: string
-                password?: boolean
-                needsConfirm?: boolean
-              }
-            | undefined
+            budget,
+          )
           if (!alive) return
-          if (raw?.ok) {
+          const raw = out.ok ? out.value : undefined
+          if (!out.ok) {
+            reply({ ok: false, error: out.error })
+          } else if (raw?.ok) {
             reply({
               ok: true,
               type: raw.typed ?? '',
@@ -196,15 +156,30 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         if (current && !sameUrl(current, pending!.url)) {
           const loading = view.loadURL?.(pending!.url)
           if (loading && typeof loading.then === 'function') await loading.catch(() => undefined)
-          await waitForLoad(view, 20_000)
-          /* 再等一会儿给 SPA —— 很多站点加载完才开始填内容 */
-          await sleep(1200)
+          await waitForLoad(view, budget)
         }
 
-        const raw = (await view.executeJavaScript?.(READ_SCRIPT)) as
-          { text?: string; html?: string; title?: string; url?: string } | undefined
-
+        /* 读正文：空会重试几次（SPA 加载完才开始填内容），失败也会重试（guest 没就绪） */
+        const out = await readPage(view, READ_SCRIPT, budget)
         if (!alive) return
+
+        if (!out.ok) {
+          /*
+           * ★ 一定把原因说清楚，而且**是渲染层自己说** ——
+           *   不能让主进程用「界面没有在 45 秒内回应」这种猜出来的原因替它发言
+           *   （真机上就是这么误导的：界面其实在干活，只是还没读完）。
+           */
+          reply({
+            ok: false,
+            error: budget.expired
+              ? `等页面就绪超时（已等 ${Math.round(BROWSE_BUDGET_MS / 1000)} 秒，这个站点可能太慢或一直加载中）：${out.error}`
+              : `读网页失败：${out.error}`,
+          })
+          return
+        }
+
+        const raw = out.value as
+          { text?: string; html?: string; title?: string; url?: string } | undefined
         reply({
           ok: true,
           text: String(raw?.text ?? ''),

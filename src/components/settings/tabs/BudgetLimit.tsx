@@ -48,10 +48,17 @@ export function BudgetLimit(): React.ReactElement | null {
 
   useEffect(() => {
     const slot = timer
+    /*
+     * 把 **ref 对象本身** 抄一份到局部（不是抄它的 .current）——
+     * 这样清理函数读到的仍是「卸载那一刻」的草稿值。
+     * （也顺手满足 exhaustive-deps 那条「别在清理函数里直接碰 ref」的告警，
+     *   不必写 eslint-disable —— 本项目禁那玩意儿。）
+     */
+    const drafts = draft
     return () => {
       clearTimeout(slot.current)
       /* 防抖还没到点就把面板关了 → 关之前把草稿补交一次 */
-      const { daily: d, monthly: m } = draft.current
+      const { daily: d, monthly: m } = drafts.current
       if (d) void patchLimits({ dailyTokens: toTokens(d) })
       if (m) void patchLimits({ monthlyTokens: toTokens(m) })
     }
@@ -92,9 +99,9 @@ export function BudgetLimit(): React.ReactElement | null {
           onChange={(e) => void patchLimits({ enabled: e.target.checked })}
         />
         <span>
-          用量超过上限就停下
+          启用用量上限
           <span className="ml-1.5 text-dense text-fg-tertiary">
-            （在调模型之前查一次账，这是唯一能真正省钱的位置）
+            （默认不限；开了才按下面的上限拦，在调模型之前查一次账）
           </span>
         </span>
       </label>

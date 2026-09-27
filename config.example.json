@@ -73,8 +73,10 @@
   },
 
   "limits": {
+    "enabled": false,
     "dailyTokens": 0,
-    "monthlyTokens": 0
+    "monthlyTokens": 0,
+    "onExceed": "block"
   },
 
   "budget": {

@@ -16,7 +16,11 @@
 const stats = require('./stats.cjs')
 const log = require('./log.cjs')
 
-/** 默认值（config-normalize 也引用这份） */
+/** 默认值（config-normalize 也引用这份）
+ *
+ * ★ `enabled: false` 是**故意的**：默认不限。量的事交给用户在「设置 → 用量」自己决定，
+ *   本地不预设任何闸门 —— 保护装置不该在用户没要求的时候拦住他。
+ */
 const DEFAULTS = {
   enabled: false,
   /** 0 = 不限 */

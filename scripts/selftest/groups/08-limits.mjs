@@ -116,7 +116,26 @@ export async function run() {
 
     setLimits({ enabled: false, dailyTokens: 100, monthlyTokens: 100 })
     seedToday(500)
-    check('关着的时候 idle 不成立（界面说的是「闸门没开」）', limits.gateState().idle === false)
+    check('默认不限：关着的时候 idle 不成立', limits.gateState().idle === false)
+
+    /*
+     * 默认状态的说法必须是**中性陈述**，不能写成告警：
+     * 默认就是「不限」，用户看到黄字会以为出了毛病，去查一个本来就没开的开关。
+     * 真正该提醒的是「开关开着却没填上限」（那种才是白设了）。
+     */
+    const gateTextSrc = readFileSync(join(ROOT, 'src/lib/usageGate.ts'), 'utf8')
+    check(
+      '★ 默认不限这件事在界面文案里说清楚了（中性句 + 指路去开关）',
+      gateTextSrc.includes('默认不限') && gateTextSrc.includes('自己打开上面那个开关'),
+    )
+    const budgetSrcForDefault = readFileSync(
+      join(ROOT, 'src/components/settings/tabs/BudgetLimit.tsx'),
+      'utf8',
+    )
+    check(
+      '★ 开关上也写着默认不限（不然用户以为出厂就设了限）',
+      budgetSrcForDefault.includes('（默认不限；'),
+    )
 
     /* ── ⑤-3 四个接口点：状态只有一份，界面不许自己算 ── */
     const extrasSrc = readFileSync(join(ROOT, 'electron/handlers/extras.cjs'), 'utf8')
