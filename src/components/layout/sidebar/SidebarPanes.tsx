@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, FolderPlus, Plus } from 'lucide-react'
+import { ChevronDown, FolderClosed, FolderPlus, Plus } from 'lucide-react'
 import type { Thread } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { chooseFolder } from '@/lib/backend'
 import { clamp, cn } from '@/lib/utils'
+import { folderAccentOf, folderPathHint } from '@/constants/folders'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
@@ -30,7 +31,7 @@ const MIN_BOTTOM = 104
 
 export interface SidebarPanesProps {
   folderList: Array<{
-    project: { id: string; name: string; path: string }
+    project: { id: string; name: string; path: string; color?: string }
     threads: Thread[]
   }>
   looseThreads: Thread[]
@@ -201,7 +202,7 @@ function FolderSection({
   onDetachThread,
   onNewThread,
 }: {
-  project: { id: string; name: string; path: string }
+  project: { id: string; name: string; path: string; color?: string }
   threads: Thread[]
   onDeleteThread: (thread: Thread) => void
   onMoveThread: (thread: Thread) => void
@@ -209,6 +210,12 @@ function FolderSection({
   onNewThread: () => void
 }) {
   const [open, setOpen] = useState(true)
+  /*
+   * 身份：颜色（扫一眼认出来）+ 路径（真正的身份，同名目录只能靠它分）。
+   * 项目里自己设过色就用它，否则按目录算一个稳定色（见 constants/folders.ts）。
+   */
+  const accent = project.color || folderAccentOf(project.id)
+  const pathHint = folderPathHint(project.path)
 
   return (
     <div className="pb-0.5">
@@ -228,8 +235,22 @@ function FolderSection({
               !open && '-rotate-90',
             )}
           />
-          <span className="truncate text-dense text-fg-primary">{project.name}</span>
-          <span className="shrink-0 text-2xs text-fg-tertiary">{threads.length}</span>
+          <FolderClosed
+            size={13}
+            aria-hidden
+            data-folder-icon="true"
+            className="shrink-0"
+            style={{ color: accent }}
+          />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="truncate text-dense text-fg-primary">{project.name}</span>
+              <span className="shrink-0 text-2xs text-fg-tertiary">{threads.length}</span>
+            </span>
+            {pathHint ? (
+              <span className="truncate text-2xs text-fg-tertiary">{pathHint}</span>
+            ) : null}
+          </span>
         </button>
         <Tooltip content="在这个文件夹里新建对话">
           <Button
