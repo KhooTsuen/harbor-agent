@@ -20,6 +20,7 @@ const WATCHED = [
   'README.md',
   'CONTRIBUTING.md',
   '.github/copilot-instructions.md',
+  'docs/README.md',
   'docs/架构.md',
   'docs/开发流程.md',
   'docs/约束机制说明.md',
