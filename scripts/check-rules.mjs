@@ -26,17 +26,23 @@ import {
   checkTodos,
 } from './check-rules/checks.mjs'
 import { checkHooksInstalled } from './check-rules/checks-hooks.mjs'
+import { checkHygiene, LIMITS } from './check-rules/checks-hygiene.mjs'
+import { checkDriftingNumbers } from './check-rules/checks-drift.mjs'
 
 /* 门面照旧再导出一次：`import { checkLineLimits } from './check-rules.mjs'` 仍然可用
-   （测试就是这么用的 —— 拆文件不该改调用方，见 docs/踩坑记录.md） */
+   （测试就是这么用的 —— 拆文件不该改调用方，见 docs/踩坑记录.md）
+   LIMITS 也一起导出：阈值只准有一处定义，测试要能拿到同一份。 */
 export {
   checkAgentMd,
   checkDiffSize,
+  checkDriftingNumbers,
   checkHooksInstalled,
+  checkHygiene,
   checkLineLimits,
   checkNoNewDeps,
   checkNoSecretsInConfig,
   checkTodos,
+  LIMITS,
 }
 
 export const ROOT = path.resolve(import.meta.dirname, '..')
@@ -50,6 +56,8 @@ export const CHECKS = [
   ['AGENT.md 在且非空', checkAgentMd],
   ['改动文件数（警告）', checkDiffSize],
   ['约束机制在位（警告）', checkHooksInstalled],
+  ['仓库卫生（警告）', checkHygiene],
+  ['易漂数字（警告）', checkDriftingNumbers],
 ]
 
 /** 跑全部检查；**不改退出码**，只返回汇总（测试直接断言这个） */
