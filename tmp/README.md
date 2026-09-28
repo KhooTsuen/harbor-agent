@@ -55,6 +55,8 @@
 | 脚本 | 干什么 |
 | --- | --- |
 | `bump-version.cjs` | 改 `package.json` 版本号 |
+| `push-now.cjs` | **推送 + 抓钩子的完整日志**（终端会把几万行截断，这个落 `tmp/push-final.txt`） |
+| `gh-state.cjs` | 线上状态核对：最近几次 CI + release 是不是「1 正式 + 1 测试」+ 标签 |
 | `gh-release-*.cjs` / `rel-finalize-*.cjs` | 建 beta release、归档产物、收尾 |
 | `gh-releases.cjs` | 列线上 release（核对「只留 1 个正式 + 1 个测试」） |
 | `update-harbor.cjs` | 把新版同步到 `E:\Harbor` |
@@ -73,7 +75,7 @@
 | `tok-tidy.cjs` | 整理 `tmp/tok/`：旧脚本收进 `archive/tok-scratch/`，**只留副本本体 `Harbor/`** |
 | `stage0-clean.cjs` | 删过 `tok17` 等冗余副本（已执行完，释放 363.7 MB） |
 | `check-vscode-settings.cjs` | 校验 `.vscode/settings.json` 没写坏 |
-| `stage01-check.cjs` | 改完 tmp/ 之后的自查：关键文件在不在 + 规范检查 + 行数红线 |
+| `readme-truth.cjs` | 核对**本文件**点名的脚本是否真的还在（索引不能撒谎） |
 
 ## 3. 常用命令
 
