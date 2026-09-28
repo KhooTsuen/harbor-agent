@@ -5,7 +5,8 @@
 > **为什么要有这个文件**：`AGENT.md`（注意没有 `s`）是**Harbor 应用自己**读取并注入
 > 每轮对话的（见 `electron/core/project.cjs`）。但 VS Code 的 agent 只认标准名
 > `AGENTS.md` 或本文件 —— **也就是说，在此之前 VS Code 里的 agent 看不到任何项目规矩。**
-> 这里做桥接，不复制内容（复制就会漂 —— 这个月的 `101` 通道、`1500+` 项自检都漂过）。
+> 这里做桥接，不复制内容 —— 复制就会漂：IPC 通道数、「内核自检 N 项」这类数字，
+> 这个月各漂过一次（有一条还写在 CI 里，红了十几次才被发现）。
 
 ## 动手前必须知道
 
@@ -32,8 +33,8 @@ node scripts/check-rules.mjs   # 行数 / 依赖两侧 / 明文密钥 / TODO / A
 ## 改完要跑
 
 ```bash
-npm run verify          # typecheck → lint → 格式 → 行数红线 → 单测 → 内核自检 → 构建
-npm run test:app        # 内核通道自检（窗口会闪一下；期望 channelsMissing 为空）
+npm run preflight              # 一站式：verify（七步）→ 应用自检 → 打印剩下必须人做的几件事
+npm run preflight -- --skip-app # 不想开窗口时（只跑 verify）
 node scripts/check-rules.mjs   # 不跑全链时的快速自查
 ```
 

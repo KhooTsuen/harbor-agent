@@ -25,7 +25,7 @@ npm run dev            # Vite + Electron（热更新）
 npm run build          # tsc --noEmit + vite build
 npm run package        # 打便携版 → dist-portable/Harbor/
 
-npm test               # 内核自检（1500+ 项，不联网、不需要 Electron）
+npm test               # 内核自检（不联网、不需要 Electron；项数每版都会涨，看输出）
 npm run test:unit      # 前端单元测试（vitest）
 npm run test:app       # 无窗口跑一遍，打印主进程与渲染层真实状态
 npm run pty:check      # 验 node-pty（纯 Node 与 Electron ABI 都要过）
