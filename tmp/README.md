@@ -37,7 +37,9 @@
 | `run-selftest-dump.cjs` | 只跑内核自检，把尾部结果写文件 |
 | `check-fmt.cjs` | 只跑格式检查（prettier） |
 | `unit-all.cjs` | 只跑单测 |
-| `ci-status.cjs` / `wait-ci.cjs` | 看 / 等 GitHub Actions 结果 |
+| `ci-status.cjs` / `wait-ci.cjs` | 看 / 等 GitHub Actions 结果（**走 `gh-api.cjs`**，见下） |
+| `gh-api.cjs` | **调 GitHub API 的通道**：用 `curl.exe` + `git config http.proxy` 那个本地代理。<br>⚠️ 直接 `fetch` 会 **ECONNRESET**（2026-09-29 实测）；VPN 没开时代理端口是死的，也会失败 |
+| `gh-net.cjs` | GitHub 连通性诊断：DNS → TCP 443 → HTTPS → 代理配置 → 本地/远端提交指针 |
 
 **真机 · 隔离副本**
 
@@ -56,6 +58,9 @@
 | `gh-release-*.cjs` / `rel-finalize-*.cjs` | 建 beta release、归档产物、收尾 |
 | `gh-releases.cjs` | 列线上 release（核对「只留 1 个正式 + 1 个测试」） |
 | `update-harbor.cjs` | 把新版同步到 `E:\Harbor` |
+
+> 发布相关脚本里有 `gh-release-beta3..beta24.cjs` 这类**按版本一次性**的（每个 beta 一份）。
+> 现在的规矩是别再那样写：一次性的用完就让 `organize2.cjs` 收走。
 
 **盘点 / 整理**
 
