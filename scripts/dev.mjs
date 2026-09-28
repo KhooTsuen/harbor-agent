@@ -18,6 +18,13 @@ import { dirname, resolve } from 'node:path'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.DEV_PORT ?? 5273)
 const URL = `http://localhost:${PORT}`
+/* 渲染层调试端口（Chromium CDP）：默认 9222，只监听本机。
+   为什么要有：改 UI 时能真断点、能读 React 里的状态，而不是只能靠探针打印。
+   探针（tmp/perf/）早就用同一个开关驱真机包了，这里只是把开发模式也接上。 */
+const DEBUG_PORT = Number(process.env.DEV_DEBUG_PORT ?? 9222)
+/* 主进程调试端口：**只在显式设置时才开** ——
+   因为它会暂停等调试器接入（--inspect 不暂停，但一旦接入就停），不想给你意外。 */
+const INSPECT_PORT = process.env.DEV_INSPECT_PORT ? Number(process.env.DEV_INSPECT_PORT) : null
 
 const ELECTRON_BIN = resolve(
   ROOT,
@@ -88,9 +95,15 @@ if (!ok) {
   shutdown(1)
 }
 
-console.log(`\n启动 Electron，加载 ${URL}\n`)
+console.log(`\n启动 Electron，加载 ${URL}`)
+console.log(`渲染层调试端口：http://127.0.0.1:${DEBUG_PORT}/json/list（Chrome DevTools 可直接打开）`)
+if (INSPECT_PORT) console.log(`主进程调试端口：${INSPECT_PORT}（等调试器接入）`)
+console.log('')
 
-const electron = spawn(ELECTRON_BIN, ['.'], {
+const electronArgs = ['.', `--remote-debugging-port=${DEBUG_PORT}`]
+if (INSPECT_PORT) electronArgs.push(`--inspect=${INSPECT_PORT}`)
+
+const electron = spawn(ELECTRON_BIN, electronArgs, {
   cwd: ROOT,
   stdio: 'inherit',
   env: { ...process.env, VITE_DEV_SERVER_URL: URL },

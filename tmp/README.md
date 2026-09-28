@@ -50,7 +50,7 @@
 | `perf/probe-*.cjs` | 真机探针：读页面、模型选择、流式、权限…… |
 | `perf/run-npm.cjs` | 在副本里跑 npm 脚本 |
 | `dbg/inspector.cjs` | **不用 VS Code 的调试器**：V8 Inspector 协议断点 + 逐帧求值。<br>实测停在打包版 `main.cjs:235`、读到 `redact()` 的入参；四个坑写在脚本头注释里 |
-| `dbg/run.cjs` / `dbg/run-electron.cjs` | 上面那个工具的两个现成例子（node 靶子 / Harbor 主进程） |
+| `dbg/run.cjs` / `dbg/run-electron.cjs` / `dbg/run-renderer.cjs` | 上面那个工具的三个现成例子（node 靶子 / Harbor 主进程 / 开发模式的渲染层） |
 
 **发布**
 

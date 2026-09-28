@@ -28,5 +28,17 @@ export default defineConfig({
   server: {
     port: 5273,
     open: false,
+    /*
+     * 开发服务器**必须**绕开这些目录。2026-09-29 实测的崩法：
+     * 应用在开发模式下会把 Chromium 配置写进 `data/chromium/`（那是运行时数据），
+     * 而 vite 的监视器默认从项目根往下爬 → 撞上被锁的 `data/chromium/Network/Cookies`
+     * → `EBUSY: resource busy or locked` → **vite 直接退出**，开发模式起不来。
+     *
+     * 这些目录都不是源码：data/ 是运行时数据，其余是构建产物 / 临时目录 / 依赖。
+     * 顺带也省掉一大堆无意义的文件监视。
+     */
+    watch: {
+      ignored: ['**/data/**', '**/dist/**', '**/dist-portable/**', '**/tmp/**', '**/shots/**', '**/test-env/**', '**/backups/**'],
+    },
   },
 })
