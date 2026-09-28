@@ -1,0 +1,3 @@
+#!/bin/sh
+# git 钩子：只是转发到 JS（逻辑在 scripts/hooks/pre-push.mjs）
+exec node scripts/hooks/pre-push.mjs

@@ -50,6 +50,12 @@ jobs:
       - name: 行数红线（单文件 ≤ 300 行）
         run: node tools/line-limit.mjs
 
+      # 能机械查的规矩一次跑完（行数 / 依赖两侧一致 / 明文密钥 / TODO / AGENT.md / 约束机制在位）。
+      # 和上面那条行数检查故意重复：那条是硬约束本身，这条是「一次看全」。
+      # 这一条也装在 pre-commit 钩子里；CI 这一份保证「本地绕过钩子也躲不过去」。
+      - name: 规范检查（check-rules）
+        run: npm run check:rules
+
       - name: 前端单元测试
         run: npm run test:unit
 
