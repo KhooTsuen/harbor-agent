@@ -56,6 +56,7 @@
 | --- | --- |
 | `bump-version.cjs` | 改 `package.json` 版本号 |
 | `push-now.cjs` | **推送 + 抓钩子的完整日志**（终端会把几万行截断，这个落 `tmp/push-final.txt`） |
+| `commit-now.cjs` | **提交**（按绝对路径跑 git + 只打印摘要行）。<br>为什么需要：终端当前目录不是仓库根时 `git add` 会静默失败，而钩子的几千行输出会把真正的报错顶出屏幕（2026-09-29 实际踩到） |
 | `gh-state.cjs` | 线上状态核对：最近几次 CI + release 是不是「1 正式 + 1 测试」+ 标签 |
 | `gh-release-*.cjs` / `rel-finalize-*.cjs` | 建 beta release、归档产物、收尾 |
 | `gh-releases.cjs` | 列线上 release（核对「只留 1 个正式 + 1 个测试」） |
