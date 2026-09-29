@@ -198,6 +198,8 @@ module.exports = {
   /* 「怎么引导模型」那两块住在 task-steering.cjs，这里转发一下（调用方不用改） */
   steeringNote: steering.steeringNote,
   shouldContinue: steering.shouldContinue,
+  shouldVerify: steering.shouldVerify,
+  completionGate: steering.completionGate,
   capturePlan,
   progressOf,
   fingerprint,

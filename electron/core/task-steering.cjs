@@ -92,6 +92,90 @@ function shouldContinue({ taskId = '', content = '', seen = {} } = {}) {
 
   return { continue: true, message, seen: { blocks: blocks + 1, snapshot } }
 }
+
+/** 会改文件的工具（判「这一轮到底动没动过东西」） */
+const WRITE_TOOLS = new Set(['write_file', 'edit_file'])
+
+/**
+ * 验证门禁（`assistant.verifyAfterEdit`）：改了文件、但**改完之后一条命令都没跑过**
+ * 就想收工 → 顶回去做一次验证。
+ *
+ * 判据只认台账上能确凿看到的事实：`steps` 里有没有「写类工具」、
+ * 最后一次写之后有没有 `run_shell`。**不去猜「跑的是不是测试」** ——
+ * 猜错就会误拦（用户只是 grep 了一下也被当成验证过，或者反过来）。
+ *
+ * 三道刹车，和计划门禁一个思路：顶够次数就放行、同一个「改了几次」只顶一次、
+ * 不是 running 的任务不拦（paused / waiting_user 是在等用户，骚扰没意义）。
+ *
+ * `seen` 由调用方自己存着（和计划门禁**分开**两个对象 —— 共用一个会被互相覆盖）。
+ */
+function shouldVerify({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
+  if (verifyAfterEdit === false) return { continue: false, seen }
+  const blocks = Number(seen.verifyBlocks) || 0
+  if (blocks >= MAX_BLOCKS) return { continue: false, seen }
+
+  let task = null
+  try {
+    task = taskId ? taskCore.get(taskId) : null
+  } catch {
+    task = null
+  }
+  if (!task || task.status !== 'running') return { continue: false, seen }
+
+  const steps = Array.isArray(task.steps) ? task.steps : []
+  const writes = steps.filter((s) => WRITE_TOOLS.has(String(s.tool ?? '')) && s.ok !== false)
+  if (writes.length === 0) return { continue: false, seen }
+  const lastWriteAt = Number(writes[writes.length - 1].at) || 0
+  const ranAfter = steps.some(
+    /*
+     * `>=` 而不是 `>`：写文件和跑命令落在**同一毫秒**时（自动化里真会出现），
+     * 用 `>` 会把它当成「没验证过」而顶回去。这里宁可宽松 —— 误拦会白烧一轮、
+     * 还会让用户觉得莫名其妙，而漏拦只是少提醒一次。
+     */
+    (s) => String(s.tool ?? '') === 'run_shell' && Number(s.at) >= lastWriteAt,
+  )
+  if (ranAfter) return { continue: false, seen }
+
+  /* 刹车二：同一个「改了 N 次」顶过一次还是没收尾 → 放行，别把人卡死在这儿 */
+  const snapshot = String(writes.length)
+  if (seen.verifySnapshot === snapshot) return { continue: false, seen }
+
+  const message = [
+    `你这次改了 ${writes.length} 次文件，但**改完之后还没跑过任何命令** —— 先验证一下再收尾。`,
+    '最理想是跑项目自己的检查（测试 / lint / 构建）；环境里没有可跑的，**回读一遍刚改的文件**也算。',
+    '说清楚你验证了什么、结果如何。确实没法验证（只改了一段纯文字之类）就说明原因再收尾。',
+  ].join('\n')
+
+  return {
+    continue: true,
+    message,
+    seen: { ...seen, verifyBlocks: blocks + 1, verifySnapshot: snapshot },
+  }
+}
+
+/**
+ * 收尾前的**两道**门禁，合成一次调用：计划没勾完 / 改了文件却没验证。
+ *
+ * 放这里而不是 `loop.cjs` 里：那边贴着 300 行红线，而「顶回去该说什么」
+ * 本来就是这一层的事（循环只管「这一轮结束没结束」）。
+ *
+ * `seen` 用一个容器装两份账（`plan` / `verify`）—— 两个门禁各自返回的
+ * `seen` 形状不同，混在一个对象里会互相覆盖。
+ *
+ * @returns {{ message: string, seen: object }} `message` 为空 = 放行
+ */
+function completionGate({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
+  const planSeen = seen.plan ?? {}
+  const verifySeen = seen.verify ?? {}
+
+  const plan = shouldContinue({ taskId, seen: planSeen })
+  if (plan.continue) return { message: plan.message, seen: { ...seen, plan: plan.seen } }
+
+  const verify = shouldVerify({ taskId, verifyAfterEdit, seen: verifySeen })
+  if (verify.continue) return { message: verify.message, seen: { ...seen, verify: verify.seen } }
+
+  return { message: '', seen: { ...seen, plan: plan.seen, verify: verifySeen } }
+}
 /**
  * 模型回复里如果给了 ```plan 块，存进任务。
  *
@@ -153,4 +237,11 @@ function steeringNote({ task, userText = '' } = {}) {
     .join('\n')
 }
 
-module.exports = { isContinueIntent, shouldContinue, steeringNote, MAX_BLOCKS }
+module.exports = {
+  isContinueIntent,
+  shouldContinue,
+  shouldVerify,
+  completionGate,
+  steeringNote,
+  MAX_BLOCKS,
+}

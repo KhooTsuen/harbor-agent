@@ -80,6 +80,40 @@ export function GeneralTab() {
             </Row>
           </>
         ) : null}
+        {/* 这两个以前也是「有配置、没界面」—— 见 AssistantSwitches 的说明 */}
+        {isReal ? (
+          <>
+            <SectionTitle>对话与浏览</SectionTitle>
+
+            <Row
+              label="自动起标题"
+              hint="第一轮结束后让它自己起个标题。关掉就用你第一句话截断当标题"
+            >
+              <Switch
+                checked={config?.general.autoTitle !== false}
+                onChange={(v) => void patchGeneral({ autoTitle: v })}
+                label="自动起标题"
+              />
+            </Row>
+
+            <Row
+              label="网页里的链接"
+              hint="Agent 打开网页时的放行策略。ask = 先问一次；allow = 直接放行 http(s)；block = 只允许空白页"
+            >
+              <Select
+                value={config?.general.browserNavigation ?? 'ask'}
+                onChange={(v) =>
+                  void patchGeneral({ browserNavigation: v as 'ask' | 'allow' | 'block' })
+                }
+                options={[
+                  { value: 'ask', label: '每次先问我' },
+                  { value: 'allow', label: '直接放行' },
+                  { value: 'block', label: '不允许打开网页' },
+                ]}
+              />
+            </Row>
+          </>
+        ) : null}
         {/* 窗口与托盘：只有桌面版有窗口这回事 */}
         {isReal ? (
           <>

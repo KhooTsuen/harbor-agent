@@ -90,6 +90,12 @@ export interface AppConfig {
     autoTitle: boolean
     /** 点关闭时藏到托盘（桌面版） */
     minimizeToTray: boolean
+    /**
+     * 浏览器标签页里外链的放行策略（内核 `navigation-policy.cjs` 在消费）。
+     * ⚠️ 2026-09-30 补：内核侧一直有这个字段，**渲染层类型里却漏了** ——
+     * 所以「有配置、没界面」里也有它一份。
+     */
+    browserNavigation: 'ask' | 'allow' | 'block'
   }
   providers: ProviderConfig[]
   /** 各场景用哪个模型（留空则回退到 assistant.model） */
@@ -111,6 +117,13 @@ export interface AppConfig {
     responseDepth: 'concise' | 'standard' | 'detailed' | 'deep'
     selfReview: boolean
     streamOutput: boolean
+    /**
+     * 三个 2026-09-30 才真正接上的开关（以前：有配置、没界面、也没行为）。
+     * 落点：`planFirst` → 提示词层；`verifyAfterEdit` → 收尾门禁；
+     * `streamOutput` → 渲染层（正文是否逐字显示）。
+     */
+    planFirst: boolean
+    verifyAfterEdit: boolean
   }
   tools: {
     permission: 'full' | 'ask' | 'readonly'

@@ -3,6 +3,7 @@ import type { Message } from '@/types'
 import type { ForkPoint } from '@/lib/branchPath'
 import { cn } from '@/lib/utils'
 import { fsReveal } from '@/lib/fsApi'
+import { useConfigStore } from '@/stores/useConfigStore'
 import { CodeBlock } from './CodeBlock'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
@@ -46,6 +47,13 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
    */
   const rounds = roundsOf(message)
 
+  /*
+   * `assistant.streamOutput`（设置 → 助手里的「流式输出」）：关掉时**正文不逐字蹦**，
+   * 等这条写完了再整段显示 —— 过程和工具照旧实时出现。
+   * 没拿到配置（浏览器预览）时按默认「开」处理。
+   */
+  const streamOutput = useConfigStore((s) => s.config?.assistant.streamOutput !== false)
+
   if (isSystem) {
     return <SystemMessage message={message} />
   }
@@ -81,6 +89,7 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                   rounds={rounds}
                   toolRuns={message.toolRuns ?? []}
                   streaming={isStreaming}
+                  hideStreamingContent={!streamOutput}
                 />
               ) : isStreaming ? (
                 /*

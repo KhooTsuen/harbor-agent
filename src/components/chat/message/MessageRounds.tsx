@@ -23,11 +23,19 @@ export function MessageRounds({
   rounds,
   toolRuns,
   streaming,
+  hideStreamingContent = false,
 }: {
   rounds: MessageRound[]
   /** 全部工具记录；`round.tools` 里存的是它的下标 */
   toolRuns: ToolRunRecord[]
   streaming: boolean
+  /**
+   * `assistant.streamOutput === false` 时传 true：**正文等写完再显示**。
+   *
+   * 过程和工具照旧实时出现（思考链、每一步工具都能看）—— 只有「答案本身」
+   * 不逐字蹦。`useSmoothText` 那条摊平的逻辑在这里就不需要了（内容还没上屏）。
+   */
+  hideStreamingContent?: boolean
 }) {
   const lastIndex = rounds.length - 1
 
@@ -57,7 +65,13 @@ export function MessageRounds({
               截图对比后要求的排版：摘要行与正文自然交错。
             */}
             {runs.length > 0 ? <ToolLine runs={runs} /> : null}
-            {round.content.trim() ? (
+            {isLast && streaming && hideStreamingContent ? (
+              /* 「不生字」模式下也得让用户看出还在动 —— 一句话就够 */
+              <p className="flex items-center gap-2 text-sm text-fg-secondary">
+                <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
+                正在写回答…（写完一次显示）
+              </p>
+            ) : round.content.trim() ? (
               <div>
                 {/*
                   只有最后一轮走增量解析：前面的轮次已经写完了，

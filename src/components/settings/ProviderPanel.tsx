@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { ProviderCard } from './providers/ProviderCard'
 import { ModelField } from './providers/ModelField'
+import { AssistantSwitches } from './providers/AssistantSwitches'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 模型 / 工具
@@ -154,14 +155,8 @@ export function AssistantPanel() {
           <span className="mb-1 block text-2xs text-fg-tertiary">助手名字</span>
           <Field value={a.name} onChange={(v) => void patchAssistant({ name: v })} />
         </label>
-        <label className="flex items-center gap-2 text-dense text-fg-primary">
-          <input
-            type="checkbox"
-            checked={a.selfReview}
-            onChange={(e) => void patchAssistant({ selfReview: e.target.checked })}
-          />
-          重要回答自动复核
-        </label>
+        {/* 助手行为开关（含 planFirst / verifyAfterEdit / streamOutput）—— 见 AssistantSwitches */}
+        <AssistantSwitches />
         <label className="block">
           <span className="mb-1 block text-2xs text-fg-tertiary">回答深度</span>
           <select

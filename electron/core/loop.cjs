@@ -110,7 +110,7 @@ async function runLoop(options) {
   let totalUsage = null
   const toolRuns = []
   let turn = 0
-  /* 完成门禁的状态：顶回去几次、上一轮的进度快照（两个刹车都靠它） */
+  /* 收尾门禁的账：顶回去几次 + 上一轮进度快照（两道门禁各存一份，见 completionGate） */
   let gateSeen = {}
   /* 预算软阈值只提醒一次（token 优化 §八） */
   let softNoted = false
@@ -211,13 +211,13 @@ async function runLoop(options) {
     /* ── 没有工具调用 → 这轮结束 ── */
     if (result.toolCalls.length === 0) {
       life.mark('verifying', traceKey(options))
-      /* 完成门禁：计划没勾完就想收工 → 顶回去继续（刹车在 task-context.cjs） */
-      const gate = taskContext.shouldContinue({
+      /* 收尾门禁（两道）：计划没勾完 / 改了没验证 → 顶回去。判定与话术全在 task-steering */
+      const gate = taskContext.completionGate({
         taskId: options.taskId ?? '',
-        content: result.content ?? '',
+        verifyAfterEdit: config.assistant?.verifyAfterEdit,
         seen: gateSeen,
       })
-      if (gate.continue) {
+      if (gate.message) {
         gateSeen = gate.seen
         messages.push({ role: 'assistant', content: result.content ?? '' })
         messages.push({ role: 'user', content: gate.message })

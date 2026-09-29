@@ -21,7 +21,7 @@ const memory = require('./memory.cjs')
 const project = require('./project.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const promptStack = require('./prompt-stack.cjs')
-const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, WORK_RULES, BROWSER_GUIDE } = promptStack
+const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, workRules, BROWSER_GUIDE } = promptStack
 const contextBuilder = require('./context-builder.cjs')
 const conversationState = require('./conversation-state.cjs')
 const sessionCore = require('./session.cjs')
@@ -244,7 +244,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     userPreferences: '',
     retrievedContext: '',
     /* 最后两层：越靠后越容易被遵守 */
-    workRules: WORK_RULES,
+    /* `assistant.planFirst` 的控制点就在这里：关掉 = 不再要求模型先出计划块 */
+    workRules: workRules({ planFirst: config.assistant?.planFirst }),
     safety: SAFETY_GUIDE,
     /* 当前时间单独一层，放在最末（它每轮都变，不能污染前面的缓存前缀） */
     currentTime: currentTimeSection(),

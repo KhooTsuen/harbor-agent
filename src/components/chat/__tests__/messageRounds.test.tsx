@@ -101,4 +101,40 @@ describe('MessageRounds', () => {
     const el = draw([{ reasoning: '   ', content: '', tools: [] }])
     expect((el.textContent ?? '').trim()).toBe('')
   })
+
+  /* ── streamOutput 开关（`assistant.streamOutput`） ──────────
+     关掉时「正文不逐字蹦」：过程和工具照旧实时出现，只有答案本身等写完再显示。
+     默认（不传）必须还是老行为 —— 这是绝大多数人用的那条路。 */
+  function drawHidden(content: string, streaming: boolean): HTMLElement {
+    act(() => {
+      root.render(
+        <MessageRounds
+          rounds={[{ reasoning: '想过', content, tools: [] }]}
+          toolRuns={runs}
+          streaming={streaming}
+          hideStreamingContent
+        />,
+      )
+    })
+    return host
+  }
+
+  it('★ 关掉流式输出：流式中不显示正文，只提示「正在写回答…」', () => {
+    const el = drawHidden('写了一半', true)
+    expect(el.textContent).not.toContain('写了一半')
+    expect(el.textContent).toContain('正在写回答')
+    /* 过程照旧看得见 —— 别把「不生字」做成「什么都看不到」 */
+    expect(hasThink(el)).toBe(true)
+  })
+
+  it('★ 关掉流式输出：写完（streaming=false）正文照常出来', () => {
+    const el = drawHidden('写完了', false)
+    expect(el.textContent).toContain('写完了')
+    expect(el.textContent).not.toContain('正在写回答')
+  })
+
+  it('默认（开着流式输出）：流式中就逐字显示，行为不变', () => {
+    const el = draw([{ reasoning: '', content: '写了一半', tools: [] }], true)
+    expect(el.textContent).toContain('写了一半')
+  })
 })

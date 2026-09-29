@@ -21,6 +21,7 @@ export const PREVIEW_CONFIG: AppConfig = {
     onboardingDismissed: false,
     autoTitle: true,
     minimizeToTray: true,
+    browserNavigation: 'ask',
   },
   providers: [
     {
@@ -46,6 +47,8 @@ export const PREVIEW_CONFIG: AppConfig = {
     responseDepth: 'standard',
     selfReview: false,
     streamOutput: true,
+    planFirst: true,
+    verifyAfterEdit: true,
   },
   tools: {
     permission: 'ask',

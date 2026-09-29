@@ -125,6 +125,7 @@ import { run as modelChoiceGroup } from './selftest/groups/87-model-choice.mjs'
 import { run as browserWaitGroup } from './selftest/groups/88-browser-wait.mjs'
 import { run as errorObserverGroup } from './selftest/groups/89-error-observer.mjs'
 import { run as errorReaderGroup } from './selftest/groups/90-error-reader.mjs'
+import { run as switchWiringGroup } from './selftest/groups/91-switch-wiring.mjs'
 
 const GROUPS = [
   basics,
@@ -133,6 +134,7 @@ const GROUPS = [
   reliability,
   agentLoop,
   promptState,
+  switchWiringGroup,
   llmBody,
   limits,
   browser,
