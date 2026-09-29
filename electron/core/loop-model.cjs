@@ -1,8 +1,6 @@
 /**
- * Agent 循环：调模型
- *
- * 从 loop.cjs 拆出来的（那边过 300 行了）。这里只管「把请求发出去、
- * 失败了怎么办」，不碰循环本身。
+ * Agent 循环：调模型（从 loop.cjs 拆出来的，那边过 300 行了）
+ * 这里只管「把请求发出去、失败了怎么办」，不碰循环本身。
  */
 
 const llm = require('./llm.cjs')
@@ -14,9 +12,8 @@ const perfMarks = require('./perf-marks.cjs')
 const loopGuard = require('./loop-guard.cjs')
 
 /**
- * 这个供应商提供这个模型吗。
- *
- * `models` 为空 = 没声明支持哪些 → 当作「都能」（别因为没声明就不给用）。
+ * 这个供应商提供这个模型吗。`models` 为空 = 没声明支持哪些 → 当作「都能」
+ * （别因为没声明就不给用）。
  */
 function servesModel(provider, model) {
   const list = Array.isArray(provider?.models) ? provider.models : []
@@ -25,10 +22,8 @@ function servesModel(provider, model) {
 }
 
 /**
- * 调模型，带**重试**与**降级**。
- *
- * 两层：①同供应商重试 N 次（指数退避）；②换供应商继续，但要明确告诉用户。
- * 三种情况一律不重试：用户中断、认证失败（重试一万次还是 401）、
+ * 调模型，带**重试**与**降级**。两层：①同供应商重试 N 次（指数退避）；
+ * ②换供应商继续，但要明确告诉用户。三种情况不重试：用户中断、认证失败、
  * 上下文超限（该压缩，不是该重发）。
  */
 async function callModel(options) {
@@ -94,6 +89,11 @@ async function callModelInner(options, emit) {
           /* ★ 降级只换供应商、不换模型（候选上面已筛过「它提供这个模型」） */
           model,
         })
+        /* 上游报「因长度停」→ 告诉用户，别静默截断（事故见 07-llm-body 组注释） */
+        if (result.finishReason === 'length') {
+          const why = '内容没写完。让它「接着写」，或让它把长内容写进文件。'
+          emit?.({ type: 'notice', level: 'warning', title: '回复被输出上限截断了', text: why })
+        }
         result.retryCount = attempt
         return result
       } catch (error) {

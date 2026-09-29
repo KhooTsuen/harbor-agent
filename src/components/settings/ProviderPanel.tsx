@@ -140,7 +140,7 @@ export function AssistantPanel() {
         </label>
         <label className="block">
           <span className="mb-1 block text-2xs text-fg-tertiary">
-            输出上限（0 = 不限：按模型声明的最大值）
+            输出上限（0 = 不限：不限制，由服务商决定能写多长）
           </span>
           <Field
             type="number"

@@ -54,27 +54,34 @@ export async function run() {
   check('普通模型照旧带 temperature', normal.temperature === 0.7)
   check('普通模型照旧带 max_tokens', normal.max_tokens === 512)
 
-  /* ── 输出上限：0 = 不限（2026-09-29）────────────────────
+  /* ── 输出上限：0 = 不限（2026-09-29 当晚改了两幕）─────────
    *
-   * 真机事故：设置里 `assistant.maxTokens = 4096`，用户 363 次请求里输出 token
+   * 第一幕：设置里 `assistant.maxTokens = 4096`，用户 363 次请求里输出 token
    * 的最大值**正好是 4096**（两次卡在 4095/4096），长回复被硬切在半句话上，
    * 他问出「你怎么中断了？？」。所以默认改成不限。
    *
-   * ★ 关键设计：不限**不是「不发这个参数」** —— 有些服务商不带时会退到一个很小的
-   *   默认值（DeepSeek 官方 chat 就是 4096），那等于没改。改为带**模型声明**的最大输出。
+   * 第二幕（同一天晚上）：上一版把「不限」实现成「补上模型声明的最大输出」，
+   * 于是每次请求都带 `max_tokens: 8192`（deepseek-flash 的声明值），
+   * 用户照样看到「说到一半就没了」—— 墙只是从 4096 挪到了 8192，而且没人处理
+   * `finish_reason === 'length'`，他连「被截断了」都不知道。
+   * 实测（打包版、同一条「写 1500 行」请求）：带 20000 → out=**9341**；
+   * **不带** → out=**8033**，两个都超过 8192。所以上游不是只能写 8192，
+   * **那堵墙是我们自己发出去的**（老注释里「不发会退到 4096」实测不成立）。
+   *
+   * 口径：想砍就砍 —— 填了值照发，没填就是**不设限**。
    */
   check(
-    '★ 输出不限（0）→ 带模型声明的最大输出，而不是干脆不发',
-    buildChatBody({ model: 'deepseek-flash', messages: [], maxTokens: 0 }).max_tokens === 8192,
+    '★ 输出不限（0）→ 请求体里没有 max_tokens（别自己砌墙）',
+    buildChatBody({ model: 'deepseek-flash', messages: [], maxTokens: 0 }).max_tokens === undefined,
   )
   check(
-    '★ 声明未知的模型：不带这个参数（让上游自己定），绝不发 0 或负数',
+    '★ 没有预设的模型也一样：不带这个参数（绝不发 0 或负数）',
     buildChatBody({ model: '没有预设的模型名', messages: [], maxTokens: 0 }).max_tokens ===
       undefined,
   )
   check(
     '★ 什么都没传（老调用方）= 不限，不会变成「发一个 0」',
-    buildChatBody({ model: 'deepseek-flash', messages: [] }).max_tokens === 8192 &&
+    buildChatBody({ model: 'deepseek-flash', messages: [] }).max_tokens === undefined &&
       buildChatBody({ model: '没有预设的模型名', messages: [] }).max_tokens === undefined,
   )
   check(

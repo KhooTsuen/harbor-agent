@@ -28,29 +28,36 @@ function buildUrl(baseUrl, chatPath) {
  */
 const REASONING_MODEL = /(^|\/)(o1|o3|o4|gpt-5)(?=[-.]|$)/i
 
-const caps = require('./provider-capabilities.cjs')
-
 function isReasoningModel(model) {
   return REASONING_MODEL.test(String(model ?? ''))
 }
 
 /**
- * 「不限」（0 / 没填）时到底发什么。
+ * 「不限」（0 / 没填）时到底发什么 —— **不发**。
  *
- * ★ 不能干脆**不发**这个参数：有些服务商不带时会退到一个很小的默认值
- *   （DeepSeek 官方 chat 就是 4096），那「不限」就变成了「按上游的隐藏默认」，
- *   修复当场落空。所以改带**模型自己声明的**最大输出（`provider-capabilities`，
- *   与设置里那张能力表同一份数据）；声明未知（null）才真的不发。
+ * ★ 2026-09-29 改。上一版正好写反了，代价是用户报的「长回复说到一半就没了」：
+ *   上一版在「不限」时不省略，而是补上**模型声明的最大输出**
+ *   （`provider-capabilities` 的 `max_output`）。听着合理，实际是**自己砌墙** ——
+ *   `deepseek-flash` 声明 8192，于是每次请求都带 `max_tokens: 8192`，
+ *   上游规规矩矩写到 8192 就停；而全项目没人处理 `finish_reason === 'length'`，
+ *   所以用户看到的是「话说到一半没了」，还不知道为什么。
  *
- * @param {string} model
+ *   真机实测（打包版，同一条「写 1500 行」的请求）：
+ *     · 带 `max_tokens: 20000` → 计费 out=**9341**，写完
+ *     · **不带**这个参数      → 计费 out=**8033**，写完
+ *   两个都**超过** 8192：证明那堵墙是我们发出去的，不是上游的极限；
+ *   也推翻了老注释里「不发会退到很小的默认值 4096」的说法（实测不成立）。
+ *
+ *   口径：想砍就砍 —— 用户填了值就照发；没填就是**不设限**。
+ *
+ * @param {string} model 保留形参：调用方按模型传；将来若某家必须显式给上限，判断仍在这里
  * @param {number} maxTokens 设置里的输出上限，0 = 不限
  * @returns {number} > 0 才发；0 = 这次请求不带 `max_tokens`
  */
 function resolveMaxTokens(model, maxTokens) {
   const wanted = Number(maxTokens)
   if (Number.isFinite(wanted) && wanted > 0) return Math.round(wanted)
-  const declared = caps.resolve(model).caps.max_output
-  return Number.isFinite(declared) && declared > 0 ? declared : 0
+  return 0
 }
 
 /**
