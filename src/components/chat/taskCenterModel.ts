@@ -17,12 +17,18 @@ const GROUP_ORDER: readonly TaskRecord['status'][] = [
 export const TASK_GROUPS: ReadonlyArray<{ status: TaskRecord['status']; label: string }> =
   GROUP_ORDER.map((status) => ({ status, label: labelOf(statusOfTask(status)) }))
 
+/**
+ * 计划行带 markdown 列表前缀（`- ` / `* `）是很常见的 —— 模型写计划时就是这么写的
+ * （真机数据里 `- [x] 列出工作目录里的文件`）。这两个函数以前只认行首的 `[x]`，
+ * 于是那种行**永远算未完成**，进度还是显示成「- [x] xxx」。
+ */
 export function isPlanDone(line: string): boolean {
-  return /^\s*\[[xX]\]/.test(String(line))
+  return /^\s*(?:[-*]\s+)?\[[xX]\]/.test(String(line))
 }
 
 export function cleanPlanLine(line: string): string {
   return String(line)
+    .replace(/^\s*[-*]\s+/, '')
     .replace(/^\s*\[[xX ]\]\s*/, '')
     .trim()
 }

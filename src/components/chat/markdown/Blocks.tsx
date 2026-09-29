@@ -79,6 +79,15 @@ function ListItemView({
 export const Block = memo(function Block({ node }: { node: BlockNode }) {
   switch (node.type) {
     case 'code':
+      /*
+       * `plan` 代码块**不在正文里画**。
+       *
+       * 2026-09-30 用户要求：计划与输入框嵌合（可折叠、最多 4 条、折叠时显示
+       * 正在做的那一步）。正文里那个块只是模型承载计划的载体 —— 画出来会把
+       * 「思考 → 工具 → 正文」的连贯性打断（他拿 VS Code 的截图对比过）。
+       * 计划本身从任务台账读（内核 `task-context.cjs` 已经在解析），见 PlanBar。
+       */
+      if (String(node.language ?? '').toLowerCase() === 'plan') return null
       return (
         <CodeBlock
           block={{

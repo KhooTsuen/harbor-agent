@@ -20,6 +20,7 @@ import { ComposerContextRow } from './composer/ContextRow'
 import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
 import { CapabilityWarning } from './composer/CapabilityWarning'
+import { PlanBar } from './composer/PlanBar'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
 import { fsTree } from '@/lib/fsApi'
 import { useAgentActive } from '@/hooks/useAgentActive'
@@ -269,6 +270,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
           </div>
         </div>
 
+        {/* 计划与输入框嵌合：有 plan 才出现（没有就一行都不占） */}
+        {activeThreadId ? <PlanBar threadId={activeThreadId} /> : null}
         {/* 待发送的图片 */}
         <ImageAttachments />
         {/* 这活当前模型干得了吗（据声明，不是实测） */}
