@@ -5,7 +5,6 @@
  * 两个硬边界：maxTurns 防烧 token；AbortSignal 让「停止」立刻停住（含 shell）。
  * 状态由 AG-001 的 lifecycle 驱动（每次转移都发事件，UI 只读不猜）。
  */
-
 const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
 const budget = require('./budget.cjs')
@@ -32,11 +31,12 @@ const {
 const { buildPromptContext } = require('./loop-prompt.cjs')
 const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute, providerForRun } = require('./loop-route.cjs')
+const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）；这个 200
-   只防「预算设成不限而模型抽风」。第一版设成 50 → 「轮数到顶」总被 for 先拦下，预算检查
-   没机会带 budgetHit。★ 两个机制不能做同一件事。 */
+/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）。
+   这个 200 只防「预算设成不限而模型抽风」；第一版设成 50 → 总被 for 先拦下，
+   预算检查没机会带 budgetHit。★ 两个机制不能做同一件事。 */
 const MAX_TURNS = 200
 
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
@@ -47,8 +47,8 @@ const LOOP_NUDGE_LIMIT = 2
    ══════════════════════════════════════════════════════════ */
 
 /*
- * 状态事件的 key。**不能用 options.taskId**（那是任务台账 id，run() 里还会换成 task.id；
- * 调用方按自己的 requestId 过滤，两边对不上事件就全丢 → 「UI 显示空闲、后台在跑」）。
+ * 状态事件的 key。**不能用 options.taskId**（那是台账 id，run() 里还会换成 task.id；
+ * 调用方按自己的 requestId 过滤，两边对不上事件就全丢 →「UI 显示空闲、后台在跑」）。
  */
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
@@ -112,6 +112,8 @@ async function runLoop(options) {
   let turn = 0
   /* 收尾门禁的账：顶回去几次 + 上一轮进度快照（两道门禁各存一份，见 completionGate） */
   let gateSeen = {}
+  /* 逐轮累积：只回最后一轮的话，复制/导出/下一轮历史都会缺内容（见 loop-transcript） */
+  const transcript = createTranscript()
   /* 预算软阈值只提醒一次（token 优化 §八） */
   let softNoted = false
   /* AG-041：重复执行顶回去几次（超过阈值就停下来问用户） */
@@ -131,7 +133,7 @@ async function runLoop(options) {
     /* AG-011：优雅暂停 —— 每轮开头 = 上一轮工具已全跑完（即「完成当前安全操作」） */
     if (options.controls?.pauseRequested?.()) {
       life.mark('paused', traceKey(options))
-      return pausedResult({ turn, usage: totalUsage, toolRuns })
+      return pausedResult({ turn, usage: totalUsage, toolRuns, transcript })
     }
     /* AG-041：轮次边界查重复（工具已跑完，这一批签名才齐）；先改道，几次不听才交人 */
     const loopHit = loopGuard.detect(loopGuard.signaturesOf(toolRuns))
@@ -139,7 +141,7 @@ async function runLoop(options) {
       emit({ type: 'loop', ...loopHit, handedOver: true })
       /* ★ 用 paused 不用 waiting_user（AG-043 真机）—— 后者渲染层算「还在跑」 */
       life.mark('paused', traceKey(options))
-      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, loopHit })
+      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, loopHit, transcript })
     }
     if (loopHit.looping) {
       loopNudges += 1
@@ -153,7 +155,7 @@ async function runLoop(options) {
       emit({ type: 'budget', ...hit, blocked: false })
       /* 同上：撞预算也是「停下来了」，不是「还挂着在等你确认」 */
       life.mark('paused', traceKey(options))
-      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, budgetHit: hit })
+      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, budgetHit: hit, transcript })
     }
     /* 软阈值（token 优化 §八）：只提醒、不阻断 —— 优先保验证与安全，砍解释与重复读 */
     if (hit.soft === true && !softNoted) {
@@ -166,6 +168,7 @@ async function runLoop(options) {
     emit({ type: 'turn_start', turn: turn + 1 })
 
     /* ── 调模型（带重试与降级）── */
+    const stream = transcript.stream(emit)
     const result = await callModel({
       config,
       provider: useProvider,
@@ -184,8 +187,8 @@ async function runLoop(options) {
       signal,
       /* AG-040：自动重试次数由预算决定（默认 3） */
       maxRetries: plan.maxRetries,
-      onContent: (text) => emit({ type: 'content', text }),
-      onReasoning: (text) => emit({ type: 'reasoning', text }),
+      onContent: stream.content,
+      onReasoning: stream.reasoning,
       onUsage: (usage) => {
         totalUsage = mergeUsage(totalUsage, usage)
         /* 每次 LLM 调用都要记一笔 —— 一轮 agent 循环里可能调好几次，分开算才准 */
@@ -249,13 +252,8 @@ async function runLoop(options) {
         emit,
       })
       life.mark('completed', traceKey(options))
-      return {
-        content: finalContent,
-        reasoning: result.reasoning,
-        usage: totalUsage,
-        turns: turn + 1,
-        toolRuns,
-      }
+      /* 整轮的正文与思考一起回给渲染层（只有最后一轮的话，复制/导出/下一轮历史都缺内容） */
+      return { ...transcript.soFar(finalContent), usage: totalUsage, turns: turn + 1, toolRuns }
     }
 
     /* AG-010：读流结束到开始执行工具之间也要查中断（真机：停止后 2.7 秒仍发起新工具） */
@@ -274,7 +272,8 @@ async function runLoop(options) {
     })
 
     emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
-
+    /* 这一轮到此为止（还要接着调工具）：把它的正文与思考并进总账 */
+    transcript.mergeRound()
     /* 这一轮的工具逐个执行（含任务台账 / 检查点）—— 见 loop-tools.cjs */
     await executeToolCalls({
       toolCalls: result.toolCalls,
@@ -289,7 +288,7 @@ async function runLoop(options) {
 
   /* 保险丝烧了（预算设成「不限」而模型一直不罢休）—— 这不是预算停下来那一步 */
   emit({ type: 'turn_end', turn: MAX_TURNS, usage: totalUsage })
-  return exhaustedResult({ usage: totalUsage, toolRuns, maxTurns: MAX_TURNS })
+  return exhaustedResult({ usage: totalUsage, toolRuns, maxTurns: MAX_TURNS, transcript })
 }
 
 /* `run` 住在 loop-run.cjs；惰性 require 破循环（loop-run 要用这里的 runLoop） */

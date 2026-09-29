@@ -126,6 +126,7 @@ import { run as browserWaitGroup } from './selftest/groups/88-browser-wait.mjs'
 import { run as errorObserverGroup } from './selftest/groups/89-error-observer.mjs'
 import { run as errorReaderGroup } from './selftest/groups/90-error-reader.mjs'
 import { run as switchWiringGroup } from './selftest/groups/91-switch-wiring.mjs'
+import { run as roundTranscriptGroup } from './selftest/groups/92-round-transcript.mjs'
 
 const GROUPS = [
   basics,
@@ -135,6 +136,7 @@ const GROUPS = [
   agentLoop,
   promptState,
   switchWiringGroup,
+  roundTranscriptGroup,
   llmBody,
   limits,
   browser,

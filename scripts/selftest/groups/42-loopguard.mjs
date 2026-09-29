@@ -121,11 +121,18 @@ export async function run() {
     stopRepeat.includes('同一个调用连着来了 3 次'),
     stopRepeat.slice(0, 60),
   )
-  const modelSrc = readFileSync(join(ROOT, 'electron/core/loop-model.cjs'), 'utf8')
+  /*
+   * 拼两个文件看：这段 2026-09-30 因为行数从 `loop-model.cjs` 搬去了
+   * `loop-result.cjs`。钉的是「这句话被用了」，不是「它住在哪个文件」——
+   * 搬家就红一次，那是测试太脆。
+   */
+  const modelSrc =
+    readFileSync(join(ROOT, 'electron/core/loop-model.cjs'), 'utf8') +
+    readFileSync(join(ROOT, 'electron/core/loop-result.cjs'), 'utf8')
   check(
     '★ 循环真的用这句话（不是又抄了一份）',
     modelSrc.includes('loopGuard.stopMessage('),
-    'loop-model.cjs 里找不到 loopGuard.stopMessage(',
+    'loop-model.cjs / loop-result.cjs 里都找不到 loopGuard.stopMessage(',
   )
 
   /* ── ④ 停下来交人 ───────────────────────────────────── */

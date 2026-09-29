@@ -229,47 +229,6 @@ async function compactMessages({ messages, provider, model, apiKey, chatPath, em
   }
 }
 
-/**
- * AG-011：暂停时的返回值。
- *
- * 故意和正常返回**同形**，只多一个 `paused: true` —— 调用方（loop.run）
- * 拿它决定把任务台账标成 paused 还是 completed，别处不用改。
- */
-function pausedResult({ turn, usage, toolRuns }) {
-  return {
-    content: '（任务已暂停，可以从这里继续）',
-    reasoning: '',
-    usage,
-    turns: turn,
-    toolRuns,
-    paused: true,
-  }
-}
-
-/** AG-011：轮数用尽时的返回值（活没干完，同样可恢复） */
-function exhaustedResult({ usage, toolRuns, maxTurns, budgetHit = null, loopHit = null }) {
-  const text = (() => {
-    if (budgetHit)
-      return `${budgetHit.message}
-（停下来等你决定：继续 / 停止 / 调整预算。）`
-    if (loopHit) {
-      /* 文案住在 loop-guard.cjs（和「对模型说的」那句挨着），这边只负责挑一句 */
-      return loopGuard.stopMessage(loopHit)
-    }
-    return `（已经连续调用工具 ${maxTurns} 轮，先停在这里。你可以说「继续」让我接着做。）`
-  })()
-  return {
-    content: text,
-    reasoning: '',
-    usage,
-    turns: maxTurns,
-    toolRuns,
-    exhausted: true,
-    budgetHit,
-    loopHit,
-  }
-}
-
 function mergeUsage(a, b) {
   if (!a) return b
   if (!b) return a
@@ -293,6 +252,7 @@ module.exports = {
   selfReview,
   reviewWithEvents,
   mergeUsage,
-  pausedResult,
-  exhaustedResult,
+  /* `pausedResult` / `exhaustedResult` 搬去了 loop-result.cjs（这边贴 300 行）。
+     这里原样再导出，调用方（loop.cjs）的 require 一行都不用改。 */
+  ...require('./loop-result.cjs'),
 }
