@@ -38,8 +38,8 @@ const MAX_VISIBLE_RUNS = 100
 /** 一次最多摊开多少组（连续同名归一组之后的组数） */
 const MAX_VISIBLE_GROUPS = 50
 
-/** 毫秒 → 人看的（<1s 给毫秒，<1min 给秒，再长给分秒） */
-function formatMs(ms: number): string {
+/** 毫秒 → 人看的（<1s 给毫秒，<1min 给秒，再长给分秒）—— 时间线那边也用它 */
+export function formatMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
   return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
@@ -191,7 +191,7 @@ function ToolGroupRow({ group }: { group: ToolGroup }) {
   )
 }
 
-function ToolRunRow({ run }: { run: ToolRunRecord }) {
+export function ToolRunRow({ run }: { run: ToolRunRecord }) {
   const [open, setOpen] = useState(false)
   const guard = useScrollGuard()
   const running = run.output === '' && run.ms === undefined

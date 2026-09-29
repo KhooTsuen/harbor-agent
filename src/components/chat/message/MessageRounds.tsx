@@ -1,6 +1,6 @@
 import type { MessageRound, ToolRunRecord } from '@/types'
 import { ThinkBlock } from '../ProcessBlocks'
-import { ToolRunList } from '../ToolRuns'
+import { ToolLine } from './ToolLine'
 import { Markdown } from '../Markdown'
 import { StreamingMarkdown } from '../markdown/StreamingMarkdown'
 
@@ -44,7 +44,11 @@ export function MessageRounds({
             {round.reasoning.trim() ? (
               <ThinkBlock text={round.reasoning} streaming={thinking} />
             ) : null}
-            {runs.length > 0 ? <ToolRunList runs={runs} /> : null}
+            {/*
+              工具**一行说完**（不占一张卡片）—— 用户 2026-09-30 拿 VS Code 的
+              截图对比后要求的排版：摘要行与正文自然交错。
+            */}
+            {runs.length > 0 ? <ToolLine runs={runs} /> : null}
             {round.content.trim() ? (
               <div>
                 {/*
