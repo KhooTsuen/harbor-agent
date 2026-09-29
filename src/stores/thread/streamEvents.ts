@@ -2,6 +2,7 @@ import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
 import { useAppStore } from '../useAppStore'
 import { useTaskStore } from '../useTaskStore'
+import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
@@ -165,6 +166,8 @@ export function handleStreamEvent(
        * 走事件驱动，别轮询；每个工具一次，量很小。
        */
       void useTaskStore.getState().refresh()
+      /* 底栏那个运行日志也得跟着走 —— 它以前只在打开时拉一次，工具跑完一条都不动 */
+      useAuditStore.getState().bump()
 
       /*
        * 工具输出里能捞出可追溯的东西：

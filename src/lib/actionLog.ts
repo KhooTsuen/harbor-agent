@@ -77,6 +77,42 @@ export function describeReason(reason: unknown): string {
   }
 }
 
+/*
+ * 已知噪声：框架自己抛的、我们改不了也不影响功能的。
+ *
+ * `Invalid guestInstanceId: N` —— `<webview>` 被摘出 DOM（切对话 / 关标签 / 退出）时，
+ * Electron 内部（`WebViewElement.disconnectedCallback` / `attachGuestInstance`）会抛这个。
+ * 它是框架在拆卸 guest 时的时序产物，用户代码里没有能改的地方，也不代表功能坏了。
+ *
+ * 为什么值得专门处理：真机上它把 2026-09-28 当天的日志刷了 **150+ 行**，
+ * 把真正的错埋了（翻日志的人第一眼全是它）。
+ *
+ * 纪律：**只认这一条具体的噪声**，而且要求消息的**第一行**就是它 ——
+ * 宁可漏过滤，也不要把真问题一起吞掉。而且不是完全静默：同一个形状
+ * 只报第一条（让人知道「有这回事」），后面的丢掉。
+ */
+const BENIGN = [/^Invalid guestInstanceId: \d+/]
+const seenBenign = new Set<string>()
+
+/** 这条异常是不是已知噪声（导出来便于测） */
+export function isBenignError(message: string): boolean {
+  const first =
+    String(message ?? '')
+      .split('\n')[0]
+      ?.trim() ?? ''
+  return BENIGN.some((re) => re.test(first))
+}
+
+/** 上报异常；噪声只放行第一条（按「把数字抹平」的形状去重） */
+function reportError(where: string, message: string): void {
+  if (isBenignError(message)) {
+    const key = (message.split('\n')[0] ?? '').replace(/\d+/g, 'N').trim()
+    if (seenBenign.has(key)) return
+    seenBenign.add(key)
+  }
+  bridge().logError?.({ where, message })
+}
+
 /**
  * 装上监听。在 React 挂载**之前**调（main.tsx）—— 装晚了会漏掉启动阶段的错。
  * @returns 卸载函数（测试用；应用里不卸）
@@ -93,16 +129,14 @@ export function installActionLog(doc: Document = document, win: Window = window)
   }
 
   const onError = (event: ErrorEvent) => {
-    bridge().logError?.({
-      where: event.filename
-        ? `window.onerror@${String(event.filename).slice(-40)}`
-        : 'window.onerror',
-      message: describeReason(event.error ?? event.message),
-    })
+    reportError(
+      event.filename ? `window.onerror@${String(event.filename).slice(-40)}` : 'window.onerror',
+      describeReason(event.error ?? event.message),
+    )
   }
 
   const onRejection = (event: PromiseRejectionEvent) => {
-    bridge().logError?.({ where: 'unhandledrejection', message: describeReason(event.reason) })
+    reportError('unhandledrejection', describeReason(event.reason))
   }
 
   doc.addEventListener('click', onClick, true)

@@ -3,6 +3,7 @@ import {
   clickLabelOf,
   describeReason,
   installActionLog,
+  isBenignError,
   logAction,
   logError,
 } from '@/lib/actionLog'
@@ -20,6 +21,8 @@ import {
         而且很容易把消息正文顺手记进去）
      ③ 连点只报一次
      ④ window 级 error / unhandledrejection 都会上报
+     ⑤ ★ 已知的枆架噪声（Electron 的 `Invalid guestInstanceId`）不刷屏 ——
+        但**只认那一条**，别的错一条都不能少
    ══════════════════════════════════════════════════════════════ */
 
 interface Entry {
@@ -132,6 +135,41 @@ describe('installActionLog', () => {
     window.dispatchEvent(event)
     expect(errors.length).toBe(1)
     expect(errors[0]?.where).toBe('unhandledrejection')
+  })
+
+  /* ── Electron 的 webview 拆卸噪声（2026-09-30） ────────────────
+     `<webview>` 摘出 DOM 时 Electron 内部会抛 `Invalid guestInstanceId: N`。
+     真机上它把当天日志刷了 150+ 行，把真正的错埋了。
+     判据：**只认这一条**，别的错一个字都不能少。 */
+  it('★ 已知噪声（Invalid guestInstanceId）不刷屏：同一个形状只报第一条', () => {
+    for (const id of [2, 3, 4, 5]) {
+      const error = new Error(`Invalid guestInstanceId: ${id}`)
+      window.dispatchEvent(new ErrorEvent('error', { error, message: error.message }))
+    }
+    expect(errors.length).toBe(1)
+    expect(errors[0]?.message).toContain('Invalid guestInstanceId')
+  })
+
+  it('★ 别的错一条都不能少（过滤只认那一条，不误伤）', () => {
+    const before = errors.length
+    for (const message of [
+      'Invalid guestInstanceId 说的是别的意思', // 少个冒号，不是它
+      'Error: Invalid guestInstanceId: 9', // 第一行不是它（前面有前缀）
+      'Cannot read properties of undefined',
+    ]) {
+      const error = new Error(message)
+      window.dispatchEvent(new ErrorEvent('error', { error, message }))
+    }
+    expect(errors.length).toBe(before + 3)
+  })
+
+  it('isBenignError 只认整行就是它的那种', () => {
+    expect(isBenignError('Invalid guestInstanceId: 7')).toBe(true)
+    expect(
+      isBenignError('Invalid guestInstanceId: 7\n    at WebViewElement.disconnectedCallback'),
+    ).toBe(true)
+    expect(isBenignError('Invalid guestInstanceId')).toBe(false)
+    expect(isBenignError('别的错 Invalid guestInstanceId: 7')).toBe(false)
   })
 
   it('卸载之后不再报（测试里要能收干净）', () => {

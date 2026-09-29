@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from 're
 import { RefreshCw, Search } from 'lucide-react'
 import type { AuditEntry } from '@/types/safety'
 import { auditList } from '@/lib/safetyApi'
+import { useAuditStore } from '@/stores/useAuditStore'
 import { cn } from '@/lib/utils'
 import { colorOf, statusOfTool } from '@/lib/statusLanguage'
 
@@ -12,7 +13,9 @@ import { colorOf, statusOfTool } from '@/lib/statusLanguage'
    数据来自主进程的审计日志（已经脱敏），全局可搜 —— 补的是
    「工具调用记录出了那条对话就再也找不到」这个缺口。
 
-   不常驻轮询：打开时拉一次 + 手动刷新。和「空闲时不轮询」的原则一致。
+   不常驻轮询：**工具跑完才拉**（信号来自 `useAuditStore`，在 streamEvents 里 bump）。
+   以前是「打开时拉一次 + 手动刷新」—— 结果面板开着、Agent 在跑，流水一条都不动，
+   看着像是「列表满了 200 条就不再刷新」（用户 2026-09-30 报的）。
    ══════════════════════════════════════════════════════════════ */
 
 const PAGE_LIMIT = 200
@@ -43,6 +46,8 @@ export function ToolLogPanel(): ReactElement {
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
+  /* 工具跑完就 +1 —— 面板据此重新拉一次（见 stores/useAuditStore.ts） */
+  const version = useAuditStore((s) => s.version)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -52,8 +57,15 @@ export function ToolLogPanel(): ReactElement {
   }, [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    /*
+     * 跟着新条目走：`version` 一变就重拉。
+     * 延迟 120ms 是为了**合并**——并行的几个工具会在同一刻连着 bump，
+     * 不合并就是连着读几次审计文件（每次都要把当天文件读进来）。
+     * 首次挂载也走这条路，120ms 看不出来。
+     */
+    const timer = window.setTimeout(() => void load(), 120)
+    return () => window.clearTimeout(timer)
+  }, [load, version])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
