@@ -137,10 +137,8 @@ export function render(messages: readonly Message[], conversationId = 't1'): voi
 }
 
 /**
- * 消息列表的滚动容器。
- *
- * ★ 别用 `div.overflow-y-auto` 找：**开屏（LaunchScreen）也是 overflow-y-auto**，
- * 切过来切过去时那个选择器会指错人。消息列表的容器是唯一带 tabIndex=-1 的。
+ * 消息列表的滚动容器。★ 别用 `div.overflow-y-auto` 找：**开屏（LaunchScreen）
+ * 也是 overflow-y-auto**，切换时会指错人。消息列表的容器是唯一带 tabIndex=-1 的。
  */
 export function scroller(): HTMLDivElement {
   const el = container.querySelector('div[tabindex="-1"]')
@@ -179,15 +177,17 @@ export function pressKey(key: string): void {
   })
 }
 
-export function buttonByText(text: string): HTMLButtonElement | null {
-  return (
-    ([...container.querySelectorAll('button')].find((b) => (b.textContent ?? '').includes(text)) as
-      HTMLButtonElement | undefined) ?? null
+/**
+ * 点按钮。`last: true` = 取最后一个（最新那条消息里的）。
+ *
+ * 思考块只能认位置不能认文案：按钮文字会在「正在思考…」和「思考过程」之间切
+ * （正文一开始流就变），2026-09-30 三个滚动测试就是这么红的。
+ */
+export function clickButton(text: string, last = false): void {
+  const all = [...container.querySelectorAll('button')].filter((b) =>
+    (b.textContent ?? '').includes(text),
   )
-}
-
-export function clickButton(text: string): void {
-  const btn = buttonByText(text)
+  const btn = (last ? all[all.length - 1] : all[0]) as HTMLButtonElement | undefined
   if (!btn) throw new Error(`找不到按钮：${text}`)
   act(() => btn.click())
 }

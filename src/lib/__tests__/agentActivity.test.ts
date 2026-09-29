@@ -11,8 +11,8 @@ import type { ToolRunRecord } from '@/types'
    所以这里测三件事：
 
      · 有工具在跑就说工具（带参数），没工具才退回相位
-     · 「还在跑」的判据和 ToolRuns.tsx 一致
-     · **接线守卫** —— 三个显示位置有没有真的用上它、旧文案有没有被改回来
+     · 「还在跑」的判据全项目一致（`runningOf`：没 result 也没耗时）
+     · **接线守卫** —— 几个显示位置有没有真的用上它、旧文案有没有被改回来
    ══════════════════════════════════════════════════════════════ */
 
 const run = (over: Partial<ToolRunRecord>): ToolRunRecord => ({
@@ -117,18 +117,26 @@ describe('AG-008 / 接线守卫', () => {
     )
   })
 
-  it('工具概览行说清是哪个工具，不再是一句「正在执行工具」', () => {
-    const src = read('src/components/chat/ToolRuns.tsx')
-    expect(src).not.toContain("'正在执行工具'")
-    expect(src).toContain('const active = runningOf(runs)')
-    expect(src).toContain('`正在${verbOf(active.name)}…`')
+  it('工具那一行说清是哪个工具在跑，不再是一句「正在执行工具」', () => {
+    const src = read('src/components/chat/message/ToolLine.tsx')
+    expect(src).not.toContain('正在执行工具')
+    /* 一行文字来自 describeRuns（单步会点名对象：「读取 README.md」） */
+    expect(src).toContain('describeRuns(runs)')
+    /* 转圈图标只表示「还在跑」，由 runningOf 判定 */
+    expect(src).toContain('runningOf(runs)')
   })
 
-  it('动作词表只有一份（ToolRuns 从 lib 拿，不自己再定义）', () => {
-    const src = read('src/components/chat/ToolRuns.tsx')
-    expect(src).not.toContain('export const ACTIONS')
-    expect(src).toContain(
-      "import { AGENT_ACTIONS as ACTIONS, runningOf, verbOf } from '@/lib/agentActivity'",
+  it('动作词表只有一份（ToolLine 从 lib 拿，不自己再定义）', () => {
+    for (const file of [
+      'src/components/chat/message/ToolLine.tsx',
+      'src/components/chat/ToolRuns.tsx',
+    ]) {
+      const src = read(file)
+      expect(src, file).not.toContain('export const ACTIONS')
+      expect(src, file).not.toContain("read_file: ['读取'") /* 别把表抄第二份 */
+    }
+    expect(read('src/components/chat/message/ToolLine.tsx')).toContain(
+      "import { AGENT_ACTIONS, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'",
     )
   })
 

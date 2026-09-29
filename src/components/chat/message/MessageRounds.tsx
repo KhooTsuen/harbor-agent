@@ -1,4 +1,5 @@
 import type { MessageRound, ToolRunRecord } from '@/types'
+import { useSmoothText } from '@/hooks/useSmoothText'
 import { ThinkBlock } from '../ProcessBlocks'
 import { ToolLine } from './ToolLine'
 import { Markdown } from '../Markdown'
@@ -30,6 +31,13 @@ export function MessageRounds({
 }) {
   const lastIndex = rounds.length - 1
 
+  /*
+   * 流式那一轮的正文要「摊平」（AG-023）—— 上游是一批一批给的，直接渲染会
+   * 一块一块地跳。它和思考链是两个独立通道（后端按 type 分开攒），所以
+   * ThinkBlock 自己那份平滑（见 ProcessBlocks）不能省。
+   */
+  const smoothLast = useSmoothText(rounds[lastIndex]?.content ?? '', streaming)
+
   return (
     <div className="flex flex-col">
       {rounds.map((round, index) => {
@@ -56,10 +64,12 @@ export function MessageRounds({
                   整篇解析一次到位更省（也避免重复解析长文本）。
                 */}
                 {streaming && isLast ? (
-                  <StreamingMarkdown text={round.content} />
+                  <StreamingMarkdown text={smoothLast} />
                 ) : (
                   <Markdown text={round.content} />
                 )}
+                {/* 打字光标：和以前一样，只在流式那一段的尾巴上闪 */}
+                {streaming && isLast ? <span className="caret" /> : null}
               </div>
             ) : null}
           </div>

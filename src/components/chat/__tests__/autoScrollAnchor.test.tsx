@@ -103,7 +103,7 @@ describe('FREE 的 delta 补偿（按锚点位移量，不按高度差）', () =
     layout([700, 100]) // 内容 800 / 视口 500 → 贴底 = 300
     expect(bottomDistance()).toBe(0) // 打开即 FOLLOW 贴底
 
-    clickButton('正在思考') // 迁移 4：点开最新思考块（此刻人还在底部）
+    clickButton('思考', true) // 迁移 4：点开最新思考块（此刻人还在底部）
     expect(jumpVisible()).toBe(true)
 
     growAbove(0, 400) // 展开的 400px 在视野上方 → 补偿 400，离底仍是 0
@@ -170,7 +170,7 @@ describe('FREE 的 delta 补偿（按锚点位移量，不按高度差）', () =
     layout([900, 900]) // 内容 1800 / 视口 500 → 贴底 = 1300
     expect(bottomDistance()).toBe(0) // 打开即 FOLLOW
 
-    clickButton('正在思考') // 迁移 4：点开块 → FREE
+    clickButton('思考', true) // 迁移 4：点开块 → FREE
     expect(jumpVisible()).toBe(true)
 
     growTail(-600) // 内容变矮（折叠 / 重排）→ 旧位置 1300 已经在新的最大滚动量（700）之外

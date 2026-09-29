@@ -1,12 +1,11 @@
 import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
-import { confirmChat } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useTaskStore } from '../useTaskStore'
-import { useUIStore } from '../useUIStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
+import { askPermissionFor } from './confirmEvents'
 
 /* ══════════════════════════════════════════════════════════════
    流式聊天事件的处理
@@ -29,6 +28,11 @@ export interface StreamState {
    * 一轮一轮的片段（思考 / 工具下标 / 正文）—— **顺序就是发生顺序**。
    * 事件本身就是按时间到达的，这里只是把它们记下来，渲染层才排得出时间线
    * （三个聚合字段拼不出先后，见 MessageRound 的注释）。
+   *
+   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })` 同步到消息上。
+   * 只在 `done` 时挂的话，**整场流式都会退回老的三段堆叠**（思考一大块 →
+   * 工具一张卡片 → 正文），一直到最后才「啪」地跳成时间线 ——
+   * 2026-09-30 用户报的「任务进行中的流式对话排版太乱」根因就是这个。
    */
   rounds: MessageRound[]
   citations: NonNullable<Message['citations']>
@@ -48,6 +52,16 @@ function currentRound(state: StreamState): MessageRound {
   const fresh: MessageRound = { reasoning: '', content: '', tools: [] }
   state.rounds.push(fresh)
   return fresh
+}
+
+/**
+ * 把分轮草稿同步到消息上（浅拷贝外层数组）。
+ *
+ * 复制成本可以忽略：一轮 = 一个对象，一场对话最多几十轮；
+ * 应用层靠**引用变了**才知道要重渲，不复制的话界面根本不更新。
+ */
+function syncRounds(state: StreamState): MessageRound[] {
+  return [...state.rounds]
 }
 
 /**
@@ -94,7 +108,7 @@ export function handleStreamEvent(
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       state.content += String(event.text ?? '')
       currentRound(state).content += String(event.text ?? '')
-      state.patch({ content: state.content })
+      state.patch({ content: state.content, rounds: syncRounds(state) })
       return { handled: true }
     }
 
@@ -102,7 +116,7 @@ export function handleStreamEvent(
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       state.reasoning += String(event.text ?? '')
       currentRound(state).reasoning += String(event.text ?? '')
-      state.patch({ reasoning: state.reasoning })
+      state.patch({ reasoning: state.reasoning, rounds: syncRounds(state) })
       return { handled: true }
     }
 
@@ -121,7 +135,7 @@ export function handleStreamEvent(
       state.toolRuns.push(record)
       /* 这一轮跑过这个工具 —— 记下标（记录本身不重复存） */
       currentRound(state).tools.push(state.toolRuns.length - 1)
-      state.patch({ toolRuns: [...state.toolRuns] })
+      state.patch({ toolRuns: [...state.toolRuns], rounds: syncRounds(state) })
       return { handled: true }
     }
 
@@ -174,55 +188,15 @@ export function handleStreamEvent(
         /* 解析不出来就算了 */
       }
 
-      state.patch({ toolRuns: [...state.toolRuns] })
+      /* 工具跑完 → 那一行从「转圈」变成「耗时」（rounds 顺带同步，成本可忽略） */
+      state.patch({ toolRuns: [...state.toolRuns], rounds: syncRounds(state) })
       return { handled: true }
     }
 
-    /* ── 写操作确认：弹给用户，用户点完回主进程 ── */
-    case 'confirm_request': {
-      const confirmId = String(event.confirmId ?? '')
-      const toolName = String(event.toolName ?? '操作')
-      const kind = String(event.kind ?? '')
-      const risk = (event.risk ?? null) as { level?: string } | null
-      const high = risk?.level === 'high'
-
-      /*
-       * AG-013：把「要不要允许」说成人话，并且**说清「本次」的范围**。
-       * 以前的标题是「模型请求执行：run_shell」—— 那是内部名字，
-       * 用户既看不懂、也不知道批了之后会发生什么。
-       */
-      const KIND_TEXT: Record<string, string> = {
-        write: '修改文件',
-        mcp: '调用外部工具',
-        risk: '执行命令',
-        path: '访问工作目录之外的文件',
-      }
-      /* 和 core/tools/approval.cjs 的 REMEMBERED 保持一致 */
-      const remembered = kind === 'write' || kind === 'mcp'
-
-      useUIStore.getState().askPermission({
-        kind: 'run-command',
-        title: high
-          ? `⚠ 高风险：${KIND_TEXT[kind] ?? toolName}`
-          : `Agent 准备${KIND_TEXT[kind] ?? `执行 ${toolName}`}`,
-        description: [
-          String(event.summary ?? ''),
-          remembered ? '同意后，**本轮**内同类操作不再询问。' : '',
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
-        confirmText: '允许本次',
-        danger: high,
-        /* AG-036：会改成什么样（没有就不传，弹窗里也不会出现「查看 Diff」） */
-        diff: Array.isArray(event.diff) ? event.diff : undefined,
-        diffNote: String(event.diffNote ?? ''),
-        impact: Array.isArray(event.impact) ? event.impact.map(String) : [],
-        onConfirm: () => void confirmChat(confirmId, true),
-        /* 关掉弹窗也算拒绝 —— 不回话的话主进程会一直等到超时 */
-        onCancel: () => void confirmChat(confirmId, false),
-      })
+    /* ── 写操作确认：弹给用户，用户点完回主进程（实现见 confirmEvents.ts）── */
+    case 'confirm_request':
+      askPermissionFor(event)
       return { handled: true }
-    }
 
     /*
      * 新一轮开始 —— 时间线在这里分段。
@@ -231,6 +205,8 @@ export function handleStreamEvent(
      */
     case 'turn_start': {
       state.rounds.push({ reasoning: '', content: '', tools: [] })
+      /* 立刻挂到消息上 —— 否则新的一轮要等它出了第一个字才在界面上出现 */
+      state.patch({ rounds: syncRounds(state) })
       return { handled: true }
     }
 
@@ -254,7 +230,13 @@ export function handleStreamEvent(
 
     case 'aborted': {
       /* ★ 标上 interrupted：这是「被中止」的那条 —— 操作条据此把「重新生成」换成「重试」 */
-      state.patch({ status: 'sent', content: state.content, interrupted: true })
+      state.patch({
+        status: 'sent',
+        content: state.content,
+        interrupted: true,
+        /* 被停掉的那条也要留住时间线：落盘只认消息上的 rounds，不挂就存不下去 */
+        rounds: syncRounds(state),
+      })
       state.finish()
       return { handled: true }
     }

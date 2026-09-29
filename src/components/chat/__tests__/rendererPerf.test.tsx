@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Message, ToolRunRecord } from '@/types'
 import { MessageList } from '../MessageList'
-import { ToolRunList, groupRuns } from '../ToolRuns'
+import { ToolLine, describeRuns } from '../message/ToolLine'
 import { Markdown } from '../Markdown'
 import { ProgressTimeline } from '../ProgressTimeline'
 import { installDomStubs } from './domStubs'
@@ -77,34 +77,34 @@ const report = (label: string, ms: number, nodes: number, extra = ''): void => {
   )
 }
 
+/** 点开当前那些可折叠的控件（概览行）—— 用一个函数是因为调用点很多 */
+function clickExpander(): void {
+  for (const button of [...container.querySelectorAll('button[aria-expanded="false"]')]) {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  }
+}
+
 describe('AG-038 / 10000 个 Tool Event', () => {
   it('★ 归类之后是一行（不是一万行）', () => {
     const runs = Array.from({ length: 10_000 }, () => toolRun())
-    const groups = groupRuns(runs)
-    expect(groups).toHaveLength(1)
-    expect(groups[0].runs).toHaveLength(10_000)
+    /* 一万次同名调用 → 一句话（「读取 10000 个文件」），不是一万个元素 */
+    expect(describeRuns(runs)).toBe('读取 10000 个文件')
   })
 
   it('★ 收起时 DOM 里只有一行；展开也要有上限', () => {
     const runs = Array.from({ length: 10_000 }, () => toolRun())
-    const collapsed = render(<ToolRunList runs={runs} />)
+    const collapsed = render(<ToolLine runs={runs} />)
     report('10000 个工具事件（收起）', collapsed.ms, collapsed.nodes)
     expect(collapsed.nodes).toBeLessThan(40)
 
-    /* 要**点两层**才见得到那一万行：先展开列表，再展开那一组 */
-    const clickAll = () => {
-      const buttons = [...container.querySelectorAll('button[aria-expanded="false"]')]
-      for (const button of buttons) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    }
     const expandedAt = performance.now()
-    act(() => clickAll())
-    act(() => clickAll())
+    act(() => clickExpander())
     const ms = performance.now() - expandedAt
     const nodes = container.querySelectorAll('*').length
     report('10000 个工具事件（展开到底）', ms, nodes)
     /*
      * 展开一万行谁也受不了 —— 必须有上限。修之前实测 **9.4 秒 / 12 万节点**，
-     * 现在是「最近 100 条」1223 个节点。判据是「不随数据线性爆炸」，
+     * 现在是「最近 100 步」一千多个节点。判据是「不随数据线性爆炸」，
      * 不是某个精确数字。
      */
     expect(nodes, `展开后 ${nodes} 个节点`).toBeLessThan(2000)
@@ -113,23 +113,21 @@ describe('AG-038 / 10000 个 Tool Event', () => {
   })
 })
 
-describe('AG-038 / 工具组太多也要截', () => {
-  it('★ 200 组（读一个、跑一条交替）只摊开最近 50 组', () => {
+describe('AG-038 / 步数多也要截', () => {
+  it('★ 200 步（读一个、跑一条交替）只摊开最近 100 步', () => {
     const runs = Array.from({ length: 200 }, (_, i) =>
       toolRun({ name: i % 2 === 0 ? 'read_file' : 'run_shell' }),
     )
-    render(<ToolRunList runs={runs} />)
-    const clickAll = () => {
-      for (const button of [...container.querySelectorAll('button[aria-expanded="false"]')]) {
-        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      }
-    }
-    act(() => clickAll())
-    act(() => clickAll())
+    render(<ToolLine runs={runs} />)
+    act(() => clickExpander())
     const nodes = container.querySelectorAll('*').length
-    report('200 组（展开）', 0, nodes)
+    /* 明细行自己的按钮没有 aria-expanded（没输出就不可展开），所以数出来是
+       1（概览行）+ 最多 100（明细行） */
+    const rows = container.querySelectorAll('button').length
+    report('200 步（展开）', 0, nodes, `${rows} 个可点行`)
     expect(nodes, `${nodes} 个节点`).toBeLessThan(3000)
-    expect(container.textContent).toContain('组没摊开')
+    expect(rows).toBeLessThanOrEqual(101)
+    expect(container.textContent).toContain('没摊开')
   })
 })
 

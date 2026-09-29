@@ -141,7 +141,13 @@ export async function run() {
   )
 
   /* ── 界面 ── */
-  const evSrc = readCore('src/stores/thread/streamEvents.ts')
+  /*
+   * 2026-09-30：这一支从 `streamEvents.ts` 搬去了 `confirmEvents.ts`（那边贴着
+   * 300 行红线）。所以这里把两个文件**拼起来看** —— 钉的是**文案本身**，
+   * 不是「它住在哪个文件」；不然搬一次文件就红一次，那是测试太脆。
+   */
+  const evSrc =
+    readCore('src/stores/thread/streamEvents.ts') + readCore('src/stores/thread/confirmEvents.ts')
   check('★ 按钮文案是「允许本次」', evSrc.includes("confirmText: '允许本次'"))
   check('★ 会说明「本轮内不再问」的范围', evSrc.includes('本轮'))
   check('高危在界面上有区别（标题带「高风险」）', evSrc.includes('高风险'))

@@ -63,6 +63,19 @@ describe('磁盘 → 界面', () => {
     expect('regeneratedFrom' in storedToUi(base, 't1')).toBe(false)
   })
 
+  /* ── 思考过程（2026-09-30 真机发现） ──────────────────────────
+     重开会话后历史消息的思考块**整个不见了**：数据里存着（真机那条 124 次工具
+     调用的思考有 3213 字），但 `storedToUi` 没把它带上来。和下面 images
+     那次是同一类漏字段 —— 存了，读回时不带。 */
+  it('★ reasoning 要还原（不然重开会话思考块整个消失）', () => {
+    const m = storedToUi({ ...base, reasoning: '先看现状' }, 't1')
+    expect(m.reasoning).toBe('先看现状')
+  })
+
+  it('没有思考时不要凭空给一个空串（老会话不受影响）', () => {
+    expect('reasoning' in storedToUi(base, 't1')).toBe(false)
+  })
+
   /* ── 带图提问（2026-09-28 真机事故） ──────────────────────────
      用户贴了一张图，重开会话就只剩「（图片）」这行占位字：缩略图没了，
      「恢复任务」时模型也收不到画面。落盘侧见 `thread/userRecord.ts`，

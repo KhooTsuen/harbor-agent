@@ -46,7 +46,7 @@ describe('滚动状态机（验收 a–h）', () => {
     expect(bottomDistance()).toBe(0) // 打开即 FOLLOW 贴底
     expect(jumpVisible()).toBe(false)
 
-    clickButton('正在思考') // 最新那条的思考块
+    clickButton('思考', true) // 最新那条的思考块（文案会变，认最后一块）
     expect(jumpVisible()).toBe(true)
     const top = dims.scrollTop
     grow(60)

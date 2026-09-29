@@ -34,6 +34,15 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     threadId,
     role: stored.role === 'tool' ? 'system' : stored.role,
     content: stored.content,
+    /*
+     * 思考过程：**必须还原**。
+     *
+     * 少了这一行，重开会话后**所有历史消息的思考块都不见了** —— 数据里存得好好的
+     * （2026-09-30 真机量的：那条 124 次工具调用的思考有 3213 字），只是读回时没带。
+     * 老记录本来就没有 `rounds`，那段「思考 → 工具 → 正文」的第一段全靠这个字段撑。
+     * 和下面 `images` 那次是同一类漏字段：存了，但读回时不带。
+     */
+    ...(stored.reasoning ? { reasoning: stored.reasoning } : {}),
     kind: isError ? 'error' : 'text',
     status: isError ? 'error' : 'sent',
     timestamp: stored.ts ?? Date.now(),
