@@ -10,6 +10,7 @@
  */
 
 const C = require('./config-defaults.cjs')
+const budgetCore = require('./budget.cjs')
 const providerCaps = require('./provider-capabilities.cjs')
 const securityCfg = require('./config-security.cjs')
 
@@ -123,7 +124,7 @@ function normalize(raw) {
   const changeset = obj(g.changeset)
 
   const limits = obj(g.limits)
-  const budgetRaw = obj(g.budget)
+  const budgetRaw = budgetCore.legacyUnlimited(obj(g.budget)).value
 
   const providers =
     Array.isArray(g.providers) && g.providers.length > 0
@@ -162,7 +163,9 @@ function normalize(raw) {
       model: str(assistant.model) || 'deepseek-chat',
       temperature: clampNumber(assistant.temperature, 0, 2, 0.7),
       topP: clampNumber(assistant.topP, 0, 1, 1),
-      maxTokens: clampNumber(assistant.maxTokens, 256, 128000, 4096),
+      /* 0 = 不限（**新的默认**）。旧默认 4096 认成「没设过」→ 0，理由同任务预算：
+         盘上的老数字不会自己变，不迁移这次修复对老用户就等于没发生 */
+      maxTokens: clampNumber(assistant.maxTokens === 4096 ? 0 : assistant.maxTokens, 0, 128000, 0),
       historyLimit: clampNumber(assistant.historyLimit, 0, 200, 20),
       responseDepth: pick(
         str(assistant.responseDepth, 'standard'),
@@ -264,13 +267,14 @@ function normalize(raw) {
     /*
      * 用量闸。token 数用 clampNumber 兜底（负数、乱填都打回 0 = 不限）。
      */
-    /* AG-040：任务预算（0 = 不限；坏值退回默认）；softRatio = 软阈值（0~1） */
+    /* AG-040：任务预算（0 = 不限 = 新默认）。旧盘上的 50/100/1800/100000 已在上游
+       经 `budgetCore.legacyUnlimited` 当成「没设过」→ 0；这里只做坏值兜底 */
     budget: {
-      maxSteps: Math.round(clampNumber(budgetRaw.maxSteps, 0, 10_000, 50)),
-      maxToolCalls: Math.round(clampNumber(budgetRaw.maxToolCalls, 0, 1_000_000, 100)),
-      maxRuntime: Math.round(clampNumber(budgetRaw.maxRuntime, 0, 86400, 1800)),
+      maxSteps: Math.round(clampNumber(budgetRaw.maxSteps, 0, 10_000, 0)),
+      maxToolCalls: Math.round(clampNumber(budgetRaw.maxToolCalls, 0, 1_000_000, 0)),
+      maxRuntime: Math.round(clampNumber(budgetRaw.maxRuntime, 0, 86400, 0)),
       maxRetries: Math.round(clampNumber(budgetRaw.maxRetries, 0, 20, 3)),
-      maxTokens: Math.round(clampNumber(budgetRaw.maxTokens, 0, 1_000_000_000, 100000)),
+      maxTokens: Math.round(clampNumber(budgetRaw.maxTokens, 0, 1_000_000_000, 0)),
       softRatio: Math.min(1, Math.max(0, clampNumber(budgetRaw.softRatio, 0, 1, 0.8))),
     },
 

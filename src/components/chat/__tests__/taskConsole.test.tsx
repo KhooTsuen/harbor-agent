@@ -152,10 +152,28 @@ describe('AG-042 / 控制台', () => {
      *   不能退到「最近一步的摘要」（那是 read_file 的文件内容 —— 真机上很难看）
      */
     expect(container.textContent).toContain('（没有计划）')
-    /* 六个动作 */
-    for (const label of ['暂停', '停止', '查看 Diff', '查看 Tool', '调整权限']) {
+    /* 六个动作（2026-09-29 起是七个：「调整预算」也常驻，见下面那条用例） */
+    for (const label of ['暂停', '停止', '查看 Diff', '查看 Tool', '调整权限', '调整预算']) {
       expect(byText(label), label).toBeTruthy()
     }
+  })
+
+  it('★ 「调整预算」在**没撞过预算**的任务上也有（不然就再也填不了上限了）', () => {
+    /*
+     * 预算默认全不限（2026-09-29）之后，任务行上的「调整预算」只在「已经撞过预算」
+     * 时出现 —— 两头一凑就是先有鸡还是先有蛋：不撞就调不了，不调又永远不撞。
+     * 所以详情里给一个常驻入口，这条钉住它。
+     */
+    draw(task({ status: 'completed', pauseReason: '', budgetHit: null }))
+    act(() => byText('详情')?.click())
+    act(() => byPrefix('控制台')?.click())
+    act(() => byText('调整预算')?.click())
+    /* 展开的是同一个 BudgetEditor：五个字段的 aria-label 都得在 */
+    for (const label of ['轮数', '工具调用', '运行时长', '自动重试', '本任务 token']) {
+      expect(container.querySelector(`[aria-label="${label}"]`), label).not.toBeNull()
+    }
+    /* 说明里必须写着「默认全是不限」—— 用户读到的第一句话就该是这个 */
+    expect(container.textContent).toContain('默认全是不限')
   })
 
   it('★ 计划全做完 → 写「计划已做完」，不写「（没有计划）」', () => {

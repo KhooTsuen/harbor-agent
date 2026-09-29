@@ -54,6 +54,41 @@ export async function run() {
   check('普通模型照旧带 temperature', normal.temperature === 0.7)
   check('普通模型照旧带 max_tokens', normal.max_tokens === 512)
 
+  /* ── 输出上限：0 = 不限（2026-09-29）────────────────────
+   *
+   * 真机事故：设置里 `assistant.maxTokens = 4096`，用户 363 次请求里输出 token
+   * 的最大值**正好是 4096**（两次卡在 4095/4096），长回复被硬切在半句话上，
+   * 他问出「你怎么中断了？？」。所以默认改成不限。
+   *
+   * ★ 关键设计：不限**不是「不发这个参数」** —— 有些服务商不带时会退到一个很小的
+   *   默认值（DeepSeek 官方 chat 就是 4096），那等于没改。改为带**模型声明**的最大输出。
+   */
+  check(
+    '★ 输出不限（0）→ 带模型声明的最大输出，而不是干脆不发',
+    buildChatBody({ model: 'deepseek-flash', messages: [], maxTokens: 0 }).max_tokens === 8192,
+  )
+  check(
+    '★ 声明未知的模型：不带这个参数（让上游自己定），绝不发 0 或负数',
+    buildChatBody({ model: '没有预设的模型名', messages: [], maxTokens: 0 }).max_tokens ===
+      undefined,
+  )
+  check(
+    '★ 什么都没传（老调用方）= 不限，不会变成「发一个 0」',
+    buildChatBody({ model: 'deepseek-flash', messages: [] }).max_tokens === 8192 &&
+      buildChatBody({ model: '没有预设的模型名', messages: [] }).max_tokens === undefined,
+  )
+  check(
+    '用户自己填了数字就听用户的（不限只影响「0 / 没填」）',
+    buildChatBody({ model: 'deepseek-flash', messages: [], maxTokens: 512 }).max_tokens === 512,
+  )
+  check(
+    '不限时推理模型照样改名（不带 max_tokens）',
+    (() => {
+      const body = buildChatBody({ model: 'openai/gpt-5', messages: [], maxTokens: 0 })
+      return body.max_tokens === undefined && body.max_completion_tokens === undefined
+    })(),
+  )
+
   /* ── include_usage ── */
 
   check(

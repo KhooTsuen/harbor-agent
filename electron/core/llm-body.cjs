@@ -28,8 +28,29 @@ function buildUrl(baseUrl, chatPath) {
  */
 const REASONING_MODEL = /(^|\/)(o1|o3|o4|gpt-5)(?=[-.]|$)/i
 
+const caps = require('./provider-capabilities.cjs')
+
 function isReasoningModel(model) {
   return REASONING_MODEL.test(String(model ?? ''))
+}
+
+/**
+ * 「不限」（0 / 没填）时到底发什么。
+ *
+ * ★ 不能干脆**不发**这个参数：有些服务商不带时会退到一个很小的默认值
+ *   （DeepSeek 官方 chat 就是 4096），那「不限」就变成了「按上游的隐藏默认」，
+ *   修复当场落空。所以改带**模型自己声明的**最大输出（`provider-capabilities`，
+ *   与设置里那张能力表同一份数据）；声明未知（null）才真的不发。
+ *
+ * @param {string} model
+ * @param {number} maxTokens 设置里的输出上限，0 = 不限
+ * @returns {number} > 0 才发；0 = 这次请求不带 `max_tokens`
+ */
+function resolveMaxTokens(model, maxTokens) {
+  const wanted = Number(maxTokens)
+  if (Number.isFinite(wanted) && wanted > 0) return Math.round(wanted)
+  const declared = caps.resolve(model).caps.max_output
+  return Number.isFinite(declared) && declared > 0 ? declared : 0
 }
 
 /**
@@ -103,6 +124,7 @@ function withStrict(tool, strictNames) {
  *           temperature?: number, topP?: number, maxTokens?: number,
  *           stream?: boolean, streamUsage?: boolean, strictToolNames?: Array<string>,
  *           reasoningEffort?: string, provider?: object }} input
+ *          `maxTokens: 0` = 不限（见 `resolveMaxTokens`）
  */
 function buildChatBody(input) {
   const {
@@ -111,7 +133,6 @@ function buildChatBody(input) {
     tools,
     temperature,
     topP,
-    maxTokens,
     stream = true,
     strictToolNames,
     reasoningEffort,
@@ -121,7 +142,8 @@ function buildChatBody(input) {
   const body = { model, messages, stream }
   if (typeof temperature === 'number') body.temperature = temperature
   if (typeof topP === 'number') body.top_p = topP
-  if (typeof maxTokens === 'number') body.max_tokens = maxTokens
+  const maxTokens = resolveMaxTokens(model, input.maxTokens)
+  if (maxTokens > 0) body.max_tokens = maxTokens
   /*
    * 思考强度（DeepSeek `reasoning_effort`）：none | low | high | max。
    * ⚠️ 这个档位曾经是「假功能」—— UI 有选择器、前端有状态，但从没发给模型。
@@ -154,6 +176,7 @@ module.exports = {
   buildUrl,
   REASONING_MODEL,
   isReasoningModel,
+  resolveMaxTokens,
   adaptForModel,
   applyProviderBody,
   withStrict,

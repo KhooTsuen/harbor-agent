@@ -40,7 +40,8 @@ export const PREVIEW_CONFIG: AppConfig = {
     model: 'deepseek-chat',
     temperature: 0.7,
     topP: 1,
-    maxTokens: 4096,
+    /* 0 = 不限（与内核默认一致：不再替用户把长回复截在 4096） */
+    maxTokens: 0,
     historyLimit: 20,
     responseDepth: 'standard',
     selfReview: false,

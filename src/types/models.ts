@@ -102,6 +102,10 @@ export interface AppConfig {
     model: string
     temperature: number
     topP: number
+    /**
+     * 单次回复的输出上限。**0 = 不限**（默认）。
+     * 不限时按模型自己声明的最大输出发（未知就不带这个参数）——见 `core/llm-body.cjs`。
+     */
     maxTokens: number
     historyLimit: number
     responseDepth: 'concise' | 'standard' | 'detailed' | 'deep'

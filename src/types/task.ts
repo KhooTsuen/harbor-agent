@@ -21,7 +21,10 @@ export interface TaskDiagnosis {
 
 /**
  * AG-040：一个任务的执行预算（五项都可以留空 = 用设置里的默认）。
- * `0` 表示不限。
+ *
+ * ★ `0` 表示不限，而且**默认就是不限**（2026-09-29 起，见 `core/budget.cjs`）——
+ *   这个对象里出现数字只可能是用户自己在任务卡片上填的。
+ *   「自动重试」那一项例外：0 = 不自动重试（它不是上限，是「自动救一把几次」）。
  */
 export interface TaskBudget {
   maxSteps?: number

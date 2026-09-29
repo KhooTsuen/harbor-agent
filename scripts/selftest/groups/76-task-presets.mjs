@@ -8,7 +8,9 @@
  * 三条要守住的：
  *   ① 判定复用意图路由的规则，不另写一套关键词（两处不一致最难查）
  *   ② **认不出来就别乱给** —— 兜底成 chat 是「没法判断」，不是「判断出是闲聊」
- *   ③ 用户自己调过全局预算就**不插手**
+ *   ③ **预算一个数字都不给**（2026-09-29 改）：以前这里会给每个任务预填
+ *      「轮数 60 / 工具 120」，用户撞了上限却查不出那个数字哪来的。
+ *      现在只剩温度，预算默认全不限、只在任务卡片上由用户自己填。
  */
 
 import { check, group } from '../harness.mjs'
@@ -27,15 +29,16 @@ export async function run() {
     Object.values(presets.TYPES).every((item) => String(item.why).length >= 8),
   )
   check(
-    '★ 除闲聊/创作外，预设不会比全局默认（50 / 100）更紧 —— 预设不该让人更容易撞墙',
-    Object.entries(presets.TYPES)
-      .filter(([key]) => key !== 'chat' && key !== 'creative')
-      .every(([, item]) => item.maxSteps >= 50 && item.maxToolCalls >= 100),
-    JSON.stringify(
-      Object.fromEntries(
-        Object.entries(presets.TYPES).map(([k, v]) => [k, `${v.maxSteps}/${v.maxToolCalls}`]),
-      ),
+    '★ 类型表里**一个预算字段都没有**（预设只给温度）',
+    Object.values(presets.TYPES).every(
+      (item) => item.maxSteps === undefined && item.maxToolCalls === undefined,
     ),
+    JSON.stringify(Object.values(presets.TYPES)[0]),
+  )
+  check(
+    '★ 预算相关的老接口已下线（留着就会被重新接上）',
+    presets.budgetFor === undefined && presets.recommend === undefined,
+    Object.keys(presets).join(','),
   )
 
   group('②-2 / 认得出是哪类活')
@@ -48,23 +51,6 @@ export async function run() {
   check(
     '手动指定优先',
     presets.detect('你好', 'code').type === 'code' && presets.detect('你好', 'code').guessed === false,
-  )
-
-  group('②-2 / 预算建议')
-  check(
-    '★ 认不出来就给空对象（不拿猜测去压用户的设置）',
-    Object.keys(presets.budgetFor('今天天气怎么样', {})).length === 0,
-  )
-  const codeBudget = presets.budgetFor('这段代码为什么报错', {})
-  check('★ 代码活给到轮数 50 / 工具 100', codeBudget.maxSteps === 50 && codeBudget.maxToolCalls === 100, JSON.stringify(codeBudget))
-  check(
-    '★ 用户自己调过预算就不插手 —— 他调那个数字是有原因的',
-    Object.keys(presets.budgetFor('这段代码为什么报错', { agent: { budget: { maxSteps: 200 } } }))
-      .length === 0,
-  )
-  check(
-    '用户只调了别的项（比如 token）也照样不插手',
-    Object.keys(presets.budgetFor('这段代码为什么报错', { agent: { budget: { maxTokens: 5 } } })).length === 0,
   )
 
   group('②-2 / 温度取值')
@@ -86,8 +72,12 @@ export async function run() {
       config: {},
     })
     made.push(presetTask.id)
-    check('★ 新任务的预算来自预设', presetTask.budget.maxSteps === 50, JSON.stringify(presetTask.budget))
-    check('★ 台账记着「哪来的」（用户看到 60/120 要追得到原因）', presetTask.preset === 'code', presetTask.preset)
+    check(
+      '★ 新建任务**不被预填预算**（这就是用户报的「没用上限却撞上限」的根源）',
+      Object.keys(presetTask.budget ?? {}).length === 0,
+      JSON.stringify(presetTask.budget),
+    )
+    check('★ 台账里也没有「预算来源」这种说法了', presetTask.preset === '', presetTask.preset)
 
     const plainTask = resumeCore.openForRun({
       goal: '今天天气怎么样',
@@ -103,7 +93,11 @@ export async function run() {
 
     const diagnoseCore = require(join(ROOT, 'electron/core/task-diagnose.cjs'))
     const text = String(diagnoseCore.diagnose(presetTask).text)
-    check('★ 诊断报告里说清预算来源', text.includes('预算来源：按「写代码」'), text.split('\n').filter((l) => l.startsWith('预算来源')).join(' / '))
+    check(
+      '★ 诊断报告不再说「预算来源：按『写代码』的推荐值」（那话已经不成立）',
+      !text.includes('预算来源'),
+      text.split('\n').filter((l) => l.startsWith('预算')).join(' / '),
+    )
   } finally {
     /* ★ 用 disposeTasks：这两个任务建出来就是 running，removeSafe 删不掉（见 env.mjs） */
     const left = disposeTasks(made)
@@ -117,5 +111,8 @@ export async function run() {
     loopSrc.includes('taskPresets.temperatureOf(threadSettings, config)'),
   )
   const resumeSrc = readFileSync(join(ROOT, 'electron/core/task-resume.cjs'), 'utf8')
-  check('★ 建任务时给了预算', resumeSrc.includes('taskPresets.budgetFor(goal, options.config)'))
+  check(
+    '★ 建任务时不再塞预设预算',
+    !resumeSrc.includes('budgetFor(') && resumeSrc.includes('一律空 = 不限'),
+  )
 }

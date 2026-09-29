@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, FolderClosed, FolderPlus, Plus } from 'lucide-react'
+import { FolderPlus, Plus } from 'lucide-react'
 import type { Thread } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { chooseFolder } from '@/lib/backend'
-import { clamp, cn } from '@/lib/utils'
-import { folderAccentOf, folderHoverTitle, folderPathHint } from '@/constants/folders'
-import { Button } from '@/components/ui/Button'
+import { clamp } from '@/lib/utils'
 import { IconButton } from '@/components/ui/IconButton'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { FolderSection } from './FolderSection'
 import { ThreadRow } from './ThreadRow'
 
 /* ══════════════════════════════════════════════════════════════
@@ -189,98 +188,6 @@ export function SidebarPanes({ folderList, looseThreads, onDeleteThread }: Sideb
           )}
         </div>
       </section>
-    </div>
-  )
-}
-
-/** 一个文件夹：标题 + 它下面的对话 */
-function FolderSection({
-  project,
-  threads,
-  onDeleteThread,
-  onMoveThread,
-  onDetachThread,
-  onNewThread,
-}: {
-  project: { id: string; name: string; path: string; color?: string }
-  threads: Thread[]
-  onDeleteThread: (thread: Thread) => void
-  onMoveThread: (thread: Thread) => void
-  onDetachThread: (thread: Thread) => void
-  onNewThread: () => void
-}) {
-  const [open, setOpen] = useState(true)
-  /*
-   * 身份：颜色（扫一眼认出来）+ 路径（真正的身份，同名目录只能靠它分）。
-   * 项目里自己设过色就用它，否则按目录算一个稳定色（见 constants/folders.ts）。
-   */
-  const accent = project.color || folderAccentOf(project.id)
-  const pathHint = folderPathHint(project.path)
-  /* 悬停给「名字 + 路径」：侧栏一窄名字就被省略号截掉，只给路径的话名字就没处读了 */
-  const hoverTitle = folderHoverTitle(project.name, project.path)
-
-  return (
-    <div className="pb-0.5">
-      <div className="group flex items-center gap-1 rounded-small px-1.5 py-1 hover:bg-bg-hover">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          title={hoverTitle}
-        >
-          <ChevronDown
-            size={13}
-            aria-hidden
-            className={cn(
-              'shrink-0 text-fg-tertiary transition-transform duration-fast',
-              !open && '-rotate-90',
-            )}
-          />
-          <FolderClosed
-            size={13}
-            aria-hidden
-            data-folder-icon="true"
-            className="shrink-0"
-            style={{ color: accent }}
-          />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-center gap-1">
-              <span className="truncate text-dense text-fg-primary">{project.name}</span>
-              <span className="shrink-0 text-2xs text-fg-tertiary">{threads.length}</span>
-            </span>
-            {pathHint ? (
-              <span className="truncate text-2xs text-fg-tertiary">{pathHint}</span>
-            ) : null}
-          </span>
-        </button>
-        <Tooltip content="在这个文件夹里新建对话">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onNewThread}
-            aria-label="在这个文件夹里新建对话"
-          >
-            <Plus size={12} />
-          </Button>
-        </Tooltip>
-      </div>
-
-      {open ? (
-        threads.length === 0 ? (
-          <p className="px-4 py-1.5 text-2xs text-fg-tertiary">这个文件夹还没有对话</p>
-        ) : (
-          threads.map((thread) => (
-            <ThreadRow
-              key={thread.id}
-              thread={thread}
-              onDelete={() => onDeleteThread(thread)}
-              onMoveToFolder={() => onMoveThread(thread)}
-              onDetachFolder={() => onDetachThread(thread)}
-            />
-          ))
-        )
-      ) : null}
     </div>
   )
 }

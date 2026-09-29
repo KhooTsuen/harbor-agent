@@ -33,7 +33,7 @@ import type { AppState } from './types'
 type Setter = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
 type Getter = () => AppState
 
-type ThreadFolderActions = Pick<AppState, 'createThread' | 'setThreadWorkdir'>
+type ThreadFolderActions = Pick<AppState, 'createThread' | 'setThreadWorkdir' | 'deleteFolder'>
 
 /** 目录还没有登记项时补一个兜底分组（已有 / 空 id 就原样返回那个数组） */
 export function withFallbackFolder(projects: Project[], id: string, threads: Thread[]): Project[] {
@@ -113,6 +113,36 @@ export function makeThreadFolderActions(set: Setter, get: Getter): ThreadFolderA
         await updateSessionMeta(threadId, { workdir })
         await get().loadFromDisk()
       }
+    },
+
+    /**
+     * 删掉一个「对话文件夹」：里面的对话 **+** 文件夹本身。
+     *
+     * ── 为什么不能直接调 `deleteProject` ──
+     * 那个只删登记项，会话一个字节都不动 —— 于是它们当场按 workdir 重新聚成一个
+     * **同名兜底分组**，文件夹原地复活。用户报的就是这个：
+     * 「对话文件夹也没有删除功能」。他 2026-09-29 明确选了「连对话一起删掉」。
+     *
+     * ── 三条纪律 ──
+     *   ① 连**已归档**的一起删。只删界面上看得见的那几条，归档的会留下来，
+     *      而它们同样会复活一个兜底分组（侧栏看起来像「删不干净」）。
+     *   ② 顺序不能反：先删对话、再删登记项。反过来的话中间那一下又是「复活」。
+     *   ③ 磁盘上那个目录**一个字节都不动** —— 删的只有应用自己的数据
+     *      （会话文件 + 任务台账），用户的工作目录不是我们的东西。
+     *
+     * @returns 删掉的对话条数（确认框与提示都要用它说清除掉了什么）
+     */
+    deleteFolder: async (projectId) => {
+      const ids = get()
+        .threads.filter((t) => t.projectId === projectId)
+        .map((t) => t.id)
+      /*
+       * 逐条删，**不并发**：`deleteThread` 每条都要停任务、清台账、删会话文件，
+       * 并发跑就是同时写三处磁盘 —— 中途失败时没人说得清删到哪一条了。
+       */
+      for (const id of ids) await get().deleteThread(id)
+      get().deleteProject(projectId)
+      return ids.length
     },
   }
 }

@@ -116,7 +116,10 @@ const DEFAULTS = {
     model: 'deepseek-chat',
     temperature: 0.7,
     topP: 1,
-    maxTokens: 4096,
+    /** 单次回复的输出上限。**0 = 不限**（2026-09-29 改；原来 4096 就是「长回复被砍断」的
+     * 凶手：363 次请求里输出 token 的最大值**正好是 4096**）。不限时不带这个参数，
+     * 改带模型声明的最大输出（见 `llm-body.cjs`），上下文基准那件事见 `context-builder.cjs` */
+    maxTokens: 0,
     historyLimit: 20,
     /** 回答深度：与推理 effort、输出上限解耦 */
     responseDepth: 'standard',
@@ -237,20 +240,20 @@ const DEFAULTS = {
   },
 
   /*
-   * 用量闸：调模型之前查一次账，超了就拦。
-   * 按 **token 数** 而不是金额 —— 金额要维护价目表，中转站计价又各不相同。
+   * 用量闸：调模型之前查一次账，超了就拦。按 **token 数** 而不是金额 ——
+   * 金额要维护价目表，中转站计价又各不相同。
    */
   /**
-   * 每个任务的执行预算（AG-040）。任务自己的 `budget` 会覆盖这里的值。
-   * `0` = 不限。
+   * 每个任务的执行预算（AG-040）。任务自己的 `budget` 覆盖这里的值；**五项默认全是不限**
+   * （只有自动重试不是上限，而是「自动救一把几次」；旧盘的 50/100/1800/100000 会被迁移）
    */
   budget: {
-    maxSteps: 50,
-    maxToolCalls: 100,
-    maxRuntime: 1800,
+    maxSteps: 0,
+    maxToolCalls: 0,
+    maxRuntime: 0,
     maxRetries: 3,
-    maxTokens: 100000,
-    /** 软阈值（0~1，token 优化）：到比例就提醒模型省着点；0 = 关闭 */
+    maxTokens: 0,
+    /** 软阈值（0~1，token 优化）：到比例就提醒模型省着点；maxTokens 不限时它不会触发 */
     softRatio: 0.8,
   },
 

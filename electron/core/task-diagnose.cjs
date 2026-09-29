@@ -132,13 +132,9 @@ function diagnose(task) {
    */
   if (task.promptVersion) out.push(`提示词：${task.promptVersion}`)
   /*
-   * ②-2：这份预算哪来的。
-   * 用户看到「轮数上限 60」而自己不记得设过 —— 这里得答得上来。
+   * ②-2 的「预算来源：按『查资料』这类任务的推荐值」已删（2026-09-29）：
+   * 预设不再给预算，这句话再也不会成立；留着它只会在老任务上撒一个善意的谎。
    */
-  if (task.preset) {
-    const label = require('./task-presets.cjs').TYPES[task.preset]?.label ?? task.preset
-    out.push(`预算来源：按「${label}」这类任务的推荐值（可在任务卡片上改）`)
-  }
   if (task.workdir) out.push(`工作目录：${task.workdir}`)
 
   if (plan.length > 0) {

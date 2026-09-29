@@ -44,7 +44,11 @@ describe('对话文件夹 / 表头入口', () => {
   })
 
   it('文件夹行上的「在这个文件夹里新建对话」照旧', () => {
-    const lines = codeLines('SidebarPanes.tsx')
+    /*
+     * 2026-09-29：文件夹行拆去了 `FolderSection.tsx`（SidebarPanes 加完菜单就贴到 300 行），
+     * 所以这条钉子跟着搬 —— 盯的还是同一个入口，只是它现在的住处变了。
+     */
+    const lines = codeLines('FolderSection.tsx')
     expect(lines.filter((line) => line.includes('在这个文件夹里新建对话')).length).toBeGreaterThan(
       0,
     )

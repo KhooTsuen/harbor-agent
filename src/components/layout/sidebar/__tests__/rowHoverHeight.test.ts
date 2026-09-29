@@ -47,4 +47,16 @@ describe('侧栏行 / 悬停不改变布局、按钮常显', () => {
     )
     expect(gates).toEqual([])
   })
+
+  /*
+   * 文件夹行同样不许藏按钮（2026-09-29 加了「文件夹菜单」之后补的）：
+   * 菜单藏到悬停里的话，用户根本不知道那一栏能删 —— 而这次要修的
+   * 正是「对话文件夹没有删除功能」这个「找不到」的问题。
+   */
+  it('★ 文件夹行的菜单也是常驻（不许悬停才出现）', () => {
+    const gates = codeLines('FolderSection.tsx').filter((line) =>
+      /group-hover:|opacity-0|group-focus-within:/.test(line),
+    )
+    expect(gates).toEqual([])
+  })
 })

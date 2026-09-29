@@ -46,37 +46,43 @@ function usageParts(usage) {
 /**
  * 每次任务的执行预算（AG-040）
  *
- * 文档给的五项：
+ * ★ **五项默认全部不限（0）**（2026-09-29 用户要求：「关于这一类的全部都要默认不设限」）。
+ *   这个模块是**刹车**，不是油门 —— 用户没要求时不该拦住他。原来默认「50 轮 / 100 次工具 /
+ *   30 分钟 / 10 万 token」，结果是任务干到一半被标成「已暂停」，用户读到的却是
+ *   「用量已经到上限」这类话，第一反应是「谁在拦我」。用户原话：
+ *   「用量上限也是在没有勾选的时候有时候也是会被拦截用量上限」。
+ *   要限的人自己在任务卡片「调整预算」里填 —— 那不是删功能，是换默认。
+ *   兜底没丢：`loop.cjs` 还有一层 200 轮硬上限，`loop-guard` 还有转圈检测。
  *
- *   maxSteps 50 / maxToolCalls 100 / maxRuntime 1800 / maxRetries 3 / maxTokens 100000
- *
- * 达到预算后要给用户三件事：**继续 / 停止 / 调整预算**。
+ * 达到预算后要给用户三件事：**继续 / 停止 / 调整预算**（不是失败，是停下来等人）。
  *
  * ── 和「用量闸」（limits.cjs）什么关系 ──
  * 那个是**全局**的（今天 / 本月一共烧了多少 token，防的是「忘了关跑一晚上」）；
- * 这里是**单个任务**的（这次活最多跑多少轮、调多少次工具、跑多久）。
- * 两者互补：全局闸在调模型前查账，任务预算在**轮次边界**查账。
+ * 这里是**单个任务**的。两者互补：全局闸在调模型前查账，任务预算在**轮次边界**查账。
  *
  * ── 为什么也要有 maxRuntime ──
  * 轮数与工具次数管不住「一条命令卡在那儿半小时」。运行时长是唯一与「干了多少」
  * 无关的兜底。
- *
- * ── 超预算不是错误 ──
- * 它是**停下来等人**：任务标成 paused（可恢复），并记下是撞了哪一项 ——
- * 界面据此显示「已达到上限」和那三个按钮。别把它做成失败。
  */
 
 const DEFAULTS = {
   /** 0 = 不限。轮数（每轮 = 一次模型调用） */
-  maxSteps: 50,
+  maxSteps: 0,
   /** 0 = 不限。整个任务里的工具调用总数 */
-  maxToolCalls: 100,
+  maxToolCalls: 0,
   /** 秒。0 = 不限 */
-  maxRuntime: 1800,
-  /** 单个工具失败后的自动重试次数上限（AG-016 的「必须有最大 Retry 次数」） */
+  maxRuntime: 0,
+  /**
+   * 单个工具失败后的自动重试次数上限（AG-016 的「必须有最大 Retry 次数」）。
+   *
+   * ★ 这一项**故意不是 0**：它不是「上限」而是「自动救一把的次数」。
+   *   设成 0 等于关掉自动恢复；设成「不限」则一个坏掉的工具会被无限重试
+   *   （`loop-tools.cjs` 是 `retry < maxRetries`，0 = 一次都不重试）。
+   *   用户 2026-09-29 明确选了「保持 3 次」。
+   */
   maxRetries: 3,
   /** 0 = 不限。这个任务累计的 token */
-  maxTokens: 100000,
+  maxTokens: 0,
   /** 软阈值（0~1）：用量到这比例就提醒模型「省着点」（token 优化），不影响硬上限 */
   softRatio: 0.8,
 }
@@ -91,6 +97,41 @@ const LABELS = {
 function num(value, fallback) {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback
+}
+
+/**
+ * 老版本的内置默认值：盘上写着这些数字的，一律当成「用户没设过」→ 0（不限）。
+ *
+ * ★ **不迁移就等于没改。** `config-defaults.cjs` 只补「缺的键」，不会覆盖已存在的值，
+ *   而老用户的 `config.json`（含本机那份）里这四项都已经被写死了 ——
+ *   不改的话照样会在第 50 轮、10 万 token 上被拦下。
+ *
+ * 判据是「值正好等于老内置默认」：这四个字段在设置界面里**没有输入框**
+ * （只能在任务卡片上按任务改），所以盘上出现 50/100/1800/100000 只可能是老默认。
+ *
+ * @returns {{ value: object, migrated: number }} `migrated` 只用于日志，便于排查
+ */
+const LEGACY_LIMITS = { maxSteps: 50, maxToolCalls: 100, maxRuntime: 1800, maxTokens: 100000 }
+
+function legacyUnlimited(raw) {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  const value = { ...source }
+  let migrated = 0
+  for (const [key, old] of Object.entries(LEGACY_LIMITS)) {
+    if (Number(source[key]) === old) {
+      value[key] = 0
+      migrated += 1
+    }
+  }
+  /*
+   * 说一声。**静默改掉用户配置里的数字正是本项目最忌讳的事**，而且这条日志是排查
+   * 「为什么以前会停、现在不停了」的唯一线索。惰性 require —— 只有真迁到东西时才加载日志
+   * （也就启动那一次），省得给这个纯函数拉一条模块依赖。
+   */
+  if (migrated > 0) {
+    require('./log.cjs').info(`任务预算的旧默认值已按「不限」处理（${migrated} 项）`)
+  }
+  return { value, migrated }
 }
 
 /**
@@ -242,6 +283,7 @@ function softNote(verdict) {
 module.exports = {
   DEFAULTS,
   LABELS,
+  LEGACY_LIMITS,
   resolve,
   check,
   atTurnBoundary,
@@ -251,4 +293,5 @@ module.exports = {
   softNote,
   usageTotal,
   usageParts,
+  legacyUnlimited,
 }

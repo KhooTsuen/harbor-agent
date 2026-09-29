@@ -31,6 +31,8 @@ const FIELDS: Field[] = [
   { key: 'maxSteps', label: '轮数', unit: '轮' },
   { key: 'maxToolCalls', label: '工具调用', unit: '次' },
   { key: 'maxRuntime', label: '运行时长', unit: '分钟', minutes: true },
+  /* 名字保持短：它是 aria-label（自动化测试与读屏都按这个认），
+     「0 = 不重试」那句例外写在下面的说明里 */
   { key: 'maxRetries', label: '自动重试', unit: '次' },
   { key: 'maxTokens', label: '本任务 token', unit: '' },
 ]
@@ -77,7 +79,9 @@ export function BudgetEditor({ task, onDone }: { task: TaskRecord; onDone: () =>
   return (
     <div className="mt-2 rounded-sm border border-line-hairline bg-bg-base/40 p-2">
       <p className="mb-1.5 text-2xs text-fg-tertiary">
-        留空 = 用默认（占位符里的就是）；<span className="text-fg-secondary">0 = 不限</span>
+        留空 = 用默认（占位符里的就是，而默认全是不限）；
+        <span className="text-fg-secondary">0 = 不限</span>
+        ，只有「自动重试」例外 —— 它是「同一个只读工具失败后自动再试几次」， 那一项 0 = 不重试。
       </p>
       <div className="flex flex-wrap gap-2">
         {FIELDS.map((field) => (

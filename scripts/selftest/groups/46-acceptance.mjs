@@ -173,8 +173,8 @@ export async function run() {
   /* ⑳ Resume（和 ⑦ 同一件事的另一面：恢复次数记着） */
   check('⑳ Resume（恢复次数记在台账里）', typeof resumedCount(taskCore, resumeTask.id) === 'number')
 
-  /* ㉑ Execution Budget：超了要能算出来 */
-  const plan50 = budget.resolve({}, {})
+  /* ㉑ Execution Budget：凑了上限就得算得出来（默认那份是不限，所以这里显式给数字） */
+  const plan50 = { ...budget.resolve({}, {}), maxSteps: 50 }
   const hit = budget.check({ budget: plan50, startedAt: Date.now(), steps: 51 })
   check('㉑ Execution Budget（能算出哪一项超了）', hit.exceeded === true, JSON.stringify(hit))
 

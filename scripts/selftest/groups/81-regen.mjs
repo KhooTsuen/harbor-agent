@@ -47,7 +47,11 @@ export async function run() {
 
   /* ── ② 预算不重置（验收 d）──────────────────────────── */
   group('重新生成 / 预算不重置（验收 d）')
-  const plan = budget.resolve({}, null)
+  /*
+   * ★ 显式给上限：默认那份是**不限**（2026-09-29 起），拿它当检查对象的话
+   *   下面每一条都会因为「根本没上限」而失败 —— 这一组要验的是 **carry 有没有接上**。
+   */
+  const plan = { ...budget.resolve({}, null), maxSteps: 50, maxTokens: 100_000 }
   const at = (turn, extraCarry) =>
     budget.atTurnBoundary({ plan, startedAt: Date.now(), turn, toolRuns: [], usage: null, carry: extraCarry })
 

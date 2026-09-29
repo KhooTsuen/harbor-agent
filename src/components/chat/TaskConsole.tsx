@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { labelOf, statusOfTask } from '@/lib/statusLanguage'
 import { elapsedMs, formatDuration, nextPlanStepOf } from './taskCenterModel'
 import { RunInspector } from './RunInspector'
+import { BudgetEditor } from './BudgetEditor'
 import { TaskTokenBadge } from './TaskTokenBadge'
 
 /* ══════════════════════════════════════════════════════════════
@@ -29,12 +30,17 @@ import { TaskTokenBadge } from './TaskTokenBadge'
        否则这里够不着）
      · 查看 Diff → 右栏「审查」标签（AG-036 那套）
      · 调整权限 / Pause / Stop → 真动作：前两个打给正在跑的那条对话
+     · **调整预算**（2026-09-29 加）→ 就地展开表单。为什么得有这个入口：
+       预算**默认全不限**了，而任务行上的「调整预算」只在「已经撞过预算」时出现 ——
+       两头一凑，用户就再也没地方设上限（先有鸡还是先有蛋）。详情里给一个常驻入口。
    ══════════════════════════════════════════════════════════════ */
 
 export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
   const [open, setOpen] = useState(false)
   /* AG-048：Run Inspector 的显隐 —— 内容全在新组件里，这里只留一个开关 */
   const [inspector, setInspector] = useState(false)
+  /* 调整预算（表单复用任务行那个 BudgetEditor —— 两处不能各写一份） */
+  const [budgetOpen, setBudgetOpen] = useState(false)
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
   const openBottomPanel = useUIStore((s) => s.openBottomPanel)
   const openSettings = useUIStore((s) => s.openSettings)
@@ -122,12 +128,18 @@ export function TaskConsole({ task, now }: { task: TaskRecord; now: number }) {
             <Button variant="ghost" size="sm" onClick={() => openSettings('access')}>
               调整权限
             </Button>
+            <Button variant="ghost" size="sm" onClick={() => setBudgetOpen((value) => !value)}>
+              调整预算
+            </Button>
             {task.status === 'paused' ? (
               <Button variant="ghost" size="sm" onClick={() => resumeTask(task.id)}>
                 继续
               </Button>
             ) : null}
           </div>
+
+          {/* 预算表单（留空 = 用默认，而默认全是不限；0 = 不限） */}
+          {budgetOpen ? <BudgetEditor task={task} onDone={() => setBudgetOpen(false)} /> : null}
 
           {/* AG-048：一屏看懂这次执行。纯展示，里面没有任何写操作 */}
           {inspector ? <RunInspector task={task} now={now} /> : null}

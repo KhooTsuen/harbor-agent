@@ -58,6 +58,12 @@ function sizeOf(content) {
   return chars(textOf(content)) + countImages(content) * IMAGE_COST
 }
 function assemble(input = {}) {
+  /*
+   * ★ 这里的 `maxTokens` 是**上下文预算的基准**（字符 = token × 3），不是「输出上限」——
+   *   虽然调用方传的就是设置里的 `assistant.maxTokens`（历史耦合，2026-09-29 没拆）。
+   *   两件事混在一起的真实后果：用户把「输出上限」改大，上下文也会跟着变宽。
+   *   0 = 不限（新的默认）→ 退回 4096，也就是和以前一样。
+   */
   const maxTokens = Math.max(2000, Number(input.maxTokens) || 4096)
   const budget = { ...DEFAULT_BUDGET, ...(input.budget || {}) }
   const totalChars = maxTokens * 3

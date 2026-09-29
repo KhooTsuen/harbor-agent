@@ -1,21 +1,23 @@
 import { join, readFileSync, require, ROOT } from '../env.mjs'
 import { check, group } from '../harness.mjs'
+/* 默认值 / 迁移 / 三层来源那几条在零件文件里（合并会让本文件顶破 300 行红线） */
+import { runDefaultChecks } from './41-budget-parts.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    AG-040：Execution Budget
 
-   文档的五项：maxSteps 50 / maxToolCalls 100 / maxRuntime 1800 /
-   maxRetries 3 / maxTokens 100000，达到之后给
-   **[继续] [停止] [调整预算]**。
-   软阈值 softRatio 0.8：用到 80% 先提醒一次（只提醒、不阻断）。
+   **五项默认全部不限（0）**（2026-09-29 用户要求：「关于这一类的全部都要默认不设限」），
+   只有 maxRetries 保持 3（它不是「上限」而是「自动救一把几次」）。用户自己填了上限、
+   真撞上去之后给 **[继续] [停止] [调整预算]**。软阈值 softRatio 0.8：用到 80% 先提醒一次。
 
-   三条设计决定，都在这一组里钉住：
+   四条设计决定，都在这一组里钉住：
 
-     · **撞预算不是失败** —— 任务标 `paused` 可恢复，并记下撞了哪一项、
-       用了多少、上限多少（界面要原样显示「50 / 50」）
+     · **默认不拦** —— 刹车不该在用户没要求时踩下去；旧盘上的 50/100/1800/100000
+       必须迁移成 0（`legacyUnlimited`），不迁移这版对老用户等于没生效
+     · **撞预算不是失败** —— 任务标 `paused` 可恢复，并记下撞了哪一项、用了多少、
+       上限多少（界面要原样显示「50 / 50」）
      · 检查点在**轮次边界**（工具全跑完之后）—— 半路停会把文件留在改了一半的状态
-     · 三项来源：内置默认 ← 设置 ← **任务自己的覆盖**（「这次活多给它两轮」
-       不该顺手改掉以后所有任务的默认）
+     · 四项来源：内置默认 ← 设置 ← **任务自己的覆盖**（「这次活多给它两轮」）
    ══════════════════════════════════════════════════════════════ */
 
 const budget = require(join(ROOT, 'electron/core/budget.cjs'))
@@ -26,45 +28,30 @@ const life = require(join(ROOT, 'electron/core/lifecycle.cjs'))
 export async function run() {
   const created = []
 
-  /* ── ① 默认值与三层来源 ─────────────────────────────── */
-  group('AG-040 / 预算从哪来')
-  check(
-    '文档的五项默认值（逐项比对，softRatio 单列在下一项）',
-    budget.DEFAULTS.maxSteps === 50 &&
-      budget.DEFAULTS.maxToolCalls === 100 &&
-      budget.DEFAULTS.maxRuntime === 1800 &&
-      budget.DEFAULTS.maxRetries === 3 &&
-      budget.DEFAULTS.maxTokens === 100000,
-    JSON.stringify(budget.DEFAULTS),
-  )
-  check(
-    '软阈值默认 0.8（提醒不阻断），且 resolve 会把它夹在 0–1',
-    budget.DEFAULTS.softRatio === 0.8 &&
-      budget.resolve({ budget: { softRatio: 5 } }, null).softRatio === 1 &&
-      budget.resolve({ budget: { softRatio: -1 } }, null).softRatio === 0,
-    JSON.stringify(budget.DEFAULTS),
-  )
-
-  const withConfig = budget.resolve({ budget: { maxSteps: 10 } }, null)
-  check('设置能改默认', withConfig.maxSteps === 10 && withConfig.maxToolCalls === 100)
-  const withTask = budget.resolve(
-    { agent: { budget: { maxSteps: 10 } } },
-    { budget: { maxSteps: 3, maxRuntime: 60 } },
-  )
-  check(
-    '★ 任务自己的覆盖优先（只覆盖填了的那些）',
-    withTask.maxSteps === 3 && withTask.maxRuntime === 60,
-  )
-  check('没填的还是设置里的值', withTask.maxToolCalls === 100)
-  check(
-    '乱七八糟的值退回默认（不吃 NaN / 负数）',
-    budget.resolve({}, { budget: { maxSteps: 'x', maxTokens: -5 } }).maxSteps === 50,
-  )
-  check('0 = 不限（原样保留）', budget.resolve({}, { budget: { maxSteps: 0 } }).maxSteps === 0)
+  /* ── ① 默认值 / 迁移 / 三层来源 ─────────────────────── */
+  /* 零件文件（加完「默认全不限 + 旧值迁移」这几条就顶破 300 行了） */
+  runDefaultChecks()
 
   /* ── ② 查账 ─────────────────────────────────────────── */
   group('AG-040 / 查账')
-  const plan = budget.resolve({}, null)
+  /* ★ 显式给上限：默认那份是不限，拿它当检查对象的话下面每条都在验「什么都不拦」 */
+  const plan = {
+    ...budget.DEFAULTS,
+    maxSteps: 50,
+    maxToolCalls: 100,
+    maxRuntime: 1800,
+    maxTokens: 100_000,
+  }
+  check(
+    '★ 默认那份（全 0）真的什么都不拦：轮数/工具/时长/token 拉满也不停',
+    budget.check({
+      budget: budget.DEFAULTS,
+      startedAt: Date.now() - 9_999_000,
+      steps: 9999,
+      toolCalls: 9999,
+      tokens: 9_999_999,
+    }).exceeded === false,
+  )
   const ok = budget.check({
     budget: plan,
     startedAt: Date.now(),

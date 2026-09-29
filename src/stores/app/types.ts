@@ -35,6 +35,11 @@ export interface AppState {
   createThread: (projectId?: string, workdir?: string) => string
   /** 把某条对话挂到另一个目录（'' = 摘掉文件夹，变成单独对话） */
   setThreadWorkdir: (threadId: string, workdir: string) => Promise<void>
+  /**
+   * 删掉一个「对话文件夹」= 里面的对话（含已归档）+ 文件夹本身。
+   * 磁盘上的目录一个字节都不动。返回删掉的对话条数。
+   */
+  deleteFolder: (projectId: string) => Promise<number>
   replaceThreadId: (pendingId: string, realId: string) => void
   /** 删对话（连同它的任务历史）。返回清掉的任务条数 */
   deleteThread: (id: string) => Promise<number>
