@@ -238,6 +238,7 @@ export function handleStreamEvent(
     /* ── 提示类事件：不改消息，但要让用户看见（实现见 noticeEvents.ts）── */
     case 'boundary':
     case 'budget':
+    case 'notice':
     case 'retry':
     case 'fallback':
     case 'context_overflow':

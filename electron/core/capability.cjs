@@ -140,6 +140,9 @@ function currentScope() {
 /**
  * 检查一个路径能不能动。
  *
+ * `fileScope` 与授权说的是「这个路径允不允许」；**要不要弹窗问用户**是另一回事，
+ * 那一层在 `tools/permission.cjs`（它手里有 `ctx.permission`）。
+ *
  * @returns {{ ok: boolean, path: string, absolute: string, reason?: string, needGrant?: boolean, sensitive?: string }}
  */
 function check(target, { workdir, sessionId } = {}) {

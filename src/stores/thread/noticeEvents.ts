@@ -24,6 +24,20 @@ type NoticeEvent = Record<string, unknown>
 export function handleNoticeEvent(event: NoticeEvent): void {
   const toast = useUIStore.getState().showToast
   switch (event.type) {
+    case 'notice': {
+      /*
+       * 内核说一声「这件事按你的设置没问，但你该知道」。
+       * 目前一处：**完全访问**档下动了敏感文件（`.env` / `.ssh`）或工作目录外的文件 ——
+       * 不弹窗（用户明确选了「不给任何确认」），但要在界面上留个看得见的痕。
+       * 标题/正文都由内核给，这一层不加工（和 'boundary' 同一套做法）。
+       */
+      toast(
+        event.level === 'warning' ? 'warning' : 'info',
+        String(event.title ?? '提示'),
+        String(event.text ?? ''),
+      )
+      return
+    }
     case 'boundary': {
       /*
        * ②-5：碰到了能力边界。**不拦**，只是先说一声 ——

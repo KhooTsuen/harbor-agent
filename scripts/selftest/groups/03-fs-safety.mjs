@@ -188,14 +188,43 @@ export async function run() {
   check('敏感文件即便在工作目录内也要授权', !envCheck.ok && Boolean(envCheck.sensitive))
   check('敏感理由可读', String(envCheck.reason).includes('环境变量'))
 
+  /*
+   * ★ 弹不弹窗由**权限档位**说了算（2026-09-29 改）：
+   *   「需要确认」档 → 问；用户拒绝 → 读不到
+   *   「完全访问」档 → 不问（用户明确选的）→ 直接授权并读，但审计里留一条
+   */
   const deniedRead = await tools.execute(
     'read_file',
     { path: OUTSIDE_FILE },
-    { ...ctx, confirm: async () => false },
+    { ...ctx, permission: 'ask', confirm: async () => false },
   )
-  check('用户拒绝后读不到', deniedRead.includes('用户拒绝'), deniedRead.slice(0, 70))
+  check('「需要确认」档：用户拒绝后读不到', deniedRead.includes('用户拒绝'), deniedRead.slice(0, 70))
 
-  const grantedRead = await tools.execute('read_file', { path: OUTSIDE_FILE }, ctx)
+  let fullAsked = 0
+  const fullRead = await tools.execute(
+    'read_file',
+    { path: OUTSIDE_FILE },
+    {
+      ...ctx,
+      permission: 'full',
+      confirm: async () => {
+        fullAsked += 1
+        return false
+      },
+    },
+  )
+  check(
+    '★ 「完全访问」档：不再弹窗（这就是用户报的那个 bug）',
+    fullAsked === 0 && !fullRead.startsWith('错误：'),
+    `问了 ${fullAsked} 次｜${fullRead.slice(0, 60)}`,
+  )
+
+  /* 「批准 → 记下授权」要在「需要确认」档验：完全访问档不问、也不留会话授权 */
+  const grantedRead = await tools.execute(
+    'read_file',
+    { path: OUTSIDE_FILE },
+    { ...ctx, permission: 'ask', confirm: async () => true },
+  )
   check('批准后能读', !grantedRead.startsWith('错误：'), grantedRead.slice(0, 70))
   check(
     '授权被记下来',
@@ -205,7 +234,7 @@ export async function run() {
   const traversal = await tools.execute(
     'read_file',
     { path: '../../../../Windows/win.ini' },
-    { ...ctx, confirm: async () => false },
+    { ...ctx, permission: 'ask', confirm: async () => false },
   )
   check('相对路径穿越被拦住', traversal.includes('用户拒绝') || traversal.startsWith('错误：'))
 

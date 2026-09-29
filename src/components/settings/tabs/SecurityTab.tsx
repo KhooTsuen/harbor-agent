@@ -25,14 +25,8 @@ import { colorOf } from '@/lib/statusLanguage'
 /* ══════════════════════════════════════════════════════════════
    设置 → 安全
 
-   这一页的定位：**让用户能看清「Agent 到底被允许做什么」**，
-   并且能随时收回权限。
-
-   四块：
-     ① 文件访问范围 —— 默认只给工作目录
-     ② Shell 风险策略 —— 四档怎么处理
-     ③ 已放开的路径 —— 能一条条撤
-     ④ 审计日志 —— 谁在什么时候拿什么权限做了什么
+   这一页的定位：**让用户能看清「Agent 到底被允许做什么」**，并且能随时收回权限。
+   四块：① 文件访问范围 ② Shell 风险策略 ③ 已放开的路径 ④ 审计日志
    ══════════════════════════════════════════════════════════════ */
 
 export function SecurityTab() {
@@ -91,7 +85,7 @@ export function SecurityTab() {
       <SectionTitle>文件访问范围</SectionTitle>
       <Row
         label="Agent 能碰哪些文件"
-        hint="默认只允许工作目录。要动外面时会在对话里弹窗问一次，批准后本次会话有效。"
+        hint="默认只允许工作目录。要动外面时会在对话里弹窗问一次，批准后本次会话有效。（选了「完全访问」就不再问，只留一条记录）"
       >
         <div className="flex flex-col gap-1">
           {SCOPE_OPTIONS.map((option) => (
@@ -115,6 +109,11 @@ export function SecurityTab() {
       </Row>
 
       <SectionTitle>Shell 风险策略</SectionTitle>
+      {/* 三档策略和「工具权限」是两层，以前没写明白（用户选了全放行还被弹窗） */}
+      <p className="px-3 pb-1.5 text-dense leading-relaxed text-fg-tertiary">
+        这三行说「这一类命令怎么办」，和上面的「工具权限」是两层：策略说要不要拦，
+        权限档说要不要问你 —— 选「完全访问」就是不问；想拦住某类命令，把它设成「拦住」。
+      </p>
       <Row label="中风险" hint="装依赖、构建、改 Git 状态、网络请求">
         <PolicySelect
           value={tools?.shellPolicy?.medium ?? 'ask'}
@@ -133,7 +132,7 @@ export function SecurityTab() {
       </Row>
       <Row
         label="危急"
-        hint="格式化磁盘、破坏系统、抓凭据、关杀软。即使选了「直接执行」也不会静默放行"
+        hint="格式化磁盘、破坏系统、抓凭据、关杀软。默认就是「拦住」（连问都不问），要放行得自己把它改成「直接执行」"
       >
         <PolicySelect
           value={tools?.shellPolicy?.critical ?? 'block'}

@@ -122,13 +122,22 @@ export async function run() {
   check('★ 窗口过了要重新问一次', expiredAsked === 1)
 
   /* ── 四处确认都走统一入口 ── */
+  /*
+   * 数量 2026-09-29 改：风险那一关拆去了 `tools/risk-gate.cjs`（index.cjs 加完
+   * 「完全访问不再弹窗」那段说明就破 300 行了），所以现在是「index 2 + risk-gate 1」。
+   */
   const idxSrc = readCore('electron/core/tools/index.cjs')
   const permSrc = readCore('electron/core/tools/permission.cjs')
-  check('index.cjs 三处都改了', (idxSrc.match(/approvals\.ask\(/g) ?? []).length === 3)
+  const gateSrc = readCore('electron/core/tools/risk-gate.cjs')
+  check(
+    '★ 三处确认都走统一入口（index 2 处 + risk-gate 1 处）',
+    (idxSrc.match(/approvals\.ask\(/g) ?? []).length === 2 &&
+      (gateSrc.match(/approvals\.ask\(/g) ?? []).length === 1,
+  )
   check('permission.cjs 也改了', permSrc.includes('approvals.ask('))
   check(
     '★ 没有漏网的 ctx.confirm 直调（漏一处就等于没合并）',
-    !/await ctx\.confirm\(/.test(idxSrc + permSrc),
+    !/await ctx\.confirm\(/.test(idxSrc + permSrc + gateSrc),
   )
 
   /* ── 界面 ── */

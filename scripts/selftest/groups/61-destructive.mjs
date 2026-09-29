@@ -87,17 +87,30 @@ export async function run() {
 
   /*
    * ★ 这一条是整个 F1 的核心断言。
-   *   把 medium / high / critical **全部**配成 allow（比用户真实配置还宽松），
-   *   这些命令也不许出现 action === 'allow' —— 因为 action==='allow' 就意味着
-   *   `permission: 'full'` 下**不问、直接执行**。
+   *
+   * 用**出厂的默认策略**：不论用户把工具权限开到哪一档，这些命令都不许静默执行 ——
+   *   危急 → block（直接拒，连问都不问）
+   *   高风险 → ask（需要确认档下会弹窗；完全访问档下不问 —— 那是用户明确选的）
+   * 判定放在**默认值**上，而不是「偷偷推翻用户的选择」：
+   * 2026-09-29 之前 `decide()` 会把 `allow` 强制降级成 ask，后果是用户选了「完全访问」
+   * 仍然被弹窗（真机审计里留着 `approval=false`）——「设置里写了但不生效」本身就是 bug。
    */
+  const DEFAULT = { medium: 'ask', high: 'ask', critical: 'block' }
   const silentlyAllowed = [...MUST_BLOCK, ...MUST_ASK].filter(
-    ([command]) => riskCore.decide(riskCore.classify(command), LOOSE).action === 'allow',
+    ([command]) => riskCore.decide(riskCore.classify(command), DEFAULT).action === 'allow',
   )
   check(
-    '★★ 策略全配成 allow，这些命令也不允许静默执行',
+    '★★ 默认策略下，这些命令没有一条能静默执行',
     silentlyAllowed.length === 0,
     silentlyAllowed.map(([c]) => c).join(' ｜ '),
+  )
+  check(
+    '★ 危急默认是「拒」（不是问）—— 用户没动过设置时，毁数据的命令压根进不来',
+    MUST_BLOCK.every(([command]) => riskCore.decide(riskCore.classify(command), DEFAULT).action === 'block'),
+  )
+  check(
+    '★ 而用户亲手把某一档设成 allow，就真的听他的（不再偷偷改判）',
+    riskCore.decide(riskCore.classify('node -e "console.log(1)"'), LOOSE).action === 'allow',
   )
 
   /* ── ② 只读白名单：别误伤 ── */
@@ -166,13 +179,43 @@ export async function run() {
 
   for (const [command, why] of MUST_ASK) {
     probe.length = 0
-    const result = await tools.execute('run_shell', { command }, denyCtx)
+    /* ★ 「需要确认」档才会弹窗（2026-09-29 起 full 档不问）—— 而且这批命令有真实副作用，
+       必须走「问完就拒」这条路，绝不能真跑 */
+    const result = await tools.execute('run_shell', { command }, { ...denyCtx, permission: 'ask' })
     check(
       `★ ${why}：弹了确认，拒绝后不执行`,
       probe.length > 0 && result.includes('拒绝'),
       `问了 ${probe.length} 次｜${result.slice(0, 80)}`,
     )
   }
+
+  /*
+   * ★ 用户报的那个 bug 的回归锁（2026-09-28 真机审计里的那条）：
+   *   他选了「完全访问」，一条无害的 `node -e "console.log(1)"` 被判高风险 → 照样弹窗。
+   *   现在：完全访问 = 不问。这条命令无副作用，可以真跑。
+   */
+  probe.length = 0
+  const inlineScript = await tools.execute(
+    'run_shell',
+    { command: 'node -e "console.log(1)"' },
+    { ...denyCtx, permission: 'full' },
+  )
+  check(
+    '★★ 「完全访问」下高风险命令不再弹窗（用户报的就是这条）',
+    probe.length === 0 && !inlineScript.includes('拒绝'),
+    `问了 ${probe.length} 次｜${inlineScript.slice(0, 80)}`,
+  )
+  probe.length = 0
+  const askedInAskMode = await tools.execute(
+    'run_shell',
+    { command: 'node -e "console.log(1)"' },
+    { ...denyCtx, permission: 'ask' },
+  )
+  check(
+    '★ 而「需要确认」档下同一条命令照旧要问（不能把安全网一起拆了）',
+    probe.length === 1 && askedInAskMode.includes('拒绝'),
+    `问了 ${probe.length} 次｜${askedInAskMode.slice(0, 60)}`,
+  )
 
   /*
    * `find . -delete` 单独测：它的目标就是当前目录，`run_shell` 那层的

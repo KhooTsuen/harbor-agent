@@ -119,6 +119,18 @@ function classify(command) {
 /**
  * 按配置策略裁决：'allow' | 'ask' | 'block'
  *
+ * **只看策略写了什么，不再偷偷推翻用户的选择。**
+ *
+ * 2026-09-29 改：以前 high / critical 即使被配成 `allow` 也会被强制降级成 `ask`。
+ * 真机后果（用户报的）：他选了「完全访问」（界面上写着「不给任何确认，直接改、直接跑」），
+ * 一条**无害的** `node -e "require.resolve('globals')"` 被判高风险 → 照样弹确认框，
+ * 他点了拒绝。审计里留着那一条（`approval=false`）。
+ * 「设置里写了 allow、执行时还是问」正是本项目最忌讳的**声明了但不生效**。
+ *
+ * 现在保护来自**默认值**，不来自偷偷改判：默认 medium/high = ask、critical = block
+ * （`config-defaults.cjs`），也就是说开箱状态下会毁数据的命令**连问都不问、直接拒**。
+ * 想更严/更松都去改策略 —— 改了就是改了。
+ *
  * @param {object} verdict classify() 的结果
  * @param {{ medium: string, high: string, critical: string }} policy
  */
@@ -126,25 +138,6 @@ function decide(verdict, policy) {
   const fallback = { low: 'allow', medium: 'ask', high: 'ask', critical: 'block' }
   const action =
     verdict.level === 'low' ? 'allow' : (policy?.[verdict.level] ?? fallback[verdict.level])
-
-  /*
-   * high / critical **没有「静默放行」这个选项**。
-   *
-   * critical 一直是这样（磁盘破坏、抓凭据，策略配 allow 也降级成 ask）。
-   * high 是这次补上的：`tools/index.cjs` 里本来就有一条 `|| verdict.level === 'high'`
-   * 在硬顶着，但 `decide()` 自己却返回 allow —— 于是设置页的风险试算会显示「允许」，
-   * 和真正执行时不一样。「兜底写在调用方、自己反而不说」不该留，2026-09-23 挪进来。
-   *
-   * 这**不是**推翻用户的 `high: 'allow'`：那一档的语义是「别每次都弹同一个框」，
-   * 不是「一次都不弹」。想完全不问，唯一正当的做法是自己去终端里跑。
-   */
-  if (rank(verdict.level) >= rank('high') && action === 'allow') {
-    return {
-      action: 'ask',
-      forced: true,
-      note: verdict.level === 'critical' ? '这类操作默认不静默放行' : '高风险操作至少确认一次',
-    }
-  }
   return { action }
 }
 

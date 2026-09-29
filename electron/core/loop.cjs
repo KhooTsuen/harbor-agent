@@ -102,6 +102,8 @@ async function runLoop(options) {
     outputLimit: config.tools.outputLimit,
     /* 技能钉到这次对话时，它的 network 声明会在这里生效（见 skill-pin.cjs） */
     signal, confirm, log, ...skillPin.ctxGrant(threadSettings),
+    /* 工具要给界面发**不打断**的提示时用它（完全访问下访问敏感文件会说一声，见 tools/permission.cjs） */
+    emit,
     granted: new Map() /* AG-013：「允许本次」的批准时刻，见 tools/approval.cjs */,
   }
 

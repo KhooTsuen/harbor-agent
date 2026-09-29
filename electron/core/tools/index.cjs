@@ -14,6 +14,7 @@
 
 const mcp = require('../mcp.cjs')
 const approvals = require('./approval.cjs')
+const riskGate = require('./risk-gate.cjs')
 const writeDiff = require('../write-diff.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
@@ -50,6 +51,8 @@ function impactFor(name, args, ctx, summary, verdict) {
  */
 async function execute(name, args, ctx = {}) {
   const startedAt = Date.now()
+  /* 风险确认已经问过一次了吗 —— 同一个动作弹两次窗最招人烦（见下面的写操作确认） */
+  let riskApproved = false
 
   /*
    * ── MCP 工具：外部进程，按写操作对待 ──
@@ -127,62 +130,28 @@ async function execute(name, args, ctx = {}) {
     : `${name}(${JSON.stringify(args).slice(0, 120)})`
 
   if (verdict) {
-    const policy = ctx.shellPolicy ?? require('../config.cjs').get().tools.shellPolicy
-    const decided = risk.decide(verdict, policy)
-    const label = risk.describe(verdict)
-
-    if (decided.action === 'block') {
-      const text =
-        `错误：这条命令被拦下了（${label}）。\n` +
-        `这是保护措施，不是故障。如果确实要跑，请在终端面板里自己执行。`
-      auditCall(ctx, {
-        tool: name,
-        args,
-        startedAt,
-        ok: false,
-        error: `风险等级 ${verdict.level} 被阻止`,
-        extras: { risk: verdict },
-      })
-      return text
+    /*
+     * 风险那一关拆在 `risk-gate.cjs`（那边管「该跑 / 该问 / 该拒」，
+     * 这里只负责把结果变成行为）。为什么不在这里判断：这个文件是唯一咽喉，
+     * 但也是行数最紧的一个 —— 加完那段说明就破 300 行。
+     */
+    const gated = await riskGate.gate({
+      name,
+      args,
+      ctx,
+      verdict,
+      summary,
+      startedAt,
+      audit: (entry) => auditCall(ctx, entry),
+      impact: impactFor(name, args, ctx, summary, verdict),
+    })
+    if (gated.blocked) return gated.blocked
+    if (gated.asked === true && gated.approved !== true) {
+      return `用户拒绝了这个操作：${summary}`
     }
-
-    /* 高风险/危急即使用户选了「完全访问」也要确认一次（allow 档已由 decide 强制降级） */
-    const needsConfirm = decided.action === 'ask'
-    if (needsConfirm && ctx.permission === 'full') {
-      if (typeof ctx.confirm !== 'function') {
-        auditCall(ctx, {
-          tool: name,
-          args,
-          startedAt,
-          ok: false,
-          error: '没有可用的确认界面，按拒绝处理',
-          extras: { risk: verdict },
-        })
-        return `错误：这条命令需要用户确认（${label}），但当前没有可确认的界面，按拒绝处理。`
-      }
-      const approved = await approvals.ask(ctx, {
-        kind: 'risk',
-        name,
-        args,
-        risk: verdict,
-        summary: `${summary}\n\n风险：${label}`,
-        impact: impactFor(name, args, ctx, summary, verdict),
-      })
-      if (approved !== true) {
-        auditCall(ctx, {
-          tool: name,
-          args,
-          startedAt,
-          approval: false,
-          ok: false,
-          error: '用户拒绝高风险命令',
-          extras: { risk: verdict },
-        })
-        return `用户拒绝了这个操作：${summary}`
-      }
-    }
-
-    summary = `${summary}\n风险：${label}`
+    /* 已经问过了 —— 下面「写操作」那一段别再问一次 */
+    if (gated.asked === true) riskApproved = true
+    summary = `${summary}\n风险：${gated.label}`
   }
 
   /* ── 权限三档 + 本轮用户约束 ── */
@@ -216,7 +185,7 @@ async function execute(name, args, ctx = {}) {
   let approval = null
   if (isWrite && typeof ctx.confirm === 'function') {
     /* ask 档：确认；full 档：只读+低风险的 shell 不打扰，写文件也不打扰 */
-    const needAsk = ctx.permission === 'ask'
+    const needAsk = ctx.permission === 'ask' && !riskApproved
     if (needAsk) {
       /*
        * AG-036：把「这次会改成什么」一起送进确认框 —— 只有 `write_file` /
