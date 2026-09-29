@@ -2,8 +2,9 @@
  * 渲染：把扫描结果打成「人看得懂」的文本，或 Markdown 报告。
  * 单独一个文件的原因：排版规则（分组、缩进、摘要）和「怎么扫」是两件事。
  */
-const SEV_ORDER = ['P0', 'P1', 'P2', 'P3']
-const SEV_LABEL = { P0: 'P0 阻塞（必须人处理）', P1: 'P1 严重', P2: 'P2 一般（系统会自己重试）', P3: 'P3 轻微 / 非故障' }
+/* 严重性的顺序与措辞由内核那份定义（`electron/core/error-rules.cjs`，经 severity.mjs 转发）——
+   界面读的也是同一份，不会出现「命令行叫阻塞、界面叫用不了」。 */
+import { SEVERITY_ORDER as SEV_ORDER, SEVERITY_LABEL as SEV_LABEL } from './severity.mjs'
 
 const fmtTime = (ts) => new Date(ts).toLocaleString('zh-CN', { hour12: false })
 

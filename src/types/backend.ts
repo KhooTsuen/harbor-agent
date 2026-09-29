@@ -24,12 +24,12 @@ import type {
 
 import type { MemoryStats, SafetyBridge } from './safety'
 import type { ImageDonePayload } from './image'
+import type { ErrorsBridge } from './errors'
 import type { NotifyBridge } from './notify'
 import type { WorkspaceBridge } from './workspace'
-
 export * from './models'
-/* SafetyBridge 已带上 ProfileBridge，这里不重复列 */
-export interface WorkbenchBridge extends SafetyBridge, NotifyBridge, WorkspaceBridge {
+/* SafetyBridge 已带上 ProfileBridge，这里不重复列；ErrorsBridge = 右栏「错误」标签 */
+export interface WorkbenchBridge extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
   showWindow: () => Promise<{ ok: boolean }>

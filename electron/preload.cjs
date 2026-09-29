@@ -153,6 +153,8 @@ const api = {
   auditStats: (days) => call('audit:stats', days),
   auditClear: () => call('audit:clear'),
   auditPrune: () => call('audit:prune'),
+  /* 错误清单（右栏「错误」标签）：只读，只看观察哨记的那一路 */
+  errorsList: (options) => call('errors:list', options),
   riskClassify: (command) => call('risk:classify', command),
 
   /* 项目（一等实体）：登记表落盘，改名的项目 id 不变 */
@@ -263,16 +265,14 @@ const api = {
   /** 订阅插件热插拔事件（新增/删除插件时主进程通知） */
   onPluginsChanged: (callback) => subscribe('plugins:changed', callback),
 
-  /* 订阅「生图完成 / 失败」。生图是异步的（提交完就返回，出图可能几分钟后），
-     那时这轮对话早结束了 —— 靠主进程推事件回来把图插进对话。 */
+  /* 订阅「生图完成 / 失败」：生图是异步的（提交完就返回，出图可能几分钟后），那轮对话早结束了 → 靠推事件把图插进对话 */
   onImageDone: (callback) =>
     subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
 
   /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
 
-  /* 一轮跑完了（主进程推）。**文案由主进程算好**（要不要弹系统通知是它决定的，
-     藏到托盘时渲染层会被节流判不准）；渲染层只负责"用户没在看就弹个提示"。 */
+  /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准），渲染层只负责「用户没在看就弹个提示」 */
   onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
 
   /** 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */

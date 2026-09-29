@@ -35,6 +35,7 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const errorsCore = require('./errors.cjs')
 const { redact } = require('./redact.cjs')
+const retention = require('./error-retention.cjs')
 
 /** 内存里最多留多少条（环形，超了丢最旧的并计数） */
 const MAX_BUFFER = 500
@@ -247,6 +248,8 @@ function install(options) {
     const opts = options || {}
     state.dir = opts.dir || DIRS.errors
     state.enabled = true
+    /* 启动时清一遍过期的（谁拥有数据谁负责清理，见 error-retention.cjs 的三条自我约束） */
+    retention.prune({ dir: state.dir })
     startTimer()
     /*
      * 定时器是 unref 的（不能让观察哨拦住进程退出），代价是「退出前那一下丢东西」

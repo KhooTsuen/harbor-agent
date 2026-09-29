@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Activity, FileCode2, GitCompareArrows, Globe, ListTodo, Package, X } from 'lucide-react'
+import {
+  Activity,
+  FileCode2,
+  GitCompareArrows,
+  Globe,
+  ListTodo,
+  Package,
+  ShieldAlert,
+  X,
+} from 'lucide-react'
 import type { FileNode, Project, RightTab } from '@/types'
 import { cn } from '@/lib/utils'
 import { colorOf } from '@/lib/statusLanguage'
@@ -15,6 +24,7 @@ import { useBrowseBridge } from './browser/useBrowseBridge'
 import { ArtifactsPanel } from '@/components/chat/ArtifactsPanel'
 import { StatePanel } from '@/components/chat/StatePanel'
 import { TaskCenter } from '@/components/chat/TaskCenter'
+import { ErrorsPanel } from './ErrorsPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { useShallow } from 'zustand/react/shallow'
@@ -26,8 +36,9 @@ import { isElectron } from '@/lib/backend'
 /* ══════════════════════════════════════════════════════════════
    RightPanel
 
-   右侧工作区：审查 / 终端 / 文件 / 浏览器 / 成果 / 任务 / 状态。
-   「任务」是 AG-028 的全局后台任务中心；「状态」仍是当前对话的长期状态。
+   右侧工作区：审查 / 文件 / 浏览器 / 成果 / 任务 / 状态 / 错误。
+   「任务」是 AG-028 的全局后台任务中心；「状态」仍是当前对话的长期状态；
+   「错误」是内核在出错现场记的清单（只读，见 ErrorsPanel）。
    ══════════════════════════════════════════════════════════════ */
 
 const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode2 }[] = [
@@ -37,6 +48,8 @@ const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode2 }[] =
   { id: 'artifacts', label: '成果', icon: Package },
   { id: 'tasks', label: '任务', icon: ListTodo },
   { id: 'state', label: '状态', icon: Activity },
+  /* 内核记的错误（只读）—— 排查「刚才那个按钮为什么没反应」时的第一站 */
+  { id: 'errors', label: '错误', icon: ShieldAlert },
 ] as const
 
 /* ── 主组件 ─────────────────────────────────────────────────── */
@@ -253,6 +266,7 @@ export function RightPanel() {
         {activeRightTab === 'artifacts' ? <ArtifactsPanel /> : null}
         {activeRightTab === 'tasks' ? <TaskCenter /> : null}
         {activeRightTab === 'state' ? <StatePanel /> : null}
+        {activeRightTab === 'errors' ? <ErrorsPanel /> : null}
 
         {/*
           浏览器**不随标签卸载** —— 和终端同一个道理，但理由不一样：

@@ -40,3 +40,13 @@ export async function saveDiagnostics(): Promise<{
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
+
+/** 打开数据目录（错误记录、日志都在这里面） */
+export async function openDataDir(): Promise<{ ok: boolean; error?: string }> {
+  if (!bridge) return { ok: false, error: '浏览器预览没有真实后端' }
+  try {
+    return await bridge.diagnosticsOpenDir()
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}

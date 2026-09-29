@@ -7,7 +7,7 @@
 import path from 'node:path'
 import { scanLogs, scanAudit, scanTasks, scanEvents, scanSessions, scanObserver } from './errors/sources.mjs'
 import { judge, lowTrust, hasDataDir } from './errors/noise.mjs'
-import { classify, classifierAvailable, severityOf, hintOf, locationOf, dedupeKey } from './errors/severity.mjs'
+import { classify, classifierAvailable, severityOf, hintOf, locationOf, dedupeKey, aggregate } from './errors/severity.mjs'
 
 /** 把 `24h` / `7d` / `30m` / ISO 时间 解析成毫秒时间戳 */
 export function parseSince(input, now = Date.now()) {
@@ -144,22 +144,8 @@ export function scan({ dataDir = path.resolve(import.meta.dirname, '..', 'data')
   }
 }
 
-/** 同一条（key 相同）合并：count / firstSeen / lastSeen */
-function aggregate(list) {
-  const map = new Map()
-  for (const e of list) {
-    const times = Number(e.repeat) || 1
-    const hit = map.get(e.key)
-    if (!hit) {
-      map.set(e.key, { ...e, count: times, firstSeen: e.ts, lastSeen: e.ts })
-      continue
-    }
-    hit.count += times
-    hit.firstSeen = Math.min(hit.firstSeen, e.ts)
-    hit.lastSeen = Math.max(hit.lastSeen, e.ts)
-  }
-  return [...map.values()].sort((a, b) => b.lastSeen - a.lastSeen)
-}
+/* 合并（count / firstSeen / lastSeen）用的是内核那份（`error-rules.cjs` 的 aggregate，
+   经 severity.mjs 转发过来）—— 界面走的是同一个函数，两边口径不会不一样。 */
 
 const countBy = (list) => {
   const out = {}

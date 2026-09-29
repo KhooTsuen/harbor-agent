@@ -55,6 +55,7 @@ const EXPECTED_CHANNELS = [
   'credentials:status',
   'diagnostics:copy',
   'diagnostics:openDir',
+  'errors:list',
   'diagnostics:save',
   'export:saveText',
   'fs:list',

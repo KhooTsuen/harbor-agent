@@ -124,6 +124,7 @@ import { run as visionGroup } from './selftest/groups/86-vision.mjs'
 import { run as modelChoiceGroup } from './selftest/groups/87-model-choice.mjs'
 import { run as browserWaitGroup } from './selftest/groups/88-browser-wait.mjs'
 import { run as errorObserverGroup } from './selftest/groups/89-error-observer.mjs'
+import { run as errorReaderGroup } from './selftest/groups/90-error-reader.mjs'
 
 const GROUPS = [
   basics,
@@ -214,6 +215,7 @@ const GROUPS = [
   modelChoiceGroup,
   browserWaitGroup,
   errorObserverGroup,
+  errorReaderGroup,
 ]
 
 async function main() {

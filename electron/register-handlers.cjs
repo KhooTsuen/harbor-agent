@@ -69,6 +69,9 @@ function registerHandlers(deps) {
   /* 先包一层，后面所有 register() 注册的通道都自动在网里 */
   wrapInvokeHandlers(ipcMain)
 
+  /* 错误清单（右栏「错误」标签，只读；见 handlers/errors.cjs） */
+  require('./handlers/errors.cjs').register({ ipcMain })
+
   /* 窗口外观 + 显示/退出（见 handlers/window.cjs） */
   require('./handlers/window.cjs').register({
     ipcMain,

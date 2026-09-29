@@ -99,7 +99,8 @@ function normalize(input: Partial<Settings> | undefined): Settings {
       s.lastRightTab === 'browser' ||
       s.lastRightTab === 'artifacts' ||
       s.lastRightTab === 'tasks' ||
-      s.lastRightTab === 'state'
+      s.lastRightTab === 'state' ||
+      s.lastRightTab === 'errors'
         ? s.lastRightTab
         : 'diff',
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,
