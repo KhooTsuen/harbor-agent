@@ -67,7 +67,9 @@ export function PlanBar({ threadId }: { threadId: string }) {
             {current ? `正在做：${cleanPlanLine(current)}` : '全部完成'}
           </span>
         )}
-        {open && rest > 0 ? <span className="shrink-0 text-fg-tertiary">还有 {rest} 条</span> : null}
+        {open && rest > 0 ? (
+          <span className="shrink-0 text-fg-tertiary">还有 {rest} 条</span>
+        ) : null}
       </button>
 
       {open ? (

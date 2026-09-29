@@ -164,6 +164,12 @@ export function Composer({ onFocusRequest }: ComposerProps) {
             onRemove={(index) => activeThreadId && removeQueuedMessage(activeThreadId, index)}
           />
 
+          {/*
+            计划栏在**输入框上方**：放下方会把输入框往上顶（整块贴底，下方一变高
+            输入框就跟着动）—— 位置变来变去很烦。上方则输入框离视口的距离不变。
+          */}
+          {activeThreadId ? <PlanBar threadId={activeThreadId} /> : null}
+
           {/* ① 输入区 */}
           <textarea
             value={input}
@@ -270,8 +276,6 @@ export function Composer({ onFocusRequest }: ComposerProps) {
           </div>
         </div>
 
-        {/* 计划与输入框嵌合：有 plan 才出现（没有就一行都不占） */}
-        {activeThreadId ? <PlanBar threadId={activeThreadId} /> : null}
         {/* 待发送的图片 */}
         <ImageAttachments />
         {/* 这活当前模型干得了吗（据声明，不是实测） */}
