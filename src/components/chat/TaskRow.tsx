@@ -128,45 +128,45 @@ export function TaskRow({
       >
         <Icon size={13} className="mt-0.5 shrink-0" style={{ color: statusColor }} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-fg-primary">
-            {task.title || task.goal || '(没有标题的任务)'}
-          </span>
-          <span
-            className="mt-0.5 block truncate text-2xs font-medium"
-            style={{ color: statusColor }}
-          >
-            {statusSummary}
-          </span>
-          {/* 当前步骤 / 下一步 —— 状态原因之后再给行动信息 */}
-          <span className="mt-0.5 block truncate text-2xs text-fg-secondary">
-            {stepPrefix}
-            {currentStepOf(task)}
-          </span>
-          {/*
-            AG-030：默认只留「进度 + 结果」两件。
-            原来这里挤了六项（步数 · Tool · 改文件 · 恢复次数 · 历时 · 更新），
-            文档要求重点突出「当前任务 / 当前步骤 / 结果 / 异常 / 下一步」——
-            其余都是可以展开再看的细节。零值也不显示（「改了 0 个文件」是噪音）。
-          */}
-          <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
-            <span>
-              {progress.done}/{progress.total} 步
+          <span className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg-primary">
+              {task.title || task.goal || '(没有标题的任务)'}
             </span>
-            {changed > 0 ? <span>改了 {changed} 个文件</span> : null}
-            {task.errors.length > 0 ? (
-              <span style={{ color: colorOf('failed') }}>{task.errors.length} 次失败</span>
-            ) : null}
-            {budgetHit ? (
-              <span style={{ color: colorOf('warning') }}>
-                已达到{budgetHit.label}（{budgetHit.used} / {budgetHit.limit}）
-              </span>
-            ) : null}
-            {loopHit ? (
-              <span style={{ color: colorOf('warning') }} title={loopHit.samples?.join(' → ')}>
-                检测到重复执行（{loopHit.count} 次同类调用）
-              </span>
-            ) : null}
+            {/* 状态与进度在右边 —— 一行说清「是什么、到哪了」 */}
+            <span className="shrink-0 text-2xs font-medium" style={{ color: statusColor }}>
+              {statusSummary}
+              {progress.total > 0 ? ` · ${progress.done}/${progress.total} 步` : ''}
+            </span>
           </span>
+          {/* 正在做 / 下一步（没有就不占位 —— 空行会把整行撑高） */}
+          {currentStepOf(task) ? (
+            <span className="mt-0.5 block truncate text-2xs text-fg-secondary">
+              {stepPrefix}
+              {currentStepOf(task)}
+            </span>
+          ) : null}
+          {/*
+            AG-030：只留「需要注意的」那几项。原来「4/4 步」也单独占一行，
+            加上状态行就成了三行碎片 —— 与 VS Code 那种「一行标题 + 右侧状态」差很远。
+          */}
+          {changed > 0 || task.errors.length > 0 || budgetHit || loopHit ? (
+            <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
+              {changed > 0 ? <span>改了 {changed} 个文件</span> : null}
+              {task.errors.length > 0 ? (
+                <span style={{ color: colorOf('failed') }}>{task.errors.length} 次失败</span>
+              ) : null}
+              {budgetHit ? (
+                <span style={{ color: colorOf('warning') }}>
+                  已达到{budgetHit.label}（{budgetHit.used} / {budgetHit.limit}）
+                </span>
+              ) : null}
+              {loopHit ? (
+                <span style={{ color: colorOf('warning') }} title={loopHit.samples?.join(' → ')}>
+                  检测到重复执行（{loopHit.count} 次同类调用）
+                </span>
+              ) : null}
+            </span>
+          ) : null}
         </span>
       </button>
 

@@ -7,6 +7,8 @@
    ══════════════════════════════════════════════════════════════ */
 
 import type { UsageBucket } from './stats'
+/* 时间线片段与 UI 侧共用一份定义（type-only import，没有运行时循环） */
+import type { MessageRound } from './conversation'
 
 export type { LimitsGateState, StatsSummary, UsageBucket } from './stats'
 
@@ -109,6 +111,11 @@ export interface SessionSummary {
 export interface StoredMessage {
   /** 这条回复的 token 用量（跟着落盘，重开会话也能算总量） */
   usage?: UsageBucket
+  /**
+   * 一轮一轮的时间线（思考 → 工具 → 正文 的真实顺序）。
+   * 不存的话重开会话会塔回三段堆叠（一大块思考 → 一列工具 → 一段正文）。
+   */
+  rounds?: MessageRound[]
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   ts?: number

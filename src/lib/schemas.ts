@@ -25,6 +25,20 @@ export const StoredMessageSchema = z.object({
       }),
     )
     .optional(),
+  /*
+   * 时间线（思考 → 工具 → 正文 的真实顺序）。
+   * ★ 必须在 schema 里声明：zod 的 object **默认会剥掉没声明的字段** ——
+   *   不写这一块，落盘的时间线读回来就没了（界面静默塔回三段堆叠）。
+   */
+  rounds: z
+    .array(
+      z.object({
+        reasoning: z.string().default(''),
+        content: z.string().default(''),
+        tools: z.array(z.number()).default([]),
+      }),
+    )
+    .optional(),
   error: z.string().optional(),
 })
 

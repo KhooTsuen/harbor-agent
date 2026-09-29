@@ -107,6 +107,8 @@ export function createReplyPersistence(opts: {
         content: text,
         ...(final.reasoning ? { reasoning: final.reasoning } : {}),
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
+        /* 时间线（思考 → 工具 → 正文 的真实顺序）—— 不存的话重开会话会塌回三段堆叠 */
+        ...(final.rounds?.length ? { rounds: final.rounds } : {}),
         ...(final.citations?.length ? { citations: final.citations } : {}),
         ...(final.usage ? { usage: final.usage } : {}),
         /* 被中止的那条：落盘标上 aborted —— 重开会话后「重试」文案还能回来 */

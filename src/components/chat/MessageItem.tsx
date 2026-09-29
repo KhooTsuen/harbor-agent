@@ -10,6 +10,7 @@ import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
 import { AnswerVersions } from './message/AnswerVersions'
+import { MessageRounds } from './message/MessageRounds'
 import { TerminalOutput } from './TerminalOutput'
 import { ThinkBlock } from './ProcessBlocks'
 import { ToolRunList } from './ToolRuns'
@@ -74,43 +75,57 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
             </div>
           ) : (
             <div className="w-full max-w-[86ch]">
-              {/* 思考——默认折叠 */}
-              {message.reasoning ? (
-                <ThinkBlock text={message.reasoning} streaming={isStreaming} />
-              ) : null}
+              {/*
+                有时间线（新记录）→ 按真实发生顺序排：思考 → 工具 → 正文 → 思考 → …
+                没有（老记录）→ 退回原来的三段式，行为不变。
+              */}
+              {message.rounds && message.rounds.length > 0 ? (
+                <MessageRounds
+                  rounds={message.rounds}
+                  toolRuns={message.toolRuns ?? []}
+                  streaming={isStreaming}
+                />
+              ) : (
+                <>
+                  {/* 思考——默认折叠 */}
+                  {message.reasoning ? (
+                    <ThinkBlock text={message.reasoning} streaming={isStreaming} />
+                  ) : null}
 
-              {/* 工具调用——一行一个，跑完显示耗时 */}
-              {message.toolRuns && message.toolRuns.length > 0 ? (
-                <ToolRunList runs={message.toolRuns} />
-              ) : null}
+                  {/* 工具调用——一行一个，跑完显示耗时 */}
+                  {message.toolRuns && message.toolRuns.length > 0 ? (
+                    <ToolRunList runs={message.toolRuns} />
+                  ) : null}
 
-              {message.content ? (
-                <div>
-                  {isStreaming ? (
-                    /*
-                     * ★ 流式中：实时 Markdown（增量解析 + 稳定块不再重渲）。
-                     *
-                     * 稳定块（空行之后的那些）解析一次就不动了，只有尾巴重渲；
-                     * 残缺的半行降级成纯文本，避免「先像段落、写完变列表」的横跳。
-                     * 写完的消息仍然走 <Markdown>（整篇解析，一次到位）。
-                     */
-                    <StreamingMarkdown text={smoothContent} />
-                  ) : (
-                    <Markdown text={message.content} />
-                  )}
-                  {isStreaming ? <span className="caret" /> : null}
-                </div>
-              ) : isStreaming ? (
-                <p className="flex items-center gap-2 text-sm text-fg-secondary">
-                  <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
-                  {/*
+                  {message.content ? (
+                    <div>
+                      {isStreaming ? (
+                        /*
+                         * ★ 流式中：实时 Markdown（增量解析 + 稳定块不再重渲）。
+                         *
+                         * 稳定块（空行之后的那些）解析一次就不动了，只有尾巴重渲；
+                         * 残缺的半行降级成纯文本，避免「先像段落、写完变列表」的横跳。
+                         * 写完的消息仍然走 <Markdown>（整篇解析，一次到位）。
+                         */
+                        <StreamingMarkdown text={smoothContent} />
+                      ) : (
+                        <Markdown text={message.content} />
+                      )}
+                      {isStreaming ? <span className="caret" /> : null}
+                    </div>
+                  ) : isStreaming ? (
+                    <p className="flex items-center gap-2 text-sm text-fg-secondary">
+                      <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
+                      {/*
                     AG-003：按下发送就要有反馈，而且要说清现在在干什么。
                     阶段文字来自主进程的状态机（AG-001 的 phase），
                     还没收到第一个 phase 事件时退回一句通用的。
                   */}
-                  {activityLabel(message.toolRuns ?? [], message.phase)}
-                </p>
-              ) : null}
+                      {activityLabel(message.toolRuns ?? [], message.phase)}
+                    </p>
+                  ) : null}
+                </>
+              )}
 
               {/*
                 只有流式过程中留下的快照、没写完 —— 说明上次进程被打断了。

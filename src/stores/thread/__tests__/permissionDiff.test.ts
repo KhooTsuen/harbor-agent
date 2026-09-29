@@ -34,6 +34,7 @@ const state = (): StreamState => ({
   content: '',
   reasoning: '',
   toolRuns: [],
+  rounds: [],
   citations: [],
   threadId: 'thread-1',
   patch: () => {},

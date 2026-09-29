@@ -202,14 +202,17 @@ export async function runElectronTurn(
     5 * 60 * 1000,
   )
 
+  /* 续跑（重新生成/接着做）时把已有时间线也带上 —— 否则老片段会被丢掉 */
+  const rounds = [...(placeholder.rounds ?? [])]
   const streamState: StreamState = {
     content,
     reasoning,
     toolRuns,
+    rounds,
     citations,
     patch,
     threadId,
-    snapshot: () => ({ ...placeholder, content, reasoning, toolRuns, citations }),
+    snapshot: () => ({ ...placeholder, content, reasoning, toolRuns, citations, rounds }),
     finish: () => {
       finish()
       /*

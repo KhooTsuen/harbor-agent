@@ -1,4 +1,4 @@
-import type { AgentPhase, Message, ToolRunRecord } from '@/types'
+import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
 import { confirmChat } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
@@ -25,6 +25,12 @@ export interface StreamState {
   content: string
   reasoning: string
   toolRuns: ToolRunRecord[]
+  /**
+   * 一轮一轮的片段（思考 / 工具下标 / 正文）—— **顺序就是发生顺序**。
+   * 事件本身就是按时间到达的，这里只是把它们记下来，渲染层才排得出时间线
+   * （三个聚合字段拼不出先后，见 MessageRound 的注释）。
+   */
+  rounds: MessageRound[]
   citations: NonNullable<Message['citations']>
   /** 把字段写回那条流式消息 */
   patch: (fields: Partial<Message>) => void
@@ -33,6 +39,15 @@ export interface StreamState {
   /** 收尾（取消订阅、清计时器、把 sending 置回 false） */
   finish: () => void
   threadId: string
+}
+
+/** 当前轮；一片内容都没收到就先把第一轮开出来（不依赖 turn_start 一定到达） */
+function currentRound(state: StreamState): MessageRound {
+  const last = state.rounds[state.rounds.length - 1]
+  if (last) return last
+  const fresh: MessageRound = { reasoning: '', content: '', tools: [] }
+  state.rounds.push(fresh)
+  return fresh
 }
 
 /**
@@ -78,6 +93,7 @@ export function handleStreamEvent(
       /* AG-037：「首字上屏」—— 只在**第一个**字时记一次（这一轮的第一个字） */
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       state.content += String(event.text ?? '')
+      currentRound(state).content += String(event.text ?? '')
       state.patch({ content: state.content })
       return { handled: true }
     }
@@ -85,6 +101,7 @@ export function handleStreamEvent(
     case 'reasoning': {
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       state.reasoning += String(event.text ?? '')
+      currentRound(state).reasoning += String(event.text ?? '')
       state.patch({ reasoning: state.reasoning })
       return { handled: true }
     }
@@ -102,6 +119,8 @@ export function handleStreamEvent(
         output: '',
       }
       state.toolRuns.push(record)
+      /* 这一轮跑过这个工具 —— 记下标（记录本身不重复存） */
+      currentRound(state).tools.push(state.toolRuns.length - 1)
       state.patch({ toolRuns: [...state.toolRuns] })
       return { handled: true }
     }
@@ -205,6 +224,16 @@ export function handleStreamEvent(
       return { handled: true }
     }
 
+    /*
+     * 新一轮开始 —— 时间线在这里分段。
+     * 以前这个事件被 default 吞掉（那时的理由：「进度靠 phase 体现」），
+     * 于是「哪段思考属于哪一轮」在渲染层就丢了。
+     */
+    case 'turn_start': {
+      state.rounds.push({ reasoning: '', content: '', tools: [] })
+      return { handled: true }
+    }
+
     /* ── 结束 ── */
     case 'done': {
       const finalContent = String(event.content ?? '') || state.content
@@ -213,6 +242,8 @@ export function handleStreamEvent(
         reasoning: String(event.reasoning ?? '') || state.reasoning,
         usage: (event.usage ?? undefined) as Message['usage'],
         toolRuns: [...state.toolRuns],
+        /* 时间线：逐轮复制一份 —— 别和 state 里的草稿共享引用 */
+        rounds: state.rounds.map((round) => ({ ...round, tools: [...round.tools] })),
         citations: [...state.citations],
         status: 'sent',
         kind: 'text',
