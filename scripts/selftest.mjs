@@ -123,6 +123,7 @@ import { run as tokenOptGroup } from './selftest/groups/85-token-opt.mjs'
 import { run as visionGroup } from './selftest/groups/86-vision.mjs'
 import { run as modelChoiceGroup } from './selftest/groups/87-model-choice.mjs'
 import { run as browserWaitGroup } from './selftest/groups/88-browser-wait.mjs'
+import { run as errorObserverGroup } from './selftest/groups/89-error-observer.mjs'
 
 const GROUPS = [
   basics,
@@ -212,6 +213,7 @@ const GROUPS = [
   visionGroup,
   modelChoiceGroup,
   browserWaitGroup,
+  errorObserverGroup,
 ]
 
 async function main() {

@@ -61,6 +61,13 @@ const DIRS = {
   get crash() {
     return path.join(rootDir(), 'data', 'crash')
   },
+  /**
+   * 错误观察哨的落点（见 error-observer.cjs）：一天一个 jsonl，只追加不覆盖。
+   * 放 data 下是为了自动受「所有数据都不许在 C 盘」那条规矩管。
+   */
+  get errors() {
+    return path.join(rootDir(), 'data', 'errors')
+  },
 }
 
 /** 把 data 下面该有的目录都建出来 */
@@ -75,6 +82,7 @@ function ensureDirs() {
     DIRS.workspace,
     DIRS.chatCache,
     DIRS.crash,
+    DIRS.errors,
   ]
   for (const dir of list) {
     fs.mkdirSync(dir, { recursive: true })

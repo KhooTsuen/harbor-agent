@@ -18,6 +18,7 @@
 
 const log = require('./core/log.cjs')
 const actions = require('./core/log-actions.cjs')
+const observer = require('./core/error-observer.cjs')
 
 /**
  * 慢调用阈值：超过它的成功调用也写一行主日志。
@@ -50,6 +51,12 @@ function wrapInvokeHandlers(ipcMain) {
         const message = error instanceof Error ? error.message : String(error)
         actions.record({ kind: 'ipc', name: channel, ok: false, ms, detail: message })
         log.error(`通道失败 ${channel}（${ms}ms）：${message}`)
+        /*
+         * 观察哨就挂在这儿：一个通道抛错以前只有这一行日志，没人汇总。
+         * 包在 `ipcMain.handle` 这一层 = **139 个通道一处全覆盖**，加新通道自动被记上。
+         * 它自己不抛、不改流程（见 error-observer.cjs 顶部三条底线）。
+         */
+        observer.record(error, { source: 'ipc', location: channel, raw: message })
         throw error
       }
     })

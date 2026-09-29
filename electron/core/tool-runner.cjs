@@ -19,6 +19,7 @@ const tools = require('./tools/index.cjs')
 const taskCore = require('./task.cjs')
 const taskNotes = require('./task-notes.cjs')
 const errors = require('./errors.cjs')
+const observer = require('./error-observer.cjs')
 const scheduler = require('./tool-scheduler.cjs')
 const shared = require('./tools/_shared.cjs')
 const { buildFailureNote } = require('./loop-prompt.cjs')
@@ -169,6 +170,23 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     bumpStats({ calls: 1, invalid: duplicateInvalid ? 1 : 0, duplicates: duplicate ? 1 : 0 })
 
     const info = ok ? null : errors.classifyToolOutput(output, { name: call.name })
+    /*
+     * 工具失败：记一笔。分类结果直接带给观察哨（它就不再分一次类了）。
+     * 只记录，不动 `info` —— 重试 / 提示 / 中止等行为与以前完全一致。
+     */
+    if (info) {
+      observer.record(info.message || String(output ?? ''), {
+        source: 'tool',
+        location: call.name,
+        kind: info.kind,
+        needsUser: info.needsUser,
+        retryable: info.retryable,
+        hint: info.hint,
+        raw: output,
+        tool: call.name,
+        taskId: options.taskId,
+      })
+    }
 
     emit({
       type: ok ? 'agent.tool.completed' : 'agent.tool.failed',

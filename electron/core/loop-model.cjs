@@ -9,6 +9,7 @@ const llm = require('./llm.cjs')
 const log = require('./log.cjs')
 const configCore = require('./config.cjs')
 const errors = require('./errors.cjs')
+const observer = require('./error-observer.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const loopGuard = require('./loop-guard.cjs')
 
@@ -99,6 +100,11 @@ async function callModelInner(options, emit) {
         const info = errors.classify(error)
         lastError = error
         log.warn(`模型调用失败（${target.id} · ${info.kind}）：${info.message}`)
+        /* aborted 是用户点的停，不算故障 → 不记（理由见 error-observer.cjs 顶部） */
+        if (info.kind !== 'aborted') {
+          const { kind, needsUser, retryable, hint } = info
+          observer.record(error, { source: 'model', location: target.id, kind, needsUser, retryable, hint })
+        }
 
         if (info.kind === 'aborted') throw error
         if (info.kind === 'context_overflow') {

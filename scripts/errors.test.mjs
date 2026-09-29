@@ -150,3 +150,40 @@ test('扫描：数据目录不存在时优雅返回，不抛异常', () => {
   assert.equal(r.ok, false)
   assert.match(r.reason, /没有数据目录/)
 })
+
+/*
+ * 观察哨那条来源（内核 `error-observer.cjs` 写的 jsonl）和别的不一样：
+ * ① 它已经在内核里分过类 → 读取侧要用它给的 kind，不能重猜（重猜就有了两个说法）
+ * ② 重复发生被折成一行 + `repeat` 计数 → 聚合时要把数折回次数
+ */
+test('扫描：观察哨写的那条要采信内核给的 kind，并且把 repeat 折回次数', () => {
+  const now = Date.now()
+  const line = (over) =>
+    JSON.stringify({
+      ts: new Date(now - 1000).toISOString(),
+      kind: 'mcp',
+      needsUser: false,
+      retryable: false,
+      message: 'MCP「filesystem」启动失败：spawn ENOENT',
+      location: 'filesystem',
+      source: 'mcp',
+      repeat: 3,
+      ...over,
+    })
+  const { root, done } = fakeData({
+    'errors/2026-01-01.jsonl': [line({}), line({ message: '（另一条）', repeat: 1 })].join('\n') + '\n',
+  })
+  try {
+    const r = scan({ dataDir: root, since: now - 3600_000 })
+    const hit = r.entries.find((e) => e.message.includes('filesystem'))
+    assert.ok(hit, `应该扫到观察哨那条，实际 ${JSON.stringify(r.entries.map((e) => e.source))}`)
+    assert.equal(hit.source, 'observer')
+    /* kind 用文件里存的（mcp），不是重新 classify 出来的 */
+    assert.equal(hit.kind, 'mcp')
+    assert.equal(hit.location, 'mcp:filesystem')
+    /* repeat=3 → 聚合成 3 次，而不是当 1 次 */
+    assert.equal(hit.count, 3)
+  } finally {
+    done()
+  }
+})

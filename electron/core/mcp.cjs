@@ -15,6 +15,7 @@
 const log = require('./log.cjs')
 const { McpConnection, PROTOCOL_VERSION } = require('./mcp-connection.cjs')
 const netGuard = require('./mcp-network-guard.cjs')
+const observer = require('./error-observer.cjs')
 
 /* ══════════════════════════════════════════════════════════════
    连接池
@@ -80,6 +81,8 @@ async function startAll(servers) {
           /* 失败也留在表里 —— 设置页要显示「为什么没起来」 */
           connections.set(server.id, conn)
           log.warn(`MCP「${server.id}」启动失败：${conn.error}`)
+          /* 记一笔：MCP 起不来用户只看到「工具没了」，而且它平时只落一行 warn */
+          observer.record(error, { source: 'mcp', location: server.id, tool: server.id })
         }
       }),
   )

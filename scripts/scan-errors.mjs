@@ -5,7 +5,7 @@
  * `scripts/scan-errors.mjs` 是它的入口；CLI（`scripts/errors.mjs`）调它。
  */
 import path from 'node:path'
-import { scanLogs, scanAudit, scanTasks, scanEvents, scanSessions } from './errors/sources.mjs'
+import { scanLogs, scanAudit, scanTasks, scanEvents, scanSessions, scanObserver } from './errors/sources.mjs'
 import { judge, lowTrust, hasDataDir } from './errors/noise.mjs'
 import { classify, classifierAvailable, severityOf, hintOf, locationOf, dedupeKey } from './errors/severity.mjs'
 
@@ -39,8 +39,17 @@ export function scan({ dataDir = path.resolve(import.meta.dirname, '..', 'data')
   const tasks = scanTasks(dataDir, since)
   const events = scanEvents(dataDir, since)
   const sessions = scanSessions(dataDir, since)
+  /* 观察哨自己的输出（内核 error-observer.cjs）：内核在 catch 里看到的第一手错误 */
+  const observed = scanObserver(dataDir, since)
 
-  const raw = [...logs.items, ...audit.items, ...tasks.items, ...events.items, ...sessions.items]
+  const raw = [
+    ...logs.items,
+    ...audit.items,
+    ...tasks.items,
+    ...events.items,
+    ...sessions.items,
+    ...observed.items,
+  ]
 
   const entries = []
   const noise = []
@@ -51,7 +60,19 @@ export function scan({ dataDir = path.resolve(import.meta.dirname, '..', 'data')
       noise.push({ ...item, reason: verdict.reason })
       continue
     }
-    const info = classify(item.message, { source: item.source })
+    /*
+     * 观察哨记的那条**已经在内核里分过类**（它的 catch 里就是调 errors.cjs）——
+     * 直接用它给的 kind，别在读取侧重猜：分类器只有一份，猜两次就会出现两个说法。
+     * 其他来源没有这个字段，照旧走 classify()。
+     */
+    const info = item.kind
+      ? {
+          kind: item.kind,
+          needsUser: item.needsUser === true,
+          retryable: item.retryable === true,
+          hint: item.hint ?? '',
+        }
+      : classify(item.message, { source: item.source })
     const isDenied = verdict.verdict === 'expected_denial'
     const entry = {
       source: item.source,
@@ -67,6 +88,8 @@ export function scan({ dataDir = path.resolve(import.meta.dirname, '..', 'data')
       location: locationOf(item),
       context: item.context ?? {},
       raw: item.raw ?? '',
+      /* 观察哨把「同一个错反复发生」折叠成一行 + repeat 计数，这里要把数找回来 */
+      repeat: Number(item.repeat) || 1,
       hint: hintOf(info.kind, item.message, info.hint ?? ''),
       retryable: Boolean(info.retryable),
       needsUser: Boolean(info.needsUser),
@@ -106,7 +129,16 @@ export function scan({ dataDir = path.resolve(import.meta.dirname, '..', 'data')
       byKind,
       bySeverity: countBy(grouped.filter((e) => e.kind !== 'retry').map((e) => e.severity)),
       warnCount: logs.warnCount,
-      scanned: { sessions: sessions.scanned ?? 0, skippedFiles: logs.skipped.length + audit.skipped.length + tasks.skipped.length + events.skipped.length + sessions.skipped.length },
+      scanned: {
+        sessions: sessions.scanned ?? 0,
+        skippedFiles:
+          logs.skipped.length +
+          audit.skipped.length +
+          tasks.skipped.length +
+          events.skipped.length +
+          sessions.skipped.length +
+          observed.skipped.length,
+      },
       elapsedMs: Date.now() - started,
     },
   }
@@ -116,12 +148,13 @@ export function scan({ dataDir = path.resolve(import.meta.dirname, '..', 'data')
 function aggregate(list) {
   const map = new Map()
   for (const e of list) {
+    const times = Number(e.repeat) || 1
     const hit = map.get(e.key)
     if (!hit) {
-      map.set(e.key, { ...e, count: 1, firstSeen: e.ts, lastSeen: e.ts })
+      map.set(e.key, { ...e, count: times, firstSeen: e.ts, lastSeen: e.ts })
       continue
     }
-    hit.count += 1
+    hit.count += times
     hit.firstSeen = Math.min(hit.firstSeen, e.ts)
     hit.lastSeen = Math.max(hit.lastSeen, e.ts)
   }

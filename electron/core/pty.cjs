@@ -25,6 +25,7 @@
 const pty = require('node-pty')
 const config = require('./config.cjs')
 const log = require('./log.cjs')
+const observer = require('./error-observer.cjs')
 
 /** id -> { proc, cols, rows, startedAt } */
 const sessions = new Map()
@@ -105,6 +106,8 @@ function start({ id, cols, rows, cwd, onData, onExit }) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     log.warn(`开终端失败：${message}`)
+    /* 开不了终端用户是直接「看见了」的，记一笔方便回查是什么环境组合（conpty / shell 路径） */
+    observer.record(error, { source: 'pty', location: id, raw: `shell=${shell} cwd=${dir}` })
     return { ok: false, error: `开终端失败：${message}` }
   }
 

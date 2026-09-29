@@ -66,11 +66,14 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
 const DEV_URL = process.env.VITE_DEV_SERVER_URL ?? ''
 /** --self-test：无窗口启动，跑完自检打印结果然后退出（CI / 我验收用） */
 const SELF_TEST = process.argv.includes('--self-test')
-/** --screenshot：无窗口启动，截一张图存到 data/ 然后退出 */
-
 const SCREENSHOT = process.argv.includes('--screenshot')
 /** 两个特殊模式都要跳过单实例锁，否则会被正在看的那个窗口拦住 */
 const HEADLESS = SELF_TEST || SCREENSHOT
+
+/* 错误观察哨 → data/errors，只记录不改行为（看它：`npm run errors`）。headless 模式**不装**：
+   它俩跑的是真实数据目录，装了就等于把自检造的假错误写进用户数据。详见 error-observer.cjs 顶部。 */
+if (!HEADLESS) require('./core/error-observer.cjs').install()
+
 let mainWindow = null
 const streams = new Map()
 

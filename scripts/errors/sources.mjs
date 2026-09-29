@@ -252,3 +252,47 @@ export function scanSessions(dataDir, sinceMs) {
   }
   return { items, skipped, scanned }
 }
+
+/**
+ * 观察哨（`electron/core/error-observer.cjs` 写的）：一天一个 jsonl，一行一条。
+ * 和其它来源两个区别：① 它**已在内核分类过** → kind/needsUser/retryable 一并带出去，
+ * `scan()` 直接采信、不再重猜；② 重复发生的错被折成一行 + `repeat` 计数，原样带出去，
+ * 由 `aggregate()` 把数找回来（否则「刷了 1000 次」会被算成 10 次）。
+ */
+export function scanObserver(dataDir, sinceMs) {
+  const dir = path.join(dataDir, 'errors')
+  const items = []
+  const skipped = []
+  for (const file of listFiles(dir, '.jsonl')) {
+    const text = readIfFresh(file, sinceMs)
+    if (text === null) {
+      skipped.push(path.basename(file))
+      continue
+    }
+    for (const line of lines(text)) {
+      let o
+      try {
+        o = JSON.parse(line)
+      } catch {
+        continue
+      }
+      const ts = Date.parse(String(o.ts ?? '')) || sinceMs
+      if (ts < sinceMs) continue
+      const origin = String(o.source || 'kernel')
+      items.push({
+        source: 'observer',
+        ts,
+        kind: o.kind ? String(o.kind) : undefined,
+        needsUser: o.needsUser === true,
+        retryable: o.retryable === true,
+        hint: o.hint ? String(o.hint) : '',
+        repeat: Number(o.repeat) || 1,
+        message: String(o.message || '（观察哨记了一条没带消息的错误）'),
+        raw: String(o.raw || '').slice(0, 400) || line.slice(0, 400),
+        location: `${origin}:${o.location || '（未指明）'}`,
+        context: { origin, taskId: o.taskId || null, sessionId: o.sessionId || null, tool: o.tool || null },
+      })
+    }
+  }
+  return { items, skipped }
+}
