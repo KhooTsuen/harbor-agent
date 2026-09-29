@@ -21,6 +21,8 @@ const memory = require('./memory.cjs')
 const project = require('./project.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const promptStack = require('./prompt-stack.cjs')
+const machineEnv = require('./machine-env.cjs')
+const mcpHint = require('./mcp-hint.cjs')
 const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, workRules, BROWSER_GUIDE } = promptStack
 const contextBuilder = require('./context-builder.cjs')
 const conversationState = require('./conversation-state.cjs')
@@ -104,6 +106,9 @@ function currentTimeSection() {
  *
  * function calling 的 schema 里已经带了每个工具的描述，但**一句导航能省很多试错**：
  * 模型知道「有没有能读目录的工具」，就不会拿 shell 去凑。
+ *
+ * 分三块：内置工具 → 本地插件 → MCP 服务器（`mcp-hint.cjs`）。
+ * 后两块都是「这里有个入口，细节在 schema 里」，不重复写参数。
  */
 function toolsSection() {
   const builtin = tools.ALL.map((t) => `- \`${t.name}\`：${t.description.split('。')[0]}。`)
@@ -117,6 +122,9 @@ function toolsSection() {
     builtin.push('\n【本地插件（装在 data/plugins/ 下，各自描述为准）】')
     builtin.push(pluginList)
   }
+  /* MCP 服务器：连上了才写，免得新对话一开始就列一堆连不上的名字 */
+  const remote = mcpHint.live()
+  if (remote) builtin.push(remote)
   return builtin.join('\n')
 }
 
@@ -230,6 +238,10 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     responseDepth: threadSettings.responseDepth ?? config.assistant.responseDepth ?? 'standard',
     /* 时间 / 系统 / 工作目录 / 文件访问范围 */
     environment: environmentSection({ workdir, assistantName: config.assistant.name }),
+    /* 这台机器上有什么：shell 是 cmd.exe、装了哪些命令、哪些没装。
+       内容由 machine-env.cjs 启动时探一次存住（`main.cjs` 里 warm）——
+       所以这里只读缓存，不 spawn 进程。 */
+    machineEnv: machineEnv.section(),
     relevantMemory: assembled.systemContext.memory,
     projectInstructions: assembled.systemContext.project,
     /* 技能与工具清单：模型得看得到「手边有什么」；

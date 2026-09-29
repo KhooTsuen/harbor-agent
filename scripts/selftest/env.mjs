@@ -32,6 +32,9 @@ const fsHandler = require(join(ROOT, 'electron/handlers/fs.cjs'))
 const llmCore = require(join(ROOT, 'electron/core/llm.cjs'))
 const redactCore = require(join(ROOT, 'electron/core/redact.cjs'))
 const promptStackCore = require(join(ROOT, 'electron/core/prompt-stack.cjs'))
+const machineEnvCore = require(join(ROOT, 'electron/core/machine-env.cjs'))
+const mcpHintCore = require(join(ROOT, 'electron/core/mcp-hint.cjs'))
+const contextDiagCore = require(join(ROOT, 'electron/core/context-diag.cjs'))
 const conversationStateCore = require(join(ROOT, 'electron/core/conversation-state.cjs'))
 const contextBuilderCore = require(join(ROOT, 'electron/core/context-builder.cjs'))
 const modeRouterCore = require(join(ROOT, 'electron/core/mode-router.cjs'))
@@ -143,6 +146,9 @@ export {
   llmCore,
   redactCore,
   promptStackCore,
+  machineEnvCore,
+  mcpHintCore,
+  contextDiagCore,
   conversationStateCore,
   contextBuilderCore,
   modeRouterCore,

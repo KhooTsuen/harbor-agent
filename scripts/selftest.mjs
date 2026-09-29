@@ -127,6 +127,7 @@ import { run as errorObserverGroup } from './selftest/groups/89-error-observer.m
 import { run as errorReaderGroup } from './selftest/groups/90-error-reader.mjs'
 import { run as switchWiringGroup } from './selftest/groups/91-switch-wiring.mjs'
 import { run as roundTranscriptGroup } from './selftest/groups/92-round-transcript.mjs'
+import { run as machinePromptGroup } from './selftest/groups/93-machine-prompt.mjs'
 
 const GROUPS = [
   basics,
@@ -220,6 +221,7 @@ const GROUPS = [
   browserWaitGroup,
   errorObserverGroup,
   errorReaderGroup,
+  machinePromptGroup,
 ]
 
 async function main() {

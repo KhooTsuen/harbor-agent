@@ -22,6 +22,7 @@ const { DIRS } = require('./paths.cjs')
 const STABLE = [
   'coreIdentity',
   'environment',
+  'machineEnv',
   'conversationPolicy',
   'userPreferences',
   'projectInstructions',

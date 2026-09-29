@@ -248,10 +248,10 @@ if (!gotLock) {
       log.warn(`自动备份失败：${error instanceof Error ? error.message : error}`)
     }
 
-    /* MCP 后台启动：要 spawn 子进程并等握手（最多 20s），不能阻塞窗口显示 */
-    void require('./core/mcp.cjs')
-      .boot(config)
-      .then(() => log.info('MCP 初始化完成'))
+    /* MCP 后台启动：要 spawn 子进程并等握手（最多 20s），不能阻塞窗口显示。
+       机器环境探测同理（为什么这么设计见 machine-env.cjs 的文件头）。 */
+    void require('./core/mcp.cjs').boot(config).then(() => log.info('MCP 初始化完成'))
+    void require('./core/machine-env.cjs').warm()
     pluginWatcher.install({ send }) // 插件热插拔：监听 data/plugins/，增删自动重扫 + 通知前端
     imageHandler.register({ send }) // 生图出图后：落盘 + 写会话 + 通知前端（见 handlers/image.cjs）
     /* token 优化：启动预热（默认关；config.cache.prewarm=true 才发一次「只带稳定前缀」的请求） */

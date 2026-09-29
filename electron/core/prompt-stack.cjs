@@ -119,8 +119,12 @@ const BROWSER_GUIDE = [
  * 为什么值得维护这个数字：提示词就是**代码**，改一句话行为就可能变，但它的改动
  * 只在 CHANGELOG 里留痕、代码里没有别的痕迹。记进台账之后，
  * 「同一个任务为什么前后表现不一样」才有得追 —— 先看 promptVersion 变没变。
+ *
+ * 变动史：
+ *   /1 → /2 —— 加 `machineEnv` 层（「这台机器上有什么」：shell 是 cmd.exe、
+ *              哪些命令装了、哪些没装）；`tools` 层同时补了 MCP 服务器清单。
  */
-const VERSION = 'prompt-stack/1'
+const VERSION = 'prompt-stack/2'
 
 /*
  * 层的顺序 = 模型看到的顺序。
@@ -142,6 +146,8 @@ const ORDER = [
    */
   'coreIdentity',
   'environment',
+  /* 机器环境（shell 是哪个、装了哪些命令）：内容整个运行期间不变，属于稳定区 */
+  'machineEnv',
   'conversationPolicy',
   'userPreferences',
   'projectInstructions',
@@ -186,6 +192,7 @@ function buildLayers(input = {}) {
       `你是 ${assistantName}，一个运行在用户本机的个人 AI 助手。回答要准确、直接、可恢复。`,
     ),
     layer('environment', 'Environment', input.environment),
+    layer('machineEnv', 'This Machine', input.machineEnv),
     layer(
       'conversationPolicy',
       'Conversation Policy',
