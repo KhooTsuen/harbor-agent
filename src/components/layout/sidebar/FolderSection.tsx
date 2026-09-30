@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ChevronDown, FolderClosed, MoreHorizontal, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, FileText, FolderClosed, MoreHorizontal, Plus, Trash2 } from 'lucide-react'
 import type { Thread } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
 import { folderAccentOf, folderHoverTitle, folderPathHint } from '@/constants/folders'
+import { projectRulesOpen } from '@/lib/projectRulesApi'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem, Popover } from '@/components/ui/Popover'
@@ -90,6 +91,18 @@ export function FolderSection({
     })
   }
 
+  /*
+   * 编辑项目规则：打开**这个文件夹那个目录**里的 `.harbor/rules.md`；
+   * 没有就先按骨架建一个（只读加载永远不建文件，建文件只发生在这一下点击之后）。
+   */
+  function editRules(): void {
+    setMenuOpen(false)
+    void (async () => {
+      const result = await projectRulesOpen(project.path, true)
+      if (!result?.ok) showToast('error', '打不开项目规则', result?.error || '内核没响应')
+    })()
+  }
+
   return (
     <div className="pb-0.5">
       <div className="group flex items-center gap-1 rounded-small px-1.5 py-1 hover:bg-bg-hover">
@@ -156,6 +169,9 @@ export function FolderSection({
             </span>
           )}
         >
+          <MenuItem icon={<FileText size={13} />} onSelect={editRules}>
+            编辑项目规则
+          </MenuItem>
           <MenuItem icon={<Trash2 size={13} />} onSelect={confirmDelete}>
             删除文件夹
           </MenuItem>

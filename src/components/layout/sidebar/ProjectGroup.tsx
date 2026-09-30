@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
+  FileText,
   FolderClosed,
   MessageSquarePlus,
   MoreHorizontal,
@@ -16,6 +17,7 @@ import type { Project, Thread } from '@/types'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { projectRulesOpen } from '@/lib/projectRulesApi'
 import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem, Popover } from '@/components/ui/Popover'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -161,6 +163,19 @@ export function ProjectGroup({ project, threads, onDeleteThread, collapsed }: Pr
               }}
             >
               {project.archived ? '取消归档' : '归档'}
+            </MenuItem>
+            <MenuItem
+              icon={<FileText size={13} />}
+              onSelect={() => {
+                setMenuOpen(false)
+                void (async () => {
+                  const result = await projectRulesOpen(project.path, true)
+                  if (!result?.ok)
+                    showToast('error', '打不开项目规则', result?.error || '内核没响应')
+                })()
+              }}
+            >
+              编辑项目规则
             </MenuItem>
             <MenuItem
               icon={<Trash2 size={13} />}

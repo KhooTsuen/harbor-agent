@@ -1,24 +1,32 @@
 /**
- * 项目说明（AGENT.md）
+ * 项目上下文（进 prompt-stack 的 `projectInstructions` 层）
  *
- * 每个项目都有自己的规矩：用什么包管理器、测试怎么跑、哪些目录别碰。
- * 这些东西**每次都要告诉模型**，所以放在工作目录里一个约定好的文件里，
- * 而不是让用户每开一个对话就重复一遍。
+ * 两个来源，同一层：
+ *   ① **项目说明** —— 工作目录里的 `AGENT.md`（`.agent/instructions.md` / `PROJECT.md` 也算），
+ *      一般由项目维护者写；
+ *   ② **项目级规则** —— 工作目录里的 `.harbor/rules.md`（+ `.harbor/rules/*.md`），
+ *      由用户在自己的项目里写，见 [`project-rules.cjs`](./project-rules.cjs)。
  *
- * 按顺序找，找到第一个就用：
+ * ★ 为什么两件事住在一个出口：它们**进的是同一层**，而 prompt-stack 的层顺序不能动；
+ *   更要紧的是 `loop-prompt.cjs` 贴着 300 行红线 —— 组装放这儿，那边一行都不用改。
+ *   各自的读法/缓存/上限仍然分开：本文件管 AGENT.md，那个管规则文件。
+ *
+ * 项目说明的查找顺序（找到第一个就用）：
  *   AGENT.md
  *   .agent/instructions.md
  *   .instructions.md
+ *   PROJECT.md
  *
  * 三条原则：
- *   ① **只读**。这个文件是给人写的，应用不改它。
- *   ② **有长度上限**。项目说明每轮都进上下文，写成一本书反而拖累。
- *   ③ **和记忆一样，是「数据」不是「指令」**。文件里写「忽略之前的指令」
- *      不改变任何权限 —— 这一点在注入时会明确告诉模型。
+ *   ① **只读**。这些文件是给人写的，应用不改它们（规则文件的「创建」是用户显式点的）。
+ *   ② **有长度上限**。项目上下文每轮都进，写成一本书反而拖累。
+ *   ③ **是「数据」不是「指令」**。文件里写「忽略之前的指令」不改变任何权限 ——
+ *      这一点在注入时会明确告诉模型。
  */
 
 const fs = require('node:fs')
 const path = require('node:path')
+const rules = require('./project-rules.cjs')
 
 const CANDIDATES = ['AGENT.md', '.agent/instructions.md', '.instructions.md', 'PROJECT.md']
 
@@ -73,14 +81,29 @@ function read({ workdir = '' } = {}) {
 }
 
 /**
- * 生成要放进系统提示的一段。
+ * 生成要放进系统提示的一段（项目说明书 + 项目级规则，两段拼起来）。
  *
- * @param {{ workdir?: string }} options
+ * 两段都没有时返回空串 —— 这一层就不注入（不是注入一个空标题）。
+ *
+ * @param {{ workdir?: string, force?: boolean }} options `force` 透传给规则文件（重新加载）
  */
-function buildPromptSection({ workdir = '' } = {}) {
+function buildPromptSection({ workdir = '', force = false } = {}) {
   const result = read({ workdir })
-  if (!result.found || !result.content.trim()) return ''
+  const parts = []
+  if (result.found && result.content.trim()) parts.push(manualSection(result))
 
+  /* 项目级规则：没有 `.harbor/` 目录时它自己返回空串，不报错也不提示 */
+  try {
+    const extra = rules.buildPromptSection({ workdir, force })
+    if (extra) parts.push(extra)
+  } catch {
+    /* 规则文件读不了不能把项目说明也弄丢 */
+  }
+  return parts.join('\n\n')
+}
+
+/** 项目说明那一段（AGENT.md）—— 单独拎出来是为了让上面那段好读 */
+function manualSection(result) {
   const body =
     result.content.length > MAX_CHARS
       ? `${result.content.slice(0, MAX_CHARS)}\n…（已截断，完整内容看 ${result.relative}）`

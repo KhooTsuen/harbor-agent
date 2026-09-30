@@ -1,6 +1,7 @@
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Row, SectionTitle } from '../parts'
+import { ProjectRulesRow } from './ProjectRulesRow'
 import { SkillPinRow } from './SkillPinRow'
 import { TemperaturePresetRow } from './TemperaturePresetRow'
 
@@ -46,6 +47,9 @@ export function ThreadSettingsTab() {
         globalTemperature={globalTemperature}
         onPick={(value) => update(thread.id, { temperature: value })}
       />
+
+      {/* 项目级规则（<工作目录>/.harbor/rules.md）：本项目所有对话都遵守，见 core/project-rules.cjs */}
+      <ProjectRulesRow />
 
       {(
         [

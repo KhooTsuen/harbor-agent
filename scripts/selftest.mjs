@@ -131,6 +131,7 @@ import { run as machinePromptGroup } from './selftest/groups/93-machine-prompt.m
 import { run as dataDoctorGroup } from './selftest/groups/94-data-doctor.mjs'
 import { run as runStatsGroup } from './selftest/groups/95-run-stats.mjs'
 import { run as replayRiskGroup } from './selftest/groups/96-replay-risk.mjs'
+import { run as projectRulesGroup } from './selftest/groups/97-project-rules.mjs'
 
 const GROUPS = [
   basics,
@@ -228,6 +229,7 @@ const GROUPS = [
   dataDoctorGroup,
   runStatsGroup,
   replayRiskGroup,
+  projectRulesGroup,
 ]
 
 async function main() {

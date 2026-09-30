@@ -1,8 +1,6 @@
 /**
- * 预加载脚本 —— 主进程与渲染层之间唯一的桥
- *
- * 原则：**白名单**。渲染层能调什么，全在这个文件里列清楚，
- * 不做「暴露整个 ipcRenderer」那种偷懒写法。
+ * 预加载脚本 —— 主进程与渲染层之间唯一的桥。原则：**白名单** ——
+ * 渲染层能调什么全在这个文件里列清楚，不做「暴露整个 ipcRenderer」那种偷懒写法。
  */
 
 const { contextBridge, ipcRenderer } = require('electron')
@@ -14,12 +12,10 @@ const EVENTS = ['chat:event']
    ★ 所有 IPC 都从 `call()` 过 —— 唯一出入口。这样「界面用了哪个功能」不用逐个埋点：
    现有通道全在网里，以后新加的也自动被记上。只报通道名/成败/耗时，**不报参数**。
 
-   ★★ 必须留在**本文件**里：main.cjs 开的是 `sandbox: true`，沙箱化的 preload
-     **不允许 require 自己的模块** —— 拆到兄弟文件那次 require 一抛，整个 preload
-     作废（`window.workbench` 不存在、界面 IPC 全死）。真机探针逮到的。
+   ★★ 必须留在**本文件**里：main.cjs 开的是 `sandbox: true`，沙箱化的 preload **不允许 require 自己的模块** ——
+     拆到兄弟文件那次 require 一抛，整个 preload 作废（`window.workbench` 不存在、界面 IPC 全死）。真机探针逮到的。
    ══════════════════════════════════════════════════════════════ */
-const stampNow = () =>
-  (typeof performance !== 'undefined' ? performance.now() : Date.now())
+const stampNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
 function report(entry) {
   try {
@@ -52,9 +48,8 @@ function call(channel, ...args) {
 }
 
 /**
- * 订阅一条主进程推来的事件，返回退订函数。
- * 抽出来是因为下面 `on*` 里有 5 处**一字不差**（抄五遍之后「退订返回了吗」得逐个看）；
- * 多通道且每个通道要包形状的（PTY）仍然自己写，不硬套。
+ * 订阅一条主进程推来的事件，返回退订函数。抽出来是因为下面 `on*` 里有 5 处**一字不差**
+ * （抄五遍之后「退订返回了吗」得逐个看）；要包形状的（PTY）仍然自己写，不硬套。
  */
 function subscribe(channel, callback) {
   const handler = (_event, payload) => callback(payload)
@@ -143,6 +138,11 @@ const api = {
   fsReveal: (target) => call('fs:reveal', target),
   fsPickAndRead: () => call('fs:pickAndRead'),
   pickImageAsDataUrl: () => call('fs:pickImageAsDataUrl'),
+
+  /* 项目级规则（<工作目录>/.harbor/rules.md）：状态 / 重新加载 / 打开（create=true 时先建骨架再打开） */
+  projectRulesStatus: (dir) => call('projectRules:status', { dir }),
+  projectRulesReload: (dir) => call('projectRules:reload', { dir }),
+  projectRulesOpen: (payload) => call('projectRules:open', payload),
 
   shellCwd: () => call('shell:cwd'),
   shellReset: () => call('shell:reset'),
