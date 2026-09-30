@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ChangeSetDiff, ChangeSetSummary, TaskRecord, TaskRecoveryItem } from '@/types/safety'
+import type { RollbackResult } from '@/lib/checkpointRollbackApi'
 import { changesetDiff, changesetList, taskList, taskRecovery } from '@/lib/safetyApi'
 import { useAppStore } from './useAppStore'
 
@@ -15,6 +16,21 @@ import { useAppStore } from './useAppStore'
      · 右栏「任务」 → 全局任务中心（横幅已整个并到这里）
    ═══════════════════════════════════════════════════════════════ */
 
+/**
+ * AG-052：刚刚那次「撤销检查点之后的改动」。
+ *
+ * 存起来而不是只弹个 toast —— 用户要能回审查面板**对着看**这次回退动了什么
+ * （需求原话：「撤销后在审查面板能看到这次回退的记录」）。
+ * 只活在本次会话里：磁盘上的真相是改动事务的 `rolledBackAt` / 任务台账，
+ * 这里不另存一份历史（那是第二份真相）。
+ */
+export interface RollbackRecord {
+  taskId: string
+  checkpointLabel: string
+  at: number
+  result: RollbackResult
+}
+
 interface TaskState {
   /** AG-028：全局任务中心的唯一前端快照（后端 task.cjs 仍是唯一真相源） */
   tasks: TaskRecord[]
@@ -29,8 +45,11 @@ interface TaskState {
    * 各拉一份不如一次拉齐（免得两个地方看到不同的「最近一次改动」）。
    */
   diff: ChangeSetDiff | null
+  /** 刚刚那次回退（AG-052）—— 审查面板顶部那条记录；null = 这次会话还没撤过 */
+  lastRollback: RollbackRecord | null
   loaded: boolean
   refresh: (workdir?: string) => Promise<void>
+  noteRollback: (record: RollbackRecord | null) => void
 }
 
 export const useTaskStore = create<TaskState>((set) => ({
@@ -38,7 +57,9 @@ export const useTaskStore = create<TaskState>((set) => ({
   unfinished: [],
   changesets: [],
   diff: null,
+  lastRollback: null,
   loaded: false,
+  noteRollback: (record) => set({ lastRollback: record }),
   /*
    * 一次刷新同时拿「全量任务」「可恢复任务」「可撤销改动」。
    * 不从 tasks 在前端推导 unfinished：恢复清单还带 envChanged / canResume，

@@ -24,6 +24,7 @@ import { useBrowseBridge } from './browser/useBrowseBridge'
 import { ArtifactsPanel } from '@/components/chat/ArtifactsPanel'
 import { StatePanel } from '@/components/chat/StatePanel'
 import { TaskCenter } from '@/components/chat/TaskCenter'
+import { RollbackRecord } from '@/components/chat/rollback/RollbackRecord'
 import { ErrorsPanel } from './ErrorsPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -204,6 +205,8 @@ export function RightPanel() {
       <div className="relative flex min-h-0 flex-1 flex-col">
         {activeRightTab === 'diff' ? (
           <div className="flex min-h-0 flex-1 flex-col">
+            {/* AG-052：刚刚撤过一次的话，顶上留一条记录（没撤过就什么都不占） */}
+            <RollbackRecord />
             {diffs.length > 0 ? (
               <>
                 <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">

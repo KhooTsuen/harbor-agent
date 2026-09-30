@@ -15,11 +15,14 @@ const log = require('../core/log.cjs')
 function register({ ipcMain }) {
   ipcMain.handle('changeset:rollbackTo', (_event, payload = {}) => {
     const taskId = String(payload?.taskId ?? '')
-    const result = changeset.rollbackTo(taskId, payload?.checkpointId)
-    if (result.ok) {
+    /* dryRun = 界面确认框的「影响预览」：只算会撤哪些、一下都不动盘（见内核头注释边界④） */
+    const dryRun = payload?.dryRun === true
+    const result = changeset.rollbackTo(taskId, payload?.checkpointId, { dryRun })
+    if (result.ok && !dryRun) {
       log.info(
         `用户回退到检查点：任务 ${taskId}，撤了 ${result.changesets.length} 个事务` +
-          `（恢复 ${result.restored.length} 个文件），${result.skipped.length} 个文件因改动更早而留着`,
+          `（恢复 ${result.restored.length} 个文件），${result.skipped.length} 个文件因改动更早而留着` +
+          (result.failed.length > 0 ? `，${result.failed.length} 个没恢复成功` : ''),
       )
     }
     return result

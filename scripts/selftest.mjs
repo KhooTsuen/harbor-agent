@@ -132,6 +132,7 @@ import { run as dataDoctorGroup } from './selftest/groups/94-data-doctor.mjs'
 import { run as runStatsGroup } from './selftest/groups/95-run-stats.mjs'
 import { run as replayRiskGroup } from './selftest/groups/96-replay-risk.mjs'
 import { run as projectRulesGroup } from './selftest/groups/97-project-rules.mjs'
+import { run as rollbackPreviewGroup } from './selftest/groups/98-rollback-preview.mjs'
 
 const GROUPS = [
   basics,
@@ -230,6 +231,7 @@ const GROUPS = [
   runStatsGroup,
   replayRiskGroup,
   projectRulesGroup,
+  rollbackPreviewGroup,
 ]
 
 async function main() {

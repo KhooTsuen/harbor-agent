@@ -8,6 +8,7 @@ import { BranchBreadcrumb } from './branch/BranchBreadcrumb'
 import { LaunchScreen } from './launch/LaunchScreen'
 import { MessageSkeleton } from './MessageSkeleton'
 import { ScrollGuardContext } from './scrollGuard'
+import { CheckpointRollbackBar } from './rollback/CheckpointRollbackBar'
 
 /* ══════════════════════════════════════════════════════════════
    MessageList
@@ -173,6 +174,13 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
                 <MessageItem key={message.id} message={message} fork={forkMap.get(message.id)} />
               ))}
             </ScrollGuardContext.Provider>
+            {/*
+              AG-052：对话结束后下方那个「撤销检查点之后的改动」。
+              挂在消息末尾而不是输入框上方：任务相关的东西不占输入框那一排
+              （AG-030 刚把噪音收拾干净，别又加一层）。它自己判断该不该出
+              （任务停了、且有检查点才渲染）。
+            */}
+            <CheckpointRollbackBar conversationId={conversationId} />
           </div>
         </div>
 

@@ -76,9 +76,12 @@
 - ✅ **回滚**：检查点（AG-035 自动 checkpoint）+ 改动事务整批撤
 - ✅ **终止**：任务中心可放弃（`task:purge` / `removeMany`）
 - ✅ **暂停时显示检查点与已完成步骤**：任务详情里的检查点列表 + 计划勾选
-- ✅ **「回到某个检查点」**（2026-09-24 补记，v1.12.0 / AG-045）：`changeset:rollbackTo`
-  撤这个点**之后**的改动（判据是时间戳，界面请传 `at`）。整批撤（「撤销这些改动」）仍在，
-  两者分工：一个回到某一步，一个整轮撤销
+- ✅ **回退：撤检查点之后的改动**（2026-09-24 加内核 / AG-045，2026-10-01 补界面入口 / AG-052）：
+  `changeset:rollbackTo` 撤这个点**之后**的改动（判据是时间戳，界面请传 `at`）。整批撤（「撤销这些改动」）仍在，
+  两者分工：一个回到某一步，一个整轮撤
+  ⚠️ **名字别写成「回到某个检查点」** —— 它只撤「这个点之后**才第一次**被改的文件」，
+  多轮反复改同一个文件时那个文件撤不动（快照只有改前镜像）。界面文案、确认框、
+  审查面板的记录都按这个口径写销
 - ✅ **手动改文件后重新读取**：`task.recovery` 算 `envChanged`，启动时提示
   「其中 N 条要动的文件已经变过了」（`useAppBootstrap.ts`），**不依赖缓存**（AG-019 避免重复读取是缓存，但有失效判定）
 
@@ -208,6 +211,7 @@
 | 项 | 产物 | 自检组 |
 |---|---|---|
 | **回退到指定检查点**（AG-045） | `changeset-rollback.cjs` + `changeset:rollbackTo` | `66-rollback-to`（43 项） |
+| **上条的界面入口 + 干跑预览 + 中文失败原因**（AG-052） | `checkpointRollbackApi.ts` + `rollback/CheckpointRollbackBar.tsx` + `RollbackRecord.tsx` | `98-rollback-preview`（40 项）+ 真机 `tmp/verify-rollback-ui.cjs`（19 项） |
 | **Artifact 内核落盘 + 版本化**（AG-046） | `core/artifact.cjs` + `handlers/artifact.cjs` + `artifactApi.ts` | `67-artifact` |
 | **Skill 权限声明**（AG-047） | `core/skill-permissions.cjs` + 设置页展示 | `68-skill-perms` |
 

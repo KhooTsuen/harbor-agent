@@ -229,6 +229,8 @@ export type PermissionKind =
   | 'clear-data'
   /* 任务面板里「清空这一组」的记录 */
   | 'clear-tasks'
+  /* AG-052：撤销检查点之后的改动（破坏性，要二次确认 + 影响预览） */
+  | 'rollback-checkpoint'
 
 export interface PermissionRequest {
   kind: PermissionKind
