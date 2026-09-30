@@ -123,17 +123,26 @@ function shouldVerify({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
   if (!task || task.status !== 'running') return { continue: false, seen }
 
   const steps = Array.isArray(task.steps) ? task.steps : []
-  const writes = steps.filter((s) => WRITE_TOOLS.has(String(s.tool ?? '')) && s.ok !== false)
+  const isWrite = (s) => WRITE_TOOLS.has(String(s.tool ?? '')) && s.ok !== false
+  const writes = steps.filter(isWrite)
   if (writes.length === 0) return { continue: false, seen }
-  const lastWriteAt = Number(writes[writes.length - 1].at) || 0
-  const ranAfter = steps.some(
-    /*
-     * `>=` 而不是 `>`：写文件和跑命令落在**同一毫秒**时（自动化里真会出现），
-     * 用 `>` 会把它当成「没验证过」而顶回去。这里宁可宽松 —— 误拦会白烧一轮、
-     * 还会让用户觉得莫名其妙，而漏拦只是少提醒一次。
-     */
-    (s) => String(s.tool ?? '') === 'run_shell' && Number(s.at) >= lastWriteAt,
-  )
+
+  /*
+   * 「最后写的那次之后，跑没跑过命令」—— 比的是**台账里的先后**，不是 `at` 的数值。
+   *
+   * `at` 是 `Date.now()`（task-notes.cjs 记的墙钟），自动化里三笔账（写 / 跑 / 再写）
+   * 能挤进**同一毫秒**：那时 `run_shell.at >= lastEdit.at` 为真，门禁就以为
+   * 「改完验证过了」直接放行 —— 2026-09-30 CI 上正是这么红了一项
+   * （本地机器慢，三笔账差 2ms，从没撞上；所以这毛病本地永远看不见）。
+   *
+   * 顺序是台账自己给的事实，不受时钟精度影响。`steps` 被截到最近 200 条也不影响
+   * 相对先后（`slice` 保序）。
+   */
+  let lastWriteIdx = -1
+  steps.forEach((s, i) => {
+    if (isWrite(s)) lastWriteIdx = i
+  })
+  const ranAfter = steps.slice(lastWriteIdx + 1).some((s) => String(s.tool ?? '') === 'run_shell')
   if (ranAfter) return { continue: false, seen }
 
   /* 刹车二：同一个「改了 N 次」顶过一次还是没收尾 → 放行，别把人卡死在这儿 */

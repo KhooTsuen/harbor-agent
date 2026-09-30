@@ -1,4 +1,4 @@
-import { join, readFileSync, require, ROOT } from '../env.mjs'
+import { join, readFileSync, require, ROOT, disposeTasks } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
@@ -95,6 +95,25 @@ export async function run() {
     '已完成的任务不再拦（不是 running 就不管）',
     taskSteering.shouldVerify({ taskId: task.id, seen: {} }).continue === false,
   )
+
+  /* ★ 2026-09-30 CI 上真红过这一项：判据原来拿 `at`（墙钟）比大小，而「写 / 跑 / 再写」
+     三笔账在快机器上能挤进**同一毫秒**，于是 `run_shell.at >= lastEdit.at` 为真，
+     门禁以为「改完验证过了」。本地三笔账差 2ms，从没撞上 —— 所以这里把时钟冻住复现。 */
+  const sameMs = taskCore.create({ goal: '三笔账挤在同一毫秒', sessionId: 'selftest-switch' })
+  const realNow = Date.now
+  const frozen = realNow()
+  Date.now = () => frozen
+  taskCore.addStep(sameMs.id, { tool: 'edit_file', ok: true, summary: '改了 a.ts' })
+  taskCore.addStep(sameMs.id, { tool: 'run_shell', ok: true, summary: 'npm test' })
+  taskCore.addStep(sameMs.id, { tool: 'edit_file', ok: true, summary: '又改了' })
+  Date.now = realNow
+  check(
+    '★ 三笔账落在同一毫秒里也认得出先后（判据只认台账顺序，不认墙钟）',
+    taskSteering.shouldVerify({ taskId: sameMs.id, seen: {} }).continue === true,
+  )
+
+  /* 建过的测试任务删干净：以前这一组不留人，`data/tasks/` 里堆了几百条 selftest* */
+  disposeTasks([task.id, sameMs.id])
 
   /* ── streamOutput：落点在渲染层 ── */
   group('开关接线 / streamOutput')
