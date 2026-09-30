@@ -14,8 +14,9 @@ import { check, group } from '../harness.mjs'
 
    ③ 是重点：一个「点上去没反应」的撤销按钮，比没有按钮更糟。
 
-   ⚠️ 本组**故意没有注册进 `scripts/selftest.mjs`**（按任务要求），
-      单独跑法见交付说明。register 那一段用假 ipcMain 真跑一遍安全 handler ——
+   ⚠️ 本组曾写「故意没有注册进 `scripts/selftest.mjs`」—— **那是旧的**。
+      2026-09-30 核对：`scripts/selftest.mjs` 已经 import 并登记它（跑全链就会跑到）。
+      留意它里面那一段 register：用假 ipcMain 真跑一遍安全 handler ——
       纯文本断言挡不住「把注册那行注释掉」，而 channelsMissing 只会在打包后才报。
    ══════════════════════════════════════════════════════════════ */
 

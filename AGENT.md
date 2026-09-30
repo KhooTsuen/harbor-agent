@@ -74,6 +74,11 @@
 9. 需要**新增或改动 IPC 通道**（必须同步 `electron/ipc-channels.cjs` 的 `EXPECTED_CHANNELS`）
 10. 需要动**权限 / 安全模型**：`risk.cjs`、`capability.cjs`、`credentials.cjs`、`navigation-policy.cjs`、
     `net-policy.cjs`、`redact.cjs`
+11. 需要**给某个实体加字段或加状态** —— 先回答「这个状态属于哪个实体」
+    （任务 / 一次执行 / 回合 / 工具调用，见 [`docs/Runtime状态机.md`](docs/Runtime状态机.md)），
+    并确认没有同义的字段/状态已经在别处了（**重复状态比缺状态更难收**）
+12. 需要**往系统提示里新增一类数据** —— 先说清它的预算、超限时怎么截断、
+    多模态内容怎么保持完整（图片被 `JSON.stringify` 切坏过一次，见 `context-builder.cjs` 的文件头）
 
 停下来不等于等一整天：写清结论和选项，让用户一句话就能拍板。
 

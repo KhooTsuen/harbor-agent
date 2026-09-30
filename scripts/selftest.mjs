@@ -128,6 +128,9 @@ import { run as errorReaderGroup } from './selftest/groups/90-error-reader.mjs'
 import { run as switchWiringGroup } from './selftest/groups/91-switch-wiring.mjs'
 import { run as roundTranscriptGroup } from './selftest/groups/92-round-transcript.mjs'
 import { run as machinePromptGroup } from './selftest/groups/93-machine-prompt.mjs'
+import { run as dataDoctorGroup } from './selftest/groups/94-data-doctor.mjs'
+import { run as runStatsGroup } from './selftest/groups/95-run-stats.mjs'
+import { run as replayRiskGroup } from './selftest/groups/96-replay-risk.mjs'
 
 const GROUPS = [
   basics,
@@ -222,6 +225,9 @@ const GROUPS = [
   errorObserverGroup,
   errorReaderGroup,
   machinePromptGroup,
+  dataDoctorGroup,
+  runStatsGroup,
+  replayRiskGroup,
 ]
 
 async function main() {

@@ -80,6 +80,14 @@ describe('开屏 / 接线钉子', () => {
     expect(src).toContain("taskUpdate(task.id, { status: 'cancelled' })")
   })
 
+  it('恢复卡：有「结果不明」的操作时要说出来（别让人直接重跑）', () => {
+    const src = read('src/components/chat/launch/ResumeCard.tsx')
+    expect(src).toContain('task.replay?.count')
+    expect(src).toContain('别直接重跑')
+    /* 颜色走语义表，不自己写色值 */
+    expect(src).toContain("colorOf('warning')")
+  })
+
   it('航道畅通：只认 kind=success + outcome.tests=passed（真实退出码）', () => {
     const src = read('src/components/layout/HarborEggs.tsx')
     expect(src).toContain("outcome.tests !== 'passed'")

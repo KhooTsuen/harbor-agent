@@ -1,7 +1,7 @@
 {
   "name": "harbor-agent",
   "private": true,
-  "version": "1.20.0-beta.34",
+  "version": "1.20.0-beta.35",
   "description": "本地优先的个人 AI Agent 工作台：任务台账、计划与进度、可恢复、可暂停、数据全在本机",
   "license": "MIT",
   "type": "module",
@@ -28,6 +28,8 @@
     "check:lines": "node tools/line-limit.mjs",
     "check:rules": "node scripts/check-rules.mjs",
     "errors": "node scripts/errors.mjs",
+    "doctor": "node scripts/data-doctor.mjs",
+    "stats": "node scripts/run-stats.mjs",
     "preflight": "node scripts/preflight.mjs",
     "verify": "npm run typecheck && npm run lint && npm run check:format && npm run check:lines && npm run test:unit && npm test && npm run build",
     "acceptance": "node tools/acceptance.mjs"

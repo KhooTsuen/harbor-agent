@@ -1,9 +1,31 @@
 # 改造进度（对照任务书逐条）
 
-> 最后更新：2026-09-23 · 版本 1.10.1（逐条复核，见下）
+> 最后更新：2026-09-30 · 版本 1.20.0-beta.34（逐条复核，见下）
 >
 > 这份文档保留早期 P0/P1 改造记录；当前产品体验优化见下方「当前优化状态」。
 > **原始记录不改**，复核结论写在这一节 —— 正文里被推翻的条目会就地标出来。
+
+---
+
+## ★ 复核声明（2026-09-30 · v1.20.0-beta.34）
+
+上一节（09-23）里「仍然成立、确认没做」的 8 条，**到这一版已经有 7 条做掉了**。
+下面同样是逐条对着代码核的 —— 和上一节冲突时，**以本节为准**。
+
+| 09-23 写「没做」的 | 现在（证据） | 结论 |
+|---|---|---|
+| 定时任务 / 后台运行 | `core/schedule-store.cjs` + `handlers/schedules.cjs` + 设置里的定时页；自检组 `72-schedule` | **已做** |
+| Artifact 落盘 + 版本化 | `core/artifact.cjs`：append-only 版本（`v1.md` / `v2.md`）+ `taskId`/`sessionId` 归属；自检组 `67-artifact` | **已做** |
+| 会话内容加密 | `core/session-crypto.cjs`（AES-GCM，密钥由 safeStorage 派生）+ 幂等迁移；自检组 `74-session-crypto` | **已做** |
+| 多项目隔离模型（Projects） | `core/projects.cjs` + `handlers/projects.cjs` + 侧栏对话文件夹；自检组 `75-projects` | **已做** |
+| 统一「导出全部 / 删除全部」面板 | `settings/panels/DataPortPanel.tsx`（删除要手打词二次确认）+ `DataTab.tsx` 的「导出全部数据」 | **已做** |
+| Provider 能力探测表 | `core/provider-capabilities.cjs`（维度表 + 覆盖优先级，不做 `if model.includes(...)` 猜）；自检组 `70-provider-caps` | **已做** |
+| Skill 声明式权限 | `core/skill-permissions.cjs`（声明会读进提示，并明说「不是系统强制」）；自检组 `68-skill-perms` | **已做** |
+| MCP 网络策略无内核级强制 | 仍然如此 —— 这是**有意保留的诚实标注**，不是待办（见 `docs/安全模型.md` 的「没做什么」） | 维持 |
+
+顺带两处过期（已在同日改掉）：`scripts/selftest/groups/64-approval-center.mjs` 文件头曾写
+「本组故意没有注册进 selftest.mjs」，实际 `selftest.mjs` 已注册；
+`docs/improvement-checklist.md` 写「真模型跑 5 类任务」，`tools/acceptance-cases.mjs` 实际是 **T1–T8 共 8 类**。
 
 ---
 
@@ -163,15 +185,12 @@
 
 ## P2 / P3 —— 没做
 
-- Projects（项目级 workspace/memory/instructions 目录结构）—— **部分**：`AGENT.md` 已支持，但没有多项目隔离模型
-- Tasks 界面（按状态分组的看板）—— ✅ **已做**（本行原写「没做」是错的）：`RightPanel` 的「任务」标签 + `taskCenterModel.ts` 的 `TASK_GROUPS`
-- 定时任务 / 后台运行 —— 没做
-- 快捷键改键 —— ✅ **已做**（`SettingsModal` 的快捷键页能录制改键、会拒冲突。本文档此前写的「没做」是滞后的）
-- ~~预算控制~~ —— ✅ **已做**（0.24.0，`limits.cjs`，按 token 数，日/月限 + block/warn）
-- Skill 权限声明（需要 shell/网络/文件的声明式权限）—— **部分**：技能系统本身已落地（`core/skills.cjs` / `handlers/skills.cjs` / `SkillsTab.tsx`），只有「声明式权限」没做
-- Artifact 系统 —— **部分**：面板 + 从回答里抽代码块有了（`ArtifactsPanel.tsx` / `parseToolOutput.ts`），没有版本化/落盘
-- 数据加密（会话内容加密）—— 没做（只加密了密钥）
-- 导出/删除的分项 UI —— **部分**：导出会话/清空已有，审计/授权/任务都能清，但没有统一的「导出全部 / 删除全部」面板
+- 定时任务 / 后台运行 —— ✅ **已做**（本行原写「没做」是错的）：`core/schedule-store.cjs` + `handlers/schedules.cjs`，自检组 `72-schedule`
+- Artifact 系统 —— ✅ **已做**（本行原写「部分」是错的）：`core/artifact.cjs` 落盘 + 版本化，自检组 `67-artifact`
+- 数据加密（会话内容加密）—— ✅ **已做**（本行原写「没做」是错的）：`core/session-crypto.cjs`，自检组 `74-session-crypto`
+- 导出/删除的分项 UI —— ✅ **已做**（本行原写「部分」是错的）：`settings/panels/DataPortPanel.tsx` 的「导出全部 / 删除全部」
+- Skill 权限声明（需要 shell/网络/文件的声明式权限）—— ✅ **已做**（本行原写「部分」是错的）：`core/skill-permissions.cjs`，自检组 `68-skill-perms`
+- Projects（项目级 workspace/memory/instructions 目录结构）—— ✅ **已做**（本行原写「部分」是错的）：`core/projects.cjs`，自检组 `75-projects`
 - 向量记忆 / 语义搜索 / 语音 / 跨设备同步 / 移动端 / 插件市场 —— 没做
 
 ---

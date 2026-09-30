@@ -134,6 +134,12 @@ export type TaskRecoveryItem = TaskRecord & {
   /** 计划进度（内核现算的，免得前端再数一遍） */
   progress: { done: number; total: number; current: number }
   canResume: boolean
+  /**
+   * 「结果不明」的操作（动过、但不知道成没成）—— 带外部副作用的那种。
+   * 接着做之前要先看一眼现场：直接重跑同一条命令可能做出两份。
+   * 内核算的，见 `electron/core/task-intent.cjs` 的 `replayRisk`。
+   */
+  replay?: { count: number; risky: Array<{ tool: string; hash: string; at: number }>; note: string }
 }
 
 /* ── 台账的桥（主进程 <-> 渲染层）──

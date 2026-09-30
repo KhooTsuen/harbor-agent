@@ -151,6 +151,64 @@ function isPending(step) {
   return Boolean(step?.intent) && step?.completed !== true
 }
 
+/*
+ * 「重跑会不会做出两份」—— 有外部副作用的工具。
+ *
+ * 为什么要分一类：**读**操作重跑一百遍都没事（read_file / list_dir / search_web），
+ * 而写文件、跑命令、生图、浏览器动作、MCP 调用重跑可能做出**两份** ——
+ * 建两个 issue、发两次请求、覆盖掉用户后来的手改。
+ *
+ * 现在意图账只覆盖 `run_shell`（见 `beginShell`），别的工具还没接；
+ * 但「哪一类不能盲目重跑」这件事得有个**单一出处** —— 接了新工具时改这里一处。
+ */
+const REPLAY_UNSAFE = [
+  /^run_shell$/,
+  /^write_file$/,
+  /^edit_file$/,
+  /^generate_image$/,
+  /^browse/,
+  /^mcp__/,
+  /^remember$/,
+]
+
+/** 这个工具重跑会不会有副作用（判断依据只此一处，别处不要再写一份） */
+function isReplayUnsafe(tool) {
+  const name = String(tool ?? '')
+  return REPLAY_UNSAFE.some((pattern) => pattern.test(name))
+}
+
+/** 台账里「结果不明」的步骤（动过，但不知道成没成） */
+function pendingSteps(task) {
+  return (Array.isArray(task?.steps) ? task.steps : []).filter((step) => isPending(step))
+}
+
+/**
+ * 恢复前该提醒的那几条 —— 有副作用、且结果不明。
+ *
+ * ★ 意图里只存了命令**指纹**（不存原文，免得把用户的命令抄进台账），
+ *   所以这里给的是「工具 + 时间 + 指纹」，人话里也不假装知道当时跑的是什么。
+ *
+ * @returns {{ count: number, risky: Array<{tool: string, hash: string, at: number}>, note: string }}
+ */
+function replayRisk(task) {
+  const risky = pendingSteps(task)
+    .filter((step) => isReplayUnsafe(step.intent?.tool ?? step.tool))
+    .map((step) => ({
+      tool: String(step.intent?.tool ?? step.tool ?? ''),
+      hash: String(step.intent?.commandHash ?? ''),
+      at: Number(step.intent?.startedAt ?? step.at ?? 0),
+    }))
+  return {
+    count: risky.length,
+    risky,
+    note:
+      risky.length === 0
+        ? ''
+        : `有 ${risky.length} 条操作**结果不明** —— 它动过，但不知道成没成。` +
+          '接着做之前先看一眼现场（文件在不在、东西有没有建出来），别直接重跑同样的操作。',
+  }
+}
+
 /**
  * 一次 `run_shell` 的开场：算指纹 + 生成 stepId + 落意图，返回 stepId。
  *
@@ -189,6 +247,9 @@ module.exports = {
   markIntent,
   markCompleted,
   isPending,
+  isReplayUnsafe,
+  pendingSteps,
+  replayRisk,
   beginShell,
   endShell,
 }

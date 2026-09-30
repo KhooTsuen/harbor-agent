@@ -42,6 +42,8 @@ export function ResumeCard({
           const progress = taskProgress(task)
           const stopped = formatUpdated(task.pausedAt ?? task.updatedAt ?? 0)
           const envChanged = task.envChanged ?? []
+          /* 结果不明的操作：动过，但不知道成没成 —— 比「文件被动过」更要紧的一档 */
+          const replay = task.replay?.count ?? 0
           return (
             <div
               key={task.id}
@@ -58,6 +60,11 @@ export function ResumeCard({
                   {envChanged.length > 0 ? (
                     <span className="mt-0.5 block text-2xs" style={{ color: colorOf('warning') }}>
                       停手后有 {envChanged.length} 个改动过的文件被动过，继续前先看一眼
+                    </span>
+                  ) : null}
+                  {replay > 0 ? (
+                    <span className="mt-0.5 block text-2xs" style={{ color: colorOf('warning') }}>
+                      有 {replay} 条操作结果不明（动过、不知道成没成）：别直接重跑，先看一眼现场
                     </span>
                   ) : null}
                 </span>

@@ -20,6 +20,7 @@
 
 const taskOutcome = require('./task-outcome.cjs')
 const consistency = require('./task-consistency.cjs')
+const taskIntent = require('./task-intent.cjs')
 
 /** 只留文件名 —— 报告是给人扫的，整条路径太长 */
 function short(file) {
@@ -28,6 +29,13 @@ function short(file) {
     .filter(Boolean)
     .slice(-2)
     .join('/')
+}
+
+/** 时间戳 → 「几时几分」（报告里不需要秒；0 或不认识的值就写「时间没记」） */
+function whenText(at) {
+  const value = Number(at ?? 0)
+  if (!Number.isFinite(value) || value <= 0) return '时间没记'
+  return new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 const STATUS_TEXT = {
@@ -185,6 +193,19 @@ function diagnose(task) {
     `检查点：${checkpoints.length} 个${checkpoints.length ? `（最近：${checkpoints.at(-1).label}）` : ''}`,
   )
   out.push(`恢复过：${task.resumeCount ?? 0} 次`)
+
+  /*
+   * 结果不明的操作（动过、但不知道成没成）。
+   *
+   * 为什么要写进诊断：这是**唯一一类「没做成」和「已经做成了」分不出来**的情况，
+   * 而它恰恰最容易让人踩坑 —— 接着做的时候再跑一遍同一条命令，
+   * 可能就做出了两份（建两个 issue、发两次请求）。病历里不提，查的时候就得靠猜。
+   */
+  const replay = taskIntent.replayRisk(task)
+  if (replay.count > 0) {
+    out.push(`结果不明：${replay.count} 条（动过、不知道成没成 —— 别直接重跑）`)
+    for (const item of replay.risky.slice(-5)) out.push(`· ${item.tool} ${item.hash}（${whenText(item.at)}）`)
+  }
 
   /*
    * ②-3：同一件事跑过第二遍吗 —— 有就把两份事实并排摆出来。

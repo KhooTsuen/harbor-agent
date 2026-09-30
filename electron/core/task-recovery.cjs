@@ -15,6 +15,7 @@
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
+const taskIntent = require('./task-intent.cjs')
 
 /**
  * 计划进度：完成几条、共几条、当前停在第几条。
@@ -47,13 +48,15 @@ function scan({ workdir = '' } = {}) {
       const env = taskResume.checkEnvironment(task.id)
       /*
        * 原样带上任务记录（界面要拿 steps / plan / planVersions 渲染时间线和计划），
-       * 只**附加**三样它自己没有的：环境变了没、计划走到哪、能不能恢复。
+       * 只**附加**四样它自己没有的：环境变了没、计划走到哪、能不能恢复、
+       * 有没有「结果不明」的操作（动过但不知道成没成 —— 别直接重跑）。
        */
       return {
         ...task,
         envChanged: env.changed,
         progress: progressOf(task.plan),
         canResume: taskResume.canResume(task.id),
+        replay: taskIntent.replayRisk(task),
       }
     })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
