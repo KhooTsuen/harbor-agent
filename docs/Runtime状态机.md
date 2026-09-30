@@ -107,6 +107,44 @@ markCompleted() 返回（或抛错）之后：写 completed:true / ok / outcome 
 | 期间文件被别的东西改过 | `task.recovery` 的 `envChanged` | 启动时提示「其中 N 条要动的文件已经变过了」，**不依赖缓存** |
 | 上一轮有结果不明的命令 | `task-intent.isPending()` | 恢复前先问人，不静默重跑 |
 
+## 检查点恢复：怎么验（端到端）
+
+**回归测试脚本**：`tmp/verify-checkpoint-e2e.cjs`
+
+```bash
+E:\nodejs\node.exe tmp/verify-checkpoint-e2e.cjs
+```
+
+它自己建一个**隔离副本**（`tmp/tok/verify`）+ 本地假模型（脚本化 SSE），跑一个真任务、真落盘、
+真回退 —— 不花 token、不碰你自己的 `data/`。退出码恒为 0，**结论看输出**（13 项检查 + 发现清单）。
+
+**先记住三条前提事实**，否则很容易把「边界」当成 bug：
+
+1. **一个任务只有一个改动事务**（`data/changesets/<改动事务 id>/meta.json` 的 `taskId` 认得出来）——
+   不是每个检查点一个事务。
+2. **快照存的是「改前镜像」（pre-image）**，没有 post-image。文件名是序号（`0001.snap`），
+   真名在 `meta.files[].snap` 里（**别按原文件名去找快照文件**，找不到）。
+3. **检查点在「每轮改动完成」时记**（`tool-runner.cjs` / `loop-tools.cjs` 的「第 N 轮改动完成」、
+   `loop.cjs` 的「第 N 轮结束」）；回退靠元组的 `at`（时间）认人，**不靠下标**。
+
+**五个场景与期望**（`changesetRollbackTo(taskId, checkpointId)`）：
+
+| 场景 | 期望 |
+|---|---|
+| 检查点之后**首次**被改的文件 | 进 `restored`，内容回到 pre-image |
+| 检查点之后**新建**的文件 | 进 `removed`，磁盘上删掉 |
+| **检查点之前**动过、之后又动的文件 | 进 `skipped` 并**写明原因**；**不碰它** |
+| 重复撤同一处 | 幂等，仍然 `ok:true` |
+| 某个快照文件丢了 | 整体仍然 `ok:true`；那个文件进 `failed` 并带 `reason`（不静默少文件） |
+
+**两条已知边界**（都记在这儿，别再当新 bug 报一遍）：
+
+- **撤不动「先前改过、后来又改」的文件**。多轮改同一个文件时很常见：那一版内容磁盘上
+  根本没存过（快照只有改前镜像），拿旧快照顶会把更早的改动一起撤掉，所以只能 `skipped` + 说明。
+  要治得在检查点处**同时**存 post-image，代价是磁盘占用。
+- **界面里没有入口**。「退回检查点」在 `preload.cjs` / handler / `ipc-channels.cjs` 三处都在，
+  但 `src/**` 里**零调用点** —— 用户点不到（整批撤的「撤销」有入口）。
+
 ## 谁改状态（排查入口）
 
 想确认「这条任务怎么变成这样」，按这个顺序看：
