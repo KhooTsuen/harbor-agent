@@ -6,11 +6,10 @@
 
 别的工具是「把代码贴进网页，等它回话」；Harbor 是「给它一个目录，让它在里面读文件、改文件、跑测试」。它干了什么你随时能看到，也能随时叫停。
 
-<summary>主界面</summary>
+![主界面：对话 + 计划栏 + 右侧任务台账](docs/screenshots/01-main.png)
 
-![主界面](docs/screenshots/01-main.png)
-
-<summary>任务中心与控制台</summary>
+<details>
+<summary>任务中心与控制台（点开看图）</summary>
 
 ![任务中心与控制台](docs/screenshots/02-tasks.png)
 
@@ -87,13 +86,18 @@ npm run package    # 打便携版 → dist-portable/Harbor/
 ## 核心能力
 
 - **有台账的任务**：每个任务记着计划与进度、每次工具调用、命令退出码、改动过哪些文件、检查点、恢复过几次
-- **能中断、能接着做**：暂停 / 停止 / 恢复。重启应用后没做完的任务还在，能接着往下走
+- **能中断、能接着做**：暂停 / 停止 / 恢复。重启应用后没做完的任务还在，能接着往下走。
+  如果有些操作**动过、但不知道成没成**（比如命令刚发出去就崩了），恢复时它会单独标出来，
+  让你先看一眼现场再说 —— 而不是默默重跑一遍
 - **能中途改方向**：跑到一半直接打字「别用方案 A 了，改 B」，它接回同一条任务，不重做已完成的步骤
 - **看得见改动**：写文件前弹窗预览 Diff（默认折叠）。改完在右栏「审查」里对账，顶栏有 `+N −M`
 - **预算与刹车**：轮数 / 工具次数 / 时长 / 重试 / token 五项上限 —— **默认全部不限**，
   要限就自己在任务卡片上「调整预算」里填。填了撞上就停下来问你，不是失败
 - **转圈检测**：认得出 A→B→A→B 的重复执行。先改道，几次不听才交给你
 - **可观察性**：每轮性能时间线（首反馈 / 首字 / 整轮 / 上下文 / 模型 / 工具），一键生成任务诊断报告
+- **数据能体检**（命令行的两个小工具，都在本机跑）：
+  `npm run doctor` 只读扫一遍数据（悬空引用 / 坏 JSON / 索引与磁盘漂移），
+  `npm run stats` 给成功率、恢复率、工具失败率 —— 早就有的台账，现在能加起来看
 
 ---
 
@@ -156,13 +160,18 @@ npx -y @modelcontextprotocol/server-filesystem D:\data
 ├── credentials.json     模型密钥（系统凭证库加密，明文只在本机内存里）
 ├── sessions/            对话记录
 ├── tasks/               任务台账（计划、工具调用、改动文件、检查点）
-├── memory.json          长期记忆
 ├── changesets/          改动快照（用于 Diff 与回滚）
-├── audit/               工具审计日志（参数已脱敏）
-└── logs/                运行日志
+├── memory.json          长期记忆
+├── skills/ plugins/     你自己加的技能与本地插件
+├── audit/ errors/       工具审计日志（参数已脱敏）· 错误记录
+├── logs/ backups/       运行日志 · 自动备份
+└── （其余是缓存与运行态：chromium/ cache/ crash/ events/ workspace/ ……）
 ```
 
 除模型接口外没有任何网络请求。没有遥测、没有账号、没有云同步。
+
+**哪个文件归谁管、谁指向谁**：见 [`docs/数据模型.md`](docs/数据模型.md)；
+攒久了想看看有没有对不上的，跑 `npm run doctor`（只读，不动你的东西）。
 
 更新与备份、数据迁移与回退：见 [`docs/更新与数据迁移.md`](docs/更新与数据迁移.md)。
 
@@ -180,19 +189,22 @@ npx -y @modelcontextprotocol/server-filesystem D:\data
 ## 开发
 
 ```bash
+npm run verify         # 一站全跑：类型 → 风格 → 格式 → 行数红线 → 单测 → 内核自检 → 构建
+npm run preflight      # verify + 应用自检，并打印「剩下必须人做的」
+
 npm test               # 内核自检（不联网、不需要 Electron；项数每版都会涨，看 CI 输出）
 npm run test:unit      # 前端单元测试
 npm run test:app       # 无窗口跑一遍，打印主进程与渲染层的真实状态
 npm run pty:check      # 验 node-pty（纯 Node 与 Electron ABI 都要过）
 
-npx tsc --noEmit                                   # 类型（零容忍）
-npx eslint src --ext .ts,.tsx                      # 风格
-npx prettier --check "src/**/*.{ts,tsx}"           # 格式
+npm run doctor         # 数据体检（只读）：悬空引用 / 坏 JSON / 索引漂移
+npm run stats          # 稳定性指标：成功率 / 恢复率 / 工具失败率
 ```
 
 这套测试不是摆设。只有实际跑起来才会暴露、单测照不到的 bug（字段名读错、状态没收尾、长任务看不到 token、干净环境里托盘起不来）都变成了新的断言。CI 在每次 push 时跑一遍（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）。
 
 改代码前请读 [`CONTRIBUTING.md`](CONTRIBUTING.md)（含几条会被守门测试拦下的硬规矩）与 [`AGENT.md`](AGENT.md)。
+想找「某件事该读哪份文档」看 [`docs/README.md`](docs/README.md)（文档地图），踩过的坑在 [`docs/踩坑记录.md`](docs/踩坑记录.md)。
 
 ---
 
