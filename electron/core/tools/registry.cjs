@@ -23,6 +23,7 @@ const browseElements = require('./browse-elements.cjs')
 const browseClick = require('./browse-click.cjs')
 const browseType = require('./browse-type.cjs')
 const generateImage = require('./generate-image.cjs')
+const askUser = require('./ask_user.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -42,6 +43,7 @@ const ALL = [
   browseType,
   generateImage,
   remember,
+  askUser,
 ]
 
 /** 哪些工具算「写操作」（只读模式下要拦，ask 模式下要确认） */
@@ -52,6 +54,9 @@ const ALL = [
  *
  * generate_image 更要算：它**要花钱**（按张计费），还会往工作目录写文件，
  * 而且慢。放进来用户才有机会先看一眼 prompt。
+ *
+ * `ask_user` **不算**：它本来就是「问用户」，再叠一层权限确认就是同一个问题问两遍。
+ * 而且它不改文件、不跑命令、不联网。
  */
 const WRITE_TOOLS = new Set([
   'write_file',

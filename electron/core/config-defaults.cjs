@@ -127,6 +127,7 @@ const DEFAULTS = {
     streamOutput: true,
     /** 计划 → 执行 → 验证：先让模型出计划再动手 */
     planFirst: true,
+    ...require('./clarify-config.cjs').DEFAULTS,
     /** 验证阶段：改完代码主动跑一次验证命令 */
     verifyAfterEdit: true,
   },

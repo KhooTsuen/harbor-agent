@@ -175,6 +175,8 @@ function normalize(raw) {
       selfReview: assistant.selfReview === true,
       streamOutput: assistant.streamOutput !== false,
       planFirst: assistant.planFirst !== false,
+      /* AG-053：开工前澄清那四项（默认值与夹取规则在 clarify-config.cjs） */
+      ...require('./clarify-config.cjs').normalize(assistant),
       verifyAfterEdit: assistant.verifyAfterEdit !== false,
     },
 

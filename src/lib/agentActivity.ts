@@ -47,6 +47,7 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   browse_click: ['点击', '次'],
   browse_type: ['输入文字', '次'],
   generate_image: ['生成', '张图片'],
+  ask_user: ['询问', '个问题'],
 }
 
 /** 工具名的动作词；没收录的老实用原名（不编） */
@@ -74,6 +75,8 @@ export const TOOL_LABELS: Record<string, string> = {
   browse_click: '点击页面元素',
   browse_type: '填写页面输入',
   generate_image: '生成图片',
+  /* AG-053：开工前澄清 —— 界面上是「问你几个问题」，不是「ask_user」 */
+  ask_user: '问你几个问题',
 }
 
 /** 工具名的人话；没收录的返回原名（不编） */

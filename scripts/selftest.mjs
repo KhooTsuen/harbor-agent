@@ -133,6 +133,8 @@ import { run as runStatsGroup } from './selftest/groups/95-run-stats.mjs'
 import { run as replayRiskGroup } from './selftest/groups/96-replay-risk.mjs'
 import { run as projectRulesGroup } from './selftest/groups/97-project-rules.mjs'
 import { run as rollbackPreviewGroup } from './selftest/groups/98-rollback-preview.mjs'
+import { run as clarifyGroup } from './selftest/groups/99-clarify.mjs'
+import { run as clarifyTimeoutGroup } from './selftest/groups/100-clarify-timeout.mjs'
 
 const GROUPS = [
   basics,
@@ -232,6 +234,8 @@ const GROUPS = [
   replayRiskGroup,
   projectRulesGroup,
   rollbackPreviewGroup,
+  clarifyGroup,
+  clarifyTimeoutGroup,
 ]
 
 async function main() {

@@ -256,8 +256,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     userPreferences: '',
     retrievedContext: '',
     /* 最后两层：越靠后越容易被遵守 */
-    /* `assistant.planFirst` 的控制点就在这里：关掉 = 不再要求模型先出计划块 */
-    workRules: workRules({ planFirst: config.assistant?.planFirst }),
+    /* `assistant.planFirst` / `clarifyFirst`（AG-053）的控制点；两条规则的原文与理由见 prompt-stack.cjs */
+    workRules: workRules({ planFirst: config.assistant?.planFirst, clarifyFirst: config.assistant?.clarifyFirst, clarifyMuted: options.clarifyMuted === true }),
     safety: SAFETY_GUIDE,
     /* 当前时间单独一层，放在最末（它每轮都变，不能污染前面的缓存前缀） */
     currentTime: currentTimeSection(),
