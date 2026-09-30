@@ -135,6 +135,7 @@ import { run as projectRulesGroup } from './selftest/groups/97-project-rules.mjs
 import { run as rollbackPreviewGroup } from './selftest/groups/98-rollback-preview.mjs'
 import { run as clarifyGroup } from './selftest/groups/99-clarify.mjs'
 import { run as clarifyTimeoutGroup } from './selftest/groups/100-clarify-timeout.mjs'
+import { run as confirmBridgeGroup } from './selftest/groups/101-confirm-bridge.mjs'
 
 const GROUPS = [
   basics,
@@ -236,6 +237,7 @@ const GROUPS = [
   rollbackPreviewGroup,
   clarifyGroup,
   clarifyTimeoutGroup,
+  confirmBridgeGroup,
 ]
 
 async function main() {

@@ -131,12 +131,27 @@ export async function run() {
 
   group('AG-053 / 工具：静音、没通道、用户跳过')
   const toolRun = async (args, ctx) => String(await askUser.run(args, ctx))
-  const quiet = await toolRun({ questions: [good()] }, { sessionId: session, clarify: null })
+  /*
+   * ★ fail-open 这条**必须有独立断言**（用户明确要求的）：
+   *   `ctx.clarify === null` = 显式关掉通道，工具要**放行**而不是抛错 ——
+   *   辅助能力缺失不能把用户的任务卡死。三件事都要在：
+   *   （a）返回的是「按你自己判断做」；（b）**没有**真的去问用户；（c）不抛异常。
+   */
+  let quiet = ''
+  let quietThrew = false
+  try {
+    quiet = await toolRun({ questions: [good()] }, { sessionId: session, clarify: null })
+  } catch {
+    quietThrew = true
+  }
+  check('★ fail-open：通道关掉时不抛异常（这是独立断言，不靠别的用例兼带）', quietThrew === false)
   check(
-    '★ 通道没接上 → 放行（不能因为辅助能力缺失把任务卡死）',
-    /没有接上澄清通道/.test(quiet),
+    '★ fail-open：告诉模型「自己拍板」而不是报错',
+    /没有接上澄清通道/.test(quiet) && /按你判断/.test(quiet),
     quiet.slice(0, 60),
   )
+  check('★ fail-open：真的没有去问用户（放行不等于偷偷弹卡）', !/用户的答复/.test(quiet))
+  check('fail-open：静音与通道是两件事（关通道不会顺带静音这个对话）', clarify.muted('selftest-clarify-nowhere') === false)
 
   const mutedSession = 'selftest-clarify-muted'
   clarify.wake(mutedSession)
@@ -172,18 +187,35 @@ export async function run() {
   )
   check('★ 用户跳过 → 明确让模型自己拍板 + 留一行理由', /跳过了这次澄清/.test(skipped), skipped.slice(0, 60))
 
+  /*
+   * ★ 这里的假答复必须和**真机一模一样**：
+   *   `handlers/chat-confirm.cjs` 超时回的是 `{ answers: [], skipped: true, timeout: true }`
+   *   —— 两种都带 skipped。批② 的自检当时少写了 skipped，于是「超时被当成用户
+   *   主动跳过」这个 bug 在假数据下一路绿到底，直到真机才曝出来。
+   */
   const timedOut = await toolRun(
     { questions: [good()] },
     {
       sessionId: 'selftest-clarify-timeout',
-      clarify: async () => ({
-        timeout: true,
-        answers: [{ question: '用哪个包管理器？', choice: 'pnpm' }],
-      }),
+      clarify: async () => ({ skipped: true, timeout: true, answers: [] }),
     },
   )
   check('★ 超时采纳默认 → 文本里标明这是默认（模型要如实告诉用户）', /离场/.test(timedOut) && /默认/.test(timedOut))
   check('超时那条标了［默认］', /［默认］/.test(timedOut), timedOut.slice(0, 120))
+  check(
+    '★ 超时不会被当成「用户说跳过」（两者带同一个 skipped 字段，顺序反了就混淆）',
+    !/用户跳过了这次澄清/.test(timedOut),
+    timedOut.slice(0, 60),
+  )
+  check(
+    '★ 超时**不计数**跳过（他没看到卡片，不能拿这个去静音他）',
+    clarify.muted('selftest-clarify-timeout') === false && clarify.skipCount('selftest-clarify-timeout') === 0,
+    String(clarify.skipCount('selftest-clarify-timeout')),
+  )
+  check(
+    '★ render 里超时优先于跳过（两个字段同时为真时的唯一判据）',
+    /离场/.test(clarify.render([good()], { skipped: true, timeout: true, answers: [] })),
+  )
 
   const bad = await toolRun({ questions: [{ question: '' }] }, { sessionId: 'x', clarify: async () => ({}) })
   check('参数全坏 → 返回说明而不是抛错（不让整轮废掉）', /没能问出去/.test(bad), bad.slice(0, 60))

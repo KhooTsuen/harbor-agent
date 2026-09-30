@@ -163,6 +163,12 @@ export async function run() {
      渲染层，权限条就是不出现。
      ══════════════════════════════════════════════════════════ */
   const chatSrc = readCore('electron/handlers/chat.cjs')
+  /*
+   * AG-053：确认往返从 chat.cjs 搬到了 chat-confirm.cjs（前者贴着 300 行），
+   * 所以「审批 id 不许冒充对话 requestId」这条要跟着指到新文件。
+   * 两边都扫：万一将来又搬回去，这里也不会静默失效。
+   */
+  const confirmSrc = readCore('electron/handlers/chat-confirm.cjs')
   const emitSrc2 = readCore('electron/core/chat-emit.cjs')
   const { createEmitter } = require(join(ROOT, 'electron/core/chat-emit.cjs'))
   const sent = []
@@ -188,7 +194,8 @@ export async function run() {
   )
   check(
     '★ askUser 不再拿 requestId 转发审批 id',
-    !/requestId: request\.requestId/.test(chatSrc) && chatSrc.includes('approvalId: request.requestId'),
+    !/requestId: request\.requestId/.test(chatSrc + confirmSrc) &&
+      confirmSrc.includes('approvalId: request.requestId'),
   )
 
   taskCore.remove(t.id)

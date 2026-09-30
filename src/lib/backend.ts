@@ -273,11 +273,18 @@ export async function importSessions(threads: Thread[]): Promise<Thread[]> {
   }
 }
 
-/** 写操作确认：把用户的允许/拒绝回给主进程 */
-export async function confirmChat(confirmId: string, approved: boolean): Promise<void> {
+/**
+ * 写操作确认：把用户的允许/拒绝回给主进程。
+ * AG-053：澄清卡多带一个 `answer`（JSON 字符串）；审批那侧不传，行为与以前一字不差。
+ */
+export async function confirmChat(
+  confirmId: string,
+  approved: boolean,
+  answer?: string,
+): Promise<void> {
   if (!bridge) return
   try {
-    await bridge.confirmChat(confirmId, approved)
+    await bridge.confirmChat(confirmId, approved, answer)
   } catch {
     /* 回不去也无所谓，主进程那边有超时 */
   }

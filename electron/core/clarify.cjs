@@ -214,7 +214,15 @@ const TAIL_ON_SKIP =
  *           timeout?: boolean }} reply
  */
 function render(questions, reply = {}) {
-  if (reply.skipped === true) return TAIL_ON_SKIP
+  /*
+   * ★ 超时**必须排在跳过前面**：真机上 `askClarify` 超时回的是
+   *   `{ skipped: true, timeout: true, answers: [] }` —— 两种都带 skipped。
+   *   先判 skipped 的话，离场会被当成「用户说跳过」：模型永远不知道自己是
+   *   按**默认选项**继续的，界面也不会出现［默认］标记，用户回来一看是懵的
+   *   （「我什么都没说，你怎么就改了？」）。
+   *   批② 真机验证抓到的就是这个 —— 自检当时的假数据没带 skipped，所以才全绿。
+   */
+  if (reply.skipped === true && reply.timeout !== true) return TAIL_ON_SKIP
 
   const byQuestion = new Map(
     (Array.isArray(reply.answers) ? reply.answers : []).map((one) => [

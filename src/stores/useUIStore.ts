@@ -71,6 +71,16 @@ interface UIState {
   setNextSteps: (value: { threadId: string; outcome: TaskOutcome } | null) => void
   askPermission: (request: PermissionRequest) => void
   closePermission: () => void
+  /**
+   * AG-053：澄清卡（开工前问的几个问题）。
+   *
+   * 和 `permission` 分开存、由 `lib/clarify.ts` 仲裁谁显示 —— 两者**不叠**：
+   * 权限那条往返有 5 分钟超时（超时=拒绝），所以权限优先，澄清排队
+   * （组件照旧挂着，只是用 hidden 收起来，省得用户勾了一半的选项被清空）。
+   */
+  clarify: PermissionRequest | null
+  askClarify: (request: PermissionRequest) => void
+  closeClarify: () => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -82,6 +92,7 @@ export const useUIStore = create<UIState>((set) => ({
   commandPaletteOpen: false,
   searchQuery: '',
   permission: null,
+  clarify: null,
   bottomPanelOpen: false,
   bottomPanelView: 'log',
   toasts: [],
@@ -122,4 +133,6 @@ export const useUIStore = create<UIState>((set) => ({
 
   askPermission: (request) => set({ permission: request }),
   closePermission: () => set({ permission: null }),
+  askClarify: (request) => set({ clarify: request }),
+  closeClarify: () => set({ clarify: null }),
 }))

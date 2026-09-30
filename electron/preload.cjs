@@ -238,7 +238,7 @@ const api = {
   abortChat: (requestId) => call('chat:abort', requestId),
   /* AG-011：暂停（做完手上这步就往回走，不是立刻断） */
   pauseChat: (requestId) => call('chat:pause', requestId),
-  confirmChat: (confirmId, approved) => call('chat:confirm', confirmId, approved),
+  confirmChat: (confirmId, approved, answer) => call('chat:confirm', confirmId, approved, answer),
   compactChat: (payload) => call('chat:compact', payload),
 
   /**

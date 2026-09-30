@@ -90,6 +90,24 @@ function shortPath(value: string, max = 60): string {
   return `${value.slice(0, max - 25)}…${value.slice(-24)}`
 }
 
+/**
+ * `ask_user`（开工前澄清）的参数摘要。
+ *
+ * 它没有 `path` / `command`，落到下面那个 JSON 兜底就是一坨
+ * `{"questions":[{"question":"…` 摊在对话里 —— 真机截图看到的。
+ * 用户要看到的是「问 2 个问题」，展开才看细节。
+ */
+function askUserSummary(args: Record<string, unknown>): string {
+  const list = Array.isArray(args.questions) ? args.questions : []
+  const first = list[0]
+  const question =
+    first && typeof first === 'object' && 'question' in first
+      ? String((first as { question?: unknown }).question ?? '').trim()
+      : ''
+  if (list.length === 0) return '（没问题可问）'
+  return `${list.length} 个问题${question ? `：${question}` : ''}`
+}
+
 /** 工具参数摘要，别把整坨 JSON 摊在界面上 */
 export function summarizeArgs(name: string, args: Record<string, unknown>): string {
   const path = typeof args.path === 'string' ? args.path : ''
@@ -98,6 +116,7 @@ export function summarizeArgs(name: string, args: Record<string, unknown>): stri
     const clean = command.replace(CHCP_PREFIX, '').trim()
     return (clean || command.trim()).slice(0, 100)
   }
+  if (name === 'ask_user') return askUserSummary(args)
   if (name === 'list_dir') return shortPath(path) || '.'
   if (path) return shortPath(path)
   return JSON.stringify(args).slice(0, 80)

@@ -27,9 +27,13 @@ import type { ImageDonePayload } from './image'
 import type { ErrorsBridge } from './errors'
 import type { NotifyBridge } from './notify'
 import type { WorkspaceBridge } from './workspace'
+import type { BrowserBridge } from './browser'
 export * from './models'
+/* 浏览器工具的桥在 browser.ts，这里转出去：老引用路径还是 '@/types/backend' */
+export * from './browser'
 /* SafetyBridge 已带上 ProfileBridge，这里不重复列；ErrorsBridge = 右栏「错误」标签 */
-export interface WorkbenchBridge extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge {
+export interface WorkbenchBridge
+  extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge, BrowserBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
   showWindow: () => Promise<{ ok: boolean }>
@@ -48,7 +52,11 @@ export interface WorkbenchBridge extends SafetyBridge, NotifyBridge, WorkspaceBr
   abortChat: (requestId: string) => Promise<{ ok: boolean; error?: string }>
   /* AG-011：暂停 —— 做完当前这步再停，和 abort（立刻断）不是一回事 */
   pauseChat: (requestId: string) => Promise<{ ok: boolean; error?: string }>
-  confirmChat: (confirmId: string, approved: boolean) => Promise<{ ok: boolean; error?: string }>
+  confirmChat: (
+    confirmId: string,
+    approved: boolean,
+    answer?: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   compactChat: (payload: {
     model?: string
     messages: Array<{ role: string; content: string }>
@@ -258,37 +266,7 @@ export interface WorkbenchBridge extends SafetyBridge, NotifyBridge, WorkspaceBr
   /** 生图完成 / 失败（异步任务，可能几分钟后才回来） */
   onImageDone: (callback: (payload: ImageDonePayload) => void) => () => void
 
-  onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
-  browserResult: (
-    id: string,
-    result: {
-      ok: boolean
-      text?: string
-      html?: string
-      title?: string
-      url?: string
-      snapshot?: unknown
-      click?: string
-      type?: string
-      into?: string
-      password?: boolean
-      needsConfirm?: boolean
-      error?: string
-    },
-  ) => Promise<{ ok: boolean; error?: string }>
-
   isElectron: true
-}
-
-export interface BrowserRequestEvent {
-  id: string
-  action: 'navigate' | 'snapshot' | 'click' | 'type'
-  url?: string
-  /** click/type: index 目标元素；type: text 内容、pressEnter 回车、authorized 已授权填密码 */
-  index?: number
-  text?: string
-  pressEnter?: boolean
-  authorized?: boolean
 }
 
 declare global {

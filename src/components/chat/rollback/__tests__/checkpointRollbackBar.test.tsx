@@ -169,7 +169,7 @@ describe('确认之后', () => {
     await pickCheckpoint(1)
     await until(() => useUIStore.getState().permission !== null)
     await act(async () => {
-      useUIStore.getState().permission?.onConfirm()
+      useUIStore.getState().permission?.onConfirm?.()
     })
     await until(() => useTaskStore.getState().lastRollback !== null)
   }

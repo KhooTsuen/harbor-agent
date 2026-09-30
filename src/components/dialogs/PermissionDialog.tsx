@@ -64,7 +64,8 @@ export function PermissionDialog() {
             size="sm"
             onClick={() => {
               confirmedRef.current = true
-              permission?.onConfirm()
+              /* AG-053：onConfirm 现在是可选的（澄清卡不用它，它自己带「就这么干」） */
+              permission?.onConfirm?.()
               closePermission()
               confirmedRef.current = false
             }}

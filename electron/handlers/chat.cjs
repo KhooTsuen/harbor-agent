@@ -16,12 +16,11 @@ const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
 const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
 const { withRequestedModel } = require('../core/model-select.cjs')
-
-/** confirmId -> resolve，等渲染层点「允许/拒绝」 */
-const pendingConfirms = new Map()
-const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
+/* AG-053：两条「问一句等回话」的往返拆到 ./chat-confirm.cjs（这边贴着 300 行） */
+const chatConfirm = require('./chat-confirm.cjs')
 
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
+  chatConfirm.register({ ipcMain })
   /* ── 发起一轮对话 ─────────────────────────────────────── */
 
   ipcMain.handle('chat:send', async (_event, payload) => {
@@ -100,7 +99,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const pause = { requested: false }
     streams.set(requestId, { controller, pause })
 
-    const confirm = (request) => askUser(requestId, request, emit)
+    const confirm = (request) => chatConfirm.askUser(requestId, request, emit)
 
     /*
      * AG-001：状态机的每次转移都推给渲染层（前端只读、不自己猜）。
@@ -249,50 +248,6 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     if (!entry) return { ok: false, error: '这个请求已经结束了' }
     entry.pause.requested = true
     return { ok: true }
-  })
-
-  /* ── 确认答复 ─────────────────────────────────────────── */
-
-  ipcMain.handle('chat:confirm', (_event, confirmId, approved) => {
-    const entry = pendingConfirms.get(confirmId)
-    if (!entry) return { ok: false, error: '这个确认已经过期了' }
-    pendingConfirms.delete(confirmId)
-    clearTimeout(entry.timer)
-    entry.resolve(approved === true)
-    return { ok: true }
-  })
-}
-
-function askUser(requestId, request, emit) {
-  return new Promise((resolve) => {
-    const confirmId = `cfm_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-
-    const timer = setTimeout(() => {
-      if (pendingConfirms.has(confirmId)) {
-        pendingConfirms.delete(confirmId)
-        resolve(false)
-      }
-    }, CONFIRM_TIMEOUT_MS)
-
-    pendingConfirms.set(confirmId, { requestId, resolve, timer })
-    emit({
-      type: 'confirm_request',
-      confirmId,
-      /*
-       * 审批 id（`approve_…`）**不能叫 requestId** —— 那是**对话的** requestId，
-       * 两者同名会被上层展开覆盖，渲染层就收不到这条确认了（见 chat-emit.cjs）。
-       */
-      approvalId: request.requestId ?? null,
-      toolName: request.name,
-      summary: request.summary,
-      args: request.args,
-      kind: request.kind ?? '',
-      risk: request.risk ?? null,
-      /* AG-036：会改成什么样（`write_file` / `edit_file` 才有） */
-      diff: request.diff ?? null,
-      diffNote: request.diffNote ?? '',
-      impact: request.impact ?? [],
-    })
   })
 }
 

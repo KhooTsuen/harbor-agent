@@ -17,6 +17,30 @@
 
 const clarify = require('../clarify.cjs')
 
+/**
+ * 谁能把问题送到界面上？
+ *
+ * ★ 写法照 `browse.cjs`：**惰性 require handler**（那边也是「工具 → 渲染层往返」，
+ *   同样不能顶层 require —— handler 要 electron，而自检是在纯 Node 里加载工具的）。
+ *
+ * 三种情形要分清：
+ *   ① `ctx.clarify === null` —— 显式关掉（自检/探针要验 fail-open 那条路）；
+ *   ② `typeof ctx.clarify === 'function'` —— 注入的（测试用假函数）；
+ *   ③ 都没有 —— 真机：惰性拿 `handlers/chat.cjs` 的 `askClarify`。
+ * 拿不到（纯 Node / 未来改名）就返回 null，调用方 **fail-open**。
+ */
+function transportOf(ctx) {
+  if (ctx.clarify === null) return null
+  if (typeof ctx.clarify === 'function') return ctx.clarify
+  try {
+    /* 找的是 chat-confirm.cjs（不是 chat.cjs）—— 那条往返住在它自己模块里 */
+    const chat = require('../../handlers/chat-confirm.cjs')
+    return typeof chat.askClarify === 'function' ? chat.askClarify : null
+  } catch {
+    return null
+  }
+}
+
 module.exports = {
   name: 'ask_user',
   description: [
@@ -88,14 +112,15 @@ module.exports = {
       return `这次没能问出去（${why}）。按你自己判断最稳妥的做法开工，并说明你的选择理由。`
     }
 
-    /* 通道没接上（自检、老版本）：放行，别把任务卡住 */
-    if (typeof ctx.clarify !== 'function') {
+    /* 通道没接上（自检、老版本、没有窗口）：放行，别把任务卡住 */
+    const transport = transportOf(ctx)
+    if (typeof transport !== 'function') {
       return '这个版本没有接上澄清通道（或当前环境拿不到界面）。直接按你判断最稳妥的做法开工，并说明理由。'
     }
 
     let reply = null
     try {
-      reply = await ctx.clarify({
+      reply = await transport({
         kind: 'clarify',
         sessionId,
         taskId: String(ctx.taskId ?? ''),
@@ -103,13 +128,25 @@ module.exports = {
         /* 校验层的警告带上：通知与日志里能看到「模型没写具体数字」这种质量问题 */
         warnings: checked.warnings,
         dropped: checked.dropped,
+        /*
+         * ★ 必须把**对话自己的事件通道**递过去：卡片事件要带对话的 requestId
+         *   （渲染层按它过滤，`turns.ts`：不匹配就 return）。`ctx.emit` 是循环里
+         *   那个 emitter，requestId 由它补；拿不到（自检 / 注入式调用）就传 null，
+         *   下游会报 noWindow 并**立刻放行**，而不是干等 5 分钟。
+         */
+        emit: typeof ctx.emit === 'function' ? ctx.emit : null,
       })
     } catch (error) {
       return `提问失败（${error instanceof Error ? error.message : String(error)}）。按你自己判断开工，并说明理由。`
     }
 
     /* 用户跳过 → 计数 +1；答了 → 清零。静音判定只看这个计数 */
-    if (reply?.skipped === true) clarify.noteSkip(sessionId)
+    if (reply?.timeout === true) {
+      /*
+       * 离场既不算跳过也不算答过：他没看到卡片，拿他**没做过的事**去静音他是错的。
+       * （超时也带 `skipped: true`，所以这条必须写在前面。）
+       */
+    } else if (reply?.skipped === true) clarify.noteSkip(sessionId)
     else if (Array.isArray(reply?.answers) && reply.answers.length > 0) clarify.noteAnswered(sessionId)
 
     return clarify.render(checked.questions, reply ?? {})

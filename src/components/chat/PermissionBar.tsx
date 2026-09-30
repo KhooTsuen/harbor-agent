@@ -29,7 +29,7 @@ export function PermissionBar() {
   }
 
   function approve(): void {
-    request.onConfirm()
+    request.onConfirm?.()
     closePermission()
   }
 

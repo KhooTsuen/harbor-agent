@@ -24,7 +24,7 @@ import { PlanBar } from './composer/PlanBar'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
 import { fsTree } from '@/lib/fsApi'
 import { useAgentActive } from '@/hooks/useAgentActive'
-import { PermissionBar } from './PermissionBar'
+import { AboveInputCards } from './AboveInputCards'
 
 /* ══════════════════════════════════════════════════════════════ Composer  这是这类工具最有辨识度的组件，结构照它排： ① 输入区 ② 工具行：+ / 模式 / 权限 … 模型 · 推理 · 发送 ③ 上下文行：项目路径 / 提文件 / 命令  发送键是**白色圆形 + 黑色箭头**（实测三张截图一致），不是彩色。 ══════════════════════════════════════════════════════════════ */
 
@@ -136,7 +136,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
     <div className="px-4 pb-3">
       {/* data-composer-shell：确认面板按它的真实 rect 贴到输入区上方（见 Modal） */}
       <div className="mx-auto w-full max-w-[var(--content-max-width)]" data-composer-shell="">
-        <PermissionBar />
+        {/* AG-053：权限条与澄清卡在这里，由 AboveInputCards 仲裁只显示一张 */}
+        <AboveInputCards />
         <div
           className={cn(
             'glass-panel relative rounded-md border bg-bg-input transition-colors duration-fast',

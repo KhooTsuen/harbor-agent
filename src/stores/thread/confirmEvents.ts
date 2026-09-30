@@ -1,4 +1,6 @@
 import { confirmChat } from '@/lib/backend'
+import { clarifyReplyToWire } from '@/lib/clarify'
+import type { ClarifyQuestion } from '@/types'
 import { useUIStore } from '../useUIStore'
 
 /* ══════════════════════════════════════════════════════════════
@@ -31,6 +33,34 @@ export function askPermissionFor(event: Record<string, unknown>): void {
   const confirmId = String(event.confirmId ?? '')
   const toolName = String(event.toolName ?? '操作')
   const kind = String(event.kind ?? '')
+
+  /*
+   * AG-053：开工前澄清走**另一张卡**。
+   *
+   * 它复用同一条 `chat:confirm` 通道（不开新通道），但回话带解释（不是布尔），
+   * 所以在这里分流：进 `clarify` 槽位，而不是权限那个 `permission` 槽位 ——
+   * 两个槽位由 `lib/clarify.ts` 的 `pickAboveInput` 仲裁谁显示（永不叠）。
+   */
+  if (kind === 'clarify') {
+    const questions = Array.isArray(event.questions) ? event.questions : []
+    useUIStore.getState().askClarify({
+      kind: 'clarify',
+      title: '动手前先对齐一下',
+      description: '',
+      confirmText: '就这么干',
+      danger: false,
+      clarify: questions as ClarifyQuestion[],
+      onClarify: (reply) => {
+        useUIStore.getState().closeClarify()
+        void confirmChat(confirmId, reply.skipped !== true, clarifyReplyToWire(reply))
+      },
+      /* 卡片被外部关掉（切对话、任务停了、用户按 Esc）：当「跳过」回话，
+         不能让主进程干等到超时 —— 那样它会以为用户离场了 */
+      onCancel: () => void confirmChat(confirmId, false),
+    })
+    return
+  }
+
   const risk = (event.risk ?? null) as { level?: string } | null
   const high = risk?.level === 'high'
   /* 和 core/tools/approval.cjs 的 REMEMBERED 保持一致 */

@@ -64,6 +64,17 @@ describe('工具参数摘要', () => {
   it('list_dir 没有路径时退化成当前目录', () => {
     expect(summarizeArgs('list_dir', { path: '' })).toBe('.')
   })
+
+  it('★ ask_user 说人话（以前是一坨 JSON 摊在对话里）', () => {
+    expect(summarizeArgs('ask_user', { questions: [{ question: '用哪个包管理器？' }, {}] })).toBe(
+      '2 个问题：用哪个包管理器？',
+    )
+  })
+
+  it('ask_user 没问题时也不报错', () => {
+    expect(summarizeArgs('ask_user', { questions: [] })).toBe('（没问题可问）')
+    expect(summarizeArgs('ask_user', {})).toBe('（没问题可问）')
+  })
 })
 
 describe('工具名转人话', () => {

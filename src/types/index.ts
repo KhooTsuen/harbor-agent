@@ -221,31 +221,10 @@ export interface ModelOption {
 
 /* ── 权限确认 ───────────────────────────────────────────────── */
 
-export type PermissionKind =
-  | 'run-command'
-  | 'delete-thread'
-  | 'delete-project'
-  | 'run-command'
-  | 'clear-data'
-  /* 任务面板里「清空这一组」的记录 */
-  | 'clear-tasks'
-  /* AG-052：撤销检查点之后的改动（破坏性，要二次确认 + 影响预览） */
-  | 'rollback-checkpoint'
-
-export interface PermissionRequest {
-  kind: PermissionKind
-  title: string
-  description: string
-  confirmText: string
-  danger: boolean
-  /** AG-036：这次会改成什么（写文件时才有）—— 弹窗里默认折叠，点开才看 */
-  diff?: DiffFile[]
-  impact?: string[]
-  diffNote?: string
-  onConfirm: () => void
-  /** 取消/关闭时调（用于「写操作确认被拒绝」这种场景） */
-  onCancel?: () => void
-}
+/* AG-052/AG-053：确认请求（含澄清那两条）与澄清类型各自一个文件
+   —— 这个桶贴着 300 行，加进来就破线。这里只转出去，调用方照旧从 `@/types` 拿。 */
+export type { PermissionKind, PermissionRequest } from './permission'
+export type { ClarifyQuestion, ClarifyReply } from './clarify'
 
 /* ── Toast ─────────────────────────────────────────────────── */
 
