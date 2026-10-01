@@ -141,10 +141,20 @@ export async function run() {
   )
   check('三个限制值都在 defaults 里导出（别处只引用）', typeof timeouts.DEFAULT_TIMEOUT_MS === 'number')
   check('默认阈值：离场 30 秒 / 等 10 分钟 / 累计上限 30 分钟', timeouts.DEFAULT_IDLE_SECONDS === 30 && timeouts.DEFAULT_TIMEOUT_MS === 600000 && timeouts.DEFAULT_MAX_WAIT_MS === 1800000)
+  /* limits 里存的是**函数**（现读）：设置里改完下一跳生效，不用重启 */
   const limits = timeouts.createTracker({}).limits
-  check('传空依赖时用默认值（不让调用方必须记三个数）', limits.idleThresholdSec === 30 && limits.timeoutMs === 600000 && limits.maxWaitMs === 1800000)
+  check(
+    '传空依赖时用默认值（不让调用方必须记三个数）',
+    limits.idleThresholdSec() === 30 && limits.timeoutMs() === 600000 && limits.maxWaitMs() === 1800000,
+  )
   check(
     '★ 配置项可覆盖（真机验证把超时调成几秒就靠这个）',
-    timeouts.createTracker({ idleThresholdSec: 3, timeoutMs: 3000 }).limits.timeoutMs === 3000,
+    timeouts.createTracker({ idleThresholdSec: 3, timeoutMs: 3000 }).limits.timeoutMs() === 3000,
   )
+  const live = { timeoutMs: 3000 }
+  const liveTracker = timeouts.createTracker({ timeoutMs: () => live.timeoutMs })
+  check('★ 上限可以传函数：改完立刻生效（不用重建追踪器）', liveTracker.limits.timeoutMs() === 3000)
+  live.timeoutMs = 50
+  check('★ 同一个追踪器读得到新值（设置改完下一跳就按新的算）', liveTracker.limits.timeoutMs() === 50)
+  check('脏值（0 / NaN / 负数）回落到默认，不是回落到「立刻超时」', timeouts.createTracker({ timeoutMs: () => 0 }).limits.timeoutMs() === timeouts.DEFAULT_TIMEOUT_MS)
 }

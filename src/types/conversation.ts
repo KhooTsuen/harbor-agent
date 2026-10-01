@@ -13,6 +13,7 @@ import type {
   ThreadStatus,
 } from './index'
 import type { StoredMessage, UsageBucket } from './models-extra'
+import type { StoredClarify } from './clarify'
 
 /* ══════════════════════════════════════════════════════════════
    对话相关的类型：消息 / 线程级设置 / 可恢复状态 / 线程
@@ -70,6 +71,11 @@ export interface Message {
   interrupted?: boolean
   /** 可追溯的搜索/文件来源 */
   citations?: Citation[]
+  /**
+   * 这一轮开工前问过什么（AG-053 批③）。
+   * 只读卡渲染靠它；老记录没这个字段 → 什么都不显示（照旧）。
+   */
+  clarify?: StoredClarify
   /** 从回答中分离出的成果 */
   artifacts?: Artifact[]
   /** 出错时的原因，用于「重试」 */

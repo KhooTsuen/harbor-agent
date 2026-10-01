@@ -1,21 +1,22 @@
 /**
- * 开工前澄清（AG-053）—— 校验、静音、措辞
+ * 开工前澄清（AG-053）—— 校验与措辞
  *
  * 需求原话：「AI 在任务开始时，主动把需要用户拿主意的地方摆出来；每个选项下方
  * 写清『因为 X，所以会有 Y 效果』（具体数字或事实，不是主观判断）；用户可以自由
  * 回答、补充想法、跳过；用户答完后才进入执行。」
  *
- * 这个文件是那条链路的**纯逻辑**（不碰 Electron、不碰 IO），三件事：
+ * 这个文件是那条链路的**纯函数**（不碰 Electron、不碰 IO）：
  *   ① `normalize()` —— 模型给的提问**不能全信**：条数、选项数、effect 有没有实质内容、
  *      默认选项有没有，都要过一遍。坏的**剔除并报告**，不整条报废（一次问坏一个
  *      问题就把整张卡丢掉，用户什么也看不到，更糟）。
- *   ② `skips` —— 「同一对话连续跳过 2 次就不再主动问」的计数器（**纯内存、
- *      不写偏好**：用户连拒两次是「这次别打扰我」，不是「以后都别问」）。
- *   ③ `render()` —— 用户的答复/超时/跳过，翻成给模型看的一段文本。
+ *   ② `render()` —— 用户的答复 / 跳过 / 离场 / 无人值守，翻成给模型看的一段文本。
+ *
+ * 按**对话**累积的那两件事（静音计数、无人值守标记）在 `clarify-session.cjs`
+ * （批③ 拆出去的，理由见那边文件头）；它们仍从这里转出去，调用方不用改。
+ * 离场计时在 `clarify-timeout.cjs`（依赖注入，也不 require electron）。
  *
  * ⚠️ **不在这个文件里 require('electron')** —— 自检和单测要在没有 Electron 的
  *    环境里直接调它（项目里那条「内核不 require electron」的硬约定）。
- *    离场检测在 `clarify-timeout.cjs`，那边也是依赖注入。
  */
 
 /** 一次最多问几个（问多了就是审问） */
@@ -25,9 +26,6 @@ const MAX_OPTIONS = 4
 const MAX_QUESTION_CHARS = 200
 const MAX_LABEL_CHARS = 60
 const MAX_EFFECT_CHARS = 200
-
-/** 连续跳过几次就静音（用户连拒两次说明不想被打扰，第三次还问是骚扰） */
-const SKIP_LIMIT = 2
 
 /**
  * 「effect 里有没有具体事实」的宽松判据：有数字，或者有量词。
@@ -60,6 +58,16 @@ function concrete(text) {
   if (/\d/.test(value)) return true
   return MEASURE_WORDS.some((word) => value.includes(word))
 }
+
+/* ══════════════════════════════════════════════════════════════
+   校验 + 措辞（纯函数）
+
+   按**对话**记的那两件事（静音、无人值守）在 `clarify-session.cjs`：
+   那边是累积的状态，这边是「给什么、回什么」，改动的理由不同。
+   它们照旧从这里转出去，调用方（`tools/ask_user.cjs` / 自检）不用改。
+   ══════════════════════════════════════════════════════════════ */
+
+const session = require('./clarify-session.cjs')
 
 function text(value, max) {
   return String(value ?? '')
@@ -156,57 +164,15 @@ function normalize(raw) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   跳过计数（同一对话，纯内存）
-   ══════════════════════════════════════════════════════════════ */
-
-/** sessionId → 连续跳过的次数 */
-const skips = new Map()
-
-/** 用户跳过一次 */
-function noteSkip(sessionId) {
-  const key = String(sessionId ?? '')
-  if (!key) return 0
-  const next = (skips.get(key) ?? 0) + 1
-  skips.set(key, next)
-  return next
-}
-
-/**
- * 用户答过一次（哪怕只答了一问）→ 计数清零。
- * 答了说明他愿意被问，之前的跳过不再算数。
- */
-function noteAnswered(sessionId) {
-  skips.delete(String(sessionId ?? ''))
-}
-
-/** 这个对话现在静音了吗 */
-function muted(sessionId) {
-  return (skips.get(String(sessionId ?? '')) ?? 0) >= SKIP_LIMIT
-}
-
-/**
- * 手动唤醒（「问我想清楚」按钮 / 用户说「你问我几个问题」）。
- *
- * 静音是「别老问了」，不是「永远别问」——用户主动要求的时候要能立刻恢复。
- * 唤醒是**一次性**的：问完这一次，如果他再跳过，计数从头开始。
- */
-function wake(sessionId) {
-  const key = String(sessionId ?? '')
-  if (key) skips.set(key, 0)
-  return 0
-}
-
-/** 测试与排查用：看当前计数（自检要断言；生产代码不调它） */
-function skipCount(sessionId) {
-  return skips.get(String(sessionId ?? '')) ?? 0
-}
-
-/* ══════════════════════════════════════════════════════════════
    措辞：把结果翻成给模型看的一段话
    ══════════════════════════════════════════════════════════════ */
 
 const TAIL_ON_SKIP =
   '用户跳过了这次澄清。按你自己判断最稳妥的做法开工，并在回复里用一行说明「我选了 X，因为 Y」。'
+
+/** 无人值守（定时任务）时的开场白 —— 和「用户跳过」必须分开说，否则模型会以为用户刚才在 */
+const TAIL_UNATTENDED =
+  '这是一次**无人值守**的运行（定时任务），没有人能回答下面这些问题。按每条的默认选项开工，并在回复里用一行说明「我选了 X（默认），因为 Y」。'
 
 /**
  * @param {Array} questions `normalize()` 的输出
@@ -231,9 +197,11 @@ function render(questions, reply = {}) {
     ]),
   )
 
-  const lines = reply.timeout === true
-    ? ['用户离场了，这次按**默认选项**继续（下面每条都标了是默认还是他选的）：']
-    : ['用户的答复：']
+  const lines = reply.unattended === true
+    ? [TAIL_UNATTENDED]
+    : reply.timeout === true
+      ? ['用户离场了，这次按**默认选项**继续（下面每条都标了是默认还是他选的）：']
+      : ['用户的答复：']
 
   questions.forEach((item, index) => {
     const answer = byQuestion.get(item.question)
@@ -241,12 +209,14 @@ function render(questions, reply = {}) {
     const chosen = item.options.find((one) => one.label === choice)
     const free = text(answer?.text, 400)
     const why = chosen?.effect ? `（因为：${chosen.effect}）` : ''
-    const tag = reply.timeout === true && choice === item.defaultValue ? '［默认］' : ''
+    /* 没人在场采纳的（离场 / 无人值守）都标「默认」—— 用户事后要分得清哪条是别人替他定的 */
+    const auto = reply.timeout === true || reply.unattended === true
+    const tag = auto && choice === item.defaultValue ? '［默认］' : ''
     lines.push(`${index + 1}. ${item.question} → ${tag}${choice}${why}`)
     if (free) lines.push(`   他还补充：${free}`)
   })
 
-  if (reply.timeout !== true) {
+  if (reply.timeout !== true && reply.unattended !== true) {
     lines.push('', '按这些答复开工。答复里没提到的部分，你自己判断，别再来回问。')
   }
   return lines.join('\n')
@@ -255,14 +225,11 @@ function render(questions, reply = {}) {
 module.exports = {
   MAX_QUESTIONS,
   MAX_OPTIONS,
-  SKIP_LIMIT,
   TAIL_ON_SKIP,
+  TAIL_UNATTENDED,
   normalize,
-  noteSkip,
-  noteAnswered,
-  muted,
-  wake,
-  skipCount,
   render,
   concrete,
+  /* 按对话记的状态（实现在 clarify-session.cjs，这里转出去） */
+  ...session,
 }

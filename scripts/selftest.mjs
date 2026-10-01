@@ -136,6 +136,7 @@ import { run as rollbackPreviewGroup } from './selftest/groups/98-rollback-previ
 import { run as clarifyGroup } from './selftest/groups/99-clarify.mjs'
 import { run as clarifyTimeoutGroup } from './selftest/groups/100-clarify-timeout.mjs'
 import { run as confirmBridgeGroup } from './selftest/groups/101-confirm-bridge.mjs'
+import { run as clarifyUnattendedGroup } from './selftest/groups/102-clarify-unattended.mjs'
 
 const GROUPS = [
   basics,
@@ -238,6 +239,7 @@ const GROUPS = [
   clarifyGroup,
   clarifyTimeoutGroup,
   confirmBridgeGroup,
+  clarifyUnattendedGroup,
 ]
 
 async function main() {

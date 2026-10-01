@@ -12,11 +12,14 @@
  *      「立即运行」），直接返回失败 —— 两条一起改同一个目录是数据损坏级别的。
  *   ③ **异常不许吞。** 抛了就写进台账的 `lastResult`，并把错误返回给调用方；
  *      定时任务失败时用户不在场，台账是唯一的线索。
+ *   ④ **整轮标成「无人值守」**（AG-053）：这一轮**不许弹澄清卡** ——
+ *      没人在场，弹了只会把任务挂到超时。`tools/ask_user.cjs` 看到标记就按默认开工。
  *
  * 心跳是**串行**跑到期的条目：同时起好几个 agent 循环会把模型配额一瞬间打爆。
  */
 
 const log = require('./log.cjs')
+const clarify = require('./clarify.cjs')
 const { isDue } = require('./schedule-next.cjs')
 const { configFor } = require('./schedule-grant.cjs')
 /* 默认台账；测试用 deps.store 换掉，别去碰用户真实的 schedules.json */
@@ -117,17 +120,36 @@ async function run(item, deps = {}) {
     if (sessionId && sessionId !== item.sessionId) ledger.recordRun(id, { sessionId })
 
     const controller = new AbortController()
-    const result = await deps.loop.run({
-      history: [{ role: 'user', content: String(item.prompt ?? '') }],
-      config: configFor(item.grant, deps.config.get()),
-      workdir: String(item.workdir ?? ''),
-      sessionId,
-      goal: String(item.name ?? ''),
-      signal: deps.signal ?? controller.signal,
-      emit: typeof deps.emit === 'function' ? deps.emit : () => {},
-      /* ★★ 底线：没人在场 = 没有人能批准。这一行不许改成任何返回真值的东西 ★★ */
-      confirm: async () => false,
-    })
+    /*
+     * ★ 无人值守：这一轮**没有人能回答问题**。
+     *
+     * 定时任务的语义就是「它自己触发、用户可能正在睡觉」—— 所以它不许弹澄清卡
+     * （弹了也没人看得见，只会把任务挂到超时）。请见 `tools/ask_user.cjs`：
+     * 那边看到这个标记就直接按默认选项开工，并且**不挂任何待回话的请求**。
+     * 和下面那条 `confirm` 是同一条道理：没人在场 = 没人能决定，
+     * 区别只是「要不要确认」有拒绝这个选项，而「问你想怎么干」只能按默认走。
+     *
+     * ⚠️ 为什么用一个「对话登记表」而不是 ctx 字段：拼 ctx 的 `loop.cjs` 是硬禁区，
+     *   而发起方（这里）恰好知道 sessionId。清理函数必须放 finally，
+     *   不然这条会话永远不再问。
+     */
+    const unmarkUnattended = clarify.markUnattended(sessionId)
+    let result = null
+    try {
+      result = await deps.loop.run({
+        history: [{ role: 'user', content: String(item.prompt ?? '') }],
+        config: configFor(item.grant, deps.config.get()),
+        workdir: String(item.workdir ?? ''),
+        sessionId,
+        goal: String(item.name ?? ''),
+        signal: deps.signal ?? controller.signal,
+        emit: typeof deps.emit === 'function' ? deps.emit : () => {},
+        /* ★★ 底线：没人在场 = 没有人能批准。这一行不许改成任何返回真值的东西 ★★ */
+        confirm: async () => false,
+      })
+    } finally {
+      unmarkUnattended()
+    }
 
     const blocked = blockedOf(result)
     const patch = {

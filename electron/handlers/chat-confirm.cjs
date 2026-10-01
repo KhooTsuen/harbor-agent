@@ -18,6 +18,7 @@
  */
 
 const confirmBridge = require('../core/confirm-bridge.cjs')
+const clarifyWatch = require('./clarify-watch.cjs')
 const log = require('../core/log.cjs')
 
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
@@ -33,10 +34,11 @@ const CLARIFY_TIMEOUT_MS = 5 * 60 * 1000
  * @returns {Promise<boolean>}
  */
 function askUser(requestId, request, emit) {
-  void requestId
   return confirmBridge
     .ask({
       timeoutMs: CONFIRM_TIMEOUT_MS,
+      /* 属于这一轮：一轮结束时（成功/失败/中断）要把它结算掉，不能悬着 */
+      owner: String(requestId ?? ''),
       payload: {
         /*
          * 审批 id（`approve_…`）**不能叫 requestId** —— 那是**对话的** requestId，
@@ -84,6 +86,8 @@ function askClarify(input = {}) {
     /* 没有事件通道（定时任务 / 已退出 / 拿不到 emitter）：立刻说「问不了」 */
     return Promise.resolve({ answers: [], skipped: true, timeout: false, noWindow: true })
   }
+  /* 已经挂上了哪张卡（下面两个回调都要认它） */
+  let cardId = ''
   return confirmBridge
     .ask({
       /*
@@ -92,9 +96,15 @@ function askClarify(input = {}) {
        *   两者都带 skipped，所以 `clarify.render()` 里**超时必须优先判**：
        *   判反了离场就被当成「用户说跳过」，模型再也看不到［默认］标记。
        *   批② 真机验证抓到的就是这个（自检当时的假数据没带 skipped，一路绿）。
+       *
+       * ⚠️ 这是**最后一道兜底**（界面上一直没人回话）。正常路径由
+       *   `clarify-watch.cjs` 的离场巡查提前推进：用户走开 10 分钟就采纳默认，
+       *   而“他在场想 20 分钟”不会被这个定时器打断（那个判据在状态机里）。
        */
       timeoutMs: Number.isFinite(input.timeoutMs) ? input.timeoutMs : CLARIFY_TIMEOUT_MS,
       idPrefix: 'clr',
+      /* 属于哪一轮：从 emitter 上取（见 core/chat-emit.cjs 里那句 `emit.requestId`） */
+      owner: String(input.emit?.requestId ?? ''),
       payload: {
         kind: 'clarify',
         sessionId: input.sessionId ?? '',
@@ -102,11 +112,37 @@ function askClarify(input = {}) {
         questions: input.questions ?? [],
       },
       /* 走对话自己的 emitter：它才会把 requestId 补上去（看上面那段） */
-      emitReply: (payload) => emit({ type: 'confirm_request', ...payload }),
+      emitReply: (payload) => {
+        cardId = String(payload.confirmId ?? '')
+        /* 交给巡查器计时（没 start 过就 no-op，靠上面那个 5 分钟兜底） */
+        clarifyWatch.arm({
+          id: cardId,
+          sessionId: input.sessionId ?? '',
+          taskId: input.taskId ?? '',
+          questions: input.questions ?? [],
+          /*
+           * ★ 判到离场 → 把这个请求**按超时推进去**。
+           *   少了这一句，巡查只会发通知、任务照样等到 5 分钟的兜底定时器
+           *   （批③ 真机第一遍就是这样：日志里通知发了，模型却再没被叫过）。
+           */
+          onSettle: () => confirmBridge.settleAsTimeout(cardId),
+        })
+        emit({ type: 'confirm_request', ...payload })
+      },
     })
     .then((reply) => {
+      if (cardId) clarifyWatch.resolve(cardId)
       if (reply.approved !== true) {
-        /* 跳过 / 超时：超时要让上层知道，好走「按默认选项继续」那条路 */
+        /*
+         * 跳过 / 超时：超时要让上层知道，好走「按默认选项继续」那条路。
+         *
+         * 离场超时是**外部时钟**推进的（巡查器 → `settleAsTimeout`），所以这里
+         * 除了把结果返回给工具，还得**让界面把那张卡收起来** —— 不然用户回来
+         * 看到一张还在等他的卡，而任务已经按默认选项跑完了。
+         */
+        if (reply.timeout === true && cardId) {
+          emit({ type: 'clarify.timeout', confirmId: cardId, sessionId: input.sessionId ?? '' })
+        }
         return { answers: [], skipped: true, timeout: reply.timeout === true }
       }
       try {
@@ -124,6 +160,19 @@ function askClarify(input = {}) {
     })
 }
 
+/**
+ * 一轮结束了（成功 / 失败 / 中断都走它）：把这一轮还挂着的确认按「拒绝」结算掉。
+ *
+ * 不结算就会：promise 一直悬着 + 界面上那张卡不消失（「任务都完了还在问我要不要允许」），
+ * 要等 5 分钟的兜底定时器才自己灭。
+ *
+ * @param {string} requestId chat 的 requestId
+ * @returns {{ closed: number }}
+ */
+function closeOut(requestId) {
+  return confirmBridge.settleAllFor(requestId)
+}
+
 /** 注册 `chat:confirm`（两条往返共用；第三个参数是 AG-053 加的可选答复） */
 function register({ ipcMain }) {
   ipcMain.handle('chat:confirm', (_event, confirmId, approved, answer) =>
@@ -131,4 +180,4 @@ function register({ ipcMain }) {
   )
 }
 
-module.exports = { register, askUser, askClarify, CONFIRM_TIMEOUT_MS, CLARIFY_TIMEOUT_MS }
+module.exports = { register, askUser, askClarify, closeOut, CONFIRM_TIMEOUT_MS, CLARIFY_TIMEOUT_MS }

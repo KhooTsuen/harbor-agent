@@ -209,12 +209,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
         life.forget(phaseKey)
         streams.delete(requestId)
         /* 收尾：把这轮没答复的确认全部按「拒绝」处理，避免悬挂 */
-        for (const [id, entry] of pendingConfirms) {
-          if (entry.requestId === requestId) {
-            entry.resolve(false)
-            pendingConfirms.delete(id)
-          }
-        }
+        chatConfirm.closeOut(requestId)
       }
     })()
 
@@ -229,12 +224,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     entry.controller.abort()
     streams.delete(requestId)
 
-    for (const [id, pending] of pendingConfirms) {
-      if (pending.requestId === requestId) {
-        pending.resolve(false)
-        pendingConfirms.delete(id)
-      }
-    }
+    /* 同样的收尾：用户按了停止，那张确认卡不该还挂着 */
+    chatConfirm.closeOut(requestId)
     return { ok: true }
   })
 

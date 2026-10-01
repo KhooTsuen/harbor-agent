@@ -39,6 +39,37 @@ export const StoredMessageSchema = z.object({
       }),
     )
     .optional(),
+  /*
+   * 开工前澄清的结果（AG-053 批③）。
+   * ★ 必须在 schema 里声明：zod 的 object **默认会剥掉没声明的字段** ——
+   *   不写这一块，落盘的澄清结果读回来就没了（界面看不到「当时选了什么」）。
+   */
+  clarify: z
+    .object({
+      questions: z.array(
+        z.object({
+          question: z.string(),
+          options: z
+            .array(z.object({ label: z.string(), effect: z.string().default('') }))
+            .default([]),
+          allowFreeform: z.boolean().default(true),
+          defaultValue: z.string().default(''),
+          defaultFrom: z.enum(['model', 'first']).default('first'),
+        }),
+      ),
+      answers: z
+        .array(
+          z.object({
+            question: z.string(),
+            choice: z.string().default(''),
+            text: z.string().default(''),
+          }),
+        )
+        .default([]),
+      skipped: z.boolean().default(false),
+      auto: z.enum(['timeout', 'unattended']).optional(),
+    })
+    .optional(),
   error: z.string().optional(),
 })
 

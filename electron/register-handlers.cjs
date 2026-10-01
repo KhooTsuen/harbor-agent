@@ -64,6 +64,11 @@ function wrapInvokeHandlers(ipcMain) {
 
 function registerHandlers(deps) {
   const { ipcMain, app, Notification, config, log, send, streams, getMainWindow } = deps
+  /*
+   * AG-053 批③：`powerMonitor` 只用来判「人还在不在」（澄清卡的超时）。
+   * 谁注入的、为什么注入：见 main.cjs 里那行与 handlers/clarify-watch.cjs 的文件头。
+   */
+  const { powerMonitor } = deps
   const { currentWorkdir, resolveWorkdir } = deps.workdir
 
   /* 先包一层，后面所有 register() 注册的通道都自动在网里 */
@@ -131,6 +136,39 @@ function registerHandlers(deps) {
   require('./handlers/project-rules.cjs').register({ ipcMain })
   /* 个人资料（头像 + 名字）—— 侧栏左下角那个圆 */
   require('./handlers/profile.cjs').register({ ipcMain })
+
+  /*
+   * ── AG-053 批③：澄清卡的「离场巡查」 ──
+   *
+   * 澄清卡是**阻塞**的（用户不答，任务就一直等）。所以用户走开太久时要：
+   *   ① 按默认选项把这一轮推进下去（不然任务永远挂在那儿）
+   *   ② 发一条系统通知 —— 他回来得知道「刚才我不在，它替我定了什么」
+   *
+   * 判据用 Electron 的 `powerMonitor.getSystemIdleTime()`（键鼠空闲秒数），
+   * 状态机在 `core/clarify-timeout.cjs`（在场不计时，离场才累加）。
+   * ⚠️ 起不来**不许**拦住应用：澄清只是辅助能力，缺了它还有 chat-confirm 里
+   *   那个 5 分钟的兜底定时器 —— 但也不能一声不吭，所以记 error 日志。
+   */
+  const clarifyWatch = require('./handlers/clarify-watch.cjs')
+  const { timeoutNotice, adoptedText } = require('./core/clarify-notice.cjs')
+  const taskCore = require('./core/task.cjs')
+  try {
+    clarifyWatch.start({
+      powerMonitor,
+      /* 上限直接给配置模块的输出（**别在这里翻译键名**，理由见 clarify-watch.cjs 的文件头） */
+      readLimits: () => require('./core/clarify-config.cjs').normalize(config.get().assistant),      onTimeout: ({ sessionId, taskId, questions }) => {
+        const task = taskCore.get(taskId)
+        const taskTitle = task?.title ?? ''
+        /* 留痕（用户回来后能看到「当时到底替我定了什么」）：日志 + 系统通知 */
+        log.info(`澄清超时：${taskTitle || '（没有标题）'} → 已按默认继续（${adoptedText(questions) || '无可用选项'}）`)
+        const notice = timeoutNotice({ taskTitle, questions })
+        notifier.notify({ id: String(sessionId ?? ''), title: notice.title, body: notice.body })
+      },
+      onMuted: ({ taskId }) => log.warn(`澄清：任务 ${taskId} 离场等待累计超上限，本任务不再弹卡`),
+    })
+  } catch (error) {
+    log.error(`澄清超时巡查启动失败：${error instanceof Error ? error.message : error}`)
+  }
 
   /* 交给 main.cjs：藏到托盘时用它给用户一句「我还在这儿」 */
   return { notifier, schedules }

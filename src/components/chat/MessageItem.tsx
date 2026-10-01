@@ -8,6 +8,7 @@ import { CodeBlock } from './CodeBlock'
 import { DiffViewer } from './DiffViewer'
 import { AssistantActions } from './message/AssistantActions'
 import { AnswerVersions } from './message/AnswerVersions'
+import { ClarifyCard } from './ClarifyCard'
 import { MessageRounds } from './message/MessageRounds'
 import { hasAnything, roundsOf } from './message/roundsOf'
 import { TerminalOutput } from './TerminalOutput'
@@ -80,6 +81,22 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
             </div>
           ) : (
             <div className="w-full max-w-[86ch]">
+              {/*
+                AG-053 批③：这一轮开工前问过什么（只读卡）。
+                放最上面 —— 它发生在那轮所有动作**之前**，顺序上就该在最前。
+                老记录没这个字段 → 什么都不渲染，和以前一字不差。
+              */}
+              {message.clarify ? (
+                <ClarifyCard
+                  readOnly
+                  questions={message.clarify.questions}
+                  answered={{
+                    answers: message.clarify.answers,
+                    skipped: message.clarify.skipped,
+                  }}
+                  auto={message.clarify.auto}
+                />
+              ) : null}
               {/*
                 有时间线（新记录）→ 按真实发生顺序排：思考 → 工具 → 正文 → 思考 → …
                 没有（老记录）→ `roundsOf` 合成一轮，排版和新的一致。

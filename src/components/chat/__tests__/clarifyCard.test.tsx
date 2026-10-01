@@ -165,4 +165,29 @@ describe('只读卡（回看历史）', () => {
     draw({ readOnly: true, answered: { skipped: true, answers: [] } })
     expect(container.textContent).toContain('当时跳过了')
   })
+
+  /* ── 自动采纳（AG-053 批③） ────────────────────────────────
+     超时 / 无人值守这两种**没人点头**的情况，回看时必须说清：
+     标的是「默认」而不是「已选」—— 不然用户会以为那是他自己挑的。 */
+  it('★ 超时自动采纳：说清「你当时不在」，标的是（默认）不是（已选）', () => {
+    draw({ readOnly: true, answered: { skipped: true, answers: [] }, auto: 'timeout' })
+    const text = container.textContent ?? ''
+    expect(text).toContain('你当时不在')
+    expect(text).toContain('pnpm（默认）')
+    /* 不能同时说「他选了」、也不能说「他跳过了」——两件事他都没做 */
+    expect(text).not.toContain('（已选）')
+    expect(text).not.toContain('当时跳过了')
+  })
+
+  it('★ 无人值守（定时任务）：说清「没人在场」', () => {
+    draw({ readOnly: true, answered: { skipped: true, answers: [] }, auto: 'unattended' })
+    const text = container.textContent ?? ''
+    expect(text).toContain('定时任务')
+    expect(text).toContain('pnpm（默认）')
+  })
+
+  it('两个问题的默认选项各自标出来（不是只标第一个）', () => {
+    draw({ readOnly: true, answered: { skipped: true, answers: [] }, auto: 'timeout' })
+    expect(container.textContent).toContain('跑（默认）')
+  })
 })

@@ -26,6 +26,12 @@ export type PermissionKind =
 
 export interface PermissionRequest {
   kind: PermissionKind
+  /**
+   * 主进程给这条请求的 id（`cfm_…` / `clr_…`）。
+   * AG-053 批③ 用得上：离场超时的收卡事件是按这个 id 推上来的，
+   * 收的时候得确认「就是这张卡」——同一条对话里可能已经换成下一张了。
+   */
+  confirmId?: string
   title: string
   description: string
   confirmText: string

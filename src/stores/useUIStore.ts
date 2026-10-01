@@ -80,7 +80,13 @@ interface UIState {
    */
   clarify: PermissionRequest | null
   askClarify: (request: PermissionRequest) => void
-  closeClarify: () => void
+  /**
+   * 收起澄清卡。
+   *
+   * 传了 `confirmId` 就**只关那一条**：超时事件是主进程推上来的（他走开了），
+   * 而它可能在界面上已经换成了下一张卡 —— 无条件关会把用户正在答的那张清掉。
+   */
+  closeClarify: (confirmId?: string) => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -134,5 +140,6 @@ export const useUIStore = create<UIState>((set) => ({
   askPermission: (request) => set({ permission: request }),
   closePermission: () => set({ permission: null }),
   askClarify: (request) => set({ clarify: request }),
-  closeClarify: () => set({ clarify: null }),
+  closeClarify: (confirmId) =>
+    set((s) => (confirmId && s.clarify?.confirmId !== confirmId ? {} : { clarify: null })),
 }))

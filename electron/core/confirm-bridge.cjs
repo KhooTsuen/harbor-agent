@@ -28,10 +28,14 @@ function newId(prefix) {
  * 挂一条请求并等回话。
  *
  * @param {{ emitReply: (payload: Record<string, unknown>) => void, timeoutMs?: number,
- *           payload?: Record<string, unknown>, idPrefix?: string }} options
+ *           payload?: Record<string, unknown>, idPrefix?: string, owner?: string }} options
+ *          `owner` = 这条确认属于哪一轮对话（chat 的 requestId）。
+ *          一轮结束时（成功/失败/中断）要把还没回话的那些**按拒绝结算掉**，
+ *          否则界面一直挂着一张卡、promise 一直悬着（AG-053 批③ 把那段
+ *          从 chat.cjs 收回来时发现它引用的 `pendingConfirms` 已经搬走了）。
  * @returns {Promise<{ approved: boolean, answer: string, timeout: boolean, id: string }>}
  */
-function ask({ emitReply, timeoutMs = 5 * 60 * 1000, payload = {}, idPrefix = 'cfm' }) {
+function ask({ emitReply, timeoutMs = 5 * 60 * 1000, payload = {}, idPrefix = 'cfm', owner = '' }) {
   return new Promise((resolve) => {
     const id = newId(idPrefix)
     const timer = setTimeout(() => {
@@ -41,7 +45,7 @@ function ask({ emitReply, timeoutMs = 5 * 60 * 1000, payload = {}, idPrefix = 'c
       resolve({ approved: false, answer: '', timeout: true, id })
     }, timeoutMs)
 
-    pending.set(id, { resolve, timer })
+    pending.set(id, { resolve, timer, owner: String(owner ?? '') })
     emitReply({ confirmId: id, ...payload })
   })
 }
@@ -67,9 +71,51 @@ function settle(id, approved, answer) {
   return { ok: true }
 }
 
+/**
+ * 一轮结束了：把**属于它**的、还没回话的确认都按「拒绝」结算掉。
+ *
+ * 为什么要它：不结算的话 promise 一直悬着、界面上那张卡也不会消失；
+ * 用户看到的是「任务已经完了，但还在问我允许不允许」。
+ * 只动 `owner` 相同的那几条 —— 同时跑着两条对话时，别把另一条的卡也灭了。
+ *
+ * @param {string} owner chat 的 requestId
+ * @returns {{ closed: number }} 结算了几条（排查用；通常是 0）
+ */
+function settleAllFor(owner) {
+  const key = String(owner ?? '')
+  if (!key) return { closed: 0 }
+  let closed = 0
+  for (const [id, entry] of pending) {
+    if (entry.owner !== key) continue
+    pending.delete(id)
+    clearTimeout(entry.timer)
+    entry.resolve({ approved: false, answer: '', timeout: false, id })
+    closed += 1
+  }
+  return { closed }
+}
+
 /** 还挂着几条（排查「界面没回话」用；自检要断言） */
 function pendingCount() {
   return pending.size
+}
+
+/**
+ * 按「超时」结算（AG-053 批③）。
+ *
+ * 给**外部时钟**用的：离场状态机（`clarify-timeout.cjs`）判定用户走开了之后，
+ * 由主进程的 sweep 把这条请求按超时推进，而不是等 `ask()` 里那个 5 分钟的硬定时器。
+ * 语义与自然超时**一字不差**（`timeout: true`）—— 两者走的是同一条下游。
+ *
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function settleAsTimeout(id) {
+  const entry = pending.get(String(id ?? ''))
+  if (!entry) return { ok: false, error: '这个确认已经过期了' }
+  pending.delete(String(id))
+  clearTimeout(entry.timer)
+  entry.resolve({ approved: false, answer: '', timeout: true, id: String(id) })
+  return { ok: true }
 }
 
 /** 测试与热重载用：清空（真机上不该有半路的残留） */
@@ -78,4 +124,4 @@ function reset() {
   pending.clear()
 }
 
-module.exports = { ask, settle, pendingCount, reset }
+module.exports = { ask, settle, settleAsTimeout, settleAllFor, pendingCount, reset }

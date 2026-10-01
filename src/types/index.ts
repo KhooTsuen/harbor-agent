@@ -224,7 +224,7 @@ export interface ModelOption {
 /* AG-052/AG-053：确认请求（含澄清那两条）与澄清类型各自一个文件
    —— 这个桶贴着 300 行，加进来就破线。这里只转出去，调用方照旧从 `@/types` 拿。 */
 export type { PermissionKind, PermissionRequest } from './permission'
-export type { ClarifyQuestion, ClarifyReply } from './clarify'
+export type { ClarifyQuestion, ClarifyReply, StoredClarify } from './clarify'
 
 /* ── Toast ─────────────────────────────────────────────────── */
 

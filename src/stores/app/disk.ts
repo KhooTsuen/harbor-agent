@@ -53,6 +53,12 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
        模型也收不到画面 —— 只剩「（图片）」这行占位字（2026-09-28 真机复现） */
     ...(stored.images && stored.images.length > 0 ? { images: stored.images } : {}),
     ...(stored.citations && stored.citations.length > 0 ? { citations: stored.citations } : {}),
+    /*
+     * 开工前问过什么（AG-053 批③）：**必须还原**。
+     * 丢了的话，重开会话看着就像「模型自己换了个包管理器」—— 用户不知道那是他当时选的。
+     * 老记录没有这个字段 → 什么都不加，渲染照旧。
+     */
+    ...(stored.clarify ? { clarify: stored.clarify } : {}),
     ...(stored.artifacts && stored.artifacts.length > 0 ? { artifacts: stored.artifacts } : {}),
     ...(stored.usage ? { usage: stored.usage } : {}),
     /* 改过的消息：版本表跟着一起回来，重开还能在几版之间切 */

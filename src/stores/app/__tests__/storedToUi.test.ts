@@ -90,4 +90,41 @@ describe('磁盘 → 界面', () => {
     expect('images' in storedToUi(base, 't1')).toBe(false)
     expect('images' in storedToUi({ ...base, images: [] }, 't1')).toBe(false)
   })
+
+  /* ── 开工前澄清的结果（AG-053 批③） ──────────────────────────
+     和 images / reasoning 同一类洞：**存了，但读回时不带**。
+     丢了的话，重开会话看着就像「模型自己换了个包管理器」——
+     用户既不知道那是他选的，也不知道哪些是超时替他定的。 */
+  it('★ clarify 要还原（含选项、他选了哪个、是不是自动采纳的）', () => {
+    const clarify = {
+      questions: [
+        {
+          question: '用哪个包管理器？',
+          options: [{ label: 'pnpm', effect: '仓库里有 pnpm-lock.yaml' }],
+          allowFreeform: true,
+          defaultValue: 'pnpm',
+          defaultFrom: 'model' as const,
+        },
+      ],
+      answers: [{ question: '用哪个包管理器？', choice: 'pnpm', text: '习惯了' }],
+      skipped: false,
+    }
+    const m = storedToUi({ ...base, clarify }, 't1')
+    expect(m.clarify).toEqual(clarify)
+  })
+
+  it('★ 超时自动采纳的那条要带着 auto（回看时要说清不是他选的）', () => {
+    const m = storedToUi(
+      {
+        ...base,
+        clarify: { questions: [], answers: [], skipped: true, auto: 'timeout' as const },
+      },
+      't1',
+    )
+    expect(m.clarify?.auto).toBe('timeout')
+  })
+
+  it('没有 clarify 时不要凭空加一个（旧对话照旧渲染）', () => {
+    expect('clarify' in storedToUi(base, 't1')).toBe(false)
+  })
 })

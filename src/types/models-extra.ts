@@ -7,6 +7,7 @@
    ══════════════════════════════════════════════════════════════ */
 
 import type { UsageBucket } from './stats'
+import type { StoredClarify } from './clarify'
 /* 时间线片段与 UI 侧共用一份定义（type-only import，没有运行时循环） */
 import type { MessageRound } from './conversation'
 
@@ -151,6 +152,8 @@ export interface StoredMessage {
   toolName?: string
   /** 工具调用记录（展示用） */
   toolRuns?: Array<{ id: string; name: string; ok: boolean; output: string; ms?: number }>
+  /** 开工前澄清的结果（AG-053 批③）—— 不存的话重开会话不知道那些选项是怎么定的 */
+  clarify?: StoredClarify
   citations?: Array<{
     id: string
     kind: 'web' | 'file'

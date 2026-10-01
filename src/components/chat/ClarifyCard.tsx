@@ -22,14 +22,28 @@ import { colorOf } from '@/lib/statusLanguage'
 
 export interface ClarifyCardProps {
   questions: readonly ClarifyQuestion[]
-  onReply: (reply: ClarifyReply) => void
+  /** 答完之后回话（**只读卡不用传**） */
+  onReply?: (reply: ClarifyReply) => void
   /** 历史只读卡（批③）：只显示，不许点 */
   readOnly?: boolean
   /** 只读模式下已经答过的内容 */
   answered?: ClarifyReply | null
+  /**
+   * 只读模式下这是**自动采纳**的（没经过用户点头）——批③：
+   *   · `timeout`    他走开了，超时按默认选项继续（回来会收到系统通知）
+   *   · `unattended` 定时任务，一开始就没人在场
+   * 两种都要说清，否则用户回看时会以为「我当时选了它」。
+   */
+  auto?: 'timeout' | 'unattended'
 }
 
-export function ClarifyCard({ questions, onReply, readOnly = false, answered }: ClarifyCardProps) {
+export function ClarifyCard({
+  questions,
+  onReply,
+  readOnly = false,
+  answered,
+  auto,
+}: ClarifyCardProps) {
   /** 问题 → 选中的选项 label */
   const [picked, setPicked] = useState<Record<string, string>>({})
   /** 问题 → 用户补的那句话 */
@@ -47,6 +61,12 @@ export function ClarifyCard({ questions, onReply, readOnly = false, answered }: 
   /* ── 只读（回看历史）：把当时选了什么标出来，选项都不可点 ── */
   if (readOnly) {
     const done = answered ?? { answers: [], skipped: false }
+    const autoText =
+      auto === 'timeout'
+        ? '（你当时不在，超时后按默认继续）'
+        : auto === 'unattended'
+          ? '（定时任务，没人在场，按默认继续）'
+          : ''
     return (
       <section
         className="mb-2 rounded-md border border-line-subtle bg-bg-raised/30 px-3 py-2"
@@ -55,7 +75,7 @@ export function ClarifyCard({ questions, onReply, readOnly = false, answered }: 
         <p className="mb-1 flex items-center gap-1.5 text-2xs text-fg-tertiary">
           <CircleHelp size={11} />
           开工前问过这几个问题
-          {done.skipped ? '（当时跳过了）' : ''}
+          {autoText || (done.skipped ? '（当时跳过了）' : '')}
         </p>
         {questions.map((item, index) => {
           const answer = done.answers.find((one) => one.question === item.question)
@@ -67,14 +87,15 @@ export function ClarifyCard({ questions, onReply, readOnly = false, answered }: 
               </p>
               <ul className="mt-0.5 flex flex-col gap-0.5">
                 {item.options.map((option) => {
-                  const chosen = option.label === choice
+                  /* 自动采纳的（超时 / 无人值守）标的是**默认选项**，不是他选的 */
+                  const chosen = auto ? option.label === item.defaultValue : option.label === choice
                   return (
                     <li
                       key={option.label}
                       className={cn('text-2xs', chosen ? 'text-fg-primary' : 'text-fg-tertiary')}
                     >
                       · {option.label}
-                      {chosen ? '（已选）' : ''}
+                      {chosen ? (auto ? '（默认）' : '（已选）') : ''}
                       <span className="text-fg-tertiary"> —— {option.effect}</span>
                     </li>
                   )
@@ -166,10 +187,10 @@ export function ClarifyCard({ questions, onReply, readOnly = false, answered }: 
           ))}
 
           <div className="mt-2.5 flex items-center justify-end gap-1.5">
-            <Button variant="ghost" size="sm" onClick={() => onReply(reply(true))}>
+            <Button variant="ghost" size="sm" onClick={() => onReply?.(reply(true))}>
               跳过，你自己看着办
             </Button>
-            <Button variant="primary" size="sm" onClick={() => onReply(reply(false))}>
+            <Button variant="primary" size="sm" onClick={() => onReply?.(reply(false))}>
               就这么干
             </Button>
           </div>

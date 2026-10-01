@@ -8,7 +8,7 @@
 
 const path = require('node:path')
 const fs = require('node:fs')
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu, powerMonitor } = require('electron')
 
 const { DIRS, ensureDirs, auditNonC, markPackaged } = require('./core/paths.cjs')
 const log = require('./core/log.cjs')
@@ -280,7 +280,7 @@ if (!gotLock) {
 const handlers = registerHandlers({
   ipcMain,
   app,
-  Notification,
+  Notification, powerMonitor,
   config,
   log,
   send,

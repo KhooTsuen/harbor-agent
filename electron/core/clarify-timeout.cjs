@@ -27,16 +27,29 @@ const DEFAULT_MAX_WAIT_MS = 30 * 60 * 1000
 /**
  * 造一个追踪器。
  *
- * @param {{ now?: () => number, idleSeconds?: () => number, idleThresholdSec?: number,
- *           timeoutMs?: number, maxWaitMs?: number }} [deps]
+ * 三个上限都可以传**函数**（每次看表时现读）—— 因为它们是可配置的
+ * （`clarify-config.cjs`）：传函数之后，设置里改完下一跳就生效，不用重启。
+ *
+ * @param {{ now?: () => number, idleSeconds?: () => number, idleThresholdSec?: number | (() => number),
+ *           timeoutMs?: number | (() => number), maxWaitMs?: number | (() => number) }} [deps]
  */
 function createTracker(deps = {}) {
   const now = typeof deps.now === 'function' ? deps.now : () => Date.now()
   const idleSeconds =
     typeof deps.idleSeconds === 'function' ? deps.idleSeconds : () => 0
-  const idleThresholdSec = Number(deps.idleThresholdSec) > 0 ? Number(deps.idleThresholdSec) : DEFAULT_IDLE_SECONDS
-  const timeoutMs = Number(deps.timeoutMs) > 0 ? Number(deps.timeoutMs) : DEFAULT_TIMEOUT_MS
-  const maxWaitMs = Number(deps.maxWaitMs) > 0 ? Number(deps.maxWaitMs) : DEFAULT_MAX_WAIT_MS
+  /** 数值或函数都收；脏值（含读取抛异常）回落到默认 */
+  const limitOf = (value, fallback) => () => {
+    try {
+      const raw = typeof value === 'function' ? value() : value
+      return Number(raw) > 0 ? Number(raw) : fallback
+    } catch {
+      /* 配置读不到 → 用默认（宁可晚点超时，也不要在定时器里抛出去） */
+      return fallback
+    }
+  }
+  const idleThreshold = limitOf(deps.idleThresholdSec, DEFAULT_IDLE_SECONDS)
+  const timeout = limitOf(deps.timeoutMs, DEFAULT_TIMEOUT_MS)
+  const maxWait = limitOf(deps.maxWaitMs, DEFAULT_MAX_WAIT_MS)
 
   /** cardId → { taskId, sessionId, armedAt, lastTick, waitedMs } */
   const cards = new Map()
@@ -50,7 +63,7 @@ function createTracker(deps = {}) {
     try {
       const seconds = Number(idleSeconds())
       if (!Number.isFinite(seconds) || seconds < 0) return false
-      return seconds >= idleThresholdSec
+      return seconds >= idleThreshold()
     } catch {
       return false
     }
@@ -94,6 +107,8 @@ function createTracker(deps = {}) {
     const events = []
     const at = now()
     const awayNow = away()
+    const timeoutMs = timeout()
+    const maxWaitMs = maxWait()
 
     for (const [id, entry] of cards) {
       if (!awayNow) {
@@ -146,7 +161,8 @@ function createTracker(deps = {}) {
     waited: (taskId) => taskWaited.get(String(taskId ?? '')) ?? 0,
     /** 现在还挂着几张卡（自检与「任务卡住了吗」排查用） */
     pending: () => [...cards.entries()].map(([id, entry]) => ({ id, ...entry })),
-    limits: { idleThresholdSec, timeoutMs, maxWaitMs },
+    /* 现读的三个上限（设置改完下一跳就生效；排查时也看得到当时的值） */
+    limits: { idleThresholdSec: idleThreshold, timeoutMs: timeout, maxWaitMs: maxWait },
   }
 }
 

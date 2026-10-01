@@ -1,7 +1,8 @@
 import { confirmChat } from '@/lib/backend'
 import { clarifyReplyToWire } from '@/lib/clarify'
-import type { ClarifyQuestion } from '@/types'
+import type { ClarifyQuestion, StoredClarify } from '@/types'
 import { useUIStore } from '../useUIStore'
+import { useAppStore } from '../useAppStore'
 
 /* ══════════════════════════════════════════════════════════════
    写操作确认（主进程推过来的 `confirm_request`）
@@ -44,6 +45,7 @@ export function askPermissionFor(event: Record<string, unknown>): void {
   if (kind === 'clarify') {
     const questions = Array.isArray(event.questions) ? event.questions : []
     useUIStore.getState().askClarify({
+      confirmId,
       kind: 'clarify',
       title: '动手前先对齐一下',
       description: '',
@@ -51,8 +53,14 @@ export function askPermissionFor(event: Record<string, unknown>): void {
       danger: false,
       clarify: questions as ClarifyQuestion[],
       onClarify: (reply) => {
-        useUIStore.getState().closeClarify()
+        useUIStore.getState().closeClarify(confirmId)
         void confirmChat(confirmId, reply.skipped !== true, clarifyReplyToWire(reply))
+        /* 记到这一轮的助手消息上（那是以后回看时的只读卡） */
+        recordClarify(event, {
+          questions: questions as ClarifyQuestion[],
+          answers: reply.answers,
+          skipped: reply.skipped === true,
+        })
       },
       /* 卡片被外部关掉（切对话、任务停了、用户按 Esc）：当「跳过」回话，
          不能让主进程干等到超时 —— 那样它会以为用户离场了 */
@@ -87,4 +95,46 @@ export function askPermissionFor(event: Record<string, unknown>): void {
     /* 关掉弹窗也算拒绝 —— 不回话的话主进程会一直等到超时 */
     onCancel: () => void confirmChat(confirmId, false),
   })
+}
+
+/**
+ * 把「开工前问过什么 + 是怎么定的」记到这一轮的助手消息上（AG-053 批③）。
+ *
+ * 为什么记在**助手消息**而不是用户消息：用户那条在按下发送时就落盘了（追加式写，
+ * 没地方原地更新），而助手那条是这一轮**收尾时**才落的 —— 这时候答复早就有了。
+ * 一起落盘还顺带解决了「重开会话看得见」：只读卡读的就是这个字段。
+ *
+ * 找不到助手消息（老对话 / 消息被切走）就**安静地什么都不做** ——
+ * 这只影响「以后回看」，不该让这一轮出别的毛病。
+ */
+function recordClarify(event: Record<string, unknown>, outcome: StoredClarify): void {
+  /*
+   * ⚠️ 主进程那条事件里带的是 `sessionId`（不是 threadId）——
+   *   两个 id 在这个项目里是同一个东西（对话就是会话），但**字段名不一样**，
+   *   写错就等于默默不记（批③ 真机跑第一遍就是这样：卡都过了，磁盘上一片空白）。
+   */
+  const threadId = String(event.sessionId ?? event.threadId ?? '')
+  if (!threadId) return
+  const messages = useAppStore.getState().threads.find((t) => t.id === threadId)?.messages ?? []
+  const last = [...messages].reverse().find((m) => m.role === 'assistant')
+  if (!last) return
+  useAppStore.getState().updateMessage(threadId, last.id, { clarify: outcome })
+}
+
+/**
+ * 主进程推来的「离场超时」（AG-053 批③）：用户走开太久，任务按**默认选项**继续了。
+ *
+ * 要做两件事，缺一件用户回来就懵：
+ *   ① **把卡收起来** —— 否则他看到的是一张还在等他的卡，而任务早跑完了；
+ *   ② **把这件事记进消息**（`auto: 'timeout'`）—— 回看时知道哪几条是替他定的。
+ *
+ * 按 confirmId 精确收：同一对话里可能已经换成下一张卡了，不能无条件关。
+ */
+export function onClarifyTimeout(event: Record<string, unknown>): void {
+  const confirmId = String(event.confirmId ?? '')
+  const pending = useUIStore.getState().clarify
+  useUIStore.getState().closeClarify(confirmId)
+  /* 卡上那几个问题就是回看要显示的东西（只认**当前这张**，别的卡不动） */
+  const questions = pending?.confirmId === confirmId ? (pending.clarify ?? []) : []
+  recordClarify(event, { questions, answers: [], skipped: true, auto: 'timeout' })
 }

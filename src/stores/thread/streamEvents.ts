@@ -6,7 +6,7 @@ import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
-import { askPermissionFor } from './confirmEvents'
+import { askPermissionFor, onClarifyTimeout } from './confirmEvents'
 
 /* ══════════════════════════════════════════════════════════════
    流式聊天事件的处理
@@ -199,6 +199,14 @@ export function handleStreamEvent(
     /* ── 写操作确认：弹给用户，用户点完回主进程（实现见 confirmEvents.ts）── */
     case 'confirm_request':
       askPermissionFor(event)
+      return { handled: true }
+
+    /*
+     * AG-053 批③：澄清卡**离场超时**（用户走开太久，已按默认选项继续）。
+     * 收卡 + 记进这条回复（实现见 confirmEvents.ts 的 onClarifyTimeout）。
+     */
+    case 'clarify.timeout':
+      onClarifyTimeout(event)
       return { handled: true }
 
     /*

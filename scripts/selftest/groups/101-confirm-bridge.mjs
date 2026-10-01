@@ -221,6 +221,30 @@ export async function run() {
       'chatConfirm.register({ ipcMain, send })',
     ),
   )
+  /*
+   * ★ 残留引用：批② 把确认表搬到 confirm-bridge 之后，`chat.cjs` 里还留着两处
+   *   `pendingConfirms`（收尾 + 中断）。它是 ReferenceError，在 Promise 的 finally 里
+   *   → **每轮结束都报一次未处理的拒绝**，而 tsc / 单测 / 自检全绿（那个文件不过 tsc）。
+   *   批③ 真机跑第四段时才在日志里看到。
+   */
+  const chatFull = readFileSync(join(ROOT, 'electron/handlers/chat.cjs'), 'utf8')
+  check('★ chat.cjs 里没有搬家剩下的旧名字（ReferenceError 的那种）', !chatFull.includes('pendingConfirms'))
+  check(
+    '★ 收尾走 chatConfirm.closeOut（一轮结束时把挂着的那条结算掉）',
+    (chatFull.match(/chatConfirm\.closeOut\(requestId\)/g) ?? []).length === 2,
+    String((chatFull.match(/chatConfirm\.closeOut\(requestId\)/g) ?? []).length),
+  )
+
+  /* ── 一轮结束要能把属于这一轮的确认结算掉（按 owner 认领，不碰别的对话） ── */
+  bridge.reset()
+  const mine = bridge.ask({ timeoutMs: 5000, owner: 'req_a', emitReply: () => {} })
+  const other = bridge.ask({ timeoutMs: 5000, owner: 'req_b', emitReply: () => {} })
+  check('两条都挂着', bridge.pendingCount() === 2)
+  const closed = chatConfirm.closeOut('req_a')
+  check('★ 只结算自己那一轮（同时跑着另一条对话时不误伤）', closed.closed === 1 && bridge.pendingCount() === 1, JSON.stringify(closed))
+  check('★ 结算成「拒绝」而不是超时（老路径拿到的还是布尔 false）', (await mine).approved === false && (await mine).timeout === false)
+  bridge.reset()
+  void other
 
   /* 端到端（内核侧）：工具 → 往返 → 答复 → 回到模型能读到的那段文本 */
   const askedByTool = []

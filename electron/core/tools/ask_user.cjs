@@ -97,6 +97,28 @@ module.exports = {
   async run(args, ctx = {}) {
     const sessionId = String(ctx.sessionId ?? '')
     const checked = clarify.normalize(args?.questions)
+    /* 参数全坏（模型没给问题 / 问题全是空的）：返回一句说明，不让整轮废掉 */
+    const unusable = () => {
+      const why = checked.dropped.map((one) => one.reason).join('；') || '没给问题'
+      return `这次没能问出去（${why}）。按你自己判断最稳妥的做法开工，并说明你的选择理由。`
+    }
+
+    /*
+     * ★ 无人值守（定时任务）：**不弹卡、不挂请求、直接按默认选项开工**。
+     *
+     * 这条必须排在最前面（连静音都排在后面）：定时任务的语义就是没人在场 ——
+     * 挂一张没人能看见、也没人能回答的卡，只会让任务干等到超时。
+     * 而且这里**不许**调 transport：调了就会在主进程留一条待回话的请求
+     * （自检断言 `pendingCount() === 0`）。
+     *
+     * 返回的那段文本本身就是**留痕**：它会作为工具结果进这条会话的记录，
+     * 用户回头翻得到「哪次定时运行替他把哪个默认选项定了」。
+     */
+    if (clarify.isUnattended(sessionId)) {
+      return checked.questions.length === 0
+        ? unusable()
+        : clarify.render(checked.questions, { unattended: true })
+    }
 
     /* 静音：这个对话连跳两次了，别再问 */
     if (clarify.muted(sessionId)) {
@@ -107,10 +129,7 @@ module.exports = {
       )
     }
 
-    if (checked.questions.length === 0) {
-      const why = checked.dropped.map((one) => one.reason).join('；') || '没给问题'
-      return `这次没能问出去（${why}）。按你自己判断最稳妥的做法开工，并说明你的选择理由。`
-    }
+    if (checked.questions.length === 0) return unusable()
 
     /* 通道没接上（自检、老版本、没有窗口）：放行，别把任务卡住 */
     const transport = transportOf(ctx)

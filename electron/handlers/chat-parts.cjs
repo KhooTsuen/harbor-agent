@@ -5,8 +5,8 @@
  * **没有状态、不碰 IPC** —— 纯粹「history 这么长」「最后一句用户说了什么」，
  * 搬走零风险，也不用改调用方逻辑。
  *
- * `pendingConfirms`（等待用户点允许/拒绝的那张表）**没搬**：它是有状态的，
- * 和 send / confirm 两个 handler 一起才有意义。
+ * 「等待用户点允许/拒绝」那张表**没搬**（也不在 `chat.cjs` 里了）：AG-053 之后它
+ * 住在 `core/confirm-bridge.cjs`（连超时、两条往返共用），`chat.cjs` 只调它。
  */
 
 const config = require('../core/config.cjs')

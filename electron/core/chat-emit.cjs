@@ -46,6 +46,15 @@ function createEmitter({ requestId, phaseKey, send }) {
     send('chat:event', { ...event, requestId })
   }
 
+  /**
+   * 这个 emitter 属于哪一轮（chat 的 requestId）。
+   *
+   * AG-053 批③：澄清那条往返拿不到 requestId（工具只能把 emitter 递过去），
+   * 而「这一轮结束时把还没回话的确认结算掉」得按 requestId 认领 —— 就挂在这里，
+   * 比再传一个参数穿四层便宜。
+   */
+  emit.requestId = requestId
+
   return { emit, flush: batcher.flush }
 }
 
