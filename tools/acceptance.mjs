@@ -15,8 +15,17 @@
  *   node tools/acceptance.mjs --runs=5                # 改次数
  *   node tools/acceptance.mjs --app=dist-portable/Harbor
  *
- * 前置：便携版的 data/ 里要有**能用的凭证**（整目录从已有安装拷过去；
- * 只拷 credentials.json 会因为 safeStorage 的上下文不完整而解密失败）。
+ * 前置：便携版的 data/ 里要有**能用的凭证** —— **整目录**从已有安装拷过去（`E:\Harbor\data\*`）。
+ *   为什么必须整目录：`safeStorage` 的密钥在**数据目录**里（`data/chromium/Local State` 的
+ *   `os_crypt.encrypted_key`），密文只在写入它时那套 `chromium/` 下能解开 ——
+ *   只拷 `credentials.json` **必然** `decryptString` 失败（实测两边密钥指纹不同；2026-10-02 又踩一次）。
+ *   也别误判成「绑 exe 路径」：换路径没事，用的是哪套 `data/chromium` 才是关键。
+ *   ⚠️ 凭证不可用时验收会**假绿**：模型一次都没答上来，而 T1 这类只读任务的判据是
+ *   「文件没被动」→ 照样 ✅，每轮还白耗满 180 秒。**跑之前先确认**便携版日志里
+ *   「凭证解密失败」是 0 条（或 `logs/token-metrics.jsonl` 有新增行）。
+ *   ⚠️ 跑完清理：删掉拷进去的 `credentials.json` 并把 config 恢复默认（别把真实凭证留在发布物里）。
+ *   这套（备份 → 整目录拷 → 断言密钥指纹 → 跑 → 还原）已脚本化：`tmp/b4-acc-run.cjs` +
+ *   `tmp/b4-acc-restore.cjs`。
  *
  * 产物：控制台摘要 + `acc-report.json`（逐轮明细）+ `acc-live.txt`（实时日志）。
  */
@@ -133,24 +142,64 @@ try {
   for (const task of TASKS) {
     if (ONLY && !task.id.includes(ONLY)) continue
     for (let run = 1; run <= RUNS; run += 1) {
+      /*
+       * 上一轮如果还没收尾（超时了），先把「停止」按掉再开下一轮 ——
+       * 否则此刻的「发送消息」键是「停止」，驱动点不到它，两边互等（2026-10-02 就这么僵住的）。
+       */
+      for (let i = 0; i < 20; i += 1) {
+        const stopped = await ev(
+          `(function(){const re=/停止/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`,
+        )
+        if (stopped !== true) break
+        await sleep(1500)
+      }
       prepareSandbox(SANDBOX)
       const t0 = now()
-      await ev(`(function(){const b=[...document.querySelectorAll('button')].find(x=>/^新建对话/.test((x.getAttribute('aria-label')||x.title||'')));if(b)b.click();return !!b})()`)
+      /*
+       * 点「新建对话」：**三处任一命中**（aria-label / title / 文本）。
+       * 以前只看 aria-label，而侧栏那个按钮没有它 → 一直静静点不到，
+       * 于是每轮都落在**上一条会话**里（历史越攼越长、工作目录也不是沙箱）。
+       */
+      const created = await ev(
+        `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`,
+      )
+      if (created !== true) console.log('  ⚠️ 没点到「新建对话」—— 本轮可能落在旧会话里')
       await sleep(1300)
       await ev(`(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(task.prompt)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`)
       await sleep(600)
-      await ev(`(function(){const b=[...document.querySelectorAll('button')].find(x=>/发送消息/.test((x.getAttribute('aria-label')||x.title||'')));if(b)b.click();return !!b})()`)
+      const sent = await ev(
+        `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`,
+      )
+      if (sent !== true) console.log('  ⚠️ 没点到「发送消息」（可能被原生对话框挡住 / 上一轮没收尾）')
 
       /* 结束判定：见到运行态 → 它消失 + 会话文件 8 秒不再变大 */
       let sawRunning = false
       let lastSize = -1
       let stableSince = now()
       let timedOut = false
-      const dl = now() + 180000
+      /* AG-053：这次有没有弹过澄清卡（含糊需求要看的那个数） */
+      let clarifyCount = 0
+      const dl = now() + (task.vague === true ? 300000 : 180000)
       while (now() < dl) {
         await sleep(1500)
+        /*
+         * 澄清卡：自动化里「用户」就是这个脚本。
+         * 不答的话这一轮会一直等到离场超时（10 分钟），把 180 秒的预算拖爆 ——
+         * 所以看见就点「跳过」（那条路 = 让模型自己拿主意），并把次数记下来。
+         */
+        const card = await ev(
+          `!!document.querySelector('section[aria-label="开工前先对齐"]')`,
+        )
+        if (card === true) {
+          clarifyCount += 1
+          await ev(
+            `(function(){const c=document.querySelector('section[aria-label="开工前先对齐"]');if(!c)return false;` +
+              `const b=[...c.querySelectorAll('button')].find(x=>/跳过/.test(x.textContent||''));if(b){b.click();return true}return false})()`,
+          )
+          await sleep(900)
+        }
         const running = await ev(
-          `!![...document.querySelectorAll('button')].find(x=>/停止/.test((x.getAttribute('aria-label')||x.title||x.textContent||'')))`,
+          `(function(){const re=/停止/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());return !!([...document.querySelectorAll('button')].find(hit))})()`,
         )
         if (running === true) sawRunning = true
         const sess = newest(join(DATA, 'sessions'), '.jsonl')
@@ -186,6 +235,9 @@ try {
         错误数: (Array.isArray(ledger?.errors) ? ledger.errors : []).length,
         工具序列: steps.map((s) => `${s.tool}${s.ok === false ? '✗' : ''}`).join('>').slice(0, 110),
         模型: ledger?.model ?? '',
+        /* AG-053：含糊需求要看的那个数（≥ 2/3 才算过，见 acceptance-cases.mjs） */
+        澄清卡: clarifyCount,
+        含糊需求: task.vague === true,
       }
       report.push(row)
       console.log(`${v.pass ? '✅' : '❌'} ${task.id} #${run} | ${row.耗时秒}s | 步${row.工具步数} 命令${row.跑过命令} 错${row.错误数} | ${v.detail.slice(0, 50)}`)
@@ -207,6 +259,26 @@ try {
   }
   for (const [k, v] of Object.entries(by)) {
     console.log(`${v.ok === v.n ? '✅' : '❌'} ${k.padEnd(16)} ${v.ok}/${v.n} · 平均 ${(v.s.reduce((a, b) => a + b, 0) / v.s.length).toFixed(1)}s`)
+  }
+
+  /*
+   * AG-053：含糊需求有没有触发澄清。
+   * 判据是「≥ 2/3」，**不拿去改退出码** —— 这是模型的判断质量，不是硬闸：
+   * 不到就回去改提示词（`CLARIFY_RULE`），而不是把澄清变成必走流程（那会卡住正常任务）。
+   */
+  const vague = report.filter((r) => r.含糊需求)
+  if (vague.length > 0) {
+    const hit = vague.filter((r) => r.澄清卡 > 0).length
+    const ok = hit / vague.length >= 2 / 3
+    console.log(
+      `\n${ok ? '✅' : '⚠️'} 含糊需求触发澄清：${hit}/${vague.length}（判据 ≥ 2/3${ok ? '' : ' —— 没到，该去调 CLARIFY_RULE，别加硬闸'}）`,
+    )
+    for (const r of vague) console.log(`   ${r.澄清卡 > 0 ? '有卡' : '没问'} · ${r.任务} #${r.轮次} · ${r.验收}`)
+    writeFileSync(
+      join(ROOT, 'acc-clarify.json'),
+      JSON.stringify({ hit, total: vague.length, pass: ok, rows: vague }, null, 2),
+      'utf8',
+    )
   }
   const pass = report.filter((r) => r.通过).length
   console.log(`\n总成功率 ${pass}/${report.length} = ${((pass / Math.max(1, report.length)) * 100).toFixed(0)}%`)

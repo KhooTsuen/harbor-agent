@@ -81,7 +81,6 @@ function decodeEntities(text) {
     raquo: '»',
     copy: '©',
     reg: '®',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     rsquo: '’',
     lsquo: '‘',
     ldquo: '“',

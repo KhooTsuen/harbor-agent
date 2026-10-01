@@ -147,6 +147,8 @@ function createWatcher(deps = {}) {
     sweep,
     pending: () => tracker.pending(),
     away: () => tracker.away(),
+    /** 这个任务累计离场等待超上限了吗（超了就别再弹卡了，见 chat-confirm 的预检） */
+    mutedFor: (taskId) => tracker.muted(taskId),
     tracker,
   }
 }
@@ -164,22 +166,47 @@ let timer = null
  */
 function start(deps = {}) {
   const monitor = deps.powerMonitor
-  const idleSeconds = () => {
-    try {
-      const value = Number(monitor?.getSystemIdleTime?.())
-      return Number.isFinite(value) && value >= 0 ? value : 0
-    } catch {
-      /* 拿不到就按「在场」—— 宁可永远不超时，也不要在他面前替他做决定 */
-      return 0
-    }
-  }
-  current = createWatcher({ idleSeconds, readLimits: deps.readLimits, onTimeout: deps.onTimeout, onMuted: deps.onMuted })
+  /*
+   * ★ `HARBOR_IDLE_SECONDS`：**真机验收专用的替身**，生产里没人设它 = 一行都不走。
+   *
+   * 为什么需要它：真机上「离场」只能靠用户**真的走开**（不动键鼠 ≥ clarifyIdleSeconds），
+   * 而验收脚本跑的正是同一台机器 —— 人一碰鼠标，系统的空闲计时就清零、`away()` 变 false，
+   * 「累计离场等待」永远到不了上限。2026-10-02 就是这么卡住的：诊断行显示
+   * `cards=1 away=false`，看着像应用挂了，其实是**设计如此**（在场不计时）+ 测试的前提错了。
+   *
+   * 所以：显式给了这个值就用它，否则照旧读 `powerMonitor.getSystemIdleTime()`。
+   * 启动日志里会写明用的是哪一个 —— 免得「验收用替身」和「真注入」被看串。
+   */
+  const fakeIdle = Number(process.env.HARBOR_IDLE_SECONDS)
+  const useFake = Number.isFinite(fakeIdle) && fakeIdle >= 0
+  const idleSeconds = useFake
+    ? () => fakeIdle
+    : () => {
+        try {
+          const value = Number(monitor?.getSystemIdleTime?.())
+          return Number.isFinite(value) && value >= 0 ? value : 0
+        } catch {
+          /* 拿不到就按「在场」—— 宁可永远不超时，也不要在他面前替他做决定 */
+          return 0
+        }
+      }
+  current = createWatcher({
+    now: deps.now,
+    idleSeconds,
+    readLimits: deps.readLimits,
+    onTimeout: deps.onTimeout,
+    onMuted: deps.onMuted,
+  })
   const sweepMs = Number(deps.sweepMs) > 0 ? Number(deps.sweepMs) : DEFAULT_SWEEP_MS
   clearInterval(timer)
   /* unref：这个定时器不该拖着进程不让退出（关窗口后该退就退） */
   timer = setInterval(() => current?.sweep(), sweepMs)
   timer.unref?.()
-  log.info(`澄清超时巡查已启动（每 ${sweepMs / 1000} 秒一跳，靠 powerMonitor 判离场）`)
+  log.info(
+    `澄清超时巡查已启动（每 ${sweepMs / 1000} 秒一跳，${
+      useFake ? `空闲值＝验收替身 ${fakeIdle} 秒` : '靠 powerMonitor 判离场'
+    }）`,
+  )
   return { ok: true, sweepMs, limits: current.tracker.limits }
 }
 
@@ -198,6 +225,17 @@ function resolve(id) {
   return current ? current.resolve(id) : { ok: false }
 }
 
+/**
+ * 这个任务已经不该再弹卡了吗（累计离场等待超上限）。
+ *
+ * 批③ 只把这件事记成了日志 —— 标记在了、但没人拦，于是「本任务不再弹卡」是句空话。
+ * 批④ 真机验这条时才发现，现在由 `chat-confirm.askClarify` 在问之前预检。
+ * 没 start 过（无窗口 / 自检）就是 false。
+ */
+function mutedFor(taskId) {
+  return current ? current.mutedFor(taskId) : false
+}
+
 /** 停掉（退出 / 自检收尾用） */
 function stop() {
   clearInterval(timer)
@@ -205,4 +243,4 @@ function stop() {
   current = null
 }
 
-module.exports = { createWatcher, start, arm, resolve, watcher, stop, DEFAULT_SWEEP_MS }
+module.exports = { createWatcher, start, arm, resolve, mutedFor, watcher, stop, DEFAULT_SWEEP_MS }

@@ -124,6 +124,18 @@ export interface AppConfig {
      */
     planFirst: boolean
     verifyAfterEdit: boolean
+    /**
+     * 开工前要不要先问清楚（AG-053，批④ 接上界面）。
+     * ⚠️ 和内核那侧**同名同义**：`core/clarify-config.cjs` 是这四个值的唯一真相源
+     * （默认值 + 夹取规则），这里只声明形状。
+     */
+    clarifyFirst: boolean
+    /** 多久没键鼠活动算「人不在」（秒）——离场检测的阈值 */
+    clarifyIdleSeconds: number
+    /** 离场后等多久自动按默认选项继续（毫秒） */
+    clarifyTimeoutMs: number
+    /** 同一任务累计离场等待的上限（毫秒），超了本任务不再弹卡 */
+    clarifyMaxWaitMs: number
   }
   tools: {
     permission: 'full' | 'ask' | 'readonly'

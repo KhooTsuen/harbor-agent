@@ -49,6 +49,11 @@ export const PREVIEW_CONFIG: AppConfig = {
     streamOutput: true,
     planFirst: true,
     verifyAfterEdit: true,
+    /* AG-053：开工前先对齐（四个值与 core/clarify-config.cjs 的默认一致） */
+    clarifyFirst: true,
+    clarifyIdleSeconds: 30,
+    clarifyTimeoutMs: 600000,
+    clarifyMaxWaitMs: 1800000,
   },
   tools: {
     permission: 'ask',

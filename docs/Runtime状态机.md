@@ -163,6 +163,36 @@ E:\nodejs\node.exe tmp\verify-checkpoint-e2e.cjs   # 内核：13 项
 E:\nodejs\node.exe tmp\verify-rollback-ui.cjs      # 界面：19 项（隔离副本 + 本地假模型，真点按钮）
 ```
 
+## 开工前澄清的「离场」判定（AG-053）
+
+巡查（`handlers/clarify-watch.cjs`，每 5 秒一跳）靠**注入的** `powerMonitor` 判人还在不在：
+`getSystemIdleTime() ≥ clarifyIdleSeconds` 才算离场，卡从那一刻起计时；到 `clarifyTimeoutMs`
+按默认选项继续 + 发通知；同一任务累计到 `clarifyMaxWaitMs` 之后**不再弹卡**。
+
+**人在场不计时是故意的** —— 他盯着屏幕想 20 分钟，那是新需求在长出来，不该被打断。
+拿不到空闲值、或它抛异常，一律**按在场**处理（宁可永不超时，也不当着他的面替他做决定）。
+
+### 验收用替身 `HARBOR_IDLE_SECONDS`
+
+| 问题 | 答案 |
+|---|---|
+| **什么时候用** | 自动化验收需要「人不在」这个前提时（`tmp/verify-clarify-ui.cjs` 的 ④ / ⑨ 段） |
+| **怎么用** | 在**启动被测应用的那个进程**里设 `HARBOR_IDLE_SECONDS=9999`（正数、0 都算「设了」；不设 = 不生效） |
+| **为什么必须有它** | 验收脚本跑在用户**正坐着的**那台机器上，一碰键鼠系统空闲计时就清零 → `away()` 恒为 false → 「累计离场超上限」永远到不了。2026-10-02 第一次跑第 ⑨ 段就卡在这儿：诊断行 `[diag] sweep cards=1 away=false` 看着像应用挂了，其实是**设计如此 + 测试前提错了** |
+| **为什么生产绝不能设** | 它**绕过**了唯一的离场证据（系统空闲值）。生产设了 = 在他明明坐在电脑前的时候替他按默认选项做决定。所以这条路只在**显式设了环境变量**时才走，生产一行都不走 |
+| **怎么知道走的是哪条** | 启动日志写明来源：`靠 powerMonitor 判离场` 或 `空闲值＝验收替身 N 秒` |
+| **真·`powerMonitor` 谁钉** | 自检 `102-clarify-unattended`（**不设**替身时必须读注入的 monitor，设了才以它为准）+ 真机第 ⑧ 段（独立探针直接读 `getSystemIdleTime()` / `getSystemIdleState()`） |
+
+### 真机怎么验
+
+```bash
+E:\nodejs\node.exe tmp\verify-clarify-ui.cjs            # 全量 79 项（①–⑨ + ③′ 唤醒）
+E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=9   # 只跑「累计离场超上限」那一段（一分钟）
+```
+
+`--only=9` 会重拷一份隔离副本（`tmp/tok/clarify-verify`，源是 `dist-portable/Harbor`，
+所以**改完内核要先 `npm run package`**）；想复用已有副本加 `--keep`。
+
 ## 谁改状态（排查入口）
 
 想确认「这条任务怎么变成这样」，按这个顺序看：

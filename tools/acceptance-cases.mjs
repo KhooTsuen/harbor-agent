@@ -53,6 +53,29 @@ const LOG_SAMPLE = (() => {
  */
 const MINE = ['calc.mjs', 'calc.test.mjs', 'greet.mjs', 'nosuch.test.mjs', '读取结果.txt', 'math.mjs']
 
+/**
+ * T9–T11（AG-053）：**三类含糊需求** —— 验的是「开工前会不会先问一句」。
+ *
+ * 为什么不写成「必须弹卡」：那是模型判断，不是硬闸（硬闸会把正常任务也卡住）。
+ * 所以判据分两层：
+ *   · 每条任务自己的**产物**照例行判定（改对了吗 / 测试过不过）；
+ *   · 三条里**至少 2 条**触发了澄清卡（次数由驱动脚本记 —— 它顺手把卡答掉，
+ *     否则没人点的卡会把这一轮拖到超时）。
+ * 不到 2/3 就去改提示词（`CLARIFY_RULE`），**不加硬闸**。
+ */
+const CLARIFY_PROMPTS = {
+  /* ① 改法多种：同一个“整理”有好几种合理解法，而且会动到现有调用方 */
+  multi:
+    'calc.mjs 里现在两个函数摆着，看着有点散。帮我把它整理成一个像样的工具模块，' +
+    '现有的测试要能接着跑过。（自己拿主意也行，但先说清你打算怎么做）',
+  /* ② 不可逆：让他「处理一下」一份文档 —— 重写还是只调格式，后果差很多 */
+  irreversible: '工作目录里的「说明.md」写得有点乱，你帮我处理一下。',
+  /* ③ 影响面说不清：补测试这件事能没有边界地一直做下去 */
+  scope:
+    '给这个项目把测试补一补，覆盖得更全一点；跑 node --test 要全过。' +
+    '补到什么程度你定，但要先告诉我你的起止范围。',
+}
+
 /** 把沙箱恢复成初始状态（每个任务、每一轮都调） */
 export function prepareSandbox(sandbox) {
   mkdirSync(sandbox, { recursive: true })
@@ -188,6 +211,63 @@ export function buildCases(ctx) {
           detail: hit
             ? `回答里有编号，文件${untouched ? '没动' : '被动过'}`
             : `回答里没找到编号${untouched ? '' : '，且文件被动过'}`,
+        }
+      },
+    },
+
+    /* ── AG-053：三类含糊需求（判据 2/3 触发澄清卡，见 CLARIFY_PROMPTS 上面那段） ── */
+    {
+      id: 'T9-含糊-改法多种',
+      prompt: CLARIFY_PROMPTS.multi,
+      vague: true,
+      needShell: true,
+      verify: () => {
+        /* 产物判据：不能把现有的两个导出改没（测试直接 import 它们），且测试要过 */
+        const calc = read(f('calc.mjs'))
+        const test = read(f('calc.test.mjs'))
+        const keepsExports = /export\s+(async\s+)?function\s+add\b/.test(calc) && /multiply\b/.test(calc)
+        const testUntouched = test === CALC_TEST
+        return {
+          pass: keepsExports && testUntouched && calc !== CALC,
+          detail: keepsExports
+            ? testUntouched
+              ? '整理过了，两个导出还在、测试没被改'
+              : '动了测试文件（那是判定基准）'
+            : '把 add / multiply 的导出弄没了（现有测试会直接挂）',
+        }
+      },
+    },
+    {
+      id: 'T10-含糊-不可逆',
+      prompt: CLARIFY_PROMPTS.irreversible,
+      vague: true,
+      verify: () => {
+        /* 产物判据：确实动过那份文档（「处理一下」不能什么都不做），且它还读得出来 */
+        const now = read(f('说明.md'))
+        const changed = now !== GUIDE_MD && now.trim().length > 0
+        const keepsKey = /验收通过-中文文件名-4172/.test(now)
+        return {
+          pass: changed,
+          detail: changed
+            ? keepsKey
+              ? '改过了，关键那行还在'
+              : '改过了，但把要照抄的关键行弄没了'
+            : '一个字都没动（「处理一下」没落地）',
+        }
+      },
+    },
+    {
+      id: 'T11-含糊-范围不清',
+      prompt: CLARIFY_PROMPTS.scope,
+      vague: true,
+      needShell: true,
+      verify: () => {
+        /* 产物判据：测试文件确实补过；至于「补到什么程度」不判（那是他自己定的范围） */
+        const test = read(f('calc.test.mjs'))
+        const added = test !== CALC_TEST && /test\s*\(/.test(test)
+        return {
+          pass: added,
+          detail: added ? '测试补过了' : '测试文件没变化',
         }
       },
     },

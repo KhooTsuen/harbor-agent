@@ -207,56 +207,77 @@ export async function run() {
   check('★ 推进之后不再挂着（工具那边立刻能继续）', bridge.pendingCount() === 0, String(bridge.pendingCount()))
   bridge.reset()
 
-  group('AG-053 / 超时通知：哪条任务 + 替他定了什么')
-  const text = notice.timeoutNotice({
-    taskTitle: '把 README 的安装步骤改成一行脚本',
-    questions: clarify.normalize([
-      good(),
-      good({
-        question: '要加 Node 版本检查吗？',
-        options: [
-          { label: '加', effect: '多 6 行 shell，版本不对时提前报错' },
-          { label: '不加', effect: '少 6 行，Node 太老时报错信息会很含糊' },
-        ],
-        defaultValue: '加',
-      }),
-    ]).questions,
+  /*
+   * ── 累计离场等待超上限 → **这个任务不再弹卡** ──
+   *
+   * `clarifyMaxWaitMs`（默认 30 分钟）是给「同一个任务里问了好几轮、每轮都等不到人」准备的。
+   * 批③ 只把标记打上了、顺手记了行日志 —— **没人拦**，于是「本任务不再弹卡」是句空话；
+   * 批④ 真机验这条才现形。这一组钉三件事：标记打得对、预检读得到、问了也不发卡。
+   *
+   * ⚠️ 必须驱动**单例**（`start()`）：`askClarify` 的预检读的就是它 ——
+   *   用局部 `createWatcher` 建的实例，那边根本看不到（第一版就写错过）。
+   */
+  const muteClock = { at: 1000 }
+  watch.start({
+    now: () => muteClock.at,
+    powerMonitor: { getSystemIdleTime: () => 9999 },
+    readLimits: () => ({ clarifyIdleSeconds: 5, clarifyTimeoutMs: 10, clarifyMaxWaitMs: 100 }),
+    /* 定时器拉长：这一组自己手动 sweep，不靠它 */
+    sweepMs: 999999,
   })
-  check('★ 标题里有任务名（通知只有一行时用户先看「哪条」）', text.title.includes('把 README 的安装步骤改成一行脚本'), text.title)
-  check('★ 正文里说清了采纳的默认选项', /pnpm/.test(text.body) && /加/.test(text.body), text.body.slice(0, 80))
-  check('标题是人话，不是「clarify timeout」这种内部词', /澄清超时/.test(text.title) && !/clarify|timeout/i.test(text.title))
+  /* 三张卡各等掉 100ms（上限就是 100ms）→ 第三张把任务等超 */
+  for (const id of ['m1', 'm2', 'm3']) {
+    watch.arm({ id, taskId: 'task_mute', sessionId: 's' })
+    muteClock.at += 100
+    watch.watcher().sweep()
+  }
+  check('★ 累计离场等待超上限 → 这个任务被标成「别再弹卡」', watch.mutedFor('task_mute') === true)
+  check('别的任务不受影响', watch.mutedFor('task_other') === false)
   check(
-    '拿不到任务名时不空着（不能出现「澄清超时： 已按默认继续」那种断句）',
-    notice.timeoutNotice({ taskTitle: '' }).title.includes('这条任务'),
-    notice.timeoutNotice({ taskTitle: '' }).title,
-  )
-  check('超长任务名会截断（通知塞不下）', notice.timeoutNotice({ taskTitle: 'x'.repeat(200) }).title.length <= 120)
-  check(
-    '问题一条都没有时也不崩',
-    notice.timeoutNotice({ taskTitle: 't' }).body.includes('没有可用选项'),
+    '累计值查得到（排查用）',
+    watch.watcher().tracker.waited('task_mute') >= 100,
+    String(watch.watcher().tracker.waited('task_mute')),
   )
 
-  group('AG-053 / 注入：main.cjs 给的是 Electron 的 powerMonitor')
-  const mainSrc = read('electron/main.cjs')
-  check('★ main.cjs 从 electron 里取 powerMonitor', /require\('electron'\)/.test(mainSrc) && /powerMonitor/.test(mainSrc))
-  check(
-    '★ 取出来是**传给 register-handlers** 的（不是自己拿来用）',
-    /registerHandlers\(\{[\s\S]*?powerMonitor,[\s\S]*?\}\)/.test(mainSrc),
-  )
-  check('内核侧不自己 require electron（巡查器靠注入）', !codeOf(read('electron/handlers/clarify-watch.cjs')).includes("require('electron')"))
-  check('离场状态机也不 require electron', !codeOf(read('electron/core/clarify-timeout.cjs')).includes("require('electron')"))
-  check('通知文案模块不 require electron', !codeOf(read('electron/core/clarify-notice.cjs')).includes("require('electron')"))
-  const regSrc = read('electron/register-handlers.cjs')
-  check(
-    '★ register-handlers 真的用它起了巡查（注入进来却不用 = 超时永远不发生）',
-    regSrc.includes('clarify-watch.cjs') && regSrc.includes('powerMonitor'),
-  )
-  check(
-    '★ 顺手把通知也接上了（起得来但从不通知 = 用户回来一脸懵）',
-    regSrc.includes('timeoutNotice') && regSrc.includes('notify('),
-  )
-  check(
-    '★ 巡查是**每跳现读配置**（设置里改完不用重启）',
-    read('electron/handlers/clarify-watch.cjs').includes('readLimits'),
-  )
+  /* 预检读得到 → 澄清往返**根本不发起**（不发事件、不挂请求） */
+  const chatConfirm = require(join(ROOT, 'electron/handlers/chat-confirm.cjs'))
+  const sent = []
+  bridge.reset()
+  const busy = await chatConfirm.askClarify({
+    sessionId: 's',
+    taskId: 'task_mute',
+    questions: [good()],
+    emit: (event) => sent.push(event),
+  })
+  check('★ 静音后不弹卡（一个事件都没发）', sent.length === 0 && busy.muted === true, JSON.stringify(busy))
+  check('★ 静音后不挂请求（主进程不会多等一秒）', bridge.pendingCount() === 0)
+  bridge.reset()
+  watch.stop()
+
+  /*
+   * ★ 验收替身 `HARBOR_IDLE_SECONDS`：真机验收脚本就坐在**同一台机器**前，
+   *   人一碰鼠标系统空闲就清零 —— 「离场」这件事在真机上没法稳定复现。
+   *   所以设了它就以它为准，没设照旧读注入进来的 powerMonitor。
+   *   （2026-10-02 真机就是这么卡住的：诊断行 `cards=1 away=false`，
+   *     看着像应用挂了，其实是设计如此「在场不计时」+ 测试前提错了。）
+   */
+  const envBefore = process.env.HARBOR_IDLE_SECONDS
+  const awayWith = (env) => {
+    if (env === undefined) delete process.env.HARBOR_IDLE_SECONDS
+    else process.env.HARBOR_IDLE_SECONDS = env
+    watch.stop()
+    watch.start({
+      powerMonitor: { getSystemIdleTime: () => 999 },
+      readLimits: () => ({ clarifyIdleSeconds: 5 }),
+    })
+    const away = watch.watcher().away()
+    watch.stop()
+    return away
+  }
+  check('★ 没设替身 → 读注入的 powerMonitor（系统说走了 999 秒 = 离场）', awayWith(undefined) === true)
+  check('★ 设了替身 → 以它为准（0 秒 = 在场，哪怕系统说走了 999 秒）', awayWith('0') === false)
+  check('替身是正常数字时也认（不是只认 0）', awayWith('999') === true)
+  if (envBefore === undefined) delete process.env.HARBOR_IDLE_SECONDS
+  else process.env.HARBOR_IDLE_SECONDS = envBefore
+  check('收尾：巡查停了、环境变量也清干净了（别影响后面的组）', watch.watcher() === null)
 }

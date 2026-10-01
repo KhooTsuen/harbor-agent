@@ -43,6 +43,28 @@ function muted(sessionId) {
 }
 
 /**
+ * 「他明确说想被问」——用户主动要求解除静音。
+ *
+ * 为什么要从**用户那句话**里认：静音只活在内核内存里，渲染层不知道存量，
+ * 而「手动唤醒」在界面上就是一个按钮 —— 按钮**把这句话填进输入框**（用户还能补两句），
+ * 发出来之后这里认出来就当场解除。比新开一条 IPC 通道便宜得多，
+ * 也不用让渲染层去猜内核状态（AG-053 批④）。
+ *
+ * 判据要**窄**：只认「让我拿主意」这种明确请求，而且**否定词优先**
+ * （「别问我」「不用问了」也是常出现的说法，别把它们当成要问）。
+ */
+const ASK_ME = [/你?问我(几|几个)?(个)?问题/, /问我想清楚/, /先问(问)?我/, /让我先(选|决定|拿主意)/]
+const ASK_ME_NOT = [/(别|不要|不用|免得|懒得|不需要)\s*(再)?(问|打扰)/, /你看着办/, /自己(拍板|决定)/]
+
+/** @param {string} text 用户这轮说的话 */
+function looksLikeAskMe(text) {
+  const value = String(text ?? '').trim()
+  if (!value) return false
+  if (ASK_ME_NOT.some((one) => one.test(value))) return false
+  return ASK_ME.some((one) => one.test(value))
+}
+
+/**
  * 手动唤醒（「问我想清楚」按钮 / 用户说「你问我几个问题」）。
  *
  * 静音是「别老问了」，不是「永远别问」——用户主动要求的时候要能立刻恢复。
@@ -91,6 +113,7 @@ module.exports = {
   muted,
   wake,
   skipCount,
+  looksLikeAskMe,
   markUnattended,
   isUnattended,
 }

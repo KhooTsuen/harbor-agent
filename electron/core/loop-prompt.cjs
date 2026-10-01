@@ -5,6 +5,7 @@
  *
  * 这里回答「这一轮要跟模型说什么」：环境（时间/系统/工作目录）、工具与技能清单、
  * 相关记忆、项目说明、会话状态、历史消息，最后按分层拼成系统提示。
+ * ⚠️ 前两层的**正文**在 prompt-env.cjs（那边写了为什么搬 + 两个坑）。
  *
  * ⚠️ 出过一次事故：改成分层时漏了「环境 / 工具清单 / 模式说明 / 做事的规矩 /
  * 安全边界」五块 —— 模型于是不知道今天几号，也失去了注入边界。
@@ -21,6 +22,8 @@ const memory = require('./memory.cjs')
 const project = require('./project.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const promptStack = require('./prompt-stack.cjs')
+const { environmentSection, currentTimeSection } = require('./prompt-env.cjs')
+const clarifyTurn = require('./clarify-turn.cjs')
 const machineEnv = require('./machine-env.cjs')
 const mcpHint = require('./mcp-hint.cjs')
 const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, workRules, BROWSER_GUIDE } = promptStack
@@ -36,13 +39,6 @@ const taskHint = require('./task-hint.cjs')
    系统提示词
    ══════════════════════════════════════════════════════════ */
 
-/**
- * 环境信息（**静态部分**）。
- *
- * 只有「操作系统 / 工作目录 / 文件访问范围」这些基本不变的东西。
- * ⚠️ 当前时间**不在这里** —— 它每轮都变，放这层会把整个提示的缓存前缀冲掉。
- * 见 `currentTimeSection()`。
- */
 /**
  * AG-017：失败后的「进度对照」。
  *
@@ -76,29 +72,6 @@ function buildFailureNote({ done = [], failed = [] } = {}) {
   lines.push('请**针对失败的那一步调整做法**（换参数、换工具，或先把原因查清楚），')
   lines.push('**已经成功的不必重做** —— 从失败的那一步接着往下走。')
   return `[上一轮执行情况]\n${lines.join('\n')}`
-}
-
-function environmentSection({ workdir, assistantName = 'Agent' }) {
-  return [
-    `- 操作系统：${process.platform === 'win32' ? 'Windows' : process.platform}`,
-    `- 工作目录：${workdir}`,
-    '- 相对路径一律理解为相对工作目录。',
-    '- **文件访问有范围限制**：默认只能读写工作目录内的文件。需要动外面的时候，',
-    '  直接按绝对路径调用工具即可 —— 应用会弹窗让用户批准，批准后本次会话有效。',
-    '  被拒绝时不要反复重试，问用户想怎么办。',
-    `- 你是 ${assistantName}，跑在用户本机上。`,
-  ].join('\n')
-}
-
-/**
- * 当前时间 —— **单独一层，放最后**。
- *
- * 它是唯一**每轮都变**的内容。DeepSeek 的 prompt 缓存是前缀匹配，
- * 把它放在开头等于让后面所有 token 每轮都没法命中。放最后，
- * 前面稳定的部分就能一直命中（命中 token 约 1/10 价）。
- */
-function currentTimeSection() {
-  return `- 当前时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`
 }
 
 /**
@@ -148,6 +121,15 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     }
     return ''
   })()
+  /*
+   * 他这轮明确说「你问我几个问题」→ 当场解除静音（AG-053 批④）。
+   *
+   * 界面那个「先问我想清楚」按钮做的就是**把这句话填进输入框**（他还能再补两句），
+   * 所以这里认出来就够了 —— 不必为它开一条新 IPC 通道，也不用让渲染层去猜内核状态。
+   * 静音只是一次性的「别老问了」，不是偏好，所以解除也不写盘。
+   * 为什么单独一个 clarify-turn.cjs：这段逻辑要跟工具侧（ask_user 的 muted）读同一份状态，
+   * 判断只能有一处；另外这个文件本来就贴着 300 行。
+   */
   /* 技能清单：只给名字 + 用途 + 路径，正文让模型自己按需读 */
   let skillSection = ''
   try {
@@ -256,8 +238,19 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     userPreferences: '',
     retrievedContext: '',
     /* 最后两层：越靠后越容易被遵守 */
-    /* `assistant.planFirst` / `clarifyFirst`（AG-053）的控制点；两条规则的原文与理由见 prompt-stack.cjs */
-    workRules: workRules({ planFirst: config.assistant?.planFirst, clarifyFirst: config.assistant?.clarifyFirst, clarifyMuted: options.clarifyMuted === true }),
+    /*
+     * `assistant.planFirst` / `clarifyFirst`（AG-053）的控制点；
+     * 两条规则的原文与理由见 prompt-stack.cjs。
+     *
+     * ★ 「现在还能不能问他」一次算清（批④ 接的），判断在 clarify-turn.cjs ——
+     * 以前这里读的是 `options.clarifyMuted`，而**那个字段根本没人赋值**：
+     * 静音之后提示词里照旧写着「先问」，模型就去问了，工具却拒答（两边说法不一致）。
+     */
+    workRules: workRules({
+      planFirst: config.assistant?.planFirst,
+      clarifyFirst: config.assistant?.clarifyFirst,
+      clarifyMuted: clarifyTurn.mutedFor({ sessionId: options.sessionId, lastUserText }),
+    }),
     safety: SAFETY_GUIDE,
     /* 当前时间单独一层，放在最末（它每轮都变，不能污染前面的缓存前缀） */
     currentTime: currentTimeSection(),

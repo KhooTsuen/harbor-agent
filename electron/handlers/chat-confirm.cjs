@@ -78,13 +78,21 @@ function askUser(requestId, request, emit) {
  * @param {{ sessionId?: string, taskId?: string, questions?: unknown[],
  *           emit?: (event: Record<string, unknown>) => void, timeoutMs?: number }} input
  * @returns {Promise<{ answers: Array<{question: string, choice?: string, text?: string}>,
- *                    skipped: boolean, timeout: boolean, noWindow?: boolean }>}
+ *                    skipped: boolean, timeout: boolean, noWindow?: boolean, muted?: boolean }>}
  */
 function askClarify(input = {}) {
   const emit = typeof input.emit === 'function' ? input.emit : null
   if (!emit) {
     /* 没有事件通道（定时任务 / 已退出 / 拿不到 emitter）：立刻说「问不了」 */
     return Promise.resolve({ answers: [], skipped: true, timeout: false, noWindow: true })
+  }
+  /*
+   * 这个任务已经等得太久（累计离场超 `clarifyMaxWaitMs`）→ **不弹卡、不挂请求**。
+   * 批③ 的巡查会把标记打上，但没人拦（只记了一行日志）——“本任务不再弹卡”当时是句空话。
+   * 真机验这条才现形。
+   */
+  if (clarifyWatch.mutedFor(input.taskId)) {
+    return Promise.resolve({ answers: [], skipped: true, timeout: false, muted: true })
   }
   /* 已经挂上了哪张卡（下面两个回调都要认它） */
   let cardId = ''

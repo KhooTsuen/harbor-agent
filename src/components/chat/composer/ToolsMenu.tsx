@@ -19,6 +19,15 @@ import { Tooltip } from '@/components/ui/Tooltip'
    单独一个文件是因为 Composer 本体已经接近 300 行。
    ══════════════════════════════════════════════════════════════ */
 
+/**
+ * 「先问我想清楚」那句请求（AG-053 批④）。
+ *
+ * ⚠️ 这句话和内核**认的是同一句** —— `core/clarify-session.cjs` 的 `looksLikeAskMe`
+ *   就是照着它写的。改这里必须同步那边（自检 **103 组**直接从这里读那句字面量，
+ *   再拿去问内核认不认 —— 两边对不上就红）。
+ */
+const ASK_ME_PHRASE = '先问我几个问题再动手，我要自己拿主意。'
+
 export function ToolsMenu({
   onGenerateImage,
   threadSettings,
@@ -84,6 +93,19 @@ export function ToolsMenu({
     }
   }
 
+  /**
+   * AG-053 批④：把「先问我」那句请求填进输入框。
+   *
+   * 为什么是填字而不是直接发：他往往还要补一句背景（「顺便说明为什么选它」），
+   * 而且直接替他发一条消息太「自作主张」—— 这个项目里那是红线。
+   */
+  function askMeFirst(): void {
+    setOpen(false)
+    const phrase = ASK_ME_PHRASE
+    setInput(input.trim() ? `${phrase}\n${input}` : phrase)
+    showToast('info', '下次开工前会先问你', '可以直接发出去（想补背景就接着写）')
+  }
+
   /** 按当前输入框里的描述画一张图 */
   async function generate(): Promise<void> {
     setOpen(false)
@@ -141,6 +163,14 @@ export function ToolsMenu({
         onSelect={() => onSettingsChange({ useMemory: threadSettings?.useMemory === false })}
       >
         {threadSettings?.useMemory === false ? '记忆：关闭' : '记忆：开启'}
+      </MenuItem>
+      {/*
+        AG-053 批④：「手动唤醒」。连跳两次之后澄清会被静音 —— 那是「别老问了」，
+        不是「永远别问」。这个按钮把**那句请求**填进输入框（他还能接着补两句），
+        发出去之后内核认出来就当场解除静音（core/clarify-session.cjs 的 looksLikeAskMe）。
+      */}
+      <MenuItem onSelect={() => askMeFirst()} hint="静音之后想被问时点它">
+        先问我想清楚
       </MenuItem>
       <div className="my-1 h-px bg-line-subtle" role="separator" />
       <MenuLabel>辅助工具</MenuLabel>

@@ -132,4 +132,53 @@ export async function run() {
     read('src/components/settings/providers/AssistantSwitches.tsx').includes('streamOutput') &&
       read('src/components/settings/ProviderPanel.tsx').includes('<AssistantSwitches />'),
   )
+
+  /* ── clarifyFirst：AG-053 的开关（批④ 才补上界面）── */
+  group('开关接线 / clarifyFirst（开工前先问清楚）')
+  check(
+    '★ 开着：规则真的进了提示词',
+    promptStack.workRules({ clarifyFirst: true }).includes('ask_user'),
+  )
+  check('★ 关掉：那一条不再注入（其余照旧）', !promptStack.workRules({ clarifyFirst: false }).includes('ask_user'))
+  check(
+    '★ loop-prompt 按**配置**传进来（不是写死的）',
+    read('electron/core/loop-prompt.cjs').includes('clarifyFirst: config.assistant?.clarifyFirst'),
+  )
+  check(
+    '★ 设置界面有入口（以前有配置、没界面 —— 这一组就是为这种病建的）',
+    read('src/components/settings/providers/AssistantSwitches.tsx').includes('clarifyFirst') &&
+      read('src/components/settings/providers/AssistantSwitches.tsx').includes('开工前先问清楚'),
+  )
+  check(
+    '★ 四个值的形状只有一处定义（渲染层只声明类型，不来第二套默认值）',
+    read('src/types/models.ts').includes('clarifyTimeoutMs') &&
+      read('electron/core/clarify-config.cjs').includes('clarifyTimeoutMs: 600000'),
+  )
+
+  /*
+   * ── AG-053 批④：内核 .cjs 的「未定义标识符」闸门在位 ──
+   *
+   * 「搬走一个表、调用方还引用着旧名字」这种错，`tsc` 管不到（内核不参与）、
+   * `node --check` 只管语法 —— 只能专门扫一遍。这个月踩了两次
+   * （`chat.cjs` 的 `pendingConfirms`、`shell.cjs` 的 `inspectCommand`）。
+   * 这里钉的是「闸门还在」：脚本在、verify 链里真的跑了它。
+   */
+  group('开关接线 / 约束机制：内核未定义标识符的闸门')
+  check('★ 闸门脚本在', read('scripts/lint-kernel.mjs').includes('no-undef'))
+  let pkg = {}
+  try {
+    pkg = JSON.parse(read('package.json'))
+  } catch {
+    pkg = {}
+  }
+  check(
+    '★ verify 链里真的跑了它（写在脚本里但没人跑 = 没有闸门）',
+    String(pkg.scripts?.verify ?? '').includes('lint:kernel'),
+    String(pkg.scripts?.verify ?? '').slice(0, 80),
+  )
+  check(
+    '★ 允许清单必须写清「为什么先留着」（不然就成了偷偷豁免）',
+    read('scripts/lint-kernel.mjs').includes('why:') &&
+      read('scripts/lint-kernel.mjs').includes('允许清单过期'),
+  )
 }

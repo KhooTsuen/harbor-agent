@@ -17,6 +17,7 @@
 | 发一个版本 | [`发布检查.md`](发布检查.md) |
 | 查**还缺什么、别人做过什么别重复做** | [`improvement-checklist.md`](improvement-checklist.md) |
 | 改代码前扫一眼**踩过的坑** | [`踩坑记录.md`](踩坑记录.md) |
+| 知道**开工前为什么要先问你、怎么关、四个值是什么** | [`开工前澄清.md`](开工前澄清.md) |
 | 用户报「用不了」 | [`故障排查.md`](故障排查.md)（含：**现在有哪些错误 → `npm run errors`**） |
 | 看**最近改了什么、为什么** | [`../CHANGELOG.md`](../CHANGELOG.md) · [`更新历史.md`](更新历史.md) |
 | 了解产品概念 / 升级与迁移 | [`核心概念.md`](核心概念.md) · [`更新与数据迁移.md`](更新与数据迁移.md) |
@@ -37,6 +38,7 @@
 | [`改造任务/`](改造任务/)（含 `PROGRESS.md`） | `AGENT.md` 真相源表、`electron/core/plugins.cjs`、自检组 67 |
 | [`数据模型.md`](数据模型.md) · [`Runtime状态机.md`](Runtime状态机.md) | 改字段 / 改状态的人；`核心概念.md` 的下一层细节 |
 | [`Token优化实施与测试提示词.md`](Token优化实施与测试提示词.md) | 自检组 85（它按这份定义盯口径） |
+| [`开工前澄清.md`](开工前澄清.md) | 自检组 `99`–`103`、`tools/acceptance-cases.mjs`（T9–T11 的判据）；改 `ask_user` / 澄清卡 / `clarify-config` 前先看它 |
 | [`Agent开屏与彩蛋设计方案.md`](Agent开屏与彩蛋设计方案.md) | `src/types/index.ts`（性格层开关的设计依据） |
 
 ## 归档（`docs/archive/`）

@@ -12,12 +12,14 @@ import { useConfigStore } from '@/stores/useConfigStore'
 
      · `planFirst`        → 内核提示词层：要不要要求模型先出 ```plan 块
                             （`prompt-stack.cjs` 的 PLAN_RULE）
+     · `clarifyFirst`     → 内核提示词层 + 工具：开工前要不要先问清楚
+                            （AG-053；关掉 = 回到「直接开做」的老行为，也是它的回滚开关）
      · `verifyAfterEdit`  → 内核收尾门禁：改了文件却没跑过命令就顶回去
                             （`task-steering.cjs` 的 shouldVerify）
      · `streamOutput`     → 渲染层：关掉时正文不逐字蹦，等写完再显示
                             （`MessageRounds` 的 hideStreamingContent）
 
-   自检钉着这三条接线（`06-prompt-state` / `44-steering`），改坏了会红。
+   自检钉着这几条接线（`06-prompt-state` / `44-steering` / `99-clarify`），改坏了会红。
    ══════════════════════════════════════════════════════════════ */
 
 /** 一个开关。四个长得一样，抽出来免得抄四遍 */
@@ -62,6 +64,13 @@ export function AssistantSwitches() {
         title="多步任务先给出计划块（界面据此显示计划栏与进度），关掉则直接开做"
       >
         先给计划再动手
+      </Toggle>
+      <Toggle
+        checked={a.clarifyFirst !== false}
+        onChange={(v) => void patchAssistant({ clarifyFirst: v })}
+        title="需求含糊、有多种合理解法时，先问清你要哪种再动手；关掉就直接开做（本开关也是这一条的回滚开关）"
+      >
+        开工前先问清楚
       </Toggle>
       <Toggle
         checked={a.verifyAfterEdit !== false}

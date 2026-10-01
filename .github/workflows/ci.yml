@@ -42,6 +42,14 @@ jobs:
       - name: 代码风格（eslint）
         run: npx eslint src --ext .ts,.tsx
 
+      # AGENT.md 硬约束 #9：跨模块的约定只有一处真相源。
+      # 这一条专扫「内核 .cjs 里引用了未定义的名字」—— `.cjs` 不过 tsc、
+      # `node --check` 只查语法，所以这类写错**只能靠真跑到那一步才现形**
+      # （2026-10-01 踩了两次：`pendingConfirms` / `inspectCommand`）。
+      # 和 `npm run verify` 里的同名步骤一字不差。
+      - name: 内核未定义标识符（no-undef）
+        run: npm run lint:kernel
+
       - name: 格式检查（prettier）
         run: npx prettier --check "src/**/*.{ts,tsx}"
 

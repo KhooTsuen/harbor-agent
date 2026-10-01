@@ -59,6 +59,29 @@
    只准出现在「一份定义 + 命令输出」里；文档里要说得写「看输出」。
    **检查**：`node scripts/check-rules.mjs`（易漂数字）—— 这条本项目已经漂过三次。
 
+9. **跨模块的约定只有一处真相源**。键名、字段名、事件形状 —— 不能两边各写一套。
+   测试要钉「**形状对齐**」，不能只钉「各自能跑」。
+
+   为什么单列一条：2026-10-01 一天之内连着栽了四次，全是同一个形状 ——
+   两边各自都对，接起来什么都不发生，而且**谁也不报错**：
+   - `chat.cjs` 搬走了确认表，还引用着旧名字 `pendingConfirms` → 每轮结束一次未处理拒绝
+   - 离场巡查挂了计时，却没人把那条往返结算掉 → 任务干等 5 分钟的兜底定时器
+   - 巡查器读 `timeoutMs`，配置给的是 `clarifyTimeoutMs` → `undefined` **静默退回默认 10 分钟**
+   - 渲染层写 `event.threadId`，主进程事件里带的是 `sessionId` → 静默不落盘、不显示
+   四次都过了 tsc / lint / 单测 / 自检。
+
+   **检查**（三条都要有）：
+   - **形状只定义一处**：传的对象用生产方那个形状，别在调用方再翻译一层
+     （例：巡查器直接吃 `core/clarify-config.cjs` 的输出；**测试夹具也用它**，
+     而不是手写一个「差不多」的对象 —— 自检 `102-clarify-unattended`）。
+   - **字符串 / 字段名契约要从源码里抠出来真跑一遍**：写一句就验一句，
+     而不是两边各信各的（例：界面那个「先问我想清楚」按钮写的**那句原话**，
+     必须被内核 `looksLikeAskMe` 认出来 —— 同一组）。
+   - **内核 `.cjs` 扫未定义标识符**：`npm run lint:kernel`（已进 `verify` 链）。
+     `.cjs` 不过 tsc，`node --check` 只查语法，**这类名字写错只能靠真跑才现形**。
+     允许清单在 `scripts/lint-kernel.mjs`，每条都要写清「为什么先留着」，
+     修好了不删条目同样报红（过期清单 = 把闸门焊死）。
+
 ## 3. 硬禁区（必须先停下来问）
 
 遇到下面任何一条：**停下改代码 → 说清「我要动什么、为什么必须动、风险点在哪」→ 等确认。**
@@ -91,7 +114,7 @@ npm run preflight # 一站式：全链 verify（含内核自检）→ 应用自�
 它跑的就是下面这些；分开跑也行，但**别漏**：
 
 ```bash
-npm run verify   # 链：typecheck → lint → 格式 → 行数红线 → 单测 → 内核自检 → 构建
+npm run verify   # 链：typecheck → lint（src）→ lint:kernel（electron 的 no-undef）→ 格式 → 行数红线 → 单测 → 内核自检 → 构建
 npm test         # 内核自检（改 electron/**/*.cjs 必跑）
 npm run test:app # 应用自检：看 channelsExpected / channelsMissing
 ```
