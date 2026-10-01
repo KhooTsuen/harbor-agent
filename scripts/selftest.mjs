@@ -139,6 +139,7 @@ import { run as confirmBridgeGroup } from './selftest/groups/101-confirm-bridge.
 import { run as clarifyUnattendedGroup } from './selftest/groups/102-clarify-unattended.mjs'
 import { run as clarifyWakeGroup } from './selftest/groups/103-clarify-wake.mjs'
 import { run as clarifyNoticeGroup } from './selftest/groups/104-clarify-notice.mjs'
+import { run as clarifyRuleGroup } from './selftest/groups/105-clarify-rule.mjs'
 
 const GROUPS = [
   basics,
@@ -244,6 +245,7 @@ const GROUPS = [
   clarifyUnattendedGroup,
   clarifyWakeGroup,
   clarifyNoticeGroup,
+  clarifyRuleGroup,
 ]
 
 async function main() {

@@ -36,7 +36,6 @@ const good = (patch = {}) => ({
 export async function run() {
   const clarify = require(join(ROOT, 'electron/core/clarify.cjs'))
   const askUser = require(join(ROOT, 'electron/core/tools/ask_user.cjs'))
-  const promptStack = require(join(ROOT, 'electron/core/prompt-stack.cjs'))
   const registry = require(join(ROOT, 'electron/core/tools/registry.cjs'))
 
   group('AG-053 / 校验：条数、选项数、坏问题剔除')
@@ -220,21 +219,7 @@ export async function run() {
   const bad = await toolRun({ questions: [{ question: '' }] }, { sessionId: 'x', clarify: async () => ({}) })
   check('参数全坏 → 返回说明而不是抛错（不让整轮废掉）', /没能问出去/.test(bad), bad.slice(0, 60))
 
-  group('AG-053 / 规则注入与开关')
-  const rules = promptStack.workRules({ planFirst: true, clarifyFirst: true })
-  check('★ 开着时提示词里有「开工前先对齐」', rules.includes('ask_user') && rules.includes('开工前先对齐'))
-  check('★ 规则里硬要求 effect 带具体数字或事实', /具体数字或事实/.test(rules))
-  check('★ 规则里硬要求默认选项是最保守那个', /最容易回滚/.test(rules))
-  check('规则里写明「你看着办」就不问', /看着办/.test(rules))
-  check(
-    '关掉开关 → 这一条不注入（其余照旧）',
-    !promptStack.workRules({ planFirst: true, clarifyFirst: false }).includes('ask_user'),
-  )
-  check(
-    '静音时也不注入（提示词里写着「先问」却不让问，模型会来回犹豫）',
-    !promptStack.workRules({ planFirst: true, clarifyMuted: true }).includes('ask_user'),
-  )
-  check('计划那一条不受这个开关影响', rules.includes('plan 块'))
+  /* 「规则注入与开关」那一组已搬到 105-clarify-rule.mjs（这个文件顶到 300 行了） */
 
   group('AG-053 / 接线')
   check('工具表里有 ask_user', registry.byName('ask_user')?.name === 'ask_user')

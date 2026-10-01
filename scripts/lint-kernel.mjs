@@ -25,15 +25,7 @@ const ROOT = path.resolve(import.meta.dirname, '..')
  * 每条都要写清「为什么先留着」+「怎么才能删掉」。修好了必须删条目，
  * 否则这个脚本会报「允许清单过期」。
  */
-export const KNOWN = [
-  {
-    file: path.join('electron', 'handlers', 'shell.cjs'),
-    name: 'inspectCommand',
-    why:
-      '预览终端（PTY 不可用时的那个假终端）里跑命令会抛。真机上 PTY 可用、走不到这条路，' +
-      '所以一直没暴露。修法＝改用 risk.classify（别处都是这么用的），**等确认**（不在本批改动范围内）。',
-  },
-]
+export const KNOWN = []
 
 function runEslint() {
   const eslint = path.join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js')
@@ -90,7 +82,10 @@ function main() {
 
   const scanned = results.length
   if (fresh.length === 0 && knownHit.size === KNOWN.length) {
-    console.log(`✓ 内核 ${scanned} 个 .cjs：没有未定义的标识符（允许清单 ${KNOWN.length} 条仍待修）`)
+    console.log(
+      `✓ 内核 ${scanned} 个 .cjs：没有未定义的标识符` +
+        (KNOWN.length ? `（允许清单 ${KNOWN.length} 条仍待修）` : '（允许清单为空）'),
+    )
     for (const one of KNOWN) {
       console.log(`   · 待修：${one.file} · ${one.name} —— ${one.why}`)
     }

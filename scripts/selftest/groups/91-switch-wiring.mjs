@@ -176,9 +176,15 @@ export async function run() {
     String(pkg.scripts?.verify ?? '').includes('lint:kernel'),
     String(pkg.scripts?.verify ?? '').slice(0, 80),
   )
+  /*
+   * 清单本身是「待修」不是「豁免」：**空着**，或者每条都写清「为什么先留着」。
+   * 2026-10-02 修掉 `inspectCommand` 后清单转空，这条断言也从「必须有 why」
+   * 改成「空的或每条都有 why」—— 钉的是不变式，不是那一刻的条数（钉条数就会
+   * 每次修完都红一次，然后有人直接删断言）。
+   */
+  const lintSrc = read('scripts/lint-kernel.mjs')
   check(
-    '★ 允许清单必须写清「为什么先留着」（不然就成了偷偷豁免）',
-    read('scripts/lint-kernel.mjs').includes('why:') &&
-      read('scripts/lint-kernel.mjs').includes('允许清单过期'),
+    '★ 允许清单是「待修」不是「豁免」：空着，或者每条都写清 why',
+    (lintSrc.includes('export const KNOWN = []') || lintSrc.includes('why:')) && lintSrc.includes('允许清单过期'),
   )
 }

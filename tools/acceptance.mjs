@@ -179,6 +179,7 @@ try {
       let timedOut = false
       /* AG-053：这次有没有弹过澄清卡（含糊需求要看的那个数） */
       let clarifyCount = 0
+      const cardTexts = []
       const dl = now() + (task.vague === true ? 300000 : 180000)
       while (now() < dl) {
         await sleep(1500)
@@ -188,10 +189,11 @@ try {
          * 所以看见就点「跳过」（那条路 = 让模型自己拿主意），并把次数记下来。
          */
         const card = await ev(
-          `!!document.querySelector('section[aria-label="开工前先对齐"]')`,
+          `(function(){const c=document.querySelector('section[aria-label="开工前先对齐"]');return c?String(c.textContent||'').replace(/\\s+/g,' ').slice(0,900):false})()`,
         )
-        if (card === true) {
+        if (card) {
           clarifyCount += 1
+          if (!cardTexts.length) cardTexts.push(card)
           await ev(
             `(function(){const c=document.querySelector('section[aria-label="开工前先对齐"]');if(!c)return false;` +
               `const b=[...c.querySelectorAll('button')].find(x=>/跳过/.test(x.textContent||''));if(b){b.click();return true}return false})()`,
@@ -213,7 +215,8 @@ try {
       if (now() >= dl) timedOut = true
 
       const elapsedMs = now() - t0
-      const v = task.verify()
+      /* 含糊用例的判据可能要看卡片原文（例如 T10「有没有说清风险」），把采到的传进去 */
+      const v = task.verify({ clarifyText: cardTexts.join(' | '), clarifyCount })
       const taskFile = newest(join(DATA, 'tasks'), '.json')
       let ledger = null
       try {

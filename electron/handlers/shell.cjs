@@ -58,6 +58,28 @@ function checkBlocked(command) {
   return null
 }
 
+/**
+ * 一条命令的「体检」：硬拦（`BLOCKED` 那几条）+ 风险分级（`core/risk.cjs`）。
+ *
+ * ⚠️ 这个函数**曾经不存在，而调用点还在**（`shell:run` 里两处用它）——
+ *    `.cjs` 不过 `tsc`，`node --check` 也只查语法、不查未定义标识符，
+ *    所以只有真走到这条路（PTY 不可用、用这个假终端跑命令）才会抛。
+ *    2026-10-02 补上，并从 `scripts/lint-kernel.mjs` 的允许清单里划掉 ——
+ *    那张清单是「待修」不是「豁免」，留着不放就是长期借口。
+ *
+ * 分级到 critical 也直接拦（`risk.cjs` 的口径：critical「默认直接拦」），
+ * 理由一并说明，用户看到的不是「被拦了」而是「它会改系统配置」。
+ */
+function inspectCommand(command) {
+  const verdict = risk.classify(command)
+  const hard = checkBlocked(command)
+  if (hard) return { block: hard, verdict }
+  if (verdict.level === 'critical') {
+    return { block: `这条命令太危险（${verdict.reasons.join('、') || 'critical'}），拦下了。`, verdict }
+  }
+  return { block: null, verdict }
+}
+
 /** `cd xxx` 单独处理：只改状态，不 spawn */
 function tryHandleCd(command) {
   const match = command.trim().match(/^cd(?:\s+(.+?))?\s*$/i)
