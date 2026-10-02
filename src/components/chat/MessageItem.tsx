@@ -85,8 +85,16 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                 AG-053 批③：这一轮开工前问过什么（只读卡）。
                 放最上面 —— 它发生在那轮所有动作**之前**，顺序上就该在最前。
                 老记录没这个字段 → 什么都不渲染，和以前一字不差。
+
+                ★ 2026-10-03：**等这一轮写完再显示**（`!isStreaming`）。
+                  它记在「这一轮的助手消息」上，而回话是**流式中途**落的 ——
+                  以前它立刻出现在正文最上面：用户刚把卡答掉，原地又冒出一张
+                  长得挺像的卡，读起来就是「答完卡还在」。
+                  （真机复现过：交互卡确实收了、工具那行也不再显示「正在询问」，
+                    但只读卡立刻出现；主进程日志 `回话 … ok=true`。）
+                  它在语义上本来就是「回看时看这儿」，留到轮末不损失任何东西。
               */}
-              {message.clarify ? (
+              {message.clarify && !isStreaming ? (
                 <ClarifyCard
                   readOnly
                   questions={message.clarify.questions}
