@@ -33,6 +33,8 @@ import { useEffect, useRef, useState } from 'react'
       effect 只依赖 `active` —— 否则每来一批就重起一次循环。
    3. **追不上时要加速，不能无限滞后**。`gap / 10` 保证了这一点：
       差距越大每帧补得越多，最多滞后约 10 帧。
+   4. **target 换成了另一段字符串（不是上一段的延续）必须立刻重置**。
+      见下面 `swapped` 那段 —— P0-1 / P0-3 的真根因就在这儿。
    ══════════════════════════════════════════════════════════════ */
 
 /** 每帧最多补「剩余量的几分之一」—— 越小越平滑、追得越慢 */
@@ -60,7 +62,36 @@ export function useSmoothText(target: string, active: boolean): string {
   const targetRef = useRef(target)
   const shownRef = useRef(target)
   const rafRef = useRef(0)
+  /* 上一帧的 target —— 拿来判断「这次是延续，还是换了一段」 */
+  const lastTargetRef = useRef(target)
 
+  /*
+   * ★ 2026-10-03 修（P0-1 / P0-3 的真根因）：
+   *
+   * 这个 hook 一直被当成「一段不断变长的文字」在用，但调用方（`MessageRounds`
+   * 的时间线）**每次 `turn_start` 都会递进来另一段字符串**（新一轮的 content，
+   * 从空开始），而且 Component 不重新挂载 —— hook 实例是同一个。
+   *
+   * 原来的更新条件是 `cur.length < full.length`（比长度）：换了一段之后，
+   *   · 新 target **更短** → 长度比不过 → 永远不更新 → 界面**冻在上一轮的字上**（P0-1）；
+   *   · 新 target **更长** → 先把上一轮的字画到新一轮的位置上 → 同一段内容显示**两遍**
+   *     （P0-3，实测 300 字变 600 个字符），等新内容超过旧长度才“自己消失”。
+   *
+   * 判据改成**前缀关系**，而不是长度：
+   *   · target 不是上一帧 target 的延续 → 换了缓冲区；
+   *   · 已显示的字不是 target 的前缀   → 目标变短了 / 内容被换掉。
+   * 两者任一成立就把 `shown` 直接置成新 target（**不拿旧字去追新字**）。
+   *
+   * 放在 render 体里（不是 effect）：React 会当场重渲、**同一帧就修正**，
+   * 不会先画一帧错字。而不换段时的追赶路径不变（shown 是 target 的前缀 → 不重置），
+   * 所以灏平效果一字不改。
+   */
+  const swapped = !target.startsWith(lastTargetRef.current) || !target.startsWith(shownRef.current)
+  if (swapped && shown !== target) {
+    shownRef.current = target
+    setShown(target)
+  }
+  lastTargetRef.current = target
   /* target 每次变都更新 ref，但不重起循环（见纪律 2） */
   targetRef.current = target
 

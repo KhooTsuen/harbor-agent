@@ -21,6 +21,19 @@ const confirmBridge = require('../core/confirm-bridge.cjs')
 const clarifyWatch = require('./clarify-watch.cjs')
 const log = require('../core/log.cjs')
 
+/*
+ * 「卡片类往返」的常驻日志（2026-10-03 加）。
+ *
+ * 为什么要常驻（而不是出问题时临时打点）：用户报过「答完卡不消失 / 任务不继续」，
+ * 而那条链路的三段（主进程发卡 → 渲染层回话 → 主进程结算）彼时**一行日志也没有** ——
+ * 只能靠猜。现在三行就能分清楚：
+ *   ① 卡发出去了吗（cardId）
+ *   ② 回话落到一条**还没结算**的请求上了吗（`ok:false` = 已经过期 → 回话被丢）
+ *   ③ 是不是被「一轮收尾」提前结算掉了（closed > 0）
+ * 量很小（一张卡最多三行），每个卡都一样处理，不算噪声。
+ */
+const cardLog = log.tagged('澄清卡')
+
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 const CLARIFY_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -155,6 +168,7 @@ function askClarify(input = {}) {
       /* 走对话自己的 emitter：它才会把 requestId 补上去（看上面那段） */
       emitReply: (payload) => {
         cardId = String(payload.confirmId ?? '')
+        cardLog.info(`发出 ${cardId}（会话 ${String(input.sessionId ?? '')}）`)
         /* 交给巡查器计时（没 start 过就 no-op，靠上面那个 5 分钟兜底） */
         clarifyWatch.arm({
           id: cardId,
@@ -215,14 +229,24 @@ function askClarify(input = {}) {
  * @returns {{ closed: number }}
  */
 function closeOut(requestId) {
-  return confirmBridge.settleAllFor(requestId)
+  const result = confirmBridge.settleAllFor(requestId)
+  /* closed > 0 = 这一轮结束时还有卡在等回话（用户可能正要答）—— 与 (b) 类问题直接相关 */
+  if (result.closed > 0) cardLog.info(`轮末结算 ${result.closed} 条还没回话的卡`)
+  return result
 }
 
 /** 注册 `chat:confirm`（两条往返共用；第三个参数是 AG-053 加的可选答复） */
 function register({ ipcMain }) {
-  ipcMain.handle('chat:confirm', (_event, confirmId, approved, answer) =>
-    confirmBridge.settle(confirmId, approved, answer),
-  )
+  ipcMain.handle('chat:confirm', (_event, confirmId, approved, answer) => {
+    const result = confirmBridge.settle(confirmId, approved, answer)
+    /*
+     * `ok:false` = 这条 id 已经不在 pending 里了（超时 / 轮末结算 / 重复点）。
+     * 那意味着**用户这次回话被丢了** —— 界面会顺从地收起卡，而主进程那边
+     * 已经按「跳过/拒绝」继续了。以后遇到「答了却没反应」先看这一行。
+     */
+    cardLog.info(`回话 ${confirmId} ok=${result.ok === true}${result.error ? ` ${result.error}` : ''}`)
+    return result
+  })
 }
 
 module.exports = { register, askUser, askClarify, closeOut, CONFIRM_TIMEOUT_MS, CLARIFY_TIMEOUT_MS }
