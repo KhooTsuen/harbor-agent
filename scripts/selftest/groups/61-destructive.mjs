@@ -49,6 +49,8 @@ const MUST_BLOCK = [
   ['Remove-Item "C:\\" -Recurse -Force', '递归删盘根：盘根带引号'],
   ['Remove-Item -Confirm:$false -Recurse C:\\', '递归删盘根：带 -Confirm 开关'],
   ['rm -rf /', 'unix 写法删根（旧注释里当参照、自己判 high 的那条）'],
+  ['rm -f /', '不带 -r 的强制删除也是删根（原只判 medium → 会被静默放行）'],
+  ['rm -f C:\\', '同上（windows 盘根）'],
 
   /* ── 同一类灾难的其它写法（口径：位置 / 引号 / 额外开关都不该影响判定）── */
   ['rm -rf C:\\', '盘根（windows）'],
@@ -92,9 +94,8 @@ const MUST_ASK = [
 
 /**
  * ★★ 治漏不能治过头：**绝不能**变成 critical 的（误报多了用户会关掉整个分级）。
- * 三种情况必须原地不动 —— ① 相对路径（`./build` / `*` / `./*.tmp`）；
- * ② 家目录・标准目录**再往下一层**；③ 名字像但不是（`/usrx` / `~/Projects`），
- * 以及目标和动作**不在同一段**里（旁边那句 `grep` 里的 `/usr` 不算目标）。
+ * 三种情况原地不动 —— ① 相对路径（`./build` / `*` / `./*.tmp`）；② 家目录 / 标准目录
+ * **再往下一层**；③ 名字像但不是（`/usrx` / `~/Projects`）；外加目标与动作不在同一段里。
  */
 const MUST_NOT_CRITICAL = [
   ['rm -rf ./build', 'high', '删构建产物'],
@@ -110,6 +111,8 @@ const MUST_NOT_CRITICAL = [
   ['rm -rf C:\\Users\\me\\projects\\foo\\node_modules', 'high', '家目录深处的产物目录'],
   ['rm -rf /usrx', 'high', '名字像 /usr 但不是（边界不能模糊）'],
   ['rm -rf ./*.tmp', 'high', '相对路径 + 通配（相对就是相对）'],
+  ['rm -f ./build/file.txt', 'medium', '普通删文件（没有 -r、相对路径，不该升级）'],
+  ['rm -f ~/Documents/x.pdf', 'medium', '家目录标准目录里的**某个文件**（只认目录本身）'],
   ['Remove-Item -Recurse -Force ./build', 'high', 'PowerShell 删构建产物'],
   ['find ./build -delete', 'high', 'find 删相对路径'],
   ['echo ./build | xargs rm -rf', 'high', 'xargs 喂相对路径'],
@@ -216,11 +219,8 @@ export async function run() {
 
   /* ── ④ 真跑一遍：execute() 那一层的实际行为 ── */
 
-  /*
-   * 全程用「一律拒绝」的 confirm：
-   *   · 不会真的执行任何东西（MUST_ASK 里那些命令有真实副作用）
-   *   · 又能靠 probe 有没有被调用，分辨「拒了」和「问了之后拒了」
-   */
+  /* 全程用「一律拒绝」的 confirm：不会真的执行任何东西（MUST_ASK 里有真实副作用），
+     又能靠 probe 有没有被调用，分辨「拒了」和「问了之后拒了」。 */
   const probe = []
   const denyCtx = {
     ...ctx,

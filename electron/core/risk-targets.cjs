@@ -10,7 +10,9 @@
  * 当「同一件事」的参照写着。清单在 `docs/踩坑记录.md`（「递归删盘根：曾经漏过的 28 条」）。
  *
  * 现在的做法：**先把命令归一化，再判目标** —— 位置、引号、额外开关都无关。
- *   腿 1  认动作：`rm -r` / `del /s` / `rd /s` / `Remove-Item -Recurse`
+ *   腿 1  认动作：`rm -r` / `del /s` / `rd /s` / `Remove-Item -Recurse`，
+ *         以及**不带 `-r` 的 `rm -f`**（`rm -f /` 删不掉目录 —— 但那是命令自己失败，
+ *         不该由命令来替判据兜底。2026-10-03 修的口子 A）
  *   腿 2  认目标：盘根、系统目录、家目录（本身 + 一级标准目录）、所有用户的家目录
  *   腿 3  绕一层：`find -delete` / `xargs rm` / 脚本里**写死**的路径
  *
@@ -34,6 +36,14 @@ const RECURSIVE_ACTION = [
   /\b(rmdir|rd)\b[^\n|;&]*?\s\/[a-z]*s(?=[\s;|&]|$)/,
   /\bremove-item\b[^\n|;&]*?-recurse\b/,
 ]
+
+/*
+ * 不带 `-r` 的强制删除。单独一张表，因为它不是「递归」—— 但**目标是盘根时后果一样**：
+ * `rm -f /` 会去删根目录下的每一项（能不能删掉是命令的事，判据不该赌这个）。
+ * 原来这条只判 medium，而 medium 可以被配成**静默放行**（`rm -f /` 就是这么溜过去的）。
+ * 反向锁：`rm -f ./build/file.txt`、`rm -f ~/Documents/x.pdf` 仍然只是 medium。
+ */
+const FORCE_ACTION = [/\brm\b[^\n|;&]*?\s-[a-z]*f[a-z]*(?=[\s;|&]|$)/]
 
 /* ── 腿 2：认「危险目标」 ───────────────────────────────────── */
 
@@ -140,6 +150,16 @@ function indirectReason(text) {
 /* ── 出口 ───────────────────────────────────────────────────── */
 
 /**
+ * 这段里有「删了就没」的动作吗？返回给用户看的说法（null = 没这种动作）。
+ * @param {string} normalized
+ */
+function actionOf(normalized) {
+  if (RECURSIVE_ACTION.some((pattern) => pattern.test(normalized))) return '递归删除'
+  if (FORCE_ACTION.some((pattern) => pattern.test(normalized))) return '强制删除'
+  return null
+}
+
+/**
  * 这条命令是不是「递归删除 + 危险目标」。
  * @param {string} command
  * @returns {string|null} 理由（给用户看的一句话）；不是这一类返回 null
@@ -154,9 +174,10 @@ function dangerousDeleteReason(command) {
    */
   for (const segment of text.split(/&&|\|\||;|\|/)) {
     const normalized = normalize(segment)
-    if (!RECURSIVE_ACTION.some((pattern) => pattern.test(normalized))) continue
+    const action = actionOf(normalized)
+    if (!action) continue
     const hit = matchDangerousTarget(normalized)
-    if (hit) return `递归删除${hit}`
+    if (hit) return `${action}${hit}`
   }
 
   return indirectReason(text)

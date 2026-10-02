@@ -183,13 +183,14 @@
    自己一条都没匹配上（而注释里拿它当参照）。修法：**先归一化再判目标**，位置 / 引号 / 额外开关无关。
    · 已修复（原来是 high，现在 critical）：`rm -rf /` · `rm -rf C:\` · `rm -rf "/"` · `rm -rf C: -Confirm:$false`
      · `del /s /q C:\` · `rd /s /q C:\Windows` · `Remove-Item` 的四种写法 · `sudo` / `bash -c` 包裹的 ·
+     · 不带 `-r` 的 `rm -f /`（原来只判 medium → 会被静默放行）·
      家目录（`~` / `$env:USERPROFILE` / `C:\Users\<名字>`）**及其下的一级标准目录**（`~/Documents` 等）·
      系统目录及其子树（`C:\Windows` / `/usr` / `/var` …）· 所有用户的父目录（`C:\Users` / `/home`）·
      间接写法（`find / -delete`、`echo / | xargs rm -rf`、脚本里写死的 `rmtree('E:/')`）
    · 曾漏过的 28 条原样记在 `踩坑记录.md`；实测口径：78+ 条里 0 漏判 / 0 误判
    · 反向锁：`MUST_NOT_CRITICAL`（17 条，相对路径 / 再深一层 / 名字像但不是 / 跨段）
    · ⚠️ **仍未覆盖的**（以后真踩到再补，别以为全收了）：没白名单的变量（`${HOME}`、`%HOMEPATH%`、
-     `$env:LOCALAPPDATA`）当目标时**不判**（保守）—— 变量看不见就不猜；`\tmp` 与 `/var/tmp`
+     `$env:LOCALAPPDATA`）当目标时**不判**（保守）—— 变量看不见就不猜；`/tmp` 与 `/var/tmp`
      这类 scratch 位置**故意**不算（但对 `/var` 整棵子树是算的，这是取舍，见 `安全模型.md` §3）。
 2. ~~**回退到指定检查点**（2.2）~~ → ✅ **2026-09-24 已做（v1.12.0，AG-045）**：
    `changeset:rollbackTo` + `changeset-rollback.cjs`，撤销检查点**之后**的改动。

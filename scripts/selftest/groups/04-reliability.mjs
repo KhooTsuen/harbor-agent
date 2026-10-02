@@ -284,10 +284,16 @@ export async function run() {
   )
 
   for (const name of [made.name, first.name, second.name]) backupCore.remove(name)
-  check('能删掉备份', !existsSync(join(backupRoot, made.name)))
+  const gone = [made, first, second].every((b) => !existsSync(join(backupRoot, b.name)))
+  check('自己造的 3 份都清掉了', gone, [made, first, second].map((b) => b.name).join(' / '))
+  /* ★ 2026-10-03 修：原来断言「删完 == 进入时」，只在进入时 ≤ 7 份时成立 —— KEEP=10、
+     本组自造 3 份，**进入时 ≥ 8 份就会 prune（删最旧的，那是设计行为）** → 断言必红。
+     改成按会发生的算术断言：留下来的 = 进入时 + 自造 3 − 被 prune − 自删 3。 */
+  const expected = Math.min(beforeCount + 3, backupCore.KEEP) - 3
+  const left = backupCore.list().length
   check(
-    '删完数量回到原样',
-    backupCore.list().length === beforeCount,
-    String(backupCore.list().length),
+    '删完数量符合算术（进入时带多少份都成立）',
+    left === expected,
+    `期望 ${expected}｜实际 ${left}（进入时 ${beforeCount} 份，KEEP=${backupCore.KEEP}）`,
   )
 }
