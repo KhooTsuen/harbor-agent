@@ -233,9 +233,14 @@ try {
       }
       const steps = Array.isArray(ledger?.steps) ? ledger.steps : []
       const askedInLedger = steps.some((s) => s.tool === 'ask_user')
-      /* 含糊用例的判据可能要看卡片原文（T10「有没有说清代价」）与台账里有没有 ask_user */
+      /*
+       * 含糊用例的判据可能要看卡片原文（T10「有没有说清代价」）与台账里有没有 ask_user；
+       * A2 起还要把 **台账步骤** 一起给过去 —— T12 要看「有没有没问就扫全盘」，
+       * 而它只能从步骤里看（卡片文本看不见已经跑掉的命令）。
+       * 老判据（T9–T11）忽略多出来的这个键，行为不变。
+       */
       const v = normalize(
-        task.verify({ clarifyText: cardTexts.join(' | '), clarifyCount, askedInLedger }),
+        task.verify({ clarifyText: cardTexts.join(' | '), clarifyCount, askedInLedger, steps }),
       )
       /*
        * ★ 观测护欏（方案第 ② 条）：这一轮到底有没有真的跑到模型？

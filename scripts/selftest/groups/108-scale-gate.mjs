@@ -124,6 +124,11 @@ export async function run() {
   )
   check('★ 拦截文案里带着信号与预估（模型才好把范围说清）', /预估/.test(first.text) && /盘根|递归/.test(first.text), first.text.slice(0, 80))
   check('★ 明确说了「别换个写法绕过去」', /别换个写法绕过去/.test(first.text))
+  check(
+    '★ 拦下时的标记与判据共用一处定义（判据靠它区分「被拦」与「真跑了」）',
+    first.text.includes(gate.BLOCKED_MARK) && typeof gate.BLOCKED_MARK === 'string',
+    gate.BLOCKED_MARK,
+  )
 
   gate.noteAsked(s1)
   const again = gate.gate({ name: 'run_shell', args: { command: 'dir /s D:\\' }, ctx: { sessionId: s1, workdir: WORKDIR }, audit: noopAudit })

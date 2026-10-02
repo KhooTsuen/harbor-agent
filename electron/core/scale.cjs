@@ -21,6 +21,15 @@ const NOTE_SECONDS = 30
 /** 能算出文件数时，超过它就硬拦（现在基本算不出来，见下面 estimate.files） */
 const HARD_FILES = 2000
 
+/**
+ * 拦截文案的开头（**一处定义**）。
+ *
+ * 闸门用它拼给模型看的话，验收判据（T12）用它区分「尝试被拦下」与「真的执行了」——
+ * 两者在台账里都是一条步骤，只差 `summary` 里有没有这句话。
+ * 两处各写一份字符串，哪天改文案就会静默失配（纪律 #9）。
+ */
+const BLOCKED_MARK = '先别做：这次的规模不小'
+
 /* ── 认信号 ───────────────────────────────────────────────── */
 
 /** 递归写法 */
@@ -262,6 +271,7 @@ module.exports = {
   HARD_SECONDS,
   HARD_FILES,
   NOTE_SECONDS,
+  BLOCKED_MARK,
   inspect,
   kindOf,
   scopeOf,

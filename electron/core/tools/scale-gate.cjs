@@ -27,7 +27,7 @@ const auditCore = require('../audit.cjs')
 const taskCore = require('../task.cjs')
 const scale = require('../scale.cjs')
 
-const { KINDS, HARD_SECONDS, HARD_FILES, NOTE_SECONDS, inspect, kindOf } = scale
+const { KINDS, HARD_SECONDS, HARD_FILES, NOTE_SECONDS, BLOCKED_MARK, inspect, kindOf } = scale
 
 /* ── 对模型说的话 ─────────────────────────────────────────── */
 
@@ -41,7 +41,7 @@ function blockText(kind, reasons, estimate) {
   const files = estimate.files === null ? '文件数未知' : `约 ${estimate.files} 个文件`
   const secs = estimate.seconds === null ? '耗时未知' : `约 ${estimate.seconds} 秒`
   return (
-    `先别做：这次的规模不小（${WHAT[kind] ?? '规模不小'}）。` +
+    `${BLOCKED_MARK}（${WHAT[kind] ?? '规模不小'}）。` +
     `看出来的信号：${reasons.join('；')}；预估 ${files} / ${secs}。` +
     '请先用 ask_user 把「打算做什么、多大范围、大约多久」说清楚（选项里写**具体数字**），' +
     '用户点头之后再按刚才那次调用重试一遍。' +
@@ -214,6 +214,7 @@ module.exports = {
   HARD_SECONDS,
   HARD_FILES,
   NOTE_SECONDS,
+  BLOCKED_MARK,
   inspect,
   kindOf,
   /* 闸门 */
