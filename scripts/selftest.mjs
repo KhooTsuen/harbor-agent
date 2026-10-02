@@ -140,6 +140,7 @@ import { run as clarifyUnattendedGroup } from './selftest/groups/102-clarify-una
 import { run as clarifyWakeGroup } from './selftest/groups/103-clarify-wake.mjs'
 import { run as clarifyNoticeGroup } from './selftest/groups/104-clarify-notice.mjs'
 import { run as clarifyRuleGroup } from './selftest/groups/105-clarify-rule.mjs'
+import { run as acceptanceVerdictGroup } from './selftest/groups/106-acceptance-verdicts.mjs'
 
 const GROUPS = [
   basics,
@@ -246,6 +247,7 @@ const GROUPS = [
   clarifyWakeGroup,
   clarifyNoticeGroup,
   clarifyRuleGroup,
+  acceptanceVerdictGroup,
 ]
 
 async function main() {

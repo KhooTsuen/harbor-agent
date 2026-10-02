@@ -1,57 +1,20 @@
 /**
- * 真机验收：任务集与沙箱
+ * 真机验收：**任务集与判据**
  *
- * 从 acceptance.mjs 拆出来的 —— 那边加完新场景就顶到 300 行红线（硬约束 #2）。
- * 这里只回答两件事：**沙箱里放什么**、**跑哪几类任务、怎么判**；
- * 驱动（起应用、发消息、等结束、统计）在 acceptance.mjs。
+ * 拆过两次，每次都是因为顶到 300 行（硬约束 #2）：
+ *   · 夹具（沙箱里写哪些文件、怎么重置）→ `acceptance-sandbox.mjs`；
+ *   · 驱动（起应用 / 发消息 / 等结束 / 前置检查 / 汇总）→ `acceptance.mjs` + `acceptance-report.mjs`；
+ *   这里只回答一件事：**跑哪几类任务、每类怎么判** ——
+ *   判据必须带**证据**（`acceptance-verdict.mjs`），观测不到就判 `unknown`。
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fail, pass, unknown } from './acceptance-verdict.mjs'
+import { CALC, CALC_TEST, FIXED, GUIDE_MD, LOG_SAMPLE, MINE } from './acceptance-sandbox.mjs'
 
-const CALC = `export function add(a, b) {
-  return a + b
-}
-
-/* BUG（故意留的）：应该返回 a * b */
-export function multiply(a, b) {
-  return a + b
-}
-`
-
-const CALC_TEST = `import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { add, multiply } from './calc.mjs'
-
-test('add', () => assert.equal(add(2, 3), 5))
-test('multiply', () => assert.equal(multiply(2, 3), 6))
-`
-
-const FIXED = /multiply[\s\S]{0,100}return\s+a\s*\*\s*b/
-
-/* T7 用：一份中文文件名的说明，要求照抄一行到另一个中文文件名里 */
-const GUIDE_MD = `# 验收说明
-
-请在工作目录新建一个文件「读取结果.txt」，里面**只写这一行**（一字不差）：
-
-验收通过-中文文件名-4172
-`
-
-/* T8 用：300 行日志，第 137 行处藏着唯一线索 */
-const LOG_SAMPLE = (() => {
-  const lines = []
-  for (let i = 1; i <= 300; i += 1) {
-    if (i === 137) lines.push('批处理编号：ZX-7783（本行是唯一线索）')
-    lines.push(`2026-09-25T00:${String(i % 60).padStart(2, '0')}:00 心跳 #${i} ok`)
-  }
-  return lines.join('\n') + '\n'
-})()
-
-/**
- * 每次重置要删掉的文件。
- * 两处用它：prepareSandbox 的清理、T5 判「有没有多建文件」。
- */
-const MINE = ['calc.mjs', 'calc.test.mjs', 'greet.mjs', 'nosuch.test.mjs', '读取结果.txt', 'math.mjs']
+/* 夹具（CALC / CALC_TEST / FIXED / GUIDE_MD / LOG_SAMPLE / MINE / prepareSandbox）
+   都在 `acceptance-sandbox.mjs` —— 那边只管「沙箱里放什么」。 */
 
 /**
  * T9–T11（AG-053）：**三类含糊需求** —— 验的是「开工前会不会先问一句」。
@@ -76,15 +39,7 @@ const CLARIFY_PROMPTS = {
     '补到什么程度你定，但要先告诉我你的起止范围。',
 }
 
-/** 把沙箱恢复成初始状态（每个任务、每一轮都调） */
-export function prepareSandbox(sandbox) {
-  mkdirSync(sandbox, { recursive: true })
-  for (const name of MINE) rmSync(join(sandbox, name), { force: true })
-  writeFileSync(join(sandbox, 'calc.mjs'), CALC)
-  writeFileSync(join(sandbox, 'calc.test.mjs'), CALC_TEST)
-  writeFileSync(join(sandbox, '说明.md'), GUIDE_MD)
-  writeFileSync(join(sandbox, '日志样本.txt'), LOG_SAMPLE)
-}
+/* `prepareSandbox` 也迁到 `acceptance-sandbox.mjs`（它属于「沙箱里放什么」那一半） */
 
 /**
  * 任务集：每类一档能力，verify 只看**磁盘产物**（或本轮新会话的最后一条回答）。
@@ -95,6 +50,8 @@ export function buildCases(ctx) {
   const sandbox = ctx.sandbox
   const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
   const f = (...parts) => join(sandbox, ...parts)
+  /** 判据的「证据」：压掉空白、截断 —— 要能进报告，又要能一眼看出问题出在哪 */
+  const snip = (s, n = 140) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n) || '（空）'
 
   /* 本轮会话里最后一条**完整**的助手回答（T8 判「答案里有没有那根针」） */
   const lastAnswer = () => {
@@ -120,8 +77,14 @@ export function buildCases(ctx) {
       prompt:
         '读一下工作目录里的 calc.mjs 和 calc.test.mjs，用一句话说清这个模块导出什么、测试测了什么。不要修改任何文件。',
       verify: () => {
-        const ok = read(f('calc.mjs')) === CALC && read(f('calc.test.mjs')) === CALC_TEST
-        return { pass: ok, detail: ok ? '只读任务，两个文件都没被动' : '只读任务却改了文件' }
+        const calc = read(f('calc.mjs'))
+        const test = read(f('calc.test.mjs'))
+        const ok = calc === CALC && test === CALC_TEST
+        return {
+          pass: ok,
+          detail: ok ? '只读任务，两个文件都没被动' : '只读任务却改了文件',
+          evidence: `calc.mjs 未变=${calc === CALC} · calc.test.mjs 未变=${test === CALC_TEST}`,
+        }
       },
     },
     {
@@ -129,8 +92,9 @@ export function buildCases(ctx) {
       prompt:
         '工作目录里 calc.mjs 的 multiply 函数是错的（现在返回 a+b，应该是 a*b）。请把它改对，改完不要跑测试。',
       verify: () => {
-        const ok = FIXED.test(read(f('calc.mjs')))
-        return { pass: ok, detail: ok ? 'multiply 已改成 a*b' : '没改对' }
+        const src = read(f('calc.mjs'))
+        const ok = FIXED.test(src)
+        return { pass: ok, detail: ok ? 'multiply 已改成 a*b' : '没改对', evidence: `calc.mjs：${snip(src)}` }
       },
     },
     {
@@ -138,8 +102,13 @@ export function buildCases(ctx) {
       prompt:
         'calc.mjs 的 multiply 是错的（返回 a+b，应为 a*b）。先改对，然后运行 node --test calc.test.mjs 验证，把测试结果告诉我。',
       verify: () => {
-        const ok = FIXED.test(read(f('calc.mjs')))
-        return { pass: ok, detail: ok ? 'multiply 已改对（有没有真跑测试看台账）' : '没改对' }
+        const src = read(f('calc.mjs'))
+        const ok = FIXED.test(src)
+        return {
+          pass: ok,
+          detail: ok ? 'multiply 已改对（有没有真跑测试看台账）' : '没改对',
+          evidence: `calc.mjs：${snip(src)}`,
+        }
       },
       needShell: true,
     },
@@ -150,7 +119,11 @@ export function buildCases(ctx) {
       verify: () => {
         const src = read(f('greet.mjs'))
         const ok = /greet/.test(src) && /你好，|你好,/.test(src)
-        return { pass: ok, detail: ok ? 'greet.mjs 已建且内容正确' : src ? '内容不对' : '文件没建' }
+        return {
+          pass: ok,
+          detail: ok ? 'greet.mjs 已建且内容正确' : src ? '内容不对' : '文件没建',
+          evidence: src ? `greet.mjs：${snip(src)}` : 'greet.mjs 不存在',
+        }
       },
     },
     {
@@ -164,6 +137,7 @@ export function buildCases(ctx) {
         return {
           pass: extra.length === 0,
           detail: extra.length === 0 ? '失败被正确报告、没多建文件' : `多建了：${extra.join(', ')}`,
+          evidence: extra.length === 0 ? '沙箱里没有多余文件' : `多余文件：${extra.join(', ')}`,
         }
       },
     },
@@ -182,6 +156,7 @@ export function buildCases(ctx) {
           detail: fixes
             ? '拆到 math.mjs、两处 import 都改了'
             : `math=${math ? '有' : '无'} 修对=${FIXED.test(math)} calc转发=${/['"]\.\/math\.mjs['"]/.test(calc)} test指向=${/['"]\.\/math\.mjs['"]/.test(test)}`,
+          evidence: `math.mjs=${math ? `${math.length} 字节` : '无'} · calc 转发到 math=${/['"]\.\/math\.mjs['"]/.test(calc)} · test 指向 math=${/['"]\.\/math\.mjs['"]/.test(test)}`,
         }
       },
       needShell: true,
@@ -195,6 +170,7 @@ export function buildCases(ctx) {
         return {
           pass: ok,
           detail: ok ? '按说明写出了结果文件' : out ? '结果文件内容不对' : '没有建结果文件',
+          evidence: out ? `读取结果.txt：${snip(out)}` : '读取结果.txt 不存在',
         }
       },
     },
@@ -211,6 +187,7 @@ export function buildCases(ctx) {
           detail: hit
             ? `回答里有编号，文件${untouched ? '没动' : '被动过'}`
             : `回答里没找到编号${untouched ? '' : '，且文件被动过'}`,
+          evidence: `回答片段：${snip(answer, 80)} · 日志样本未变=${untouched}`,
         }
       },
     },
@@ -234,6 +211,7 @@ export function buildCases(ctx) {
               ? '整理过了，两个导出还在、测试没被改'
               : '动了测试文件（那是判定基准）'
             : '把 add / multiply 的导出弄没了（现有测试会直接挂）',
+          evidence: `两个导出还在=${keepsExports} · 测试未改=${testUntouched} · calc.mjs 有变动=${calc !== CALC}`,
         }
       },
     },
@@ -251,9 +229,12 @@ export function buildCases(ctx) {
        *
        * 卡片原文由驱动采到后传进来（见 `acceptance.mjs` 的 `cardTexts`）。
        */
-      verify: ({ clarifyText = '' } = {}) => {
+      verify: ({ clarifyText = '', askedInLedger = false } = {}) => {
         if (!clarifyText) {
-          return { pass: false, detail: '没主动问（不可逆操作应该先问）' }
+          /* 台账里问了、但驱动没采到卡片文本 → **观测不到**，不当作「没问」（批④ 假红的近亲） */
+          return askedInLedger
+            ? unknown('台账里有 ask_user，但驱动没采到卡片文本（观测不到，不判）', 'askedInLedger=true · clarifyText 空')
+            : fail('没主动问（不可逆操作应该先问）', '台账里没有 ask_user，也没采到澄清卡')
         }
         /*
          * 「说清风险」的判定口径 **2026-10-02 校准过一次**：
@@ -267,15 +248,13 @@ export function buildCases(ctx) {
         const hasBecause = /因为/.test(clarifyText)
         const concrete =
           /\d/.test(clarifyText) || /风险|不可逆|无法恢复|恢复不了|备份|覆盖|丢失/.test(clarifyText)
-        return {
-          pass: hasBecause && concrete,
-          detail:
-            hasBecause && concrete
-              ? '主动问了，且每个选项都写了具体后果'
-              : hasBecause
-                ? '问了，但选项里没有具体数字/事实（用户没法判断代价）'
-                : '问了，但选项没写「因为 X」（用户看不到代价）',
-        }
+        const detail = hasBecause && concrete
+          ? '主动问了，且每个选项都写了具体后果'
+          : hasBecause
+            ? '问了，但选项里没有具体数字/事实（用户没法判断代价）'
+            : '问了，但选项没写「因为 X」（用户看不到代价）'
+        const how = `卡原文：${snip(clarifyText, 160)}`
+        return hasBecause && concrete ? pass(detail, how) : fail(detail, how)
       },
     },
     {
@@ -290,6 +269,7 @@ export function buildCases(ctx) {
         return {
           pass: added,
           detail: added ? '测试补过了' : '测试文件没变化',
+          evidence: `calc.test.mjs 有变动=${test !== CALC_TEST} · 里含 test(=${/test\s*\(/.test(test)}`,
         }
       },
     },

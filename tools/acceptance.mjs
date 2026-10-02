@@ -32,7 +32,11 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { buildCases, prepareSandbox } from './acceptance-cases.mjs'
+import { buildCases } from './acceptance-cases.mjs'
+import { prepareSandbox } from './acceptance-sandbox.mjs'
+import { normalize, observeRound } from './acceptance-verdict.mjs'
+import { preflightBad, summarize } from './acceptance-report.mjs'
+import { Cdp } from './acceptance-cdp.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1] ?? fallback
@@ -48,29 +52,6 @@ const INSPECT = process.argv.includes('--inspect')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const now = () => Date.now()
 
-class Cdp {
-  constructor(ws) {
-    this.ws = ws
-    this.seq = 0
-    this.pending = new Map()
-    ws.addEventListener('message', (e) => {
-      const m = JSON.parse(e.data)
-      const s = this.pending.get(m.id)
-      if (!s) return
-      this.pending.delete(m.id)
-      if (m.error) s.reject(new Error(JSON.stringify(m.error)))
-      else s.resolve(m.result)
-    })
-  }
-  send(method, params = {}) {
-    const id = ++this.seq
-    return new Promise((res, rej) => {
-      this.pending.set(id, { resolve: res, reject: rej })
-      this.ws.send(JSON.stringify({ id, method, params }))
-    })
-  }
-}
-
 const newest = (dir, ext) => {
   if (!existsSync(dir)) return null
   const list = readdirSync(dir)
@@ -79,6 +60,23 @@ const newest = (dir, ext) => {
     .sort((a, b) => b.m - a.m)
   return list[0]?.f ?? null
 }
+
+/** 当天应用日志（人看的那个）—— 「这一轮到底有没有请求过模型」从这儿看 */
+const logText = () => {
+  const d = new Date()
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const p = join(DATA, 'logs', `${key}.log`)
+  try {
+    return existsSync(p) ? readFileSync(p, 'utf8') : ''
+  } catch {
+    return ''
+  }
+}
+
+/*
+ * 前置检查、汇总与退出码在 `acceptance-report.mjs`；这里只留驱动本身
+ * （起应用 / 发消息 / 等结束 / 每轮观测）。
+ */
 
 /* 任务集与沙箱在 acceptance-cases.mjs；这边只管驱动（起应用、发消息、等结束、统计） */
 const TASKS = buildCases({
@@ -90,6 +88,16 @@ const TASKS = buildCases({
 })
 
 const report = []
+{
+  const bad = preflightBad({ data: DATA, sandbox: SANDBOX })
+  if (bad.length) {
+    console.log('⛔ 前置不成立，拒绝开始（否则多半白跑，或者拿假绿换一个 ✅）：')
+    for (const b of bad) console.log(`   · ${b}`)
+    console.log('   补法：最小集拷贝 credentials.json + config.json + chromium/Local State（见 tmp/b4-acc-run.cjs）')
+    process.exit(2)
+  }
+  console.log('前置检查✓ config.workdir 指向沙箱 · 凭证 backend=safeStorage · chromium/Local State 在')
+}
 let cdp = null
 const app = (() => {
   /* 先清残留实例：否则会连到旧进程，端口还冲突 */
@@ -154,6 +162,7 @@ try {
         await sleep(1500)
       }
       prepareSandbox(SANDBOX)
+      const logBefore = logText().length
       const t0 = now()
       /*
        * 点「新建对话」：**三处任一命中**（aria-label / title / 文本）。
@@ -215,8 +224,6 @@ try {
       if (now() >= dl) timedOut = true
 
       const elapsedMs = now() - t0
-      /* 含糊用例的判据可能要看卡片原文（例如 T10「有没有说清风险」），把采到的传进去 */
-      const v = task.verify({ clarifyText: cardTexts.join(' | '), clarifyCount })
       const taskFile = newest(join(DATA, 'tasks'), '.json')
       let ledger = null
       try {
@@ -225,11 +232,28 @@ try {
         /* 读不到就留空 */
       }
       const steps = Array.isArray(ledger?.steps) ? ledger.steps : []
+      const askedInLedger = steps.some((s) => s.tool === 'ask_user')
+      /* 含糊用例的判据可能要看卡片原文（T10「有没有说清代价」）与台账里有没有 ask_user */
+      const v = normalize(
+        task.verify({ clarifyText: cardTexts.join(' | '), clarifyCount, askedInLedger }),
+      )
+      /*
+       * ★ 观测护欏（方案第 ② 条）：这一轮到底有没有真的跑到模型？
+       * 观测不到就判 `unknown` —— 既不算过也不算不过，不拿它充 ✓。
+       */
+      const guard = observeRound({ timedOut, logSlice: logText().slice(logBefore), steps })
+      const outcome = guard ? guard.outcome : v.outcome
+      const detail = guard ? `${guard.detail}（判据本会判 ${v.outcome}：${v.detail}）` : v.detail
+      const evidence = guard ? `${guard.evidence} · 判据证据：${v.evidence}` : v.evidence
+      const mark = outcome === 'pass' ? '✅' : outcome === 'fail' ? '❌' : '⚠️'
       const row = {
         任务: task.id,
         轮次: run,
-        通过: v.pass,
-        验收: v.detail,
+        结局: outcome,
+        通过: outcome === 'pass',
+        验收: detail,
+        证据: evidence,
+        观测护栏: guard?.evidence ?? '',
         耗时秒: +(elapsedMs / 1000).toFixed(1),
         超时: timedOut,
         见到运行态: sawRunning,
@@ -243,48 +267,22 @@ try {
         含糊需求: task.vague === true,
       }
       report.push(row)
-      console.log(`${v.pass ? '✅' : '❌'} ${task.id} #${run} | ${row.耗时秒}s | 步${row.工具步数} 命令${row.跑过命令} 错${row.错误数} | ${v.detail.slice(0, 50)}`)
+      console.log(
+        `${mark} ${task.id} #${run} | ${row.耗时秒}s | 步${row.工具步数} 命令${row.跑过命令} 错${row.错误数} | ${detail.slice(0, 50)}`,
+      )
+      if (guard) console.log(`     ↳ 观测：${evidence}`)
       /* 实时日志：一行一轮，随时可读（别去戳 stdout —— 会被截断） */
-      appendFileSync(join(ROOT, 'acc-live.txt'), `${new Date().toISOString().slice(11, 19)} ${v.pass ? '✅' : '❌'} ${task.id} #${run} | ${row.耗时秒}s | ${v.detail}\n`, 'utf8')
+      appendFileSync(
+        join(ROOT, 'acc-live.txt'),
+        `${new Date().toISOString().slice(11, 19)} ${mark} ${task.id} #${run} | ${row.耗时秒}s | ${detail}\n`,
+        'utf8',
+      )
     }
   }
 } catch (e) {
   console.log('!! 驱动出错：', String(e?.message ?? e))
 } finally {
-  writeFileSync(join(ROOT, 'acc-report.json'), JSON.stringify(report, null, 2), 'utf8')
-  console.log('\n════════ 汇总 ════════')
-  const by = {}
-  for (const r of report) {
-    by[r.任务] ??= { ok: 0, n: 0, s: [] }
-    by[r.任务].n += 1
-    if (r.通过) by[r.任务].ok += 1
-    by[r.任务].s.push(r.耗时秒)
-  }
-  for (const [k, v] of Object.entries(by)) {
-    console.log(`${v.ok === v.n ? '✅' : '❌'} ${k.padEnd(16)} ${v.ok}/${v.n} · 平均 ${(v.s.reduce((a, b) => a + b, 0) / v.s.length).toFixed(1)}s`)
-  }
-
-  /*
-   * AG-053：含糊需求有没有触发澄清。
-   * 判据是「≥ 2/3」，**不拿去改退出码** —— 这是模型的判断质量，不是硬闸：
-   * 不到就回去改提示词（`CLARIFY_RULE`），而不是把澄清变成必走流程（那会卡住正常任务）。
-   */
-  const vague = report.filter((r) => r.含糊需求)
-  if (vague.length > 0) {
-    const hit = vague.filter((r) => r.澄清卡 > 0).length
-    const ok = hit / vague.length >= 2 / 3
-    console.log(
-      `\n${ok ? '✅' : '⚠️'} 含糊需求触发澄清：${hit}/${vague.length}（判据 ≥ 2/3${ok ? '' : ' —— 没到，该去调 CLARIFY_RULE，别加硬闸'}）`,
-    )
-    for (const r of vague) console.log(`   ${r.澄清卡 > 0 ? '有卡' : '没问'} · ${r.任务} #${r.轮次} · ${r.验收}`)
-    writeFileSync(
-      join(ROOT, 'acc-clarify.json'),
-      JSON.stringify({ hit, total: vague.length, pass: ok, rows: vague }, null, 2),
-      'utf8',
-    )
-  }
-  const pass = report.filter((r) => r.通过).length
-  console.log(`\n总成功率 ${pass}/${report.length} = ${((pass / Math.max(1, report.length)) * 100).toFixed(0)}%`)
+  const code = summarize({ report, root: ROOT })
   app.kill()
-  process.exit(report.length > 0 && pass === report.length ? 0 : 1)
+  process.exit(code)
 }
