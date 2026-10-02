@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleHelp, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleHelp, Sparkles } from 'lucide-react'
 import type { ClarifyQuestion, ClarifyReply } from '@/types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -20,6 +20,10 @@ import { colorOf } from '@/lib/statusLanguage'
    （整个卡片跳过，Agent 自己拍板并在回复里说明理由），以及批⑤ 加的两个
    「退出口」：**先不做了**（这次先不做，界面同时把这轮 pause 住，任务可恢复）
    和 **换个说法**（问题没说清，换措辞重问一版）。
+
+   ★ 2026-10-03（用户要求）：改成**一张卡内分步** —— 一次只展开一问，答完翻到下一问，
+   顶部显示「问题 1/3」，答过的收起并写着「已选 X（点这里改）」。他明说了**不要**做成
+   三张卡（三张卡 = 点三次 + 等三次，比原来更烦）。
 
    ⚠️ 这四个的**后台后果不是一回事**，措辞上不能糊成一团：跳过是「你接着干」，
    「先不做了」是「停手」；说成同一句，模型会一边写交接一边把活干完。
@@ -53,6 +57,14 @@ export function ClarifyCard({
   const [picked, setPicked] = useState<Record<string, string>>({})
   /** 问题 → 用户补的那句话 */
   const [notes, setNotes] = useState<Record<string, string>>({})
+
+  /*
+   * 分步（2026-10-03）：一次只展开一个问题。
+   * 答完自动翻到下一问；答过的收起显示，点它能回去改。
+   * 数据结构没动（还是 questions 数组 + picked/notes），只改了画法。
+   */
+  const [step, setStep] = useState(0)
+  const lastStep = Math.max(0, questions.length - 1)
 
   const reply = (skipped: boolean): ClarifyReply => ({
     skipped,
@@ -155,68 +167,111 @@ export function ClarifyCard({
           <CircleHelp size={14} />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-xs font-medium text-fg-primary">动手前先对齐一下</h3>
+          <h3 className="flex items-center gap-1.5 text-xs font-medium text-fg-primary">
+            动手前先对齐一下
+            {/* 进度只在真有第二问时显示 —— 一问的卡写「1/1」是纯噪声 */}
+            {questions.length > 1 ? (
+              <span className="font-mono text-2xs text-fg-tertiary">
+                问题 {Math.min(step, lastStep) + 1}/{questions.length}
+              </span>
+            ) : null}
+          </h3>
           <p className="mt-0.5 text-2xs leading-relaxed text-fg-secondary">
             答完它再开工。不想答就点「跳过」—— Agent 会自己拍板，并在回复里说明理由。
             想让它先停手就说「先不做了」（任务会停下来，之后能接着做）；觉得问得不对劲就点
             「换个说法」。
           </p>
 
-          {questions.map((item, index) => (
-            <div key={item.question} className="mt-2.5">
-              <p className="text-xs text-fg-primary">
-                {index + 1}. {item.question}
-              </p>
-              <div className="mt-1 flex flex-col gap-1">
-                {item.options.map((option) => {
-                  const chosen = picked[item.question] === option.label
-                  return (
-                    <button
-                      key={option.label}
-                      type="button"
-                      aria-pressed={chosen}
-                      onClick={() =>
-                        setPicked((state) => ({ ...state, [item.question]: option.label }))
-                      }
-                      className={cn(
-                        'rounded-sm border px-2 py-1 text-left transition-colors duration-fast',
-                        chosen
-                          ? 'border-line-focus bg-bg-hover'
-                          : 'border-line-hairline hover:bg-bg-hover',
-                      )}
-                    >
-                      <span className="flex items-center gap-1.5 text-2xs text-fg-primary">
-                        {chosen ? <Sparkles size={11} /> : null}
-                        {option.label}
-                        {/* 默认选项要看得见：用户离场时按它继续，他得知道是哪个 */}
-                        {option.label === item.defaultValue ? (
-                          <span className="text-fg-tertiary">
-                            （没收到回答就按它来
-                            {item.defaultFrom === 'first' ? '，AI 没标默认，取第一个' : ''}）
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="mt-0.5 block text-2xs text-fg-tertiary">
-                        因为：{option.effect}
-                      </span>
-                    </button>
-                  )
-                })}
+          {questions.map((item, index) => {
+            const open = index === step
+            const choice = picked[item.question] ?? ''
+            return (
+              <div
+                key={item.question}
+                className={cn(
+                  'mt-1.5 rounded-sm border',
+                  open ? 'border-line-focus' : 'border-line-hairline bg-bg-base/20',
+                )}
+              >
+                {/* 标题行：点它切换展开哪一问（答过的点回去能改） */}
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setStep(index)}
+                  className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left transition-colors duration-fast hover:bg-bg-hover"
+                >
+                  {open ? (
+                    <ChevronDown size={11} className="shrink-0 text-fg-tertiary" />
+                  ) : (
+                    <ChevronRight size={11} className="shrink-0 text-fg-tertiary" />
+                  )}
+                  <span className="text-xs text-fg-primary">
+                    {index + 1}. {item.question}
+                  </span>
+                  {open ? null : (
+                    <span className="ml-auto min-w-0 truncate text-2xs text-fg-tertiary">
+                      {choice ? `已选 ${choice}（点这里改）` : '还没答（点这里答）'}
+                    </span>
+                  )}
+                </button>
+
+                {open ? (
+                  <div className="px-2 pb-2">
+                    <div className="flex flex-col gap-1">
+                      {item.options.map((option) => {
+                        const chosen = choice === option.label
+                        return (
+                          <button
+                            key={option.label}
+                            type="button"
+                            aria-pressed={chosen}
+                            onClick={() => {
+                              setPicked((state) => ({ ...state, [item.question]: option.label }))
+                              /* 选完就翻到下一问（最后一问就停在这儿） */
+                              setStep((value) => Math.min(value + 1, lastStep))
+                            }}
+                            className={cn(
+                              'rounded-sm border px-2 py-1 text-left transition-colors duration-fast',
+                              chosen
+                                ? 'border-line-focus bg-bg-hover'
+                                : 'border-line-hairline hover:bg-bg-hover',
+                            )}
+                          >
+                            <span className="flex items-center gap-1.5 text-2xs text-fg-primary">
+                              {chosen ? <Sparkles size={11} /> : null}
+                              {option.label}
+                              {/* 默认选项要看得见：用户离场时按它继续，他得知道是哪个 */}
+                              {option.label === item.defaultValue ? (
+                                <span className="text-fg-tertiary">
+                                  （没收到回答就按它来
+                                  {item.defaultFrom === 'first' ? '，AI 没标默认，取第一个' : ''}）
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="mt-0.5 block text-2xs text-fg-tertiary">
+                              因为：{option.effect}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {item.allowFreeform ? (
+                      <input
+                        type="text"
+                        value={notes[item.question] ?? ''}
+                        onChange={(event) =>
+                          setNotes((state) => ({ ...state, [item.question]: event.target.value }))
+                        }
+                        placeholder="想补充点什么就写在这儿（可以只写这个、不选）"
+                        aria-label={`补充：${item.question}`}
+                        className="mt-1 w-full rounded-sm border border-line-hairline bg-bg-base/40 px-2 py-1 text-2xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-              {item.allowFreeform ? (
-                <input
-                  type="text"
-                  value={notes[item.question] ?? ''}
-                  onChange={(event) =>
-                    setNotes((state) => ({ ...state, [item.question]: event.target.value }))
-                  }
-                  placeholder="想补充点什么就写在这儿（可以只写这个、不选）"
-                  aria-label={`补充：${item.question}`}
-                  className="mt-1 w-full rounded-sm border border-line-hairline bg-bg-base/40 px-2 py-1 text-2xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
-                />
-              ) : null}
-            </div>
-          ))}
+            )
+          })}
 
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5">
             {/* 左边两个是「退出口」（批⑤）：都不是「就这么干」的高亮样式 */}

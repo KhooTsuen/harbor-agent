@@ -77,6 +77,8 @@ describe('卡片上必须看得见的东西', () => {
 
   it('模型没标默认时如实说（不假装是模型选的）', () => {
     draw()
+    /* 分步之后第二问默认是收起的 —— 点开才看得到（顺便验「能回去改」）*/
+    act(() => buttonByText('2. 要不要顺手跑一遍测试？')?.click())
     expect(container.textContent).toContain('AI 没标默认，取第一个')
   })
 
@@ -161,6 +163,42 @@ describe('答完之后回什么', () => {
     act(() => buttonByText('就这么干')?.click())
     expect(replies[0]?.cancelled).toBeUndefined()
     expect(replies[0]?.rephrase).toBeUndefined()
+  })
+})
+
+describe('分步：一次展开一个问题（2026-10-03 用户要求）', () => {
+  it('★ 只展开当前那一问，别的一律收起（含顶部进度）', () => {
+    draw()
+    expect(container.textContent).toContain('pnpm')
+    expect(container.textContent).toContain('问题 1/2')
+    /* 第二问的选项不该同时摊着（用户原话：不要问题 123 都挤在同一个 UI 里） */
+    expect(container.textContent).not.toContain('多花约 40 秒，能提前发现改坏')
+  })
+
+  it('★ 答完第一问自动展开第二问，进度跟着走', () => {
+    draw()
+    act(() => buttonByText('pnpm')?.click())
+    expect(container.textContent).toContain('问题 2/2')
+    expect(container.textContent).toContain('因为：多花约 40 秒，能提前发现改坏')
+  })
+
+  it('★ 答过的收起显示「已选 X」，点它能回去改（改完回执是新答案）', () => {
+    draw()
+    act(() => buttonByText('pnpm')?.click())
+    expect(container.textContent).toContain('已选 pnpm（点这里改）')
+
+    act(() => buttonByText('1. 用哪个包管理器？')?.click())
+    expect(container.textContent).toContain('问题 1/2')
+    /*
+     * 这里要按**开头**匹配：`buttonByText('npm')` 会先命中「pnpm」
+     * （`includes` 嘛）—— 那样测的就是「改了但没改对」。
+     */
+    const npmButton = [...container.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').trim().startsWith('npm'),
+    )
+    act(() => npmButton?.click())
+    act(() => buttonByText('就这么干')?.click())
+    expect(replies[0]?.answers[0]?.choice).toBe('npm')
   })
 })
 
