@@ -31,11 +31,24 @@ function openTaskResult(threadId: string): void {
   useUIStore.getState().setActiveRightTab('tasks')
 }
 
+/**
+ * P1-3：用户点了「需要你确认」的通知 —— 他点的目的就是那张卡，
+ * 所以**只切回那条对话** + 请卡片亮一下，**不打开任务中心**
+ * （任务中心是「看结果」的地方，和「有张卡在等你」是两件事）。
+ */
+function openPendingCard(threadId: string): void {
+  if (threadId) useAppStore.getState().setActiveThread(threadId)
+  useUIStore.getState().requestCardFocus()
+}
+
 export function useTaskNotifications(): void {
-  /* 点系统通知 → 和点应用内「查看结果」走同一条路 */
+  /* 点系统通知 → 按通知的 kind 分流（任务结果 / 等你确认的卡片） */
   useEffect(() => {
     if (!useRealBackend) return
-    return subscribeNotificationClick(({ id }) => openTaskResult(id))
+    return subscribeNotificationClick(({ id, kind }) => {
+      if (kind === 'confirm') openPendingCard(id)
+      else openTaskResult(id)
+    })
   }, [])
 
   useEffect(() => {

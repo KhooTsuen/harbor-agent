@@ -56,9 +56,15 @@ export function subscribeTaskEnd(callback: (payload: TaskEndPayload) => void): (
   return bridge.onTaskEnd(callback)
 }
 
-/** AG-029：用户点了系统通知（主进程已把窗口叫回来） */
+/**
+ * AG-029 / P1-3：用户点了系统通知（主进程已把窗口叫回来）。
+ *
+ * `kind` 区分两类通知（主进程发的，见 `handlers/notify.cjs`）：
+ *   · 空 / 没有 = 任务结束 → 跳到那条任务的结果（默认，老行为不变）
+ *   · `confirm` = 「需要你确认」→ 跳回那条对话 + 把卡片亮一下
+ */
 export function subscribeNotificationClick(
-  callback: (payload: { id: string }) => void,
+  callback: (payload: { id: string; kind?: string }) => void,
 ): () => void {
   if (!bridge?.onNotificationClick) return () => {}
   return bridge.onNotificationClick(callback)

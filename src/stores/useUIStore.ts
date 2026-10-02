@@ -87,6 +87,15 @@ interface UIState {
    * 而它可能在界面上已经换成了下一张卡 —— 无条件关会把用户正在答的那张清掉。
    */
   closeClarify: (confirmId?: string) => void
+  /**
+   * P1-3：用户点了「需要你确认」的系统通知 → 请求把正在等他的那张卡**亮一下**
+   * （聚焦到卡片的第一个可点项 + 滚进视野）。
+   *
+   * 用递增的 nonce 而不是布尔：卡片那边只需要「又收到一次请求」这个事实，
+   * 不用管上一次有没有消费掉；也避免为它写一套复位逻辑。
+   */
+  cardFocusNonce: number
+  requestCardFocus: () => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -99,6 +108,7 @@ export const useUIStore = create<UIState>((set) => ({
   searchQuery: '',
   permission: null,
   clarify: null,
+  cardFocusNonce: 0,
   bottomPanelOpen: false,
   bottomPanelView: 'log',
   toasts: [],
@@ -142,4 +152,5 @@ export const useUIStore = create<UIState>((set) => ({
   askClarify: (request) => set({ clarify: request }),
   closeClarify: (confirmId) =>
     set((s) => (confirmId && s.clarify?.confirmId !== confirmId ? {} : { clarify: null })),
+  requestCardFocus: () => set((s) => ({ cardFocusNonce: s.cardFocusNonce + 1 })),
 }))

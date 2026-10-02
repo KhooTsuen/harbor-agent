@@ -19,6 +19,7 @@
 
 const confirmBridge = require('../core/confirm-bridge.cjs')
 const clarifyWatch = require('./clarify-watch.cjs')
+const confirmNotify = require('./confirm-notify.cjs')
 const log = require('../core/log.cjs')
 
 /*
@@ -77,9 +78,10 @@ function exitsIn(answer) {
  * @param {{ name?: string, summary?: string, args?: unknown, kind?: string, risk?: unknown,
  *           diff?: unknown, diffNote?: string, impact?: string[] }} request
  * @param {(event: Record<string, unknown>) => void} emit 推事件给渲染层
+ * @param {string} [sessionId] 这条对话的 id —— 只用于「需要你确认」那条系统通知
  * @returns {Promise<boolean>}
  */
-function askUser(requestId, request, emit) {
+function askUser(requestId, request, emit, sessionId = '') {
   return confirmBridge
     .ask({
       timeoutMs: CONFIRM_TIMEOUT_MS,
@@ -101,7 +103,15 @@ function askUser(requestId, request, emit) {
         diffNote: request.diffNote ?? '',
         impact: request.impact ?? [],
       },
-      emitReply: (payload) => emit({ type: 'confirm_request', ...payload }),
+      emitReply: (payload) => {
+        emit({ type: 'confirm_request', ...payload })
+        /* 卡片已经推出去了，用户要是没在前台，就发条系统通知把他叫回来（P1-3） */
+        confirmNotify.tellUser({
+          sessionId,
+          key: String(payload?.confirmId ?? ''),
+          ask: confirmNotify.permissionAsk(request),
+        })
+      },
     })
     /* 老路：只取布尔。超时、拒绝、找不到都是 false（与以前一字不差） */
     .then((reply) => reply.approved === true)
@@ -183,6 +193,12 @@ function askClarify(input = {}) {
           onSettle: () => confirmBridge.settleAsTimeout(cardId),
         })
         emit({ type: 'confirm_request', ...payload })
+        /* 同 askUser：不在前台就发通知（澄清卡最容易「等在那儿没人知道」）*/
+        confirmNotify.tellUser({
+          sessionId: String(input.sessionId ?? ''),
+          key: cardId,
+          ask: confirmNotify.clarifyAsk(input.questions),
+        })
       },
     })
     .then((reply) => {

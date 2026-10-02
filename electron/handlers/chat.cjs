@@ -99,7 +99,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const pause = { requested: false }
     streams.set(requestId, { controller, pause })
 
-    const confirm = (request) => chatConfirm.askUser(requestId, request, emit)
+    /* sessionId 一并带上：「需要你确认」的系统通知点开后要跳回这条对话（P1-3） */
+    const confirm = (request) => chatConfirm.askUser(requestId, request, emit, sessionId)
 
     /*
      * AG-001：状态机的每次转移都推给渲染层（前端只读、不自己猜）。

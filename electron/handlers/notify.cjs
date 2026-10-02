@@ -29,6 +29,17 @@ const APP_ID = 'dev.harbor.agent'
 const MAX_TITLE = 120
 const MAX_BODY = 400
 
+/**
+ * 窗口现在是不是「不在前台」：没有窗口 / 最小化 / 不可见 / 没焦点。
+ *
+ * 抽出来是因为 **两种通知都要这个判据**（任务结束、需要你确认），
+ * 各写一遍就会漂。最小化必须显式判：Windows 上最小化之后 `isVisible()`
+ * 可能仍是 true、`isFocused()` 是 false。
+ */
+function isBackground(win) {
+  return !win || win.isMinimized() || !win.isVisible() || !win.isFocused()
+}
+
 function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
   try {
     if (app && process.platform === 'win32') app.setAppUserModelId(APP_ID)
@@ -36,8 +47,14 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
     log.warn(`设置 AppUserModelId 失败：${error instanceof Error ? error.message : error}`)
   }
 
-  /** 弹一条系统通知（点它：叫回窗口 + 告诉渲染层跳到那条任务） */
-  function notify({ id = '', title, body = '' }) {
+  /**
+   * 弹一条系统通知（点它：叫回窗口 + 告诉渲染层跳到那条任务）
+   *
+   * @param {{ id?: string, title?: string, body?: string, kind?: string }} input
+   *   `kind` 会跟着点击事件回渲染层 —— 空的 = 任务结束（默认，跳任务中心）；
+   *   `confirm` = 「需要你确认」（跳那条对话 + 聚焦卡片，见 useTaskNotifications）
+   */
+  function notify({ id = '', title, body = '', kind = '' }) {
     const safeTitle = String(title ?? '').slice(0, MAX_TITLE)
     if (!safeTitle) return { ok: false, error: '缺标题' }
     try {
@@ -52,19 +69,59 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
       notification.on('click', () => {
         try {
           showWindow()
-          getMainWindow()?.webContents?.send('app:notificationClick', { id: String(id) })
+          getMainWindow()?.webContents?.send('app:notificationClick', {
+            id: String(id),
+            kind: String(kind),
+          })
         } catch (error) {
           log.warn(`通知点击处理失败：${error instanceof Error ? error.message : error}`)
         }
       })
       notification.show()
-      /* 通知只在「窗口不在前台」时才会发，出问题得能回查到底发没发 */
-      log.info(`系统通知：${safeTitle}`)
+      /*
+       * 通知只在「窗口不在前台」时才会发，出问题得能回查到底发没发、发的什么 ——
+       * 真机上（尤其 Windows）通知弹没弹、弹了什么，只有这一行能作证。
+       */
+      log.info(`系统通知：${safeTitle}｜${String(body).replace(/\s+/g, ' ').slice(0, 60)}`)
       return { ok: true }
     } catch (error) {
       log.warn(`系统通知发不出去：${error instanceof Error ? error.message : error}`)
       return { ok: false, error: String(error?.message ?? error) }
     }
+  }
+
+  /* 已经为哪几张卡发过通知 —— 「只发一次，不重复」（用户 2026-10-03 的要求） */
+  const toldConfirm = new Set()
+
+  /**
+   * 「需要你确认」（2026-10-03 用户报的）：澄清卡 / 权限确认弹出来时，
+   * 如果窗口不在前台就发一条系统通知 —— 不然用户切走了根本不知道任务在等他，
+   * 任务就一直挂在那个卡上。
+   *
+   * 三条约束（都是用户明确提的）：
+   *   · **不在前台才发** —— 用上面那个 isBackground（和任务结束通知同一套判据）；
+   *   · **只发一次** —— 同一张卡（key）重复调只发第一条；
+   *   · **不抢焦点** —— 这里只发通知；窗口是**用户点通知**之后才叫回来的
+   *     （走 notify 的 click 回调），和 AG-029 一个规矩。
+   *
+   * @param {{ id?: string, key?: string, title?: string, body?: string }} input
+   *   `id` = 回渲染层用来跳转的会话 id；`key` = 去重用的卡片 id（默认同 id）
+   */
+  function notifyConfirm({ id = '', key = '', title, body = '' }) {
+    const dedupe = String(key || id || '')
+    if (dedupe && toldConfirm.has(dedupe)) {
+      log.info(`需要确认：这张卡已经发过通知了（${dedupe}）`)
+      return { ok: false, error: '已经发过了' }
+    }
+    if (!isBackground(getMainWindow())) {
+      /* 前台不发是**正常路径**（用户正看着），但也要能回查「为什么没有通知」 */
+      log.info('需要确认：窗口在前台，不发系统通知')
+      return { ok: false, error: '窗口在前台' }
+    }
+    /* 不发散记账：超过 50 张就清一次（每张卡都是秒级结算的东西） */
+    if (toldConfirm.size > 50) toldConfirm.clear()
+    if (dedupe) toldConfirm.add(dedupe)
+    return notify({ id, title, body, kind: 'confirm' })
   }
 
   /**
@@ -82,12 +139,12 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
 
       const win = getMainWindow()
       /*
-       * 最小化单独判：Windows 上最小化之后 isVisible() 可能仍是 true、
+       * 「窗口不在前台」的判据抽在 isBackground 里（和「需要你确认」共用）——
+       * 最小化必须显式判：Windows 上最小化之后 isVisible() 可能仍是 true、
        * isFocused() 是 false —— 而「最小化」正是最常用的那个场景，
        * 漏了它就会出现「明明最小化了却不弹通知」（用户实测提过）。
        */
-      const background = !win || win.isMinimized() || !win.isVisible() || !win.isFocused()
-      if (background) notify({ id: sessionId, title: notice.title, body: notice.description })
+      if (isBackground(win)) notify({ id: sessionId, title: notice.title, body: notice.description })
       /*
        * AG-033/034：把「这一轮到底干了什么」带上 —— 渲染层据此决定给哪些
        * 「下一步」（改了文件才有 diff / 测试 / 提交；测试跑过就不必再劝它跑）。
@@ -103,7 +160,7 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
     }
   }
 
-  return { notify, onRunEnd }
+  return { notify, notifyConfirm, onRunEnd }
 }
 
-module.exports = { createTaskNotifier, APP_ID }
+module.exports = { createTaskNotifier, isBackground, APP_ID }

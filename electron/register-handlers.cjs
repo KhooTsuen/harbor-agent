@@ -93,6 +93,11 @@ function registerHandlers(deps) {
     showWindow: deps.showWindow,
     getMainWindow,
   })
+  /*
+   * P1-3：「需要你确认」（澄清卡 / 权限确认）也走同一个通知器 ——
+   * 卡弹出来时如果窗口不在前台，用户根本不知道任务在等他。
+   */
+  require('./handlers/confirm-notify.cjs').setNotifier(notifier)
 
   require('./handlers/log.cjs').register({ ipcMain })
   require('./handlers/compact.cjs').register({ ipcMain })

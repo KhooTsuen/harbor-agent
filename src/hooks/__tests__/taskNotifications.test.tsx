@@ -13,11 +13,12 @@ import type { TaskEndPayload } from '@/types/notify'
      · 窗口在后台 → 当前对话也弹
      · 点「查看结果」→ 切到那条对话 + 打开任务中心
      · 点系统通知 → 同上（主进程已经把窗口叫回来了）
+     · 点「需要你确认」的通知 → 切回那条对话 + 亮卡片，**不打开任务中心**
    ══════════════════════════════════════════════════════════════ */
 
 const h = vi.hoisted(() => ({
   taskEnd: [] as Array<(payload: TaskEndPayload) => void>,
-  clicks: [] as Array<(payload: { id: string }) => void>,
+  clicks: [] as Array<(payload: { id: string; kind?: string }) => void>,
 }))
 
 vi.mock('@/lib/backend', async (importOriginal) => {
@@ -33,7 +34,7 @@ vi.mock('@/lib/subscriptions', async (importOriginal) => {
       h.taskEnd.push(callback)
       return () => {}
     },
-    subscribeNotificationClick: (callback: (payload: { id: string }) => void) => {
+    subscribeNotificationClick: (callback: (payload: { id: string; kind?: string }) => void) => {
       h.clicks.push(callback)
       return () => {}
     },
@@ -157,6 +158,24 @@ describe('AG-029 / 后台任务通知（渲染层）', () => {
 
     expect(useAppStore.getState().activeThreadId).toBe(other)
     expect(useUIStore.getState().activeRightTab).toBe('tasks')
+  })
+
+  it('★ 点「需要你确认」的通知 → 切回那条对话 + 亮卡片（不打开任务中心）', () => {
+    /*
+     * P1-3：用户切走之后卡片弹出来，他点通知就是冲着**那张卡**来的 ——
+     * 任务中心是「看结果」的地方，把他扔到那儿等于又得自己找一遍。
+     */
+    const active = useAppStore.getState().activeThreadId
+    const other = useAppStore.getState().createThread()
+    useAppStore.getState().setActiveThread(active)
+    /* 右栏先停在「审查」—— 上一条测试把标签留在任务中心了，不设的话这条断言没意义 */
+    useUIStore.setState({ activeRightTab: 'diff', cardFocusNonce: 0 })
+
+    act(() => h.clicks[0]({ id: other, kind: 'confirm' }))
+
+    expect(useAppStore.getState().activeThreadId).toBe(other)
+    expect(useUIStore.getState().cardFocusNonce).toBe(1)
+    expect(useUIStore.getState().activeRightTab).toBe('diff')
   })
 
   it('★ AG-033：当前对话完成 → 亮出「下一步」入口', () => {
