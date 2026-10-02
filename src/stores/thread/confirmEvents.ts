@@ -1,5 +1,7 @@
 import { confirmChat } from '@/lib/backend'
+import { pauseChat } from '@/lib/chatControl'
 import { clarifyReplyToWire } from '@/lib/clarify'
+import { taskUpdate } from '@/lib/safetyApi'
 import type { ClarifyQuestion, StoredClarify } from '@/types'
 import { useUIStore } from '../useUIStore'
 import { useAppStore } from '../useAppStore'
@@ -23,6 +25,44 @@ const KIND_TEXT: Record<string, string> = {
   mcp: '调用外部工具',
   risk: '执行命令',
   path: '访问工作目录之外的文件',
+}
+
+/**
+ * 「先不做了」之后要把任务标成 paused —— 但**得等这一轮收尾再标**（批⑤ 真机踩到的）。
+ *
+ * 两条更直的路都试过、都不行，所以才需要这个 Map：
+ *   · **只靠 `chat:pause`**：那个标记只在**下一轮开头**被读（`loop.cjs` 的
+ *     `controls.pauseRequested`），而「先不做了」的措辞是让模型**别再调工具** ——
+ *     这一轮就此结束，没有下一轮。真机第一遍就是这个结局：`chat:pause` 确实发了
+ *     （审计日志 `ok:true`），台账最后仍是 `completed`（模型说完「好，我按你说的办」就收尾了）。
+ *   · **点的那一刻直接写台账**：主进程在**同一轮收尾时**自己会写一次
+ *     （正常收尾 → `completed`），那次写**早于**渲染层收到的 done 事件 ——
+ *     当场写会被它盖掉，用户看到的是「已完成」，比不写更让人迷惑。
+ *
+ * 所以：点的那一刻只记下「这一轮结束时要标 paused」，等这条 requestId 的 done 到了再写。
+ * 写的是**现成的** `task:update`（任务面板的「放弃」走的就是它），不开新通道。
+ */
+const pauseAfterTurn = new Map<string, string>() /* requestId → taskId */
+
+/**
+ * 这一轮结束了（由 `streamEvents` 的 done 分支调）——
+ * 把「先不做了」的意图落成台账上的 `paused`。
+ *
+ * 为什么偏偏是 done 这个时机：它是**主进程那次收尾写之后**才到渲染层的，
+ * 这时候写才不会被盖掉。而 `paused` 又在内核 `task-resume.cjs` 的 RESUMABLE 里，
+ * 于是任务列表会给「继续」、点了能接着做 —— 那就是用户要的「可恢复」。
+ */
+export function applyPauseAfterTurn(requestId: string): void {
+  const key = String(requestId ?? '')
+  const taskId = pauseAfterTurn.get(key)
+  if (!taskId) return
+  pauseAfterTurn.delete(key)
+  /*
+   * `pauseReason: 'user'`：台账上写清「是用户叫停的」。
+   * 任务行只有在 reason 是 budget/loop/interrupted 时才多渲染一块（`TaskRow`），
+   * 所以这个值就是一条普通「已暂停」行 —— 正是我们要的。
+   */
+  void taskUpdate(taskId, { status: 'paused', pausedAt: Date.now(), pauseReason: 'user' })
 }
 
 /**
@@ -55,11 +95,32 @@ export function askPermissionFor(event: Record<string, unknown>): void {
       onClarify: (reply) => {
         useUIStore.getState().closeClarify(confirmId)
         void confirmChat(confirmId, reply.skipped !== true, clarifyReplyToWire(reply))
+        /*
+         * 「先不做了」（批⑤）：除了给模型那句话，还得把这一轮**停住** ——
+         * 复用现成的暂停链路，**不开新通道**。两件事缺一不可，原因写在
+         * `pauseAfterTurn` 那段：`chat:pause` 只拦得住「模型还在往下干」的那种，
+         * 而台账上的 `paused` 得等这一轮收尾再写。
+         *
+         * 为什么用 pause 不用 abort：abort 会打断**正在跑的那一步**（半个文件、
+         * 半截命令、半截交接），而用户的意思是「先不做了」，不是「把手上这步砸了」。
+         *
+         * `event.requestId` 是对话这一轮的 requestId（`chat-emit.cjs` 把它放在
+         * 展开的最后，"confirm_request" 自带的那个审批 id 顶不掉它）。
+         */
+        if (reply.cancelled === true) {
+          const requestId = String(event.requestId ?? '')
+          const taskId = String(event.taskId ?? '')
+          if (requestId) void pauseChat(requestId)
+          /* 两个 id 都得有：少了 taskId 就不知道标哪条任务（宁可不标，不标错） */
+          if (requestId && taskId) pauseAfterTurn.set(requestId, taskId)
+        }
         /* 记到这一轮的助手消息上（那是以后回看时的只读卡） */
         recordClarify(event, {
           questions: questions as ClarifyQuestion[],
           answers: reply.answers,
           skipped: reply.skipped === true,
+          cancelled: reply.cancelled,
+          rephrase: reply.rephrase,
         })
       },
       /* 卡片被外部关掉（切对话、任务停了、用户按 Esc）：当「跳过」回话，

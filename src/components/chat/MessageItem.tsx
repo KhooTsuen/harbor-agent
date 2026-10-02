@@ -90,10 +90,17 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                 <ClarifyCard
                   readOnly
                   questions={message.clarify.questions}
-                  answered={{
-                    answers: message.clarify.answers,
-                    skipped: message.clarify.skipped,
-                  }}
+                  /*
+                   * ★ 整个对象递过去，**不要逐字段拼**（批⑤ 踩到的）：
+                   *   原来是 `{answers, skipped}` 两行白名单 —— 批⑤ 给
+                   *   `StoredClarify` 加了 `cancelled` / `rephrase`，两行都没跟，
+                   *   类型也**不会报错**（它们是可选的），于是一个点了「先不做了」
+                   *   的卡片在回看时显示成「（当时跳过了）」：用户被安上一句他没做过的事。
+                   *   递整个对象之后，以后再加字段也不会再漏。
+                   *   （`StoredClarify` 比 `ClarifyReply` 多的字段都是可选的，
+                   *     多的那个 `questions` 不是对象字面量，不受多余属性检查管。）
+                   */
+                  answered={message.clarify}
                   auto={message.clarify.auto}
                 />
               ) : null}

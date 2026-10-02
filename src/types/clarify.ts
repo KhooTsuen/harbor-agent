@@ -24,6 +24,15 @@ export interface ClarifyReply {
   answers: Array<{ question: string; choice: string; text: string }>
   /** 用户点了「跳过」——不答了，让模型自己拍板 */
   skipped: boolean
+  /**
+   * 用户点了「先不做了」（批⑤）：这次先不做。
+   *
+   * 和 `skipped` 的区别不是措辞而是**后果**：跳过 = 你别问了接着干，
+   * 这个 = 别动手了（界面同时把这轮 pause 住，任务可恢复）。
+   */
+  cancelled?: boolean
+  /** 用户点了「换个说法」（批⑤）：问题没说清，换措辞重问一版 */
+  rephrase?: boolean
 }
 
 /**
@@ -43,4 +52,11 @@ export interface StoredClarify {
   skipped: boolean
   /** 有值 = 没经过用户确认（超时 / 无人值守）；用户自己答的没有这个字段 */
   auto?: 'timeout' | 'unattended'
+  /**
+   * 用户当时点的是「先不做了」（批⑤）——只读卡要说成一个**具体动作**，
+   * 不能落到「（当时跳过了）」那一句：跳过是「你看着办」，这个是把任务停住了。
+   */
+  cancelled?: boolean
+  /** 用户当时点了「换个说法」（批⑤）：他让 Agent 重问了一版 */
+  rephrase?: boolean
 }

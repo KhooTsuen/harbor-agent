@@ -25,6 +25,39 @@ const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 const CLARIFY_TIMEOUT_MS = 5 * 60 * 1000
 
 /**
+ * 澄清卡上除了「答」和「跳过」之外的两个**退出口**（AG-053 批⑤）。
+ *
+ * 它们和「跳过」走同一条 `chat:confirm`（`approved` 也是 false，**不开新通道**），
+ * 区别只在回话 JSON 里多一个标记：
+ *   · `{ cancel: true }`   → 「先不做了」：这一轮别动手了，写个交接收尾
+ *   · `{ rephrase: true }` → 「换个说法」：问题没说清，重新组织一遍再问
+ *
+ * ★ 旧实现这个分支**直接 return，压根不看 `reply.answer`** —— 那两个出口会被
+ *   当成「用户跳过了」。后果不是错一句话，是错一个状态：跳过计数是静音的判据
+ *   （连跳两次就不再主动问），而点「先不做了」的人只是「这次先不做」，他却会
+ *   被当成「又拒了一次」。拿用户没说过的话去记他，是这里最不能接受的一种错。
+ *
+ * 解析失败 / 老版本界面 → 返回空对象，仍然当跳过（不能把任务卡住）。
+ *
+ * @param {unknown} answer 渲染层回的 JSON 字符串
+ * @returns {{cancelled?: true, rephrase?: true}}
+ */
+function exitsIn(answer) {
+  try {
+    const value = JSON.parse(String(answer ?? '') || '{}')
+    const out = {}
+    /* ★ 名字必须是 `cancelled`：渲染层 `types/clarify.ts` 里就叫这个。
+       写成 `cancel`（少一个 l）不会报错、不会抛异常 —— 只是“这两个出口总是被当成跳过”，
+       而自检 107 组的真往返一次就把它抓出来了。 */
+    if (value?.cancelled === true) out.cancelled = true
+    if (value?.rephrase === true) out.rephrase = true
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/**
  * 审批：要不要让这一步执行。
  *
  * @param {string} requestId 对话的 requestId（只用来记日志，**不能当审批 id**）
@@ -142,16 +175,20 @@ function askClarify(input = {}) {
       if (cardId) clarifyWatch.resolve(cardId)
       if (reply.approved !== true) {
         /*
-         * 跳过 / 超时：超时要让上层知道，好走「按默认选项继续」那条路。
+         * 跳过 / 超时 / 两个退出口：超时要让上层知道，好走「按默认选项继续」那条路。
          *
          * 离场超时是**外部时钟**推进的（巡查器 → `settleAsTimeout`），所以这里
          * 除了把结果返回给工具，还得**让界面把那张卡收起来** —— 不然用户回来
          * 看到一张还在等他的卡，而任务已经按默认选项跑完了。
+         *
+         * `skipped: true` 是**兼容形状**（上层只认这个字段），退出口靠额外的
+         * 标记区分 —— `ask_user.cjs` 会先认标记再决定计不计「跳过」。
          */
         if (reply.timeout === true && cardId) {
           emit({ type: 'clarify.timeout', confirmId: cardId, sessionId: input.sessionId ?? '' })
         }
-        return { answers: [], skipped: true, timeout: reply.timeout === true }
+        const exits = exitsIn(reply.answer)
+        return { answers: [], skipped: true, timeout: reply.timeout === true, ...exits }
       }
       try {
         const value = JSON.parse(reply.answer || '{}')

@@ -6,7 +6,7 @@ import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
-import { askPermissionFor, onClarifyTimeout } from './confirmEvents'
+import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
 
 /* ══════════════════════════════════════════════════════════════
    流式聊天事件的处理
@@ -236,6 +236,12 @@ export function handleStreamEvent(
         kind: 'text',
       })
       state.finish()
+      /*
+       * 批⑤：「先不做了」的收尾。必须**放在这里**（而不是点按钮那一刻）——
+       * done 是主进程那次收尾写（正常结束 → completed）**之后**才到的，
+       * 这时候才写得上 `paused`。理由与踩坑过程写在 `confirmEvents` 的 `pauseAfterTurn`。
+       */
+      applyPauseAfterTurn(String(event.requestId ?? ''))
       return { handled: true, notifyDone: true }
     }
 

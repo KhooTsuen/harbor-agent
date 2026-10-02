@@ -68,6 +68,14 @@ export const StoredMessageSchema = z.object({
         .default([]),
       skipped: z.boolean().default(false),
       auto: z.enum(['timeout', 'unattended']).optional(),
+      /*
+       * 两个退出口（批⑤）：「先不做了」「换个说法」。
+       * ★ 同样必须在 schema 里声明 —— zod 的 object 会把没声明的字段**静静剥掉**，
+       *   那时候卡片上用户点的是哪个动作，重开对话就看不出来了（只读卡会退回到
+       *   「（当时跳过了）」那句错话）。
+       */
+      cancelled: z.boolean().optional(),
+      rephrase: z.boolean().optional(),
     })
     .optional(),
   error: z.string().optional(),

@@ -18,6 +18,18 @@ export function clarifyReplyToWire(reply: ClarifyReply): string {
   return JSON.stringify({
     skipped,
     /*
+     * 两个「退出口」（批⑤）：「先不做了」「换个说法」。
+     *
+     * 它们同样走 `chat:confirm`、`approved` 也只能是 false（就是上面的 `skipped`），
+     * 靠这两个标记把自己和「跳过」分开 —— 内核 `chat-confirm.cjs` 解析它们，
+     * `clarify.cjs` 的 `render()` 按标记选措辞，`ask_user.cjs` 据此决定
+     * 「算不算跳过」（后者关系到静音，错记一次用户下次就设不到卡了）。
+     *
+     * ★ 不带这两个字段时，这条通道的行为和加它们之前**一模一样**。
+     */
+    ...(reply.cancelled === true ? { cancelled: true } : {}),
+    ...(reply.rephrase === true ? { rephrase: true } : {}),
+    /*
      * 跳过就把答案清掉：内核那边拿到 skipped 本来也不会用答案，但**半截答案**
      * 留在回话里会诱导后来的人写出「既跳过又用答案」的逻辑（今天还没有，明天会有）。
      */
@@ -39,6 +51,9 @@ export function summarizeClarify(
   questions: readonly ClarifyQuestion[],
   reply: ClarifyReply,
 ): string[] {
+  /* 两个退出口要先说（批⑤）：说成「这次跳过了」就把用户的动作说错了 */
+  if (reply.cancelled === true) return ['他说「先不做了」——这次先不做，任务停在这儿等继续']
+  if (reply.rephrase === true) return ['他觉得问题没说清，让 Agent 换个说法重问了一版']
   if (reply.skipped) return ['这次跳过了，由 Agent 自己判断']
   const byQuestion = new Map(reply.answers.map((one) => [one.question, one]))
   return questions.map((item) => {

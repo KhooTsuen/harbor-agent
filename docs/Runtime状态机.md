@@ -183,15 +183,45 @@ E:\nodejs\node.exe tmp\verify-rollback-ui.cjs      # 界面：19 项（隔离副
 | **怎么知道走的是哪条** | 启动日志写明来源：`靠 powerMonitor 判离场` 或 `空闲值＝验收替身 N 秒` |
 | **真·`powerMonitor` 谁钉** | 自检 `102-clarify-unattended`（**不设**替身时必须读注入的 monitor，设了才以它为准）+ 真机第 ⑧ 段（独立探针直接读 `getSystemIdleTime()` / `getSystemIdleState()`） |
 
+### 卡片上的两个「退出口」（AG-053 批⑤）
+
+除了「就这么干 / 跳过」，卡片上还有两个出口。三个「不批」走**同一条** `chat:confirm`
+（`approved` 只能是 true/false），靠回话 JSON 里的标记区分：
+
+| 出口 | 回话 | 之后发生什么 |
+|---|---|---|
+| 先不做了 | `{skipped:true, cancelled:true}` | 模型收到「**这次先不做**：别调工具、别改文件，把结论和下次从哪接着做写清楚」；这一轮收尾后**台账标成 `paused`**（`pauseReason: 'user'`）→ 任务列表给「继续」 |
+| 换个说法 | `{skipped:true, rephrase:true}` | 模型收到「**重新组织问题再问一次**，别原样重复」；同一对话最多 `REPHRASE_LIMIT`（2）次，到顶就按静音那套收尾 |
+
+两个出口都**不计数「跳过」** —— 那个计数是静音的判据（连跳两次不再主动问），
+把「先不做了」记成跳过，等于拿用户没说过的话去改他以后的行为。
+
+### 「任务暂停」是**等这一轮收尾**才写的（批⑤ 真机踩出来的）
+
+`chat:pause` 那个标记只在**每一轮开头**被读（`loop.cjs` 的 `controls.pauseRequested`），
+而「先不做了」的措辞本身就是让模型别再调工具 —— **这一轮就此结束、没有下一轮**，
+标记设了也没人读（真机第一遍：审计日志里 `chat:pause ok:true`，台账最后仍是 `completed`）。
+当场直接写台账同样不行：主进程在**同一轮收尾**写 `completed`，那次写**早于**渲染层收到的
+`done` 事件，会被覆盖。
+
+所以走「先记意图、等 `done` 再落」：`confirmEvents` 的 `pauseAfterTurn`
+（`requestId → taskId`）→ `streamEvents` 的 `done` 分支调 `applyPauseAfterTurn()`
+→ 现成的 `task:update` 写 `{status:'paused', pausedAt, pauseReason:'user'}`。
+**这里的顺序就是全部关键**：主进程收尾写 < 渲染层 done < 我们写。
+
 ### 真机怎么验
 
 ```bash
-E:\nodejs\node.exe tmp\verify-clarify-ui.cjs            # 全量 79 项（①–⑨ + ③′ 唤醒）
-E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=9   # 只跑「累计离场超上限」那一段（一分钟）
+E:\nodejs\node.exe tmp\verify-clarify-ui.cjs             # 全量 98 项（①–⑪ + ③′ 唤醒）
+E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=9    # 只跑「累计离场超上限」那一段（一分钟）
+E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=10   # 只跑「先不做了」（--only=11 → 换个说法）
+E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=8    # 只跑 powerMonitor 探针
 ```
 
 `--only=9` 会重拷一份隔离副本（`tmp/tok/clarify-verify`，源是 `dist-portable/Harbor`，
 所以**改完内核要先 `npm run package`**）；想复用已有副本加 `--keep`。
+批⑤ 起自带包断言：`tmp/rebuild-portable-ag053.cjs` 会核对包里真有那两个出口
+（内核 `exitsIn(reply.answer)` + 界面文案），**不核对就很容易拿上一版代码白跑十分钟**。
 
 ## 谁改状态（排查入口）
 

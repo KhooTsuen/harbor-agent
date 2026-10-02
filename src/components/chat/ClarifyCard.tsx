@@ -16,8 +16,13 @@ import { colorOf } from '@/lib/statusLanguage'
    内核那侧已经校验过 `effect` 是否「具体」（没数字也没量词会记警告），
    这边不再重复判断，只如实显示。
 
-   三件事用户可以干：**选一个**（每题单选）、**补一句**（自由回答）、**跳过**
-   （整个卡片跳过，Agent 自己拍板并在回复里说明理由）。
+   四件事用户可以干：**选一个**（每题单选）、**补一句**（自由回答）、**跳过**
+   （整个卡片跳过，Agent 自己拍板并在回复里说明理由），以及批⑤ 加的两个
+   「退出口」：**先不做了**（这次先不做，界面同时把这轮 pause 住，任务可恢复）
+   和 **换个说法**（问题没说清，换措辞重问一版）。
+
+   ⚠️ 这四个的**后台后果不是一回事**，措辞上不能糊成一团：跳过是「你接着干」，
+   「先不做了」是「停手」；说成同一句，模型会一边写交接一边把活干完。
    ══════════════════════════════════════════════════════════════ */
 
 export interface ClarifyCardProps {
@@ -58,6 +63,21 @@ export function ClarifyCard({
     })),
   })
 
+  /**
+   * 两个「退出口」的回话（批⑤）。
+   *
+   * 都带 `skipped: true`：内核那条通道传的是布尔（`approved = !skipped`），
+   * 退出口和「跳过」一样都是「不批」，靠 `cancelled` / `rephrase` 标记区分
+   * —— 内核 `chat-confirm.cjs` 里解析这两个标记。
+   */
+  const exit = (kind: 'cancelled' | 'rephrase'): ClarifyReply => {
+    const base: ClarifyReply = {
+      skipped: true,
+      answers: questions.map((item) => ({ question: item.question, choice: '', text: '' })),
+    }
+    return kind === 'cancelled' ? { ...base, cancelled: true } : { ...base, rephrase: true }
+  }
+
   /* ── 只读（回看历史）：把当时选了什么标出来，选项都不可点 ── */
   if (readOnly) {
     const done = answered ?? { answers: [], skipped: false }
@@ -67,6 +87,16 @@ export function ClarifyCard({
         : auto === 'unattended'
           ? '（定时任务，没人在场，按默认继续）'
           : ''
+    /*
+     * 两个退出口要**分开说**（批⑤）——它们和「跳过」不是同一件事：
+     * 跳过是让 Agent 自己拍板接着干，而「先不做了」是把任务停住了。
+     * 都说成「（当时跳过了）」，用户回看会以为自己当时是想让它继续。
+     */
+    const exitText = done.cancelled
+      ? '（你当时说先不做了，任务停在那儿）'
+      : done.rephrase
+        ? '（你当时说换个说法，重问了一版）'
+        : ''
     return (
       <section
         className="mb-2 rounded-md border border-line-subtle bg-bg-raised/30 px-3 py-2"
@@ -75,7 +105,7 @@ export function ClarifyCard({
         <p className="mb-1 flex items-center gap-1.5 text-2xs text-fg-tertiary">
           <CircleHelp size={11} />
           开工前问过这几个问题
-          {autoText || (done.skipped ? '（当时跳过了）' : '')}
+          {autoText || exitText || (done.skipped ? '（当时跳过了）' : '')}
         </p>
         {questions.map((item, index) => {
           const answer = done.answers.find((one) => one.question === item.question)
@@ -128,6 +158,8 @@ export function ClarifyCard({
           <h3 className="text-xs font-medium text-fg-primary">动手前先对齐一下</h3>
           <p className="mt-0.5 text-2xs leading-relaxed text-fg-secondary">
             答完它再开工。不想答就点「跳过」—— Agent 会自己拍板，并在回复里说明理由。
+            想让它先停手就说「先不做了」（任务会停下来，之后能接着做）；觉得问得不对劲就点
+            「换个说法」。
           </p>
 
           {questions.map((item, index) => (
@@ -186,13 +218,24 @@ export function ClarifyCard({
             </div>
           ))}
 
-          <div className="mt-2.5 flex items-center justify-end gap-1.5">
-            <Button variant="ghost" size="sm" onClick={() => onReply?.(reply(true))}>
-              跳过，你自己看着办
-            </Button>
-            <Button variant="primary" size="sm" onClick={() => onReply?.(reply(false))}>
-              就这么干
-            </Button>
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5">
+            {/* 左边两个是「退出口」（批⑤）：都不是「就这么干」的高亮样式 */}
+            <div className="flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" onClick={() => onReply?.(exit('cancelled'))}>
+                先不做了
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => onReply?.(exit('rephrase'))}>
+                换个说法
+              </Button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" onClick={() => onReply?.(reply(true))}>
+                跳过，你自己看着办
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => onReply?.(reply(false))}>
+                就这么干
+              </Button>
+            </div>
           </div>
         </div>
       </div>

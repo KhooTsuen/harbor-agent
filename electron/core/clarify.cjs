@@ -175,11 +175,49 @@ const TAIL_UNATTENDED =
   '这是一次**无人值守**的运行（定时任务），没有人能回答下面这些问题。按每条的默认选项开工，并在回复里用一行说明「我选了 X（默认），因为 Y」。'
 
 /**
+ * 「先不做了」（AG-053 批⑤）—— 卡片左边第一个出口。
+ *
+ * 和「跳过」**必须分开说**：跳过是「别问了，你看着办」（接着干），这个是
+ * 「先停，别动手」（这一轮就此收尾）。说成同一句的话，模型会一边写着交接
+ * 一边把活干完 —— 用户点的是「先不做」，回来却发现文件已经改了。
+ *
+ * 交接里要写「下次从哪一步接着做」：界面那边同时把这轮 pause 住，任务在
+ * 台账上变成 paused，用户回头点「继续」时接的就是这几行。
+ */
+const TAIL_ON_CANCEL =
+  '用户点了「先不做了」：**这次先不做**。立刻停手 —— 不要再调任何工具、不要改任何文件。' +
+  '把这个任务已经查到的结论、以及「下次从哪一步接着做」，用几行写清楚，然后结束这一轮' +
+  '（他会从任务列表点「继续」接着做）。'
+
+/**
+ * 「换个说法」（AG-053 批⑤）—— 卡片上的第二个出口。
+ *
+ * ★ 必须明确要求**换措辞、换选项**：原样再发一遍是用户最不想看到的
+ *   （他刚说过「这版没说清」）。也别让他把已经问清的再问一遍。
+ */
+const TAIL_ON_REPHRASE =
+  '用户点了「换个说法」：他觉得刚才那几个问题没说清（或者选项不合适）。' +
+  '**重新组织问题再问一次** —— 换个角度、换一组更具体的选项，别把同一版问题原样重复；' +
+  '已经问清的那几条不用再问。如果你确实问不出更好的，就直接按最稳妥的做法开工，并说明理由。'
+
+/**
  * @param {Array} questions `normalize()` 的输出
  * @param {{ answers?: Array<{question: string, choice?: string, text?: string}>, skipped?: boolean,
- *           timeout?: boolean }} reply
+ *           timeout?: boolean, unattended?: boolean, cancelled?: boolean,
+ *           rephrase?: boolean }} reply
  */
 function render(questions, reply = {}) {
+  /*
+   * ★ 两个「退出口」也**必须排在跳过前面**（批⑤ 新加）：
+   *   「先不做了」和「换个说法」回话时 `approved` 都是 false —— 也就是说
+   *   上游完全可以（而且 `handlers/chat-confirm.cjs` 里就是这么写的）把它们
+   *   连同 `skipped: true` 一起给过来。写在跳过后面的话，用户点了「换个说法」，
+   *   模型收到的却是「用户跳过了这次澄清」，然后自己开工去了 —— 而用户还在等
+   *   一个重新问的卡。批② 离场判定踩过同一个坑（见下面那段）。
+   */
+  if (reply.cancelled === true) return TAIL_ON_CANCEL
+  if (reply.rephrase === true) return TAIL_ON_REPHRASE
+
   /*
    * ★ 超时**必须排在跳过前面**：真机上 `askClarify` 超时回的是
    *   `{ skipped: true, timeout: true, answers: [] }` —— 两种都带 skipped。
@@ -227,6 +265,8 @@ module.exports = {
   MAX_OPTIONS,
   TAIL_ON_SKIP,
   TAIL_UNATTENDED,
+  TAIL_ON_CANCEL,
+  TAIL_ON_REPHRASE,
   normalize,
   render,
   concrete,

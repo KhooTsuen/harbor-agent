@@ -55,6 +55,39 @@ describe('答复的线上格式', () => {
     expect(wire.answers[0]?.text).toBe('')
   })
 
+  /*
+   * 两个「退出口」（批⑤）：「先不做了」「换个说法」。
+   * ★ 它们和「跳过」共用一条通道（`approved` 只能是 true/false），
+   *   所以 `skipped` 也是 true —— 带上的这两个标记就是**唯一的区分**。
+   *   字段名写错一个字母不会报错（内核那边静静当跳过），所以把**键名本身**钉住。
+   */
+  it('★「先不做了」带上 cancelled，且不带 rephrase', () => {
+    const wire = JSON.parse(
+      clarifyReplyToWire({ skipped: true, answers: [], cancelled: true }),
+    ) as Record<string, unknown>
+    expect(wire.cancelled).toBe(true)
+    expect(wire.rephrase).toBeUndefined()
+    expect(Object.keys(wire).sort()).toEqual(['answers', 'cancelled', 'skipped'])
+  })
+
+  it('★「换个说法」带上 rephrase', () => {
+    const wire = JSON.parse(
+      clarifyReplyToWire({ skipped: true, answers: [], rephrase: true }),
+    ) as Record<string, unknown>
+    expect(wire.rephrase).toBe(true)
+    expect(Object.keys(wire).sort()).toEqual(['answers', 'rephrase', 'skipped'])
+  })
+
+  it('正常答复不带退出口标记（老形状一个字段不差 —— 老内核照旧能用）', () => {
+    const wire = JSON.parse(
+      clarifyReplyToWire({
+        skipped: false,
+        answers: [{ question: 'q', choice: 'pnpm', text: '' }],
+      }),
+    ) as Record<string, unknown>
+    expect(Object.keys(wire).sort()).toEqual(['answers', 'skipped'])
+  })
+
   it('只写了补充（一个字没选）也算答了 —— 「可以只写这个、不选」', () => {
     expect(
       clarifyAnswered({
@@ -83,6 +116,18 @@ describe('历史卡片的一句话摘要', () => {
 
   it('跳过的说不出来就写「跳过了」', () => {
     expect(summarizeClarify(questions, { skipped: true, answers: [] })[0]).toContain('跳过')
+  })
+
+  it('★「先不做了」不能说成「跳过了」（一个停住了、一个接着干了）', () => {
+    const line = summarizeClarify(questions, { skipped: true, answers: [], cancelled: true })[0]
+    expect(line).toContain('先不做了')
+    expect(line).not.toContain('跳过')
+  })
+
+  it('★「换个说法」如实说（他去等重问的那一版了）', () => {
+    expect(
+      summarizeClarify(questions, { skipped: true, answers: [], rephrase: true })[0],
+    ).toContain('换个说法')
   })
 })
 

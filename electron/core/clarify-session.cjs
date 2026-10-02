@@ -1,10 +1,11 @@
 /**
  * 澄清：**这条对话现在是什么状态**（AG-053 批③ 从 `clarify.cjs` 拆出来的）
  *
- * 两件按对话记的事，都是「要不要问他」的前置判断：
+ * 三件按对话记的事，都是「要不要问他」的前置判断：
  *   ① **静音** —— 同一对话连续跳过 2 次就不再主动问（纯内存、不写偏好：
  *      用户连拒两次是「这次别打扰我」，不是「以后都别问」）。
- *   ② **无人值守** —— 定时任务那一轮：没人在场，**不弹卡、不挂请求**，
+ *   ② **重问次数** —— 卡片上的「换个说法」（批⑤）不能无限点：到顶了自己拍板。
+ *   ③ **无人值守** —— 定时任务那一轮：没人在场，**不弹卡、不挂请求**，
  *      直接按默认选项开工（见 `tools/ask_user.cjs`）。
  *
  * 为什么拆：`clarify.cjs` 加完无人值守变成了 314 行（硬约束 #2 是 300）。
@@ -17,6 +18,16 @@
 
 /** 连续跳过几次就静音（用户连拒两次说明不想被打扰，第三次还问是骚扰） */
 const SKIP_LIMIT = 2
+
+/**
+ * 同一对话最多「换个说法」几次（批⑤）。
+ *
+ * 为什么要有上限：重问一次 = 模型**重新生成**问题，而「还是没说清」可以无限点下去 ——
+ * 那就成了两位互相等对方的礼貌僵局（模型问 → 用户说没说清 → 模型再问 → …），
+ * 一轮对话全耗在这上面，而且双方都没做错什么。上限到了就按静音那一套收尾：
+ * 自己拍板、说明理由（跟「跳过两次」的后续完全一致 —— 都是「别再问了」）。
+ */
+const REPHRASE_LIMIT = 2
 
 /* ── ① 静音 ───────────────────────────────────────────────── */
 
@@ -34,7 +45,10 @@ function noteSkip(sessionId) {
 
 /** 用户答过一次（哪怕只答了一问）→ 计数清零：他愿意被问，之前的跳过不算数 */
 function noteAnswered(sessionId) {
-  skips.delete(String(sessionId ?? ''))
+  const key = String(sessionId ?? '')
+  skips.delete(key)
+  /* 重问次数一起清：答完了就是一个新话题了（下一次问的不再是「刚才那版」） */
+  rephrases.delete(key)
 }
 
 /** 这个对话现在静音了吗 */
@@ -81,7 +95,30 @@ function skipCount(sessionId) {
   return skips.get(String(sessionId ?? '')) ?? 0
 }
 
-/* ── ② 无人值守（定时任务） ───────────────────────────────── */
+/* ── ② 「换个说法」（批⑤） ─────────────────────────────── */
+
+/** sessionId → 这条对话里已经重问过几次 */
+const rephrases = new Map()
+
+/**
+ * 用户点了一次「换个说法」→ 计数 +1。
+ *
+ * @returns {number} 让调用方**当场比上限**（就在旁边，不用再多一个查询函数）
+ */
+function noteRephrase(sessionId) {
+  const key = String(sessionId ?? '')
+  if (!key) return 0
+  const next = (rephrases.get(key) ?? 0) + 1
+  rephrases.set(key, next)
+  return next
+}
+
+/** 测试与排查用（自检要断言；生产代码不调它） */
+function rephraseCount(sessionId) {
+  return rephrases.get(String(sessionId ?? '')) ?? 0
+}
+
+/* ── ③ 无人值守（定时任务） ───────────────────────────────── */
 
 /** 正在跑的无人值守对话（sessionId） */
 const unattended = new Set()
@@ -108,8 +145,11 @@ function isUnattended(sessionId) {
 
 module.exports = {
   SKIP_LIMIT,
+  REPHRASE_LIMIT,
   noteSkip,
   noteAnswered,
+  noteRephrase,
+  rephraseCount,
   muted,
   wake,
   skipCount,

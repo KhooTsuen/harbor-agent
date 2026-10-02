@@ -133,6 +133,35 @@ describe('答完之后回什么', () => {
     expect(replies[0]?.answers).toHaveLength(2)
     expect(replies[0]?.answers[1]?.choice).toBe('')
   })
+
+  /* ── 两个「退出口」（AG-053 批⑤） ─────────────────────────
+     它们和「跳过」共用一条通道（`approved` 只能是 true/false），
+     所以回话里都带 `skipped: true` —— 靠 `cancelled` / `rephrase` 区分。
+     界面上不能只是「点了有反应」：标记写错了，内核那边会静静地当跳过。 */
+  it('★「先不做了」→ cancelled 标记（内核据此停手 + 界面把这轮 pause 住）', () => {
+    draw()
+    act(() => buttonByText('pnpm')?.click())
+    act(() => buttonByText('先不做了')?.click())
+    expect(replies).toHaveLength(1)
+    expect(replies[0]?.cancelled).toBe(true)
+    expect(replies[0]?.skipped).toBe(true)
+    /* 不能顺手把选中的选项带走：那是两件事（他是在说「先别做」，不是「我选 pnpm 但你先别做」） */
+    expect(replies[0]?.answers.every((one) => one.choice === '')).toBe(true)
+  })
+
+  it('★「换个说法」→ rephrase 标记（不带 cancelled）', () => {
+    draw()
+    act(() => buttonByText('换个说法')?.click())
+    expect(replies[0]?.rephrase).toBe(true)
+    expect(replies[0]?.cancelled).toBeUndefined()
+  })
+
+  it('平时点「就这么干」不带任何退出口标记（别把正常路也标脏）', () => {
+    draw()
+    act(() => buttonByText('就这么干')?.click())
+    expect(replies[0]?.cancelled).toBeUndefined()
+    expect(replies[0]?.rephrase).toBeUndefined()
+  })
 })
 
 describe('只读卡（回看历史）', () => {
@@ -164,6 +193,21 @@ describe('只读卡（回看历史）', () => {
   it('当时跳过的，也说一句（不然回看像漏答了）', () => {
     draw({ readOnly: true, answered: { skipped: true, answers: [] } })
     expect(container.textContent).toContain('当时跳过了')
+  })
+
+  it('★ 当时说「先不做了」的，不能说成「当时跳过了」（一个停住了、一个接着干了）', () => {
+    draw({ readOnly: true, answered: { skipped: true, answers: [], cancelled: true } })
+    const text = container.textContent ?? ''
+    expect(text).toContain('先不做了')
+    expect(text).not.toContain('当时跳过了')
+    expect(text).not.toContain('（已选）')
+  })
+
+  it('★ 当时说「换个说法」的，也如实说', () => {
+    draw({ readOnly: true, answered: { skipped: true, answers: [], rephrase: true } })
+    const text = container.textContent ?? ''
+    expect(text).toContain('换个说法')
+    expect(text).not.toContain('当时跳过了')
   })
 
   /* ── 自动采纳（AG-053 批③） ────────────────────────────────

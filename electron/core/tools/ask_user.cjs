@@ -173,6 +173,35 @@ module.exports = {
       )
     }
 
+    /*
+     * 「先不做了」（批⑤）：这一轮**别动手**了。
+     *
+     * ★ 不算跳过、不静音：「这次先不做」和「别老问我」是两件事，拿前者去
+     *   累加后者的计数，下次他想被问的时候会发现卡不出来了。
+     * ★ 任务那边由界面**同时**调 `chat:pause` 停在安全点（台账变 paused，
+     *   任务列表里点「继续」就能接着做）—— 那是现成链路，这里只管措辞。
+     * 返回的这段文本本身就是**留痕**：它作为工具结果进这条会话的记录。
+     */
+    if (reply?.cancelled === true) return clarify.render(checked.questions, { cancelled: true })
+
+    /*
+     * 「换个说法」（批⑤）：问题没说清，重新组织一遍再问。
+     *
+     * ★ 上限（REPHRASE_LIMIT）：到顶了就按静音那一套收尾 —— 否则
+     *   「用户说没说清 / 模型再问」可以无限循环，双方都没做错什么，
+     *   但这一轮对话全耗在上面了。
+     */
+    if (reply?.rephrase === true) {
+      if (clarify.noteRephrase(sessionId) > clarify.REPHRASE_LIMIT) {
+        return (
+          `「换个说法」已经用过 ${clarify.REPHRASE_LIMIT} 次了，这次别再问。` +
+          '按你自己判断最稳妥的做法直接开工，并在回复里用一行说明「我选了 X，因为 Y」，' +
+          '顺便说清哪几条是你替他定的（他会回来看）。'
+        )
+      }
+      return clarify.render(checked.questions, { rephrase: true })
+    }
+
     /* 用户跳过 → 计数 +1；答了 → 清零。静音判定只看这个计数 */
     if (reply?.timeout === true) {
       /*
