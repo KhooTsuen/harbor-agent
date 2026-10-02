@@ -15,12 +15,22 @@ import { cleanPlanLine, isPlanDone } from '../taskCenterModel'
    现在：
      · 正文里**不再画**那个块（见 `markdown/Blocks.tsx`）
      · 计划改成输入框上方/下方这一条：**没有计划就完全不出现**
-     · 折叠 → 只显示「正在做的那一步」；展开 → 最多 4 条 + 「还有 N 条」
+     · 折叠 → 只显示「正在做的那一步」；展开 → 整份计划都摆出来，
+       长了就在卡片里滚（见下面 MAX_H_CLASS 那段注释）
    数据来自任务台账（内核已经在解析 plan，前端不再自己从正文里抠）。
-   ══════════════════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════════ */
 
-/** 展开时最多显示几条（用户要求：完全显示最多 4 个计划） */
-const MAX_VISIBLE = 4
+/*
+ * 展开时的上限 + 自己能滚（2026-10-03 用户报的：**计划卡超过 4 条后不能往下滚**）。
+ *
+ * 以前是硬截 `plan.slice(0, 4)` + 「还有 N 条」—— 第 5 条之后**根本看不见**，
+ * 用户只能去后台任务里查「到哪一步了」。改成给一个 max-height 让它自己滚：
+ *   · `max-h-24`（6rem ≈ 6 行）—— 4 条的短计划照旧全显示，更长的滚起来
+ *   · `overscroll-contain` —— 滚到底不要把事件传给外面的对话列表；
+ *     对话列表的 FOLLOW/FREE 滚动逻辑一行都没动（那是另一块，别混）
+ *   · 滚动条不另写样式：沿用全局那套（index.css 的 ::-webkit-scrollbar，细、透明轨道）
+ */
+const MAX_H_CLASS = 'max-h-24 overflow-y-auto overscroll-contain'
 
 export function PlanBar({ threadId }: { threadId: string }) {
   const [open, setOpen] = useState(false)
@@ -40,8 +50,6 @@ export function PlanBar({ threadId }: { threadId: string }) {
   const done = plan.filter(isPlanDone).length
   const currentIndex = plan.findIndex((line) => !isPlanDone(line))
   const current = currentIndex >= 0 ? plan[currentIndex] : ''
-  const shown = open ? plan.slice(0, MAX_VISIBLE) : []
-  const rest = plan.length - shown.length
 
   return (
     <div className="mb-1.5 rounded-sm border border-line-subtle bg-bg-raised/40">
@@ -67,14 +75,11 @@ export function PlanBar({ threadId }: { threadId: string }) {
             {current ? `正在做：${cleanPlanLine(current)}` : '全部完成'}
           </span>
         )}
-        {open && rest > 0 ? (
-          <span className="shrink-0 text-fg-tertiary">还有 {rest} 条</span>
-        ) : null}
       </button>
 
       {open ? (
-        <ul className="flex flex-col gap-0.5 px-2 pb-1.5">
-          {shown.map((line, index) => {
+        <ul className={cn('flex flex-col gap-0.5 px-2 pb-1.5 pr-1', MAX_H_CLASS)}>
+          {plan.map((line, index) => {
             const isCurrent = index === currentIndex
             return (
               <li

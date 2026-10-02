@@ -12,7 +12,8 @@ import { PlanBar } from '../PlanBar'
      · 有 plan 才显示（没有就一行都不占）
      · 可折叠
      · 折叠时显示「正在进行的那一步」
-     · 展开时最多 4 条（多的说「还有 N 条」）
+     · 展开时把整份计划都摆出来；长了在卡片里滚
+       （2026-10-03 改：原来是硬截 4 条 + 「还有 N 条」，长计划看不全）
    ══════════════════════════════════════════════════════════════ */
 
 function task(plan: string[], sessionId = 's1'): TaskRecord {
@@ -76,17 +77,25 @@ describe('PlanBar', () => {
     expect(text).not.toContain('顺手修掉明显的错字')
   })
 
-  it('★ 展开最多 4 条，多的说「还有 N 条」', () => {
+  it('★ 展开把整份计划都摆出来，长了在卡片里滚（不再截到 4 条）', () => {
     useTaskStore.setState({ tasks: [task(SIX)] })
     draw()
     toggle()
     const text = host.textContent ?? ''
-    /* 前 4 条在 */
-    expect(text).toContain('列出工作目录里的文件')
-    expect(text).toContain('用三句话总结')
-    /* 第 5、6 条不摊开（6 - 4 = 2 条被收着） */
-    expect(text).not.toContain('检查 README 有没有过期描述')
-    expect(text).toContain('还有 2 条')
+    /*
+     * 2026-10-03 用户报的：「计划卡超过 4 条后不能往下滚」——
+     * 以前是硬截前 4 条 + 一句「还有 2 条」，第 5 条起根本看不见，
+     * 只能去后台任务里查「到哪一步了」。
+     */
+    for (const line of SIX) expect(text).toContain(line.replace(/^\[[ x]\] /, ''))
+    expect(text).not.toContain('还有 2 条')
+
+    /* 长计划靠**卡片自己滚**看：上限 + overflow + 不把滚轮传给外面的对话列表 */
+    const list = host.querySelector('ul')
+    const cls = list?.className ?? ''
+    expect(cls).toContain('max-h-')
+    expect(cls).toContain('overflow-y-auto')
+    expect(cls).toContain('overscroll-contain')
   })
 
   it('计划做完时说「全部完成」', () => {
