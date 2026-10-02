@@ -1,5 +1,5 @@
 import { asked, ctx, require, join, ROOT, tools, riskCore } from '../env.mjs'
-import { check, group } from '../harness.mjs'
+import { check, group, warn } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    破坏性命令：**必须**被拦或必须问，绝不能静默执行
@@ -57,9 +57,30 @@ const MUST_ASK = [
   ['Remove-Item -Recurse ./build', '递归删子目录仍是 high（别误伤）'],
 ]
 
+/**
+ * ★★ 已知缺口（2026-10-03 做 A2 第 4 步时顺手撞出来的，**不在那次范围内**）
+ *
+ * 「递归删盘根」的 PowerShell 写法，**参数顺序 / 引号一变就掉出 critical**：
+ * 规则要求盘根是**最后一个**参数（`… -Recurse -Force C:\` ✓），一旦盘根夹在中间
+ * （`-Recurse C:\ -Force`）或带引号（`"C:\"`）就只判 high —— 同一件灾难，
+ * 从「不问直接拒」降到「问一下」（而且用户选了「完全访问」那一档就**不问**）。
+ * 另一半：注释把 `rm -rf /` 当参照说「同一件事」，但 `rm -rf /` 自己也是 high。
+ *
+ * ⚠️ 这几条**故意按当前（不好的）行为钉住**，不是认可它：
+ *   · 谁把规则修对了 → 这里会红 → 请同时把这批搬进 `MUST_BLOCK`；
+ *    · 谁把规则改得更松 → 也红。
+ * 待办在 `docs/improvement-checklist.md`（第 1 条）。
+ */
+const KNOWN_GAP_HIGH = [
+  ['Remove-Item -Recurse C:\\ -Force', '盘根夹在中间'],
+  ['Remove-Item C:\\ -Recurse -Force', '盘根在开头'],
+  ['Remove-Item "C:\\" -Recurse -Force', '盘根带引号'],
+  ['Remove-Item -Confirm:$false -Recurse C:\\', '带 -Confirm 开关'],
+  ['rm -rf /', 'unix 写法删根（注释里当参照的那一条）'],
+]
+
 /** 这些**必须还是 low** —— 治漏不能治成「什么都要问」，误报多了用户会整个关掉分级 */
-const STILL_READONLY = [
-  ['ls -la', 'ls 带参数'],
+const STILL_READONLY = [  ['ls -la', 'ls 带参数'],
   ['dir /s /b', 'dir 带参数'],
   ['git status', 'git status'],
   ['grep -r foo .', 'grep -r（-r 是"递归搜索"，不是"递归删除"）'],
@@ -84,6 +105,21 @@ export async function run() {
     const level = riskCore.classify(command).level
     check(`★ ${why} 判为高风险`, level === 'high', `实际 ${level}｜${command}`)
   }
+
+  /* ── ①′ 已知缺口：现状钉住（修好它这里会红，那就是提醒你搬进 MUST_BLOCK）── */
+
+  for (const [command, why] of KNOWN_GAP_HIGH) {
+    const level = riskCore.classify(command).level
+    check(
+      `【已知缺口】${why}：递归删盘根现在只判 high（不是想要的行为）`,
+      level === 'high',
+      `实际 ${level}｜${command}｜修好它请把这条搬进 MUST_BLOCK`,
+    )
+  }
+  warn(
+    '递归删盘根的参数顺序 / 引号一变就掉出 critical（`rm -rf /` 也一样）',
+    '同一件灾难只剩「问一下」这道门；待办见 docs/improvement-checklist.md 第 1 条',
+  )
 
   /*
    * ★ 这一条是整个 F1 的核心断言。
