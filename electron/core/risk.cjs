@@ -20,6 +20,8 @@
  *   critical 格式化磁盘、破坏系统、抓凭据、关杀软、**改账户** —— **默认直接拦**
  *
  * 模式表在 `risk-patterns.cjs`：那张表还要继续长，和逻辑放一起会顶到行数红线。
+ * 其中「递归删除 + 危险目标」这一类在 `risk-targets.cjs` —— 它要**归一化**之后才判得了
+ * （位置 / 引号 / 额外开关都不该影响结果），塞进正则表里写不出来。
  */
 
 const {
@@ -31,6 +33,7 @@ const {
   WRITES,
   isReadOnlyCommand,
 } = require('./risk-patterns.cjs')
+const { dangerousDeleteReason } = require('./risk-targets.cjs')
 
 /** 从低到高 */
 const LEVELS = ['low', 'medium', 'high', 'critical']
@@ -59,6 +62,18 @@ function classify(command) {
       reasons.push(label)
       bump('critical')
     }
+  }
+
+  /*
+   * ★ 2026-10-03 补：「递归删除 + 危险目标」→ critical。
+   *   旧的两条 PowerShell 正则要求盘根恰好在最后一个参数，实测 46 条里漏了 28 条
+   *   （`rm -rf /`、`rm -rf C:\`、`del /s /q C:\`…）。判据在 `risk-targets.cjs`。
+   *   只有 critical 才**不问直接拒**；漏判的代价是「用户选了完全访问时连问都不问」。
+   */
+  const deadlyDelete = dangerousDeleteReason(text)
+  if (deadlyDelete) {
+    reasons.push(deadlyDelete)
+    bump('critical')
   }
 
   for (const [pattern, label] of HIGH) {

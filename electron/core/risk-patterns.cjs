@@ -57,25 +57,12 @@ const CRITICAL = [
     '创建或改动本地账户',
   ],
   /*
-   * 脚本里直接删盘根。参数是变量就看不见了，所以只能抓**写死**的这种 ——
-   * `shutil.rmtree('E:/')`、`fs.rmSync('C:\\', {recursive:true})` 都归这里。
+   * ★ 2026-10-03：原来这里有 3 条「脚本删盘根 / PowerShell 删盘根」的正则，已删 ——
+   *   它们要求盘根恰好在最后一个参数（顺序一变、加个引号就掉出 critical，实测漏 28 条），
+   *   现在统一由 `risk-targets.cjs` 的 `dangerousDeleteReason()` 判：先归一化再比目标，
+   *   并且覆盖面更宽（盘根 / 系统目录 / 家目录 / 一级标准目录 / find -delete / xargs rm）。
+   *   同一件事不写两套规则（写两套就会漂 —— 旧的注释把 `rm -rf /` 当参照，而它自己判 high）。
    */
-  [
-    /\b(rmtree|rmSync|rmdirSync|delTree)\s*\(\s*['"]([a-zA-Z]:[\\/]?|\/|[\\/]{2})['"]/i,
-    '脚本删除整个盘或根目录',
-  ],
-  /*
-   * PowerShell 递归删盘根：`Remove-Item -Recurse ./build` 是 high（要确认），
-   * 但目标是盘根（`C:\` / `/`）和 `rm -rf /` 是同一件事 —— 没有正当场景，直接 critical。
-   */
-  [
-    /\bRemove-Item\b[^\n]*-Recurse\b[^\n]+\s(['"]?[a-zA-Z]:[\\/]?['"]?|\\{1,2}|\/)\s*$/i,
-    '递归删除整个盘或根目录（PowerShell）',
-  ],
-  [
-    /\bRemove-Item\b[^\n]*-(?:Path|LiteralPath)\s+['"]?[a-zA-Z]:[\\/]?['"]?[^\n]*-Recurse\b/i,
-    '递归删除整个盘或根目录（PowerShell）',
-  ],
   /* dd 往盘上写：`of=/dev/` 那条是 Unix 裸设备，这条补 Windows 盘符 */
   [/\bdd\s+if=.*of=[a-z]:[\\/]/i, '用 dd 覆盖盘上的文件'],
   /* WMIC 删卷/格式化 —— 这是删盘，不是「改系统」，从 high 提到 critical */

@@ -66,8 +66,14 @@ export function runGrantChecks({ grant, riskCore, BASE_CONFIG }) {
     return /只读/.test(sentence) && sentence.includes('rm -rf build')
   })())
   check('高危命令的被拒说明带上风险理由', (() => {
-    const sentence = grant.explainBlock('workspace', { tool: 'run_shell', command: 'rm -rf /' })
+    const sentence = grant.explainBlock('workspace', { tool: 'run_shell', command: 'reg add HKLM\\Software\\x /v y /d z' })
     return /不批/.test(sentence) && /风险/.test(sentence)
+  })())
+  /* ★ 2026-10-03 补：`rm -rf /` 已经是 critical，说明里应该是「危险」——
+     同一句话要分得出「问一下」和「直接拒」两档，不然用户看不出区别。 */
+  check('★ 危急命令的被拒说明也带上理由（而且说得出是「危险」）', (() => {
+    const sentence = grant.explainBlock('workspace', { tool: 'run_shell', command: 'rm -rf /' })
+    return /不批/.test(sentence) && /危险/.test(sentence)
   })())
 
   group('定时任务 / configFor 不许污染用户配置')

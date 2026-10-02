@@ -1,5 +1,5 @@
 import { asked, ctx, require, join, ROOT, tools, riskCore } from '../env.mjs'
-import { check, group, warn } from '../harness.mjs'
+import { check, group } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    破坏性命令：**必须**被拦或必须问，绝不能静默执行
@@ -7,17 +7,18 @@ import { check, group, warn } from '../harness.mjs'
    这一组是 2026-09-23 那次排查的回归锁。当时发现：在
    `permission: 'full'` + `shellPolicy: { medium: 'allow' }` 这个**真实配置**下，
    一批会毁掉机器或数据的命令被判成 medium → 直接执行、**连问都不问**：
-
-     · `Format-Volume -DriveLetter C`（PowerShell 的格式化，`format c:` 的同义词）
-     · `net user x P@ss /add`（建账户）、`net localgroup administrators x /add`（提权）
-     · `python -c "…shutil.rmtree('E:/')"`（内联脚本删盘根）
-     · `find . -delete` ← **判成 low**，`find` 在只读白名单里，而白名单只看命令开头
+   `Format-Volume`（`format c:` 的 PowerShell 同义词）、`net user x P@ss /add`（建账户）、
+   `python -c "…shutil.rmtree('E:/')"`，还有 `find . -delete`（**判成 low** ——
+   `find` 在只读白名单里，而白名单只看命令开头）。
 
    根因不是「黑名单少写了几条」，是**两个设计问题**：
      ① 模式表全是 cmd / unix 写法，PowerShell 的同义命令一个都没覆盖
      ② 只读白名单 `^…` 只审**命令开头**，后面跟什么参数完全不看
    所以这里刻意**不逐条测命令名**（那种测试补不完），而是测**类别性质**：
    任何「会毁掉数据 / 提权 / 代码不可见」的东西，在最宽松的策略下也不许静默放行。
+
+   2026-10-03 加：「递归删除 + 危险目标」的写法穷举（`risk-targets.cjs`）——
+   旧规则要求盘根在**最后一个参数**，实测 46 条里漏 28 条。
    ══════════════════════════════════════════════════════════════ */
 
 /** 用户真实的 shellPolicy —— 刻意用最宽松的一档来测 */
@@ -41,6 +42,38 @@ const MUST_BLOCK = [
   ['Remove-Item -Path C:\\ -Recurse -Force', '递归删盘根（-Path 写法）'],
   [`wmic logicaldisk where "DeviceID='C:'" delete`, 'WMIC 删卷'],
   [`dd if=/dev/zero of=C:\\Windows\\system32\\x`, 'dd 覆盖盘上文件'],
+
+  /* ★ 2026-10-03 补：这 5 条原来在 `KNOWN_GAP_HIGH` 里**按坏行为钉住**，现在改好了 */
+  ['Remove-Item -Recurse C:\\ -Force', '递归删盘根：盘根夹在中间'],
+  ['Remove-Item C:\\ -Recurse -Force', '递归删盘根：盘根在开头'],
+  ['Remove-Item "C:\\" -Recurse -Force', '递归删盘根：盘根带引号'],
+  ['Remove-Item -Confirm:$false -Recurse C:\\', '递归删盘根：带 -Confirm 开关'],
+  ['rm -rf /', 'unix 写法删根（旧注释里当参照、自己判 high 的那条）'],
+
+  /* ── 同一类灾难的其它写法（口径：位置 / 引号 / 额外开关都不该影响判定）── */
+  ['rm -rf C:\\', '盘根（windows）'],
+  ['rm -rf "/"', '盘根带引号'],
+  ['rm -rf /*', '盘根通配'],
+  ['rm -rf C:/', '盘根（正斜杠）'],
+  ['del /s /q C:\\*.*', '盘根 + `*.*` 通配（「整个盘」的另一种写法）'],
+  ['rm -rf /usr', '系统目录（unix）'],
+  ['rm -rf C:\\Windows', '系统目录（windows）'],
+  ['rd /s /q C:\\Windows', 'rd 删系统目录'],
+  ['del /s /q C:\\', 'cmd 递归删盘根'],
+  ['bash -c "rm -rf /"', '包在 shell -c 里（和 sudo 一样，看的是内容）'],
+
+  /* ── 家目录：**本身**和一级标准目录（`~/Documents/project` 不算，见反向组）── */
+  ['rm -rf $env:USERPROFILE', '家目录（变量）'],
+  ['rm -rf ~', '家目录（~）'],
+  ['rm -rf ~/Documents', '家目录下的一级标准目录'],
+  ['rm -rf C:\\Users\\me\\Documents', '家目录下的一级标准目录（windows 写法）'],
+  ['rm -rf C:\\Users', '所有用户的父目录'],
+  ['rm -rf /home', '所有用户的父目录（unix）'],
+
+  /* ── 间接写法：目标和动作不在同一条命令里 ── */
+  ['find / -delete', 'find 边搜边删（起点是根）'],
+  ['find / -exec rm -rf {} \\;', 'find -exec 删根'],
+  ['echo / | xargs rm -rf', 'xargs 把根喂给 rm'],
 ]
 
 /** 分类上必须是 high，执行上必须「先问」 */
@@ -58,29 +91,35 @@ const MUST_ASK = [
 ]
 
 /**
- * ★★ 已知缺口（2026-10-03 做 A2 第 4 步时顺手撞出来的，**不在那次范围内**）
- *
- * 「递归删盘根」的 PowerShell 写法，**参数顺序 / 引号一变就掉出 critical**：
- * 规则要求盘根是**最后一个**参数（`… -Recurse -Force C:\` ✓），一旦盘根夹在中间
- * （`-Recurse C:\ -Force`）或带引号（`"C:\"`）就只判 high —— 同一件灾难，
- * 从「不问直接拒」降到「问一下」（而且用户选了「完全访问」那一档就**不问**）。
- * 另一半：注释把 `rm -rf /` 当参照说「同一件事」，但 `rm -rf /` 自己也是 high。
- *
- * ⚠️ 这几条**故意按当前（不好的）行为钉住**，不是认可它：
- *   · 谁把规则修对了 → 这里会红 → 请同时把这批搬进 `MUST_BLOCK`；
- *    · 谁把规则改得更松 → 也红。
- * 待办在 `docs/improvement-checklist.md`（第 1 条）。
+ * ★★ 治漏不能治过头：**绝不能**变成 critical 的（误报多了用户会关掉整个分级）。
+ * 三种情况必须原地不动 —— ① 相对路径（`./build` / `*` / `./*.tmp`）；
+ * ② 家目录・标准目录**再往下一层**；③ 名字像但不是（`/usrx` / `~/Projects`），
+ * 以及目标和动作**不在同一段**里（旁边那句 `grep` 里的 `/usr` 不算目标）。
  */
-const KNOWN_GAP_HIGH = [
-  ['Remove-Item -Recurse C:\\ -Force', '盘根夹在中间'],
-  ['Remove-Item C:\\ -Recurse -Force', '盘根在开头'],
-  ['Remove-Item "C:\\" -Recurse -Force', '盘根带引号'],
-  ['Remove-Item -Confirm:$false -Recurse C:\\', '带 -Confirm 开关'],
-  ['rm -rf /', 'unix 写法删根（注释里当参照的那一条）'],
+const MUST_NOT_CRITICAL = [
+  ['rm -rf ./build', 'high', '删构建产物'],
+  ['rm -rf ./node_modules', 'high', '删依赖目录'],
+  ['rm -rf ./tmp/cache', 'high', '删缓存'],
+  ['rm -rf *', 'high', '当前目录下的所有东西（相对，不是根）'],
+  ['rm -rf .', 'high', '当前目录'],
+  ['rm -rf /tmp/harbor-scratch', 'high', '/tmp 不是系统目录（故意没收）'],
+  ['rm -rf $env:TEMP\\harbor', 'high', 'TEMP 只是临时目录'],
+  ['rm -rf ~/projects/foo', 'high', '家目录**下面**的项目'],
+  ['rm -rf ~/Documents/project', 'high', '标准目录**下面**的东西（只认目录本身）'],
+  ['rm -rf ~/Projects', 'high', '自建同名目录（只看深度，不看名字）'],
+  ['rm -rf C:\\Users\\me\\projects\\foo\\node_modules', 'high', '家目录深处的产物目录'],
+  ['rm -rf /usrx', 'high', '名字像 /usr 但不是（边界不能模糊）'],
+  ['rm -rf ./*.tmp', 'high', '相对路径 + 通配（相对就是相对）'],
+  ['Remove-Item -Recurse -Force ./build', 'high', 'PowerShell 删构建产物'],
+  ['find ./build -delete', 'high', 'find 删相对路径'],
+  ['echo ./build | xargs rm -rf', 'high', 'xargs 喂相对路径'],
+  ['ls | xargs rm -rf', 'high', 'xargs 的输入是当前目录（源不明确，不升级）'],
+  ['rm -rf ./build && grep -r foo /usr/share/doc', 'high', '旁边那句 grep 里的 /usr 不算目标'],
 ]
 
 /** 这些**必须还是 low** —— 治漏不能治成「什么都要问」，误报多了用户会整个关掉分级 */
-const STILL_READONLY = [  ['ls -la', 'ls 带参数'],
+const STILL_READONLY = [
+  ['ls -la', 'ls 带参数'],
   ['dir /s /b', 'dir 带参数'],
   ['git status', 'git status'],
   ['grep -r foo .', 'grep -r（-r 是"递归搜索"，不是"递归删除"）'],
@@ -106,30 +145,18 @@ export async function run() {
     check(`★ ${why} 判为高风险`, level === 'high', `实际 ${level}｜${command}`)
   }
 
-  /* ── ①′ 已知缺口：现状钉住（修好它这里会红，那就是提醒你搬进 MUST_BLOCK）── */
+  /* ── ①′ 反向：治漏不能治过头（升级成 critical 的那批，这里必须原地不动）── */
 
-  for (const [command, why] of KNOWN_GAP_HIGH) {
-    const level = riskCore.classify(command).level
-    check(
-      `【已知缺口】${why}：递归删盘根现在只判 high（不是想要的行为）`,
-      level === 'high',
-      `实际 ${level}｜${command}｜修好它请把这条搬进 MUST_BLOCK`,
-    )
+  for (const [command, level, why] of MUST_NOT_CRITICAL) {
+    const actual = riskCore.classify(command).level
+    check(`不许升成 critical：${why}`, actual === level, `期望 ${level}｜实际 ${actual}｜${command}`)
   }
-  warn(
-    '递归删盘根的参数顺序 / 引号一变就掉出 critical（`rm -rf /` 也一样）',
-    '同一件灾难只剩「问一下」这道门；待办见 docs/improvement-checklist.md 第 1 条',
-  )
 
   /*
-   * ★ 这一条是整个 F1 的核心断言。
-   *
-   * 用**出厂的默认策略**：不论用户把工具权限开到哪一档，这些命令都不许静默执行 ——
-   *   危急 → block（直接拒，连问都不问）
-   *   高风险 → ask（需要确认档下会弹窗；完全访问档下不问 —— 那是用户明确选的）
-   * 判定放在**默认值**上，而不是「偷偷推翻用户的选择」：
-   * 2026-09-29 之前 `decide()` 会把 `allow` 强制降级成 ask，后果是用户选了「完全访问」
-   * 仍然被弹窗（真机审计里留着 `approval=false`）——「设置里写了但不生效」本身就是 bug。
+   * ★ 这一条是整个 F1 的核心断言。用**出厂的默认策略**：不论用户把工具权限开到哪一档，
+   *   危急 → block（直接拒，连问都不问）；高风险 → ask。判定放在**默认值**上，
+   *   而不是「偷偷推翻用户的选择」（2026-09-29 之前的 `decide()` 会强制降级，
+   *   后果是真机审计里那条 `approval=false` ——「设置里写了但不生效」本身就是 bug）。
    */
   const DEFAULT = { medium: 'ask', high: 'ask', critical: 'block' }
   const silentlyAllowed = [...MUST_BLOCK, ...MUST_ASK].filter(
@@ -225,11 +252,8 @@ export async function run() {
     )
   }
 
-  /*
-   * ★ 用户报的那个 bug 的回归锁（2026-09-28 真机审计里的那条）：
-   *   他选了「完全访问」，一条无害的 `node -e "console.log(1)"` 被判高风险 → 照样弹窗。
-   *   现在：完全访问 = 不问。这条命令无副作用，可以真跑。
-   */
+  /* ★ 用户报的那个 bug 的回归锁（2026-09-28 真机审计）：选了「完全访问」，一条无害的
+     `node -e` 被判高风险 → 照样弹窗。现在：完全访问 = 不问。这条无副作用，可以真跑。 */
   probe.length = 0
   const inlineScript = await tools.execute(
     'run_shell',
@@ -253,11 +277,8 @@ export async function run() {
     `问了 ${probe.length} 次｜${askedInAskMode.slice(0, 60)}`,
   )
 
-  /*
-   * `find . -delete` 单独测：它的目标就是当前目录，`run_shell` 那层的
-   * DANGEROUS 会**直接拒掉**（进不到确认这一步）。两种拦法都算合格，
-   * 要求只有一条 —— 不许未经确认就执行。
-   */
+  /* `find . -delete` 单独测：目标就是当前目录，`run_shell` 那层的 DANGEROUS 会**直接拒掉**
+     （进不到确认那一步）。两种拦法都算合格 —— 要求只有一条：不许未经确认就执行。 */
   probe.length = 0
   const findDelete = await tools.execute('run_shell', { command: 'find . -delete' }, denyCtx)
   check(

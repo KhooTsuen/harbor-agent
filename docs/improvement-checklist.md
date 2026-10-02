@@ -176,28 +176,21 @@
      跑一段时间后统计「预估 ≥ 300s 的操作实际触发多少次 / 实际跑多久」，用来校准
      `scaleHardSeconds` 的默认值（现在是拍的 120 秒 —— 「不靠拍，靠数据」）。
 
-1. **危险度层：递归删盘根的写法漏了一半**（2026-10-03 做 A2 第 4 步时顺手撞出来，**没动它**）：
-   用户要的自检「关掉规模层不能连带把危险度也关掉」写断言时，随手挑了个写法 ——
-   `Remove-Item -Recurse C:\ -Force` —— 结果它**不是 critical，是 high**。实测口径：
-
-   | 写法 | 现在判 |
-   |---|---|
-   | `Remove-Item -Recurse -Force C:\` | critical（规则要求盘根在**末尾**） |
-   | `Remove-Item -Path C:\ -Recurse -Force` | critical（`-Path` 那条专门管） |
-   | `Remove-Item -Recurse C:\ -Force`（盘根夹在中间） | **high** |
-   | `Remove-Item C:\ -Recurse -Force`（盘根在开头） | **high** |
-   | `Remove-Item "C:\" -Recurse -Force`（带引号） | **high** |
-   | `Remove-Item -Confirm:$false -Recurse C:\` | **high** |
-   | `rm -rf /` ← **注释里当参照的那一条** | **high** |
-
-   后果：同一件灾难从「**不问直接拒**」降到「**问一下**」；而用户选了「完全访问」那一档时
-   high 是**不问**的 —— 也就是这条命门只剩一次点击。
-   另一半是**声明与代码不符**：`risk-patterns.cjs` 那条注释写着「目标盘根和 `rm -rf /` 是同一件事
-   —— 没有正当场景，直接 critical」，但 `rm -rf /` 自己**一条规则都没匹配上**。
-   · 现状**已钉住**：`61-destructive.mjs` 的 `KNOWN_GAP_HIGH` 按当前行为断言 + 一条 `warn`
-     （修好会红 → 提醒把这几条搬进 `MUST_BLOCK`）。
-   · 要不要现在修：这是**危险度层**的改动（`docs/安全模型.md` + 真机验证 + `61` 组一起动），
-     够一次单独的小步，**别混在 A2 里**。
+1. ~~**危险度层：递归删盘根的写法漏了一半**（2026-10-03 做 A2 第 4 步时顺手撞出来，没动它）~~
+   → ✅ **2026-10-03 已修**（`core/risk-targets.cjs` + 自检组 `61-destructive`）：
+   根因是**判据钉错了地方** —— 旧的两条 PowerShell 正则要求盘根恰好在**最后一个参数**，
+   顺序一换（`-Recurse C:\ -Force`）、加引号（`"C:\"`）就掉出 critical；`rm -rf /`
+   自己一条都没匹配上（而注释里拿它当参照）。修法：**先归一化再判目标**，位置 / 引号 / 额外开关无关。
+   · 已修复（原来是 high，现在 critical）：`rm -rf /` · `rm -rf C:\` · `rm -rf "/"` · `rm -rf C: -Confirm:$false`
+     · `del /s /q C:\` · `rd /s /q C:\Windows` · `Remove-Item` 的四种写法 · `sudo` / `bash -c` 包裹的 ·
+     家目录（`~` / `$env:USERPROFILE` / `C:\Users\<名字>`）**及其下的一级标准目录**（`~/Documents` 等）·
+     系统目录及其子树（`C:\Windows` / `/usr` / `/var` …）· 所有用户的父目录（`C:\Users` / `/home`）·
+     间接写法（`find / -delete`、`echo / | xargs rm -rf`、脚本里写死的 `rmtree('E:/')`）
+   · 曾漏过的 28 条原样记在 `踩坑记录.md`；实测口径：78+ 条里 0 漏判 / 0 误判
+   · 反向锁：`MUST_NOT_CRITICAL`（17 条，相对路径 / 再深一层 / 名字像但不是 / 跨段）
+   · ⚠️ **仍未覆盖的**（以后真踩到再补，别以为全收了）：没白名单的变量（`${HOME}`、`%HOMEPATH%`、
+     `$env:LOCALAPPDATA`）当目标时**不判**（保守）—— 变量看不见就不猜；`\tmp` 与 `/var/tmp`
+     这类 scratch 位置**故意**不算（但对 `/var` 整棵子树是算的，这是取舍，见 `安全模型.md` §3）。
 2. ~~**回退到指定检查点**（2.2）~~ → ✅ **2026-09-24 已做（v1.12.0，AG-045）**：
    `changeset:rollbackTo` + `changeset-rollback.cjs`，撤销检查点**之后**的改动。
    判据是时间戳（`checkpoint.at` vs `files[].at`），界面请传 `at`（下标会随 50 条截断挪位）。

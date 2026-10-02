@@ -223,9 +223,12 @@ export async function run() {
   check('带了退出码', echo.includes('退出码'))
 
   const danger = await tools.execute('run_shell', { command: 'rm -rf /' }, ctx)
+  /* ★ 2026-10-03：`rm -rf /` 现在在**风险层**就判危急、直接拦下（以前只判 high，
+     一路落到 run_shell 的兜底名单才被拒）。所以这里不钉「破坏系统」那句具体文案 ——
+     兜底那道线的说法不该成为验收标准。 */
   check(
     '危险命令被拦下',
-    danger.startsWith('错误：') && danger.includes('破坏系统'),
+    danger.startsWith('错误：') && /破坏系统|拦下了/.test(danger),
     danger.slice(0, 60),
   )
 
