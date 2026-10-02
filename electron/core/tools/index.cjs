@@ -15,6 +15,7 @@
 const mcp = require('../mcp.cjs')
 const approvals = require('./approval.cjs')
 const riskGate = require('./risk-gate.cjs')
+const scaleGate = require('./scale-gate.cjs')
 const writeDiff = require('../write-diff.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
@@ -123,6 +124,20 @@ async function execute(name, args, ctx = {}) {
     return text
   }
 
+  /* ── ①′ 规模（A2）：**这里只看看**，把这个代价顺手写进「已经要弹的那个确认框」──
+     ★ 为什么不在这一步拦：危险度该先判（会不会毁东西），规模是**最后一道**问询。
+       `docs/安全模型.md` §8 的原话是「缺第三层：规模」—— 补的是**没人问**的那种
+       （只读扫全盘：危险度 low、权限也不管），不是去抢危险度的话。 */
+  const scalePeek = scaleGate.gate({ name, args: args ?? {}, ctx, dry: true })
+  const scaleImpact =
+    scalePeek.level === 'ok'
+      ? []
+      : [
+          `规模：${(scalePeek.reasons ?? []).join('；')}（预估 ${
+            scalePeek.estimate?.files == null ? '文件数未知' : `约 ${scalePeek.estimate.files} 个文件`
+          } / ${scalePeek.estimate?.seconds == null ? '耗时未知' : `约 ${scalePeek.estimate.seconds} 秒`}）`,
+        ]
+
   /* ── ② 风险分级（只有 run_shell 有）── */
   const verdict = name === 'run_shell' ? risk.classify(args?.command) : null
   let summary = tool.summarize
@@ -143,7 +158,7 @@ async function execute(name, args, ctx = {}) {
       summary,
       startedAt,
       audit: (entry) => auditCall(ctx, entry),
-      impact: impactFor(name, args, ctx, summary, verdict),
+      impact: [...impactFor(name, args, ctx, summary, verdict), ...scaleImpact],
     })
     if (gated.blocked) return gated.blocked
     if (gated.asked === true && gated.approved !== true) {
@@ -197,7 +212,7 @@ async function execute(name, args, ctx = {}) {
         name,
         args,
         summary,
-        impact: impactFor(name, args, ctx, summary, verdict),
+        impact: [...impactFor(name, args, ctx, summary, verdict), ...scaleImpact],
         diff: view.diff,
         diffNote: view.note,
       })
@@ -213,6 +228,18 @@ async function execute(name, args, ctx = {}) {
         return `用户拒绝了这个操作：${summary}`
       }
     }
+  }
+
+  /*
+   * ── ②′ 规模拦截（A2）：**最后一道**问询，就在执行之前 ──
+   * ★ 前面已经问过就跳过（危险度弹过、或写操作确认过）—— 用户刚为这条命令点过头，
+   *   再弹一次规模确认就是骚扰（AG-014「禁止连续弹出大量确认框」）。
+   * ★ 它拦的正是**没人会问**的那种：只读扫全盘 —— 危险度 low、权限层也不管。
+   * ★ 拦 = **不执行工具**，只把话还给模型（让它去 ask_user 问清范围）。
+   */
+  if (!riskApproved && approval === null) {
+    const gatedScale = scaleGate.gate({ name, args: args ?? {}, ctx })
+    if (gatedScale.level === 'blocked') return gatedScale.text
   }
 
   /* ── ③ 真正执行 ── ★ 顺序铁律：run_shell **先落「意图」再执行** —— 见 task-intent.cjs */

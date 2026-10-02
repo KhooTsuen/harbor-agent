@@ -16,6 +16,7 @@
  */
 
 const clarify = require('../clarify.cjs')
+const scaleGate = require('./scale-gate.cjs')
 
 /**
  * 谁能把问题送到界面上？
@@ -209,7 +210,16 @@ module.exports = {
        * （超时也带 `skipped: true`，所以这条必须写在前面。）
        */
     } else if (reply?.skipped === true) clarify.noteSkip(sessionId)
-    else if (Array.isArray(reply?.answers) && reply.answers.length > 0) clarify.noteAnswered(sessionId)
+    else if (Array.isArray(reply?.answers) && reply.answers.length > 0) {
+      clarify.noteAnswered(sessionId)
+      /*
+       * A2：他答过一次规模确认 → 本对话内同类重操作不再问。
+       * 为何挂在这里：「他答了」是这条路上唯一确定的事实（他答的是不是同意
+       * 不是代码能判的），所以授权只按 kind 记、只在本对话内 ——
+       * 范围含糊时宁可下次再问一遍（见 tools/scale-gate.cjs）。
+       */
+      scaleGate.noteAsked(sessionId)
+    }
 
     return clarify.render(checked.questions, reply ?? {})
   },
