@@ -27,6 +27,18 @@ export function group(title) {
   console.log(`\n── ${title} ──`)
 }
 
+/**
+ * 一条**提醒**：既不算过，也不算不过。
+ *
+ * 用途（2026-10-03 用户拍板的分工）：「每个配置项都必须有人读」这类检查里，
+ * **字符串筛查**是快速过滤（注释里提到也算「提到」，会误报），而**行为断言**
+ * 才是最终判据。只有筛查、还没被行为钉住的那几项标 warn 而不是 pass ——
+ * 让「这里还没钉死」在输出里看得见，而不是被一片 ✅ 盖住。
+ */
+export function warn(name, detail = '') {
+  console.log(`  ⚠️ ${name}${detail ? `  ← ${detail}` : ''}`)
+}
+
 /** 打印汇总，返回进程退出码（0 = 全过） */
 export function report() {
   console.log(`\n════════════════════════════════`)

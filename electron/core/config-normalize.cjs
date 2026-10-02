@@ -167,16 +167,13 @@ function normalize(raw) {
          盘上的老数字不会自己变，不迁移这次修复对老用户就等于没发生 */
       maxTokens: clampNumber(assistant.maxTokens === 4096 ? 0 : assistant.maxTokens, 0, 128000, 0),
       historyLimit: clampNumber(assistant.historyLimit, 0, 200, 20),
-      responseDepth: pick(
-        str(assistant.responseDepth, 'standard'),
-        ['concise', 'standard', 'detailed', 'deep'],
-        'standard',
-      ),
+      responseDepth: pick(str(assistant.responseDepth, 'standard'), ['concise', 'standard', 'detailed', 'deep'], 'standard'),
       selfReview: assistant.selfReview === true,
       streamOutput: assistant.streamOutput !== false,
       planFirst: assistant.planFirst !== false,
-      /* AG-053：开工前澄清那四项（默认值与夹取规则在 clarify-config.cjs） */
+      /* AG-053 / A2：开工前澄清与规模确认（默认值与夹取规则在各自那个 config 里） */
       ...require('./clarify-config.cjs').normalize(assistant),
+      ...require('./scale-config.cjs').normalize(assistant),
       verifyAfterEdit: assistant.verifyAfterEdit !== false,
     },
 

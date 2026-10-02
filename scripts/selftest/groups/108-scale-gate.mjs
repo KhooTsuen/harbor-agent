@@ -1,5 +1,6 @@
-import { join, require, ROOT } from '../env.mjs'
-import { check, group } from '../harness.mjs'
+import { readdirSync } from 'node:fs'
+import { join, readFileSync, require, ROOT } from '../env.mjs'
+import { check, group, warn } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
    规模预检（A2，用户 2026-10-03 批准）
@@ -46,6 +47,31 @@ export async function run() {
     check(`★ ${label} → 问`, v.level === 'ask', `${v.level} / ${v.reasons.join('；')}`)
   }
 
+  /*
+   * ★★ 工作目录**之外**的另外三种写法（2026-10-03 量口径时补的）。以前全被判成 `workdir`
+   * → **只 note 不拦**，而它们指的是「用户目录 / Unix 根」这种递归一趟十几万个文件的地方。
+   * 撞出的经过：给 T12 换提示词后先离线量了一遍 —— `$env:USERPROFILE` 只判 note，
+   * 而那个写法正好是模型答「磁盘被什么占掉了」时最可能选的。
+   */
+  for (const [label, command, wantScope] of [
+    ['环境变量递归（用户目录）', 'Get-ChildItem $env:USERPROFILE -Recurse -Force', 'outside'],
+    ['环境变量递归（%TEMP%）', 'dir /s %TEMP%', 'outside'],
+    ['Unix 根递归', 'find /usr -name "*.so"', 'outside'],
+    ['正斜杠盘符递归', 'Get-ChildItem C:/Users -Recurse', 'outside'],
+  ]) {
+    const v = gate.inspect(sh(command))
+    check(
+      `★ ${label} → 问（当「外面」看）`,
+      v.level === 'ask' && v.scope === wantScope,
+      `${v.level} / ${v.scope} / ${v.reasons.join('；')}`,
+    )
+  }
+  check(
+    '★ 环境变量这种写法**不走**「用户说了范围」的豁免（说不清是哪个目录，宁可多问一句）',
+    gate.inspect(sh('dir /s %TEMP%', '扫一下 %TEMP% 吧')).level === 'ask',
+    gate.inspect(sh('dir /s %TEMP%', '扫一下 %TEMP% 吧')).level,
+  )
+
   group('A2 / 必须问：批量外联（分界是「批量 vs 单次」，不是「联网 vs 本地」）')
 
   for (const [label, command] of [
@@ -72,9 +98,29 @@ export async function run() {
     ['单次抓一个文件', 'curl -O https://example.com/a.zip'],
     ['工作目录里递归搜', 'grep -r foo .'],
     ['工作目录里递归列目录', 'Get-ChildItem -Recurse .'],
+    /* 工作目录里 find → 只 note（`find` 本身就是递归，但不逃出去就不打扰人） */
+    ['工作目录里 find', 'find . -name "*.cjs"'],
   ]) {
     const v = gate.inspect(sh(command))
     check(`${label} → 不拦（最多 note）`, v.level !== 'ask', v.level)
+  }
+
+  /*
+   * ★★ 拿**真机跑出来的原话**当防误伤用例（T12 那次真跑，模型干的 18 条探测）：
+   * 这是真实模型在「重操作」语境下会选的路子，全是廉价只读，一条都不该被拦。
+   */
+  for (const command of [
+    'wmic cpu get name,numberofcores,numberoflogicalprocessors,loadpercentage /format:list',
+    'wmic logicaldisk get caption,drivetype,size,freespace /format:list',
+    'systeminfo | findstr /C:"Total Physical Memory" /C:"Available Physical Memory"',
+    'powershell -NoProfile -Command "Get-Process | Sort-Object WS -Descending | Select-Object -First 15 Name"',
+    'powershell -NoProfile -Command "Get-PhysicalDisk | Select-Object FriendlyName,MediaType"',
+    'powershell -NoProfile -Command "Get-Volume | Where-Object DriveLetter | Select-Object DriveLetter"',
+    'powershell -NoProfile -Command "Get-CimInstance Win32_StartupCommand | Format-Table"',
+    'powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Select-Object NumberOfCores"',
+  ]) {
+    const v = gate.inspect(sh(command))
+    check(`真机那条廉价探测不被拦 → ${v.level}`, v.level === 'ok', `${v.level}｜${command.slice(0, 80)}`)
   }
 
   check(
@@ -176,45 +222,8 @@ export async function run() {
   )
   gate.reset()
 
-  group('A2 / 提示词层：模型先判断（闸门只兼底）')
-
-  const stack = require(join(ROOT, 'electron/core/prompt-stack.cjs'))
-  const rulesOn = stack.workRules({ planFirst: true, clarifyFirst: true })
-  check(
-    '★ 开着的时候注入「动手前先掂量代价」',
-    /掂量代价/.test(rulesOn) && /多大范围/.test(rulesOn),
-    rulesOn.includes('掂量代价') ? '有' : '没有',
-  )
-  check(
-    '★ 文案里说清了「有界重活不用问，但要说一句」',
-    /不用问/.test(rulesOn) && /预计多久/.test(rulesOn),
-  )
-  check(
-    '★ 也说清了例外：用户说了范围 / 小范围只读探测 → 直接做',
-    /已经说了范围/.test(rulesOn) && /小范围只读探测/.test(rulesOn),
-  )
-  check(
-    '★ 和「开工前对齐」共用一个开关：关掉 clarifyFirst → 两条都不注入',
-    !/掂量代价/.test(stack.workRules({ planFirst: true, clarifyFirst: false })),
-  )
-  check(
-    '★ 静音时也不注入（不让问的时候还写着「先问规模」，模型只会来回犹豫）',
-    !/掂量代价/.test(stack.workRules({ planFirst: true, clarifyMuted: true })),
-  )
-  check(
-    '★ 拆文件没把老规矩弄丢（先看再改 / 先给计划 / 其余规矩都在）',
-    /先看再改/.test(rulesOn) &&
-      /plan 块/.test(rulesOn) &&
-      /edit_file/.test(rulesOn) &&
-      /回答用简体中文/.test(rulesOn),
-    String(rulesOn.length),
-  )
-  check(
-    '关掉 planFirst 只去掉计划那一条（其余照旧）',
-    !/plan 块/.test(stack.workRules({ planFirst: false })) &&
-      /掂量代价/.test(stack.workRules({ planFirst: false })),
-  )
-
+  /* 配置那一半（默认值 → 归一化 → 读取 → 生效；每个配置项必须有人读）搬去了
+     `109-scale-config.mjs` —— 这一组只管判据。 */
   group('A2 / 留痕：预估进审计（用户要的「不靠拍，靠数据」）')
 
   const entries = []

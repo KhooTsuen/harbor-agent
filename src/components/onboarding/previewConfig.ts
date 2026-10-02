@@ -54,6 +54,11 @@ export const PREVIEW_CONFIG: AppConfig = {
     clarifyIdleSeconds: 30,
     clarifyTimeoutMs: 600000,
     clarifyMaxWaitMs: 1800000,
+    /* A2：重操作先问规模（四个值与 core/scale-config.cjs 的默认一致） */
+    scaleFirst: true,
+    scaleHardSeconds: 120,
+    scaleWarnSeconds: 30,
+    scaleMaxFiles: 2000,
   },
   tools: {
     permission: 'ask',

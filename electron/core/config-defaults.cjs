@@ -116,9 +116,7 @@ const DEFAULTS = {
     model: 'deepseek-chat',
     temperature: 0.7,
     topP: 1,
-    /** 单次回复的输出上限。**0 = 不限**（2026-09-29 改；原来 4096 就是「长回复被砍断」的
-     * 凶手：363 次请求里输出 token 的最大值**正好是 4096**）。不限时不带这个参数，
-     * 改带模型声明的最大输出（见 `llm-body.cjs`），上下文基准那件事见 `context-builder.cjs` */
+    /** 单次回复的输出上限。**0 = 不限**（原来 4096 就是长回复被砍断的凶手：363 次请求里输出上限正好是它）。不限时不带这个参数，上下文基准见 `context-builder.cjs` */
     maxTokens: 0,
     historyLimit: 20,
     /** 回答深度：与推理 effort、输出上限解耦 */
@@ -128,6 +126,7 @@ const DEFAULTS = {
     /** 计划 → 执行 → 验证：先让模型出计划再动手 */
     planFirst: true,
     ...require('./clarify-config.cjs').DEFAULTS,
+    ...require('./scale-config.cjs').DEFAULTS,
     /** 验证阶段：改完代码主动跑一次验证命令 */
     verifyAfterEdit: true,
   },

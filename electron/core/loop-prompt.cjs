@@ -249,6 +249,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     workRules: workRules({
       planFirst: config.assistant?.planFirst,
       clarifyFirst: config.assistant?.clarifyFirst,
+      /* A2：规模层也有自己的开关（关掉 = 闸门与这条规矩一起退场） */
+      scaleFirst: config.assistant?.scaleFirst,
       clarifyMuted: clarifyTurn.mutedFor({ sessionId: options.sessionId, lastUserText }),
     }),
     safety: SAFETY_GUIDE,

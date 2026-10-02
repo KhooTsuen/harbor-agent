@@ -108,15 +108,18 @@ const REST_RULES = [
  * 不让问的时候还写着「先问规模」，模型只会来回犹豫。两者共用同一个开关。
  * `clarifyMuted` = 这个对话/任务已经不该再问了（连跳两次、或累计等超上限）：
  * 那时候**规则也不注入**，理由同上。
+ * `scaleFirst: false`（A2 的规模层开关）同理去掉「先掂量代价」那一条 ——
+ * 闸门都关了还写着「先问规模」，模型只会白问一轮。
  */
 function workRules(input = {}) {
   /* 两条跟 `ask_user` 走的规矩，共用一个「现在还能不能问他」的判断 */
   const canAsk = input.clarifyFirst !== false && input.clarifyMuted !== true
+  const wantScale = canAsk && input.scaleFirst !== false
   return [
     LOOK_FIRST_RULE,
     input.planFirst === false ? '' : PLAN_RULE,
     canAsk ? CLARIFY_RULE : '',
-    canAsk ? SCALE_RULE : '',
+    wantScale ? SCALE_RULE : '',
     REST_RULES,
   ]
     .filter(Boolean)

@@ -143,6 +143,8 @@ import { run as clarifyRuleGroup } from './selftest/groups/105-clarify-rule.mjs'
 import { run as acceptanceVerdictGroup } from './selftest/groups/106-acceptance-verdicts.mjs'
 import { run as clarifyExitsGroup } from './selftest/groups/107-clarify-exits.mjs'
 import { run as scaleGateGroup } from './selftest/groups/108-scale-gate.mjs'
+import { run as scaleConfigGroup } from './selftest/groups/109-scale-config.mjs'
+import { run as scalePromptGroup } from './selftest/groups/110-scale-prompt.mjs'
 
 const GROUPS = [
   basics,
@@ -252,6 +254,8 @@ const GROUPS = [
   acceptanceVerdictGroup,
   clarifyExitsGroup,
   scaleGateGroup,
+  scaleConfigGroup,
+  scalePromptGroup,
 ]
 
 async function main() {

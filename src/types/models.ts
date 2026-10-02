@@ -136,6 +136,18 @@ export interface AppConfig {
     clarifyTimeoutMs: number
     /** 同一任务累计离场等待的上限（毫秒），超了本任务不再弹卡 */
     clarifyMaxWaitMs: number
+    /**
+     * A2：重操作动手前先问规模。
+     * ⚠️ 和内核那侧**同名同义**：`core/scale-config.cjs` 是这四个值的唯一真相源；
+     *   `scaleFirst: false` **只关规模这一层**，危险度（`risk.cjs`）照旧。
+     */
+    scaleFirst: boolean
+    /** 预估耗时 ≥ 它 → 硬拦（先问规模再说） */
+    scaleHardSeconds: number
+    /** 预估耗时 ≥ 它 → 记一条 note（不拦） */
+    scaleWarnSeconds: number
+    /** 能算出文件数时 ≥ 它就硬拦（现在算不出来，界面上故意不暴露） */
+    scaleMaxFiles: number
   }
   tools: {
     permission: 'full' | 'ask' | 'readonly'

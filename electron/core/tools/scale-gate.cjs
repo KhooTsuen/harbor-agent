@@ -25,9 +25,37 @@
 const log = require('../log.cjs')
 const auditCore = require('../audit.cjs')
 const taskCore = require('../task.cjs')
+const configCore = require('../config.cjs')
 const scale = require('../scale.cjs')
+const scaleConfig = require('../scale-config.cjs')
 
 const { KINDS, HARD_SECONDS, HARD_FILES, NOTE_SECONDS, BLOCKED_MARK, inspect, kindOf } = scale
+
+/**
+ * 这次生效的阈值与开关（配置 → 闸门）。
+ *
+ * 读相照 `risk-gate.cjs` 读 `shellPolicy` 那个写法：`ctx` 里给了就用它（自检/测试注入），
+ * 否则问 `config`（归一化已保证是干净的）。读不到就用默认值 —— 宁可按默认拦，也不能哑。
+ */
+function limitsOf(ctx = {}) {
+  const fromCtx = ctx.assistant
+  const fromConfig = (() => {
+    try {
+      return configCore.get()?.assistant
+    } catch {
+      return null
+    }
+  })()
+  const merged = scaleConfig.normalize({ ...(fromConfig ?? {}), ...(fromCtx ?? {}) })
+  return {
+    enabled: merged.scaleFirst !== false,
+    limits: {
+      hardSeconds: merged.scaleHardSeconds,
+      warnSeconds: merged.scaleWarnSeconds,
+      maxFiles: merged.scaleMaxFiles,
+    },
+  }
+}
 
 /* ── 对模型说的话 ─────────────────────────────────────────── */
 
@@ -164,11 +192,20 @@ function record(audit, ctx, name, args, verdict, decision) {
  *             estimate?: object, reasons?: string[] }}
  */
 function gate({ name, args = {}, ctx = {}, audit = auditCore.record, dry = false }) {
+  const { enabled, limits } = limitsOf(ctx)
+  /*
+   * `scaleFirst: false` = **只关「规模」这一层**，直接放行。
+   * ★ 危险度那一层**不受影响**：`risk-gate.cjs` / 权限层 / 敏感文件提示一个字没改 ——
+   *   危险命令该拦照拦、该问照问。这个开关是规模层的回滚开关，不是「关掉安全检查」
+   *   （自检里有一条专门钉这个语义：关掉之后「递归删盘」仍然会被危险度拦下）。
+   */
+  if (!enabled) return { level: 'ok', disabled: true }
   const verdict = inspect({
     name,
     args,
     workdir: String(ctx.workdir ?? ''),
     userText: String(ctx.lastUserText ?? '') || goalOf(ctx.taskId),
+    limits,
   })
   if (dry) {
     return {
@@ -209,12 +246,13 @@ function gate({ name, args = {}, ctx = {}, audit = auditCore.record, dry = false
 }
 
 module.exports = {
-  /* 阈值与识别（从 `core/scale.cjs` 转出去：调用方一个入口就够） */
+  /* 阈值与识别（从 `core/scale.cjs` / `core/scale-config.cjs` 转出去：调用方一个入口就够） */
   KINDS,
   HARD_SECONDS,
   HARD_FILES,
   NOTE_SECONDS,
   BLOCKED_MARK,
+  limitsOf,
   inspect,
   kindOf,
   /* 闸门 */

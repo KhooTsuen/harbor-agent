@@ -72,6 +72,34 @@ export function AssistantSwitches() {
       >
         开工前先问清楚
       </Toggle>
+      {/*
+       * A2：规模确认（重操作动手前先问清代价）。
+       * ★ 文案里写死一句「**不动危险度**」—— 用户点这个开关前必须知道：
+       *   关掉它，危险命令该拦照拦、该问照问（自检里有一条专门钉这个语义）。
+       * ★ 只暴露秒数，**不暴露** scaleMaxFiles（"文件数"预检现在算不出来 ——
+       *   给一个不起作用的旋钮比不给更糟；待办在 docs/improvement-checklist.md）。
+       */}
+      <Toggle
+        checked={a.scaleFirst !== false}
+        onChange={(v) => void patchAssistant({ scaleFirst: v })}
+        title="扫全盘 / 批量下载 / 递归批处理这类重操作，动手前先问清范围和代价。关掉只影响「规模」这一层：危险命令该拦还拦、该问还问（不动危险度）"
+      >
+        重操作先问规模
+      </Toggle>
+      <label className="flex items-center gap-2 text-dense text-fg-primary">
+        预估超过
+        <input
+          type="number"
+          min={10}
+          max={1800}
+          step={10}
+          value={a.scaleHardSeconds ?? 120}
+          onChange={(e) => void patchAssistant({ scaleHardSeconds: Number(e.target.value) })}
+          aria-label="重操作时长阈值（秒）"
+          className="w-20 rounded-sm border border-line-hairline bg-bg-base/40 px-1.5 py-0.5 text-2xs"
+        />
+        秒算重操作（10–1800，保存时夹取）
+      </label>
       <Toggle
         checked={a.verifyAfterEdit !== false}
         onChange={(v) => void patchAssistant({ verifyAfterEdit: v })}
