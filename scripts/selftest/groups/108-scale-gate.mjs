@@ -171,6 +171,45 @@ export async function run() {
   )
   gate.reset()
 
+  group('A2 / 提示词层：模型先判断（闸门只兼底）')
+
+  const stack = require(join(ROOT, 'electron/core/prompt-stack.cjs'))
+  const rulesOn = stack.workRules({ planFirst: true, clarifyFirst: true })
+  check(
+    '★ 开着的时候注入「动手前先掂量代价」',
+    /掂量代价/.test(rulesOn) && /多大范围/.test(rulesOn),
+    rulesOn.includes('掂量代价') ? '有' : '没有',
+  )
+  check(
+    '★ 文案里说清了「有界重活不用问，但要说一句」',
+    /不用问/.test(rulesOn) && /预计多久/.test(rulesOn),
+  )
+  check(
+    '★ 也说清了例外：用户说了范围 / 小范围只读探测 → 直接做',
+    /已经说了范围/.test(rulesOn) && /小范围只读探测/.test(rulesOn),
+  )
+  check(
+    '★ 和「开工前对齐」共用一个开关：关掉 clarifyFirst → 两条都不注入',
+    !/掂量代价/.test(stack.workRules({ planFirst: true, clarifyFirst: false })),
+  )
+  check(
+    '★ 静音时也不注入（不让问的时候还写着「先问规模」，模型只会来回犹豫）',
+    !/掂量代价/.test(stack.workRules({ planFirst: true, clarifyMuted: true })),
+  )
+  check(
+    '★ 拆文件没把老规矩弄丢（先看再改 / 先给计划 / 其余规矩都在）',
+    /先看再改/.test(rulesOn) &&
+      /plan 块/.test(rulesOn) &&
+      /edit_file/.test(rulesOn) &&
+      /回答用简体中文/.test(rulesOn),
+    String(rulesOn.length),
+  )
+  check(
+    '关掉 planFirst 只去掉计划那一条（其余照旧）',
+    !/plan 块/.test(stack.workRules({ planFirst: false })) &&
+      /掂量代价/.test(stack.workRules({ planFirst: false })),
+  )
+
   group('A2 / 留痕：预估进审计（用户要的「不靠拍，靠数据」）')
 
   const entries = []

@@ -232,8 +232,15 @@ describe('会话读回 / 接线守卫', () => {
   })
 
   it('计划块约定在系统提示里（否则新对话永远不会给计划）', () => {
-    const src = readFileSync(join(SRC, '..', 'electron/core/prompt-stack.cjs'), 'utf8')
-    expect(src).toMatch(/第一行写任务名/)
+    /*
+     * 文案住在 `prompt-rules.cjs`（A2 拆出去的），`prompt-stack.cjs` 把它转出去当一层用。
+     * 两处都钉：规矩在 **且** 真的会被注入 —— 拆文件时最容易「只搬走一半」，
+     * 而只钉「某个文件里有这句话」是钉在**位置**上，不是钉在意图上（2026-10-02 那条教训）。
+     */
+    const rules = readFileSync(join(SRC, '..', 'electron/core/prompt-rules.cjs'), 'utf8')
+    const stack = readFileSync(join(SRC, '..', 'electron/core/prompt-stack.cjs'), 'utf8')
+    expect(rules).toMatch(/第一行写任务名/)
+    expect(stack).toMatch(/require\('\.\/prompt-rules\.cjs'\)/)
   })
 })
 
