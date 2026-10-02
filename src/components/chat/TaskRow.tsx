@@ -146,8 +146,7 @@ export function TaskRow({
             </span>
           ) : null}
           {/*
-            AG-030：只留「需要注意的」那几项。原来「4/4 步」也单独占一行，
-            加上状态行就成了三行碎片 —— 与 VS Code 那种「一行标题 + 右侧状态」差很远。
+            AG-030：只留「需要注意的」那几项（原来「4/4 步」还单独占一行，加状态行就成了三行碎片）
           */}
           {changed > 0 || task.errors.length > 0 || budgetHit || loopHit ? (
             <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-fg-tertiary">
@@ -257,11 +256,12 @@ export function TaskRow({
             />
           ) : null}
           {envChanged.length > 0 ? (
+            /* 措辞（2026-10-03）：任务级检查（任务停下来后文件被谁动过），别说成「你离开之后」 */
             <p className="mb-1.5 text-2xs" style={{ color: colorOf('warning') }}>
-              ⚠ 你离开之后 {envChanged.length} 个文件被改过（
+              ⚠ 这个任务暂停之后 {envChanged.length} 个文件被改过（
               {envChanged
-                .slice(0, 2)
                 .map((f) => f.split(/[\\/]/).pop())
+                .slice(0, 2)
                 .join('、')}
               ）—— 接着做之前它会先重读
             </p>

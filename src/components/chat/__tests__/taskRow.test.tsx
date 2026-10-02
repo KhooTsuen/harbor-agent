@@ -17,7 +17,7 @@ vi.mock('@/lib/safetyApi', async (importOriginal) => {
     },
   }
 })
-import type { TaskRecord } from '@/types/safety'
+import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { TaskRow } from '../TaskRow'
 
 /* AG-035：「诊断」是**按需**拉的一份报告 —— 这里用假的桥替身，别的测试不受影响 */
@@ -74,11 +74,13 @@ function task(patch: Partial<TaskRecord> = {}): TaskRecord {
 function draw(
   record: TaskRecord,
   handlers: { resume?: () => void; giveUp?: () => void; open?: () => void; del?: () => void } = {},
+  recovery?: TaskRecoveryItem,
 ) {
   act(() => {
     root.render(
       <TaskRow
         task={record}
+        recovery={recovery}
         phases={[]}
         now={9000}
         active={false}
@@ -228,5 +230,30 @@ describe('AG-028 / 任务行（真渲染）', () => {
     expect(detail).toBeTruthy()
     act(() => detail?.click())
     expect(el.textContent).toContain('读了配置文件')
+  })
+
+  it('★ 环境变化那句不再说「你离开之后」（2026-10-03 用户被这个词带偏过）', () => {
+    /*
+     * 用户把它理解成「我离开电脑之后文件被改过」，去查了一圈是不是被人动了。
+     * 它其实是**任务级**的检查：任务停下来之后，它改过的文件被谁动过
+     * （`core/task-resume.cjs` 的 checkEnvironment）—— 和「用户离开电脑」无关。
+     */
+    const record = task({ status: 'paused' })
+    const el = draw(
+      record,
+      {},
+      {
+        ...record,
+        envChanged: ['E:/demo/run.js'],
+        progress: { done: 1, total: 2, current: 1 },
+        canResume: true,
+      },
+    )
+    const detail = button(el, '详情')
+    act(() => detail?.click())
+    const text = el.textContent ?? ''
+    expect(text).toContain('这个任务暂停之后 1 个文件被改过（run.js）')
+    expect(text).toContain('接着做之前它会先重读')
+    expect(text).not.toContain('你离开之后')
   })
 })
