@@ -29,9 +29,28 @@ export function estimateMessages(messages: readonly Message[]): number {
   return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0)
 }
 
-/** 低于这个比例不提示；超过「提示线」提醒，超过「自动线」直接压 */
-const WARN_RATIO = 0.4
-export const AUTO_RATIO = 0.6
+/**
+ * 压缩的两条线（比例）。
+ *
+ * ★ 2026-10-04：以前这里写死 0.4 / 0.6，而内核的 `config-defaults.cjs` 里也有
+ *   一份 `compactAt: 0.4` / `autoCompactAt: 0.6`（设置页改的就是那一份）——
+ *   用户在设置里改了百分比，**渲染层根本没读**，两边各写各的。
+ *   现在：调用方把配置里的值传进来（`useThreadStore` 从 config 取），
+ *   这里的常量只当**缺配置时的默认值**，并且必须与内核一致
+ *   （`compactDrift.test.ts` 直接读内核那份来比）。
+ */
+export const DEFAULT_WARN_RATIO = 0.4
+export const DEFAULT_AUTO_RATIO = 0.6
+
+/** 旧名字（别处可能引用）—— 指着同一个默认值 */
+export const AUTO_RATIO = DEFAULT_AUTO_RATIO
+
+export interface CompactRatios {
+  /** 到这个占比提醒可以压缩 */
+  warn?: number
+  /** 到这个占比后台自动压缩 */
+  auto?: number
+}
 
 export interface CompactAdvice {
   used: number
@@ -41,12 +60,18 @@ export interface CompactAdvice {
   auto: boolean
 }
 
-export function adviseCompact(messages: readonly Message[], maxTokens: number): CompactAdvice {
+export function adviseCompact(
+  messages: readonly Message[],
+  maxTokens: number,
+  ratios: CompactRatios = {},
+): CompactAdvice {
   const used = estimateMessages(messages)
   /* 0 / 没填 = 内核那边用的基准（见 CONTEXT_BASE_TOKENS 的注释）：两边不能一个 16384 一个 4096 */
   const limit = Math.max(2000, maxTokens || CONTEXT_BASE_TOKENS)
+  const warnAt = Number.isFinite(ratios.warn) ? Number(ratios.warn) : DEFAULT_WARN_RATIO
+  const autoAt = Number.isFinite(ratios.auto) ? Number(ratios.auto) : DEFAULT_AUTO_RATIO
   const ratio = used / limit
-  return { used, limit, ratio, warn: ratio >= WARN_RATIO, auto: ratio >= AUTO_RATIO }
+  return { used, limit, ratio, warn: ratio >= warnAt, auto: ratio >= autoAt }
 }
 
 /** 生成一条「压缩点」消息，插在消息流里让用户看得见 */
@@ -147,11 +172,15 @@ function parseStructuredSummary(summary: string): Partial<ConversationState> | n
 }
 
 /** 发消息前的自动检查：到线了就压。返回是否压过 */
-export async function maybeAutoCompact(threadId: string, maxTokens: number): Promise<boolean> {
+export async function maybeAutoCompact(
+  threadId: string,
+  maxTokens: number,
+  ratios: CompactRatios = {},
+): Promise<boolean> {
   const thread = useAppStore.getState().threads.find((t) => t.id === threadId)
   if (!thread) return false
 
-  const advice = adviseCompact(thread.messages, maxTokens)
+  const advice = adviseCompact(thread.messages, maxTokens, ratios)
   if (!advice.auto) return false
 
   const result = await runCompact(threadId, true)

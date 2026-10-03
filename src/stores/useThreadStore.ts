@@ -169,8 +169,13 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
     /* 上下文检查：超提示线就提醒，超自动线就后台压（不阻塞这次发送） */
     /* 0 = 不限；缺配置时当 0 处理（adviseCompact 会退到 CONTEXT_BASE_TOKENS，别在这里塞 4096） */
-    const maxTokens = useConfigStore.getState().config?.assistant.maxTokens ?? 0
-    const advice = adviseCompact(thread.messages, maxTokens)
+    const cfg = useConfigStore.getState().config
+    const maxTokens = cfg?.assistant.maxTokens ?? 0
+    /* 两条线从配置里取（设置页改的就是这份）—— 以前渲染层写死 0.4/0.6，改了设置也不生效 */
+    const advice = adviseCompact(thread.messages, maxTokens, {
+      warn: cfg?.context?.compactAt,
+      auto: cfg?.context?.autoCompactAt,
+    })
     if (advice.auto) {
       void runCompact(threadId, true)
     } else if (advice.warn) {
