@@ -11,7 +11,7 @@
 | 第二步 | #7 的 error 分支缺口（`status === 'error'` 时整条时间线不渲染） | ✅ 完成 |
 | 第三步 | 拆 maxTokens（一物二用 → 先出方案） | ✅ 完成（方案见下，未触发停止条件） |
 | 第四步 | B3 附件路径（**只调研**，等拍板） | ✅ 调研完成（结论：不修，两条修法都踩停止条件） |
-| 第五步 | 最终验证（全链 + 清理测试痕迹） | 未开始 |
+| 第五步 | 最终验证（全链 + 清理测试痕迹） | ✅ 完成（见下，全 0 退出码） |
 
 ---
 
@@ -263,5 +263,36 @@ Agent 用浏览器做三件事（读元素 / 点 / 打字）时，界面上**唯
 附件在**工作目录里**、不跟会话走：拷会话不会带上附件。但这**不破**可移植性 ——
 会话里存的是完整原文，附件只是「给模型读全文用的可再生副本」，
 用户再发一次同样的内容就会在新目录重写一份。**所以附件不跟会话走是可接受的。**
+
+---
+
+## 第五步：最终验证
+
+| 命令 | 退出码 | 关键数字 |
+| --- | --- | --- |
+| `npm run typecheck` | 0 | — |
+| `npm run lint` | 0 | 1 条 warning（`src/components/boot/useBootGate.ts:52` `exhaustive-deps`，**本批之外**，按规矩只记录不修） |
+| `npm run lint:kernel` | 0 | — |
+| `npm run check:format` | 0 | — |
+| `npm run check:lines` | 0 | 904 个文件全 ≤ 300 行 |
+| `npm run test:unit` | 0 | **143 文件 / 1226 项** |
+| `npm test`（内核自检） | 0 | **3677 项 0 失败**（比开工时 +2：91 组新增两条接线断言） |
+| `npm run build` | 0 | — |
+| `npm run verify`（全链） | 0 | 188KB 输出，无红 |
+| `npm run test:app`（应用自检） | 0 | 通道 143 个、缺 0；会话可写、pty 可用、桥在 |
+| `node scripts/check-rules.mjs` | 0 | 九项全过（tmp/ 345 项，已从 509 收进 archive/） |
+
+- **硬禁区**：`loop.cjs` / `task.cjs` / `session*.cjs` / `changeset*.cjs` 的 `git diff --stat` **为空**。
+- **测试痕迹**：`node tmp/t4-restore.cjs`（dry）先看 → `--apply` 执行 → 逐字节核对
+  **基线 1913 文件 · 不符 0 · 缺失 0 · 多出 5**（5 个全是 Chromium 缓存，该目录本就不在基线里）。
+- **第二、三步的真机验证**：第二步用 `tmp/stub-llm-error.cjs`（跑到一半用 401 打断）在
+  **隔离副本** `tmp/tok/s2` 里真跑过一轮，判据全中（`role=alert` 在、报错前调过的工具可见、
+  报错只说一遍），截图 `tmp/shots-s2/error-keeps-timeline.png`。第三步是「换一个数从哪来」，
+  行为面由内核自检 + 单测覆盖（提示层读谁有两条接线断言钉着）。
+- **`E:\Harbor` 已同步**：`npm run build` → `scripts/build-portable.mjs` → `tmp/update-harbor.cjs`
+  （robocopy exit=3 < 8 即成功，`data/` 两侧都排除）。复核过：装好的内核里
+  `config-defaults.cjs` 有 `baseTokens: 16384`，而 `E:\Harbor\data\config.json` 里
+  用户自己的配置是 `maxTokens: 0` → **本次拆分对他的行为零影响**。
+- 提交：`fb3b589`（代码）→ `e7df2f6`（断言 + 文档），已推 `origin/main`。
 
 
