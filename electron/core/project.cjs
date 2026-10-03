@@ -11,6 +11,12 @@
  *   更要紧的是 `loop-prompt.cjs` 贴着 300 行红线 —— 组装放这儿，那边一行都不用改。
  *   各自的读法/缓存/上限仍然分开：本文件管 AGENT.md，那个管规则文件。
  *
+ * ★ 曾经想在这里再接一段「项目现状」（`project-facts.cjs`），**实测否决了**：
+ *   这一层会被 `context-builder` 按 `budget.project`（默认 15%）裁剪，
+ *   而 AGENT.md 长的项目（比如 Harbor 自己）会把事实层整段挤掉 ——
+ *   实测裁完只剩 1817 字符、全是 AGENT.md 的开头。事实层现在挂在
+ *   `taskContext.buildTaskState()`（`taskState` 层，不裁剪）—— 见那边的注释。
+ *
  * 项目说明的查找顺序（找到第一个就用）：
  *   AGENT.md
  *   .agent/instructions.md
