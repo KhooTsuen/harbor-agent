@@ -36,8 +36,17 @@ const rules = require('./project-rules.cjs')
 
 const CANDIDATES = ['AGENT.md', '.agent/instructions.md', '.instructions.md', 'PROJECT.md']
 
-/** 注入上限：超过就截断，并明确告诉模型「被截断了」 */
-const MAX_CHARS = 6000
+/**
+ * 注入上限：超过就截断，并明确告诉模型「被截断了」。
+ *
+ * 6000 → 12000（2026-10-03）。实测：Harbor 自己的 `AGENT.md` 已经是 **8157 字符**，
+ * 6000 会把「附录 A–E」整块切掉；而它下面还有第二道裁剪（`context-builder` 的
+ * `budget.project`），两道叠起来只剩 1817 字符 —— 15 个标题只进去 4 个，
+ * 「硬禁区 / 收工前必须跑 / 交付时必须报告」模型从来没读到过。
+ * 这不是省钱，是「写在文件里的规矩失效」，所以两道都放宽（另一道见 context-builder.cjs）。
+ * 仍然有上限：写给模型看的项目说明不该是一本书（那一本可以去读文件）。
+ */
+const MAX_CHARS = 12000
 
 /**
  * 找到项目说明文件。

@@ -101,7 +101,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const reasoning = thread?.reasoning ?? 'high'
 
   const trimmed = input.trim()
-  const tooLong = input.length >= MAX_INPUT_LENGTH
+  const atLimit = input.length >= MAX_INPUT_LENGTH /* 只作提示，不拦发送：见 constants */
   /* 光贴一张图不写字也该能发 —— 截图提问是很常见的用法 */
   const hasImages = useThreadStore((s) => s.inputImages.length > 0)
   /*
@@ -110,7 +110,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
    */
   const hasContent = trimmed.length > 0 || hasImages
   /* AG-025：sending 时也能发 —— 只是排队（拦不拦由 sendMessage 按 sendingThreads 判断） */
-  const canSend = hasContent && !tooLong
+  const canSend = hasContent /* 长度不参与：能写出来就能发（上限由输入框与 store 卡住） */
 
   /* 补全菜单：打 / 出命令，打 @ 出文件 */
   const options = (() => {
@@ -142,7 +142,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
           className={cn(
             'glass-panel relative rounded-md border bg-bg-input transition-colors duration-fast',
             'border-line-subtle focus-within:border-line-focus',
-            tooLong && 'border-danger',
+            atLimit && 'border-danger',
           )}
         >
           {/* 补全下拉 */}
@@ -246,7 +246,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
                 <span
                   className={cn(
                     'mr-1 font-mono text-2xs',
-                    tooLong ? 'text-danger' : 'text-fg-tertiary',
+                    atLimit ? 'text-danger' : 'text-fg-tertiary',
                   )}
                   aria-live="polite"
                 >

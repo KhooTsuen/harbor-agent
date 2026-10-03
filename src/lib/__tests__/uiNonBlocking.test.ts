@@ -95,7 +95,7 @@ describe('AG-009 / Renderer 不阻塞', () => {
 
   it('发送不再拿 sending 卡住 —— 跑着时排队（AG-025）', () => {
     const src = readFileSync(join(SRC, 'components', 'chat', 'Composer.tsx'), 'utf8')
-    expect(src).toContain('const canSend = hasContent && !tooLong')
+    expect(src).toContain('const canSend = hasContent')
     /* canSend 不再含 !sending —— 排队由 sendMessage 内部按 sendingThreads 判断 */
     expect(src).not.toContain('const canSend = !sending')
   })

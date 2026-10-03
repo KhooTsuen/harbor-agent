@@ -51,6 +51,10 @@ describe('AG-024/025 接线守卫', () => {
   })
 
   it('★ 发送按钮不再拿 sending 卡住（跑着时是「排队」），textarea 永不锁定', () => {
-    expect(composer).toContain('canSend = hasContent && !tooLong')
+    /* 2026-10-03：长度也不再参与 —— 以前贴满上限会让发送键变灰、用户对着满格的
+       框发不出去，得上网自己删到少一个字符（真机探针逮到）。上限由输入框与
+       store 卡住，能写出来就能发。 */
+    expect(composer).toContain('const canSend = hasContent')
+    expect(composer).not.toContain('&& !tooLong')
   })
 })

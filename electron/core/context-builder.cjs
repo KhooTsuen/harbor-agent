@@ -21,6 +21,29 @@ const DEFAULT_BUDGET = {
 }
 
 /**
+ * 项目上下文的下限（字符）—— **不受上面的百分比管**。
+ *
+ * 2026-10-03 实测：Harbor 自己的 `AGENT.md` 是 8157 字符，`budget.project`（总字符
+ * 的 15%）只给到 1843 —— 经过两道裁剪后只剩 1817 字符，15 个标题只进去 4 个，
+ * 「硬禁区」「收工前必须跑」「交付时必须报告」和全部附录**模型从来没读到过**。
+ * 这不是「省 token」，是「写在文件里的规矩默默失效」—— 用户以为已经交代过了。
+ *
+ * 为什么用下限而不是调大百分比：
+ *   · 各层的额度是**各自独立算的**（memory / project / task / conversation 互不挤占，
+ *     对话那条才是唯一按 remaining 递减的），所以这里放宽**不会**抢别层的额度；
+ *   · 百分比会让「项目上下文」随对话预算缩水 —— 而它跟对话多长没关系：
+ *     硬约束该不该被读到，不该取决于 `assistant.maxTokens` 填了多少。
+ *
+ * 上限仍然有，而且由**生产者**兜住（`project.cjs` + `project-rules.cjs` 各自带上限与
+ * 「已截断」标记）—— 所以这里给的是「不裁」，不是「无限」。下限是**算出来的**：
+ * 两个生产者的上限相加再加一点余量（头部标题与截断说明）。
+ * 不写死数字：那三个数各自会变，写死就会漂——症状是「文件明明在上限以内，
+ * 进上下文还是被切」，而且没有任何测试会报（改上限的人不会想到还有第二处数字）。
+ */
+const PROJECT_FLOOR =
+  require('./project.cjs').MAX_CHARS + require('./project-rules.cjs').MAX_CHARS + 1024
+
+/**
  * 一张图按多少字符占预算。
  *
  * **不能按 base64 的真实长度算**：一张 200KB 的图是 27 万字符，而 API 侧只按
@@ -70,7 +93,8 @@ function assemble(input = {}) {
   const cap = (name) => Math.max(400, Math.floor(totalChars * (Number(budget[name] ?? 10) / 100)))
   const state = trim(input.conversationState, cap('task'))
   const memory = trim(input.memory, cap('memory'))
-  const project = trim(input.project, cap('project'))
+  /* 项目上下文：按百分比算完再抬到下限 —— 见 PROJECT_FLOOR 的注释（两道裁剪的实测） */
+  const project = trim(input.project, Math.max(cap('project'), PROJECT_FLOOR))
   const task = trim(input.task, cap('task'))
   const recent = Array.isArray(input.messages) ? input.messages : []
   let remaining = cap('conversation')
@@ -90,4 +114,4 @@ function assemble(input = {}) {
     estimates: { maxTokens, chars: totalChars - remaining, selectedMessages: selected.length },
   }
 }
-module.exports = { DEFAULT_BUDGET, assemble, trim }
+module.exports = { DEFAULT_BUDGET, PROJECT_FLOOR, assemble, trim }
