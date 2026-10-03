@@ -70,6 +70,12 @@ describe('错误面板：复制文案', () => {
 
 describe('错误面板：接线（测试照不到的那一层）', () => {
   const rightPanel = read('src/components/layout/RightPanel.tsx')
+  /*
+   * 标签表在 2026-10-04 拆去了 RightTabs.tsx（加上 Agent 活动角标后
+   * RightPanel.tsx 破 300 行红线）。所以「有没有这一项」看那个文件，
+   * 「面板真的被渲染」仍旧看 RightPanel —— 两边都得真的接上。
+   */
+  const rightTabs = read('src/components/layout/RightTabs.tsx')
   const types = read('src/types/index.ts')
   const settings = read('src/stores/useSettingsStore.ts')
   const channels = read('electron/ipc-channels.cjs')
@@ -82,7 +88,9 @@ describe('错误面板：接线（测试照不到的那一层）', () => {
   })
 
   it('标签表里有一项，并且面板真的被渲染（不是只注册了没人用）', () => {
-    expect(rightPanel).toContain("id: 'errors'")
+    expect(rightTabs).toContain("id: 'errors'")
+    /* 标签表得真的被用上，否则“注册了”也是假的 */
+    expect(rightPanel).toContain('<RightTabs')
     expect(rightPanel).toContain("activeRightTab === 'errors' ? <ErrorsPanel />")
   })
 

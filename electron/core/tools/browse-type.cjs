@@ -59,7 +59,12 @@ module.exports = {
     const pressEnter = Boolean(args?.pressEnter)
 
     const browser = require('../../handlers/browser.cjs')
-    let result = await browser.request('type', { index, text, pressEnter }, ctx?.signal)
+    /* sessionId 跟着下去：主进程要用它做「浏览通知」的去重与点击跳转 */
+    let result = await browser.request(
+      'type',
+      { index, text, pressEnter, sessionId: ctx?.sessionId },
+      ctx?.signal,
+    )
 
     /*
      * 一旦确认这是密码框，**立刻**把这个值登记成「已知密钥」：

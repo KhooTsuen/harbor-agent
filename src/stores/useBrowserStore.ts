@@ -45,6 +45,14 @@ interface BrowserState {
   reloadKey: number
   /** Agent 要读的页面 —— BrowserTab 挂载后会消费掉它 */
   pending: PendingBrowse | null
+  /**
+   * Agent 最后一次动网页的时刻（0 = 还没动过）。
+   *
+   * 为什么放在 store：要显示角标的是右栏**标签栏**，而收到请求的是
+   * `useBrowseBridge`（同一个组件里，但标签栏要能单独订阅）——
+   * 而且用户点开浏览器标签看一下之后角标就该减掉。
+   */
+  agentAt: number
 
   open: (url: string) => void
   select: (id: string) => void
@@ -54,6 +62,10 @@ interface BrowserState {
   requestBrowse: (request: PendingBrowse) => void
   /** BrowserTab 处理完了 */
   clearPending: () => void
+  /** Agent 动了网页（点/读/打字）——点亮右栏「浏览器」标签上的角标 */
+  markAgentActivity: () => void
+  /** 用户自己点开浏览器标签看过了 —— 角标减掉 */
+  clearAgentActivity: () => void
   closeAll: () => void
 }
 
@@ -66,6 +78,7 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
   activeId: '',
   reloadKey: 0,
   pending: null,
+  agentAt: 0,
 
   open: (url) =>
     set((state) => {
@@ -113,5 +126,8 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
 
   clearPending: () => set({ pending: null }),
 
-  closeAll: () => set({ tabs: [], activeId: '', pending: null }),
+  markAgentActivity: () => set({ agentAt: Date.now() }),
+  clearAgentActivity: () => set({ agentAt: 0 }),
+
+  closeAll: () => set({ tabs: [], activeId: '', pending: null, agentAt: 0 }),
 }))

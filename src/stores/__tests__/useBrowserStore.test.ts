@@ -49,3 +49,37 @@ describe('浏览器标签：Agent 请求', () => {
     expect(state.pending?.action).toBe('type')
   })
 })
+
+/* ══════════════════════════════════════════════════════════════
+   「Agent 动过网页」的角标（收尾第一步）
+
+   原来那条线索只有「右栏悄悄切到浏览器标签」—— 用户在看对话时等于没有。
+   角标是**用户自己看没看过**的标志，所以「点开看过就减掉」是它的一半功能。
+   ══════════════════════════════════════════════════════════════ */
+
+describe('浏览器标签：Agent 活动角标', () => {
+  beforeEach(() => {
+    useBrowserStore.getState().closeAll()
+  })
+
+  it('没动过网页时是暗的', () => {
+    expect(useBrowserStore.getState().agentAt).toBe(0)
+  })
+
+  it('动一次就亮', () => {
+    useBrowserStore.getState().markAgentActivity()
+    expect(useBrowserStore.getState().agentAt).toBeGreaterThan(0)
+  })
+
+  it('用户点开看过之后减掉', () => {
+    useBrowserStore.getState().markAgentActivity()
+    useBrowserStore.getState().clearAgentActivity()
+    expect(useBrowserStore.getState().agentAt).toBe(0)
+  })
+
+  it('把浏览器标签全关掉时一并复位（下次开不该带着旧角标）', () => {
+    useBrowserStore.getState().markAgentActivity()
+    useBrowserStore.getState().closeAll()
+    expect(useBrowserStore.getState().agentAt).toBe(0)
+  })
+})

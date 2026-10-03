@@ -88,8 +88,12 @@ describe('AG-028 / 任务中心数据', () => {
 
 describe('AG-028 / 接线守卫', () => {
   it('右栏有独立「任务」标签并挂 TaskCenter', () => {
+    /* 标签表在 2026-10-04 拆去了 RightTabs.tsx（RightPanel 破 300 行红线）——
+       所以「有没有这一项」看那个文件，「挂没挂 TaskCenter」仍旧看 RightPanel */
+    const tabs = readFileSync(join(SRC, 'components/layout/RightTabs.tsx'), 'utf8')
+    expect(tabs).toContain("{ id: 'tasks', label: '任务'")
     const src = readFileSync(join(SRC, 'components/layout/RightPanel.tsx'), 'utf8')
-    expect(src).toContain("{ id: 'tasks', label: '任务'")
+    expect(src).toContain('<RightTabs')
     expect(src).toContain("activeRightTab === 'tasks' ? <TaskCenter />")
   })
 

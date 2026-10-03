@@ -73,7 +73,8 @@ module.exports = {
 
     /* 浏览器标签要开着才会有 webview —— 关着的时候给个明确的指引 */
     /* AG-011：带上中断信号 —— 点停止时不再死等这 45 秒 */
-    const result = await browser.request('navigate', { url }, ctx?.signal)
+    /* sessionId 跟着下去：主进程要用它做「浏览通知」的去重与点击跳转 */
+    const result = await browser.request('navigate', { url, sessionId: ctx?.sessionId }, ctx?.signal)
     if (!result.ok) {
       throw new Error(
         `${result.error}。右侧有个「浏览器」标签，点开它再让我读网页（Agent 用的就是这个浏览器）。`,

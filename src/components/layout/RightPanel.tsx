@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react'
-import {
-  Activity,
-  FileCode2,
-  GitCompareArrows,
-  Globe,
-  ListTodo,
-  Package,
-  ShieldAlert,
-  X,
-} from 'lucide-react'
-import type { FileNode, Project, RightTab } from '@/types'
+import { GitCompareArrows, FileCode2 } from 'lucide-react'
+import type { FileNode, Project } from '@/types'
 import { cn } from '@/lib/utils'
 import { colorOf } from '@/lib/statusLanguage'
 import { useAgentActive } from '@/hooks/useAgentActive'
@@ -27,11 +18,13 @@ import { TaskCenter } from '@/components/chat/TaskCenter'
 import { RollbackRecord } from '@/components/chat/rollback/RollbackRecord'
 import { ErrorsPanel } from './ErrorsPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconButton } from '@/components/ui/IconButton'
+/* 标签栏单独一个文件：角标加上来之后本文件会破 300 行红线（硬约束 #2） */
+import { RightTabs } from './RightTabs'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTaskStore } from '@/stores/useTaskStore'
+import { useBrowserStore } from '@/stores/useBrowserStore'
 import { isElectron } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -40,18 +33,9 @@ import { isElectron } from '@/lib/backend'
    右侧工作区：审查 / 文件 / 浏览器 / 成果 / 任务 / 状态 / 错误。
    「任务」是 AG-028 的全局后台任务中心；「状态」仍是当前对话的长期状态；
    「错误」是内核在出错现场记的清单（只读，见 ErrorsPanel）。
-   ══════════════════════════════════════════════════════════════ */
 
-const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode2 }[] = [
-  { id: 'diff', label: '审查', icon: GitCompareArrows },
-  { id: 'files', label: '文件', icon: FileCode2 },
-  { id: 'browser', label: '浏览器', icon: Globe },
-  { id: 'artifacts', label: '成果', icon: Package },
-  { id: 'tasks', label: '任务', icon: ListTodo },
-  { id: 'state', label: '状态', icon: Activity },
-  /* 内核记的错误（只读）—— 排查「刚才那个按钮为什么没反应」时的第一站 */
-  { id: 'errors', label: '错误', icon: ShieldAlert },
-] as const
+   标签栏（含各标签的角标）在 `RightTabs.tsx`。
+   ══════════════════════════════════════════════════════════════ */
 
 /* ── 主组件 ─────────────────────────────────────────────────── */
 
@@ -72,6 +56,12 @@ const EMPTY_PROJECT: Project = {
 export function RightPanel() {
   /* 接住 Agent 的浏览请求（挂在这里而不是 BrowserTab：请求来时标签可能没开）*/
   useBrowseBridge()
+
+  /*
+   * 「Agent 动过网页」的角标（收尾第一步）。
+   * 静态的点，**不闪** —— 闪烁类提示在长时间运行时反而变成噪音。
+   */
+  const agentUsedBrowser = useBrowserStore((s) => s.agentAt > 0)
 
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
   const active = useAgentActive(thread?.id)
@@ -152,49 +142,17 @@ export function RightPanel() {
       className="flex h-full min-h-0 flex-col border-l border-line-subtle bg-bg-base"
       aria-label="右侧面板"
     >
-      {/*
-        标签栏：右栏默认只有 380px，七个标签都带文字会被挤成竖排单字。
-        改法：**只有当前标签显示文字**，其余只留图标（悬停有 tooltip），
-        这样在最小宽度和最大字号缩放下都放得下；再窄就横向滚动（滚动条隐藏），
-        关闭按钮留在滚动区外面，永远可见。
-      */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-line-subtle px-1.5 py-1">
-        {TABS.map((tab) => {
-          const Icon = tab.icon
-          const active = tab.id === activeRightTab
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveRightTab(tab.id)}
-              aria-current={active}
-              title={tab.label}
-              aria-label={tab.label}
-              className={cn(
-                'relative flex h-7 shrink-0 items-center justify-center gap-1 rounded-sm transition-colors duration-fast',
-                active
-                  ? 'min-w-12 bg-bg-raised px-2 text-fg-primary'
-                  : 'w-7 px-0 text-fg-secondary hover:bg-bg-hover hover:text-fg-primary',
-              )}
-            >
-              <Icon size={13} className="shrink-0" />
-              {/* 非当前标签靠 aria-label + title 说明，视觉上只留图标，避免七等分挤字。 */}
-              <span className={cn('text-2xs', !active && 'sr-only')}>{tab.label}</span>
-              {tab.id === 'diff' && diffs.length > 0 ? (
-                <span className="shrink-0 font-mono text-2xs text-fg-tertiary">{diffs.length}</span>
-              ) : null}
-            </button>
-          )
-        })}
-        <IconButton
-          label="关闭右侧面板"
-          size={28}
-          className="ml-auto shrink-0"
-          onClick={() => setRightPanelVisible(false)}
-        >
-          <X size={14} />
-        </IconButton>
-      </div>
+      <RightTabs
+        activeRightTab={activeRightTab}
+        diffCount={diffs.length}
+        agentUsedBrowser={agentUsedBrowser}
+        onSelect={(tab) => {
+          setActiveRightTab(tab)
+          /* 用户自己点开「浏览器」看过了 —— 角标减掉 */
+          if (tab === 'browser') useBrowserStore.getState().clearAgentActivity()
+        }}
+        onClose={() => setRightPanelVisible(false)}
+      />
 
       {/* 内容 */}
       {/*

@@ -75,6 +75,19 @@ function request(action, payload, signal) {
 
     pending.set(id, { resolve: settle, timer })
 
+    /*
+     * 「Agent 在动网页，而你没在看」→ 一条系统通知（收尾第一步）。
+     *
+     * 放在这里是因为这是**所有浏览请求的唯一入口**（navigate / snapshot /
+     * click / type 四路都过它）—— 挂在四个工具里迟早漏一个。
+     * 能不能发（不在前台 / 这条对话发过没有）由通知器判断，这里只管把上下文告诉它。
+     */
+    require('./browse-notify.cjs').tellUser({
+      sessionId: String(payload?.sessionId ?? ''),
+      action,
+      url: String(payload?.url ?? ''),
+    })
+
     for (const win of windows) {
       win.webContents.send('browser:request', { id, action, ...payload })
     }

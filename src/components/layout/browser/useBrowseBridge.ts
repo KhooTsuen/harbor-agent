@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore, type PendingBrowse } from '@/stores/useBrowserStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { browseNotice, isBrowseAction } from '@/lib/browseNotice'
 import type { BrowserRequestEvent } from '@/types/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -25,11 +26,35 @@ export function useBrowseBridge(): void {
   const toastRef = useRef(useUIStore.getState().showToast)
   toastRef.current = useUIStore((s) => s.showToast)
 
+  /*
+   * 上一条提示的键（见 `lib/browseNotice.ts`）。
+   * 用 ref 不用 state：这只是一次去重记录，变了不需要重渲染。
+   */
+  const lastNoticeRef = useRef('')
+
   useEffect(() => {
     const bridge = window.workbench
     if (!bridge?.onBrowserRequest) return
 
     const off = bridge.onBrowserRequest((req: BrowserRequestEvent) => {
+      /*
+       * 「Agent 在用浏览器」写在界面上。
+       *
+       * 为什么必须有：browse 三个动作（读元素 / 点 / 打字）在界面上的表现
+       * **只有**右侧面板悄悄切到「浏览器」标签 —— 用户在看对话时完全不知道
+       * 发生了什么（小尾巴 #8）。所以：① 右边标签上点个角标；② 说一句话。
+       */
+      if (isBrowseAction(req.action)) {
+        useBrowserStore.getState().markAgentActivity()
+        const { key, notice } = browseNotice(
+          lastNoticeRef.current,
+          req.action,
+          String(req.url ?? ''),
+        )
+        lastNoticeRef.current = key
+        if (notice) toastRef.current(notice.level, notice.title, notice.detail)
+      }
+
       if (req.action === 'snapshot' || req.action === 'click' || req.action === 'type') {
         /*
          * 读/点/打字：操作当前页面，不导航。
@@ -65,7 +90,6 @@ export function useBrowseBridge(): void {
         .getState()
         .requestBrowse({ id: req.id, action: 'navigate', url: String(req.url) })
       useUIStore.getState().setActiveRightTab('browser')
-      toastRef.current('info', '正在用浏览器读取网页', String(req.url))
     })
 
     return off

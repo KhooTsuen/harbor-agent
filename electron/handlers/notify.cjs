@@ -52,7 +52,8 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
    *
    * @param {{ id?: string, title?: string, body?: string, kind?: string }} input
    *   `kind` 会跟着点击事件回渲染层 —— 空的 = 任务结束（默认，跳任务中心）；
-   *   `confirm` = 「需要你确认」（跳那条对话 + 聚焦卡片，见 useTaskNotifications）
+   *   `confirm` = 「需要你确认」（跳那条对话 + 聚焦卡片）；
+   *   `browse` = 「Agent 在动网页」（跳那条对话 + 右栏落到浏览器标签）
    */
   function notify({ id = '', title, body = '', kind = '' }) {
     const safeTitle = String(title ?? '').slice(0, MAX_TITLE)
@@ -93,6 +94,9 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
   /* 已经为哪几张卡发过通知 —— 「只发一次，不重复」（用户 2026-10-03 的要求） */
   const toldConfirm = new Set()
 
+  /* 浏览通知的去重集：按**会话**去重（一条对话只提醒一次，见 notifyBrowse） */
+  const toldBrowse = new Set()
+
   /**
    * 「需要你确认」（2026-10-03 用户报的）：澄清卡 / 权限确认弹出来时，
    * 如果窗口不在前台就发一条系统通知 —— 不然用户切走了根本不知道任务在等他，
@@ -122,6 +126,32 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
     if (toldConfirm.size > 50) toldConfirm.clear()
     if (dedupe) toldConfirm.add(dedupe)
     return notify({ id, title, body, kind: 'confirm' })
+  }
+
+  /**
+   * 「Agent 在动网页，而你没在看」（2026-10-04，收尾第一步）。
+   *
+   * 和 `notifyConfirm` 同一套口径（不在前台才发 / 同一个 key 只发一次 / 不抢焦点），
+   * 只有去重粒度不一样：澄清卡是「一张卡一条」，这里是「**一条对话一条**」——
+   * 一个任务里 browse 十几次是常态，每次都弹会被人直接关掉通知。
+   *
+   * @param {{ id?: string, key?: string, title?: string, body?: string }} input
+   *   `id` = 会话 id（点通知后切回那条对话）；`key` = 去重键（默认同 id）
+   */
+  function notifyBrowse({ id = '', key = '', title, body = '' }) {
+    const dedupe = String(key || id || 'browse')
+    if (toldBrowse.has(dedupe)) {
+      log.info(`浏览通知：这条对话已经发过了（${dedupe}）`)
+      return { ok: false, error: '已经发过了' }
+    }
+    if (!isBackground(getMainWindow())) {
+      /* 前台不发是**正常路径**（用户正看着，界面已有 toast 与面板切换） */
+      log.info('浏览通知：窗口在前台，不发系统通知')
+      return { ok: false, error: '窗口在前台' }
+    }
+    if (toldBrowse.size > 50) toldBrowse.clear()
+    toldBrowse.add(dedupe)
+    return notify({ id, title, body, kind: 'browse' })
   }
 
   /**
@@ -160,7 +190,7 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
     }
   }
 
-  return { notify, notifyConfirm, onRunEnd }
+  return { notify, notifyBrowse, notifyConfirm, onRunEnd }
 }
 
 module.exports = { createTaskNotifier, isBackground, APP_ID }

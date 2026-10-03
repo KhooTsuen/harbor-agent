@@ -3,6 +3,7 @@ import { shouldNotifyEnd } from '@/lib/taskNotify'
 import { subscribeNotificationClick, subscribeTaskEnd } from '@/lib/subscriptions'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useBrowserStore } from '@/stores/useBrowserStore'
 import { useRealBackend } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -41,12 +42,25 @@ function openPendingCard(threadId: string): void {
   useUIStore.getState().requestCardFocus()
 }
 
+/**
+ * 用户点了「Agent 在动网页」的通知 —— 他的目的就是**去看它在干什么**，
+ * 所以切回那条对话 + 右栏落到「浏览器」标签（不弹卡片、不开任务中心）。
+ * 这里是「不抢焦点」的例外：通知是用户自己点的，把窗口叫回来是他在要求的。
+ */
+function openBrowserWork(threadId: string): void {
+  if (threadId) useAppStore.getState().setActiveThread(threadId)
+  useUIStore.getState().setActiveRightTab('browser')
+  /* 他把浏览器标签调出来了，角标就该减掉 */
+  useBrowserStore.getState().clearAgentActivity()
+}
+
 export function useTaskNotifications(): void {
-  /* 点系统通知 → 按通知的 kind 分流（任务结果 / 等你确认的卡片） */
+  /* 点系统通知 → 按通知的 kind 分流（任务结果 / 等你确认的卡片 / Agent 在用浏览器） */
   useEffect(() => {
     if (!useRealBackend) return
     return subscribeNotificationClick(({ id, kind }) => {
       if (kind === 'confirm') openPendingCard(id)
+      else if (kind === 'browse') openBrowserWork(id)
       else openTaskResult(id)
     })
   }, [])

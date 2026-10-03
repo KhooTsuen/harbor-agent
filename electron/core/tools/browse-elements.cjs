@@ -60,7 +60,8 @@ module.exports = {
 
   async run(_args, ctx = {}) {
     const browser = require('../../handlers/browser.cjs')
-    const result = await browser.request('snapshot', {}, ctx.signal)
+    /* sessionId 跟着下去：主进程要用它做「浏览通知」的去重与点击跳转 */
+    const result = await browser.request('snapshot', { sessionId: ctx.sessionId }, ctx.signal)
     if (!result.ok) {
       throw new Error(`${result.error}。先用 browse 打开一个网页，再让我读它的元素。`)
     }

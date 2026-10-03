@@ -98,6 +98,8 @@ function registerHandlers(deps) {
    * 卡弹出来时如果窗口不在前台，用户根本不知道任务在等他。
    */
   require('./handlers/confirm-notify.cjs').setNotifier(notifier)
+  /* 「Agent 在动网页而你没在看」也走同一个通知器（收尾第一步）：一条对话最多一条 */
+  require('./handlers/browse-notify.cjs').setNotifier(notifier)
 
   require('./handlers/log.cjs').register({ ipcMain })
   require('./handlers/compact.cjs').register({ ipcMain })

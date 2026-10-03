@@ -38,7 +38,8 @@ module.exports = {
     }
 
     const browser = require('../../handlers/browser.cjs')
-    const result = await browser.request('click', { index }, ctx?.signal)
+    /* sessionId 跟着下去：主进程要用它做「浏览通知」的去重与点击跳转 */
+    const result = await browser.request('click', { index, sessionId: ctx?.sessionId }, ctx?.signal)
     if (!result.ok) {
       throw new Error(result.error)
     }
