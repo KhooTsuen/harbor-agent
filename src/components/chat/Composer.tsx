@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { ImageIcon, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MAX_INPUT_LENGTH } from '@/constants'
@@ -13,7 +12,7 @@ import { ModePicker } from './composer/ModePicker'
 import { SendControls } from './composer/SendControls'
 import { QueuedMessages } from './composer/QueuedMessages'
 import { ModelPicker } from './composer/ModelPicker'
-import { MENTIONS, SLASH_COMMANDS } from './composer/completions'
+import { useCompletions } from './composer/useCompletions'
 import { SuggestionChips } from './composer/SuggestionChips'
 import { NextSteps } from './composer/NextSteps'
 import { ComposerContextRow } from './composer/ContextRow'
@@ -22,7 +21,6 @@ import { ImageAttachments } from './composer/ImageAttachments'
 import { CapabilityWarning } from './composer/CapabilityWarning'
 import { PlanBar } from './composer/PlanBar'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
-import { fsTree } from '@/lib/fsApi'
 import { useAgentActive } from '@/hooks/useAgentActive'
 import { AboveInputCards } from './AboveInputCards'
 
@@ -67,30 +65,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const sendOnEnter = useSettingsStore((s) => s.settings.sendOnEnter)
   const configuredModel = useConfigStore((s) => s.config?.assistant.model)
 
-  const [completionsOpen, setCompletionsOpen] = useState(false)
-  const [fileMentions, setFileMentions] = useState<
-    Array<{ name: string; path: string; desc: string }>
-  >([])
-
-  useEffect(() => {
-    let alive = true
-    void fsTree().then((tree) => {
-      if (!alive || !tree?.ok) return
-      const files: Array<{ name: string; path: string; desc: string }> = []
-      const walk = (nodes: typeof tree.children) => {
-        for (const node of nodes) {
-          if (node.type === 'file')
-            files.push({ name: node.path, path: node.path, desc: '引用文件' })
-          else if (node.children) walk(node.children)
-        }
-      }
-      walk(tree.children)
-      setFileMentions(files.slice(0, 500))
-    })
-    return () => {
-      alive = false
-    }
-  }, [project?.path])
+  /* 补全（打 / 出命令、打 @ 出文件）—— 逻辑在 composer/useCompletions.ts */
+  const completions = useCompletions(input, setInput, project?.path)
 
   const { attachFromClipboard, pickImage, attachFile, insertImageMessage } =
     useComposerAttachments()
@@ -112,20 +88,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   /* AG-025：sending 时也能发 —— 只是排队（拦不拦由 sendMessage 按 sendingThreads 判断） */
   const canSend = hasContent /* 长度不参与：能写出来就能发（上限由输入框与 store 卡住） */
 
-  /* 补全菜单：打 / 出命令，打 @ 出文件 */
-  const options = (() => {
-    const match = /(?:^|\s)([/@])([^\s]*)$/.exec(input)
-    if (!match) return []
-    if (match[1] === '/') return SLASH_COMMANDS.map((c) => ({ cmd: c.cmd, desc: c.desc }))
-    return fileMentions.length > 0
-      ? fileMentions
-      : MENTIONS.map((m) => ({ name: m.name, desc: m.desc }))
-  })()
-
-  function applyCompletion(label: string): void {
-    setInput(input.replace(/([/@])[^\s]*$/, `${label} `))
-    setCompletionsOpen(false)
-  }
+  /* 补全菜单开不开 / 有哪些候选项，都由 useCompletions 管 */
 
   function submit(): void {
     if (!canSend) return
@@ -146,12 +109,16 @@ export function Composer({ onFocusRequest }: ComposerProps) {
           )}
         >
           {/* 补全下拉 */}
-          {completionsOpen && options.length > 0 ? (
+          {completions.open && completions.options.length > 0 ? (
             <div className="glass absolute bottom-full left-0 mb-1.5 max-h-60 w-72 overflow-y-auto rounded-md p-1 shadow-high">
-              {options.map((option) => {
+              {completions.options.map((option) => {
                 const label = 'cmd' in option ? option.cmd : option.name
                 return (
-                  <MenuItem key={label} onSelect={() => applyCompletion(label)} hint={option.desc}>
+                  <MenuItem
+                    key={label}
+                    onSelect={() => completions.apply(label)}
+                    hint={option.desc}
+                  >
                     <span className="font-mono text-xs">{label}</span>
                   </MenuItem>
                 )
@@ -176,7 +143,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
-              setCompletionsOpen(/[/@][^\s]*$/.test(e.target.value))
+              completions.syncFromText(e.target.value)
             }}
             onFocus={onFocusRequest}
             onPaste={(e) => {
@@ -185,9 +152,9 @@ export function Composer({ onFocusRequest }: ComposerProps) {
               if (attachFromClipboard(e)) e.preventDefault()
             }}
             onKeyDown={(e) => {
-              if (completionsOpen && (e.key === 'Escape' || e.key === 'Tab')) {
+              if (completions.open && (e.key === 'Escape' || e.key === 'Tab')) {
                 e.preventDefault()
-                setCompletionsOpen(false)
+                completions.close()
                 return
               }
               if (
