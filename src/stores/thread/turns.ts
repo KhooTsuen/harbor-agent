@@ -13,6 +13,7 @@ import { createReplyPersistence } from './replyPersistence'
 import { drainPendingRegen } from './regenQueue'
 import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
 import type { StoredMessage } from '@/types/models-extra'
+import { logError } from '@/lib/actionLog'
 
 /* ══════════════════════════════════════════════════════════════
    一轮对话的两条实现路径
@@ -182,11 +183,23 @@ export async function runElectronTurn(
   const finish = (): void => {
     if (finished) return
     finished = true
-    persistence.persistReply()
+    /*
+     * ★ 先把「正在跑」摘掉，**再**落盘。
+     *
+     * 2026-10-04 真机事故：收尾链上任何一步抛异常，界面就永远停在「运行中」
+     * （输入区一直是暂停/停止），而落盘又是最先抛的那个候选（读不了磁盘、
+     * 写会话失败都会抛）。所以顺序改成：先让界面能用，再把活儿干完。
+     * 同形状的兜底在 `streamEvents.ts` 的 `runSafely`。
+     */
+    set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
     window.clearTimeout(timeoutId)
     off()
     endTurnRequest(threadId)
-    set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
+    try {
+      persistence.persistReply()
+    } catch (error) {
+      logError('turn.persistReply', error)
+    }
     drainPendingRegen(threadId)
     /* AG-025：这条跑完了，自动发排队的下一条 */
     drainQueued(threadId)

@@ -7,17 +7,12 @@ import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
 import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
+import { logError } from '@/lib/actionLog'
 
 /* ══════════════════════════════════════════════════════════════
-   流式聊天事件的处理
-
-   从 turns.ts 拆出来的。turns.ts 现在只负责「发起、收尾、中断」，
-   这里负责「每种事件怎么落到消息上」。
-
-   ⚠️ 拆分的教训：一开始我在 turns.ts 里只留了个空函数占位就以为拆完了 ——
-   tsc 全过，但**流式内容、工具过程、引用全都不再更新**。
-   层与层之间的接线是测试照不到的，所以这份文件必须整体搬完再验证，
-   不能留一半。
+   流式聊天事件的处理：每种事件怎么落到消息上（turns.ts 只管发起、收尾、中断）。
+   ⚠️ 拆这个文件踩过的坑：只留空函数占位 → tsc 全绿但流式/工具/引用全不更新；
+   这类跨层接线必须真跑一遍（详见 docs/踩坑记录.md）。
    ══════════════════════════════════════════════════════════════ */
 
 export interface StreamState {
@@ -26,14 +21,9 @@ export interface StreamState {
   reasoning: string
   toolRuns: ToolRunRecord[]
   /**
-   * 一轮一轮的片段（思考 / 工具下标 / 正文）—— **顺序就是发生顺序**。
-   * 事件本身就是按时间到达的，这里只是把它们记下来，渲染层才排得出时间线
-   * （三个聚合字段拼不出先后，见 MessageRound 的注释）。
-   *
-   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })` 同步到消息上。
-   * 只在 `done` 时挂的话，**整场流式都会退回老的三段堆叠**（思考一大块 →
-   * 工具一张卡片 → 正文），一直到最后才「啪」地跳成时间线 ——
-   * 2026-09-30 用户报的「任务进行中的流式对话排版太乱」根因就是这个。
+   * 一轮一轮的片段（思考 / 工具下标 / 正文）—— 顺序就是发生顺序；三个聚合字段拼不出先后。
+   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })`：只在 `done` 时挂的话，
+   * 整场流式会退回三段堆叠（2026-09-30 用户报的「流式排版太乱」根因）。
    */
   rounds: MessageRound[]
   citations: NonNullable<Message['citations']>
@@ -55,31 +45,31 @@ function currentRound(state: StreamState): MessageRound {
   return fresh
 }
 
-/**
- * 把分轮草稿同步到消息上（浅拷贝外层数组）。
- *
- * 复制成本可以忽略：一轮 = 一个对象，一场对话最多几十轮；
- * 应用层靠**引用变了**才知道要重渲，不复制的话界面根本不更新。
- */
+/** 把分轮草稿同步到消息上（浅拷贝外层）；不复制的话引用没变 → 界面不重渲 */
 function syncRounds(state: StreamState): MessageRound[] {
   return [...state.rounds]
 }
 
 /**
- * AG-002：生命周期事件用的是标准名（`agent.*`），而且**每条都带 phase 字段**。
- *
- * 判断只看 `phase` 字段，不看事件名 —— 名字将来再改也不影响这里。
- * `agent.tool.*` 是工具事件，不属于生命周期，排除在外。
+ * 收尾链上的每一步都单独兜住：任何一步抛异常都不许把后面的带走，抛了就记一笔
+ * （进 `data/errors/*.jsonl`）。2026-10-04 真机事故的根因与证据链见 docs/踩坑记录.md。
  */
+function runSafely(where: string, fn: () => void): void {
+  try {
+    fn()
+  } catch (error) {
+    logError(`stream.${where}`, error)
+  }
+}
+
+/** AG-002：判断只看 `phase` 字段（事件名将来再改也不影响）；`agent.tool.*` 不算生命周期 */
 function isLifecycleEvent(type: string): boolean {
   if (type === 'phase') return true
   return type.startsWith('agent.') && !type.startsWith('agent.tool.')
 }
 
 /**
- * 处理一个来自主进程的事件。
- *
- * 返回值告诉调用方要不要接着做后置动作（目前只有 done 需要）。
+ * 处理一个来自主进程的事件。返回值告诉调用方要不要接着跑后置动作（目前只有 done 需要），
  * 这样 turns.ts 不用把每种事件的后续逻辑都写一遍。
  */
 export function handleStreamEvent(
@@ -88,11 +78,7 @@ export function handleStreamEvent(
 ): { handled: boolean; notifyDone?: boolean } {
   const type = String(event.type ?? '')
 
-  /*
-   * AG-001 + AG-002：生命周期阶段由主进程的状态机推过来，渲染层照单收下 ——
-   * 不自己算。以前是「发消息就置 running、结束按事件猜 success/error」，
-   * 那种做法下 UI 和后台随时可能不一致。
-   */
+  /* AG-001/AG-002：阶段由主进程的状态机推过来，渲染层照单收下 —— 不自己算（否则 UI 与后台随时可能不一致） */
   if (isLifecycleEvent(type)) {
     const phase = String(event.phase ?? '') as AgentPhase
     if (phase) {
@@ -224,44 +210,51 @@ export function handleStreamEvent(
     /* ── 结束 ── */
     case 'done': {
       const finalContent = String(event.content ?? '') || state.content
-      state.patch({
-        content: finalContent,
-        reasoning: String(event.reasoning ?? '') || state.reasoning,
-        usage: (event.usage ?? undefined) as Message['usage'],
-        toolRuns: [...state.toolRuns],
-        /* 时间线：逐轮复制一份 —— 别和 state 里的草稿共享引用 */
-        rounds: state.rounds.map((round) => ({ ...round, tools: [...round.tools] })),
-        citations: [...state.citations],
-        status: 'sent',
-        kind: 'text',
-      })
-      state.finish()
+      /* ★ 顺序：**先收尾，再写字段** —— patch 一抛，finish 就永远轮不到（2026-10-04 事故） */
+      runSafely('done.finish', () => state.finish())
+      runSafely('done.patch', () =>
+        state.patch({
+          content: finalContent,
+          reasoning: String(event.reasoning ?? '') || state.reasoning,
+          usage: (event.usage ?? undefined) as Message['usage'],
+          toolRuns: [...state.toolRuns],
+          /* 时间线：逐轮复制一份 —— 别和 state 里的草稿共享引用 */
+          rounds: state.rounds.map((round) => ({ ...round, tools: [...round.tools] })),
+          citations: [...state.citations],
+          status: 'sent',
+          kind: 'text',
+        }),
+      )
       /*
        * 批⑤：「先不做了」的收尾。必须**放在这里**（而不是点按钮那一刻）——
        * done 是主进程那次收尾写（正常结束 → completed）**之后**才到的，
        * 这时候才写得上 `paused`。理由与踩坑过程写在 `confirmEvents` 的 `pauseAfterTurn`。
        */
-      applyPauseAfterTurn(String(event.requestId ?? ''))
+      runSafely('done.pauseAfterTurn', () => applyPauseAfterTurn(String(event.requestId ?? '')))
       return { handled: true, notifyDone: true }
     }
 
     case 'aborted': {
-      /* ★ 标上 interrupted：这是「被中止」的那条 —— 操作条据此把「重新生成」换成「重试」 */
-      state.patch({
-        status: 'sent',
-        content: state.content,
-        interrupted: true,
-        /* 被停掉的那条也要留住时间线：落盘只认消息上的 rounds，不挂就存不下去 */
-        rounds: syncRounds(state),
-      })
-      state.finish()
+      /* ★ 先收尾再写字段（同上）；标 `interrupted`：操作条据此把「重新生成」换成「重试」 */
+      runSafely('aborted.finish', () => state.finish())
+      runSafely('aborted.patch', () =>
+        state.patch({
+          status: 'sent',
+          content: state.content,
+          interrupted: true,
+          /* 被停掉的那条也要留住时间线：落盘只认消息上的 rounds，不挂就存不下去 */
+          rounds: syncRounds(state),
+        }),
+      )
       return { handled: true }
     }
 
     case 'error': {
       const message = String(event.message ?? '未知错误')
-      state.patch({ status: 'error', kind: 'error', errorText: message, content: message })
-      state.finish()
+      runSafely('error.finish', () => state.finish())
+      runSafely('error.patch', () =>
+        state.patch({ status: 'error', kind: 'error', errorText: message, content: message }),
+      )
       return { handled: true }
     }
 
