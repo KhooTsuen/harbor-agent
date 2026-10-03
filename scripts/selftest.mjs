@@ -146,6 +146,7 @@ import { run as clarifyExitsGroup } from './selftest/groups/107-clarify-exits.mj
 import { run as scaleGateGroup } from './selftest/groups/108-scale-gate.mjs'
 import { run as scaleConfigGroup } from './selftest/groups/109-scale-config.mjs'
 import { run as scalePromptGroup } from './selftest/groups/110-scale-prompt.mjs'
+import { run as probeGroup } from './selftest/groups/112-probe.mjs'
 
 const GROUPS = [
   basics,
@@ -258,6 +259,7 @@ const GROUPS = [
   scaleGateGroup,
   scaleConfigGroup,
   scalePromptGroup,
+  probeGroup,
 ]
 
 async function main() {
