@@ -40,8 +40,7 @@ const DEFAULT_BUDGET = {
  * 不写死数字：那三个数各自会变，写死就会漂——症状是「文件明明在上限以内，
  * 进上下文还是被切」，而且没有任何测试会报（改上限的人不会想到还有第二处数字）。
  */
-const PROJECT_FLOOR =
-  require('./project.cjs').MAX_CHARS + require('./project-rules.cjs').MAX_CHARS + 1024
+const PROJECT_FLOOR = require('./prompt-limits.cjs').PROJECT_FLOOR_CHARS
 
 /**
  * 一张图按多少字符占预算。
@@ -55,11 +54,31 @@ const IMAGE_COST = 800
 function chars(value) {
   return typeof value === 'string' ? value.length : 0
 }
+
+/**
+ * 至少留这么多原文才值得把一条消息留下（见 assemble 里那个 `size < MIN_KEEP_CHARS`）。
+ *
+ * 2026-10-04：以前预算被挤到极限时，旧消息会被裁得**只剩一行裁剪说明**（14 字符）——
+ * 它占着预算，却不提供任何信息，模型只能看到一串「上下文已按预算裁剪」。
+ * 现在这种残片不要：宁可整条不进上下文（并把条数告诉模型，见 assemble 的 droppedNote）。
+ */
+const MIN_KEEP_CHARS = 200
+
+/**
+ * 裁剪说明的**固定长度**（算预算时要预先留出来）。
+ *
+ * 带上了原长：模型（和事后看日志的人）能区分「这条本来就很短」和「它有两万字但只进来了开头」。
+ * 尾部的 `…上下文已按预算裁剪…` 刻意保留原措辞 —— 历史文档、自检组（86-vision）与
+ * 用户回的会话记录里都是这个串，换掉它等于把过去的证据链断掉。
+ */
+const TRIM_NOTE_RESERVE = 64
+const trimNote = (len) => `\n[这条消息原有 ${len} 字符，只有开头进得来。…上下文已按预算裁剪…]`
+
 function trim(value, limit) {
   const text = String(value ?? '')
-  return text.length <= limit
-    ? text
-    : `${text.slice(0, Math.max(0, limit - 40))}\n[…上下文已按预算裁剪…]`
+  if (text.length <= limit) return text
+  const note = trimNote(text.length)
+  return `${text.slice(0, Math.max(0, limit - note.length))}${note}`
 }
 /** 切一条消息的内容：多模态**只切文本、图片整块留**（切一半的 base64 是坏图） */
 function trimContent(content, limit) {
@@ -120,19 +139,51 @@ function assemble(input = {}) {
   const recent = Array.isArray(input.messages) ? input.messages : []
   let remaining = cap('conversation')
   const selected = []
-  for (let i = recent.length - 1; i >= 0 && remaining > 0; i -= 1) {
+  let dropped = 0
+  let i = recent.length - 1
+  for (; i >= 0 && remaining > 0; i -= 1) {
     const item = recent[i]
+    const original = sizeOf(item.content)
     const copy = { ...item, content: trimContent(item.content, remaining) }
     const size = sizeOf(copy.content)
+    /*
+     * 「被裁到只剩一行说明」的残片不要（见 MIN_KEEP_CHARS 的注释）。
+     * 判据是「被缩过 且 剩得很小」—— 本来就很短的消息（「你好」）不受影响。
+     * 不扣预算：留不出像样内容的残片不值得占位，宁可让更早的消息也因此整条不进。
+     */
+    if (size > 0 && size < MIN_KEEP_CHARS && size < original) {
+      dropped += 1
+      continue
+    }
     if (size > 0) {
       selected.unshift(copy)
       remaining -= size
     }
   }
+  /* 预算用完时，更早的那些**根本没轮到** —— 它们同样是「没进上下文」，要一起算上 */
+  if (i + 1 > 0) dropped += i + 1
+  /*
+   * 有消息被整条丢掉时，**一处**说明比 N 行残片有用：模型因此知道「上面还有内容」，
+   * 却又不用为每个被丢的旧消息付一行预算。挂在会话状态那一层（系统侧）。
+   */
+  const droppedNote = dropped > 0 ? `\n（更早的 ${dropped} 条对话因预算没进上下文）` : ''
   return {
-    systemContext: { memory, project, task, conversationState: state },
+    systemContext: { memory, project, task, conversationState: state + droppedNote },
     messages: selected,
-    estimates: { maxTokens, chars: totalChars - remaining, selectedMessages: selected.length },
+    estimates: {
+      maxTokens,
+      chars: totalChars - remaining,
+      selectedMessages: selected.length,
+      droppedMessages: dropped,
+    },
   }
 }
-module.exports = { DEFAULT_BUDGET, DEFAULT_CONTEXT_TOKENS, PROJECT_FLOOR, assemble, trim }
+module.exports = {
+  DEFAULT_BUDGET,
+  DEFAULT_CONTEXT_TOKENS,
+  MIN_KEEP_CHARS,
+  PROJECT_FLOOR,
+  TRIM_NOTE_RESERVE,
+  assemble,
+  trim,
+}

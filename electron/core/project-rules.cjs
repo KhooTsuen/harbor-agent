@@ -29,14 +29,20 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { TEMPLATE } = require('./project-rules-template.cjs')
+const { MAX_RULES_CHARS } = require('./prompt-limits.cjs')
 
 /** 规则目录名（工作目录下的隐藏目录） */
 const DIR = '.harbor'
 const MAIN = 'rules.md'
 const EXTRA_DIR = 'rules'
 
-/** 注入上限：超过就截断（和 project.cjs 的 AGENT.md 同一个思路，上限略大一点） */
-const MAX_CHARS = 8000
+/**
+ * 注入上限：超过就截断（和 project.cjs 的 AGENT.md 同一个思路，但**值不一样**）。
+ *
+ * ★ 2026-10-04：数字搬到 `prompt-limits.cjs`（唯一真相源）—— 它和 AGENT.md 那个 12000
+ *   以前两处各写各的，而 `context-builder` 的项目层下限又把两者相加；改一个另两个漂。
+ */
+const MAX_CHARS = MAX_RULES_CHARS
 
 
 /** 缓存：workdir → { fingerprint, result }。只活在这个进程里，落盘的东西一概不留。 */

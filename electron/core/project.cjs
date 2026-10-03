@@ -33,6 +33,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const rules = require('./project-rules.cjs')
+const { MAX_AGENT_MD_CHARS } = require('./prompt-limits.cjs')
 
 const CANDIDATES = ['AGENT.md', '.agent/instructions.md', '.instructions.md', 'PROJECT.md']
 
@@ -45,8 +46,11 @@ const CANDIDATES = ['AGENT.md', '.agent/instructions.md', '.instructions.md', 'P
  * 「硬禁区 / 收工前必须跑 / 交付时必须报告」模型从来没读到过。
  * 这不是省钱，是「写在文件里的规矩失效」，所以两道都放宽（另一道见 context-builder.cjs）。
  * 仍然有上限：写给模型看的项目说明不该是一本书（那一本可以去读文件）。
+ *
+ * ★ 2026-10-04：数字搬到 `prompt-limits.cjs`（唯一真相源）—— 它和「规则目录那个 8000」
+ *   以前各写各的，改一个另一个漂，而且不会有任何测试报红。
  */
-const MAX_CHARS = 12000
+const MAX_CHARS = MAX_AGENT_MD_CHARS
 
 /**
  * 找到项目说明文件。
