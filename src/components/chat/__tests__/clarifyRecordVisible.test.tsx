@@ -103,4 +103,74 @@ describe('只读卡（开工前问过什么）', () => {
     render(makeMessage())
     expect(container.textContent ?? '').not.toContain('开工前问过这几个问题')
   })
+
+  /*
+   * ★ 2026-10-04（小尾巴 #7）：把「什么时候显示」的路径都钉住。
+   *
+   * `sent` / `undefined`（老记录）→ 显示；`streaming` → 不显示（上面那条）。
+   *
+   * ⚠️ `error` 是**既有行为、不是本次修的**：`MessageItem` 对 error 那条走的是
+   * 「只画错误块」的分支，整条时间线（包括只读卡）都不渲染 —— 也就是说
+   * 「答了卡、但这一轮最终失败」时，回看只能看到错误，看不到当时答了什么。
+   * 它属于「卡少了」而不是「卡过早」，不在本次范围；这里先钉住现状，
+   * 免得以后有人以为它已经修好了。
+   */
+  it('非流式收尾：sent / 老记录显示；error 走错误块（既有行为）', () => {
+    render(makeMessage({ status: 'sent', clarify: STORED }))
+    expect(container.textContent ?? '').toContain('开工前问过这几个问题')
+
+    render(makeMessage({ status: undefined, clarify: STORED }))
+    expect(container.textContent ?? '').toContain('开工前问过这几个问题')
+
+    render(makeMessage({ status: 'error', clarify: STORED }))
+    expect(container.textContent ?? '').not.toContain('开工前问过这几个问题')
+  })
+
+  it('★ 连着三张卡各记各的（同一会话里不串味）', () => {
+    const cards = [1, 2, 3].map((n) => ({
+      id: `m${n}`,
+      threadId: 't1',
+      role: 'assistant' as const,
+      content: `第 ${n} 轮`,
+      kind: 'text' as const,
+      status: 'sent' as const,
+      timestamp: n,
+      clarify: {
+        questions: [
+          {
+            question: `第${n}轮问的问题`,
+            options: [
+              { label: `第${n}轮的选项甲`, effect: '甲' },
+              { label: `第${n}轮的选项乙`, effect: '乙' },
+            ],
+            allowFreeform: false,
+            defaultValue: `第${n}轮的选项甲`,
+            defaultFrom: 'model' as const,
+          },
+        ],
+        answers: [{ question: `第${n}轮问的问题`, choice: `第${n}轮的选项乙`, text: '' }],
+        skipped: false,
+      },
+    }))
+    act(() => {
+      root.render(
+        <div>
+          {cards.map((m) => (
+            <MessageItem key={m.id} message={m} />
+          ))}
+        </div>,
+      )
+    })
+    const text = container.textContent ?? ''
+    for (const n of [1, 2, 3]) {
+      /* 自己的问题、自己的答案各出现一次 */
+      expect(text.split(`第${n}轮问的问题`).length - 1).toBe(1)
+      expect(text.split(`第${n}轮的选项乙（已选）`).length - 1).toBe(1)
+      /* 别人的答案不许出现在自己这张卡上 */
+      for (const other of [1, 2, 3].filter((x) => x !== n)) {
+        expect(text.split(`第${other}轮的选项乙（已选）`).length - 1).toBe(1)
+      }
+    }
+    expect(text.split('开工前问过这几个问题').length - 1).toBe(3)
+  })
 })
