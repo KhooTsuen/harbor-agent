@@ -187,4 +187,24 @@ export async function run() {
     '★ 允许清单是「待修」不是「豁免」：空着，或者每条都写清 why',
     (lintSrc.includes('export const KNOWN = []') || lintSrc.includes('why:')) && lintSrc.includes('允许清单过期'),
   )
+
+  /*
+   * ── 上下文基准 vs 输出上限：这两件事拆开了（2026-10-04）──
+   *
+   * `loop-prompt` 传给 `contextBuilder.assemble()` 的那个 `maxTokens` 是**上下文**
+   * 预算基准（字符 = ×3）。以前传的是设置页的 `assistant.maxTokens`（输出上限）——
+   * 于是一个管「能写多长」的数字顺带决定了系统提示 / 项目文件 / 记忆能占多少。
+   * 现在各归各，这一组只钉「谁读谁」。
+   */
+  group('开关接线 / 上下文基准与输出上限拆开')
+  const loopPromptSrc = read('electron/core/loop-prompt.cjs')
+  check(
+    '★ 提示层读 context.baseTokens（不再读 assistant.maxTokens）',
+    /^\s*maxTokens:\s*config\.context\?\.baseTokens,?\s*$/m.test(loopPromptSrc) &&
+      !loopPromptSrc.includes('config.assistant.maxTokens'),
+  )
+  check(
+    '★ 输出那条路没被跟着改（还是 assistant.maxTokens）',
+    read('electron/core/loop-model.cjs').includes('config.assistant.maxTokens'),
+  )
 }
