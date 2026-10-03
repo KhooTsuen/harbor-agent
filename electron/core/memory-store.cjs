@@ -26,7 +26,7 @@ const {
   SCOPES,
   SOURCES,
   STATUSES,
-  SECRET_LIKE,
+  looksLikeSecret,
   filePath,
   newId,
   nextSeq,
@@ -72,8 +72,9 @@ function add(input) {
   if (!content) return { ok: false, error: '内容不能为空' }
   if (content.length > 500) return { ok: false, error: '一条记忆最多 500 字，请拆成几条' }
 
-  /* 密钥不进记忆 —— 记忆每轮都注入，混一个 key 等于每轮都在泄露 */
-  if (SECRET_LIKE.test(content)) {
+  /* 密钥不进记忆 —— 记忆每轮都注入，混一个 key 等于每轮都在泄露。
+     判据只有一处（`memory-schema.cjs` → `redact.cjs` 的模式表），这里不自己写正则 */
+  if (looksLikeSecret(content)) {
     return { ok: false, error: '这段内容看起来含密钥/凭据，没有记下来。' }
   }
 
@@ -148,7 +149,7 @@ function update(id, patch) {
   if (!item) return { ok: false, error: '记忆不存在' }
 
   if (typeof patch.content === 'string' && patch.content.trim()) {
-    if (SECRET_LIKE.test(patch.content)) return { ok: false, error: '内容看起来含密钥，没有保存' }
+    if (looksLikeSecret(patch.content)) return { ok: false, error: '内容看起来含密钥，没有保存' }
     item.content = patch.content.trim().slice(0, 500)
   }
   if (TYPES.includes(patch.type)) item.type = patch.type

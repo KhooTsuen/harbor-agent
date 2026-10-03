@@ -25,8 +25,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const redact = require('./redact.cjs')
-const { SECRET_LIKE } = require('./memory-schema.cjs')
+/* 密钥判据只有一处实现（`memory-schema.cjs` → `redact.cjs` 的模式表） */
+const { looksLikeSecret } = require('./memory-schema.cjs')
 const { validateWhen } = require('./schedule-next.cjs')
 const { GRANTS } = require('./schedule-grant.cjs')
 
@@ -99,13 +99,6 @@ function clone(item) {
 
 function newId() {
   return `sch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
-}
-
-/** 看着像密钥吗（两道：记忆那套前缀 + 全局脱敏的模式表） */
-function looksLikeSecret(text) {
-  const sample = String(text ?? '')
-  if (!sample) return false
-  return SECRET_LIKE.test(sample) || redact.looksSecret(sample)
 }
 
 /** 目录不存在 → 回落空串（= 用默认工作目录），这不算错误 */

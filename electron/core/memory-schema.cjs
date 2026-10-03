@@ -19,6 +19,7 @@
 
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
+const redact = require('./redact.cjs')
 
 const TYPES = [
   'preference',
@@ -44,9 +45,26 @@ function newId() {
   return `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
 }
 
-/** 看起来像密钥的内容不许进记忆 */
-const SECRET_LIKE =
-  /(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|Bearer\s+[A-Za-z0-9._-]{20,})/
+/**
+ * 看起来像密钥的内容不许进记忆。
+ *
+ * 模式表**只有一处**：`redact.cjs` 的 PATTERNS（外加凭证库里登记过的真 key）。
+ *
+ * 这里以前自己拄了一张 5 条的窄表（只认 sk- / gh[pousr]_ / AKIA / 私钥块 / Bearer），
+ * 而脱敏那张表宽得多。后果（只读审计 + 实测）：`github_pat_…`、`AIza…`（Google）、
+ * `xoxb-…`（Slack）、`hf_…`（HuggingFace）、JWT、`api_key=xxx`、`password: xxx`
+ * 七类都能写进记忆 —— 而记忆是**每轮注入上下文**的，漏一条就是每轮都泄露 + 进备份。
+ *
+ * ⚠️ 不要改成 `redact.looksSecret()`：它拿**带 /g 的正则**做 `.test()`，会留下 lastIndex，
+ * 同一根字符串连判两边结果会**交替翻**（2026-10-04 实测：
+ * `looksSecret('password: hunter2secret')` 连判 5 次 = [true,false,true,false,true]）。
+ * 走主入口 `redact()` 做「原文 vs 脱敏后」对比：`String.replace` 会把 lastIndex 归零，稳定。
+ */
+function looksLikeSecret(text) {
+  const sample = String(text ?? '')
+  if (!sample) return false
+  return redact.redact(sample) !== sample
+}
 
 /** 下一个序号（取文件里最大的 +1） */
 function nextSeq(data) {
@@ -76,7 +94,7 @@ module.exports = {
   SCOPES,
   SOURCES,
   STATUSES,
-  SECRET_LIKE,
+  looksLikeSecret,
   filePath,
   newId,
   nextSeq,
