@@ -167,6 +167,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
             taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
             /* AG-018：把用户这句话也交给它 —— 说「继续」时要明确告诉他“这是接着做” */
             userText: lastUserText(history),
+            /* 新活第一轮要按**这个目录**给验证口径（有没有测试入口），见 verify-hint.cjs */
+            workdir,
           }),
           /* 拿用户那句话当任务目标：不传的话任务标题永远是「未命名任务」，
              用户根本不知道那条没干完的活是啥。 */

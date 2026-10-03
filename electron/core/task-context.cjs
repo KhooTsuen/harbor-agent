@@ -27,6 +27,7 @@ const taskCore = require('./task.cjs')
 const taskHint = require('./task-hint.cjs')
 const taskResume = require('./task-resume.cjs')
 const steering = require('./task-steering.cjs')
+const verifyHint = require('./verify-hint.cjs')
 /* 指纹算法只该有一份，放在 task-plan.cjs（那里没有依赖，不会绕回来） */
 /* 计划行的小工具（是否勾完 / 进度 / 去标记）住在 task-plan.cjs —— 见那边的注释 */
 const { fingerprint, isDone, progressOf, stripMarks } = require('./task-plan.cjs')
@@ -51,7 +52,7 @@ function resetProgressMemory() {
   lastProgress.clear()
 }
 
-function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
+function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = '' } = {}) {
   let tasks = []
   try {
     /*
@@ -77,8 +78,12 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '' } = {}) {
   const ordered = mine.slice(0, MAX_TASKS)
 
   /* 新活的第一轮（本会话一条未完成任务都没有）：必须带上「本轮请求」——
-     只说通用规矩模型不照做，真机实测过（缘由写在 task-hint.cjs）。 */
-  if (ordered.length === 0) return taskHint.freshRequest(userText)
+     只说通用规矩模型不照做，真机实测过（缘由写在 task-hint.cjs）。
+     顺带在这里给一句**验证口径**（有测试入口就给命令、没有就要求先建一个）——
+     只在这一轮说，后面每轮都说是噪音（边界见 verify-hint.cjs 的文件头）。 */
+  if (ordered.length === 0) {
+    return [taskHint.freshRequest(userText), verifyHint.build({ workdir })].filter(Boolean).join('\n\n')
+  }
 
   /* 哪条是「当前」：优先显式 taskId，否则最近更新的那条（unfinished 已按 updatedAt 降序） */
   const currentId = taskId || ordered[0]?.id || ''
