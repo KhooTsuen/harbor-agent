@@ -43,6 +43,12 @@ export {
    路径 A：真实后端（Electron）
    ══════════════════════════════════════════════════════════════ */
 
+/**
+ * 一轮最多跑这么久；到点就收尾（兜底的超时，不是业务上限制）。
+ * 抽成常量是为了能在测试里断言它 —— 也让「改了时长」这件事看得见。
+ */
+export const TURN_TIMEOUT_MS = 5 * 60 * 1000
+
 export async function runElectronTurn(
   threadId: string,
   _userText: string,
@@ -184,12 +190,9 @@ export async function runElectronTurn(
     if (finished) return
     finished = true
     /*
-     * ★ 先把「正在跑」摘掉，**再**落盘。
-     *
-     * 2026-10-04 真机事故：收尾链上任何一步抛异常，界面就永远停在「运行中」
-     * （输入区一直是暂停/停止），而落盘又是最先抛的那个候选（读不了磁盘、
-     * 写会话失败都会抛）。所以顺序改成：先让界面能用，再把活儿干完。
-     * 同形状的兜底在 `streamEvents.ts` 的 `runSafely`。
+     * ★ 先把「正在跑」摘掉，**再**落盘：2026-10-04 真机事故里这一步抛异常，界面就永远停在
+     *   「运行中」，而落盘正是最先抛的那个（读不了盘 / 写会话失败都会抛）。
+     *   同形状的兜底见 `streamEvents.ts` 的 `runSafely` 与下面的 `onTurnTimeout`。
      */
     set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
     window.clearTimeout(timeoutId)
@@ -205,15 +208,20 @@ export async function runElectronTurn(
     drainQueued(threadId)
   }
 
-  /* 兜底：万一结束事件因故没到，也不能让界面一直转 */
-  const timeoutId = window.setTimeout(
-    () => {
+  /*
+   * 兜底：结束事件因故没到也不能一直转。★ 它也栽过 —— 以前第一句是 `patch(...)`，一句抛了
+   * 后面的 `finish()` 也不跑（当晚两道保险死在同一形状上）。现在：先放开界面，再写状态。
+   */
+  const onTurnTimeout = (): void => {
+    finish()
+    try {
       patch({ status: 'sent', content: content || '（超时未结束）' })
       useAppStore.getState().setThreadStatus(threadId, 'error')
-      finish()
-    },
-    5 * 60 * 1000,
-  )
+    } catch (error) {
+      logError('turn.timeout', error)
+    }
+  }
+  const timeoutId = window.setTimeout(onTurnTimeout, TURN_TIMEOUT_MS)
 
   /* 续跑（重新生成/接着做）时把已有时间线也带上 —— 否则老片段会被丢掉 */
   const rounds = [...(placeholder.rounds ?? [])]

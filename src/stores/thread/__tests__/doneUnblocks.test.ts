@@ -137,4 +137,22 @@ describe('接线：顺序本身也要钉住（层与层之间测试照不到）'
     )
     expect(block).toContain("logError('turn.persistReply'")
   })
+
+  /*
+   * ★ 兜底（5 分钟超时）也走同一条路 —— 2026-10-04 当晚它就是第二个卡住的地方：
+   *   回调里第一句是 patch，抛了以后 finish() 也不会跑，于是「兜底」跟着一起失效。
+   */
+  it('★ 超时兜底：先收尾再写状态，写状态失败也有留痕', () => {
+    const start = turnsSrc.indexOf('const onTurnTimeout = (): void => {')
+    expect(start, '找不到兜底回调（改名了？）').toBeGreaterThan(0)
+    const block = turnsSrc.slice(start, start + 600)
+    expect(block.indexOf('finish()')).toBeLessThan(block.indexOf('patch({'))
+    expect(block).toContain("logError('turn.timeout'")
+    expect(block).toContain('try {')
+  })
+
+  it('★ 超时时长是具名常量（改时长这件事要看得见）', () => {
+    expect(turnsSrc).toContain('export const TURN_TIMEOUT_MS')
+    expect(turnsSrc).toContain('window.setTimeout(onTurnTimeout, TURN_TIMEOUT_MS)')
+  })
 })
