@@ -1,5 +1,6 @@
 import { abortChat, pauseChat } from '@/lib/backend'
 import { useThreadStore } from '../useThreadStore'
+import { useUIStore } from '../useUIStore'
 import { abortMockTurn } from './mockTurn'
 
 /* ══════════════════════════════════════════════════════════════
@@ -44,6 +45,18 @@ export function drainQueued(threadId: string): void {
 
 /** 传 threadId 只停那一条；不传就把所有在跑的都停掉 */
 export function stopActiveRequest(threadId?: string): void {
+  /*
+   * 停了这条对话，它上面挂着的澄清卡也就没意义了（2026-10-04，小尾巴 #4）：
+   * 留着它的话，用户一按「停止」卡还在问，而主进程那边其实已经在等一个不会来的答案 ——
+   * 等到超时就被当成「用户离场」，按默认选项自己开工。所以要**收卡 + 回话**。
+   *
+   * 只收这一条对话的（`open.threadId`）：后台别的对话的卡不归这次停止管。
+   */
+  const open = useUIStore.getState().clarify
+  if (open && (threadId === undefined || open.threadId === threadId)) {
+    useUIStore.getState().cancelClarify()
+  }
+
   if (threadId) {
     const id = activeRequests.get(threadId)
     if (id) void abortChat(id)

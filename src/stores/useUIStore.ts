@@ -88,6 +88,16 @@ interface UIState {
    */
   closeClarify: (confirmId?: string) => void
   /**
+   * 主动收掉澄清卡，**并把「不批」回给内核**（2026-10-04，小尾巴 #4）。
+   *
+   * 用在「切对话」「停任务」两条路径上：卡不能跟着用户跑到别的对话里（它是共享的
+   * 一份 UI 状态），也不能让主进程干等到 5 分钟超时（那会被当成用户离场，
+   * 按默认选项自己开工 —— 而用户只是走开了、或者把任务停了）。
+   *
+   * 与 `closeClarify` 的区别：那个只是「把界面收起来」，不动内核。
+   */
+  cancelClarify: (confirmId?: string) => void
+  /**
    * P1-3：用户点了「需要你确认」的系统通知 → 请求把正在等他的那张卡**亮一下**
    * （聚焦到卡片的第一个可点项 + 滚进视野）。
    *
@@ -98,7 +108,7 @@ interface UIState {
   requestCardFocus: () => void
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   rightPanelVisible: true,
   activeRightTab: 'diff',
   settingsOpen: false,
@@ -152,5 +162,13 @@ export const useUIStore = create<UIState>((set) => ({
   askClarify: (request) => set({ clarify: request }),
   closeClarify: (confirmId) =>
     set((s) => (confirmId && s.clarify?.confirmId !== confirmId ? {} : { clarify: null })),
+  cancelClarify: (confirmId) => {
+    const cur = get().clarify
+    /* 传了 id 就只收那一条（主进程推来的收卡事件可能对应已经换掉的上一张） */
+    if (!cur || (confirmId && cur.confirmId !== confirmId)) return
+    set({ clarify: null })
+    /* 先收界面再回话：回话里可能抛（IPC 断了），界面不能因此留在那儿 */
+    cur.onCancel?.()
+  },
   requestCardFocus: () => set((s) => ({ cardFocusNonce: s.cardFocusNonce + 1 })),
 }))

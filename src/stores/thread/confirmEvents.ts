@@ -91,6 +91,8 @@ export function askPermissionFor(event: Record<string, unknown>): void {
       description: '',
       confirmText: '就这么干',
       danger: false,
+      /* 这张卡属于哪条对话 —— 切走时要收的是它（见 useAppStore.setActiveThread） */
+      threadId: String(event.sessionId ?? event.threadId ?? ''),
       clarify: questions as ClarifyQuestion[],
       onClarify: (reply) => {
         useUIStore.getState().closeClarify(confirmId)
