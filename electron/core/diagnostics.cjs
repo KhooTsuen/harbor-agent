@@ -7,7 +7,9 @@
  * 「你配的什么模型」「日志说什么」「有没有报错」，几轮下来用户就烦了。
  * 一次导出全部，一眼定位。
  *
- * **脱敏是硬要求**：API Key 绝不能出现在诊断包里。只报长度和前后几位。
+ * **脱敏是硬要求**：API Key 绝不能出现在诊断包里。
+ * 两处落点：① 配置摘要里密钥只标「已配置」，不显示值；
+ * ② 日志行过 `redact.cjs`（「像不像密钥」的判据**只有那一处**）。
  */
 
 const fs = require('node:fs')
@@ -18,6 +20,8 @@ const session = require('./session.cjs')
 const stats = require('./stats.cjs')
 const scene = require('./scene.cjs')
 const log = require('./log.cjs')
+/* 脱敏只走这一个入口 —— 这里不再自己写「像不像密钥」的正则 */
+const redact = require('./redact.cjs')
 const fileCache = require('./file-cache.cjs')
 const searchCache = require('./search-cache.cjs')
 /* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
@@ -29,22 +33,17 @@ const LOG_LINES = 120
 const MESSAGE_PREVIEW = 160
 
 /**
- * 把可能是密钥的字符串打码。
+ * 把日志里出现的疑似密钥再兜一层。
  *
- * 宁可多打一点 —— 诊断包是用户要发给别人的，泄露一次就麻烦。
+ * 走过一段弯路：这里曾经自己写两条窄正则（只认 `sk-` / `Bearer` / `api_key=`），
+ * 比 `redact.cjs` 的模式表窄得多 —— 两套规则**会漂移**：哪天宽的那边加了新厂商前缀，
+ * 这边忘了跟，第二道兜底就形同虚设。现在直接调主入口，判据只有一处。
+ *
+ * ⚠️ 不要换成 `redact.looksSecret()`：它用带 /g 的正则做 `.test()`，会留下 lastIndex，
+ * 同一根字符串连判结果会交替翻。`redact()` 内部走 `String.replace`，没有这个问题。
  */
-function mask(secret) {
-  const text = String(secret ?? '')
-  if (!text) return '（空）'
-  if (text.length <= 8) return `${'*'.repeat(text.length)}（${text.length} 位）`
-  return `${text.slice(0, 4)}…${text.slice(-2)}（${text.length} 位）`
-}
-
-/** 把日志里出现的疑似密钥再兜一层 —— 日志可能打过 header */
 function scrubLogLine(line) {
-  return String(line)
-    .replace(/(sk-|Bearer\s+)[A-Za-z0-9_-]{8,}/g, (m, prefix) => `${prefix}***已隐藏***`)
-    .replace(/(api[_-]?key"?\s*[:=]\s*"?)[A-Za-z0-9_-]{8,}/gi, '$1***已隐藏***')
+  return redact.redact(String(line))
 }
 
 function readTailLines(file, count) {
@@ -256,7 +255,7 @@ function build() {
     '```',
     '',
     '---',
-    '（API Key 已打码，只显示长度。可以安全地发给别人。）',
+    '（API Key 只标「已配置」，不显示值；日志行已过全局脱敏。可以安全地发给别人。）',
   ]
 
   const text = sections.join('\n')
@@ -271,4 +270,4 @@ function build() {
   return { text, file, errorCount: errors.length, logLines: logLines.length }
 }
 
-module.exports = { build, mask }
+module.exports = { build }
