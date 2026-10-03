@@ -55,10 +55,10 @@ function newId() {
  * `xoxb-…`（Slack）、`hf_…`（HuggingFace）、JWT、`api_key=xxx`、`password: xxx`
  * 七类都能写进记忆 —— 而记忆是**每轮注入上下文**的，漏一条就是每轮都泄露 + 进备份。
  *
- * ⚠️ 不要改成 `redact.looksSecret()`：它拿**带 /g 的正则**做 `.test()`，会留下 lastIndex，
- * 同一根字符串连判两边结果会**交替翻**（2026-10-04 实测：
- * `looksSecret('password: hunter2secret')` 连判 5 次 = [true,false,true,false,true]）。
- * 走主入口 `redact()` 做「原文 vs 脱敏后」对比：`String.replace` 会把 lastIndex 归零，稳定。
+ * 判据与 `redact.cjs` 同源：这里直接调它的**主入口**（原文 vs 脱敏后对比）。
+ * （2026-10-04 之前 `looksSecret()` 自己遍历模式表做 `.test()`，带 /g 的正则会把
+ *  `lastIndex` 留下 —— 同一根字符串连判两次结果会交替翻；那个 bug 当天已修，
+ *  现在两个入口等价。这里仍写 `redact()`，只是不想再动已验过的那行。）
  */
 function looksLikeSecret(text) {
   const sample = String(text ?? '')

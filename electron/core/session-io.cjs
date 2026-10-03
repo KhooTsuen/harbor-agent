@@ -22,6 +22,7 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const { redact, scrubStorage } = require('./redact.cjs')
+const { writeAtomic } = require('./safe-write.cjs')
 const { sealLine, openLineDetailed } = require('./session-crypto.cjs')
 
 const MAX_TITLE = 60
@@ -94,4 +95,79 @@ function writeLines(id, lines) {
   fs.writeFileSync(fileFor(id), text, 'utf8')
 }
 
-module.exports = { fileFor, newId, safeTitle, readLines, writeLines, serializeLine, MAX_TITLE }
+/**
+ * 只改**第一行**（meta），其余字节原样保留。
+ *
+ * 为什么不是「整篇读出来再整篇写回去」（2026-10-04 改的）：
+ *   · `readLines()` 为了容错会**跳过解不开的行**（换了 Windows 账户 / data 换机器就会遇到）——
+ *     拿它的结果写回去，那些行就被永久删了，而用户只是在改标题；
+ *   · 长会话（数 MB）整篇重写期间崩溃 / 断电会截断文件，截断点之后的内容全没；
+ *     追加式写「崩了只丢最后一行」的保证在这里失效。
+ *
+ * 所以：第一行是 meta 就换掉它；不是 meta（或第一行本身就解不开）就把新 meta 插到最前面。
+ * 两种情况都**不读也不写其余行**，并用原子写落盘。
+ *
+ * @returns {{ ok: boolean, replaced?: boolean, error?: string }}
+ */
+function writeMetaLine(id, meta) {
+  const file = fileFor(id)
+  if (!fs.existsSync(file)) return { ok: false, error: '会话不存在' }
+  const raw = fs.readFileSync(file, 'utf8')
+  const cut = raw.indexOf('\n')
+  const firstRaw = cut >= 0 ? raw.slice(0, cut) : raw
+  const rest = cut >= 0 ? raw.slice(cut + 1) : ''
+  const head = openLineDetailed(firstRaw.trim())
+  let isMeta = false
+  if (head.ok) {
+    try {
+      isMeta = JSON.parse(head.text).type === 'meta'
+    } catch {
+      isMeta = false
+    }
+  }
+  /* 第一行是 meta 就换掉它，否则把新 meta 插到最前面 —— 两种情况其余内容都不参与重排 */
+  const keep = isMeta ? rest : raw
+  /*
+   * 例外（唯一一处会动其它行的地方）：**旧文件里还留着明文密钥**时顺手清一遍。
+   * 这条保证以前是「整篇重写」白送的（自检 `31-session-redact` 钉着），
+   * 改成只换第一行之后必须显式做，否则等于把脱敏能力悄悄丢了。
+   * 只在真检测到才扫（`redact()` 与原文不同），平时零开销。
+   */
+  const body = redact(keep) === keep ? keep : rescrubLines(keep)
+  writeAtomic(file, `${serializeLine(meta)}\n${body}`)
+  return { ok: true, replaced: isMeta }
+}
+
+/**
+ * 逐行重新脱敏：能解析的行过一遍唯一序列化入口，**解不开的行原样保留**。
+ *
+ * 与「整篇读→整篇写」的区别：坏行不会被丢掉（问题 22 的另一半），
+ * 且落盘走原子写 —— 清旧密钥的同时不引入「写一半截断」的风险。
+ */
+function rescrubLines(text) {
+  return text
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed) return line
+      const opened = openLineDetailed(trimmed)
+      if (!opened.ok) return line
+      try {
+        return serializeLine(JSON.parse(opened.text))
+      } catch {
+        return line
+      }
+    })
+    .join('\n')
+}
+
+module.exports = {
+  fileFor,
+  newId,
+  safeTitle,
+  readLines,
+  writeLines,
+  writeMetaLine,
+  serializeLine,
+  MAX_TITLE,
+}

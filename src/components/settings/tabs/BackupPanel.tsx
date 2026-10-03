@@ -108,12 +108,25 @@ export function BackupPanel() {
                     {formatSize(item.size)}
                     {item.items.length > 0 ? ` · ${item.items.join(', ')}` : ''}
                   </p>
+                  {/* 空壳 / 不完整：首启时 config、记忆都还没落盘，备份只留两个空目录。
+                      不给它标注的话，用户会以为这是一份正经备份（审计问题 13）。 */}
+                  {item.empty ? (
+                    <p className="mt-0.5 text-2xs text-danger">
+                      空备份：里面没有任何用户数据，不能恢复
+                    </p>
+                  ) : item.missing.length > 0 ? (
+                    <p className="mt-0.5 text-2xs text-fg-tertiary">
+                      不完整：缺 {item.missing.join('、')}
+                    </p>
+                  ) : null}
                 </div>
 
                 <Button
                   variant="ghost"
                   size="sm"
                   icon={<RotateCcw size={12} />}
+                  disabled={item.empty}
+                  title={item.empty ? '空备份里没有可恢复的数据' : undefined}
                   onClick={() =>
                     askPermission({
                       kind: 'clear-data',

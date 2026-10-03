@@ -222,12 +222,24 @@ function walk(value, depth, maxDepth) {
   return String(value)
 }
 
-/** 这一段文本里有没有疑似密钥（诊断包末尾自检用） */
+/**
+ * 这一段文本里有没有疑似密钥。
+ *
+ * 直接走 `redact()` **主入口**做「原文 vs 脱敏后」对比 —— 判据和脱敏是同一处，
+ * 以后加新厂商前缀只改 PATTERNS 一张表。
+ *
+ * ★ 为什么不再自己遍历 `PATTERNS` 做 `.test()`：那些正则大多带 `/g`，
+ *   而 `RegExp.prototype.test()` 会把 `lastIndex` **留在正则对象上**，
+ *   于是「同一根字符串连判两次」结果会交替翻
+ *   （2026-10-04 实测：`looksSecret('password: hunter2secret')` 连判 5 次 =
+ *   `[true,false,true,false,true]`）。上层拿它当门禁时，
+ *   「拦不拦得住」就取决于上一次判的是哪根字符串了。
+ *   `redact()` 内部是 `String.replace`，全局替换结束后 `lastIndex` 归零，没有这个问题。
+ */
 function looksSecret(text) {
   const sample = String(text ?? '')
   if (!sample) return false
-  for (const secret of known) if (secret && sample.includes(secret)) return true
-  return PATTERNS.every(([pattern]) => !pattern.test(sample)) ? false : true
+  return redact(sample) !== sample
 }
 
 /**

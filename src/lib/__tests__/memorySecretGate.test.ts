@@ -134,7 +134,9 @@ describe('记忆密钥门禁 / 判据只有一处', () => {
   it('★ memory-schema 不再有自己那张表，改用 redact 的模式表', () => {
     const src = read('electron/core/memory-schema.cjs')
     expect(src).not.toContain('SECRET_LIKE')
-    expect(src).toContain('redact.looksSecret')
+    /* 钉「真的调了主入口」这件事，而不是注释里的某句话 */
+    expect(src).toContain('redact.redact(')
+    expect(src).toContain("require('./redact.cjs')")
   })
 
   it('★ 记忆写入的两处门禁都用共享判据', () => {

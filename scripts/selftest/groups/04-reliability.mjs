@@ -268,7 +268,8 @@ export async function run() {
   check(
     '只备用户自己的数据（不备日志/缓存）',
     backupCore.ITEMS.every((it) =>
-      ['config.json', 'memory.md', 'sessions', 'skills'].includes(it.name),
+    /* 2026-10-04 改：原来是 memory.md —— 老路径，启动时早被改名了，记忆从来没被备到过（审计问题 5） */
+      ['config.json', 'memory.json', 'sessions', 'skills'].includes(it.name),
     ),
     backupCore.ITEMS.map((it) => it.name).join(','),
   )

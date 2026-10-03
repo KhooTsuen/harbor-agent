@@ -39,8 +39,9 @@ const MESSAGE_PREVIEW = 160
  * 比 `redact.cjs` 的模式表窄得多 —— 两套规则**会漂移**：哪天宽的那边加了新厂商前缀，
  * 这边忘了跟，第二道兜底就形同虚设。现在直接调主入口，判据只有一处。
  *
- * ⚠️ 不要换成 `redact.looksSecret()`：它用带 /g 的正则做 `.test()`，会留下 lastIndex，
- * 同一根字符串连判结果会交替翻。`redact()` 内部走 `String.replace`，没有这个问题。
+ * ⚠️ 别换成 `redact.looksSecret()` 的**旧**实现：它当时用带 /g 的正则做 `.test()`，
+ * 会留下 lastIndex，同一根字符串连判结果会交替翻（那个 bug 2026-10-04 已修）。
+ * `redact()` 走 `String.replace`，全局替换结束会把 lastIndex 归零，从来没这个毛病。
  */
 function scrubLogLine(line) {
   return redact.redact(String(line))

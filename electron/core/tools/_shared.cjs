@@ -113,6 +113,11 @@ function truncateMiddle(text, maxChars = 12000, reason = '超出单次输出上�
 /**
  * 截断 + 完整输出落盘（token 优化 §三：命令输出要保原始日志路径）。
  * 落盘失败不影响截断本身。
+ *
+ * ★ 落盘前过一遍全局脱敏：命令输出里完全可能出现密钥（`type config.json`、
+ *   `echo %API_KEY%`、API 响应里带 token…），而这份文件在 `data/logs` 下、会被诊断包读走、
+ *   也会跟着用户拷 data/ 走。**发给模型的那份不脱敏**（模型要的就是真实输出），
+ *   脱敏的只是盘上这份。
  */
 function truncateWithLog(text, maxChars = 8000, reason = '超出上限') {
   const src = String(text ?? '')
@@ -122,9 +127,10 @@ function truncateWithLog(text, maxChars = 8000, reason = '超出上限') {
     const fs = require('node:fs')
     const path = require('node:path')
     const { DIRS } = require('../paths.cjs')
+    const { redact } = require('../redact.cjs')
     fs.mkdirSync(DIRS.logs, { recursive: true })
     file = path.join(DIRS.logs, `tool-output-${Date.now()}.log`)
-    fs.writeFileSync(file, src, 'utf8')
+    fs.writeFileSync(file, redact(src), 'utf8')
   } catch {
     file = ''
   }

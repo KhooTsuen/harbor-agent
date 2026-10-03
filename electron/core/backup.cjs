@@ -19,95 +19,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+/* 清单 / 路径 / 算体积 / 列出备份都在 backup-scan.cjs（那边是只读的一半，
+   加完「空壳备份」防护后这个文件过 300 行了，按职责拆的） */
+const { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list } = require('./backup-scan.cjs')
 
-/** 留最近几份。太多没意义，用户也不会去翻 */
-const KEEP = 10
 /** 自动备份的间隔 */
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000
-
-/** 备份清单：只备用户自己的东西 */
-const ITEMS = [
-  { name: 'config.json', dir: false },
-  { name: 'memory.md', dir: false },
-  { name: 'sessions', dir: true },
-  { name: 'skills', dir: true },
-]
-
-function backupRoot() {
-  return path.join(DIRS.data, 'backups')
-}
-
-function stamp(date = new Date()) {
-  const p = (n) => String(n).padStart(2, '0')
-  return (
-    `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}` +
-    `-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`
-  )
-}
-
-function dirSize(target) {
-  let total = 0
-  const walk = (p) => {
-    let entries
-    try {
-      entries = fs.readdirSync(p, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      const full = path.join(p, entry.name)
-      if (entry.isDirectory()) walk(full)
-      else {
-        try {
-          total += fs.statSync(full).size
-        } catch {
-          /* 读不到就算了 */
-        }
-      }
-    }
-  }
-  try {
-    if (fs.statSync(target).isDirectory()) walk(target)
-    else return fs.statSync(target).size
-  } catch {
-    return 0
-  }
-  return total
-}
-
-/** 列出所有备份，新的在前 */
-function list() {
-  let entries = []
-  try {
-    entries = fs.readdirSync(backupRoot(), { withFileTypes: true })
-  } catch {
-    return []
-  }
-
-  return (
-    entries
-      /* 同一秒内连点会顺延成 20260914-080206-1，后缀要认得 */
-      .filter((e) => e.isDirectory() && /^\d{8}-\d{6}(-\d+)?$/.test(e.name))
-      .map((e) => {
-        const full = path.join(backupRoot(), e.name)
-        let meta = {}
-        try {
-          meta = JSON.parse(fs.readFileSync(path.join(full, 'meta.json'), 'utf8'))
-        } catch {
-          /* 老备份可能没有 meta */
-        }
-        return {
-          name: e.name,
-          path: full,
-          size: dirSize(full),
-          reason: typeof meta.reason === 'string' ? meta.reason : '手动',
-          items: Array.isArray(meta.items) ? meta.items : [],
-          createdAt: fs.statSync(full).mtimeMs,
-        }
-      })
-      .sort((a, b) => b.createdAt - a.createdAt)
-  )
-}
 
 /** 超量就删最旧的 */
 function prune() {
@@ -141,21 +58,35 @@ function create(reason = 'manual') {
   }
 
   const copied = []
+  const skipped = []
   try {
     fs.mkdirSync(finalTarget, { recursive: true })
 
     for (const item of ITEMS) {
       const source = path.join(DIRS.data, item.name)
-      if (!fs.existsSync(source)) continue
+      /* 没有 / 空 → 跳过，但**要说出来**（以前静默跳过 = 清单里写有记忆、其实没备） */
+      if (!hasContent(source)) {
+        skipped.push(item.name)
+        continue
+      }
       const dest = path.join(finalTarget, item.name)
       fs.cpSync(source, dest, { recursive: item.dir, force: true })
       copied.push(item.name)
     }
 
+    /* 一个用户项都没拷到 = 这份备份毫无用处，别留着（首启就会发生） */
+    if (copied.length === 0) {
+      fs.rmSync(finalTarget, { recursive: true, force: true })
+      log.info(`没有可备份的用户数据（${skipped.join(', ') || '空'}），这一轮不出备份`)
+      return { ok: false, skipped: true, error: '还没有可备份的数据（首次启动时正常）' }
+    }
+
+    if (skipped.length > 0) log.info(`备份跳过这几项（还没有 / 是空的）：${skipped.join(', ')}`)
+
     fs.writeFileSync(
       path.join(finalTarget, 'meta.json'),
       JSON.stringify(
-        { reason, items: copied, createdAt: new Date().toISOString(), version: 1 },
+        { reason, items: copied, skipped, createdAt: new Date().toISOString(), version: 1 },
         null,
         2,
       ),
@@ -182,6 +113,7 @@ function create(reason = 'manual') {
     path: finalTarget,
     size: dirSize(finalTarget),
     items: copied,
+    skipped,
     removed,
   }
 }
@@ -207,15 +139,30 @@ function restore(name) {
   const source = path.join(backupRoot(), name)
   if (!fs.existsSync(source)) return { ok: false, error: `找不到备份 ${name}` }
 
+  /* ★ 空壳恢复是**破坏性**的（拿空目录盖上去，对话与技能全没了）——
+     界面已经禁了「恢复」，但界面只是壳，后端必须自己卡住（审计问题 13） */
+  const usable = ITEMS.filter((item) => hasContent(path.join(source, item.name)))
+  if (usable.length === 0) {
+    return {
+      ok: false,
+      error: '这份备份里没有任何用户数据（空壳），恢复它只会清空当前数据 —— 已拒绝',
+    }
+  }
+
   const safety = create('before-restore')
   const restored = []
+  const skipped = []
 
   try {
     for (const item of ITEMS) {
       const from = path.join(source, item.name)
-      if (!fs.existsSync(from)) continue
+      /* 备份里没有 / 只是空目录 → 跳过：绝不拿「没东西」盖用户现有的东西 */
+      if (!hasContent(from)) {
+        skipped.push(item.name)
+        continue
+      }
       const to = path.join(DIRS.data, item.name)
-      /* 先删再拷：不然旧文件会和新文件混在一起（比如已删的会话又活了） */
+      /* 先删再拷：不然旧文件会混进来（比如已删的会话又活了） */
       fs.rmSync(to, { recursive: item.dir, force: true })
       fs.cpSync(from, to, { recursive: item.dir, force: true })
       restored.push(item.name)
@@ -230,10 +177,14 @@ function restore(name) {
     }
   }
 
-  log.info(`已从 ${name} 恢复（${restored.join(', ')}）`)
+  log.info(
+    `已从 ${name} 恢复（${restored.join(', ')}）` +
+      (skipped.length > 0 ? `；跳过这几项（备份里是空的）：${skipped.join(', ')}` : ''),
+  )
   return {
     ok: true,
     restored,
+    skipped,
     safetyBackup: safety.ok ? safety.name : '',
     needsRestart: true,
   }

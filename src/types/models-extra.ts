@@ -20,6 +20,9 @@ export interface BackupInfo {
   reason: string
   items: string[]
   createdAt: number
+  /** 空壳：一个用户项都没有（界面据此禁用「恢复」）；missing = 缺哪几项（按磁盘现算） */
+  empty: boolean
+  missing: string[]
 }
 
 export interface SkillInfo {

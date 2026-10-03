@@ -9,7 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-const { fileFor, newId, safeTitle, readLines, writeLines, serializeLine } = require('./session-io.cjs')
+const { fileFor, newId, safeTitle, readLines, writeLines, writeMetaLine, serializeLine } = require('./session-io.cjs')
 
 function create({
   title = '新对话',
@@ -105,16 +105,20 @@ function appendCompact(id, summary, upTo) {
 
 /**
  * 改 meta。
- * meta 在第一行，改它要整体重写 —— 会话不大时这点开销可以接受。
+ *
+ * 只换第一行、其余字节原样保留（含解不开的坏行），落盘走原子写 ——
+ * 细节与理由见 `session-io.cjs` 的 `writeMetaLine`。
+ *
+ * 以前是「整篇读 → 整篇重写」：改个标题就可能把坏行永久删掉，
+ * 并在写一半时把长会话截断成半个文件。
  */
 function updateMeta(id, patch) {
-  const lines = readLines(id)
-  if (lines.length === 0) return null
+  if (!fs.existsSync(fileFor(id))) return null
 
+  const lines = readLines(id)
   let meta = lines.find((l) => l.type === 'meta')
   if (!meta) {
     meta = { type: 'meta', id, title: '新对话', mode: 'pair', model: '', createdAt: Date.now() }
-    lines.unshift(meta)
   }
 
   if (patch.title !== undefined) meta.title = safeTitle(patch.title)
@@ -125,8 +129,8 @@ function updateMeta(id, patch) {
   if (patch.reasoning !== undefined) meta.reasoning = String(patch.reasoning)
   if (patch.threadSettings !== undefined) meta.threadSettings = patch.threadSettings
 
-  writeLines(id, lines)
-  return meta
+  const written = writeMetaLine(id, meta)
+  return written.ok ? meta : null
 }
 
 function remove(id) {

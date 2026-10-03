@@ -20,6 +20,7 @@
 const fs = require('node:fs')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 const { findConflicts } = require('./memory-similarity.cjs')
 const {
   TYPES,
@@ -35,22 +36,26 @@ const {
 } = require('./memory-schema.cjs')
 
 function load() {
+  let raw = ''
   try {
-    const parsed = JSON.parse(fs.readFileSync(filePath(), 'utf8'))
-    return {
-      version: 1,
-      items: Array.isArray(parsed.items)
-        ? parsed.items.filter((i) => i && typeof i.content === 'string')
-        : [],
-    }
+    raw = fs.readFileSync(filePath(), 'utf8')
   } catch {
+    return { version: 1, items: [] } /* 还没建过这个文件 = 空，不是错 */
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && typeof i.content === 'string') : []
+    return { version: 1, items }
+  } catch (error) {
+    /* 解不开：先留一份 —— 不然接下来任何一次 add/touch 写盘都会把它盖成空列表 */
+    log.error(`记忆文件解不开（已另存 ${keepCorruptCopy(filePath())}）：${error instanceof Error ? error.message : error}`)
     return { version: 1, items: [] }
   }
 }
 
 function persist(data) {
   fs.mkdirSync(DIRS.data, { recursive: true })
-  fs.writeFileSync(filePath(), JSON.stringify(data, null, 2), 'utf8')
+  writeAtomic(filePath(), JSON.stringify(data, null, 2))
 }
 
 /* ── 写 ──────────────────────────────────────────────────── */
@@ -72,8 +77,7 @@ function add(input) {
   if (!content) return { ok: false, error: '内容不能为空' }
   if (content.length > 500) return { ok: false, error: '一条记忆最多 500 字，请拆成几条' }
 
-  /* 密钥不进记忆 —— 记忆每轮都注入，混一个 key 等于每轮都在泄露。
-     判据只有一处（`memory-schema.cjs` → `redact.cjs` 的模式表），这里不自己写正则 */
+  /* 密钥不进记忆（每轮注入 = 每轮泄露）；判据只有一处：memory-schema → redact 模式表 */
   if (looksLikeSecret(content)) {
     return { ok: false, error: '这段内容看起来含密钥/凭据，没有记下来。' }
   }
