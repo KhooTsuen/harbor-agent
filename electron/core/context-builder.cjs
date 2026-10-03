@@ -80,14 +80,35 @@ function sizeOf(content) {
   if (!Array.isArray(content)) return chars(content)
   return chars(textOf(content)) + countImages(content) * IMAGE_COST
 }
+/**
+ * `assistant.maxTokens = 0`（不限）时的上下文基准。
+ *
+ * 2026-10-04 真机实测：贴 96122 字符，模型只看到前 3646 字符（≈3.8%）—— 因为
+ * 「不限」时基准退回 4096 → 总字符 12288 → 对话层 30% = **3686 字符**。
+ * 这个 4096 是历史上「输出上限默认值」留下的，跟上下文窗口没关系：
+ * 一线模型窗口早就 64k+ 了，没有任何理由把对话层压在 3.7k 字符。
+ *
+ * 改成 16384 之后：总字符 49152 → 对话层 30% = **14745 字符**（≈1.5 万），
+ * 「几千到一两万字符的粘贴」能直接被看到；同时仍然**留着一个防呆上限**
+ * （不是无限：这一层的上限就是 14745 字符 ≈ 4.9k token）。
+ *
+ * 只影响「0 / 没填」的情况：用户显式填了值（含任务级覆盖）一律照旧 —— 所以
+ * 这个数字不会覆盖任何人的显式设置，也不会改变「输出上限」的语义。
+ *
+ * ★ 渲染层 `src/constants/index.ts` 的 `CONTEXT_BASE_TOKENS` 必须与它同一个值
+ * （跨进程没法共享常量）；`contextBaseDrift.test.ts` 盯着两边。
+ */
+const DEFAULT_CONTEXT_TOKENS = 16384
+
 function assemble(input = {}) {
   /*
    * ★ 这里的 `maxTokens` 是**上下文预算的基准**（字符 = token × 3），不是「输出上限」——
    *   虽然调用方传的就是设置里的 `assistant.maxTokens`（历史耦合，2026-09-29 没拆）。
    *   两件事混在一起的真实后果：用户把「输出上限」改大，上下文也会跟着变宽。
-   *   0 = 不限（新的默认）→ 退回 4096，也就是和以前一样。
+   *   0 = 不限 → 用 DEFAULT_CONTEXT_TOKENS（见上面的来由）；
+   *   显式填了值就听用户的（测试也靠这条构造小预算）。
    */
-  const maxTokens = Math.max(2000, Number(input.maxTokens) || 4096)
+  const maxTokens = Math.max(2000, Number(input.maxTokens) || DEFAULT_CONTEXT_TOKENS)
   const budget = { ...DEFAULT_BUDGET, ...(input.budget || {}) }
   const totalChars = maxTokens * 3
   const cap = (name) => Math.max(400, Math.floor(totalChars * (Number(budget[name] ?? 10) / 100)))
@@ -114,4 +135,4 @@ function assemble(input = {}) {
     estimates: { maxTokens, chars: totalChars - remaining, selectedMessages: selected.length },
   }
 }
-module.exports = { DEFAULT_BUDGET, PROJECT_FLOOR, assemble, trim }
+module.exports = { DEFAULT_BUDGET, DEFAULT_CONTEXT_TOKENS, PROJECT_FLOOR, assemble, trim }

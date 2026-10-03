@@ -160,6 +160,18 @@ export const LAYOUT = {
  */
 export const MAX_INPUT_LENGTH = 100000
 
+/* ── 上下文预算 ──────────────────────────────────────────────── */
+
+/*
+ * 「输出上限 = 0（不限）」时，上下文预算用多大。
+ *
+ * 内核侧同一个数字叫 `DEFAULT_CONTEXT_TOKENS`（`electron/core/context-builder.cjs`）——
+ * 跨进程没法共享常量，两边必须一致；`contextBaseDrift.test.ts` 会读内核那边比一遍。
+ * 这里用到它的是**压缩提示线**（`thread/compact.ts`）：如果它还是老的 4096，
+ * 用户贴一条一万多字符的消息后，每一轮都会被「自动压缩」判一次（白花钱还丢上下文）。
+ */
+export const CONTEXT_BASE_TOKENS = 16384
+
 /* ── 文案 ────────────────────────────────────────────────────── */
 
 export const EMPTY_THREAD_PROMPTS = [

@@ -11,6 +11,7 @@ const bounds = require('../core/capability-bounds.cjs')
 const life = require('../core/lifecycle.cjs')
 const bus = require('../core/events.cjs')
 const metrics = require('../core/metrics.cjs')
+const longPaste = require('../core/long-paste.cjs')
 const { createEmitter } = require('../core/chat-emit.cjs')
 const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
@@ -90,6 +91,52 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
     /* 用时以「用户按下发送」为准（渲染层带来）；没带就退化成主进程收到的时间 */
     const startedAt = Date.now()
+
+    /*
+     * 长消息落文件（2026-10-04，见 `core/long-paste.cjs` 的文件头）。
+     *
+     * 为什么在内核做、而且在这里做：
+     *   · 写文件要落在**工作目录**里（目录内模型免授权就能 read_file），而工作目录
+     *     是内核解析出来的（`resolveWorkdir`，会话挂的目录不在了会回落）；
+     *   · 渲染层没有「静默写文件」的通道（只有带保存对话框的 `export:saveText`），
+     *     为这个功能新开一条 IPC 是更大的改动，也不该开；
+     *   · 只动**这一轮刚发的那条** user 消息（历史里更早的长消息不回头改写）。
+     *
+     * ★ 只改「发给模型的那一份」：会话文件与气泡里一直是完整原文；
+     *   落了文件就发一条 attachment 事件让界面把路径显出来（不静默，不许悄悄换）。
+     */
+    const lastUserAt = (() => {
+      for (let i = history.length - 1; i >= 0; i -= 1) if (history[i]?.role === 'user') return i
+      return -1
+    })()
+    if (lastUserAt >= 0) {
+      const planned = longPaste.offload({
+        text: history[lastUserAt].content,
+        workdir,
+        sessionId,
+      })
+      if (planned.changed) {
+        history[lastUserAt].content = planned.outgoing
+        emit({
+          type: 'attachment',
+          path: planned.path,
+          chars: planned.chars,
+          kept: planned.kept,
+          created: planned.created,
+        })
+        here.info(
+          `长消息已落文件：${planned.path}（${planned.chars} 字符 → 发前 ${planned.kept}，${planned.created ? '新写' : '复用'}）`,
+        )
+      } else if (planned.error) {
+        emit({
+          type: 'notice',
+          level: 'warning',
+          title: '长消息没能落成文件',
+          text: `${planned.error} —— 这条消息只能按对话预算裁剪，超出的部分模型看不到`,
+        })
+        here.warn(`长消息落文件失败（${planned.reason}）：${planned.error}`)
+      }
+    }
 
     const controller = new AbortController()
     /*

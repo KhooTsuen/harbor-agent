@@ -119,3 +119,20 @@ export type ChatEvent =
       from: string
       detail?: string
     }
+  /*
+   * 长消息被落成了文件（内核在发出去之前做的，见 `core/long-paste.cjs`）。
+   * 为什么要发这条事件：界面必须**看得见**这件事 —— 用户看到的气泡里还是完整原文，
+   * 但发给模型的是「开头 + 路径」。不许悄悄换掉用户贴的东西，所以必须有这一条。
+   */
+  | {
+      requestId: string
+      type: 'attachment'
+      /** 落盘后的绝对路径（模型用 read_file 读它） */
+      path: string
+      /** 原消息长度（字符） */
+      chars: number
+      /** 消息里保留的开头长度（字符） */
+      kept: number
+      /** 这一次是否真的新写了文件（重发/后续轮次复用同一份时为 false） */
+      created: boolean
+    }

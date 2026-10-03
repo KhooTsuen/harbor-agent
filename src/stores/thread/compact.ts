@@ -1,5 +1,6 @@
 import type { ConversationState, Message } from '@/types'
 import { uid } from '@/lib/utils'
+import { CONTEXT_BASE_TOKENS } from '@/constants'
 import { appendCompact, compactChat } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
@@ -42,7 +43,8 @@ export interface CompactAdvice {
 
 export function adviseCompact(messages: readonly Message[], maxTokens: number): CompactAdvice {
   const used = estimateMessages(messages)
-  const limit = Math.max(2000, maxTokens || 4096)
+  /* 0 / 没填 = 内核那边用的基准（见 CONTEXT_BASE_TOKENS 的注释）：两边不能一个 16384 一个 4096 */
+  const limit = Math.max(2000, maxTokens || CONTEXT_BASE_TOKENS)
   const ratio = used / limit
   return { used, limit, ratio, warn: ratio >= WARN_RATIO, auto: ratio >= AUTO_RATIO }
 }

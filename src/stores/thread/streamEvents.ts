@@ -6,6 +6,7 @@ import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
+import { handleAttachmentEvent } from './attachmentEvents'
 import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
 import { logError } from '@/lib/actionLog'
 
@@ -255,6 +256,12 @@ export function handleStreamEvent(
       runSafely('error.patch', () =>
         state.patch({ status: 'error', kind: 'error', errorText: message, content: message }),
       )
+      return { handled: true }
+    }
+
+    /* 长消息落了文件：在消息流里留一行看得见的提示（不静默换掉用户贴的东西） */
+    case 'attachment': {
+      runSafely('attachment', () => handleAttachmentEvent(state.threadId, event))
       return { handled: true }
     }
 

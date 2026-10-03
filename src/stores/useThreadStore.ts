@@ -168,7 +168,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     }
 
     /* 上下文检查：超提示线就提醒，超自动线就后台压（不阻塞这次发送） */
-    const maxTokens = useConfigStore.getState().config?.assistant.maxTokens ?? 4096
+    /* 0 = 不限；缺配置时当 0 处理（adviseCompact 会退到 CONTEXT_BASE_TOKENS，别在这里塞 4096） */
+    const maxTokens = useConfigStore.getState().config?.assistant.maxTokens ?? 0
     const advice = adviseCompact(thread.messages, maxTokens)
     if (advice.auto) {
       void runCompact(threadId, true)
