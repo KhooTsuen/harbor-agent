@@ -23,6 +23,10 @@
  *      又在稳定区之后，是提示里唯一能安全容纳「每轮重算的易变文本」的位置。
  *      治的是长任务被裁剪后反复侦察同一件事，所以**两个分支都给**（不只第一轮）。
  *
+ *   ⑤ 这类活以前踩过的坑 —— 把召回到的多条记忆**归并**成一句（`memory-reflect.cjs`）。
+ *      和 ④ 相反，它**只在第一轮**给：它是「动手前的一句提醒」，不是常驻状态；
+ *      而它归并的那些条目本来就每轮都被 `memory-recall` 注入过了。
+ *
  * 计划条目的完成标记写进字符串本身（`[x] 读 package.json`），不是另建结构 ——
  * 老任务里没有标记的条目按「未完成」算，不需要迁移。
  */
@@ -34,6 +38,7 @@ const taskResume = require('./task-resume.cjs')
 const steering = require('./task-steering.cjs')
 const verifyHint = require('./verify-hint.cjs')
 const projectFacts = require('./project-facts.cjs')
+const memoryReflect = require('./memory-reflect.cjs')
 /* 指纹算法只该有一份，放在 task-plan.cjs（那里没有依赖，不会绕回来） */
 /* 计划行的小工具（是否勾完 / 进度 / 去标记）住在 task-plan.cjs —— 见那边的注释 */
 const { fingerprint, isDone, progressOf, stripMarks } = require('./task-plan.cjs')
@@ -73,12 +78,28 @@ function factsSection(workdir) {
   }
 }
 
+/**
+ * 「这类活你以前踩过什么坑」那段（缺口 D 的 Reflect 雏形）。
+ *
+ * 只在**新活第一轮**给：把召回到的多条记忆归并成一句「同一件事你记过不止一次」——
+ * 每轮都念就是噪音，而且那些条目本身每轮已经被 `memory-recall` 注入了。
+ * 没归并出成组的（或跟本次提问没词重合的）它自己返回空串。
+ */
+function reflectSection(userText, projectId) {
+  try {
+    return memoryReflect.reflect({ query: String(userText ?? ''), projectId: String(projectId ?? '') })
+  } catch (error) {
+    log.warn(`综合记忆失败：${error instanceof Error ? error.message : error}`)
+    return ''
+  }
+}
+
 /** 只给测试用：清掉进度记忆 */
 function resetProgressMemory() {
   lastProgress.clear()
 }
 
-function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = '' } = {}) {
+function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = '', projectId = '' } = {}) {
   let tasks = []
   try {
     /*
@@ -108,7 +129,12 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = 
      顺带在这里给一句**验证口径**（有测试入口就给命令、没有就要求先建一个）——
      只在这一轮说，后面每轮都说是噪音（边界见 verify-hint.cjs 的文件头）。 */
   if (ordered.length === 0) {
-    return [taskHint.freshRequest(userText), verifyHint.build({ workdir }), factsSection(workdir)]
+    return [
+      taskHint.freshRequest(userText),
+      verifyHint.build({ workdir }),
+      reflectSection(userText, projectId),
+      factsSection(workdir),
+    ]
       .filter(Boolean)
       .join('\n\n')
   }

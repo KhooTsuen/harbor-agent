@@ -149,6 +149,7 @@ import { run as scalePromptGroup } from './selftest/groups/110-scale-prompt.mjs'
 import { run as probeGroup } from './selftest/groups/112-probe.mjs'
 import { run as verifyHintGroup } from './selftest/groups/113-verify-hint.mjs'
 import { run as projectFactsGroup } from './selftest/groups/114-project-facts.mjs'
+import { run as memoryReflectGroup } from './selftest/groups/115-memory-reflect.mjs'
 
 const GROUPS = [
   basics,
@@ -264,6 +265,7 @@ const GROUPS = [
   probeGroup,
   verifyHintGroup,
   projectFactsGroup,
+  memoryReflectGroup,
 ]
 
 async function main() {
