@@ -46,4 +46,21 @@ describe('分段落盘 / 该不该写', () => {
   it('内容变短（不该发生）也不写', () => {
     expect(shouldFlushPartial(500, 900, T, T - PARTIAL_MIN_MS)).toBe(false)
   })
+
+  /*
+   * ★ 2026-10-04：度量改成「正文 + 思考」（调用方拼好再传进来）。
+   *   事故现场：一轮 8 分钟几乎全在思考/跑工具，正文一个字没长 —— 只看正文的话
+   *   这里一路是 0，磁盘上一个快照都不留。
+   */
+  it('★ 只有思考在长（正文 0）→ 也要写：思考算进度', () => {
+    const reasoningOnly = 0 + 200
+    expect(shouldFlushPartial(reasoningOnly, 0, T, T - PARTIAL_MIN_MS)).toBe(true)
+    expect(shouldFlushPartial(reasoningOnly, 50, T, T - PARTIAL_MIN_MS)).toBe(true)
+  })
+
+  it('正文 + 思考一起算：两段各长一点也可能凑够阈值', () => {
+    /* 正文 10、思考 25 → 合计 35 ≥ 30（单看任一段都不够） */
+    expect(shouldFlushPartial(35, 0, T, T - PARTIAL_MIN_MS)).toBe(true)
+    expect(shouldFlushPartial(10, 0, T, T - PARTIAL_MIN_MS)).toBe(false)
+  })
 })

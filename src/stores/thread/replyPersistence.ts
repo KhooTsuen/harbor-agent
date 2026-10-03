@@ -66,11 +66,17 @@ export function createReplyPersistence(opts: {
      */
     flushPartial: () => {
       const content = getContent()
-      const now = Date.now()
-      if (!shouldFlushPartial(content.length, lastFlushLen, now, lastFlushAt)) return
-      lastFlushAt = now
-      lastFlushLen = content.length
       const reasoning = getReasoning()
+      const now = Date.now()
+      /*
+       * ★ 度量用「正文 + 思考」：只看正文的话，一段长思考（或纯工具轮）期间
+       *   磁盘上什么都没有（2026-10-04 事故现场：8 分钟没写一次）。
+       *   间隔规则照旧（至少 3 秒），所以不会把写入量抬上去。
+       */
+      const metric = content.length + reasoning.length
+      if (!shouldFlushPartial(metric, lastFlushLen, now, lastFlushAt)) return
+      lastFlushAt = now
+      lastFlushLen = metric
       useAppStore.getState().persistMessage(threadId, {
         role: 'assistant',
         key: messageId,
