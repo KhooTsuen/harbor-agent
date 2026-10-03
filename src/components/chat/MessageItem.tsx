@@ -10,7 +10,7 @@ import { AssistantActions } from './message/AssistantActions'
 import { AnswerVersions } from './message/AnswerVersions'
 import { ClarifyCard } from './ClarifyCard'
 import { MessageRounds } from './message/MessageRounds'
-import { hasAnything, roundsOf } from './message/roundsOf'
+import { hasAnything, roundsOf, roundsOfError } from './message/roundsOf'
 import { TerminalOutput } from './TerminalOutput'
 import { activityLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
@@ -45,8 +45,11 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
    * 时间线：思考 → 工具 → 正文 → 思考 → …（顺序就是发生顺序）。
    * 新记录直接用自己的 `rounds`；老记录（那个字段是后加的，磁盘上一条都没有）
    * 合成一轮 —— 两代消息排出来一个样，不会一条新一条老。见 roundsOf.ts。
+   *
+   * ★ 出错那条走 `roundsOfError`：它的 content 和 errorText 是同一句话，
+   *   直接排会在红底下面再说一遍（那个函数里写了为什么）。
    */
-  const rounds = roundsOf(message)
+  const rounds = isError ? roundsOfError(message) : roundsOf(message)
 
   /*
    * `assistant.streamOutput`（设置 → 助手里的「流式输出」）：关掉时**正文不逐字蹦**，
@@ -79,9 +82,18 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                 {message.errorText ?? message.content}
               </span>
             </div>
-          ) : (
-            <div className="w-full max-w-[86ch]">
-              {/*
+          ) : null}
+
+          {/*
+            ★ 第二步（2026-10-04）：出错时**也**把时间线排出来。
+
+            以前这里是 `isError ? 错误块 : 时间线` —— 一出错整条时间线就被吞了：
+            那一轮「问过的澄清卡」「调过的工具」「改过的文件」全部看不见，
+            用户只能看到一句报错，以为白干了（这是小尾巴 #7 的另一半）。
+            报错本身当然要留：红底块样式一个字没改，下面接着排发生过的东西。
+          */}
+          <div className="w-full max-w-[86ch]">
+            {/*
                 AG-053 批③：这一轮开工前问过什么（只读卡）。
                 放最上面 —— 它发生在那轮所有动作**之前**，顺序上就该在最前。
                 老记录没这个字段 → 什么都不渲染，和以前一字不差。
@@ -94,133 +106,138 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                     但只读卡立刻出现；主进程日志 `回话 … ok=true`。）
                   它在语义上本来就是「回看时看这儿」，留到轮末不损失任何东西。
               */}
-              {message.clarify && !isStreaming ? (
-                <ClarifyCard
-                  readOnly
-                  questions={message.clarify.questions}
-                  /*
-                   * ★ 整个对象递过去，**不要逐字段拼**（批⑤ 踩到的）：
-                   *   原来是 `{answers, skipped}` 两行白名单 —— 批⑤ 给
-                   *   `StoredClarify` 加了 `cancelled` / `rephrase`，两行都没跟，
-                   *   类型也**不会报错**（它们是可选的），于是一个点了「先不做了」
-                   *   的卡片在回看时显示成「（当时跳过了）」：用户被安上一句他没做过的事。
-                   *   递整个对象之后，以后再加字段也不会再漏。
-                   *   （`StoredClarify` 比 `ClarifyReply` 多的字段都是可选的，
-                   *     多的那个 `questions` 不是对象字面量，不受多余属性检查管。）
-                   */
-                  answered={message.clarify}
-                  auto={message.clarify.auto}
-                />
-              ) : null}
-              {/*
+            {message.clarify && !isStreaming ? (
+              <ClarifyCard
+                readOnly
+                questions={message.clarify.questions}
+                /*
+                 * ★ 整个对象递过去，**不要逐字段拼**（批⑤ 踩到的）：
+                 *   原来是 `{answers, skipped}` 两行白名单 —— 批⑤ 给
+                 *   `StoredClarify` 加了 `cancelled` / `rephrase`，两行都没跟，
+                 *   类型也**不会报错**（它们是可选的），于是一个点了「先不做了」
+                 *   的卡片在回看时显示成「（当时跳过了）」：用户被安上一句他没做过的事。
+                 *   递整个对象之后，以后再加字段也不会再漏。
+                 *   （`StoredClarify` 比 `ClarifyReply` 多的字段都是可选的，
+                 *     多的那个 `questions` 不是对象字面量，不受多余属性检查管。）
+                 */
+                answered={message.clarify}
+                auto={message.clarify.auto}
+              />
+            ) : null}
+            {/*
                 有时间线（新记录）→ 按真实发生顺序排：思考 → 工具 → 正文 → 思考 → …
                 没有（老记录）→ `roundsOf` 合成一轮，排版和新的一致。
               */}
-              {rounds.length > 0 && hasAnything(rounds) ? (
-                <MessageRounds
-                  rounds={rounds}
-                  toolRuns={message.toolRuns ?? []}
-                  streaming={isStreaming}
-                  hideStreamingContent={!streamOutput}
-                />
-              ) : isStreaming ? (
-                /*
+            {rounds.length > 0 && hasAnything(rounds) ? (
+              <MessageRounds
+                rounds={rounds}
+                toolRuns={message.toolRuns ?? []}
+                streaming={isStreaming}
+                hideStreamingContent={!streamOutput}
+              />
+            ) : isStreaming ? (
+              /*
                   AG-003：按下发送就要有反馈，而且要说清现在在干什么。
                   阶段文字来自主进程的状态机（AG-001 的 phase），
                   还没收到第一个 phase 事件时退回一句通用的。
                 */
-                <p className="flex items-center gap-2 text-sm text-fg-secondary">
-                  <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
-                  {activityLabel(message.toolRuns ?? [], message.phase)}
-                </p>
-              ) : null}
+              <p className="flex items-center gap-2 text-sm text-fg-secondary">
+                <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
+                {activityLabel(message.toolRuns ?? [], message.phase)}
+              </p>
+            ) : null}
 
-              {/*
+            {/*
                 只有流式过程中留下的快照、没写完 —— 说明上次进程被打断了。
                 不说的话用户会以为「模型就写了这么多」，而后面其实还有。
               */}
-              {message.interrupted ? (
-                <p className="mt-1 text-2xs text-fg-tertiary">
-                  这条回复没写完 —— 上次运行被打断了，可以在右栏「任务」里接着做
-                </p>
-              ) : null}
+            {message.interrupted ? (
+              <p className="mt-1 text-2xs text-fg-tertiary">
+                这条回复没写完 —— 上次运行被打断了，可以在右栏「任务」里接着做
+              </p>
+            ) : null}
 
-              {message.codeBlocks?.map((block) => (
-                <CodeBlock key={block.id} block={block} className="mt-3" />
-              ))}
+            {message.codeBlocks?.map((block) => (
+              <CodeBlock key={block.id} block={block} className="mt-3" />
+            ))}
 
-              {message.diffs && message.diffs.length > 0 ? (
-                <DiffViewer files={message.diffs} className="mt-3" />
-              ) : null}
+            {message.diffs && message.diffs.length > 0 ? (
+              <DiffViewer files={message.diffs} className="mt-3" />
+            ) : null}
 
-              {message.terminalLines && message.terminalLines.length > 0 ? (
-                <TerminalOutput lines={message.terminalLines} className="mt-3" />
-              ) : null}
+            {message.terminalLines && message.terminalLines.length > 0 ? (
+              <TerminalOutput lines={message.terminalLines} className="mt-3" />
+            ) : null}
 
-              {message.artifacts && message.artifacts.length > 0 ? (
-                <div className="mt-3 flex flex-col gap-1">
-                  {message.artifacts.map((artifact) => (
-                    <div
-                      key={artifact.id}
-                      className="flex items-center gap-2 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-fg-secondary">
-                        {artifact.name}
-                      </span>
-                      {artifact.path ? (
-                        <button
-                          type="button"
-                          className="shrink-0 text-fg-tertiary hover:text-fg-primary"
-                          onClick={() => void fsReveal(artifact.path ?? '')}
-                        >
-                          打开
-                        </button>
-                      ) : null}
-                      <span className="shrink-0 text-fg-tertiary">成果 · {artifact.type}</span>
-                    </div>
+            {message.artifacts && message.artifacts.length > 0 ? (
+              <div className="mt-3 flex flex-col gap-1">
+                {message.artifacts.map((artifact) => (
+                  <div
+                    key={artifact.id}
+                    className="flex items-center gap-2 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-fg-secondary">
+                      {artifact.name}
+                    </span>
+                    {artifact.path ? (
+                      <button
+                        type="button"
+                        className="shrink-0 text-fg-tertiary hover:text-fg-primary"
+                        onClick={() => void fsReveal(artifact.path ?? '')}
+                      >
+                        打开
+                      </button>
+                    ) : null}
+                    <span className="shrink-0 text-fg-tertiary">成果 · {artifact.type}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {message.citations && message.citations.length > 0 ? (
+              <div className="mt-3 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs text-fg-secondary">
+                <p className="mb-1 text-fg-tertiary">来源</p>
+                <ol className="flex flex-col gap-1">
+                  {message.citations.map((citation, index) => (
+                    <li key={citation.id} className="flex gap-1.5">
+                      <span className="shrink-0 font-mono text-fg-tertiary">[{index + 1}]</span>
+                      <a
+                        href={citation.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 truncate text-fg-secondary hover:text-fg-primary hover:underline"
+                        title={citation.url}
+                      >
+                        {citation.title}
+                        {citation.domain ? ` · ${citation.domain}` : ''}
+                      </a>
+                    </li>
                   ))}
-                </div>
-              ) : null}
+                </ol>
+              </div>
+            ) : null}
 
-              {message.citations && message.citations.length > 0 ? (
-                <div className="mt-3 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs text-fg-secondary">
-                  <p className="mb-1 text-fg-tertiary">来源</p>
-                  <ol className="flex flex-col gap-1">
-                    {message.citations.map((citation, index) => (
-                      <li key={citation.id} className="flex gap-1.5">
-                        <span className="shrink-0 font-mono text-fg-tertiary">[{index + 1}]</span>
-                        <a
-                          href={citation.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="min-w-0 truncate text-fg-secondary hover:text-fg-primary hover:underline"
-                          title={citation.url}
-                        >
-                          {citation.title}
-                          {citation.domain ? ` · ${citation.domain}` : ''}
-                        </a>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              ) : null}
+            {/* 生成的图片 */}
+            {message.images?.map((src) => (
+              <img
+                key={src.slice(-24)}
+                src={src}
+                alt="生成的图片"
+                className="mt-3 max-w-full rounded-base border border-line-hairline"
+              />
+            ))}
 
-              {/* 生成的图片 */}
-              {message.images?.map((src) => (
-                <img
-                  key={src.slice(-24)}
-                  src={src}
-                  alt="生成的图片"
-                  className="mt-3 max-w-full rounded-base border border-line-hairline"
-                />
-              ))}
+            {/*
+                这条提问有好几版回答时，回答下面也常显 ‹ n / N ›（切换不重跑）。
+                ★ 出错那条不给（保持原样：出错时没有「几版回答」这回事，
+                  而操作条上的「复制」在报错文案上只会把错误话复制走）。
+              */}
+            {!isStreaming && !isError ? <AnswerVersions message={message} fork={fork} /> : null}
 
-              {/* 这条提问有好几版回答时，回答下面也常显 ‹ n / N ›（切换不重跑） */}
-              {!isStreaming ? <AnswerVersions message={message} fork={fork} /> : null}
-
-              {showActions && !isStreaming ? <AssistantActions message={message} /> : null}
-            </div>
-          )}
+            {showActions && !isStreaming && !isError ? (
+              <AssistantActions message={message} />
+            ) : null}
+          </div>
         </div>
       )}
     </article>

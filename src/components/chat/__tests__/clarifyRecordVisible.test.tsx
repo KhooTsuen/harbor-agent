@@ -106,24 +106,35 @@ describe('只读卡（开工前问过什么）', () => {
 
   /*
    * ★ 2026-10-04（小尾巴 #7）：把「什么时候显示」的路径都钉住。
-   *
    * `sent` / `undefined`（老记录）→ 显示；`streaming` → 不显示（上面那条）。
-   *
-   * ⚠️ `error` 是**既有行为、不是本次修的**：`MessageItem` 对 error 那条走的是
-   * 「只画错误块」的分支，整条时间线（包括只读卡）都不渲染 —— 也就是说
-   * 「答了卡、但这一轮最终失败」时，回看只能看到错误，看不到当时答了什么。
-   * 它属于「卡少了」而不是「卡过早」，不在本次范围；这里先钉住现状，
-   * 免得以后有人以为它已经修好了。
    */
-  it('非流式收尾：sent / 老记录显示；error 走错误块（既有行为）', () => {
+  it('非流式收尾：sent / 老记录都显示', () => {
     render(makeMessage({ status: 'sent', clarify: STORED }))
     expect(container.textContent ?? '').toContain('开工前问过这几个问题')
 
     render(makeMessage({ status: undefined, clarify: STORED }))
     expect(container.textContent ?? '').toContain('开工前问过这几个问题')
+  })
 
-    render(makeMessage({ status: 'error', clarify: STORED }))
-    expect(container.textContent ?? '').not.toContain('开工前问过这几个问题')
+  /*
+   * ★ 2026-10-04（小尾巴 #7 的另一半）：**出错那条现在也显示**。
+   *
+   * 以前 `MessageItem` 对 error 走「只画错误块」的分支 —— 整条时间线（含只读卡）
+   * 都不渲染。于是「答了卡，但这一轮最终失败」时，回看只剩一句报错，
+   * 用户以为白答了一场。
+   *
+   * ⚠️ 这条**改的是断言、不是放宽**：原来这里写的是
+   * `expect(...).not.toContain(...)`（"error 走错误块，既有行为"），
+   * 现在行为变了，断言跟着变成「报错在 + 卡也在」——
+   * 也就是两个都得有，不是「有没有都算过」。细节见
+   * `errorKeepsTimeline.test.tsx`。
+   */
+  it('★ 出错那条也显示只读卡（红底错误块和时间线一起画）', () => {
+    render(makeMessage({ status: 'error', errorText: '供应商 401', clarify: STORED }))
+    const text = container.textContent ?? ''
+    expect(text).toContain('供应商 401')
+    expect(text).toContain('开工前问过这几个问题')
+    expect(text).toContain('屏幕像素（已选）')
   })
 
   it('★ 连着三张卡各记各的（同一会话里不串味）', () => {

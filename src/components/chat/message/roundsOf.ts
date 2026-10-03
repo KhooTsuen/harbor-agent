@@ -42,3 +42,22 @@ export function hasAnything(rounds: readonly MessageRound[]): boolean {
       round.reasoning.trim() !== '' || round.content.trim() !== '' || round.tools.length > 0,
   )
 }
+
+/**
+ * **出错**那条消息该怎么分段（2026-10-04，收尾第二步）。
+ *
+ * 为什么要单独一个函数：出错时 store 把**同一句话**同时写进了 `errorText`
+ * 和 `content`（见 `stores/thread/streamEvents.ts` 与 `turns.ts`）。
+ * 整条时间线照常渲染之后，那句错误话就会在红底块**下面再说一遍**。
+ *
+ * 所以：
+ *   · 有真 `rounds` 的记录照旧（那里面是**真发生过的**几轮，含被打断前的正文）；
+ *   · 只有合成轮的老记录 → 把正文抹掉（红底块已经说了），但**工具记录留着**。
+ *     工具正是这一步的意义：「调过的工具」「答过的澄清卡」是用户看不见就会
+ *     以为白干的那部分。
+ */
+export function roundsOfError(message: Message): MessageRound[] {
+  const rounds = roundsOf(message)
+  if (message.rounds && message.rounds.length > 0) return rounds
+  return rounds.map((round) => ({ ...round, content: '' }))
+}
