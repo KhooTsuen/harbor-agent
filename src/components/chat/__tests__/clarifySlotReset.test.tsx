@@ -104,10 +104,7 @@ describe('澄清卡更换时不许串味', () => {
     const note = container.querySelector('textarea')
     if (note) {
       act(() => {
-        const setter = Object.getOwnPropertyDescriptor(
-          HTMLTextAreaElement.prototype,
-          'value',
-        )?.set
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
         setter?.call(note, '上一张卡里写的话')
         note.dispatchEvent(new Event('input', { bubbles: true }))
       })

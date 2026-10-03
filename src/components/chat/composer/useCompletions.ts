@@ -16,8 +16,7 @@ import { MENTIONS, SLASH_COMMANDS } from './completions'
 
 /** 补全项：命令只有 cmd/desc，文件有 name/path/desc（备选清单只有 name/desc） */
 export type CompletionOption =
-  | { cmd: string; desc: string }
-  | { name: string; path?: string; desc: string }
+  { cmd: string; desc: string } | { name: string; path?: string; desc: string }
 
 export interface Completions {
   /** 菜单开着没有（由输入内容推导） */
@@ -39,9 +38,9 @@ export function useCompletions(
   projectPath?: string,
 ): Completions {
   const [open, setOpen] = useState(false)
-  const [fileMentions, setFileMentions] = useState<Array<{ name: string; path: string; desc: string }>>(
-    [],
-  )
+  const [fileMentions, setFileMentions] = useState<
+    Array<{ name: string; path: string; desc: string }>
+  >([])
 
   useEffect(() => {
     let alive = true
@@ -50,7 +49,8 @@ export function useCompletions(
       const files: Array<{ name: string; path: string; desc: string }> = []
       const walk = (nodes: typeof tree.children) => {
         for (const node of nodes) {
-          if (node.type === 'file') files.push({ name: node.path, path: node.path, desc: '引用文件' })
+          if (node.type === 'file')
+            files.push({ name: node.path, path: node.path, desc: '引用文件' })
           else if (node.children) walk(node.children)
         }
       }

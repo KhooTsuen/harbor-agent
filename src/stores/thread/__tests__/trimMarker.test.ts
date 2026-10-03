@@ -53,9 +53,7 @@ describe('上下文裁剪说明', () => {
     for (const m of out.messages) {
       const text = String(m.content)
       if (text.includes('上下文已按预算裁剪')) {
-        expect(text.split('上下文已按预算裁剪')[0].length).toBeGreaterThan(
-          ctx.MIN_KEEP_CHARS - 1,
-        )
+        expect(text.split('上下文已按预算裁剪')[0].length).toBeGreaterThan(ctx.MIN_KEEP_CHARS - 1)
       }
     }
   })
