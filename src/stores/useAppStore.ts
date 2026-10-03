@@ -17,6 +17,7 @@ import { makeThreadFolderActions } from './app/threadFolders'
 import { appPersistOptions } from './app/persistOptions'
 import { mergeImport } from '@/lib/migrations'
 import { useUIStore } from './useUIStore'
+import { onLeaveThread } from './thread/clarifyGuard'
 export { getActiveProject, getActiveThread, sortThreads } from './app/selectors'
 
 export const useAppStore = create<AppState>()(
@@ -69,18 +70,9 @@ export const useAppStore = create<AppState>()(
       },
 
       setActiveThread: (id) => {
-        /*
-         * 切走之前先收掉**属于刚离开那条对话**的澄清卡（2026-10-04，小尾巴 #4）。
-         *
-         * 卡片状态只有一份（`useUIStore.clarify`），不清的话它会跟着用户跑到新对话里；
-         * 而不回话给内核的话，主进程会一直等到 5 分钟超时 —— 那会被当成「用户离场」，
-         * 按默认选项自己开工，可用户只是切了个对话。
-         *
-         * 只收「属于上一条」的：后台可能还有别的对话挂着卡，那不是这次切换的事。
-         */
-        const leaving = get().activeThreadId
-        const open = useUIStore.getState().clarify
-        if (leaving && open && open.threadId === leaving) useUIStore.getState().cancelClarify()
+        /* 切走之前先收掉属于刚离开那条对话的澄清卡（2026-10-04，小尾巴 #4）——
+           细节与来由见 stores/thread/clarifyGuard.ts */
+        onLeaveThread(get().activeThreadId)
 
         set({ activeThreadId: id })
         const thread = get().threads.find((t) => t.id === id)

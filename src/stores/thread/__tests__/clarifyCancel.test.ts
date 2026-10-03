@@ -68,6 +68,25 @@ describe('切对话 / 停任务时的澄清卡', () => {
     expect(onCancelCalls).toBe(0)
   })
 
+  /*
+   * ★ 「新建对话」也是一次离开 —— 但它**不走** setActiveThread，而是自己在
+   *   createThread 里 set({ activeThreadId })。真机验证时正是这条路漏了：
+   *   卡开着点「新建对话」，澄清卡跟到了新对话里。
+   */
+  it('★ 新建对话：也把上一张卡收掉（它不走 setActiveThread）', () => {
+    openClarify('t1')
+    useAppStore.getState().createThread()
+    expect(useUIStore.getState().clarify).toBeNull()
+    expect(onCancelCalls).toBe(1)
+  })
+
+  it('★ 新建对话时，卡属于**别的**对话 —— 不动它', () => {
+    openClarify('t9')
+    useAppStore.getState().createThread()
+    expect(useUIStore.getState().clarify?.confirmId).toBe('clr_x')
+    expect(onCancelCalls).toBe(0)
+  })
+
   it('★ 停止这条对话：收卡 + 回话（否则内核当用户离场，按默认开工）', () => {
     openClarify('t1')
     stopActiveRequest('t1')

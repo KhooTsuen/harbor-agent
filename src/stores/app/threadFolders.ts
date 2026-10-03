@@ -5,6 +5,7 @@ import { updateSessionMeta, useRealBackend } from '@/lib/backend'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { folderIdFor } from './folderIds'
 import { fallbackProjectFor } from './workspaceGroups'
+import { onLeaveThread } from '../thread/clarifyGuard'
 import type { AppState } from './types'
 
 /* ══════════════════════════════════════════════════════════════
@@ -69,13 +70,17 @@ export function makeThreadFolderActions(set: Setter, get: Getter): ThreadFolderA
       }
 
       /* 新对话就归在新目录那一栏下：activeProjectId 跟着走，下次「新建对话」还在那儿 */
-      const push = (thread: Thread): void =>
+      const push = (thread: Thread): void => {
+        /* 「新建对话」也是一次离开（真机验证时发现的：它不走 setActiveThread，
+           于是卡开着点新建对话，澄清卡跟到了新对话里）—— 收尾在一处，见 clarifyGuard */
+        onLeaveThread(get().activeThreadId)
         set((s) => ({
           projects: withFallbackFolder(s.projects, targetId, [thread]),
           threads: [thread, ...s.threads],
           activeThreadId: thread.id,
           activeProjectId: targetId,
         }))
+      }
 
       /* 磁盘模式：先用 pending id 占位，第一次发送时才落文件 */
       if (useRealBackend) {
