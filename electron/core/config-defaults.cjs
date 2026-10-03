@@ -196,6 +196,7 @@ const DEFAULTS = {
   },
 
   context: {
+    baseTokens: 16384, // 上下文基准（token），字符预算 = ×3；以前偷用 assistant.maxTokens，已拆开
     /** 各段占上下文窗口的比例（%） */
     budget: {
       system: 10,

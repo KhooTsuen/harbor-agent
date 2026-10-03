@@ -229,6 +229,8 @@ function normalize(raw) {
     },
 
     context: {
+      /* 0/不填 → 默认；有效值夹 2000–128000（下限与 context-builder 对齐，详见进度文档） */
+      baseTokens: clampNumber(Number(context.baseTokens) || C.DEFAULTS.context.baseTokens, 2000, 128000, C.DEFAULTS.context.baseTokens),
       budget: Object.fromEntries(
         Object.entries(C.DEFAULTS.context.budget).map(([key, value]) => [
           key,

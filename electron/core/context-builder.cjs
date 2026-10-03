@@ -122,7 +122,8 @@ const DEFAULT_CONTEXT_TOKENS = 16384
 function assemble(input = {}) {
   /*
    * ★ 这里的 `maxTokens` 是**上下文预算的基准**（字符 = token × 3），不是「输出上限」——
-   *   虽然调用方传的就是设置里的 `assistant.maxTokens`（历史耦合，2026-09-29 没拆）。
+   *   2026-10-04 起调用方（`loop-prompt.cjs`）传的是 `config.context.baseTokens`，
+   *   不再传设置里的 `assistant.maxTokens`（那个是输出上限，历史耦合已拆）。
    *   两件事混在一起的真实后果：用户把「输出上限」改大，上下文也会跟着变宽。
    *   0 = 不限 → 用 DEFAULT_CONTEXT_TOKENS（见上面的来由）；
    *   显式填了值就听用户的（测试也靠这条构造小预算）。

@@ -184,7 +184,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
       ? { ...baseBudget, memory: Math.max(1, Math.floor((Number(baseBudget.memory) || 5) / 2)) }
       : baseBudget
   const assembled = contextBuilder.assemble({
-    maxTokens: config.assistant.maxTokens,
+    /* 上下文基准读 context.baseTokens（2026-10-04 拆开：输出上限不再影响上下文），详见进度文档 */
+    maxTokens: config.context?.baseTokens,
     budget: softBudget,
     memory: memorySection,
     project: projectSection,

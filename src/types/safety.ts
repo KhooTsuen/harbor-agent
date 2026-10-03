@@ -1,6 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
    安全与可靠：类型
-
    从 backend.ts / models.ts 拆出来的 —— 加完审计、授权、任务、
    改动事务之后，那两个文件都过 300 行了。
    ══════════════════════════════════════════════════════════════ */
@@ -22,6 +21,7 @@ export interface MemoryConfig {
 }
 
 export interface ContextConfig {
+  baseTokens: number // 上下文基准（token），字符预算 = ×3；与 assistant.maxTokens（输出上限）无关
   budget: Record<string, number>
   compactAt: number
   autoCompactAt: number
