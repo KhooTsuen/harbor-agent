@@ -102,6 +102,13 @@ describe('Markdown 渲染', () => {
     expect(html('[点我](javascript:alert(1))')).not.toContain('href="javascript:')
   })
 
+  it('★ file:// 链接也不会（审计问题 18）：本地文件不能因为一条聊天消息变成可点链接', () => {
+    const out = html('[点我](file:///C:/Windows/system.ini)')
+    expect(out).not.toContain('href="file:')
+    /* 仍然把原文显示出来（当普通文字），不是悄悄吞掉 */
+    expect(out).toContain('file:///C:/Windows/system.ini')
+  })
+
   it('流式中的半截内容不抛异常', () => {
     for (const text of ['**没闭合', '```ts\nconst a = 1', '| a | b |\n|---', '- [x] 未完成']) {
       expect(() => html(text)).not.toThrow()

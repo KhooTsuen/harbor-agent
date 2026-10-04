@@ -1,4 +1,5 @@
 import type { InlineNode } from './types'
+import { isSafeHref } from '@/lib/linkPolicy'
 
 /* ══════════════════════════════════════════════════════════════
    行内解析
@@ -15,8 +16,8 @@ interface Rule {
   build: (match: RegExpExecArray) => InlineNode | null
 }
 
-/** 只放行这些开头的链接 —— `javascript:` 之类一律当普通文字 */
-const SAFE_HREF = /^(https?:|file:|\/|\.\/|\.\.\/|#|mailto:)/i
+/* 链接白名单在 linkPolicy.ts（与搜索结果引用共用一个判据）；
+   这里只管「像不像链接」，`javascript:` / `file:` 之类一律当普通文字 */
 
 const RULES: Rule[] = [
   /* 行内代码优先级最高：里面的 * 和 _ 都不该被解析 */
@@ -33,7 +34,7 @@ const RULES: Rule[] = [
   {
     re: /\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/,
     build: (m) =>
-      SAFE_HREF.test(m[2]) ? { type: 'link', href: m[2], children: parseInline(m[1]) } : null,
+      isSafeHref(m[2]) ? { type: 'link', href: m[2], children: parseInline(m[1]) } : null,
   },
 
   /* 自动链接：裸 URL（前面不能紧跟字母或斜杠，免得把 URL 内部切开） */

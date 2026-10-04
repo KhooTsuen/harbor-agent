@@ -14,6 +14,7 @@ import { hasAnything, roundsOf, roundsOfError } from './message/roundsOf'
 import { TerminalOutput } from './TerminalOutput'
 import { activityLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
+import { isSafeHref } from '@/lib/linkPolicy'
 import { SystemMessage } from './SystemMessage'
 import { UserMessage } from './message/UserMessage'
 
@@ -198,21 +199,30 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
               <div className="mt-3 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs text-fg-secondary">
                 <p className="mb-1 text-fg-tertiary">来源</p>
                 <ol className="flex flex-col gap-1">
-                  {message.citations.map((citation, index) => (
-                    <li key={citation.id} className="flex gap-1.5">
-                      <span className="shrink-0 font-mono text-fg-tertiary">[{index + 1}]</span>
-                      <a
-                        href={citation.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 truncate text-fg-secondary hover:text-fg-primary hover:underline"
-                        title={citation.url}
-                      >
-                        {citation.title}
-                        {citation.domain ? ` · ${citation.domain}` : ''}
-                      </a>
-                    </li>
-                  ))}
+                  {message.citations.map((citation, index) => {
+                    /* 搜索结果的地址是外部来的：不在白名单里就不画成链接（审计问题 18） */
+                    const label = `${citation.title}${citation.domain ? ` · ${citation.domain}` : ''}`
+                    return (
+                      <li key={citation.id} className="flex gap-1.5">
+                        <span className="shrink-0 font-mono text-fg-tertiary">[{index + 1}]</span>
+                        {isSafeHref(citation.url) ? (
+                          <a
+                            href={citation.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="min-w-0 truncate text-fg-secondary hover:text-fg-primary hover:underline"
+                            title={citation.url}
+                          >
+                            {label}
+                          </a>
+                        ) : (
+                          <span className="min-w-0 truncate text-fg-tertiary" title={citation.url}>
+                            {label}
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ol>
               </div>
             ) : null}

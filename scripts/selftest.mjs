@@ -152,6 +152,7 @@ import { run as verifyHintGroup } from './selftest/groups/113-verify-hint.mjs'
 import { run as projectFactsGroup } from './selftest/groups/114-project-facts.mjs'
 import { run as memoryReflectGroup } from './selftest/groups/115-memory-reflect.mjs'
 import { run as projectCompleteGroup } from './selftest/groups/116-project-context-complete.mjs'
+import { run as urlPolicyGroup } from './selftest/groups/117-url-policy.mjs'
 
 const GROUPS = [
   basics,
@@ -270,6 +271,7 @@ const GROUPS = [
   projectFactsGroup,
   memoryReflectGroup,
   projectCompleteGroup,
+  urlPolicyGroup,
 ]
 
 async function main() {

@@ -105,7 +105,7 @@ function createWindow() {
 
   win.once('ready-to-show', () => windowChrome.showAndMaximize(win, HEADLESS))
 
-  /* 外链一律用系统浏览器打开，不在应用里跳走 */
+  /* 外链只走白名单（http / https / mailto），其余只记日志不打开：core/url-policy.cjs */
   /* 导航策略 + webview 加固：主窗口和每个 webview 都要挂，见 navigation-policy.cjs */
   navigationPolicy.install({
     app,
@@ -114,7 +114,7 @@ function createWindow() {
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    require('./core/url-policy.cjs').openExternalSafe(shell, url, 'window-open')
     return { action: 'deny' }
   })
 

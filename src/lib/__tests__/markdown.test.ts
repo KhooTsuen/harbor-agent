@@ -79,6 +79,12 @@ describe('parseInline', () => {
     expect(shape(parseInline('[点我](javascript:alert(1))'))).toBe('[点我](javascript:alert(1))')
   })
 
+  it('★ file:// 链接不当链接（审计问题 18）—— 本地 Agent 的聊天里到处是本地路径', () => {
+    expect(shape(parseInline('[点我](file:///C:/Windows/system.ini)'))).toBe(
+      '[点我](file:///C:/Windows/system.ini)',
+    )
+  })
+
   it('图片不会被链接规则吃掉开头的叹号', () => {
     expect(shape(parseInline('![图](https://a.com/b.png)'))).toBe('img(图)')
   })
