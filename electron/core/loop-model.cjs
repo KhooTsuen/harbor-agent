@@ -94,6 +94,17 @@ async function callModelInner(options, emit) {
           const why = '内容没写完。让它「接着写」，或让它把长内容写进文件。'
           emit?.({ type: 'notice', level: 'warning', title: '回复被输出上限截断了', text: why })
         }
+        /* ★ 只取证：有内容却没有 finish_reason = 上游平静断流（只记日志，不改行为） */
+        require('./llm-stream-end.cjs').noteStreamEnd({
+          label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
+          model,
+          providerId: target.id,
+          finishReason: result.finishReason,
+          content: result.content.length,
+          reasoning: result.reasoning.length,
+          toolCalls: result.toolCalls.length,
+          ms: result.latencyMs,
+        })
         result.retryCount = attempt
         return result
       } catch (error) {
