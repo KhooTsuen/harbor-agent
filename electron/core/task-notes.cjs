@@ -55,8 +55,19 @@ function addCommand(id, command, result = '') {
   const task = io.get(id)
   if (!task) return null
   task.commands.push({
-    command: String(command).slice(0, 500),
-    result: String(result).slice(0, 300),
+    /*
+     * ★ 写盘前过脱敏（审计问题 24 延伸）：`commands[].command` 恰恰是密钥最常见
+     *   的位置（`curl -H "Authorization: Bearer sk-…"` 这类），而这条路以前是
+     *   台账上唯一没脱敏的（`task.finish` 的 result 上一批已修）。
+     *
+     * ⚠️ 顺序是**先脱敏再截断**，不能反：反过来的话 `slice` 会把密钥切成半截，
+     *   而模式已经认不出来了（JWT 少一段就不匹配）—— 半截照样是明文片段。
+     *
+     * ⚠️ `exitOk` 继续用**原文**判：那条判据认的是 `[退出码 N]` / `[进程被超时杀掉…]`，
+     *   不该让脱敏参与（`task-outcome.cjs` 那边也是按字符串认的）。
+     */
+    command: redact.redact(String(command)).slice(0, 500),
+    result: redact.redact(String(result)).slice(0, 300),
     /* AG-034：退出码单独存 —— result 截到 300 字，尾巴上的 `[退出码 N]` 常常被截掉 */
     exitOk: outcome.exitOf(result),
     at: Date.now(),

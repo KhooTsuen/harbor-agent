@@ -26,6 +26,12 @@ const WORKDIR = 'D:\\proj'
 /** 造一次 shell 调用（workdir 固定，用户那句话按需给） */
 const sh = (command, userText = '') => ({ name: 'run_shell', args: { command }, workdir: WORKDIR, userText })
 const noopAudit = () => {}
+/** 一次**合规的规模确认提问**（拦截文案要求的：说清范围与代价、选项里写数字） */
+const SCALE_ASK = [
+  { question: '这次扫多大范围？大概多久？', options: [{ label: '整个 C 盘（约 50000 个文件，5 分钟）' }] },
+]
+/** 与规模无关的提问（模型跑偏问风格）——问题 7 的正身 */
+const OFF_TOPIC_ASK = [{ question: '你想要什么风格？', options: [{ label: '简洁' }] }]
 
 export async function run() {
   const gate = require(join(ROOT, 'electron/core/tools/scale-gate.cjs'))
@@ -176,7 +182,7 @@ export async function run() {
     gate.BLOCKED_MARK,
   )
 
-  gate.noteAsked(s1)
+  gate.noteAsked(s1, SCALE_ASK)
   const again = gate.gate({ name: 'run_shell', args: { command: 'dir /s D:\\' }, ctx: { sessionId: s1, workdir: WORKDIR }, audit: noopAudit })
   check('★ 答过一次之后，同一对话里扫 D 盘不再问（用户点名的那个例子）', again.level === 'ok', again.level)
   check(
@@ -189,6 +195,27 @@ export async function run() {
   )
   gate.reset()
   check('reset 之后授权清空（测试隔离用）', gate.grantsFor(s1).length === 0)
+
+  group('A2 / 授权收窄（审计问题 7）')
+
+  const blockedFor = (sessionId, command = 'dir /s C:\\') =>
+    gate.gate({ name: 'run_shell', args: { command }, ctx: { sessionId, workdir: WORKDIR }, audit: noopAudit }).level
+
+  /* ① 被答的是无关问题（模型拦截后先问了句风格）→ 不给授权 */
+  gate.reset()
+  const sOff = 'selftest-scale-offtopic'
+  blockedFor(sOff)
+  gate.noteAsked(sOff, OFF_TOPIC_ASK)
+  check('★★ 被答的是无关问题 → **不授权**（以前答什么都算批过）', blockedFor(sOff) === 'blocked', blockedFor(sOff))
+
+  /* ② 拦截后先跑了别的工具 → 那次「等授权」作废 */
+  gate.reset()
+  const sWander = 'selftest-scale-wander'
+  blockedFor(sWander)
+  gate.gate({ name: 'read_file', args: {}, ctx: { sessionId: sWander, workdir: WORKDIR }, audit: noopAudit })
+  gate.noteAsked(sWander, SCALE_ASK)
+  check('★★ 拦截后先跑了别的工具 → 等授权作废（不留给下一次无关提问）', blockedFor(sWander) === 'blocked', blockedFor(sWander))
+  gate.reset()
 
   group('A2 / 接线：咽喉真的挂上了闸门')
 
@@ -255,7 +282,7 @@ export async function run() {
     gate.reset()
     const s = 'selftest-scale-count'
     gate.gate({ name: 'run_shell', args: { command: 'dir /s C:\\' }, ctx: { sessionId: s, workdir: WORKDIR }, audit: noopAudit })
-    gate.noteAsked(s)
+    gate.noteAsked(s, SCALE_ASK)
     const seen = []
     gate.gate({ name: 'run_shell', args: { command: 'dir /s C:\\' }, ctx: { sessionId: s, workdir: WORKDIR }, audit: (e) => seen.push(e) })
     gate.reset()

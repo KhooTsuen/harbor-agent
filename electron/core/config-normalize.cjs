@@ -160,7 +160,8 @@ function normalize(raw) {
     assistant: {
       name: str(assistant.name) || C.BRAND.assistant,
       systemPrompt: str(assistant.systemPrompt),
-      model: str(assistant.model) || 'deepseek-chat',
+      /* 模型要真的有人提供（审计问题 25）—— 判据与回落规则见 config-model.cjs */
+      model: require('./config-model.cjs').pickModel(assistant.model, providers),
       temperature: clampNumber(assistant.temperature, 0, 2, 0.7),
       topP: clampNumber(assistant.topP, 0, 1, 1),
       /* 0 = 不限（**新的默认**）。旧默认 4096 认成「没设过」→ 0，理由同任务预算：

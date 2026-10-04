@@ -109,7 +109,9 @@ export function SecurityTab() {
       </Row>
 
       <SectionTitle>Shell 风险策略</SectionTitle>
-      {/* 三档策略和「工具权限」是两层，以前没写明白（用户选了全放行还被弹窗） */}
+      {/* 三档策略和「工具权限」是两层，以前没写明白（用户选了全放行还被弹窗）。
+          审计问题 2 那句提示挂在**选权限档的地方**（ProviderPanel 的「完全访问」说明）——
+          这里已经贴到 300 行红线，而「选 full 的那一刻」才是该看到那句话的时候。 */}
       <p className="px-3 pb-1.5 text-dense leading-relaxed text-fg-tertiary">
         这三行说「这一类命令怎么办」，和上面的「工具权限」是两层：策略说要不要拦，
         权限档说要不要问你 —— 选「完全访问」就是不问；想拦住某类命令，把它设成「拦住」。

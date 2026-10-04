@@ -37,11 +37,10 @@ const MESSAGE_PREVIEW = 160
  *
  * 走过一段弯路：这里曾经自己写两条窄正则（只认 `sk-` / `Bearer` / `api_key=`），
  * 比 `redact.cjs` 的模式表窄得多 —— 两套规则**会漂移**：哪天宽的那边加了新厂商前缀，
- * 这边忘了跟，第二道兜底就形同虚设。现在直接调主入口，判据只有一处。
+ * 这边忘了跟，第二道兜底就形同虚设。现在判据只有一处：`redact.cjs` 的模式表。
  *
- * ⚠️ 别换成 `redact.looksSecret()` 的**旧**实现：它当时用带 /g 的正则做 `.test()`，
- * 会留下 lastIndex，同一根字符串连判结果会交替翻（那个 bug 2026-10-04 已修）。
- * `redact()` 走 `String.replace`，全局替换结束会把 lastIndex 归零，从来没这个毛病。
+ * 这里用 `redact()` 而不是 `redact.looksSecret()`：要的是**脱敏后的文本**，
+ * 不是「像不像密钥」那个布尔（那个入口是给门禁用的，比如记忆拒收）。
  */
 function scrubLogLine(line) {
   return redact.redact(String(line))

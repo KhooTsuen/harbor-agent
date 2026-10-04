@@ -14,7 +14,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
    这一组钉三件事：
      ① 那 7 类在**门禁**上被拒（不是只在脱敏函数上被认出）；
      ② 正常内容不被误拒（否则修复会把用户的记忆功能弄坏）；
-     ③ 判据只有一处：`memory-schema` 不再有自己那张表，两个消费者都用它。
+     ③ 判据只有一处：`memory-schema` 直接引 `redact.looksSecret`（同一个函数），
+        两个消费者都用它。
    ══════════════════════════════════════════════════════════════ */
 
 const ROOT = join(__dirname, '..', '..', '..')
@@ -22,6 +23,9 @@ const require_ = createRequire(import.meta.url)
 
 const schema = require_(join(ROOT, 'electron/core/memory-schema.cjs')) as {
   looksLikeSecret: (text: unknown) => boolean
+}
+const redact = require_(join(ROOT, 'electron/core/redact.cjs')) as {
+  looksSecret: (text: unknown) => boolean
 }
 const store = require_(join(ROOT, 'electron/core/memory-store.cjs')) as {
   add: (input: { content: string }) => { ok: boolean; error?: string; item?: { id: string } }
@@ -131,12 +135,15 @@ describe('记忆密钥门禁 / 反向：正常内容不误拒', () => {
 describe('记忆密钥门禁 / 判据只有一处', () => {
   const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-  it('★ memory-schema 不再有自己那张表，改用 redact 的模式表', () => {
+  it('★ memory-schema 不再自己实现判据，而是直接用 redact 的那一个', () => {
     const src = read('electron/core/memory-schema.cjs')
     expect(src).not.toContain('SECRET_LIKE')
-    /* 钉「真的调了主入口」这件事，而不是注释里的某句话 */
-    expect(src).toContain('redact.redact(')
+    /* 2026-10-04 再收一次：连「原文 vs 脱敏后」这段对比也不自己写了 ——
+       它是 `redact.looksSecret()` 的正文，两份实现就是两个会漂的真相源。
+       这里钉的是**同一份**（函数同一性），比钉源码字符串更强。 */
+    expect(src).toContain('const looksLikeSecret = redact.looksSecret')
     expect(src).toContain("require('./redact.cjs')")
+    expect(schema.looksLikeSecret).toBe(redact.looksSecret)
   })
 
   it('★ 记忆写入的两处门禁都用共享判据', () => {

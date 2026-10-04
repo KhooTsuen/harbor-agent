@@ -72,19 +72,23 @@ describe('问题 20：browse 过网络策略（webview 分支）', () => {
     expect(blocked).toContain('网络策略')
   })
 
-  it('允许模式 → 放行；「先问」+ 完全访问 → 放行但留痕', () => {
+  it('允许模式 → 放行；「先问」+ 需要确认档 → 交给上层弹框（转授权请求）', () => {
     expect(browse.networkGuard('http://example.com/a', { netPolicy: { mode: 'allow' } })).toBe('')
-
-    const notes: string[] = []
-    const log = { info: (text: string) => notes.push(text), warn: () => {} }
     expect(
       browse.networkGuard('http://example.com/a', {
         netPolicy: { mode: 'ask' },
-        permission: 'full',
-        log,
+        permission: 'ask',
       }),
     ).toBe('')
-    expect(notes.join('\n')).toContain('先问')
+  })
+
+  it('★ 「先问」+ 完全访问 → 拒（没人问就不能放行；2026-10-04 与 run_shell 统一）', () => {
+    const blocked = browse.networkGuard('http://example.com/a', {
+      netPolicy: { mode: 'ask' },
+      permission: 'full',
+    })
+    expect(blocked).toContain('没人被问')
+    expect(blocked).toContain('要放行')
   })
 })
 

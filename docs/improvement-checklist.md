@@ -172,13 +172,21 @@
 | 诊断包读「昨天」的日志 | `core/diagnostics.cjs` 的 `logFile()` 用 `new Date().toISOString().slice(0,10)`（**UTC** 日期）拼日志文件名，而应用自己写日志按**本地日期**命名（`core/log.cjs`）→ 东八区**凌晨 8 点之前**导出的诊断包，读的是**前一天**的日志文件 | 排查问题时看错日志（会误导）；不影响数据 | 发现于 2026-10-04，待修（改法：`logFile()` 用本地日期拼） |
 | 前端第 4 份脱敏表 | `src/lib/dataPortExport.ts` 里自带一张「像不像密钥」的正则表（导出数据时用），与 `core/redact.cjs` 的模式表**不共享** | 与问题 8/9 同源：多条规则会漂移，改了主进程忘了前端 | 发现于 2026-10-04，**与问题 8/9 同源，待统一** |
 | 三份原子写 | `core/session-crypto.cjs` 自己那份 `writeAtomic`（加密迁移用）与新的 `core/safe-write.cjs` 重复。**没并**：`session*.cjs` 是硬禁区 | 同一段逻辑三个地方（`session-crypto` / `safe-write` / 各自的调用点） | 发现于 2026-10-04，待授权后收敛 |
-| 三个文件贴在 300 行上 | `src/types/models-extra.ts`、`scripts/selftest/groups/04-reliability.mjs`（以及 `electron/main.cjs`，第 2 批只剩 299 行，加 5 行就红） | 下次动它们时会先撞红线，得顺手拆 | 发现于 2026-10-04，**下次顺手拆**（拆法见 `.github/skills/split-file`） |
+| 三个文件贴在 300 行上 | `src/types/models-extra.ts`、`scripts/selftest/groups/04-reliability.mjs`、`src/components/settings/tabs/SecurityTab.tsx`（第 3 批想在那页加一句提示，加了就 303 ✗ —— 提示改挂到 `ProviderPanel`）；另有 `electron/core/config-normalize.cjs` 现在**正好 300** | 下次动它们时会先撞红线，得顺手拆 | 发现于 2026-10-04，**下次顺手拆**（拆法见 `.github/skills/split-file`） |
 | `browse` 的三个兄弟不过网络策略 | `browse-click` / `browse-elements` / `browse-type` 操作的是**已打开**的页面。问题 20 只把策略接在 `browse` 的 URL 上；跳转归 `navigation-policy`（`general.browserNavigation`）。要接得先说清「按哪个 URL 判」（目标链接 / 当前页） | 「设置里禁止了网络，Agent 却还能点开一个链接」——取决于页面自己怎么跳 | 发现于 2026-10-04，待定口径 |
-| `run_shell` 与 `browse` 的 ask 口径不一致 | 网络策略说「先问」时：`run_shell` 在完全访问档下**直接拒**，`browse` **放行 + 记日志**（后者理由：确认界面不在工具层，且「完全访问」语义就是不再问，见审计问题 2） | 同一份设置，两条路的后果不同 → 用户会觉得「有时候拦、有时候不拦」 | 发现于 2026-10-04，待统一（要么都拒，要么都给界面加提示） |
+| 规模授权收窄后的多一次往返 | 第 3 批把授权收窄成「只认紧接着拦截那次 ask、且问题里有规模词 + 数字」。模型若在拦截后先去读了文件再问，就得再问一次（安全方向的代价） | 多一张卡片；不会误授权 | 发现于 2026-10-04，**先看着**（实测发现模型常跑偏，再考虑把窗口放宽） |
+
+## 2026-10-04 记（第 3 批做完，已销账的三条）
+
+| 项 | 结果 |
+| --- | --- |
+| `looksSecret` 修好但零调用 | ✅ 已销：`memory-schema.looksLikeSecret` 直接就是它（三处判据收敛成一处） |
+| `task-notes.addCommand` 的 command/result 未脱敏 | ✅ 已销：写盘前过 `redact`（**先脱敏再截断**），`exitOk` 仍用原文判 |
+| `run_shell` 与 `browse` 的 ask 口径不一致 | ✅ 已销：共用 `_shared.decideNetAsk` —— 上层会问就交给它、不会问就拒（`browse` 不再「放行 + 记日志」） |
 
 ## 还没做（按建议顺序）
 
-0. **A2 规模预检的「文件数」闸门**（2026-10-03 记，别忘）：
+0. **A2 规模预检的「文件数」闸门**（2026-10-03 记，别忘；2026-10-04 第 3 批又核了一遍）：
    `scaleMaxFiles`（默认 2000）现在**基本算不出来** —— 预检不数文件（数一遍本身就是它要拦的
    那种操作），所以它只在能算出文件数时才生效，**界面上故意不暴露**（不起作用的旋钮比没有更糟）。
    · 什么时候能算出来：以后若加「轻量估价」（只数工作目录前两层 / 读目录项数）就有了；

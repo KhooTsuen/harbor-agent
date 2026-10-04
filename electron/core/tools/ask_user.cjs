@@ -213,12 +213,11 @@ module.exports = {
     else if (Array.isArray(reply?.answers) && reply.answers.length > 0) {
       clarify.noteAnswered(sessionId)
       /*
-       * A2：他答过一次规模确认 → 本对话内同类重操作不再问。
-       * 为何挂在这里：「他答了」是这条路上唯一确定的事实（他答的是不是同意
-       * 不是代码能判的），所以授权只按 kind 记、只在本对话内 ——
-       * 范围含糊时宁可下次再问一遍（见 tools/scale-gate.cjs）。
+       * A2：他答过一次**规模确认** → 本对话内同类重操作不再问（审计问题 7 后收窄：
+       * 得是紧接着拦截那次问的、且问题看着像在问规模；无关问题不给授权）。
+       * 为何挂在「答了」这一支：「他答了」是这条路上唯一确定的事实。
        */
-      scaleGate.noteAsked(sessionId)
+      scaleGate.noteAsked(sessionId, checked.questions)
     }
 
     return clarify.render(checked.questions, reply ?? {})

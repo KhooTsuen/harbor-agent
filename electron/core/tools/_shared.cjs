@@ -137,9 +137,32 @@ function truncateWithLog(text, maxChars = 8000, reason = '超出上限') {
   return truncateMiddle(src, maxChars, `${reason}${file ? `（完整输出：${file}）` : ''}`)
 }
 
+/**
+ * 网络策略说「先问」之后怎么落地 —— `run_shell` 与 `browse` 共用这一条判据。
+ *
+ * 为什么需要它：**确认界面不在工具层**（在 `tools/index.cjs` 的 approval 流程），
+ * 所以「先问」只有两种安全落地：
+ *   · 上层这一档**真的会弹确认框** → 放行，让上层问；
+ *   · 上层不问（完全访问档 / 静默放行）→ **拒**。
+ *
+ * ★ 绝没有第三种「放行 + 记一条日志」——那等于没问（审计问题 20 收尾：
+ *   `browse` 一开始就是那么写的，2026-10-04 用户拍板统一到「转授权请求」这一套）。
+ *
+ * @param {{ action: 'allow'|'ask'|'deny' }} decided
+ * @param {boolean} upperWillAsk 上层这一档会不会真的弹确认框
+ * @returns {{ pass: boolean, byPolicy?: boolean }}
+ *   `pass: false` + `byPolicy: true` = 策略直接禁；`byPolicy: false` = 策略要问但没人问
+ */
+function decideNetAsk(decided, upperWillAsk) {
+  if (decided?.action === 'allow') return { pass: true }
+  if (decided?.action === 'deny') return { pass: false, byPolicy: true }
+  return upperWillAsk === true ? { pass: true } : { pass: false, byPolicy: false }
+}
+
 module.exports = {
   PermissionRequiredError,
   resolvePath,
+  decideNetAsk,
   snapshotBefore,
   readTextFile,
   withLineNumbers,

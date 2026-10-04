@@ -100,6 +100,15 @@ export function AssistantSwitches() {
         />
         秒算重操作（10–1800，保存时夹取）
       </label>
+      {/*
+        审计问题 6：`scaleMaxFiles`（文件数上限）**当前不生效** —— 预检不数文件
+        （数一遍本身就是它要拦的那种操作），所以界面上不给那个旋钮；
+        但得让看到 config.json 的人知道它不是「坏了」。待办见 improvement-checklist A2 第 0 条。
+      */}
+      <p className="px-1 text-2xs leading-relaxed text-fg-tertiary">
+        另有「文件数超过 N 个就拦」那一条（设置里的 scaleMaxFiles）暂时不生效：预检不数文件。
+        界面上没给旋钮，是因为一个不起作用的开关比没有更糟。
+      </p>
       <Toggle
         checked={a.verifyAfterEdit !== false}
         onChange={(v) => void patchAssistant({ verifyAfterEdit: v })}

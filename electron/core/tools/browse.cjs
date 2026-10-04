@@ -20,6 +20,7 @@
  */
 
 const netPolicy = require('../net-policy.cjs')
+const { decideNetAsk } = require('./_shared.cjs')
 
 /** 拦掉明显不该让模型去开的地址 */
 function rejectInternal(url) {
@@ -43,20 +44,20 @@ function rejectInternal(url) {
 }
 
 /**
- * 网络策略这一关（审计问题 20）。
+ * 网络策略这一关（审计问题 20，2026-10-04 与 `run_shell` 统一口径）。
  *
- * `net-policy.cjs` 里 `kind:'webview'` 这条分支**早就写好了，却没有任何调用者** ——
+ * `net-policy.cjs` 里 `kind: 'webview'` 这条分支**早就写好了，却没有任何调用者** ——
  * 也就是说：设置里把网络改成「禁止」、或者把某个域名扔进禁止名单，
  * `run_shell` 会拦，但 Agent 用 `browse` 直接开那个页面**不受影响**。
  *
- * 口径（为什么和 `run_shell` 不完全一样）：
- *   · `deny` → 拦下，把理由交给用户（这才是这个问题的正身）
- *   · `ask`  → 放行，但**记一条日志**。这一层拿不到确认界面（确认在
- *            `tools/index.cjs`），而「完全访问」这个档位的语义就是「不再问」
- *            （见审计问题 2：这是设计取向，只是界面没写清）。
- *            `run_shell` 在同样情形下更严（直接拒），两处口径不一致 ——
- *            已记进 docs/improvement-checklist.md，不在这一批里顺手改。
+ * 口径（与 `run_shell` 同一套判据，见 `_shared.decideNetAsk`）：
  *   · `allow` → 放行
+ *   · `deny`  → 拦下，把理由与「怎么放行」交给用户
+ *   · `ask`   → **上层会不会问？** 会问就交给它（用户看到确认框，等于把这个请求
+ *              转成了授权请求）；不会问（完全访问档）就**在这里拒** ——
+ *              「放行 + 记一条日志」等于没问，用户拍板不要这种落地方式。
+ *              上层会不会问看权限档：`browse` 在 `registry.WRITE_TOOLS` 里，
+ *              所以「需要确认」档会弹框、「完全访问」档不弹（`risk-gate.shouldAsk`）。
  */
 function networkGuard(url, ctx) {
   let decided
@@ -73,15 +74,20 @@ function networkGuard(url, ctx) {
     return ''
   }
 
-  if (decided.action === 'allow') return ''
   if (decided.action === 'deny') {
-    return `这个地址被网络策略拦下了。\n原因：${decided.reason}\n地址：${url}`
+    return (
+      `这个地址被网络策略拦下了。\n原因：${decided.reason}\n地址：${url}\n` +
+      '要放行：把目标主机加进「设置 → 权限与安全 → 网络策略」的允许名单，或把策略改成「允许」。'
+    )
   }
+  if (decideNetAsk(decided, ctx?.permission === 'ask').pass) return ''
 
-  ctx?.log?.info?.(
-    `browse 要开一个网络策略要求「先问」的地址（当前权限档 ${ctx?.permission ?? '?'}）：${url}`,
+  return (
+    '这个地址要联网，网络策略要求「每次先问」，但当前权限档（完全访问）不会问到你 ——\n' +
+    '为了不出现「没人被问就把请求发出去」，按拒绝处理。\n' +
+    `原因：${decided.reason}\n地址：${url}\n` +
+    '要放行：把目标主机加进允许名单、把网络策略改成「允许」，或把权限档改成「需要确认」。'
   )
-  return ''
 }
 
 module.exports = {

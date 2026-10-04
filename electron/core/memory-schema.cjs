@@ -55,16 +55,13 @@ function newId() {
  * `xoxb-…`（Slack）、`hf_…`（HuggingFace）、JWT、`api_key=xxx`、`password: xxx`
  * 七类都能写进记忆 —— 而记忆是**每轮注入上下文**的，漏一条就是每轮都泄露 + 进备份。
  *
- * 判据与 `redact.cjs` 同源：这里直接调它的**主入口**（原文 vs 脱敏后对比）。
- * （2026-10-04 之前 `looksSecret()` 自己遍历模式表做 `.test()`，带 /g 的正则会把
- *  `lastIndex` 留下 —— 同一根字符串连判两次结果会交替翻；那个 bug 当天已修，
- *  现在两个入口等价。这里仍写 `redact()`，只是不想再动已验过的那行。）
+ * ★ 判据**只有一处**（2026-10-04 统一）：`redact.looksSecret()`。它就是
+ *   「原文 vs 过一遍主入口」的对比，加新厂商前缀只改 `redact.cjs` 那张模式表。
+ *   以前这里**又写了一遍**同样的对比 —— 两处逻辑一模一样就是两个会漂的真相源
+ *   （第三处 `diagnostics.scrubLogLine` 已经在上一轮改成 `redact()`）。
+ *   名字保持不变：`memory-store` 与 `schedule-store` 照旧引 `looksLikeSecret`。
  */
-function looksLikeSecret(text) {
-  const sample = String(text ?? '')
-  if (!sample) return false
-  return redact.redact(sample) !== sample
-}
+const looksLikeSecret = redact.looksSecret
 
 /** 下一个序号（取文件里最大的 +1） */
 function nextSeq(data) {

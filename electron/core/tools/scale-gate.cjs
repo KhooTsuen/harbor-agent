@@ -28,6 +28,7 @@ const taskCore = require('../task.cjs')
 const configCore = require('../config.cjs')
 const scale = require('../scale.cjs')
 const scaleConfig = require('../scale-config.cjs')
+const scaleAsk = require('./scale-ask.cjs')
 
 const { KINDS, HARD_SECONDS, HARD_FILES, NOTE_SECONDS, BLOCKED_MARK, inspect, kindOf } = scale
 
@@ -81,22 +82,31 @@ function blockText(kind, reasons, estimate) {
 
 /** sessionId → 已批过的 kind 集合 */
 const grants = new Map()
-/** sessionId → 刚被拦下的 kind（等这个对话里 ask_user 被答一次就转成授权） */
+/** sessionId → 刚被拦下的 kind（等这个对话里**紧接着**那次 ask_user 被答才转成授权） */
 const pending = new Map()
 
 /**
- * 这个对话里 `ask_user` 真被答过一次 —— 把刚才那次规模拦截记成「用户批了」。
+ * 这个对话里 `ask_user` 刚被答了一次 —— **只有紧接着拦截那次问的规模确认**才记账。
  *
  * 为什么只按 kind、只在本对话内：「他答了」是那条路上唯一确定的事实，
  * 「他答的是同意」不是代码能判的 —— 范围含糊时宁可下次再问一遍。
  *
+ * ★ 两个收窄条件（审计问题 7）：
+ *   ① `pending` 是**一次性**的 —— 被答一次就销掉（不管认不认），不留着等下一次；
+ *   ② 问的得**看着像规模确认**（`scale-ask.looksLikeScaleAsk`），无关问题不给授权。
+ *   `pending` 还会在「模型跑去干别的工具」时清掉，见 `gate()`。
+ *
  * @returns {string|null} 转成授权的 kind
  */
-function noteAsked(sessionId) {
+function noteAsked(sessionId, questions) {
   const key = String(sessionId ?? '')
   const kind = pending.get(key)
   if (!key || !kind) return null
   pending.delete(key)
+  if (!scaleAsk.looksLikeScaleAsk(questions)) {
+    log.info(`[规模预检] 被答的那次不是规模确认（「${kind}」不记授权，下次还会问）`)
+    return null
+  }
   if (!grants.has(key)) grants.set(key, new Set())
   grants.get(key).add(kind)
   log.info(`[规模预检] 用户答过一次规模确认 → 本对话内「${kind}」不再问`)
@@ -200,6 +210,15 @@ function gate({ name, args = {}, ctx = {}, audit = auditCore.record, dry = false
    *   （自检里有一条专门钉这个语义：关掉之后「递归删盘」仍然会被危险度拦下）。
    */
   if (!enabled) return { level: 'ok', disabled: true }
+
+  /*
+   * ★ 模型跑去干别的工具 → 那次拦截的 pending 立刻作废（审计问题 7）。
+   *   `gate()` 是**每次工具调用**都会过的一道，所以「紧接着那一次就是 ask_user」
+   *   这件事在这里判得出来：不是 ask_user 就说明它没去问规模，那这次的「等授权」
+   *   就该失效，而不是留着等下一次无关的提问把它变成授权。
+   */
+  if (name !== 'ask_user') pending.delete(String(ctx.sessionId ?? ''))
+
   const verdict = inspect({
     name,
     args,
