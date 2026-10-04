@@ -21,11 +21,20 @@ const ROOT = join(__dirname, '..', '..', '..')
 const require_ = createRequire(import.meta.url)
 const SANDBOX = mkdtempSync(join(tmpdir(), 'harbor-batch2a-'))
 
-const { DIRS } = require_(join(ROOT, 'electron/core/paths.cjs')) as { DIRS: { sessions: string } }
+/* ★ 沙盒注入口：来由见 batch1DataLoss.test.ts 顶部（CI 上没有仓库 data/，没注入口就会读写它） */
+const paths = require_(join(ROOT, 'electron/core/paths.cjs')) as {
+  DIRS: { sessions: string }
+  markPackaged: (base: string) => void
+  ensureDirs: () => void
+}
+paths.markPackaged(SANDBOX)
+paths.ensureDirs()
+const { DIRS } = paths
 const sessionIo = require_(join(ROOT, 'electron/core/session-io.cjs')) as {
   fileFor: (id: string) => string
   isSessionId: (id: unknown) => boolean
   newId: () => string
+  writeLines: (id: string, lines: unknown[]) => void
 }
 const sessionRead = require_(join(ROOT, 'electron/core/session-read.cjs')) as {
   list: () => { id: string }[]
@@ -61,6 +70,9 @@ describe('问题 15：会话 id 白名单（四个通道共用的那一处）', 
   })
 
   it('★ 会话列表遇到不合规的文件名不崩（跳过它）', () => {
+    /* 先放一个**合规**的会话：以前这条靠仓库 data/sessions 里恰好有东西，
+       CI 上是空的 → `expected 0 to be greater than 0` */
+    sessionIo.writeLines(sessionIo.newId(), [{ type: 'meta', title: '沙盒里的正常会话' }])
     const stray = join(DIRS.sessions, 'zzz-not-ours-1.jsonl')
     writeFileSync(stray, '{"type":"meta","title":"不是我们的文件"}\n', 'utf8')
     try {
@@ -148,11 +160,13 @@ describe('问题 16：超时/中断连子树一起杀', () => {
 
 describe('问题 17：run_shell 的执行目录也过权限边界', () => {
   it('工作目录外 → 需要授权（不是默默跑掉）', async () => {
+    /* 以前写的是 'C:\Windows' —— 那个路径只在 Windows 上算「工作目录外」；
+       CI 跑 Linux，它会被当成相对路径（落在工作目录里）→ 权限门放行
+       → 断言就变成了 `promise resolved instead of rejecting`。
+       改成沙盒的同级目录：两个平台都在工作目录之外。 */
+    const outside = mkdtempSync(join(tmpdir(), 'harbor-outside-'))
     await expect(
-      runShell.run(
-        { command: 'echo hi', cwd: 'C:\\Windows' },
-        { workdir: SANDBOX, sessionId: 'batch2' },
-      ),
+      runShell.run({ command: 'echo hi', cwd: outside }, { workdir: SANDBOX, sessionId: 'batch2' }),
     ).rejects.toThrow(/需要授权/)
   })
 

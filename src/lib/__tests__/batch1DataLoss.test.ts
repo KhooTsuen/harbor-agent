@@ -31,6 +31,24 @@ const ROOT = join(__dirname, '..', '..', '..')
 const require_ = createRequire(import.meta.url)
 const SANDBOX = mkdtempSync(join(tmpdir(), 'harbor-batch1-'))
 
+/*
+ * ★ 这一组必须跑在**沙盒**里。会话 / 记忆 / 备份的真实路径由 paths.cjs 算出来，
+ *   之前没有注入口 —— 它直接读写仓库的 data/，而 CI 是全新检出：
+ *   `.gitignore` 里 `data/` 被忽略 → `data/config.json` 根本不存在
+ *   → 「真备份一份」的断言前提不成立（备份只剩 sessions），CI 连红 9 次。
+ *   `markPackaged` 就是那个注入口（DIRS 全是 getter，调完立刻生效）。
+ */
+const paths = require_(join(ROOT, 'electron/core/paths.cjs')) as {
+  DIRS: { data: string }
+  markPackaged: (base: string) => void
+  ensureDirs: () => void
+}
+paths.markPackaged(SANDBOX)
+paths.ensureDirs()
+/* 备份清单里的这两项要真的存在且有内容，否则它们会进 skipped（本地以前是靠仓库 data/ 蒙对的） */
+writeFileSync(join(paths.DIRS.data, 'config.json'), '{}\n', 'utf8')
+writeFileSync(join(paths.DIRS.data, 'memory.json'), '{"items": []}\n', 'utf8')
+
 const sessionIo = require_(join(ROOT, 'electron/core/session-io.cjs')) as {
   fileFor: (id: string) => string
   newId: () => string
@@ -83,7 +101,7 @@ describe('问题 22 / 改标题不再丢数据', () => {
     expect(after[0]).toContain('新标题')
     expect(after.slice(1).join('\n')).toBe(before)
     expect(readFileSync(file, 'utf8')).toContain('e1:this-is-not-openable-ciphertext')
-  })
+  }, 30000)
 
   it('★ 第一行不是 meta（或解不开）时，把 meta 插到最前面，原字节一个不丢', () => {
     const id = sessionIo.newId()
@@ -119,7 +137,8 @@ describe('问题 27 / 记忆：原子写 + 坏文件留档', () => {
     list: () => unknown[]
   }
   const memPath = store.filePath()
-  const dataDir = join(ROOT, 'data')
+  /* ★ 走沙盒：以前是 join(ROOT, 'data') —— CI 上没有那个目录，readdirSync 直接 ENOENT */
+  const dataDir = join(SANDBOX, 'data')
   let snapshot: string | null = null
 
   beforeAll(() => {
@@ -167,7 +186,8 @@ describe('问题 5 + 13 / 备份：清单改对 + 空壳滚不进来', () => {
     remove: (name: string) => { ok: boolean }
     list: () => { name: string; empty: boolean; missing: string[] }[]
   }
-  const backupsRoot = join(ROOT, 'data', 'backups')
+  /* ★ 同上：备份根也要指到沙盒，否则「刚建的备份」在仓库 data/ 下根本找不到 */
+  const backupsRoot = join(SANDBOX, 'data', 'backups')
 
   it('★ 清单里是 memory.json，不是老路径 memory.md', () => {
     const names = scan.ITEMS.map((i) => i.name)

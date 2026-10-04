@@ -1,7 +1,8 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 /* ══════════════════════════════════════════════════════════════
    第 2 批（下）：出口（审计问题 20 / 21 / 23 / 24）
@@ -16,6 +17,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const ROOT = join(__dirname, '..', '..', '..')
 const require_ = createRequire(import.meta.url)
+const SANDBOX = mkdtempSync(join(tmpdir(), 'harbor-batch2b-'))
+
+/*
+ * ★ 沙盒 + 时间预算（来由见 batch1DataLoss.test.ts 顶部）：
+ *   这一组会建任务（写 data/tasks），而 CI 上仓库根本没有 data/；
+ *   再者批量 require 这些内核模块本身就慢，Linux runner 上 5 秒不够。
+ */
+const paths = require_(join(ROOT, 'electron/core/paths.cjs')) as {
+  markPackaged: (base: string) => void
+  ensureDirs: () => void
+}
+paths.markPackaged(SANDBOX)
+paths.ensureDirs()
+vi.setConfig({ testTimeout: 30000 })
 
 const plugins = require_(join(ROOT, 'electron/core/plugins.cjs')) as {
   describePermissions: (permissions: unknown) => string

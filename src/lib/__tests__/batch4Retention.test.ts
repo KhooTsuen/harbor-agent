@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 
 /* ══════════════════════════════════════════════════════════════
    第 4 批：保留策略与孤儿快照（审计问题 1 / 3 / 4 / 10 / 11）
@@ -20,6 +20,19 @@ import { afterAll, describe, expect, it } from 'vitest'
 const ROOT = join(__dirname, '..', '..', '..')
 const require_ = createRequire(import.meta.url)
 const SANDBOX = mkdtempSync(join(tmpdir(), 'harbor-batch4-'))
+
+/*
+ * ★ 沙盒 + 时间预算（来由见 batch1DataLoss.test.ts 顶部）：
+ *   这一组真写日志 / 事件 / 快照（全在 data/ 下），CI 上没有仓库 data/；
+ *   而且它在做真文件 I/O，Linux runner 上 5 秒默认预算不够。
+ */
+const paths = require_(join(ROOT, 'electron/core/paths.cjs')) as {
+  markPackaged: (base: string) => void
+  ensureDirs: () => void
+}
+paths.markPackaged(SANDBOX)
+paths.ensureDirs()
+vi.setConfig({ testTimeout: 30000 })
 
 const retention = require_(join(ROOT, 'electron/core/data-retention.cjs')) as {
   KEEP_DAYS: number
