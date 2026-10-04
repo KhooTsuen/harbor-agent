@@ -28,6 +28,7 @@ import {
 import { checkHooksInstalled } from './check-rules/checks-hooks.mjs'
 import { checkHygiene, LIMITS } from './check-rules/checks-hygiene.mjs'
 import { checkDriftingNumbers } from './check-rules/checks-drift.mjs'
+import { checkVersionBump } from './check-rules/checks-version.mjs'
 
 /* 门面照旧再导出一次：`import { checkLineLimits } from './check-rules.mjs'` 仍然可用
    （测试就是这么用的 —— 拆文件不该改调用方，见 docs/踩坑记录.md）
@@ -42,6 +43,7 @@ export {
   checkNoNewDeps,
   checkNoSecretsInConfig,
   checkTodos,
+  checkVersionBump,
   LIMITS,
 }
 
@@ -55,6 +57,9 @@ export const CHECKS = [
   ['无 TODO 残留（警告）', checkTodos],
   ['AGENT.md 在且非空', checkAgentMd],
   ['改动文件数（警告）', checkDiffSize],
+  /* 用户要求「每次修复或更新都要升小版本」。发布检查.md 里早有通道规矩，
+     但它只在发版那天人工核对 —— 平时提交忘了升没人拦。这条把它提前到提交那一刻。 */
+  ['改了代码必须升版本号', checkVersionBump],
   ['约束机制在位（警告）', checkHooksInstalled],
   ['仓库卫生（警告）', checkHygiene],
   ['易漂数字（警告）', checkDriftingNumbers],
