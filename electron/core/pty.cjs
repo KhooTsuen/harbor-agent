@@ -41,7 +41,8 @@ function defaultShell() {
 
 function baseDir() {
   const { DIRS } = require('./paths.cjs')
-  return config.get().general.workdir || DIRS.workspace
+  /* 默认对话目录（2026-10-05 改成 data/chat；老装机的 data/workspace 由 workdir.cjs 那边判） */
+  return config.get().general.workdir || DIRS.chat
 }
 
 function clamp(value, min, fallback) {

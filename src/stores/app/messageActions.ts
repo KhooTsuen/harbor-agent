@@ -1,5 +1,4 @@
 import type { Message, Thread } from '@/types'
-import { touch } from './types'
 
 /* ══════════════════════════════════════════════════════════════
    消息级操作
@@ -13,16 +12,25 @@ import { touch } from './types'
 
 type Setter = (updater: (state: { threads: Thread[] }) => { threads: Thread[] }) => void
 
-/** 把某个 thread 的 messages 换成新的 */
+/**
+ * 把某个 thread 的 messages 换成新的
+ *
+ * ⚠️ 这里**故意不调 touch()**（曾包过 `touch({ ...t, ... })`）—— 理由：
+ * 流式回答期间每来一个分片都会走 updateMessage，顺手刷 updatedAt 就等价于
+ * 「侧栏按最近活跃每几百毫秒重排一次」。真机反馈：同时跑两三个任务时，
+ * 列表在眼前往上跳、想点的对话点不中，只想打开的对话跑到别处去了。
+ *
+ * 现在「往上浮」只发生在**一轮的开始与结束**（见 useAppStore.setThreadPhase
+ * 里按边界阶段触发的那一次 touch）—— 一轮中间写多少条消息都不动位置。
+ * 所以以后往这里加新 action 时，默认也**不要**加 touch。
+ */
 function patchMessages(
   set: Setter,
   threadId: string,
   mapper: (messages: Message[]) => Message[],
 ): void {
   set((s) => ({
-    threads: s.threads.map((t) =>
-      t.id === threadId ? touch({ ...t, messages: mapper(t.messages) }) : t,
-    ),
+    threads: s.threads.map((t) => (t.id === threadId ? { ...t, messages: mapper(t.messages) } : t)),
   }))
 }
 

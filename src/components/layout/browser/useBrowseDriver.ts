@@ -38,32 +38,48 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
   const clearPending = useBrowserStore((s) => s.clearPending)
   /* 正在处理的那一个，避免重复执行 */
   const busyRef = useRef<string | null>(null)
+  /* 上一次 effect 还活着吗 —— 见下面那道闸的注释 */
+  const liveRef = useRef(false)
 
   useEffect(() => {
     if (!pending) return
-    if (busyRef.current === pending.id) return
+    /*
+     * 同一条请求已在处理 → 不重复执行。
+     * 但**只挡还活着的那一次**：React 18 StrictMode 会「挂载→立刻卸载→再挂载」，
+     * 死掉的那次会一直占着 busyRef，于是唯一活着的那次被挡掉 —— 开发模式下
+     * 每次浏览都静默失败（主进程一直等到 45 秒超时）。真机复现过。
+     */
+    if (busyRef.current === pending.id && liveRef.current) return
     busyRef.current = pending.id
+    liveRef.current = true
 
     let alive = true
+    /*
+     * 这一条请求回过话没有。
+     * 卸载/换请求时要靠它判断「该不该补一条失败回话」—— 见下面 cleanup 里的注释。
+     */
+    let replied = false
+
+    const reply = (result: {
+      ok: boolean
+      text?: string
+      html?: string
+      title?: string
+      url?: string
+      snapshot?: unknown
+      click?: string
+      type?: string
+      into?: string
+      password?: boolean
+      needsConfirm?: boolean
+      error?: string
+    }): void => {
+      replied = true
+      /* 拿 id 的这一刻就记牢：cleanup 里再读 pending 可能已经是下一条了 */
+      void window.workbench?.browserResult?.(pending!.id, result)
+    }
 
     async function run(): Promise<void> {
-      const reply = (result: {
-        ok: boolean
-        text?: string
-        html?: string
-        title?: string
-        url?: string
-        snapshot?: unknown
-        click?: string
-        type?: string
-        into?: string
-        password?: boolean
-        needsConfirm?: boolean
-        error?: string
-      }): void => {
-        void window.workbench?.browserResult?.(pending!.id, result)
-      }
-
       /* 等 webview 挂上（切到浏览器标签后才会有）—— 跟后面几步共用同一条预算 */
       const budget = new Budget()
       const view = await waitForElement(() => webviewRef.current, budget)
@@ -200,6 +216,29 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
 
     return () => {
       alive = false
+      liveRef.current = false
+      /*
+       * ★ 没回过话就当场回一条（2026-10-05 真机反馈 1c）。
+       *
+       * 以前这里只是 `alive = false` —— 请求就这么**被丢掉**了：主进程那头
+       * 一直等到 45 秒超时才回话，用户看到的是「界面没有在 45 秒内回应」，
+       * 而界面早就知道这条请求做不完了。凡是界面已经知道结果的情况，
+       * 就该马上说清楚，别让主进程去猜。
+       *
+       * 判断「是不是真被丢掉了」看 store 里当前那条请求：
+       *   · cleanup 先于新 effect 跑 —— 「被新请求顶掉」时 store 里已经是新的 id → 回话 ✓
+       *   · 被 closeAll 清掉 / 换成 null → 也回话 ✓
+       *   · StrictMode 复挂、或单纯重渲染（还是同一条）→ **不回话**，
+       *     因为马上就会有另一次执行接着把它做完
+       */
+      const current = useBrowserStore.getState().pending
+      if (!replied && current?.id !== pending!.id) {
+        reply({
+          ok: false,
+          error:
+            '页面已切换：这条浏览请求在执行途中被打断了（浏览器标签换了、被关了，或者面板被切走）。重新发起一次，或先手动点开右侧「浏览器」再试。',
+        })
+      }
     }
   }, [pending, webviewRef, clearPending])
 }

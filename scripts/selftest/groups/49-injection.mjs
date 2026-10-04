@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { asked, dirname, join, require, ROOT, SANDBOX, ctx } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
@@ -130,26 +130,34 @@ export async function run() {
   )
 
   /*
-   * ★ 反过来也要钉住：「完全访问」档下**确实放行**（用户明确选的），
-   *   但**不能悄悄放行** —— 要给一条**不打断**的提示（内核发 notice 事件 → 界面弹 toast）。
-   *   这里用 `emit` 收事件，不去数审计条数：审计按天落盘、自检环境里读不到当前那天的文件
-   *   （数条数还容易被 `read()` 的 limit 截住，我第一次就写出了一个「5000 → 5000」的假失败）。
+   * ★ 反过来也要钉住：「完全访问」档下**确实放行**（用户明确选的），但**不能悄悄放行**。
+   *
+   * 2026-10-05 真机反馈 8 改了这条契约的**实现方式**：以前是发一条 notice（界面弹 toast），
+   * 但完全访问档下读一次代码库能刷几十条、把界面糊死；现在**只写审计**
+   * （`pathBypass` + 一句「为什么没问」）。
+   *
+   * 所以这里钉两件事：① 不再发 notice；② 审计那一条的**内容**（源码级）。
+   * 审计没法在这里读 —— 按天落盘，自检环境读不到当前那天的文件
+   * （以前数条数写出过「5000 → 5000」的假失败）。
    */
   const notices = []
-  const fullOutside = await tools.execute(    'write_file',
+  const fullOutside = await tools.execute(
+    'write_file',
     { path: join(SANDBOX, '..', 'injected-outside-full.txt'), content: '完全访问档写出来的' },
     { ...ctx, permission: 'full', confirm: async () => false, emit: (e) => notices.push(e) },
   )
   check(
-    '★ 「完全访问」档：不再弹窗（用户选的），但会给一条不打断的提示',
-    !fullOutside.startsWith('错误：') && notices.some((n) => n.type === 'notice'),
+    '★ 「完全访问」档：不再弹窗，也不再弹提示（改走审计）',
+    !fullOutside.startsWith('错误：') && notices.filter((n) => n.type === 'notice').length === 0,
     `结果 ${fullOutside.slice(0, 40)}｜事件 ${JSON.stringify(notices)}`,
   )
-  const notice = notices.find((n) => n.type === 'notice') ?? {}
+
+  const permSrc = readFileSync(join(ROOT, 'electron/core/tools/permission.cjs'), 'utf8')
   check(
-    '★ 提示里说清了「当前是完全访问，所以没问」',
-    String(notice.text ?? '').includes('完全访问') && String(notice.title ?? '').length > 0,
-    JSON.stringify(notice),
+    '★ 审计里写清了「没问是因为完全访问」',
+    permSrc.includes('pathBypass: ctx.permission') &&
+      permSrc.includes('完全访问档：未询问即放行'),
+    'permission.cjs 里找不到 pathBypass 或「完全访问档：未询问即放行」',
   )
 
   const envFile = join(SANDBOX, '.env')

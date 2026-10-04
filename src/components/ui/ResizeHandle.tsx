@@ -34,6 +34,18 @@ export interface ResizeHandleProps {
   side: 'left' | 'right' | 'top' | 'bottom'
   label: string
   orientation?: 'horizontal' | 'vertical'
+  /**
+   * 竖向手柄的热区往**上/下**各伸出多少 px（默认 12）。
+   * 只对 `orientation="vertical"` 生效；横向那侧刻意不对称（左侧 1px、右侧 12px，
+   * 原因见下面热区那段注释），不在这里调。
+   *
+   * 什么时候要收窄：手柄那一侧紧挨着另一个可点控件时。
+   * 真机踩过：输入框高度那条线上沿压在面板上，面板里第一个元素是计划栏（约 22px 高），
+   * 热区往下伸 12px 正好盖住它的标题上半部，且热区带 z-10 在上层 ——
+   * 想点计划栏展开，结果拖的是输入框高度。
+   */
+  hitTop?: number
+  hitBottom?: number
 }
 
 export function ResizeHandle({
@@ -45,6 +57,8 @@ export function ResizeHandle({
   side,
   label,
   orientation = 'horizontal',
+  hitTop = 12,
+  hitBottom = 12,
 }: ResizeHandleProps) {
   const vertical = orientation === 'vertical'
   const startRef = useRef({ pos: 0, value: 0, dragging: false })
@@ -199,17 +213,17 @@ export function ResizeHandle({
         抓手就只剩线的左右 1px，太难点中。
 
         ⚠️ 别改回对称（-left-3 -right-3）—— 会重新盖住邻居的滚动条。
-        垂直方向（上/下）的两侧邻居都没滚动条，维持 ±12px —— 但**层级同样要带 z-10**：
+        垂直方向（上/下）的两侧邻居都没滚动条，默认也是 ±12px —— 但**层级同样要带 z-10**：
         输入框那条手柄压在「聊天区 / 输入框」的交界线上，而聊天区是 `relative z-10`，
         不带 z 时热区会被整条吃掉。真机扫描过：同一份代码，预刷新时 8 个采样点有 4 个
         命中手柄热区（可拖），刷新后同一位置 8 个点全部命中聊天区，一个都抓不到。
+
+        竖向的上下值现在走 `hitTop` / `hitBottom`（px）—— 邻居是可点控件时能单独收窄，
+        横向那侧不动（它不对称是为了绕开滚动条，见上）。
       */}
       <span
-        className={cn(
-          /* z-10 两个方向都要带（原来只有左右方向带）—— 理由见上面那段注释 */
-          'absolute z-10',
-          vertical ? 'inset-x-0 -top-3 -bottom-3' : 'inset-y-0 -left-px -right-3',
-        )}
+        className={cn('absolute z-10', !vertical && 'inset-y-0 -left-px -right-3')}
+        style={vertical ? { left: 0, right: 0, top: -hitTop, bottom: -hitBottom } : undefined}
       />
       <span
         className={cn(

@@ -25,6 +25,7 @@ import { StatusDot } from '@/components/ui/StatusDot'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { useThreadHasTask } from '@/stores/useTaskStore'
 import { colorOf } from '@/lib/statusLanguage'
+import { UnreadDot } from './UnreadDot'
 
 /* ══════════════════════════════════════════════════════════════
    侧栏里的一行线程
@@ -170,6 +171,9 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
       <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
         {relativeTime(thread.updatedAt)}
       </span>
+
+      {/* 提醒点（真机反馈 4）：跑完/卡住且用户还没看过 —— 见 UnreadDot */}
+      <UnreadDot thread={thread} />
 
       {/*
         操作槽：按钮**常显**，位置与占地恒定（w-7 × h-4）。

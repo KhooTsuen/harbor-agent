@@ -55,6 +55,17 @@ const DIRS = {
   get workspace() {
     return path.join(rootDir(), 'data', 'workspace')
   },
+  /**
+   * 默认**对话目录**（2026-10-05 用户拍板：默认位置改成这里）。
+   *
+   * 和 workspace 的区别是"叫什么"而不是"干什么"：workspace 是历史包袱 ——
+   * 名字含义太泛（工作区？工作目录？）而实际只当对话的落地点用。
+   * 老装机里 workspace 已经有东西的话**继续用它**（见 handlers/workdir.cjs），
+   * 不搬文件、不改 config，不让人升级完就找不到东西。
+   */
+  get chat() {
+    return path.join(rootDir(), 'data', 'chat')
+  },
   get chatCache() {
     return path.join(rootDir(), 'data', 'cache')
   },
@@ -91,6 +102,7 @@ function ensureDirs() {
     DIRS.avatars,
     DIRS.backgrounds,
     DIRS.workspace,
+    DIRS.chat,
     DIRS.chatCache,
     DIRS.crash,
     DIRS.errors,
@@ -118,6 +130,7 @@ function auditNonC() {
     ['日志', DIRS.logs],
     ['会话', DIRS.sessions],
     ['工作目录', DIRS.workspace],
+    ['对话目录', DIRS.chat],
   ]
   for (const [label, dir] of list) {
     const normalized = path.resolve(dir).toLowerCase()

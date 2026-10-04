@@ -35,6 +35,14 @@ async function runWithPathPermission(tool, args, ctx) {
        * 完全访问 = 不问。但**不能悄悄放行**：审计里留一条、界面上弹一条 toast。
        * 走的是同一条授权 + 重试，只是跳过了「问」这一步。
        */
+      /*
+       * 只留审计，**不弹提示**（真机反馈 8）。
+       *
+       * 以前这里每个「工作目录之外的文件」都弹一条 toast —— 完全访问档下
+       * 读一次代码库能刷出几十条，把界面糊死（用户原话：弹得没法看）。
+       * 而这条信息本来就在审计里（下一行的 `pathBypass` + target + note），
+       * 事后查得到，不必拿它打扰人。
+       */
       auditCall(ctx, {
         tool: tool.name,
         args,
@@ -42,9 +50,14 @@ async function runWithPathPermission(tool, args, ctx) {
         ok: true,
         approval: null,
         error: '',
-        extras: { pathBypass: ctx.permission, sensitive: error.sensitive ?? '', target },
+        extras: {
+          pathBypass: ctx.permission,
+          sensitive: error.sensitive ?? '',
+          target,
+          /* 让人一眼看懂：没问是因为档位是「完全访问」，不是出了问题 */
+          note: `完全访问档：未询问即放行${what}`,
+        },
       })
-      notice(ctx, `访问了${what}`, `${target}\n（当前是「完全访问」，按你的设置没有询问）`)
       /*
        * ★ 授权用 `once`（用完即销），**不能**用 `session`：
        *   完全访问下放行一次就留下一条 12 小时的会话授权的话，用户之后切回
@@ -80,19 +93,13 @@ async function runWithPathPermission(tool, args, ctx) {
   }
 }
 
-/**
- * 一条**不打断**的提示（`ctx.emit` 是循环里那个事件通道）。
- *
- * 用途：某件事按用户的设置「没有问」，但用户仍应该知道它发生了 ——
- * 弹窗换成 toast，不挡人做事。拿不到通道就只留审计（照样有痕）。
+/*
+ * ★ 2026-10-05 删掉了这里的 `notice()` 函数：它唯一的调用点（完全访问档放行
+ *   文件访问）改成了**只写审计**（真机反馈 8 —— 高频提示不该弹 toast）。
+ *   渲染层仍然接 `notice` 事件（见 stores/thread/noticeEvents.ts），
+ *   以后确实需要「不打断但要说一声」时再把它加回来 —— 现在内核里没有发出者，
+ *   留着就是死代码（lint 也会报未使用）。
  */
-function notice(ctx, title, text) {
-  try {
-    ctx.emit?.({ type: 'notice', level: 'info', title, text })
-  } catch {
-    /* 提示失败不能影响主流程 */
-  }
-}
 
 /* ── ④ 审计 ───────────────────────────────────────────────── */
 

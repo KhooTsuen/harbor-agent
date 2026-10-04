@@ -20,6 +20,23 @@ import { sameUrl } from '@/lib/url'
 export interface BrowserTabItem {
   id: string
   url: string
+  /**
+   * 这个标签属于**哪个会话**（标签栏按会话隔离，真机反馈 6）。
+   * 会话号就是 `Thread.id`；`''` = 还不知道属于谁（只会在测试里出现）。
+   */
+  sessionId: string
+  /**
+   * 谁开的这个标签。
+   * `user`  = 在地址栏里自己开的：Agent 不许把它当成"自己那一个"拿去改地址；
+   * `agent` = Agent 导航开出来的：同一个会话里永远只复用这一个（真机反馈 1b）。
+   */
+  owner: 'user' | 'agent'
+  /**
+   * 这个标签的 webview 重建计数（手动「重新加载」用）。
+   * 放在**每个标签**上，不是全局一个 —— 以前全局一个，一重载就把当前 webview 换了；
+   * 而标签常驻之后，全局值还会让切标签也跟着重建（见 BrowserTab 的注释）。
+   */
+  reloadKey: number
 }
 
 /** 主进程发来、还没被执行的一次浏览请求 */
@@ -36,13 +53,16 @@ export interface PendingBrowse {
   pressEnter?: boolean
   /** type 时用：用户已明确授权填密码（由确认弹窗得到） */
   authorized?: boolean
+  /**
+   * 哪个会话发起的。渲染层从当前会话盖章（主进程发的事件里没有这个字段）。
+   * 用来让 AI 在同一个会话里复用同一个标签 —— 见 `requestBrowse` 里的注释。
+   */
+  sessionId?: string
 }
 
 interface BrowserState {
   tabs: BrowserTabItem[]
   activeId: string
-  /** 换一个值就强制重建 webview（重载用） */
-  reloadKey: number
   /** Agent 要读的页面 —— BrowserTab 挂载后会消费掉它 */
   pending: PendingBrowse | null
   /**
@@ -54,7 +74,7 @@ interface BrowserState {
    */
   agentAt: number
 
-  open: (url: string) => void
+  open: (url: string, sessionId?: string) => void
   select: (id: string) => void
   close: (id: string) => void
   reload: () => void
@@ -66,24 +86,61 @@ interface BrowserState {
   markAgentActivity: () => void
   /** 用户自己点开浏览器标签看过了 —— 角标减掉 */
   clearAgentActivity: () => void
-  closeAll: () => void
+  /** 关标签：传会话号就只关那个会话的，不传就全关 */
+  closeAll: (sessionId?: string) => void
 }
 
 function newTabId(): string {
   return `tab-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
 }
 
+/**
+ * 本会话的标签（真机反馈 6：标签栏按会话隔离）。
+ *
+ * 口径：`sessionId` 等于本会话，或者「还没认领归属的用户标签」——
+ * 后者是兜底（地址栏建标签时还没来得及盖章），**别的会话的标签永远不会混进来**。
+ * `visibleTabOf` 与 BrowserTab 的标签栏都调它，别各写一遍。
+ */
+export function tabsOfSession(
+  tabs: readonly BrowserTabItem[],
+  sessionId: string,
+): BrowserTabItem[] {
+  return tabs.filter((t) => t.sessionId === sessionId || (t.sessionId === '' && t.owner === 'user'))
+}
+
+/**
+ * 当前该**显示**、也该被 Agent 驱动的那一个标签。
+ *
+ * 只看本会话的标签 —— 别的会话的标签留在 DOM 里继续活着，但不显示、也不被驱动。
+ * 放在这里当**唯一口径**：BrowserTab（显示谁）、useBrowseBridge（判断「有没有页面」）、
+ * useBrowseDriver（驱动哪个元素）三处都调它，不要各写一遍。
+ */
+export function visibleTabOf(
+  tabs: readonly BrowserTabItem[],
+  sessionId: string,
+  activeId: string,
+): BrowserTabItem | undefined {
+  const mine = tabsOfSession(tabs, sessionId)
+  return mine.find((t) => t.id === activeId) ?? mine[mine.length - 1]
+}
+
 export const useBrowserStore = create<BrowserState>()((set) => ({
   tabs: [],
   activeId: '',
-  reloadKey: 0,
   pending: null,
   agentAt: 0,
 
-  open: (url) =>
+  /**
+   * 用户自己开一个标签。
+   * `sessionId` 由调用方（BrowserTab）从当前会话取 —— 标签栏按会话隔离靠它。
+   */
+  open: (url, sessionId) =>
     set((state) => {
       const id = newTabId()
-      return { tabs: [...state.tabs, { id, url }], activeId: id }
+      return {
+        tabs: [...state.tabs, { id, url, sessionId: sessionId ?? '', owner: 'user', reloadKey: 0 }],
+        activeId: id,
+      }
     }),
 
   select: (id) => set({ activeId: id }),
@@ -94,7 +151,13 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
       return { tabs, activeId }
     }),
 
-  reload: () => set((state) => ({ reloadKey: state.reloadKey + 1 })),
+  /* 只重建**当前标签**那个 webview（以前全局一个值，一重载就把当前那个换了） */
+  reload: () =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === state.activeId ? { ...t, reloadKey: t.reloadKey + 1 } : t,
+      ),
+    })),
 
   requestBrowse: (request) =>
     set((state) => {
@@ -107,18 +170,58 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
         return { pending: request }
       }
       /*
-       * 已经有同一个地址的标签就复用它 —— 不然 Agent 读三次同一个页面
-       * 会开出三个标签，用户看着莫名其妙。
+       * 导航：**每个会话最多一个 Agent 标签**（真机反馈 1b）。
        *
-       * 「同一个地址」用 sameUrl 判，不用 `===`：Agent 给的地址写法不统一
-       * （`example.com` 和 `example.com/`），严格比较会当成两个页面，
-       * 于是白开一个标签、webview 重建、页面重新加载。
+       * 以前是按地址找：地址一样就复用，不一样就再开一个 —— 于是 Agent 在一个会话里
+       * 连读五个页面就堆出五个标签，用户看到一排"它开过的网页"，还得自己关。
+       * 现在它在这个会话里就那一个标签，换页面就是换那一个（也顺带让"切标签"这件事
+       * 在界面上彻底消失）。
+       *
+       * 找不到本会话的标签时，才退回去按地址找（老行为，且**保留写法的宽容**：
+       * `example.com` 与 `example.com/` 算同一个页面）—— 用户已经开着同一个页
+       * 时不再白开一个。这种情况顺手把归属改成这个会话，下次导航就真复用了。
+       *
+       * 没有会话号（万一）时只按地址找：宁可多一个标签，也别把两个会话的页面混在一起。
        */
-      const existing = state.tabs.find((t) => sameUrl(t.url, request.url ?? ''))
-      if (existing) return { activeId: existing.id, pending: request }
+      const sid = request.sessionId ?? ''
+      /* ① 本会话里 **Agent 自己那一个** 标签（每个会话最多一个） */
+      const own = sid
+        ? state.tabs.find((t) => t.sessionId === sid && t.owner === 'agent')
+        : undefined
+      /*
+       * ② 退一步：已经开着同一个页面就用它（不白开一个）。
+       *    · 还不知道归属的标签可以用（顺手认领成本会话的）；
+       *    · **别的会话的标签不许抢** —— 否则会把人家的页面搬到这个会话里来。
+       */
+      const sameUrlTab = state.tabs.find(
+        (t) => sameUrl(t.url, request.url ?? '') && (t.sessionId === '' || t.sessionId === sid),
+      )
+      const existing = own ?? sameUrlTab
+      if (existing) {
+        const same = sameUrl(existing.url, request.url ?? '')
+        return {
+          tabs: state.tabs.map((t) =>
+            t.id === existing.id
+              ? {
+                  ...t,
+                  /* 地址没真的变就不动它（动一下 React 就会重新导一次） */
+                  url: same ? t.url : (request.url ?? t.url),
+                  sessionId: t.sessionId || sid,
+                  /* 地址真的变了才重建 webview；同地址复用不重建（不白重新加载） */
+                  reloadKey: same ? t.reloadKey : t.reloadKey + 1,
+                }
+              : t,
+          ),
+          activeId: existing.id,
+          pending: request,
+        }
+      }
       const id = newTabId()
       return {
-        tabs: [...state.tabs, { id, url: request.url }],
+        tabs: [
+          ...state.tabs,
+          { id, url: request.url ?? '', sessionId: sid, owner: 'agent', reloadKey: 0 },
+        ],
         activeId: id,
         pending: request,
       }
@@ -129,5 +232,20 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
   markAgentActivity: () => set({ agentAt: Date.now() }),
   clearAgentActivity: () => set({ agentAt: 0 }),
 
-  closeAll: () => set({ tabs: [], activeId: '', pending: null, agentAt: 0 }),
+  /*
+   * 关标签。传会话号就只关那个会话的（真机反馈 6：一个会话收尾不该把别的会话
+   * 正在看的页面也关掉）；不传就全关（收尾 / 测试用）。
+   * 关掉的会话正好有请求在跑时把 pending 清掉 —— driver 的 cleanup 会据此**当面回话**，
+   * 不让主进程干等 45 秒超时（见 useBrowseDriver 里那段注释）。
+   */
+  closeAll: (sessionId) =>
+    set((state) => {
+      if (!sessionId) return { tabs: [], activeId: '', pending: null, agentAt: 0 }
+      const tabs = state.tabs.filter((t) => t.sessionId !== sessionId)
+      return {
+        tabs,
+        activeId: tabs.some((t) => t.id === state.activeId) ? state.activeId : '',
+        pending: state.pending?.sessionId === sessionId ? null : state.pending,
+      }
+    }),
 }))

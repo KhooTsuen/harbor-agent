@@ -1,4 +1,4 @@
-import { FolderOpen, Loader2, Plus, RefreshCw, Shield } from 'lucide-react'
+import { Loader2, Plus, RefreshCw, Shield } from 'lucide-react'
 import { useState } from 'react'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -8,6 +8,7 @@ import { Field } from '@/components/ui/Field'
 import { ProviderCard } from './providers/ProviderCard'
 import { ModelField } from './providers/ModelField'
 import { AssistantSwitches } from './providers/AssistantSwitches'
+import { WorkdirRow } from './providers/WorkdirRow'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 模型 / 工具
@@ -215,10 +216,6 @@ const PERMISSIONS = [
 export function ToolsPanel() {
   const config = useConfigStore((s) => s.config)
   const patchTools = useConfigStore((s) => s.patchTools)
-  const workdir = useConfigStore((s) => s.workdir)
-  const chooseWorkdir = useConfigStore((s) => s.chooseWorkdir)
-  const [picking, setPicking] = useState(false)
-
   if (!config) return null
 
   return (
@@ -256,31 +253,7 @@ export function ToolsPanel() {
         </div>
       </div>
 
-      <div className="acrylic-card rounded-base px-3.5 py-3">
-        <p className="mb-1 text-2xs text-fg-tertiary">
-          工作目录（模型看到的「相对路径」是相对这里）
-        </p>
-        <div className="flex items-center gap-2">
-          <span
-            className="min-w-0 flex-1 truncate rounded-base border border-line-hairline bg-bg-raised/30 px-2.5 py-1.5 font-mono text-xs text-fg-secondary"
-            title={workdir || config.general.workdir}
-          >
-            {workdir || config.general.workdir || '（默认：data/workspace）'}
-          </span>
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={picking}
-            icon={<FolderOpen size={13} />}
-            onClick={() => {
-              setPicking(true)
-              void chooseWorkdir().finally(() => setPicking(false))
-            }}
-          >
-            换一个
-          </Button>
-        </div>
-      </div>
+      <WorkdirRow />
 
       <label className="acrylic-card rounded-base block px-3.5 py-3">
         <span className="mb-1 block text-2xs text-fg-tertiary">命令超时（秒）</span>

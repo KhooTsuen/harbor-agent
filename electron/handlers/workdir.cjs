@@ -24,7 +24,32 @@ const windowState = require('../window-state.cjs')
 
 function currentWorkdir() {
   const configured = config.get().general.workdir
-  return configured && fs.existsSync(configured) ? configured : DIRS.workspace
+  if (configured && fs.existsSync(configured)) return configured
+  return defaultWorkdir()
+}
+
+/** 目录里有没有东西（读不了当没有 —— 权限问题不归这里管） */
+function hasContent(dir) {
+  try {
+    return fs.readdirSync(dir).length > 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * **没配过**工作目录时用哪里。
+ *
+ * 2026-10-05 用户拍板：默认对话位置改成 `data/chat`。
+ * 但老装机的 `data/workspace` 里可能已经有一堆东西（用户认知里"我的文件就在那儿"），
+ * 所以加一条不搬家的规矩：
+ *   · workspace 里有东西而 chat 还是空的 → **继续用 workspace**（升级完东西还在原处）；
+ *   · 否则（新装 / 两边都空 / 两边都有）→ 用 chat。
+ * 配过的（`general.workdir` 有值且目录存在）一律以配置为准，上面两条都不参与。
+ */
+function defaultWorkdir() {
+  if (hasContent(DIRS.workspace) && !hasContent(DIRS.chat)) return DIRS.workspace
+  return DIRS.chat
 }
 
 /**

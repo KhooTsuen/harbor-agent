@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { Globe, Plus, RotateCw, X } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useBrowseDriver } from './browser/useBrowseDriver'
-import { useBrowserStore } from '@/stores/useBrowserStore'
+import { useBrowserStore, tabsOfSession, visibleTabOf } from '@/stores/useBrowserStore'
+import { useAppStore } from '@/stores/useAppStore'
 import { IconButton } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils'
 
@@ -52,10 +53,11 @@ export function BrowserTab() {
    */
   const tabs = useBrowserStore((s) => s.tabs)
   const activeId = useBrowserStore((s) => s.activeId)
-  const reloadKey = useBrowserStore((s) => s.reloadKey)
   const openTab = useBrowserStore((s) => s.open)
   const selectTab = useBrowserStore((s) => s.select)
   const closeTab = useBrowserStore((s) => s.close)
+  /* 会话号就是 Thread.id —— 标签栏按会话隔离靠它（真机反馈 6） */
+  const sessionId = useAppStore((s) => s.activeThreadId)
 
   const [draft, setDraft] = useState('')
   /** Agent 的 `browse` 工具要通过它操作当前这个 webview */
@@ -63,12 +65,19 @@ export function BrowserTab() {
 
   useBrowseDriver(webviewRef)
 
-  const active = tabs.find((tab) => tab.id === activeId)
+  /*
+   * 本会话的标签（标签栏只摆这些）+ 当前该显示 / 被 Agent 驱动的那一个。
+   * 两个口径都从 store 里取（见 useBrowserStore 的 tabsOfSession / visibleTabOf），
+   * 不在这里重写一遍筛选条件 —— 否则跟 useBrowseBridge 那边的判断会慢慢走垪。
+   */
+  const mine = tabsOfSession(tabs, sessionId)
+  const active = visibleTabOf(tabs, sessionId, activeId)
 
   function open(input: string): void {
     const url = normalizeUrl(input)
     if (!url) return
-    openTab(url)
+    /* 带上会话号：这个标签从此属于本会话（切到别的会话就不会摆在人家那儿） */
+    openTab(url, sessionId)
     setDraft(url)
   }
 
@@ -78,9 +87,9 @@ export function BrowserTab() {
   }
 
   function close(id: string): void {
-    /* 关掉的是当前标签时，地址栏要跟着换到接替的那个 */
-    if (id === activeId) {
-      const fallback = tabs.filter((tab) => tab.id !== id).at(-1)
+    /* 关掉的是当前标签时，地址栏要跟着换到接替的那个（只在**本会话**里找） */
+    if (id === active?.id) {
+      const fallback = mine.filter((tab) => tab.id !== id).at(-1)
       setDraft(fallback?.url ?? '')
     }
     closeTab(id)
@@ -123,11 +132,11 @@ export function BrowserTab() {
         </IconButton>
       </form>
 
-      {/* ── 标签页（在地址栏下面）── */}
-      {tabs.length > 0 ? (
+      {/* ── 标签页（在地址栏下面）—— 只摆**本会话**的（别的会话的标签留着但不摆出来）── */}
+      {mine.length > 0 ? (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-line-subtle px-1.5 py-1">
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeId
+          {mine.map((tab) => {
+            const isActive = tab.id === active?.id
             return (
               <button
                 key={tab.id}
@@ -162,32 +171,62 @@ export function BrowserTab() {
       ) : null}
 
       {/* ── 内容 ── */}
-      {active ? (
-        /* webview 高度要由外面这层给死，不然它在 flex 里会塌成 0 */
-        <div className="min-h-0 flex-1 bg-bg-base">
-          {/*
-            隔离说明（都是刻意写的，别删）：
-              · partition —— 独立会话，网页碰不到应用自己的存储
-              · webpreferences —— 明确写死沙箱，不靠默认值
-              · ref —— Agent 的 browse 工具靠它驱动这个 webview
-          */}
+      {/*
+        每个标签一个**常驻** webview（真机反馈 1a）。
+
+        以前只渲染当前标签那一个（`key` 里带 activeId）：切标签 = 卸载旧的、挂载新的
+        = 底下那个 webContents 被销毁 → 切回来网页从头加载（滚动位置、填了一半的表单、
+        SPA 状态全没）。现在切标签只是换 `display`，页面本身一直活着。
+
+        `key` 里只放这个标签**自己**的 reloadKey（手动重载才重建它自己），
+        所以切标签、别的标签重载，都不会重建它。
+
+        这一层**永远挂着**（哪怕本会话一个标签都没有）：别的会话的页面还在里面活着，
+        只是 `display:none`（真机反馈 6：会话之间不互相销毁）。
+
+        隔离说明（都是刻意写的，别删）：
+          · partition —— 独立会话，网页碰不到应用自己的存储
+          · webpreferences —— 明确写死沙箱，不靠默认值
+          · ref —— Agent 的 browse 工具靠它驱动**当前**这个 webview
+
+        webview 高度要由外面这层给死，不然它在 flex 里会塌成 0。
+      */}
+      <div className="relative min-h-0 flex-1 bg-bg-base">
+        {tabs.map((tab) => (
           <webview
-            key={`${active.id}-${reloadKey}`}
-            ref={webviewRef as React.RefObject<never>}
-            src={active.url}
+            key={`${tab.id}-${tab.reloadKey}`}
+            /*
+             * 只有当前标签那个交给 Agent（驱动只认一个元素）。
+             * 用回调 ref 而不是 ref 对象：ref 对象会被 React 挂到**最后一个**上面。
+             * 每次重渲会先以 null 调旧回调、再以元素调新回调 —— null 那次忽略即可。
+             */
+            ref={
+              ((el: HTMLElement | null) => {
+                if (el && tab.id === active?.id) webviewRef.current = el
+              }) as React.RefCallback<never>
+            }
+            src={tab.url}
             partition="persist:agent-browser"
             webpreferences="sandbox=yes,contextIsolation=yes,nodeIntegration=no"
             allowpopups="false"
-            style={{ width: '100%', height: '100%' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              /* 非当前标签：留在 DOM 里但不占位（display:none 不会销毁 guest） */
+              display: tab.id === active?.id ? 'block' : 'none',
+            }}
           />
-        </div>
-      ) : (
-        <EmptyState
-          icon={<Globe size={28} />}
-          title="内置浏览器"
-          description="在上面输入网址回车，网页会在这里打开。也可以在终端里跑起本地服务，再访问 localhost。"
-        />
-      )}
+        ))}
+        {/* 本会话没有页面时叠一层空状态（位置跟以前一样：就在标签栏下面） */}
+        {active ? null : (
+          <EmptyState
+            className="absolute inset-0"
+            icon={<Globe size={28} />}
+            title="内置浏览器"
+            description="在上面输入网址回车，网页会在这里打开。也可以在终端里跑起本地服务，再访问 localhost。"
+          />
+        )}
+      </div>
     </div>
   )
 }

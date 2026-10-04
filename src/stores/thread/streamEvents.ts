@@ -6,6 +6,7 @@ import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
+import { armUnread } from './unreadArm'
 import { handleAttachmentEvent } from './attachmentEvents'
 import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
 import { logError } from '@/lib/actionLog'
@@ -22,9 +23,8 @@ export interface StreamState {
   reasoning: string
   toolRuns: ToolRunRecord[]
   /**
-   * 一轮一轮的片段（思考 / 工具下标 / 正文）—— 顺序就是发生顺序；三个聚合字段拼不出先后。
-   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })`：只在 `done` 时挂的话，
-   * 整场流式会退回三段堆叠（2026-09-30 用户报的「流式排版太乱」根因）。
+   * 一轮一轮的片段（思考 / 工具下标 / 正文）—— 顺序就是发生顺序，三个聚合字段拼不出先后。
+   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })`，否则整场流式会退回三段堆叠。
    */
   rounds: MessageRound[]
   citations: NonNullable<Message['citations']>
@@ -85,6 +85,7 @@ export function handleStreamEvent(
     if (phase) {
       state.patch({ phase })
       useAppStore.getState().setThreadPhase(state.threadId, phase)
+      armUnread(state.threadId, phase)
     }
     return { handled: true }
   }

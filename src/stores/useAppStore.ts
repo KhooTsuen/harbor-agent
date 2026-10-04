@@ -75,6 +75,8 @@ export const useAppStore = create<AppState>()(
         onLeaveThread(get().activeThreadId)
 
         set({ activeThreadId: id })
+        /* 用户点开这条对话了 —— 把它的提醒点清掉（真机反馈 4） */
+        useUIStore.getState().clearUnread(id)
         const thread = get().threads.find((t) => t.id === id)
         if (thread) set({ activeProjectId: thread.projectId })
 
@@ -151,7 +153,21 @@ export const useAppStore = create<AppState>()(
             const history = t.phaseHistory ?? []
             const next =
               history[history.length - 1] === phase ? history : [...history, phase].slice(-24)
-            return touch({ ...t, phase, phaseHistory: next })
+            /*
+             * 只有**轮边界**才刷 updatedAt（侧栏按它排序）：
+             *   preparing  = 这一轮开始（lifecycle.cjs 与 loop.cjs 都在轮首 mark）
+             *   completed / failed / cancelled = 这一轮结束（即那边的 TERMINAL）
+             * thinking / planning / executing / verifying / responding 在一轮里会来回跳
+             * 十几次，每次部刷的话，任务运行期间侧栏就一直重排（真机反馈 #3）。
+             * 一轮中间写多少条消息都不动位置 —— 消息变动也不再刷（见 messageActions.ts）。
+             */
+            const boundary =
+              phase === 'preparing' ||
+              phase === 'completed' ||
+              phase === 'failed' ||
+              phase === 'cancelled'
+            const patched = { ...t, phase, phaseHistory: next }
+            return boundary ? touch(patched) : patched
           }),
         })),
 

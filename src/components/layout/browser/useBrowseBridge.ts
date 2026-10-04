@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { useBrowserStore, type PendingBrowse } from '@/stores/useBrowserStore'
+import { useBrowserStore, visibleTabOf, type PendingBrowse } from '@/stores/useBrowserStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useAppStore } from '@/stores/useAppStore'
+import { getActiveThread } from '@/stores/app/selectors'
 import { browseNotice, isBrowseAction } from '@/lib/browseNotice'
 import type { BrowserRequestEvent } from '@/types/backend'
 
@@ -38,6 +40,15 @@ export function useBrowseBridge(): void {
 
     const off = bridge.onBrowserRequest((req: BrowserRequestEvent) => {
       /*
+       * 这次请求属于哪个会话 —— **渲染层自己盖章**（主进程发来的事件里没有这个字段）。
+       * 用「用户当前正在看的那个会话」：AI 请求开浏览器时，界面就切在它上面。
+       * 它决定 AI 在浏览器里复用哪一个标签（每个会话一个，见 useBrowserStore）。
+       *
+       * 注意 thread.id **就是**会话号（真后端下两者同一个值，见 setThreadMode 里
+       * `updateSessionMeta(id, …)` 的写法）；Thread 上没有单独的 sessionId 字段。
+       */
+      const sessionId = getActiveThread(useAppStore.getState())?.id ?? ''
+      /*
        * 「Agent 在用浏览器」写在界面上。
        *
        * 为什么必须有：browse 三个动作（读元素 / 点 / 打字）在界面上的表现
@@ -59,9 +70,12 @@ export function useBrowseBridge(): void {
         /*
          * 读/点/打字：操作当前页面，不导航。
          * 前提是浏览器里已经有打开的页面 —— 没有就直说，别让主进程干等 45 秒。
+         *
+         * 「有没有页面」按**本会话**看（真机反馈 6）：别的会话开着页面不算 ——
+         * 那些页面拿不来给这个会话点/打字（可能完全是另一个站点）。
          */
-        const { activeId } = useBrowserStore.getState()
-        if (!activeId) {
+        const { tabs, activeId } = useBrowserStore.getState()
+        if (!visibleTabOf(tabs, sessionId, activeId)) {
           void window.workbench?.browserResult?.(req.id, {
             ok: false,
             error: '浏览器里还没有打开的页面，先 browse 打开一个网页',
@@ -76,6 +90,7 @@ export function useBrowseBridge(): void {
           text: req.text,
           pressEnter: req.pressEnter,
           authorized: req.authorized,
+          sessionId,
         })
         useUIStore.getState().setActiveRightTab('browser')
         return
@@ -88,7 +103,7 @@ export function useBrowseBridge(): void {
        */
       useBrowserStore
         .getState()
-        .requestBrowse({ id: req.id, action: 'navigate', url: String(req.url) })
+        .requestBrowse({ id: req.id, action: 'navigate', url: String(req.url), sessionId })
       useUIStore.getState().setActiveRightTab('browser')
     })
 
