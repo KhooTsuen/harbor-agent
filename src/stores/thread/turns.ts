@@ -10,6 +10,7 @@ import { buildHistory } from './history'
 import { guardSendableImages } from './sendGuard'
 import { beginTurnRequest, drainQueued, endTurnRequest, type TurnSetter } from './turnControl'
 import { createReplyPersistence } from './replyPersistence'
+import { createTurnWatchdog } from './turnWatchdog'
 import { drainPendingRegen } from './regenQueue'
 import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
 import type { StoredMessage } from '@/types/models-extra'
@@ -44,7 +45,7 @@ export {
    ══════════════════════════════════════════════════════════════ */
 
 /**
- * 一轮最多跑这么久；到点就收尾（兜底的超时，不是业务上限制）。
+ * **连续这么久没有新内容**才算卡住（旧语义是「一轮最多跑这么久」—— 那个语义本身就是这次修的 bug，见 turnWatchdog.ts）。
  * 抽成常量是为了能在测试里断言它 —— 也让「改了时长」这件事看得见。
  */
 export const TURN_TIMEOUT_MS = 5 * 60 * 1000
@@ -195,7 +196,7 @@ export async function runElectronTurn(
      *   同形状的兜底见 `streamEvents.ts` 的 `runSafely` 与下面的 `onTurnTimeout`。
      */
     set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
-    window.clearTimeout(timeoutId)
+    watchdog.dispose()
     off()
     endTurnRequest(threadId)
     try {
@@ -208,20 +209,17 @@ export async function runElectronTurn(
     drainQueued(threadId)
   }
 
-  /*
-   * 兜底：结束事件因故没到也不能一直转。★ 它也栽过 —— 以前第一句是 `patch(...)`，一句抛了
-   * 后面的 `finish()` 也不跑（当晚两道保险死在同一形状上）。现在：先放开界面，再写状态。
-   */
+  /* 兜底：**连续 TURN_TIMEOUT_MS 一个字都没收到**才算卡住（判定在 turnWatchdog.ts） */
   const onTurnTimeout = (): void => {
     finish()
     try {
-      patch({ status: 'sent', content: content || '（超时未结束）' })
+      patch({ status: 'sent', content: content || '（长时间没有新内容，已停止接收）' })
       useAppStore.getState().setThreadStatus(threadId, 'error')
     } catch (error) {
       logError('turn.timeout', error)
     }
   }
-  const timeoutId = window.setTimeout(onTurnTimeout, TURN_TIMEOUT_MS)
+  const watchdog = createTurnWatchdog({ silenceMs: TURN_TIMEOUT_MS, onStall: onTurnTimeout })
 
   /* 续跑（重新生成/接着做）时把已有时间线也带上 —— 否则老片段会被丢掉 */
   const rounds = [...(placeholder.rounds ?? [])]
@@ -247,6 +245,8 @@ export async function runElectronTurn(
 
   off = subscribeChatEvents((event) => {
     if (event.requestId !== requestId) return
+    /* 有事件就是「还活着」—— 这一行就是新旧兜底的全部区别（判定见 turnWatchdog.ts） */
+    watchdog.touch()
     lastEventType = String(event.type ?? '')
     /* content / reasoning 是累积的，事件本身不带全量，所以状态得跟着更新 */
     const result = handleStreamEvent(event as Record<string, unknown>, streamState)

@@ -34,6 +34,7 @@ const { logError } = await import('@/lib/actionLog')
 const ROOT = join(__dirname, '..', '..', '..', '..')
 const streamSrc = readFileSync(join(ROOT, 'src/stores/thread/streamEvents.ts'), 'utf8')
 const turnsSrc = readFileSync(join(ROOT, 'src/stores/thread/turns.ts'), 'utf8')
+const watchdogSrc = readFileSync(join(ROOT, 'src/stores/thread/turnWatchdog.ts'), 'utf8')
 
 type Hooks = { patch?: () => void; finish?: () => void }
 
@@ -151,8 +152,15 @@ describe('接线：顺序本身也要钉住（层与层之间测试照不到）'
     expect(block).toContain('try {')
   })
 
-  it('★ 超时时长是具名常量（改时长这件事要看得见）', () => {
+  it('★ 兜底接线：常量具名，判定交给 turnWatchdog（不再「到点就收尾」）', () => {
     expect(turnsSrc).toContain('export const TURN_TIMEOUT_MS')
-    expect(turnsSrc).toContain('window.setTimeout(onTurnTimeout, TURN_TIMEOUT_MS)')
+    expect(turnsSrc).toContain('createTurnWatchdog({ silenceMs: TURN_TIMEOUT_MS')
+    /* 每个流式事件都要报一次平安 —— 少了这一行，长任务会被自己的兜底掐掉（2026-10-04 用户报的） */
+    expect(turnsSrc).toContain('watchdog.touch()')
+    /* 旧写法：到点无条件收尾（退订事件流 + 标成已发送，而后台还在跑） */
+    expect(turnsSrc).not.toContain('window.setTimeout(onTurnTimeout, TURN_TIMEOUT_MS)')
+    /* 判定必须看「多久没有新内容」，不是「一共跑了多久」 */
+    expect(watchdogSrc).toContain('const silent = now() - lastAt')
+    expect(watchdogSrc).toContain('if (silent >= opts.silenceMs)')
   })
 })
