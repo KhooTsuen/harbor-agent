@@ -13,6 +13,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
+const retention = require('./data-retention.cjs')
 
 const file = () => path.join(DIRS.logs, 'token-metrics.jsonl')
 
@@ -43,7 +44,11 @@ function hitRate(hit, miss) {
 function recordRequest(row) {
   try {
     fs.mkdirSync(DIRS.logs, { recursive: true })
-    fs.appendFileSync(file(), `${JSON.stringify({ at: Date.now(), ...row })}\n`, 'utf8')
+    const line = `${JSON.stringify({ at: Date.now(), ...row })}\n`
+    /* 审计问题 4：这个文件以前**只增不减** —— 超 6MB 就留一份 `.1` 再重开
+       （和 `log-actions.cjs` 同一套做法，所以总量有界：转出来的那份下次会被盖掉） */
+    retention.rotateFile(file(), line.length)
+    fs.appendFileSync(file(), line, 'utf8')
     return { ok: true }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }

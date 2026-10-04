@@ -62,6 +62,17 @@ const DIRS = {
     return path.join(rootDir(), 'data', 'crash')
   },
   /**
+   * 事件流落点（见 `events.cjs`）：一天一个 jsonl，只追加不覆盖。
+   *
+   * ★ 2026-10-04 才补上：以前 `DIRS` 里**没有这个键**（目录是 events 自己 lazily 建的），
+   *   于是第 4 批的保留期那句 `DIRS.events` 读到 `undefined` → `readdirSync(undefined)` 抛
+   *   → 被 catch 成「目录还不存在」→ **静默什么都没做**。单测看不出来（它自己传目录），
+   *   是真机探针摆好旧文件、发现一个都没删才逮住的。
+   */
+  get events() {
+    return path.join(rootDir(), 'data', 'events')
+  },
+  /**
    * 错误观察哨的落点（见 error-observer.cjs）：一天一个 jsonl，只追加不覆盖。
    * 放 data 下是为了自动受「所有数据都不许在 C 盘」那条规矩管。
    */
@@ -83,6 +94,7 @@ function ensureDirs() {
     DIRS.chatCache,
     DIRS.crash,
     DIRS.errors,
+    DIRS.events,
   ]
   for (const dir of list) {
     fs.mkdirSync(dir, { recursive: true })

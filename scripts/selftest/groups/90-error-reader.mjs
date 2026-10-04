@@ -141,6 +141,48 @@ export async function run() {
 
   rmSync(TMP, { recursive: true, force: true })
 
+  /* ── ④′ 第 4 批：logs / events / crash 的保留期 + **清理抛错也不能影响启动** ── */
+  const dataRetention = require(join(ROOT, 'electron/core/data-retention.cjs'))
+  rmSync(TMP, { recursive: true, force: true })
+  const logsTmp = join(TMP, 'logs')
+  mkdirSync(logsTmp, { recursive: true })
+  writeFileSync(join(logsTmp, '2020-01-01.log'), 'x', 'utf8')
+  /* 要有两个按天的文件才谈得上「删旧的、留最新那个」——只有一个时它永远留着（设计如此） */
+  writeFileSync(join(logsTmp, '2020-01-02.log'), 'x', 'utf8')
+  writeFileSync(join(logsTmp, 'keep-me.txt'), 'x', 'utf8')
+
+  const pruned2 = dataRetention.pruneAll({ dirs: { logs: logsTmp } })
+  check(
+    '★ 第 4 批的启动清理真的删到东西（logs 旧文件没了）',
+    pruned2['logs.daily'].removed.includes('2020-01-01.log'),
+    JSON.stringify(pruned2['logs.daily']),
+  )
+  check(
+    '★ 名字不认得的照样一个都不碰',
+    readdirSync(logsTmp).includes('keep-me.txt'),
+    readdirSync(logsTmp).join(' '),
+  )
+  check(
+    '★ 清理抛错也不炸（只 ok:false）—— 应用照样能起',
+    (() => {
+      const boom = {
+        exec: () => {
+          throw new Error('boom')
+        },
+      }
+      const r = dataRetention.pruneDaily({ dir: logsTmp, re: boom, now: Date.now() })
+      return r.ok === false && r.removed.length === 0
+    })(),
+  )
+  check(
+    '★ 启动清扫里接上了它、而且包在 try 里',
+    /try \{\s*\n?\s*require\('\.\/core\/data-retention\.cjs'\)\.pruneAll\(\)/.test(
+      readFileSync(join(ROOT, 'electron/boot-cleanup.cjs'), 'utf8'),
+    ),
+    'boot-cleanup 里没接保留期，或没包 try',
+  )
+  rmSync(TMP, { recursive: true, force: true })
+
   /* ── ⑤ 规则只有一份（本仓库返工最多的一类问题，直接读源码钉住） ── */
   const scriptsSeverity = readFileSync(join(ROOT, 'scripts/errors/severity.mjs'), 'utf8')
   const scriptsRender = readFileSync(join(ROOT, 'scripts/errors/render.mjs'), 'utf8')

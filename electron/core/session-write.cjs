@@ -136,6 +136,9 @@ function updateMeta(id, patch) {
 function remove(id) {
   const file = fileFor(id)
   if (fs.existsSync(file)) fs.rmSync(file, { force: true })
+  /* 会话没了，它那份上下文诊断快照也没主了（审计问题 10）—— 顺手一起清。
+     路径与删除都归 `diag-retention.cjs`（那边和 `context-diag` 是配对的两半） */
+  require('./diag-retention.cjs').removeSnap(id)
   return { ok: true }
 }
 
@@ -146,6 +149,13 @@ function removeAll() {
     if (!name.endsWith('.jsonl')) continue
     fs.rmSync(path.join(DIRS.sessions, name), { force: true })
     count += 1
+  }
+  /* 会话全没了 → 那些快照全是无主的。调既有的那个扫描（它只认 `sess_*.json`
+     这个形状，别的东西一律不碰），不在这个文件里再写一遍命名规则（问题 10） */
+  try {
+    require('./diag-retention.cjs').pruneOrphanDiags()
+  } catch {
+    /* 清不掉快照不影响删会话 */
   }
   return { ok: true, count }
 }

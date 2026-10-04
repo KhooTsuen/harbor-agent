@@ -16,7 +16,7 @@ function warn(what, error) {
 }
 
 /**
- * 启动时扫一遍上一轮遗留的「还在跑」任务。
+ * 启动时扫一遍：① 上一轮遗留的「还在跑」任务；② 各目录里过期的旧文件。
  *
  * 用户报过：「任务跑着的时候进程被中断，再打开时那个进行中的对话没保留」。
  * 实测复现后磁盘上剩的是 `status: running` —— 而能「接着做」的状态只有
@@ -32,6 +32,21 @@ function sweepStaleTasks() {
     require('./core/task.cjs').pauseRunning('startup')
   } catch (error) {
     warn('清扫遗留任务失败', error)
+  }
+
+  /*
+   * 顺带把旧文件扫一遍（审计问题 1/3/4/10/11）：
+   * 主日志 / 动作流水 / 工具大输出 / 事件流 / 崩溃转储 / 无主诊断快照。
+   *
+   * ★ 为什么挂在这里而不是 `main.cjs`：`main.cjs` 只剩 299 行，加两行就过红线；
+   *   而这就是「启动清扫」的同一个时刻（细节与保留期见 `core/data-retention.cjs`）。
+   * ★ 清理失败**不能**影响启动：那一层每一步都自己 try 了，这里再兜一层
+   *   （验收要求：构造「清理抛错」场景，应用照样能起）。
+   */
+  try {
+    require('./core/data-retention.cjs').pruneAll()
+  } catch (error) {
+    warn('清理旧文件失败', error)
   }
 }
 
