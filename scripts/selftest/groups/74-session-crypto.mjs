@@ -133,8 +133,9 @@ export async function run() {
     check('★ 错误是人话（说了「解不开」）', /解不开/.test(broken.error), broken.error)
     check('损坏行的 openLine 返回空串（不是原文、不是密文）', sessionCrypto.openLine(corrupt(sealedSample)) === '')
 
-    /* 接线：一行坏了不能让整个会话读不出来（临时文件，finally 里删掉） */
-    const tmpId = 'selftest-crypto-broken'
+    /* 接线：一行坏了不能让整个会话读不出来（临时文件，finally 里删掉）。
+       ★ id 要合 `sess_` 白名单 —— `fileFor` 现在卡这个（审计问题 15） */
+    const tmpId = 'sess_selftestcryptobroken'
     const tmpFile = sessionIO.fileFor(tmpId)
     try {
       writeFileSync(

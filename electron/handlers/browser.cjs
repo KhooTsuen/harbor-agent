@@ -14,10 +14,11 @@
  * 不能让工具永久挂着。
  */
 
-const { ipcMain, BrowserWindow } = require('electron')
+const { ipcMain, BrowserWindow, app, session } = require('electron')
 const log = require('../core/log.cjs')
 const { createSettler, onAbort } = require('../core/abort.cjs')
 const { extractText, pickSource } = require('../core/browser-text.cjs')
+const webviewPermissions = require('../core/webview-permissions.cjs')
 
 /** 等界面的上限。读一个页面比「用户点确认」快得多，不需要五分钟 */
 const REQUEST_TIMEOUT_MS = 45_000
@@ -95,6 +96,21 @@ function request(action, payload, signal) {
 }
 
 function register() {
+  /*
+   * 网页标签的权限闸：默认全拒（审计问题 21）—— 理由见 core/webview-permissions.cjs。
+   * 挂 `whenReady` 而不是就地装：`register()` 是**启动早期**跑的
+   * （`main.cjs` 在模块顶层就调它），那时候 `session` 模块还不能用。
+   * 反正网页标签要等用户点开才加载，装得再晚也来得及。
+   *
+   * 那个 `typeof` 判断是给自检留的：自检在**纯 Node** 里跑，假 electron 只有
+   * 它 stub 出来的那几个方法（没有 whenReady）。
+   */
+  if (typeof app.whenReady === 'function') {
+    app.whenReady().then(() => {
+      webviewPermissions.install(session.fromPartition(webviewPermissions.PARTITION), log)
+    })
+  }
+
   /* ── 渲染层回话 ── */
   ipcMain.handle('browser:result', (_event, payload) => {
     const id = String(payload?.id ?? '')

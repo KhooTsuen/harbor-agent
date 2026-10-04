@@ -19,6 +19,7 @@
  */
 
 const log = require('../core/log.cjs')
+const redact = require('../core/redact.cjs')
 const taskNotify = require('../core/task-notify.cjs')
 const taskCore = require('../core/task.cjs')
 const taskOutcome = require('../core/task-outcome.cjs')
@@ -56,7 +57,12 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
    *   `browse` = 「Agent 在动网页」（跳那条对话 + 右栏落到浏览器标签）
    */
   function notify({ id = '', title, body = '', kind = '' }) {
-    const safeTitle = String(title ?? '').slice(0, MAX_TITLE)
+    /*
+     * ★ 系统通知是**唯一会离开本应用**的出口：它留进 Windows 通知历史、
+     *   屏幕共享 / 录屏 / 投屏时别人直接看得到。而两处内容源都是未脱敏的原文
+     *   （run_shell 的命令原文、任务结论的首行），所以这里必须过一道（审计问题 24）。
+     */
+    const safeTitle = redact.redact(String(title ?? '')).slice(0, MAX_TITLE)
     if (!safeTitle) return { ok: false, error: '缺标题' }
     try {
       if (!Notification || Notification.isSupported?.() === false) {
@@ -65,7 +71,7 @@ function createTaskNotifier({ Notification, app, showWindow, getMainWindow }) {
       }
       const notification = new Notification({
         title: safeTitle,
-        body: String(body).slice(0, MAX_BODY),
+        body: redact.redact(String(body ?? '')).slice(0, MAX_BODY),
       })
       notification.on('click', () => {
         try {

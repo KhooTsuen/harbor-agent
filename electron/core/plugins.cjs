@@ -182,7 +182,22 @@ function describePermissions(permissions) {
   const paths = (Array.isArray(perm.paths) ? perm.paths : []).filter(
     (p) => typeof p === 'string' && p,
   )
-  const side = network && write ? '联网 + 写文件' : network ? '联网' : write ? '写文件' : '无副作用'
+  /*
+   * ★ 一个字段都没声明时**不能说「无副作用」**（审计问题 23）：
+   * 判定那边对这种插件是按「可能有副作用」拦的（plugin-tool.cjs 里 fail-closed），
+   * 描述和判定必须说同一件事 —— 否则报错文案会变成
+   * 「插件「X」（无副作用）被拒绝」，自相矛盾。
+   */
+  const undeclared = perm.network === undefined && perm.write === undefined
+  const side = undeclared
+    ? '未声明权限，按可能有副作用处理'
+    : network && write
+      ? '联网 + 写文件'
+      : network
+        ? '联网'
+        : write
+          ? '写文件'
+          : '无副作用'
   const pathPart = paths.length > 0 ? ` + 访问工作目录外 ${paths.length} 处` : ''
   return `（${side}${pathPart}）`
 }

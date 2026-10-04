@@ -29,21 +29,29 @@ async function executePlugin(name, args, ctx, startedAt) {
   if (!plugin) return null
 
   const perm = plugin.permissions ?? {}
-  const needsNetwork = perm.network === true
-  const needsWrite = perm.write === true
-  /* 联网/写文件都算「有副作用」——和写操作一样对待 */
-  const risky = needsNetwork || needsWrite
+  /*
+   * ★ fail-closed（审计问题 23）：**没声明**不等于「没有副作用」。
+   *
+   * 以前是 `perm.network === true` 才算联网，于是 manifest 里忘了写（或故意不写）
+   * permissions 的插件，在只读模式下也照跑不误 —— 等于「不声明就是白名单」。
+   * 现在反过来：只有**明确写死 false** 才算「不联网 / 不写盘」，
+   * 没写就是「可能有」，该拦的拦、该问的问。
+   */
+  const maybeNetwork = perm.network !== false
+  const maybeWrite = perm.write !== false
+  const declaredSafe = perm.network === false && perm.write === false
+  const risky = !declaredSafe
 
   /* ── 运行时约束（不依赖模型自觉，和内置工具同一套）── */
   if (ctx.allowTools === false) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本次对话关闭工具' })
     return `错误：本次对话已关闭工具调用，${name} 被拒绝。`
   }
-  if (ctx.allowWrite === false && needsWrite) {
+  if (ctx.allowWrite === false && maybeWrite) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
     return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
   }
-  if (ctx.allowNetwork === false && needsNetwork) {
+  if (ctx.allowNetwork === false && maybeNetwork) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止联网' })
     return `错误：本轮对话禁止联网，${name} 被运行时拒绝。`
   }
@@ -61,7 +69,10 @@ async function executePlugin(name, args, ctx, startedAt) {
       args,
       summary: `运行插件「${plugin.nameForHuman}」${plugins.describePermissions(perm)}${pathsText ? `\n将访问工作目录外：${pathsText}` : ''}`,
     })
-    if (!approval) {
+    /* 和 `tools/index.cjs` 同一口径：`approval !== true`。
+       `!approval` 会把任何非假值（字符串、对象）都当成同意 —— 确认函数
+       真返回了个别的东西，那是没同意，不是同意（审计问题 23） */
+    if (approval !== true) {
       auditCall(ctx, { tool: name, args, startedAt, approval: false, ok: false, error: '用户拒绝' })
       return `用户拒绝了这个操作：${name}`
     }

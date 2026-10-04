@@ -85,6 +85,21 @@ function dirSize(target) {
   return total
 }
 
+/**
+ * 备份目录名的白名单：`20260914-080206`（同一秒连点会顺延成 `…-1`）。
+ *
+ * ⚠️ 为什么必须校验（审计问题 14）：`restore(name)` / `remove(name)` 以前直接把
+ * 传进来的 name 拼成路径 —— name 是从界面（也就是渲染层）来的，
+ * 于是 `remove('../sessions')` 能删掉**数据目录外/内任意目录**，
+ * `restore('..\\..\\Windows')` 能拿任意目录盖数据。这个白名单是唯一真相源，
+ * `list` / `restore` / `remove` 三处共用。
+ */
+const NAME_RE = /^\d{8}-\d{6}(-\d+)?$/
+
+function isBackupName(name) {
+  return NAME_RE.test(String(name ?? ''))
+}
+
 /** 列出所有备份，新的在前 */
 function list() {
   let entries = []
@@ -97,7 +112,7 @@ function list() {
   return (
     entries
       /* 同一秒内连点会顺延成 20260914-080206-1，后缀要认得 */
-      .filter((e) => e.isDirectory() && /^\d{8}-\d{6}(-\d+)?$/.test(e.name))
+      .filter((e) => e.isDirectory() && isBackupName(e.name))
       .map((e) => {
         const full = path.join(backupRoot(), e.name)
         let meta = {}
@@ -123,4 +138,4 @@ function list() {
   )
 }
 
-module.exports = { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list }
+module.exports = { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list, isBackupName }

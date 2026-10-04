@@ -21,7 +21,8 @@ const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 /* 清单 / 路径 / 算体积 / 列出备份都在 backup-scan.cjs（那边是只读的一半，
    加完「空壳备份」防护后这个文件过 300 行了，按职责拆的） */
-const { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list } = require('./backup-scan.cjs')
+const { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list, isBackupName } =
+  require('./backup-scan.cjs')
 
 /** 自动备份的间隔 */
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -136,6 +137,11 @@ function maybeAuto() {
  * 恢复本身很危险，先留后路。
  */
 function restore(name) {
+  /* ★ 名字先过白名单（审计问题 14）：`restore('..\\..\\Windows')` 以前能拿任意
+     目录盖数据。`name` 是从界面一层层传进来的，不能当成可信输入 */
+  if (!isBackupName(name)) {
+    return { ok: false, error: `备份名不合法（应该是 20260922-213954 这种时间戳）：${String(name).slice(0, 60)}` }
+  }
   const source = path.join(backupRoot(), name)
   if (!fs.existsSync(source)) return { ok: false, error: `找不到备份 ${name}` }
 
@@ -191,6 +197,11 @@ function restore(name) {
 }
 
 function remove(name) {
+  /* 同 restore：名字必须先是自己造的（审计问题 14）—— 这里更狠，
+     `remove('..\\sessions')` 以前会直接把会话目录连着删掉 */
+  if (!isBackupName(name)) {
+    return { ok: false, error: '备份名不合法，拒绝删除' }
+  }
   const target = path.join(backupRoot(), name)
   if (!fs.existsSync(target)) return { ok: false, error: '找不到这个备份' }
   try {

@@ -12,6 +12,7 @@ const log = require('./log.cjs')
 const io = require('./task-io.cjs')
 const taskIndex = require('./task-index.cjs')
 const notes = require('./task-notes.cjs')
+const { redact } = require('./redact.cjs')
 const taskIntent = require('./task-intent.cjs') // 执行可判定：意图 / 结果两段落盘
 const {
   parsePlan,
@@ -138,7 +139,9 @@ function finish(id, { status = 'completed', result = '' } = {}) {
   const task = io.get(id)
   if (!task) return null
   task.status = STATUSES.includes(status) ? status : 'completed'
-  task.result = String(result).slice(0, 4000)
+  /* 结论可能要外发（系统通知取它的首行；台账也会被导出），所以写盘前过一道脱敏 ——
+     模型复述用户的密钥很常见，而这条落盘之后还会被备份带走（审计问题 24） */
+  task.result = redact(String(result).slice(0, 4000))
   task.finishedAt = Date.now()
   task.updatedAt = io.monotonicNow()
   io.write(task)

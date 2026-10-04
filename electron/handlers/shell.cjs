@@ -19,6 +19,8 @@ const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
 const risk = require('../core/risk.cjs')
 const audit = require('../core/audit.cjs')
+/* 杀进程一律走它（连子树一起杀）—— 见 core/abort.cjs 的文件头 */
+const { killTree } = require('../core/abort.cjs')
 
 /** 一次的默认超时（秒）。不设的话一条卡住的命令会把终端占死 */
 const DEFAULT_TIMEOUT = 120
@@ -184,11 +186,10 @@ function register({ ipcMain }) {
 
       const timer = setTimeout(() => {
         send('stderr', `\n[超时 ${timeoutSec} 秒，已终止]\n`)
-        try {
-          child.kill()
-        } catch {
-          /* 已经退了 */
-        }
+        /* ★ killTree 而不是 child.kill 那一套（审计问题 16）：Windows 下直接 kill
+           只杀直接子进程（cmd.exe），命令真正跑着的那一层（npm run dev 的 node、
+           ping 之类）会变孤儿接着跑 —— 用户以为收工了，机器还在焖 */
+        killTree(child)
         finish({ ok: false, error: `超时（${timeoutSec} 秒）`, output })
       }, timeoutSec * 1000)
 
@@ -198,11 +199,8 @@ function register({ ipcMain }) {
         const text = String(chunk)
         output += text
         if (output.length > MAX_OUTPUT) {
-          try {
-            child.kill()
-          } catch {
-            /* 忽略 */
-          }
+          /* 同上：输出爆了要连子树一起掐 */
+          killTree(child)
           return
         }
         send(stream, text)
@@ -239,22 +237,14 @@ function register({ ipcMain }) {
   ipcMain.handle('shell:abort', (_event, requestId) => {
     const entry = running.get(String(requestId))
     if (!entry) return { ok: false, error: '没有正在跑的命令' }
-    try {
-      entry.child.kill()
-    } catch {
-      /* 忽略 */
-    }
+    killTree(entry.child)
     return { ok: true }
   })
 
   /** 中断所有（窗口关闭时用） */
   ipcMain.handle('shell:abortAll', () => {
     for (const [, entry] of running) {
-      try {
-        entry.child.kill()
-      } catch {
-        /* 忽略 */
-      }
+      killTree(entry.child)
     }
     running.clear()
     return { ok: true }

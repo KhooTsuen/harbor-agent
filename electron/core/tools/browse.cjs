@@ -19,6 +19,8 @@
  * 防注入里这一招性价比最高，比堆一堆「不要听网页的」规则管用。
  */
 
+const netPolicy = require('../net-policy.cjs')
+
 /** 拦掉明显不该让模型去开的地址 */
 function rejectInternal(url) {
   let parsed = null
@@ -40,6 +42,48 @@ function rejectInternal(url) {
   return ''
 }
 
+/**
+ * 网络策略这一关（审计问题 20）。
+ *
+ * `net-policy.cjs` 里 `kind:'webview'` 这条分支**早就写好了，却没有任何调用者** ——
+ * 也就是说：设置里把网络改成「禁止」、或者把某个域名扔进禁止名单，
+ * `run_shell` 会拦，但 Agent 用 `browse` 直接开那个页面**不受影响**。
+ *
+ * 口径（为什么和 `run_shell` 不完全一样）：
+ *   · `deny` → 拦下，把理由交给用户（这才是这个问题的正身）
+ *   · `ask`  → 放行，但**记一条日志**。这一层拿不到确认界面（确认在
+ *            `tools/index.cjs`），而「完全访问」这个档位的语义就是「不再问」
+ *            （见审计问题 2：这是设计取向，只是界面没写清）。
+ *            `run_shell` 在同样情形下更严（直接拒），两处口径不一致 ——
+ *            已记进 docs/improvement-checklist.md，不在这一批里顺手改。
+ *   · `allow` → 放行
+ */
+function networkGuard(url, ctx) {
+  let decided
+  try {
+    decided = netPolicy.decide({ kind: 'webview', target: url, ctx })
+  } catch (error) {
+    /*
+     * 读不出策略时的堕落方向（想清楚再改）：**放行 + 告警**。
+     * 反过来（读不到就拦）后果更重 —— 配置被手改坏一个字段，整个浏览功能
+     * 会停摆且没人知道为什么。而这里的默认读的是 config 的默认值，真要
+     * 抛错也是代码 bug，那种情况日志里能看见。
+     */
+    ctx?.log?.warn?.(`browse 读网络策略失败：${error instanceof Error ? error.message : error}`)
+    return ''
+  }
+
+  if (decided.action === 'allow') return ''
+  if (decided.action === 'deny') {
+    return `这个地址被网络策略拦下了。\n原因：${decided.reason}\n地址：${url}`
+  }
+
+  ctx?.log?.info?.(
+    `browse 要开一个网络策略要求「先问」的地址（当前权限档 ${ctx?.permission ?? '?'}）：${url}`,
+  )
+  return ''
+}
+
 module.exports = {
   name: 'browse',
   description:
@@ -58,6 +102,8 @@ module.exports = {
   /** 会联网，算写操作那一类（审计里也按这个记） */
   network: true,
 
+  /** 自检/单测直接调它（不必真开浏览器），见 src/lib/__tests__/batch2Security.test.ts */
+  networkGuard,
   summarize(args) {
     return `打开网页 ${String(args?.url ?? '')}`
   },
@@ -68,6 +114,10 @@ module.exports = {
 
     const problem = rejectInternal(url)
     if (problem) throw new Error(problem)
+
+    /* 网络策略（审计问题 20）：设置里的「禁止」/禁止名单对网页浏览同样有效 */
+    const blocked = networkGuard(url, ctx)
+    if (blocked) throw new Error(blocked)
 
     const browser = require('../../handlers/browser.cjs')
 

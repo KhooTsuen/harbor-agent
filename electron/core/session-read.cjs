@@ -7,7 +7,7 @@
 
 const fs = require('node:fs')
 const { DIRS } = require('./paths.cjs')
-const { fileFor, safeTitle, readLines } = require('./session-io.cjs')
+const { fileFor, isSessionId, safeTitle, readLines } = require('./session-io.cjs')
 const { groupAnswers } = require('./session-answers.cjs')
 /* 文本口径（含带图消息的多模态数组）只有一处实现：message-text.cjs */
 const { textOf } = require('./message-text.cjs')
@@ -114,6 +114,9 @@ function list() {
   for (const name of fs.readdirSync(DIRS.sessions)) {
     if (!name.endsWith('.jsonl')) continue
     const id = name.slice(0, -'.jsonl'.length)
+    /* 名字不合规的（人手放进去的、老版本留下的）跳过：下面 `readLines` 会走
+       `fileFor` 的白名单校验并抛错 —— 一个杂物文件不能让整个会话列表打不开 */
+    if (!isSessionId(id)) continue
     const lines = readLines(id)
     if (lines.length === 0) continue
 

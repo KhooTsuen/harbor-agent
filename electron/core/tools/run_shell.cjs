@@ -2,7 +2,7 @@ const { exec } = require('node:child_process')
 const encoding = require('../shell-encoding.cjs')
 const netPolicy = require('../net-policy.cjs')
 const risk = require('../risk.cjs')
-const { truncateWithLog } = require('./_shared.cjs')
+const { resolvePath, truncateWithLog } = require('./_shared.cjs')
 const { createSettler, killTree, onAbort } = require('../abort.cjs')
 
 /**
@@ -79,6 +79,26 @@ function networkGuard(command, ctx) {
   )
 }
 
+/**
+ * 执行目录也要过权限边界（审计问题 17）。
+ *
+ * 文件工具（`read_file` / `write_file`…）都走 `resolvePath`，所以越过工作目录会被
+ * 拦下来问用户；但 shell 这条路以前是**裸的** —— `run_shell({ command: 'type C:\\Users\\x\\.ssh\\id_rsa' })`
+ * 或直接 `cd /d C:\\` 就绕开了整套边界。这里把 cwd 交给同一个 `resolvePath`：
+ *   · 在工作目录内 → 正常放行
+ *   · 在外面但拿过授权 → 放行（授权表就在那边）
+ *   · 没授权 → 抛 PermissionRequiredError，由 `tools/index.cjs` 转成向用户要授权
+ *
+ * 没传 cwd 时退到 `ctx.workdir`（和以前一样）—— 没有工作目录可用时只好不管，
+ * 交给上层反正会拦（这是现有行为，不在这里改）。
+ */
+function resolveShellCwd(rawCwd, ctx) {
+  const asked = rawCwd === undefined || rawCwd === null || rawCwd === ''
+  const wanted = String(asked ? (ctx.workdir ?? '') : rawCwd)
+  if (!wanted) return ctx.workdir ?? ''
+  return resolvePath(wanted, ctx.workdir ?? '', ctx)
+}
+
 module.exports = {
   name: 'run_shell',
   /* 自检直接调它（不必真发请求），见 scripts/selftest/groups/73-net-policy.mjs */
@@ -111,7 +131,11 @@ module.exports = {
     const networkBlocked = networkGuard(command, ctx)
     if (networkBlocked) throw new Error(networkBlocked)
 
-    const cwd = args.cwd ? String(args.cwd) : ctx.workdir
+    const cwd = resolveShellCwd(args.cwd, ctx)
+    /* 审计里要记**实际**在哪儿跑的（问题 17）：`args.cwd` 是模型自己填的，不填时
+       审计里只看得到命令、看不到目录。这里的 `args` 和 `tools/index.cjs` 记审计时
+       拿到的是同一个对象，所以就地把实际值回填进去（只在不一样时写一笔）。 */
+    if (args.cwd !== cwd) args.cwd = cwd
     const timeoutSec = Math.min(600, Math.max(5, Number(args.timeout) || ctx.shellTimeout || 60))
 
     return await new Promise((resolve) => {
@@ -119,8 +143,18 @@ module.exports = {
       /* 先声明再挂监听：onAbort 在 signal 已经断掉时会立刻触发，
          那时 child 还是 null —— killTree(null) 是安全的，这条顺序能兜住 */
       let child = null
-      const off = onAbort(ctx.signal, () => {
+      let timer = null
+      /* 两条死亡路径（中断 / 超时）都要摘监听、停 timer，收在一处 */
+      const done = () => {
+        if (timer) clearTimeout(timer)
+        timer = null
+        off()
+      }
+      let off = () => {}
+      off = onAbort(ctx.signal, () => {
         killTree(child)
+        /* 停掉超时 timer —— 不然它 10 分钟后还要醒一次，白拖住进程退出 */
+        done()
         /*
          * AG-010：**不等 exec 的 callback**。
          * callback 要等输出管道关掉才来 —— 实测中断之后又等了 29.6 秒
@@ -129,6 +163,22 @@ module.exports = {
          */
         finish('[已被用户中断，这条命令的子进程已经终止]')
       })
+
+      /*
+       * 超时自己管（审计问题 16）：
+       *
+       * 以前把这个交给 `exec` 的 `timeout`，而 Node 内部只 `kill()` 直接子进程
+       * （cmd.exe），命令真正在跑的孙子（ping/node/curl…）会变孤儿继续跑 ——
+       * 和中断那条路是两个标准，实测过。现在两条路共用 `killTree`（taskkill /T）。
+       *
+       * ★ 措辞里**必须留着「进程被超时杀掉」**：`task-outcome.cjs` 按这个标记
+       *   判「这条命令失败了」（那条正则钉在 `34-outcome` 自检里），改字要同步改它。
+       */
+      timer = setTimeout(() => {
+        killTree(child)
+        /* 和中断同一套：不等 callback（管道要等子进程全退才关），立刻结算 */
+        finish(`[进程被超时杀掉（${timeoutSec}s）：已连同子进程一起终止]`)
+      }, timeoutSec * 1000)
 
       /*
        * ★ 输出按**字节**收（encoding: 'buffer'），再交给 shell-encoding 去解。
@@ -140,7 +190,6 @@ module.exports = {
         command,
         {
           cwd,
-          timeout: timeoutSec * 1000,
           maxBuffer: 4 * 1024 * 1024,
           windowsHide: true,
           encoding: 'buffer',
@@ -148,7 +197,7 @@ module.exports = {
           shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
         },
         (error, stdout, stderr) => {
-          off()
+          done()
           const parts = []
           const out = encoding.decode(stdout).trimEnd()
           const err = encoding.decode(stderr).trimEnd()

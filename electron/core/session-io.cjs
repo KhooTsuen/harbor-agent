@@ -27,8 +27,30 @@ const { sealLine, openLineDetailed } = require('./session-crypto.cjs')
 
 const MAX_TITLE = 60
 
+/**
+ * 会话 id 的白名单：`sess_` + 小写字母数字 —— `newId()` 就是照这个造的。
+ *
+ * ⚠️ 为什么必须卡（审计问题 15）：`fileFor(id)` 以前直接把 id 拼进路径，
+ * 而 id 是从渲染层传进来的（`session:read` / `session:update` / `session:delete` …）。
+ * 传 `..\..\config` 就能读写**任意文件**。这几个通道共用同一个 `fileFor`，
+ * 所以堵在这一处 = 一次堵住全部通道。
+ *
+ * 卡死就抛错，不「悄悄换成安全路径」：id 不合法说明调用方有 bug、或者有人在
+ * 攻击，两种情况都该响一声，不该装作没事。
+ */
+const SESSION_ID_RE = /^sess_[a-z0-9]+$/
+
+/** 文件名（去掉 .jsonl）是不是我们自己的会话 id —— `session-read.list()` 逐文件扫时要用 */
+function isSessionId(id) {
+  return SESSION_ID_RE.test(String(id ?? ''))
+}
+
 function fileFor(id) {
-  return path.join(DIRS.sessions, `${id}.jsonl`)
+  const text = String(id ?? '')
+  if (!isSessionId(text)) {
+    throw new Error(`会话 id 不合法（只接受 sess_ 开头的小写字母数字）：${text.slice(0, 60)}`)
+  }
+  return path.join(DIRS.sessions, `${text}.jsonl`)
 }
 
 function newId() {
@@ -163,6 +185,7 @@ function rescrubLines(text) {
 
 module.exports = {
   fileFor,
+  isSessionId,
   newId,
   safeTitle,
   readLines,
