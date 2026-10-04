@@ -48,6 +48,9 @@ export function ResizeHandle({
 }: ResizeHandleProps) {
   const vertical = orientation === 'vertical'
   const startRef = useRef({ pos: 0, value: 0, dragging: false })
+  /* 拖拽期间每帧只提交一次（见 onPointerMove）；pendingRef 存这一帧该落的值 */
+  const frameRef = useRef(0)
+  const pendingRef = useRef<number | null>(null)
 
   /*
    * 最新值。键盘连续点按必须靠它累加 ——
@@ -90,7 +93,20 @@ export function ResizeHandle({
           ? startRef.current.value + delta
           : startRef.current.value - delta
 
-      onChange(clamp(grows, min, max))
+      const next = clamp(grows, min, max)
+      /*
+       * 每帧只提交一次。
+       * 为什么：指针一秒能来几百个 pointermove，逐个 onChange 就是几百次 setState ——
+       * 输入框下面还挂着 picker / chips / 卡片，重渲排成一队，手感就是「按住慢慢挪才动」。
+       * 另外 latest 也要在拖拽期更新：endDrag 拿它提交（拖拽中 value prop 可能还没跟上）。
+       */
+      latest.current = next
+      pendingRef.current = next
+      if (frameRef.current) return
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = 0
+        if (pendingRef.current !== null) onChange(pendingRef.current)
+      })
     },
     [max, min, onChange, side, vertical],
   )
@@ -99,19 +115,29 @@ export function ResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!startRef.current.dragging) return
       startRef.current.dragging = false
+      /* 还欠一帧的话当场补上，然后提交**最新值**（不是 value prop —— 它可能是拖拽开始时的旧值） */
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current)
+        frameRef.current = 0
+      }
+      if (pendingRef.current !== null) {
+        onChange(pendingRef.current)
+        pendingRef.current = null
+      }
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
-      onCommit?.(value)
+      onCommit?.(latest.current)
     },
-    [onCommit, value],
+    [onChange, onCommit],
   )
 
   /* 卸载时兜底清干净，避免异常退出后光标卡在 col-resize */
   useEffect(() => {
     return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }

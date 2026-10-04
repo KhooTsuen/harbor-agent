@@ -108,6 +108,12 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   return (
     <div className="px-4 pb-3">
       {/* data-composer-shell：确认面板按它的真实 rect 贴到输入区上方（见 Modal） */}
+      {/*
+        注（2026-10-04）：「框变高时整块上浮、底栏跟着一起移」试过，但那条与
+        「手柄贴住指针」在算术上互斥 —— 手柄位置 = 下沿 − 高度，下沿再上浮一次，
+        手柄就会以鼠标两倍的速度跑（真机量到：拖 60px、手柄跑 76px，反而更不跟手）。
+        所以保持「上沿跟着指针、下沿钉住」，底栏固定在底部不动。
+      */}
       <div className="mx-auto w-full max-w-[var(--content-max-width)]" data-composer-shell="">
         {/* AG-053：权限条与澄清卡在这里，由 AboveInputCards 仲裁只显示一张 */}
         <AboveInputCards />
@@ -206,8 +212,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
             )}
           />
 
-          {/* ② 工具行 */}
-          <div className="flex items-center gap-1 border-t border-line-subtle px-2 py-1.5">
+          {/* ② 工具行。whitespace-nowrap：窄窗口下「标准」「deepseek-chat」会被折成两行（真机截到过） */}
+          <div className="flex items-center gap-1 whitespace-nowrap border-t border-line-subtle px-2 py-1.5">
             <ToolsMenu
               onGenerateImage={insertImageMessage}
               threadSettings={thread?.settings}
