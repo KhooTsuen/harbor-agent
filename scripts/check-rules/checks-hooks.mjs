@@ -5,7 +5,7 @@
  * 这也正好印证拆分的理由 —— 查「单文件 ≤ 300 行」的脚本自己先撞线。
  *
  * 查三件事（都是**警告**，不是 error）：
- *   ① `.github/hooks/pre-commit` / `pre-push` 在不在
+ *   ① `.github/hooks/pre-commit` / `pre-push` / `commit-msg` 在不在
  *   ② `git config core.hooksPath` 有没有指到 `.github/hooks`
  *   ③ `scripts/check-rules.mjs` 在不在（这个文件本身）
  *
@@ -18,7 +18,9 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 
 const WANT_PATH = '.github/hooks'
-const HOOKS = ['pre-commit', 'pre-push']
+
+/** 必须在位的钩子。★ 这份名单是**唯一真相源**：`scripts/hooks/install.mjs` 也 import 它 */
+export const HOOKS = ['pre-commit', 'pre-push', 'commit-msg']
 
 export function checkHooksInstalled(root) {
   const warnings = []

@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT } from './lib.mjs'
+import { HOOKS } from '../check-rules/checks-hooks.mjs'
 
 const WANT = '.github/hooks'
 const CHECK_ONLY = process.argv.includes('--check')
@@ -23,7 +24,8 @@ const now = (() => {
   }
 })()
 
-const missing = ['pre-commit', 'pre-push'].filter((f) => !existsSync(join(ROOT, WANT, f)))
+/* 名单只有一份，在检查脚本那边（第 7 项「约束机制在位」用的就是它）—— 别再抄第二份 */
+const missing = HOOKS.filter((f) => !existsSync(join(ROOT, WANT, f)))
 
 console.log(`仓库：${ROOT}`)
 console.log(`core.hooksPath 现在：${now}`)
@@ -34,7 +36,7 @@ if (CHECK_ONLY) {
 }
 
 if (missing.length) {
-  console.log('\n✗ 钩子文件不在，无法安装（先确认 .github/hooks/pre-commit、pre-push 在）')
+  console.log(`\n✗ 钩子文件不在，无法安装（先确认 .github/hooks/ 下这些都在：${HOOKS.join('、')}）`)
   process.exit(1)
 }
 

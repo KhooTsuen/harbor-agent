@@ -81,10 +81,12 @@ npx prettier --check "src/**/*.{ts,tsx}"           # 格式
 
 例：`修：新建对话那条路也要收澄清卡（补漏，真机发现的）`
 
+- 这张表是给人看的**摘要**：**词表只有一份定义，在 [`scripts/hooks/commit-msg.mjs`](scripts/hooks/commit-msg.mjs) 里**，
+  判定以它为准。想看当前真的词表：`node scripts/hooks/commit-msg.mjs --list`。
+- **提交时会被拦**：`commit-msg` 钩子发现标题不合规就直接拦住（并把词表打出来）；git 自己造的
+  `Merge` / `Revert` / `fixup!` 放行。新克隆还没装钩子的话：`node scripts/hooks/install.mjs`。
 - 这条只管**以后**：历史那几十笔（`修：` / `测试：` / `test:` / `style:` 混着来）**故意不重写** ——
   重写要强推，`v1.21.0` 那个 tag 和已有克隆都会对不上。
-- **已知缺口**：这条**没有机械检查**（提交时不会拦，靠自觉）。要拦就加一个 `commit-msg` 钩子，
-  做法见 [`docs/约束机制说明.md`](docs/约束机制说明.md) 第 5 节「怎么加一条新规矩」。
 
 ## Issue
 

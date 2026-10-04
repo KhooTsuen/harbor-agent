@@ -1,6 +1,7 @@
 /* 「关于检查清单本身」的测试（元测试）：
  *   ① 清单结构合法 + 必需项都在（不数数量）
  *   ② 第 7 项：约束机制（git 钩子）在位
+ *   ③ 提交标题的前缀闸门（`scripts/hooks/commit-msg.mjs`）
  *
  * 单独一个文件的原因：主测试文件已经贴着 300 行红线，再加就顶线
  * —— 查行数的工具先被自己的规矩卡住，这个项目已经发生过一次；
@@ -13,8 +14,11 @@ import { execFileSync } from 'node:child_process'
 import { test } from 'node:test'
 import { CHECKS, checkHooksInstalled } from './check-rules.mjs'
 import { REPO, gitRepo, tempRoot } from './check-rules/test-kit.mjs'
+import { PREFIXES, checkSubject, subjectOf } from './hooks/commit-msg.mjs'
 
-const HOOK_NAMES = ['pre-commit', 'pre-push']
+/* 这份名单故意**不** import `checks-hooks.mjs` 的 `HOOKS`：测试手里得有一份自己的名单，
+   才验得出「检查脚本看漏了一个钩子」—— 跟着被测对象走，就永远验不出它错。 */
+const HOOK_NAMES = ['pre-commit', 'pre-push', 'commit-msg']
 
 test('清单：每一项都是 [名字, 函数]，不重名，必需项都在（**不数数量**）', () => {
   /* 为什么不断言 length === N：条目本来就会越加越多，写死就一定漂
@@ -102,4 +106,53 @@ test('第 7 项：配置指向别的目录也算没装（不能只看存在）',
   } finally {
     done()
   }
+})
+
+/* ── ③ 提交标题的前缀闸门 ─────────────────────────────────────────
+   规矩在 CONTRIBUTING.md 的「提交标题的格式」，词表在 hooks/commit-msg.mjs。
+   这里钉住**判定本身**，别让词表和判定各自跑偏。 */
+
+test('词表：不重名，每项都是 [前缀, 用在]（**不数数量** —— 词表以后会加）', () => {
+  assert.ok(PREFIXES.length > 0, '词表不能是空的')
+  for (const entry of PREFIXES) {
+    assert.ok(Array.isArray(entry) && entry.length === 2, `应该是 [前缀, 用在]：${JSON.stringify(entry)}`)
+    assert.ok(typeof entry[0] === 'string' && entry[0].length > 0, '前缀不能为空')
+    assert.ok(typeof entry[1] === 'string' && entry[1].length > 0, `${entry[0]} 的「用在」不能为空`)
+  }
+  const names = PREFIXES.map(([prefix]) => prefix)
+  assert.equal(new Set(names).size, names.length, `词表里有重名：${names.join('、')}`)
+})
+
+test('提交标题：词表里每个前缀都放行（前缀后是全角冒号）', () => {
+  for (const [prefix] of PREFIXES) {
+    const verdict = checkSubject(`${prefix}：随便一句为什么`)
+    assert.equal(verdict.ok, true, `${prefix}：应该放行，却报了 ${verdict.reason}`)
+  }
+})
+
+test('★ 提交标题：没前缀 / 前缀不在词表里 → 拦下，并说清为什么', () => {
+  for (const line of ['update stuff', '优化：自己发明的词', '修复:半角冒号也不在表里']) {
+    const verdict = checkSubject(line)
+    assert.equal(verdict.ok, false, `${line} 应该被拦下`)
+    assert.ok(verdict.reason, '拦下时必须给出原因（不能只是 false）')
+  }
+  assert.match(checkSubject('update stuff').reason, /没有前缀|不在词表/)
+})
+
+test('★ 提交标题：半角冒号拦下，并点名要全角（最常见的手滑）', () => {
+  const verdict = checkSubject('修: 用了半角冒号')
+  assert.equal(verdict.ok, false)
+  assert.match(verdict.reason, /全角/)
+})
+
+test('提交标题：git 自己造的放行（Merge / Revert / fixup! / squash!）', () => {
+  for (const line of ["Merge branch 'x' into y", 'Revert "修：xxx"', 'fixup! 修：xxx', 'squash! 文档：xxx']) {
+    assert.equal(checkSubject(line).ok, true, `${line} 应该放行`)
+  }
+})
+
+test('提交标题：取第一条非空、非注释行（git 会往提交信息文件里塞注释）', () => {
+  const text = '# Please enter the commit message\n\n修：标题在这\n\n正文\n# 注释'
+  assert.equal(subjectOf(text), '修：标题在这')
+  assert.equal(subjectOf('# 只有注释\n'), '')
 })

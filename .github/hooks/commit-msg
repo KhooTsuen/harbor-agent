@@ -1,0 +1,5 @@
+#!/bin/sh
+# git 钩子：只是转发到 JS（Windows 上 sh 里的引号/中文很容易出事，逻辑不放这里面）
+# 装法：node scripts/hooks/install.mjs（把 core.hooksPath 指到 .github/hooks）
+# 规矩：CONTRIBUTING.md 的「提交标题的格式」；词表在 scripts/hooks/commit-msg.mjs
+exec node scripts/hooks/commit-msg.mjs "$1"
