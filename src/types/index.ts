@@ -157,6 +157,8 @@ export interface Settings {
   /** 强制停掉 ASCII 场景的后台动画 */
   asciiReducedMotion: boolean
   sidebarWidth: number
+  /** 输入框高度（px）：面板上沿可拖，拖完就固定在那个高度；纯界面状态，只进 localStorage */
+  composerHeight: number
   rightPanelWidth: number
   sidebarCollapsed: boolean
   /** 侧栏上下分栏：上半（对话文件夹）占的百分比 */

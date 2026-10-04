@@ -173,12 +173,16 @@ export function ResizeHandle({
         抓手就只剩线的左右 1px，太难点中。
 
         ⚠️ 别改回对称（-left-3 -right-3）—— 会重新盖住邻居的滚动条。
-        垂直方向（上/下）的两侧邻居都没滚动条，维持 ±12px、不动 z。
+        垂直方向（上/下）的两侧邻居都没滚动条，维持 ±12px —— 但**层级同样要带 z-10**：
+        输入框那条手柄压在「聊天区 / 输入框」的交界线上，而聊天区是 `relative z-10`，
+        不带 z 时热区会被整条吃掉。真机扫描过：同一份代码，预刷新时 8 个采样点有 4 个
+        命中手柄热区（可拖），刷新后同一位置 8 个点全部命中聊天区，一个都抓不到。
       */}
       <span
         className={cn(
-          'absolute',
-          vertical ? 'inset-x-0 -top-3 -bottom-3' : 'inset-y-0 -left-px -right-3 z-10',
+          /* z-10 两个方向都要带（原来只有左右方向带）—— 理由见上面那段注释 */
+          'absolute z-10',
+          vertical ? 'inset-x-0 -top-3 -bottom-3' : 'inset-y-0 -left-px -right-3',
         )}
       />
       <span

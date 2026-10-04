@@ -133,10 +133,21 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
 export const LAYOUT = {
   sidebar: { default: 240, min: 220, max: 320, collapsed: 48 },
   rightPanel: { default: 360, min: 320, max: 480 },
+  /*
+   * 输入框高度（px）：面板上沿那条线可以拖，松手后**固定在拖到的位置**
+   * （写进设置持久化 —— `Settings.composerHeight`，纯界面状态，只进 localStorage）。
+   *
+   * min/max 与 `design.ts` 的 `composerMinHeight` / `composerMaxHeight` 同值：
+   * 那两个 token 目前无人引用（`LAYOUT_TOKENS` 还是一张待接线的注册表），
+   * 真正生效的是这一份 —— 以后要调，两处一起改，别只改一边。
+   *
+   * 原来这里是 `composerMaxHeight: 200`（同样没人引用），已并进 `composer.max`，
+   * 免得同一个上限出现两个名字。
+   */
+  composer: { default: 96, min: 52, max: 200 },
   topbarHeight: 40,
   statusBarHeight: 28,
   contentMaxWidth: 760,
-  composerMaxHeight: 200,
 } as const
 
 /* ── 输入限制 ────────────────────────────────────────────────── */

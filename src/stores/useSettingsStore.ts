@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   asciiQuality: 'high',
   asciiReducedMotion: false,
   sidebarWidth: LAYOUT.sidebar.default,
+  composerHeight: LAYOUT.composer.default,
   rightPanelWidth: LAYOUT.rightPanel.default,
   sidebarCollapsed: false,
   rightPanelVisible: true,
@@ -120,6 +121,12 @@ function normalize(input: Partial<Settings> | undefined): Settings {
       Number(s.sidebarWidth) || LAYOUT.sidebar.default,
       LAYOUT.sidebar.min,
       LAYOUT.sidebar.max,
+    ),
+    /* 与侧栏同款：老版本存过的高度也在这里按新的 min/max 夹一遍 */
+    composerHeight: clamp(
+      Number(s.composerHeight) || LAYOUT.composer.default,
+      LAYOUT.composer.min,
+      LAYOUT.composer.max,
     ),
     rightPanelWidth: clamp(
       Number(s.rightPanelWidth) || LAYOUT.rightPanel.default,

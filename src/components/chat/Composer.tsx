@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { ImageIcon, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MAX_INPUT_LENGTH } from '@/constants'
+import { LAYOUT, MAX_INPUT_LENGTH } from '@/constants'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useConfigStore } from '@/stores/useConfigStore'
+import { ResizeHandle } from '@/components/ui/ResizeHandle'
 import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem } from '@/components/ui/Popover'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -63,6 +65,14 @@ export function Composer({ onFocusRequest }: ComposerProps) {
   const updateThreadSettings = useAppStore((s) => s.updateThreadSettings)
 
   const sendOnEnter = useSettingsStore((s) => s.settings.sendOnEnter)
+  /*
+   * 输入框高度：拖动期间只走**本地** state —— 每动一像素就写全局设置的话，
+   * 所有订阅 settings 的组件（含消息列表）都得跟着重渲。松手才落设置。
+   */
+  const savedComposerHeight = useSettingsStore((s) => s.settings.composerHeight)
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const [draggingHeight, setDraggingHeight] = useState<number | null>(null)
+  const composerHeight = draggingHeight ?? savedComposerHeight
   const configuredModel = useConfigStore((s) => s.config?.assistant.model)
 
   /* 补全（打 / 出命令、打 @ 出文件）—— 逻辑在 composer/useCompletions.ts */
@@ -101,6 +111,23 @@ export function Composer({ onFocusRequest }: ComposerProps) {
       <div className="mx-auto w-full max-w-[var(--content-max-width)]" data-composer-shell="">
         {/* AG-053：权限条与澄清卡在这里，由 AboveInputCards 仲裁只显示一张 */}
         <AboveInputCards />
+        {/*
+          输入框高度可拖：这条线压在面板上沿，往上拖变高、往下拖变矮，
+          松手就固定在拖到的位置（写进设置，重启还在）。范围见 LAYOUT.composer。
+        */}
+        <ResizeHandle
+          orientation="vertical"
+          side="top"
+          label="调整输入框高度"
+          value={composerHeight}
+          min={LAYOUT.composer.min}
+          max={LAYOUT.composer.max}
+          onChange={setDraggingHeight}
+          onCommit={(next) => {
+            setDraggingHeight(null)
+            updateSettings({ composerHeight: next })
+          }}
+        />
         <div
           className={cn(
             'glass-panel relative rounded-md border bg-bg-input transition-colors duration-fast',
@@ -138,7 +165,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
           */}
           {activeThreadId ? <PlanBar threadId={activeThreadId} /> : null}
 
-          {/* ① 输入区 */}
+          {/* ① 输入区。高度由上面那条拖拽线决定，不再是写死的 max-h/min-h */}
           <textarea
             value={input}
             onChange={(e) => {
@@ -167,12 +194,13 @@ export function Composer({ onFocusRequest }: ComposerProps) {
                 submit()
               }
             }}
-            rows={2}
             maxLength={MAX_INPUT_LENGTH + 200}
             placeholder="描述你想让它做什么…"
             aria-label="消息输入框"
+            /* 高度是唯一权威：不写 rows（写了也只会误导，CSS height 本来就盖过它） */
+            style={{ height: composerHeight }}
             className={cn(
-              'block max-h-[200px] min-h-[52px] w-full resize-none rounded-t-md bg-transparent',
+              'block w-full resize-none overflow-y-auto rounded-t-md bg-transparent',
               'px-3.5 pb-1 pt-3 text-base leading-relaxed text-fg-primary',
               'placeholder:text-fg-tertiary focus:outline-none',
             )}
