@@ -35,11 +35,23 @@ test('清单：每一项都是 [名字, 函数]，不重名，必需项都在（
   }
 })
 
-test('第 7 项：真实仓库里钩子已装 → 无警告', () => {
+test('第 7 项：真实仓库里跑一遍 —— 装了就闭嘴，没装就点名', () => {
   const result = checkHooksInstalled(REPO)
   assert.deepEqual(result.errors, [], '这一项只警告不报错（新克隆还没装时不该红）')
-  assert.deepEqual(result.warnings, [], `真实仓库应该有警告为空，实际：${result.warnings.join('；')}`)
-  assert.equal(result.summary, '钩子已装')
+
+  /* ★ 这里原本写的是「真实仓库的 warnings 必须为空」—— **只在装过钩子的机器上成立**：
+     `core.hooksPath` 是本地 git 配置，克隆不出来（本文档第 3 节就写着「换台机器要重跑一次」），
+     所以 CI 上必然落在「没装」那一支，那笔提交一推上去就红了（Run 198）。
+     两条路都合法，但都得把话说清楚：装了就别再啰嗦，没装必须点名缺什么 + 给出安装命令。 */
+  const said = result.warnings.join('｜')
+  if (result.summary === '钩子已装') {
+    assert.deepEqual(result.warnings, [], `说了「钩子已装」就不能同时有警告：${said}`)
+  } else {
+    assert.ok(
+      said.includes('core.hooksPath') && said.includes('install.mjs'),
+      `没装钩子就得点名 core.hooksPath 和安装命令，实际：${said}`,
+    )
+  }
 })
 
 test('第 7 项：钩子文件缺失 → 警告点名缺哪个', () => {
