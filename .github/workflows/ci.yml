@@ -64,6 +64,12 @@ jobs:
       - name: 规范检查（check-rules）
         run: npm run check:rules
 
+      # check-rules **自己的**测试（清单结构 + 每一项的行为）。
+      # 以前文档写的是「人 / CI」，实际谁都没跑 —— 检查脚本本身坏了不会被发现。
+      # 并进 verify（pre-push）后，钩子与 CI 两处都会跑。
+      - name: 规则检查的自测（check-rules 的测试）
+        run: npm run test:rules
+
       - name: 前端单元测试
         run: npm run test:unit
 
