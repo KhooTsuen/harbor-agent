@@ -123,8 +123,69 @@ export function waitForLoad(view: WebviewElement, budget: Budget): Promise<void>
   })
 }
 
-/** 在 webview 里跑一段脚本的结果 */
-export type ScriptOutcome<T> = { ok: true; value: T | undefined } | { ok: false; error: string }
+/**
+ * 等「后退 / 前进**真的动了**没有」。
+ *
+ * ★ 为什么不先问 `canGoBack()`（2026-10-06 真机 bug ①）：
+ *   页面自报 hl=2（确实有上一页，页面里 `history.back()` 一次就退回列表、
+ *   连筛选词都恢复了），而 webview 的 `canGoBack()` 返回 **false** ——
+ *   于是 `browse_nav` 回了一句「到头了：没有上一页可以后退」。
+ *   而它根本没到头（bug ②：那句话把「有上一页」也误判成到头）。
+ *   同一份判据还牵着界面上那两个按钮的灰显，所以这一条不能拿来当结论。
+ *
+ * 现在的口径：**动手之后核实** ——
+ *   · 先记下地址，由调用方去调 goBack / goForward
+ *   · 等 `did-navigate` / `did-navigate-in-page` / `did-finish-load`，
+ *     或者轮询地址真的变了（有些站点的页内导航不发事件）
+ *   · 过了这段时间还没动静 → 返回 false，由调用方决定要不要兜底 / 报「到头了」
+ *
+ * 这样「到头了」才是一句**验证过的**结论，而不是一次猜测。
+ *
+ * @param before 动手之前的地址（拿它比出“变没变”）
+ * @returns 真的换了页面 / 地址就 true
+ */
+export function waitForNavMove(
+  view: WebviewElement,
+  before: string,
+  budget: Budget,
+  cap = 2500,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let poll: ReturnType<typeof setInterval> | undefined
+    const names = ['did-navigate', 'did-navigate-in-page', 'did-finish-load']
+
+    const done = (moved: boolean): void => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      if (poll) clearInterval(poll)
+      for (const name of names) view.removeEventListener(name, onEvent)
+      resolve(moved)
+    }
+
+    const onEvent = (): void => done(true)
+    for (const name of names) view.addEventListener(name, onEvent)
+
+    const current = (): string => {
+      try {
+        return view.getURL?.() ?? ''
+      } catch {
+        return ''
+      }
+    }
+    poll = setInterval(() => {
+      const now = current()
+      if (now && now !== before) done(true)
+    }, 100)
+
+    timer = setTimeout(() => done(false), budget.slice(cap))
+  })
+}
+
+/** 在 webview 里跑一段脚本的结果 */ export type ScriptOutcome<T> =
+  { ok: true; value: T | undefined } | { ok: false; error: string }
 
 /**
  * 在 webview 里跑一段脚本 —— **失败会重试**。

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
 import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from './scripts'
-import { goInView, navStateOf } from './webviewNav'
+import { navBlockedText, stepHistory } from './navStep'
 import {
   BROWSE_BUDGET_MS,
   Budget,
@@ -164,28 +164,18 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         }
 
         /*
-         * nav：在当前标签里后退 / 前进（浏览器的历史，不开新标签）。
-         *
-         * ★ 先问「能不能退」再动手：`goBack()` 在没历史时是个**空操作**，
-         *   不先问就会回一句「已后退」而页面根本没动 —— 模型拿着假成功继续往下做，
-         *   后面每一步都建在错的前提上（这种错最难查）。
-         *   所以拿不到状态 / 到头了，一律当着面说清楚。
+         * nav：在当前标签里后退 / 前进（不开新标签）。
+         * 「怎么判断真的动了」、以及为什么不能信 canGoBack()，全在 navStep.ts 的文件头
+         * —— 那是 2026-10-06 真机 bug 留下的教训，别搬回来。
          */
         if (pending!.action === 'nav') {
           const step: 'back' | 'forward' = pending!.direction === 'forward' ? 'forward' : 'back'
-          const state = navStateOf(view)
-          if (step === 'back' ? !state.back : !state.forward) {
-            reply({
-              ok: false,
-              error:
-                step === 'back'
-                  ? '这个标签已经到头了：没有上一页可以后退（它是从这里开始打开的）'
-                  : '这个标签已经到头了：没有下一页可以前进',
-            })
+          const outcome = await stepHistory(view, step, budget)
+          if (!outcome.moved) {
+            reply({ ok: false, error: navBlockedText(step, outcome, view.getURL?.() ?? '') })
             return
           }
 
-          goInView(view, step)
           await waitForLoad(view, budget)
           if (!alive) return
 

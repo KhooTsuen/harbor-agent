@@ -68,13 +68,24 @@ export async function run() {
     'utf8',
   )
   check('★ 驱动层认识 nav 动作', /action === 'nav'/.test(driverSrc))
-  check(
-    '★ nav 先问「能不能退」再动手（goBack 在没历史时是空操作，会回假成功）',
-    /navStateOf\(view\)/.test(driverSrc),
-  )
+
+  /*
+   * ★ 这一条是 2026-10-06 那个真机 bug 的根：当时拿 `canGoBack()` 当结论，
+   *   而它会在「确实有上一页」时回 false（页面报 hl=2、history.back() 一下就退回去了）。
+   *   现在的契约是**动手 + 核实**，两条兜底都必须活着 —— 拆到 navStep.ts 之后
+   *   这几条线跟着契约走（拆文件不该把守卫留在原地变成空手段）。
+   */
+  const stepSrc = readFileSync(join(ROOT, 'src/components/layout/browser/navStep.ts'), 'utf8')
+  check('★ 动手之后核实（不拿 canGoBack 当结论）', /waitForNavMove\(view, before/.test(stepSrc))
+  check('★ 兜底会用页面自己的 history.back / forward', /history\.\$\{step\}\(\)/.test(stepSrc))
+  check('★ 失败信息里带上 canGoBack / canGoForward 诊断值', /canGoBack=\$\{outcome\.back\}/.test(stepSrc))
 
   const storeSrc = readFileSync(join(ROOT, 'src/stores/useBrowserStore.ts'), 'utf8')
   check('★ nav 归到「不开新标签」那一类', /request\.action === 'nav'/.test(storeSrc))
+
+  const waitSrc = readFileSync(join(ROOT, 'src/components/layout/browser/browseWait.ts'), 'utf8')
+  check('★ 那个“动没动”的等待真的在监听导航事件', /waitForNavMove/.test(waitSrc))
+  check('★ 也轮询地址（有些页内导航不发事件）', /now !== before/.test(waitSrc))
 
   const bridgeSrc = readFileSync(
     join(ROOT, 'src/components/layout/browser/useBrowseBridge.ts'),
