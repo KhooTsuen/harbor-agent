@@ -46,6 +46,8 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   browse_elements: ['读取页面', '次'],
   browse_click: ['点击', '次'],
   browse_type: ['输入文字', '次'],
+  /* AI 用浏览器历史后退/前进（不开新标签）—— 1.28.0 新增 */
+  browse_nav: ['网页后退/前进', '次'],
   generate_image: ['生成', '张图片'],
   /* 真机反馈 9b 的新工具：动作词是「下载」，量词用「个文件」 */
   download: ['下载', '个文件'],
@@ -76,6 +78,7 @@ export const TOOL_LABELS: Record<string, string> = {
   browse_elements: '读取页面元素',
   browse_click: '点击页面元素',
   browse_type: '填写页面输入',
+  browse_nav: '网页后退/前进',
   generate_image: '生成图片',
   download: '下载文件',
   /* AG-053：开工前澄清 —— 界面上是「问你几个问题」，不是「ask_user」 */

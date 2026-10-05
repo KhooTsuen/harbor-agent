@@ -42,8 +42,8 @@ export interface BrowserTabItem {
 /** 主进程发来、还没被执行的一次浏览请求 */
 export interface PendingBrowse {
   id: string
-  /** navigate=导航读正文；snapshot=读元素；click=点；type=打字（后三个不导航） */
-  action: 'navigate' | 'snapshot' | 'click' | 'type'
+  /** navigate=导航读正文；snapshot=读元素；click=点；type=打字；nav=历史后退/前进 */
+  action: 'navigate' | 'snapshot' | 'click' | 'type' | 'nav'
   url: string
   /** click / type 时用：目标元素索引（snapshot 返回的 i） */
   index?: number
@@ -58,6 +58,8 @@ export interface PendingBrowse {
    * 用来让 AI 在同一个会话里复用同一个标签 —— 见 `requestBrowse` 里的注释。
    */
   sessionId?: string
+  /** nav 时用：往哪个方向走（back 上一页 / forward 下一页） */
+  direction?: 'back' | 'forward'
 }
 
 interface BrowserState {
@@ -178,11 +180,18 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
 
   requestBrowse: (request) =>
     set((state) => {
-      /* snapshot / click / type 都不导航、不开新标签：只操作当前已经打开的页面 */
+      /*
+       * snapshot / click / type / nav 都不开新标签：只操作当前已经打开的页面。
+       *
+       * nav（后退/前进）虽然会换页面，但换的是**这个标签自己的历史** ——
+       * 为它再开一个标签，等于把「退回去」变成「又开一遍刚才那页」：
+       * 多一个标签、丢掉筛选和滚动位置，用户看到的也不是它退回去了。
+       */
       if (
         request.action === 'snapshot' ||
         request.action === 'click' ||
-        request.action === 'type'
+        request.action === 'type' ||
+        request.action === 'nav'
       ) {
         return queuedOf(state, request)
       }

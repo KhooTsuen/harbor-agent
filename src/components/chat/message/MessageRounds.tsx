@@ -38,6 +38,13 @@ export function MessageRounds({
   hideStreamingContent?: boolean
 }) {
   const lastIndex = rounds.length - 1
+  /*
+   * 这条消息出过正文没有（只要出过一次就永远是 true —— 正文不会退回去）。
+   * 光标位靠它决定要不要占：一次都还没出过时干脆不挂（下方有注释）。
+   */
+  const everHadContent = rounds.some((round) => round.content.trim())
+  /** 最后一轮现在有没有正文 —— 有才把光标露出来 */
+  const lastHasContent = Boolean(rounds[lastIndex]?.content.trim())
 
   /*
    * 流式那一轮的正文要「摊平」（AG-023）—— 上游是一批一批给的，直接渲染会
@@ -82,17 +89,29 @@ export function MessageRounds({
                 ) : (
                   <Markdown text={round.content} />
                 )}
-                {/*
-                  打字光标：在**有正文的这一轮**的尾巴上闪。
-                  上一层那个 `round.content.trim()` 是它的前提 —— 空档期不画光标，
-                  这是 2026-10-06 拿真机定下来的（画了会多一行空行）。
-                */}
-                {streaming && isLast ? <span className="caret" /> : null}
               </div>
             ) : null}
           </div>
         )
       })}
+
+      {/*
+        打字光标：**整条消息只挂一个，位置钉在尾巴上**（2026-10-06 第二次调整）。
+
+        上一版挂在「有正文的那一轮」里面，换轮时那个元素会卸载再挂载：
+        光标那一行的出现 / 消失让下面所有东西上下跳一格（真机反馈的「对话抽搐」），
+        而且重挂会重置 CSS 闪烁动画（看着像卡了一下）。
+
+        现在：它不在任何一轮里面，所以在换轮、工具行增删时**都不会卸载**；
+        流式期间只是「有正文就看得见、没有（正在想 / 跑工具）就看不见」，
+        位置始终占着 —— 不会跳。
+
+        两条底线：① 一行正文都没出过时不挂（那种情况下它会多出一行空的，
+        2026-10-06 第一版就栽在这儿）；② 非流式（答完了）不挂。
+      */}
+      {streaming && everHadContent ? (
+        <span className={lastHasContent ? 'caret' : 'caret invisible'} aria-hidden="true" />
+      ) : null}
     </div>
   )
 }

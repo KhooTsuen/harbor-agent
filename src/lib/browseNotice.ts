@@ -16,8 +16,8 @@
    真机事故两次都出在「看起来没逻辑的地方」，这种判断必须能单测。
    ══════════════════════════════════════════════════════════════ */
 
-/** 主进程发来的四个动作（navigate 复用 `PendingBrowse` 的取值） */
-export type BrowseAction = 'navigate' | 'snapshot' | 'click' | 'type'
+/** 主进程发来的五个动作（navigate 复用 `PendingBrowse` 的取值） */
+export type BrowseAction = 'navigate' | 'snapshot' | 'click' | 'type' | 'nav'
 
 /** 一条 toast 的内容 */
 export interface BrowseNotice {
@@ -64,6 +64,15 @@ export function browseNotice(
         key,
         notice: { level: 'info', title: 'Agent 正在网页上输入', detail: '它在替你填内容' },
       }
+    case 'nav':
+      return {
+        key,
+        notice: {
+          level: 'info',
+          title: 'Agent 正在网页里前进/后退',
+          detail: '用浏览器历史，不开新标签',
+        },
+      }
     default:
       /* 将来内核加了新动作：不认识就不提示，别拿空标题糊用户 */
       return { key, notice: null }
@@ -73,9 +82,15 @@ export function browseNotice(
 /**
  * 动作还是不是「在动网页」—— 用来点亮右栏「浏览器」标签上的角标。
  *
- * 四个动作都算：navigate 在开页面，snapshot/click/type 在操作页面，
- * 对用户来说都是「Agent 在用浏览器」。
+ * 五个动作都算：navigate 在开页面，snapshot/click/type 在操作页面，
+ * nav 在页面之间后退/前进 —— 对用户来说都是「Agent 在用浏览器」。
  */
 export function isBrowseAction(action: string): action is BrowseAction {
-  return action === 'navigate' || action === 'snapshot' || action === 'click' || action === 'type'
+  return (
+    action === 'navigate' ||
+    action === 'snapshot' ||
+    action === 'click' ||
+    action === 'type' ||
+    action === 'nav'
+  )
 }

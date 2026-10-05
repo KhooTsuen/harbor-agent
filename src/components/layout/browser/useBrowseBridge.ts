@@ -66,9 +66,15 @@ export function useBrowseBridge(): void {
         if (notice) toastRef.current(notice.level, notice.title, notice.detail)
       }
 
-      if (req.action === 'snapshot' || req.action === 'click' || req.action === 'type') {
+      if (
+        req.action === 'snapshot' ||
+        req.action === 'click' ||
+        req.action === 'type' ||
+        req.action === 'nav'
+      ) {
         /*
-         * 读/点/打字：操作当前页面，不导航。
+         * 读 / 点 / 打字 / 回退：都在**当前**这个标签里做，不开新标签（nav 走的是
+         * 它自己的历史，见 useBrowserStore.requestBrowse 里的注释）。
          * 前提是浏览器里已经有打开的页面 —— 没有就直说，别让主进程干等 45 秒。
          *
          * 「有没有页面」按**本会话**看（真机反馈 6）：别的会话开着页面不算 ——
@@ -90,6 +96,7 @@ export function useBrowseBridge(): void {
           text: req.text,
           pressEnter: req.pressEnter,
           authorized: req.authorized,
+          direction: req.direction,
           sessionId,
         })
         useUIStore.getState().setActiveRightTab('browser')

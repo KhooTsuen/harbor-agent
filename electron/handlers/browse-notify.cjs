@@ -27,6 +27,7 @@ const ACTION_TEXT = {
   snapshot: { title: 'Agent 正在读网页上的元素', body: '它在找可点/可填的东西' },
   click: { title: 'Agent 正在网页上点击', body: '它在替你操作页面' },
   type: { title: 'Agent 正在网页上输入', body: '它在替你填内容' },
+  nav: { title: 'Agent 正在网页里后退/前进', body: '用的浏览器历史，不会新开标签' },
 }
 
 /**

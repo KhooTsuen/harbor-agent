@@ -9,10 +9,12 @@
 /** 主进程把一次浏览器动作交给渲染层去执行（真正点页面的是渲染层的 webview） */
 export interface BrowserRequestEvent {
   id: string
-  action: 'navigate' | 'snapshot' | 'click' | 'type'
+  action: 'navigate' | 'snapshot' | 'click' | 'type' | 'nav'
   url?: string
   /** click/type: index 目标元素；type: text 内容、pressEnter 回车、authorized 已授权填密码 */
   index?: number
+  /** nav: 往哪个方向走（back 上一页 / forward 下一页） */
+  direction?: 'back' | 'forward'
   text?: string
   pressEnter?: boolean
   authorized?: boolean
@@ -36,6 +38,8 @@ export interface BrowserBridge {
       into?: string
       password?: boolean
       needsConfirm?: boolean
+      /** nav 成功时回一句「往哪个方向走的」（主进程据此写人话） */
+      nav?: string
       error?: string
     },
   ) => Promise<{ ok: boolean; error?: string }>

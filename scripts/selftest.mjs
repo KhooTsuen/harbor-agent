@@ -156,6 +156,7 @@ import { run as urlPolicyGroup } from './selftest/groups/117-url-policy.mjs'
 import { run as safeWriteGroup } from './selftest/groups/118-safe-write.mjs'
 import { run as downloadGroup } from './selftest/groups/119-download.mjs'
 import { run as editRulesGroup } from './selftest/groups/120-edit-rules.mjs'
+import { run as browseNavGroup } from './selftest/groups/121-browse-nav.mjs'
 
 const GROUPS = [
   basics,
@@ -249,6 +250,7 @@ const GROUPS = [
   visionGroup,
   modelChoiceGroup,
   browserWaitGroup,
+  browseNavGroup,
   errorObserverGroup,
   errorReaderGroup,
   machinePromptGroup,

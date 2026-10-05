@@ -31,6 +31,7 @@ const SEARCH_TOOLS = new Set([
   'browse_elements',
   'browse_click',
   'browse_type',
+  'browse_nav',
 ])
 
 function isSearchTool(name) {

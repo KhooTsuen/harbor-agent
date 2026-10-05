@@ -169,6 +169,8 @@ function register() {
       text,
       title: String(result.title ?? ''),
       url: String(result.url ?? ''),
+      /* browse_nav 多一个「往哪个方向走的」：工具要拿它写人话 */
+      nav: result.nav === undefined ? undefined : String(result.nav),
       truncated: picked.raw.length > 12_000,
     })
     return { ok: true }

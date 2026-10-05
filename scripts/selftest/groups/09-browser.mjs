@@ -238,6 +238,8 @@ export async function run() {
   check('★ 授权后才带 authorized 重发', /authorized:\s*true/.test(typeSrc))
   check('★ 密码值会登记成已知密钥（审计/日志才会脱敏）', /redact\.remember\(/.test(typeSrc))
 
+  /* browse_nav（后退 / 前进）的检查在 121-browse-nav.mjs —— 这一组过了 300 行 */
+
   /* ── browse_elements 的格式化（纯函数）── */
 
   group('浏览器 / 元素清单格式化')

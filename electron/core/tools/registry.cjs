@@ -22,6 +22,7 @@ const browse = require('./browse.cjs')
 const browseElements = require('./browse-elements.cjs')
 const browseClick = require('./browse-click.cjs')
 const browseType = require('./browse-type.cjs')
+const browseNav = require('./browse-nav.cjs')
 const download = require('./download.cjs')
 const generateImage = require('./generate-image.cjs')
 const askUser = require('./ask_user.cjs')
@@ -42,6 +43,7 @@ const ALL = [
   browseElements,
   browseClick,
   browseType,
+  browseNav,
   generateImage,
   remember,
   askUser,
@@ -70,6 +72,7 @@ const WRITE_TOOLS = new Set([
   'browse_elements',
   'browse_click',
   'browse_type',
+  'browse_nav',
   'generate_image',
   'remember',
   'download',

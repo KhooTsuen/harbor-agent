@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
 import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from './scripts'
+import { goInView, navStateOf } from './webviewNav'
 import {
   BROWSE_BUDGET_MS,
   Budget,
@@ -72,6 +73,8 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
       into?: string
       password?: boolean
       needsConfirm?: boolean
+      /** nav 成功时回「往哪个方向走的」（主进程据它写人话） */
+      nav?: string
       error?: string
     }): void => {
       replied = true
@@ -157,6 +160,49 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
           } else {
             reply({ ok: false, error: String(raw?.error ?? '输入失败') })
           }
+          return
+        }
+
+        /*
+         * nav：在当前标签里后退 / 前进（浏览器的历史，不开新标签）。
+         *
+         * ★ 先问「能不能退」再动手：`goBack()` 在没历史时是个**空操作**，
+         *   不先问就会回一句「已后退」而页面根本没动 —— 模型拿着假成功继续往下做，
+         *   后面每一步都建在错的前提上（这种错最难查）。
+         *   所以拿不到状态 / 到头了，一律当着面说清楚。
+         */
+        if (pending!.action === 'nav') {
+          const step: 'back' | 'forward' = pending!.direction === 'forward' ? 'forward' : 'back'
+          const state = navStateOf(view)
+          if (step === 'back' ? !state.back : !state.forward) {
+            reply({
+              ok: false,
+              error:
+                step === 'back'
+                  ? '这个标签已经到头了：没有上一页可以后退（它是从这里开始打开的）'
+                  : '这个标签已经到头了：没有下一页可以前进',
+            })
+            return
+          }
+
+          goInView(view, step)
+          await waitForLoad(view, budget)
+          if (!alive) return
+
+          /* 退回去之后把正文一并读回来 —— 模型十有八九就是想看那一页的内容 */
+          const out = await readPage(view, READ_SCRIPT, budget)
+          if (!alive) return
+          const raw = out.ok
+            ? (out.value as { text?: string; html?: string; title?: string; url?: string })
+            : undefined
+          reply({
+            ok: true,
+            nav: step,
+            text: String(raw?.text ?? ''),
+            html: raw?.text ? '' : String(raw?.html ?? ''),
+            title: String(raw?.title ?? ''),
+            url: String(raw?.url ?? view.getURL?.() ?? ''),
+          })
           return
         }
 
