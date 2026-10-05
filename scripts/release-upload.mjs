@@ -20,9 +20,10 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+/* 认仓库 / 拿凭据 / 发请求只有一份实现（清理脚本用的是同一份） */
+import { ghApi, readToken, repoOf } from './lib/github-release.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -34,15 +35,6 @@ function fail(message) {
   process.exit(1)
 }
 
-function run(cmd, args, options = {}) {
-  return spawnSync(cmd, args, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-    ...options,
-  })
-}
-
 const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
 const tag = `v${version}`
 const zipName = `harbor-${version}-win-x64.zip`
@@ -50,20 +42,13 @@ const zipPath = join(ROOT, 'dist-portable', zipName)
 if (!existsSync(zipPath)) fail(`${zipName} 不存在 —— 先跑 npm run package && npm run release:zip`)
 const sizeMb = Math.round(statSync(zipPath).size / 1048576)
 
-/* origin 推 owner/repo —— https 与 ssh 两种写法都认 */
-const remote = (run('git', ['remote', 'get-url', 'origin']).stdout ?? '').trim()
-const found = /github\.com[:/]([^/]+)\/([^/.\s]+)/.exec(remote)
-if (!found) fail(`认不出 origin 是哪个 GitHub 仓库：${remote || '（空）'}`)
-const [, owner, repo] = found
-
-/** 凭据走 git 自己的 helper（和 push 用同一份），拿不到就让人先去 push 一次 */
-function readToken() {
-  const filled = run('git', ['credential', 'fill'], {
-    input: 'protocol=https\nhost=github.com\n\n',
-  })
-  const row = (filled.stdout ?? '').split('\n').find((line) => line.startsWith('password='))
-  if (!row) fail('git credential fill 没给出 token —— 先 git push 一次把凭据存好')
-  return row.slice('password='.length)
+/* origin 推 owner/repo —— 两种写法都认（实现见 lib/github-release.mjs） */
+let owner = ''
+let repo = ''
+try {
+  ;({ owner, repo } = repoOf())
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error))
 }
 
 /** Release 正文直接取 CHANGELOG 里这一节 —— 正文只写一份，别在这儿再抄一遍 */
@@ -76,32 +61,17 @@ function releaseBody() {
   return (next > 0 ? rest.slice(0, next) : rest).trim()
 }
 
-const key = DRY ? '' : readToken()
-
-async function api(path, options = {}) {
-  const upload = path.startsWith('UPLOAD')
-  const url = upload
-    ? `https://uploads.github.com${path.slice('UPLOAD'.length)}`
-    : `https://api.github.com${path}`
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'harbor-release-upload',
-      ...(options.headers ?? {}),
-    },
-  })
-  const text = await response.text()
-  let json = null
+let key = ''
+if (!DRY) {
   try {
-    json = text ? JSON.parse(text) : null
-  } catch {
-    /* 非 JSON 就只留文本 */
+    key = readToken()
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
   }
-  return { ok: response.ok, status: response.status, json, text }
 }
+
+/** 只在 tool 里包一层：把 token 补上（真正的实现在 lib/github-release.mjs） */
+const api = (path, options = {}) => ghApi(path, { token: key, ...options })
 
 console.log(`准备发布 ${tag}（${IS_BETA ? 'Pre-release' : '正式版'}）`)
 console.log(`  仓库：${owner}/${repo}`)

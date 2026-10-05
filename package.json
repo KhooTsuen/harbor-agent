@@ -14,6 +14,7 @@
     "package": "npm run build && node scripts/build-portable.mjs",
     "release:zip": "node scripts/release-zip.mjs",
     "release:upload": "node scripts/release-upload.mjs",
+    "release:prune": "node scripts/release-prune.mjs",
     "cleanup:heavy": "node scripts/cleanup-heavy.mjs",
     "cleanup:release": "node scripts/cleanup-heavy.mjs --release",
     "test": "node scripts/selftest.mjs",
