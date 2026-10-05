@@ -20,6 +20,8 @@ export interface BrowserRequestEvent {
 
 export interface BrowserBridge {
   onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
+  /** 网页里 window.open / target=_blank 的地址（主进程拦下真窗口后转过来的） */
+  onBrowserOpenTab?: (callback: (url: string) => void) => () => void
   browserResult: (
     id: string,
     result: {

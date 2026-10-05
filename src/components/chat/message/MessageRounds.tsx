@@ -71,13 +71,6 @@ export function MessageRounds({
                 <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
                 正在写回答…（写完一次显示）
               </p>
-            ) : /*
-             * 只在**有正文**的轮次才渲染内容块（光标在里面，跟着正文走）。
-             * 2026-10-06 试过「只要这一轮还在跑就渲染」，结果是思考/跑工具那段
-             * 会多出一行**只有光标**的空行 —— 真机上看着难受，撤回。
-             * 真想让它跳轮也不重挂，得把光标挪到整条消息末尾只挂一个（版面改动，
-             * 要拿真机截图才能定）。
-             */
             ) : round.content.trim() ? (
               <div>
                 {/*

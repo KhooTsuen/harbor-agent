@@ -93,9 +93,9 @@ function hardenWebview(webPreferences) {
  * （webview 有独立 webContents，只挂主窗口是拦不住网页里点链接的）。
  * 放一处，改的时候只用看这一处。
  *
- * @param {{ app: object, win: object, getMode: () => string }} input
+ * @param {{ app: object, win: object, getMode: () => string, onPopup?: (url: string) => void }} input
  */
-function install({ app, win, getMode }) {
+function install({ app, win, getMode, onPopup }) {
   wireNavigationGuard(win.webContents, getMode, '主窗口')
 
   /* webview 挂载时强制加固 —— 页面里的属性覆盖不了这一层 */
@@ -110,8 +110,15 @@ function install({ app, win, getMode }) {
   app.on('web-contents-created', (_event, contents) => {
     if (contents.getType() !== 'webview') return
     wireNavigationGuard(contents, getMode, '网页')
-    /* 网页想弹新窗口一律拦掉：不弹，也不交给系统浏览器 */
-    contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    /*
+     * 网页想弹新窗口：**不给它真窗口**，但把地址交给界面开成一个标签页
+     * （2026-10-06 用户拍板：链接要能开新标签，而不是什么都不发生）。
+     * 只有 http/https 才接 —— 别的协议连通知都不发，保持原来的"一律拦掉"。
+     */
+    contents.setWindowOpenHandler(({ url }) => {
+      if (onPopup && /^https?:\/\//i.test(url)) onPopup(url)
+      return { action: 'deny' }
+    })
   })
 }
 

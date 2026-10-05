@@ -269,8 +269,9 @@ const api = {
   onImageDone: (callback) =>
     subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
 
-  /** 主进程发来的浏览请求（要操作 webview + 回话，见 useBrowseBridge.ts） */
+  /* 浏览：主进程发来的操作请求（见 useBrowseBridge.ts）+ 网页弹窗转过来的新标签地址 */
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
+  onBrowserOpenTab: (callback) => subscribe('browser:openTab', callback),
 
   /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准），渲染层只负责「用户没在看就弹个提示」 */
   onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
@@ -293,7 +294,6 @@ const api = {
     }
   },
 
-  /** 渲染层可以据此判断「我是不是跑在 Electron 里」 */
   isElectron: true,
 }
 

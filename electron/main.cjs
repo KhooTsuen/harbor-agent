@@ -105,12 +105,13 @@ function createWindow() {
 
   win.once('ready-to-show', () => windowChrome.showAndMaximize(win, HEADLESS))
 
-  /* 外链只走白名单（http / https / mailto），其余只记日志不打开：core/url-policy.cjs */
-  /* 导航策略 + webview 加固：主窗口和每个 webview 都要挂，见 navigation-policy.cjs */
+  /* 外链只走白名单（core/url-policy.cjs）+ 导航策略与 webview 加固（navigation-policy.cjs） */
   navigationPolicy.install({
     app,
     win,
     getMode: () => config.get().general.browserNavigation ?? 'ask',
+    /* 网页里的 window.open / target=_blank 转成界面里的新标签页（详见 navigation-policy.cjs） */
+    onPopup: (url) => send('browser:openTab', url),
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {

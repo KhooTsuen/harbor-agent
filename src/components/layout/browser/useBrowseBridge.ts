@@ -109,6 +109,23 @@ export function useBrowseBridge(): void {
 
     return off
   }, [])
+
+  /*
+   * 网页里弹新窗口（`window.open` / `target=_blank`）：主进程不给它真窗口，
+   * 而是把地址转过来 —— 在这里开成一个**本会话的标签页**，并切到浏览器。
+   * 用户要的就是"链接能开新标签"（2026-10-06 拍板）。
+   */
+  useEffect(() => {
+    const bridge = window.workbench
+    if (!bridge?.onBrowserOpenTab) return
+    return bridge.onBrowserOpenTab((url) => {
+      const target = String(url ?? '')
+      if (!/^https?:\/\//i.test(target)) return
+      const sessionId = getActiveThread(useAppStore.getState())?.id ?? ''
+      useBrowserStore.getState().open(target, sessionId)
+      useUIStore.getState().setActiveRightTab('browser')
+    })
+  }, [])
 }
 
 /** 万一 BrowserTab 一直没挂上（比如右侧面板被折叠了），别让主进程一直等 */

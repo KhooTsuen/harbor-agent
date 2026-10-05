@@ -260,7 +260,7 @@ export function BrowserTab() {
             src={tab.url}
             partition="persist:agent-browser"
             webpreferences="sandbox=yes,contextIsolation=yes,nodeIntegration=no"
-            allowpopups="false"
+            allowpopups="true"
             style={{
               /*
                * ★ 绝对定位铺满，**不能用 `display:none` 藏**（真机反馈 2：切回来后半截黑屏）。
