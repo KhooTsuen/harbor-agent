@@ -45,15 +45,12 @@ function fileFor(now = new Date()) {
 }
 
 function rotateIfNeeded(file, incoming) {
-  try {
-    const size = fs.existsSync(file) ? fs.statSync(file).size : 0
-    if (size + incoming <= MAX_BYTES) return
-    const backup = `${file}.1`
-    fs.rmSync(backup, { force: true })
-    fs.renameSync(file, backup)
-  } catch {
-    /* 轮转失败不影响主流程 */
-  }
+  /* 实现收敛到 rotate-file.cjs（以前和 data-retention 各一份 —— 两处同一套做法） */
+  require('./rotate-file.cjs').rotateIfOver(file, {
+    incoming,
+    maxBytes: MAX_BYTES,
+    label: '动作流水：单文件',
+  })
 }
 
 /**

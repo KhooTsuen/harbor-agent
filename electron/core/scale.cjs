@@ -121,16 +121,18 @@ function inspect({ name, args = {}, workdir = '', userText = '', limits = {} }) 
 
   const escapes = scope === 'drive-root' || scope === 'outside'
   /*
-   * ⚠️ `files` 恒为 null —— 预检**不数文件**（数一遍本身就是它要拦的那种操作，
-   *    而且代价不可控），所以这里如实写「未知」。
-   *    连带后果（审计问题 6）：下面那条文件数闸门**当前恒不成立**，
-   *    `scaleMaxFiles` 这个配置项因而**不生效**。界面上按「不起作用的旋钮
-   *    不暴露」故意不显示它（见 settings/providers/AssistantSwitches.tsx），
-   *    待办在 docs/improvement-checklist.md 的 A2 第 0 条（要接上先解决
-   *    「怎么便宜地估文件数」）。要撤掉这条闸门，请先把那条代办也一起处理。
+   * 文件数：只在「递归 / 批量」时才估（别的命令不看文件数，白数一遍是浪费）。
+   * 口径是**下界**（只数两层、到上限就停），见 `scale-files.cjs` 的文件头。
+   * 2026-10-06 接通：此前 `files` 恒为 null，第四条硬拦（`scaleMaxFiles`）
+   * 因而恒不成立 —— 它只能静默地挂在源码里假装存在。
    */
+  const files =
+    recursive || batch
+      ? require('./scale-files.cjs').estimateFiles(workdir, { max: maxFiles })
+      : null
+
   const estimate = {
-    files: null,
+    files,
     seconds,
     basis: seconds === null ? 'unknown' : 'table',
   }
@@ -148,14 +150,11 @@ function inspect({ name, args = {}, workdir = '', userText = '', limits = {} }) 
   }
 
   /*
-   * 硬拦三条：
+   * 硬拦四条：
    *   · **批量外联** —— 范围不可控（爬一个站、镜像一个仓库），和它逃不逃出工作目录无关；
    *   · **递归/批量 且逃出工作目录** —— 「扫全盘」这类，代价值得先问一句。
    *   · 估时闸门（阈值可从配置改，见 `scale-config.cjs`）。
-   *
-   * ★ 第四条（文件数）**留着但当前恒不成立**：`estimate.files` 永远是 null（见上）。
-   *   写在这里是为了「将来有便宜的文件数估算时接上就生效」，
-   *   不是为了假装它在起作用 —— 界面上那个旋钮因此不暴露。
+   *   · 文件数闸门（`scaleMaxFiles`）—— 口径是下界，估不出来（null）就不成立。
    */
   const isHard =
     external ||

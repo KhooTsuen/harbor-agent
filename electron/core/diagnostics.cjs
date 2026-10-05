@@ -56,8 +56,13 @@ function readTailLines(file, count) {
 }
 
 function logFile() {
-  const day = new Date().toISOString().slice(0, 10)
-  return path.join(DIRS.logs, `${day}.log`)
+  /*
+   * ★ 日期口径**必须和应用写日志时一致**（`log.dayStamp()` = **本地**日期）。
+   * 这里原来用 `toISOString().slice(0,10)` —— 那是 **UTC** 日期：东八区凌晨 8 点
+   * 之前导出的诊断包读的是**前一天**的日志文件（排查时看错日志会误导人）。
+   * 不要再自己拼日期：一个口径两处实现，迟早再漂一次。
+   */
+  return path.join(DIRS.logs, `${log.dayStamp()}.log`)
 }
 
 /** 配置摘要：只报「配了什么」，不报密钥 */

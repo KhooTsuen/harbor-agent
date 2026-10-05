@@ -26,13 +26,13 @@ import { auditStats, taskList } from './safetyApi'
         相关的 IPC 是 `credentials:status`（只回条数/后端名，**不回值**）；
         `config:get` 回来时 apiKey 已由内核 `config.forRenderer()` 打成掩码。
      ② 落盘前再跑一遍 scrubForExport（键名口径与 `electron/core/redact.cjs` 的
-        `SECRET_KEY` 逐字相同，自检组 69 盯着这行），再用 findSecretLikeValue
-        复检 —— 还有疑似密钥就**拒绝落盘**。
+        `SECRET_KEY` 逐字相同 —— `__tests__/dataPortExportSync.test.ts` 盯着这条），
+        再用 findSecretLikeValue 复检 —— 还有疑似密钥就**拒绕落盘**。
    ══════════════════════════════════════════════════════════════ */
 
 export const EXPORT_SCHEMA = 1
 
-/** payload 的键集合 —— 自检组 69 按这份清单断言，改这里要同步改那边 */
+/** payload 的键集合 —— `__tests__/dataPortExportSync.test.ts` 盯着这份清单 */
 export const EXPORT_KEYS: readonly string[] = [
   'app',
   'schema',
@@ -52,8 +52,9 @@ export const MASKED_SECRET = '••••••••'
 
 /**
  * 字段名像密钥吗。
- * ★ 这行的内容必须与 `electron/core/redact.cjs` 的 `SECRET_KEY` **逐字一致** ——
- *   渲染层复制了一份它的口径，两边漂了就有一边是漏的。
+ * ★ 这行的内容必须与 `electron/core/redact.cjs` 的 `SECRET_KEY` **逐字一致**（
+ *   `__tests__/dataPortExportSync.test.ts` 按键比较两边）—— 渲染层复制了一份
+ *   它的口径，两边漂了就有一边是漏的。
  */
 const SECRET_KEY =
   /(api[_-]?key|apikey|secret|token|password|passwd|credential|authorization|cookie|private[_-]?key|session[_-]?id)/i
@@ -75,7 +76,9 @@ const TEXT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '***已隐藏***'],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, '***已隐藏***'],
   [/\bAIza[A-Za-z0-9_-]{30,}\b/g, '***已隐藏***'],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '***已隐藏***'],
   [/\bAKIA[0-9A-Z]{16}\b/g, '***已隐藏***'],
+  [/\bhf_[A-Za-z0-9]{30,}\b/g, '***已隐藏***'],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '***已隐藏***'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '***已隐藏***'],
   [/(\bhttps?:\/\/[^\s/@:]+):[^\s/@]+@/gi, `$1:***已隐藏***@`],

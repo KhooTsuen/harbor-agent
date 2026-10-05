@@ -34,8 +34,15 @@ const fake = (...parts: string[]) => parts.join('')
 const PATTERN_SECRET = fake('github', '_pat_', 'F'.repeat(22)) // 老窄正则认不出这一类
 const NAMED_SECRET = fake('sk-', 'diagnostics', '-test-', '9f2c7a41') // 走「记名法」那一条
 
-/** 跟 `diagnostics.cjs` 里 `logFile()` 同一口径（UTC 日期）—— 对不上就让下面的断言红给我看 */
-const todayLog = () => join(ROOT, 'data', 'logs', `${new Date().toISOString().slice(0, 10)}.log`)
+/*
+ * 日志文件名**直接跟内核要**（`log.dayStamp()` = 本地日期），这里不再自己拼一份。
+ *
+ * 这行原来是 `new Date().toISOString().slice(0,10)`（**UTC**）+ 一句「跟内核同一口径，
+ * 对不上就让下面的断言红给我看」—— 2026-10-06 内核把 UTC 改成 `log.dayStamp()` 之后
+ * 它确实红了（这条断言按设计干活了）。修法不是把日期抄两遍，而是**只有一处实现**。
+ */
+const logCore = require('../../../electron/core/log.cjs')
+const todayLog = () => join(ROOT, 'data', 'logs', `${logCore.dayStamp()}.log`)
 
 let originalSize = 0
 const created: string[] = []

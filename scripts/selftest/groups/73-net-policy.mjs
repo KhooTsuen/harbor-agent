@@ -14,8 +14,9 @@ import { runSkillPinChecks } from './73-net-policy-pin-parts.mjs'
 
    ⚠️ 这一组**不改用户的 config.json**：策略全走注入（ctx.netPolicy）；
    最后那组只把 configModule.get 临时换成抛错，跑完在 finally 里还原。
-   ⚠️ `scripts/selftest.mjs` 还没注册这一组（主代理加一行 import + GROUPS 即可）；
-   单独跑的现成命令写在 `tmp-note-a3.md`。
+   ✅ 已挂在 `scripts/selftest.mjs` 上（`netPolicyGroup`，GROUPS 里有它）。
+   这里原来写着「还没注册」—— 2026-10-06 核对发现那是**过期注释**
+   （拿它当依据会得出手检没在跑的错觉）；单独跑的现成命令写在 `tmp-note-a3.md`。
 */
 
 const netPolicy = require(join(ROOT, 'electron/core/net-policy.cjs'))

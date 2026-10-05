@@ -14,7 +14,7 @@
 
    ⚠️ 这一组不改用户的 config.json / credentials.json：config.get 与 credentials.get/set
       都临时换成假的，finally 里还原。沙箱在 data/selftest-workspace/session-crypto。
-   ⚠️ `scripts/selftest.mjs` 还没注册这一组（主代理加一行 import + GROUPS 即可）。
+   ✅ 已挂在 `scripts/selftest.mjs`（`sessionCrypto`）；原来那句「还没注册」是过期注释。
 */
 
 import { check, group } from '../harness.mjs'

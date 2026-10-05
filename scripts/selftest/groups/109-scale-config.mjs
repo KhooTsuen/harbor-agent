@@ -139,9 +139,33 @@ export async function run() {
     '行为断言：scaleFirst / scaleHardSeconds / scaleWarnSeconds 都有（上面那一组）',
     true,
   )
-  warn(
-    'scaleMaxFiles 只有筛查、没有行为断言 —— 因为「文件数」现在算不出来',
-    '它不是漏了，是暂时没法钉：见 docs/improvement-checklist.md 第 0 条',
-  )
+
+  /*
+   * scaleMaxFiles（文件数上限）：2026-10-06 之前它**只有一个阈值、没有估算**
+   * （`estimate.files` 恒为 null → 闸门恒不成立）。现在接了 scale-files.cjs，
+   * 这条从「筛查」升级成有的**行为**可钉：真数一个目录，看它数得出来、
+   * 到上限会停、读不出来就如实给 null（null ≠ 0：0 是「很小」，null 是「不知道」）。
+   */
+  group('规模预检 / 文件数估算（scale-files）')
+
+  const fsMod = require('node:fs')
+  const osMod = require('node:os')
+  const pathMod = require('node:path')
+  const scaleFiles = require(join(ROOT, 'electron/core/scale-files.cjs'))
+
+  const fixture = fsMod.mkdtempSync(pathMod.join(osMod.tmpdir(), 'scale-files-'))
+  fsMod.writeFileSync(pathMod.join(fixture, 'a.txt'), 'x')
+  fsMod.mkdirSync(pathMod.join(fixture, 'sub'))
+  for (let i = 0; i < 12; i += 1) fsMod.writeFileSync(pathMod.join(fixture, 'sub', `f${i}.txt`), 'x')
+
+  check('数得出来（工作目录 + 子目录两层）', scaleFiles.estimateFiles(fixture, { max: 999 }) >= 13)
+  check('★ 到上限就停（不为了精确把整棵树跑完）', scaleFiles.estimateFiles(fixture, { max: 5 }) >= 5)
+  check('★ 读不出来给 null，不给 0（0 会被当成「很小」）', scaleFiles.estimateFiles(pathMod.join(fixture, '不存在')) === null)
+
+  const scaleSrc = readFileSync(join(ROOT, 'electron/core/scale.cjs'), 'utf8')
+  check('★ scale.cjs 真去调它了（否则闸门还是个摆设）', /scale-files/.test(scaleSrc))
+  check('★ 只在递归/批量时才算（别的命令白数一遍是浪费）', /recursive \|\| batch/.test(scaleSrc))
+
+  fsMod.rmSync(fixture, { recursive: true, force: true })
   check('★ 筛查能红：编一个没人读的键 → 筛查判「没人读」', screenRead('scaleNotReadYet_没人读这个词').length === 0)
 }

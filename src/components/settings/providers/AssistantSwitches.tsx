@@ -76,8 +76,9 @@ export function AssistantSwitches() {
        * A2：规模确认（重操作动手前先问清代价）。
        * ★ 文案里写死一句「**不动危险度**」—— 用户点这个开关前必须知道：
        *   关掉它，危险命令该拦照拦、该问照问（自检里有一条专门钉这个语义）。
-       * ★ 只暴露秒数，**不暴露** scaleMaxFiles（"文件数"预检现在算不出来 ——
-       *   给一个不起作用的旋钮比不给更糟；待办在 docs/improvement-checklist.md）。
+       * ★ 只暴露秒数，**不暴露** scaleMaxFiles（文件数上限）—— 它已经生效了
+       *   （2026-10-06 接上廉价的下界估算，见 electron/core/scale-files.cjs），
+       *   但定位是**内部门槛**：估算只会低估、拿它当旋钮会给人「很准」的错觉。
        */}
       <Toggle
         checked={a.scaleFirst !== false}
@@ -101,13 +102,13 @@ export function AssistantSwitches() {
         秒算重操作（10–1800，保存时夹取）
       </label>
       {/*
-        审计问题 6：`scaleMaxFiles`（文件数上限）**当前不生效** —— 预检不数文件
-        （数一遍本身就是它要拦的那种操作），所以界面上不给那个旋钮；
-        但得让看到 config.json 的人知道它不是「坏了」。待办见 improvement-checklist A2 第 0 条。
+        scaleMaxFiles（文件数上限）**已经生效**（2026-10-06 接上估算），但它定位是
+        内部门槛：估算只数两层、只会低估，暴露成旋钮会让人以为它很准。
+        所以这里说清「有这么一条、在管着」，不给旋钮。
       */}
       <p className="px-1 text-2xs leading-relaxed text-fg-tertiary">
-        另有「文件数超过 N 个就拦」那一条（设置里的 scaleMaxFiles）暂时不生效：预检不数文件。
-        界面上没给旋钮，是因为一个不起作用的开关比没有更糟。
+        另有「递归/批量操作涉及的文件数超过 N 个就拦」那一条（config.json 里的 scaleMaxFiles，默认
+        2000）—— 它已经生效，但估算偏保守（只数两层），界面上不给旋钮。
       </p>
       <Toggle
         checked={a.verifyAfterEdit !== false}

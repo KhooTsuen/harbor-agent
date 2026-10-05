@@ -152,24 +152,19 @@ function pruneByAge({ dir, re, days = KEEP_DAYS, keepMin = 0, now = Date.now(), 
 /**
  * 单文件超上限就改名留一份旧的（审计问题 4：`token-metrics.jsonl` 以前只增不减）。
  *
- * 和 `log-actions.rotateIfNeeded` 同一套做法（那份没动 —— 不动已验过的代码）。
+ * 和 `log-actions.rotateIfNeeded` 用的是**同一份实现**（`rotate-file.cjs`）。
  * 只留一份 `.1`（下次再超会把它盖掉），所以总量有界。
  *
  * @returns {boolean} 有没有真的转
  */
 function rotateFile(file, incoming = 0, maxBytes = METRICS_MAX_BYTES) {
-  try {
-    const size = fs.existsSync(file) ? fs.statSync(file).size : 0
-    if (size + incoming <= maxBytes) return false
-    const backup = `${file}.1`
-    fs.rmSync(backup, { force: true })
-    fs.renameSync(file, backup)
-    log.warn(`清理 token 指标：单文件超过 ${Math.round(maxBytes / 1024 / 1024)}MB，旧的改名成 ${path.basename(backup)}`)
-    return true
-  } catch {
-    /* 轮转失败不影响写指标 */
-    return false
-  }
+  /* 实现收敛到 rotate-file.cjs（以前和 log-actions.rotateIfNeeded 同一套做法各写一份） */
+  return require('./rotate-file.cjs').rotateIfOver(file, {
+    incoming,
+    maxBytes,
+    label: '清理 token 指标：单文件',
+    warn: (message) => log.warn(message),
+  })
 }
 
 /**

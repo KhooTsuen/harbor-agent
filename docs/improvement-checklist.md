@@ -169,10 +169,10 @@
 
 | 项 | 说明 | 影响 | 状态 |
 | --- | --- | --- | --- |
-| 诊断包读「昨天」的日志 | `core/diagnostics.cjs` 的 `logFile()` 用 `new Date().toISOString().slice(0,10)`（**UTC** 日期）拼日志文件名，而应用自己写日志按**本地日期**命名（`core/log.cjs`）→ 东八区**凌晨 8 点之前**导出的诊断包，读的是**前一天**的日志文件 | 排查问题时看错日志（会误导）；不影响数据 | 发现于 2026-10-04，待修（改法：`logFile()` 用本地日期拼） |
-| 前端第 4 份脱敏表 | `src/lib/dataPortExport.ts` 里自带一张「像不像密钥」的正则表（导出数据时用），与 `core/redact.cjs` 的模式表**不共享** | 与问题 8/9 同源：多条规则会漂移，改了主进程忘了前端 | 发现于 2026-10-04，**与问题 8/9 同源，待统一** |
+| 诊断包读「昨天」的日志 | `core/diagnostics.cjs` 的 `logFile()` 用 `new Date().toISOString().slice(0,10)`（**UTC** 日期）拼日志文件名，而应用自己写日志按**本地日期**命名（`core/log.cjs`）→ 东八区**凌晨 8 点之前**导出的诊断包，读的是**前一天**的日志文件 | 排查问题时看错日志（会误导）；不影响数据 | ✅ **2026-10-06 已修**：`logFile()` 改用 `log.dayStamp()`（本地日期，一个口径一处实现） |
+| 前端第 4 份脱敏表 | `src/lib/dataPortExport.ts` 里自带一张「像不像密钥」的正则表（导出数据时用），与 `core/redact.cjs` 的模式表**不共享** | 与问题 8/9 同源：多条规则会漂移，改了主进程忘了前端 | ✅ **2026-10-06 已钉**：两边不合并（内核 CJS / 渲染层过 Vite，硬合会把内核拖进打包链），但加了 `dataPortExportSync.test.ts` 比正则体（键名逐字一致 + 自由文本候选是内核子集）。原来注释里写的「自检组 69」**根本不存在** —— 这条契约此前没人守 |
 | 三份原子写 | `core/session-crypto.cjs` 自己那份 `writeAtomic`（加密迁移用）与新的 `core/safe-write.cjs` 重复。**没并**：`session*.cjs` 是硬禁区 | 同一段逻辑三个地方（`session-crypto` / `safe-write` / 各自的调用点） | 发现于 2026-10-04，待授权后收敛 |
-| 三个文件贴在 300 行上 | `src/types/models-extra.ts`、`scripts/selftest/groups/04-reliability.mjs`、`src/components/settings/tabs/SecurityTab.tsx`（第 3 批想在那页加一句提示，加了就 303 ✗ —— 提示改挂到 `ProviderPanel`）；另有 `electron/core/config-normalize.cjs` 现在**正好 300** | 下次动它们时会先撞红线，得顺手拆 | 发现于 2026-10-04，**下次顺手拆**（拆法见 `.github/skills/split-file`） |
+| 三个文件贴在 300 行上 | `src/types/models-extra.ts`、`scripts/selftest/groups/04-reliability.mjs`、`src/components/settings/tabs/SecurityTab.tsx`（第 3 批想在那页加一句提示，加了就 303 ✗ —— 提示改挂到 `ProviderPanel`）；另有 `electron/core/config-normalize.cjs` 现在**正好 300** | 下次动它们时会先撞红线，得顺手拆 | ✅ 2026-10-06 核过：**正好 300 行**的其实是 9 个（不止这里列的三个）——还有 `Composer.tsx` / `TaskRow.tsx` / `McpTab.tsx` / `models-extra.ts` / `safety.ts` / `config-defaults.cjs` / `errors.cjs`。拆分是纯机械活且有回归风险，留给专门一批（拆法见 `.github/skills/split-file`） |
 | `browse` 的三个兄弟不过网络策略 | `browse-click` / `browse-elements` / `browse-type` 操作的是**已打开**的页面。问题 20 只把策略接在 `browse` 的 URL 上；跳转归 `navigation-policy`（`general.browserNavigation`）。要接得先说清「按哪个 URL 判」（目标链接 / 当前页） | 「设置里禁止了网络，Agent 却还能点开一个链接」——取决于页面自己怎么跳 | 发现于 2026-10-04，待定口径 |
 | 规模授权收窄后的多一次往返 | 第 3 批把授权收窄成「只认紧接着拦截那次 ask、且问题里有规模词 + 数字」。模型若在拦截后先去读了文件再问，就得再问一次（安全方向的代价） | 多一张卡片；不会误授权 | 发现于 2026-10-04，**先看着**（实测发现模型常跑偏，再考虑把窗口放宽） |
 
@@ -188,17 +188,20 @@
 
 | 项 | 说明 | 影响 | 状态 |
 | --- | --- | --- | --- |
-| 两处单文件轮转逻辑 | `log-actions.rotateIfNeeded`（6MB，先有）与新的 `data-retention.rotateFile`（token 指标用）是同一套做法。**没并**：不动已验过的代码（本批约束） | 同一段逻辑两个地方，改一处容易忘另一处 | 发现于 2026-10-04，待收敛（并进 `data-retention.rotateFile` 即可） |
-| 审计问题 18 / 19 一直没排进批次 | ① 外链打开无 scheme 白名单（两条 `shell.openExternal` 出口 + 渲染层正则放行 `file:`，顺带终端链接是死路径）；② 主窗口无 CSP | 两者都是审计说的「建议修」但**没进任何一批**（每批清单里都没有），不是被否掉 | 发现于 2026-10-04 清点时，见进度台账「仍未做的」 |
+| 两处单文件轮转逻辑 | `log-actions.rotateIfNeeded`（6MB，先有）与新的 `data-retention.rotateFile`（token 指标用）是同一套做法。**没并**：不动已验过的代码（本批约束） | 同一段逻辑两个地方，改一处容易忘另一处 | ✅ **2026-10-06 已收敛**到 `electron/core/rotate-file.cjs`，两边都改调它 |
+| 审计问题 18 / 19 一直没排进批次 | ① 外链打开无 scheme 白名单（两条 `shell.openExternal` 出口 + 渲染层正则放行 `file:`，顺带终端链接是死路径）；② 主窗口无 CSP | 两者都是审计说的「建议修」但**没进任何一批**（每批清单里都没有），不是被否掉 | ✅ **第 5 批已做**（外链白名单 + CSP，见 `审计修复进度.md` 第 5 批） |
 
 ## 还没做（按建议顺序）
 
-0. **A2 规模预检的「文件数」闸门**（2026-10-03 记，别忘；2026-10-04 第 3 批又核了一遍）：
-   `scaleMaxFiles`（默认 2000）现在**基本算不出来** —— 预检不数文件（数一遍本身就是它要拦的
-   那种操作），所以它只在能算出文件数时才生效，**界面上故意不暴露**（不起作用的旋钮比没有更糟）。
-   · 什么时候能算出来：以后若加「轻量估价」（只数工作目录前两层 / 读目录项数）就有了；
-   · 算出来之后要不要暴露：倾向**不暴露**，只当内部门槛，用审计里的真实命中率调。
-   · 校准口径（基础已建好）：每次触发都写了审计 `extras.scale` + 一行 `[规模预检]` 日志；
+0. ~~**A2 规模预检的「文件数」闸门**（2026-10-03 记，2026-10-04 第 3 批又核了一遍）~~
+   → ✅ **2026-10-06 已接上**：新增 `electron/core/scale-files.cjs`，口径是**下界**
+   （只数工作目录 + 每个子目录两层、到上限就停；读不出来给 **null** 而不是 0）——
+   只在「递归 / 批量」时才估。`scale.cjs` 的第四条硬拦（`scaleMaxFiles`）从
+   「恒不成立、只能挂在源码里假装存在」变成真的会拦；自检 `109-scale-config` 里
+   对应那条从「筛查」升级成**行为断言**（真数一个目录）。
+   · 界面上**仍然不给旋钮**（刻意）：估算只会低估，当旋钮会给人「很准」的错觉；
+     它是内部门槛，用审计里的真实命中率调。
+   · 校准口径（原样保留）：每次触发都写审计 `extras.scale` + 一行 `[规模预检]` 日志；
      跑一段时间后统计「预估 ≥ 300s 的操作实际触发多少次 / 实际跑多久」，用来校准
      `scaleHardSeconds` 的默认值（现在是拍的 120 秒 —— 「不靠拍，靠数据」）。
 
