@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Globe, Plus, RotateCw, X, XCircle } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useBrowseDriver } from './browser/useBrowseDriver'
+import { goInView, navStateOf } from './browser/webviewNav'
 import { useBrowserStore, tabsOfSession, visibleTabOf } from '@/stores/useBrowserStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { IconButton } from '@/components/ui/IconButton'
@@ -67,15 +68,9 @@ export function BrowserTab() {
 
   useBrowseDriver(webviewRef)
 
-  /** 前进/后退（真机反馈 3：浏览器该有的功能） */
+  /* 前进/后退：调用一律走 webviewNav —— 那边裹了 try/catch（没就绪时调它会抛） */
   function go(step: 'back' | 'forward'): void {
-    const view = webviewRef.current as unknown as {
-      goBack?: () => void
-      goForward?: () => void
-    } | null
-    if (!view) return
-    if (step === 'back') view.goBack?.()
-    else view.goForward?.()
+    goInView(webviewRef.current, step)
   }
 
   /*
@@ -92,13 +87,22 @@ export function BrowserTab() {
    * （监听挂在**元素**上，所以类型要带上 HTMLElement 那一半边。）
    */
   useEffect(() => {
-    const view = webviewRef.current as unknown as
-      (HTMLElement & { canGoBack?: () => boolean; canGoForward?: () => boolean }) | null
+    const view = webviewRef.current
     if (!view) return
-    const sync = (): void =>
-      setNav({ back: view.canGoBack?.() === true, forward: view.canGoForward?.() === true })
+    /*
+     * ⚠️ 状态一律用 navStateOf 取（它裹了 try/catch）—— 直接调 `view.canGoBack()`
+     * 在 guest 没就绪时会抛，而异常从 effect 冒出去就是整个面板「这一块出错了」（真机踩过）。
+     * `dom-ready` 也得听：页面如果是「已经加载好」才挂上来的，只有它会响。
+     */
+    const sync = (): void => setNav(navStateOf(view))
     sync()
-    const names = ['did-navigate', 'did-navigate-in-page', 'did-finish-load', 'did-fail-load']
+    const names = [
+      'dom-ready',
+      'did-navigate',
+      'did-navigate-in-page',
+      'did-finish-load',
+      'did-fail-load',
+    ]
     for (const name of names) view.addEventListener(name, sync)
     return () => {
       for (const name of names) view.removeEventListener(name, sync)
