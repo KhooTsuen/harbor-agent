@@ -6,7 +6,6 @@ import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
-import { armUnread } from './unreadArm'
 import { applyToolProgress } from './toolProgress'
 import { citationsOf } from './toolCitations'
 import { handleAttachmentEvent } from './attachmentEvents'
@@ -87,7 +86,6 @@ export function handleStreamEvent(
     if (phase) {
       state.patch({ phase })
       useAppStore.getState().setThreadPhase(state.threadId, phase)
-      armUnread(state.threadId, phase)
     }
     return { handled: true }
   }

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Globe, Plus, RotateCw, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Globe, Plus, RotateCw, X, XCircle } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useBrowseDriver } from './browser/useBrowseDriver'
 import { useBrowserStore, tabsOfSession, visibleTabOf } from '@/stores/useBrowserStore'
@@ -62,8 +62,21 @@ export function BrowserTab() {
   const [draft, setDraft] = useState('')
   /** Agent 的 `browse` 工具要通过它操作当前这个 webview */
   const webviewRef = useRef<HTMLElement | null>(null)
+  /* 前进/后退能不能点（webview 的 API 是同步的，但按钮要重渲才知道） */
+  const [nav, setNav] = useState({ back: false, forward: false })
 
   useBrowseDriver(webviewRef)
+
+  /** 前进/后退（真机反馈 3：浏览器该有的功能） */
+  function go(step: 'back' | 'forward'): void {
+    const view = webviewRef.current as unknown as {
+      goBack?: () => void
+      goForward?: () => void
+    } | null
+    if (!view) return
+    if (step === 'back') view.goBack?.()
+    else view.goForward?.()
+  }
 
   /*
    * 本会话的标签（标签栏只摆这些）+ 当前该显示 / 被 Agent 驱动的那一个。
@@ -72,6 +85,25 @@ export function BrowserTab() {
    */
   const mine = tabsOfSession(tabs, sessionId)
   const active = visibleTabOf(tabs, sessionId, activeId)
+
+  /*
+   * 导航事件里刷一次前进/后退的可用性。
+   * 依赖里带 `active?.id` 是因为 webview 元素会随当前标签换 —— 换了就得重新挂监听。
+   * （监听挂在**元素**上，所以类型要带上 HTMLElement 那一半边。）
+   */
+  useEffect(() => {
+    const view = webviewRef.current as unknown as
+      (HTMLElement & { canGoBack?: () => boolean; canGoForward?: () => boolean }) | null
+    if (!view) return
+    const sync = (): void =>
+      setNav({ back: view.canGoBack?.() === true, forward: view.canGoForward?.() === true })
+    sync()
+    const names = ['did-navigate', 'did-navigate-in-page', 'did-finish-load', 'did-fail-load']
+    for (const name of names) view.addEventListener(name, sync)
+    return () => {
+      for (const name of names) view.removeEventListener(name, sync)
+    }
+  }, [active?.id])
 
   function open(input: string): void {
     const url = normalizeUrl(input)
@@ -105,6 +137,12 @@ export function BrowserTab() {
           open(draft)
         }}
       >
+        <IconButton label="后退" size={28} disabled={!nav.back} onClick={() => go('back')}>
+          <ChevronLeft size={13} />
+        </IconButton>
+        <IconButton label="前进" size={28} disabled={!nav.forward} onClick={() => go('forward')}>
+          <ChevronRight size={13} />
+        </IconButton>
         <Globe size={13} className="shrink-0 text-fg-tertiary" />
         <input
           value={draft}
@@ -134,39 +172,49 @@ export function BrowserTab() {
 
       {/* ── 标签页（在地址栏下面）—— 只摆**本会话**的（别的会话的标签留着但不摆出来）── */}
       {mine.length > 0 ? (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-line-subtle px-1.5 py-1">
-          {mine.map((tab) => {
-            const isActive = tab.id === active?.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => select(tab)}
-                title={tab.url}
-                className={cn(
-                  'group flex max-w-44 shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors duration-fast',
-                  isActive
-                    ? 'bg-bg-raised text-fg-primary'
-                    : 'text-fg-secondary hover:bg-bg-hover hover:text-fg-primary',
-                )}
-              >
-                <Globe size={11} className="shrink-0 opacity-60" />
-                <span className="min-w-0 flex-1 truncate font-mono">{titleOf(tab.url)}</span>
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  aria-label="关闭标签页"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    close(tab.id)
-                  }}
-                  className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-bg-overlay group-hover:opacity-100"
+        <div className="flex shrink-0 items-center gap-1 border-b border-line-subtle px-1.5 py-1">
+          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+            {mine.map((tab) => {
+              const isActive = tab.id === active?.id
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => select(tab)}
+                  title={tab.url}
+                  className={cn(
+                    'group flex max-w-44 shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors duration-fast',
+                    isActive
+                      ? 'bg-bg-raised text-fg-primary'
+                      : 'text-fg-secondary hover:bg-bg-hover hover:text-fg-primary',
+                  )}
                 >
-                  <X size={11} />
-                </span>
-              </button>
-            )
-          })}
+                  <Globe size={11} className="shrink-0 opacity-60" />
+                  <span className="min-w-0 flex-1 truncate font-mono">{titleOf(tab.url)}</span>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label="关闭标签页"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      close(tab.id)
+                    }}
+                    className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-bg-overlay group-hover:opacity-100"
+                  >
+                    <X size={11} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {/* 一次性关掉本对话的全部标签（真机反馈 3） */}
+          <IconButton
+            label="关闭全部标签（只关这条对话的）"
+            size={28}
+            onClick={() => useBrowserStore.getState().closeAll(sessionId)}
+          >
+            <XCircle size={13} />
+          </IconButton>
         </div>
       ) : null}
 
@@ -210,10 +258,18 @@ export function BrowserTab() {
             webpreferences="sandbox=yes,contextIsolation=yes,nodeIntegration=no"
             allowpopups="false"
             style={{
-              width: '100%',
-              height: '100%',
-              /* 非当前标签：留在 DOM 里但不占位（display:none 不会销毁 guest） */
-              display: tab.id === active?.id ? 'block' : 'none',
+              /*
+               * ★ 绝对定位铺满，**不能用 `display:none` 藏**（真机反馈 2：切回来后半截黑屏）。
+               * display:none → 元素尺寸变 0×0 → 底下的 guest 视图跟着塌，
+               * 再显示时它不一定重排（页面就停在那个小尺寸上，下面一大块是空的）。
+               * 现在是 `visibility:hidden` + 绝对定位：元素**始终**是一个完整尺寸，
+               * 只是看不见、也不吃鼠标。
+               */
+              position: 'absolute',
+              inset: 0,
+              visibility: tab.id === active?.id ? 'visible' : 'hidden',
+              pointerEvents: tab.id === active?.id ? 'auto' : 'none',
+              zIndex: tab.id === active?.id ? 1 : 0,
             }}
           />
         ))}

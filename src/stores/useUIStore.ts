@@ -44,13 +44,6 @@ interface UIState {
    */
   nextSteps: { threadId: string; outcome: TaskOutcome } | null
 
-  /**
-   * 哪些对话行上有点（真机反馈 4）。
-   * 值是「这条对话最后一次跑成什么样」—— 点开之前那个点按它取色。
-   * **内存态，不落盘**：提醒点是「这次没看见」，不是历史记录。
-   */
-  unread: Record<string, import('@/types').AgentPhase>
-
   /** 彩蛋：/harbor 本地统计面板 */
   harborStatsOpen: boolean
   openHarborStats: () => void
@@ -76,10 +69,6 @@ interface UIState {
   hideToast: (id: string) => void
 
   setNextSteps: (value: { threadId: string; outcome: TaskOutcome } | null) => void
-  /** 这条对话跑完 / 卡住而用户没在看它 —— 在它那一行点一个小点 */
-  markUnread: (threadId: string, phase: import('@/types').AgentPhase) => void
-  /** 用户点开这条对话了 —— 把它的点清掉 */
-  clearUnread: (threadId: string) => void
   askPermission: (request: PermissionRequest) => void
   closePermission: () => void
   /**
@@ -134,8 +123,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   bottomPanelView: 'log',
   toasts: [],
   nextSteps: null,
-  /* 提醒点：一开始一个都没有（内存态，重启就清） */
-  unread: {},
   harborStatsOpen: false,
 
   openHarborStats: () => set({ harborStatsOpen: true }),
@@ -169,23 +156,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   openBottomPanel: (view) => set({ bottomPanelOpen: true, bottomPanelView: view }),
 
   setNextSteps: (value) => set({ nextSteps: value }),
-
-  /*
-   * 提醒点（真机反馈 4）。
-   * 值没变就返回空对象（zustand 不重渲）—— 同一条对话反复走相位时别白重渲。
-   */
-  markUnread: (threadId, phase) =>
-    set((s) =>
-      s.unread[threadId] === phase ? {} : { unread: { ...s.unread, [threadId]: phase } },
-    ),
-
-  clearUnread: (threadId) =>
-    set((s) => {
-      if (!(threadId in s.unread)) return {}
-      const unread = { ...s.unread }
-      delete unread[threadId]
-      return { unread }
-    }),
 
   askPermission: (request) => set({ permission: request }),
   closePermission: () => set({ permission: null }),

@@ -170,33 +170,19 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
         return { pending: request }
       }
       /*
-       * 导航：**每个会话最多一个 Agent 标签**（真机反馈 1b）。
+       * 导航：**一个地址一个标签**（真机反馈 3 把上一版改回来了）。
        *
-       * 以前是按地址找：地址一样就复用，不一样就再开一个 —— 于是 Agent 在一个会话里
-       * 连读五个页面就堆出五个标签，用户看到一排"它开过的网页"，还得自己关。
-       * 现在它在这个会话里就那一个标签，换页面就是换那一个（也顺带让"切标签"这件事
-       * 在界面上彻底消失）。
+       * 中间试过「每个会话只留一个 Agent 标签」—— 那是错的：Agent 连读三个页面，
+       * 用户只看得见最后一个，「它到底开了哪些网页」完全看不出来。
+       * 现在一个地址一个标签，只是**按会话隔离**（别的会话的页面不摆在这条对话的标签栏里）。
        *
-       * 找不到本会话的标签时，才退回去按地址找（老行为，且**保留写法的宽容**：
-       * `example.com` 与 `example.com/` 算同一个页面）—— 用户已经开着同一个页
-       * 时不再白开一个。这种情况顺手把归属改成这个会话，下次导航就真复用了。
-       *
-       * 没有会话号（万一）时只按地址找：宁可多一个标签，也别把两个会话的页面混在一起。
+       * 「同一个地址」用 sameUrl 判，不用 `===`：Agent 给的地址写法不统一
+       * （`example.com` 与 `example.com/`），严格比较会白开一个标签。
        */
       const sid = request.sessionId ?? ''
-      /* ① 本会话里 **Agent 自己那一个** 标签（每个会话最多一个） */
-      const own = sid
-        ? state.tabs.find((t) => t.sessionId === sid && t.owner === 'agent')
-        : undefined
-      /*
-       * ② 退一步：已经开着同一个页面就用它（不白开一个）。
-       *    · 还不知道归属的标签可以用（顺手认领成本会话的）；
-       *    · **别的会话的标签不许抢** —— 否则会把人家的页面搬到这个会话里来。
-       */
-      const sameUrlTab = state.tabs.find(
+      const existing = state.tabs.find(
         (t) => sameUrl(t.url, request.url ?? '') && (t.sessionId === '' || t.sessionId === sid),
       )
-      const existing = own ?? sameUrlTab
       if (existing) {
         const same = sameUrl(existing.url, request.url ?? '')
         return {

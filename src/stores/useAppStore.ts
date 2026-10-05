@@ -75,8 +75,6 @@ export const useAppStore = create<AppState>()(
         onLeaveThread(get().activeThreadId)
 
         set({ activeThreadId: id })
-        /* 用户点开这条对话了 —— 把它的提醒点清掉（真机反馈 4） */
-        useUIStore.getState().clearUnread(id)
         const thread = get().threads.find((t) => t.id === id)
         if (thread) set({ activeProjectId: thread.projectId })
 

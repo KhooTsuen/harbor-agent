@@ -60,29 +60,25 @@ describe('浏览器标签：Agent 请求', () => {
 const navIn = (id: string, sessionId: string, url: string): void =>
   useBrowserStore.getState().requestBrowse({ id, action: 'navigate', url, sessionId })
 
-describe('浏览器标签：每个会话一个', () => {
+describe('浏览器标签：一个地址一个标签（按会话隔离）', () => {
   beforeEach(() => {
     useBrowserStore.getState().closeAll()
   })
 
-  it('★ 同一会话换页面：还是那一个标签，地址跟着换', () => {
+  it('★ 同一会话里换页面 → **新开一个标签**（用户要看它开了哪些网页）', () => {
     navIn('r1', 's1', 'https://example.com')
-    const first = useBrowserStore.getState().tabs[0]?.id
     navIn('r2', 's1', 'https://example.org')
     const state = useBrowserStore.getState()
-    expect(state.tabs).toHaveLength(1)
-    expect(state.tabs[0]?.id).toBe(first)
-    expect(state.tabs[0]?.url).toBe('https://example.org')
+    expect(state.tabs).toHaveLength(2)
+    expect(state.tabs.map((t) => t.url).sort()).toEqual([
+      'https://example.com',
+      'https://example.org',
+    ])
+    /* 新开的那一个自动成为当前标签 */
+    expect(state.activeId).toBe(state.tabs[1]?.id)
   })
 
-  it('换了地址要重建 webview（否则 React 不会重新导那个 src）', () => {
-    navIn('r1', 's1', 'https://example.com')
-    const before = useBrowserStore.getState().tabs[0]?.reloadKey ?? 0
-    navIn('r2', 's1', 'https://example.org')
-    expect(useBrowserStore.getState().tabs[0]?.reloadKey).toBe(before + 1)
-  })
-
-  it('同一会话、同一条地址：只复用，不重建（不要白重新加载一次）', () => {
+  it('同一会话、同一条地址（含写法差异）：复用，不白开也不重建', () => {
     navIn('r1', 's1', 'https://example.com/a')
     const before = useBrowserStore.getState().tabs[0]?.reloadKey ?? 0
     navIn('r2', 's1', 'https://example.com/a')

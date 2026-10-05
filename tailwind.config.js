@@ -215,11 +215,6 @@ export default {
         'slide-in-right': 'slide-in-right var(--motion-base) var(--ease-out)',
         spin: 'spin 900ms linear infinite',
         pulse: 'pulse 1.6s ease-in-out infinite',
-        /*
-         * 慢版脉冲（真机反馈 4 的提醒点）：默认那条 1.6s 在侧栏每行上太跳，
-         * 一眼看过去像在报警；2.6s 才是「有事，但不打扰」。
-         */
-        'pulse-slow': 'pulse 2.6s ease-in-out infinite',
       },
     },
   },

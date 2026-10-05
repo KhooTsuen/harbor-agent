@@ -56,6 +56,9 @@ const { workRules, WORK_RULES } = require('./prompt-rules.cjs')
  * 于是点空、填错，或者以为没生效就重复点。
  */
 const BROWSER_GUIDE = [
+  '- **每次 `browse` 会新开一个标签页**（只有地址完全一样才复用）—— 一个任务里读几个页面',
+  '  就开几个，用户要看得见你打开过什么，**不要**为了省标签而反复覆盖同一个页面。',
+  '- 标签页互相独立：各自的滚动位置和状态都留着，切标签**不会**重新加载页面。',
   '- 顺序：`browse` 打开页面 → `browse_elements` 看有什么能点/能填 →',
   '  `browse_click` / `browse_type` 操作 → **再** `browse_elements` 看结果。',
   '- **先看再动**。click / type 的 index 只对**最近一次** `browse_elements` 读到的',
@@ -88,7 +91,7 @@ const BROWSER_GUIDE = [
  *   /1 → /2 —— 加 `machineEnv` 层（「这台机器上有什么」：shell 是 cmd.exe、
  *              哪些命令装了、哪些没装）；`tools` 层同时补了 MCP 服务器清单。
  */
-const VERSION = 'prompt-stack/2'
+const VERSION = 'prompt-stack/3'
 
 /*
  * 层的顺序 = 模型看到的顺序。
