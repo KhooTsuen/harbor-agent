@@ -19,9 +19,8 @@
  *   scripts/selftest/groups/08-…                 用量闸（预算）
  *   scripts/selftest/groups/09-…                 浏览器正文清洗 / 导航策略 / browse 工具
  *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
- *   scripts/selftest/groups/11-…                 图像：异步任务轮询 + generate_image 工具
+ *   scripts/selftest/groups/11-… / 13-…          图像：异步任务轮询 + generate_image 工具
  *   scripts/selftest/groups/12-…                 模块引用：相对 require 路径都存在
- *   scripts/selftest/groups/13-…                 generate_image 工具
  *   scripts/selftest/groups/14-…                 任务台账注入 / 完整性 / 完成门禁
  *   scripts/selftest/groups/15-…                 AG-001 生命周期状态机
  *   scripts/selftest/groups/79-…                 LLM 流式 / 看门狗
@@ -157,6 +156,7 @@ import { run as safeWriteGroup } from './selftest/groups/118-safe-write.mjs'
 import { run as downloadGroup } from './selftest/groups/119-download.mjs'
 import { run as editRulesGroup } from './selftest/groups/120-edit-rules.mjs'
 import { run as browseNavGroup } from './selftest/groups/121-browse-nav.mjs'
+import { run as modelProbeGroup } from './selftest/groups/122-model-probe.mjs'
 
 const GROUPS = [
   basics,
@@ -251,6 +251,7 @@ const GROUPS = [
   modelChoiceGroup,
   browserWaitGroup,
   browseNavGroup,
+  modelProbeGroup,
   errorObserverGroup,
   errorReaderGroup,
   machinePromptGroup,
