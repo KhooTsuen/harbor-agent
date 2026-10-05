@@ -47,6 +47,8 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   browse_click: ['点击', '次'],
   browse_type: ['输入文字', '次'],
   generate_image: ['生成', '张图片'],
+  /* 真机反馈 9b 的新工具：动作词是「下载」，量词用「个文件」 */
+  download: ['下载', '个文件'],
   ask_user: ['询问', '个问题'],
 }
 
@@ -75,6 +77,7 @@ export const TOOL_LABELS: Record<string, string> = {
   browse_click: '点击页面元素',
   browse_type: '填写页面输入',
   generate_image: '生成图片',
+  download: '下载文件',
   /* AG-053：开工前澄清 —— 界面上是「问你几个问题」，不是「ask_user」 */
   ask_user: '问你几个问题',
 }

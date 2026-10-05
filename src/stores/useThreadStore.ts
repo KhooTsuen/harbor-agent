@@ -6,7 +6,7 @@ import { uid } from '@/lib/utils'
 import { useRealBackend } from '@/lib/backend'
 import { pauseActiveRequest, runElectronTurn, stopActiveRequest } from './thread/turns'
 import { createSession } from '@/lib/backend'
-import { adviseCompact, runCompact } from './thread/compact'
+import { adviseCompact, modelWindowOf, runCompact } from './thread/compact'
 import { tryHandleCommand } from './thread/commands'
 import { runMockTurn } from './thread/mockTurn'
 import { makeVersionActions } from './thread/messageVersions'
@@ -171,11 +171,11 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     /* 基准读 context.baseTokens（2026-10-04 拆开）；0/没填 → adviseCompact 退到 CONTEXT_BASE_TOKENS */
     const cfg = useConfigStore.getState().config
     const maxTokens = cfg?.context?.baseTokens ?? 0
-    /* 两条线从配置里取（设置页改的就是这份）—— 以前渲染层写死 0.4/0.6，改了设置也不生效 */
-    const advice = adviseCompact(thread.messages, maxTokens, {
-      warn: cfg?.context?.compactAt,
-      auto: cfg?.context?.autoCompactAt,
-    })
+    /* 窗口从能力矩阵取（未知 = null）；分母 = min(窗口×0.8, 用户上限)，见 compact.ts */
+    const window = modelWindowOf(cfg?.capabilities, thread.model)
+    /* 两条线从配置取（设置页改的就是这份）—— 以前这里写死 0.4/0.6，改设置不生效 */
+    const ratios = { warn: cfg?.context?.compactAt, auto: cfg?.context?.autoCompactAt }
+    const advice = adviseCompact(thread.messages, maxTokens, ratios, window)
     if (advice.auto) {
       void runCompact(threadId, true)
     } else if (advice.warn) {

@@ -22,6 +22,7 @@ const browse = require('./browse.cjs')
 const browseElements = require('./browse-elements.cjs')
 const browseClick = require('./browse-click.cjs')
 const browseType = require('./browse-type.cjs')
+const download = require('./download.cjs')
 const generateImage = require('./generate-image.cjs')
 const askUser = require('./ask_user.cjs')
 const mcp = require('../mcp.cjs')
@@ -44,6 +45,7 @@ const ALL = [
   generateImage,
   remember,
   askUser,
+  download,
 ]
 
 /** 哪些工具算「写操作」（只读模式下要拦，ask 模式下要确认） */
@@ -57,6 +59,8 @@ const ALL = [
  *
  * `ask_user` **不算**：它本来就是「问用户」，再叠一层权限确认就是同一个问题问两遍。
  * 而且它不改文件、不跑命令、不联网。
+ *
+ * `download` 算：它既联网又往磁盘写东西（真机反馈 9b 新增的工具）。
  */
 const WRITE_TOOLS = new Set([
   'write_file',
@@ -68,10 +72,11 @@ const WRITE_TOOLS = new Set([
   'browse_type',
   'generate_image',
   'remember',
+  'download',
 ])
 
 /** 哪些工具会改文件（审计里记下来） */
-const FILE_WRITERS = new Set(['write_file', 'edit_file'])
+const FILE_WRITERS = new Set(['write_file', 'edit_file', 'download'])
 
 /* 内置工具 + 本地插件（插件是动态的，读一次合并缓存起来） */
 let _pluginTools = null

@@ -83,6 +83,27 @@ export function ToolRunRow({ run }: { run: ToolRunRecord }) {
         ) : (
           <span className="flex-1" />
         )}
+        {/* 长任务自己报的进度（真机反馈 9a）：百分比在左、条在右 */}
+        {run.progress ? (
+          <span className="flex shrink-0 items-center gap-1.5" title={run.progress.note}>
+            <span className="font-mono text-fg-tertiary">
+              {run.progress.percent === null ? '进行中' : `${Math.round(run.progress.percent)}%`}
+            </span>
+            {/* 报不出百分比时**不给条**：一个填满的条会被误读成「快好了」 */}
+            {run.progress.percent === null ? null : (
+              <span className="h-1 w-16 overflow-hidden rounded-pill bg-bg-overlay">
+                <span
+                  className="block h-full rounded-pill transition-all duration-fast"
+                  style={{
+                    width: `${Math.max(2, Math.min(100, run.progress.percent))}%`,
+                    background: colorOf('running'),
+                  }}
+                />
+              </span>
+            )}
+          </span>
+        ) : null}
+
         {run.ms !== undefined ? (
           <span className="shrink-0 font-mono text-fg-tertiary">{run.ms}ms</span>
         ) : null}

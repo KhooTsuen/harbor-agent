@@ -16,6 +16,12 @@ type Bridge = {
   projectRulesStatus?: (dir?: string) => Promise<unknown>
   projectRulesReload?: (dir?: string) => Promise<unknown>
   projectRulesOpen?: (payload: { dir?: string; create?: boolean }) => Promise<unknown>
+  projectRulesReadFile?: (payload: { dir?: string; target?: string }) => Promise<unknown>
+  projectRulesWriteFile?: (payload: {
+    dir?: string
+    target?: string
+    content?: string
+  }) => Promise<unknown>
 }
 
 const bridge =
@@ -70,6 +76,52 @@ export function projectRulesOpen(
       ? () => bridge.projectRulesOpen?.({ dir, create }) ?? Promise.resolve(null)
       : undefined,
     null,
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════
+   应用内编辑（真机反馈 10）
+
+   ★ `target` 是**符号**（`'rules'` / `'agent'`），不是路径 ——
+     文件由内核自己拼（`projectRules:readFile` / `writeFile` 的注释里写了为什么）：
+     界面这边连「哪个文件的路径」都不掌握，也就没机会传错一个能写到别处的路径。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 能在应用内编辑的两份文件 */
+export type RuleTarget = 'rules' | 'agent'
+
+export interface RulesFile {
+  ok: boolean
+  file?: string
+  exists?: boolean
+  content?: string
+  mtime?: number
+  bytes?: number
+  error?: string
+}
+
+/** 桥没接上时给一个**说得清**的失败（不然界面只会显示「读不到」） */
+const NO_BRIDGE: RulesFile = { ok: false, error: '这个环境里没有内核，改不了文件' }
+
+export function projectRulesReadFile(target: RuleTarget, dir?: string): Promise<RulesFile> {
+  return callTo(
+    bridge?.projectRulesReadFile
+      ? () => bridge.projectRulesReadFile?.({ dir, target }) ?? Promise.resolve(null)
+      : undefined,
+    NO_BRIDGE,
+  )
+}
+
+export function projectRulesWriteFile(
+  target: RuleTarget,
+  content: string,
+  dir?: string,
+): Promise<RulesFile> {
+  return callTo(
+    bridge?.projectRulesWriteFile
+      ? () => bridge.projectRulesWriteFile?.({ dir, target, content }) ?? Promise.resolve(null)
+      : undefined,
+    NO_BRIDGE,
   )
 }
 

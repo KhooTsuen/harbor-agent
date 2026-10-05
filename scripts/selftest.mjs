@@ -154,6 +154,8 @@ import { run as memoryReflectGroup } from './selftest/groups/115-memory-reflect.
 import { run as projectCompleteGroup } from './selftest/groups/116-project-context-complete.mjs'
 import { run as urlPolicyGroup } from './selftest/groups/117-url-policy.mjs'
 import { run as safeWriteGroup } from './selftest/groups/118-safe-write.mjs'
+import { run as downloadGroup } from './selftest/groups/119-download.mjs'
+import { run as editRulesGroup } from './selftest/groups/120-edit-rules.mjs'
 
 const GROUPS = [
   basics,
@@ -274,6 +276,8 @@ const GROUPS = [
   projectCompleteGroup,
   urlPolicyGroup,
   safeWriteGroup,
+  downloadGroup,
+  editRulesGroup,
 ]
 
 async function main() {

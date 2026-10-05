@@ -258,5 +258,9 @@ export async function run() {
       read('src/lib/projectRulesApi.ts').includes('export function describeRules'),
   )
 
+  /*
+   * 应用内编辑（真机反馈 10）那一段拆到了 `120-edit-rules.mjs` ——
+   * 本文件当时已经在 300 行边上（硬约束 #2）。
+   */
   reset()
 }

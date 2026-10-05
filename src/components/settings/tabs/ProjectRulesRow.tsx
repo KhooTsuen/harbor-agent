@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileText, FolderOpen, Plus, RefreshCw } from 'lucide-react'
+import { FileText, FolderOpen, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { Button } from '@/components/ui/Button'
 import {
@@ -11,6 +11,7 @@ import {
 import type { ProjectRulesStatus } from '@/types/projectRules'
 import { colorOf } from '@/lib/statusLanguage'
 import { Row } from '../parts'
+import { RulesEditor } from './RulesEditor'
 
 /* ══════════════════════════════════════════════════════════════
    对话设置 → 项目规则（`<工作目录>/.harbor/rules.md`）
@@ -34,6 +35,8 @@ export function ProjectRulesRow() {
   const [status, setStatus] = useState<ProjectRulesStatus | null>(null)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
+  /* 应用内编辑器开着没（真机反馈 10） */
+  const [editing, setEditing] = useState(false)
 
   const refresh = useCallback(() => {
     let alive = true
@@ -98,6 +101,14 @@ export function ProjectRulesRow() {
           <Button
             variant="secondary"
             size="sm"
+            icon={<Pencil size={13} />}
+            onClick={() => setEditing(true)}
+          >
+            编辑
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             icon={<FolderOpen size={13} />}
             loading={busy === 'open'}
             onClick={() => void open(false)}
@@ -115,6 +126,14 @@ export function ProjectRulesRow() {
           </Button>
         </div>
       </div>
+
+      {/* 应用内编辑（真机反馈 10）：保存后规则立即生效，这里刷一下状态就行 */}
+      <RulesEditor
+        open={editing}
+        dir={dir || undefined}
+        onClose={() => setEditing(false)}
+        onSaved={refresh}
+      />
     </Row>
   )
 }

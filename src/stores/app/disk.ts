@@ -119,6 +119,8 @@ export async function fetchMessagesFromDisk(id: string): Promise<Message[] | nul
     kind: 'text',
     status: 'sent',
     timestamp: c.ts,
+    /* 覆盖到第几条要带回来：上下文用量从这儿之后算起（真机反馈 12b） */
+    compactUpTo: c.upTo,
     /* 摘要挂在 reasoning 上，点开压缩点就能看 */
     reasoning: c.summary,
   }))

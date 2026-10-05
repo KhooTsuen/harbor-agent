@@ -1,6 +1,6 @@
 /**
- * 预加载脚本 —— 主进程与渲染层之间唯一的桥。原则：**白名单** ——
- * 渲染层能调什么全在这个文件里列清楚，不做「暴露整个 ipcRenderer」那种偷懒写法。
+ * 预加载脚本 —— 主进程与渲染层之间唯一的桥。原则：**白名单**：渲染层能调什么
+ * 全在这个文件里列清楚，不做「暴露整个 ipcRenderer」那种偷懒写法。
  */
 
 const { contextBridge, ipcRenderer } = require('electron')
@@ -9,11 +9,9 @@ const { contextBridge, ipcRenderer } = require('electron')
 const EVENTS = ['chat:event']
 
 /* ══════════════════════════════════════════════════════════════
-   ★ 所有 IPC 都从 `call()` 过 —— 唯一出入口。这样「界面用了哪个功能」不用逐个埋点：
-   现有通道全在网里，以后新加的也自动被记上。只报通道名/成败/耗时，**不报参数**。
-
-   ★★ 必须留在**本文件**里：main.cjs 开的是 `sandbox: true`，沙箱化的 preload **不允许 require 自己的模块** ——
-     拆到兄弟文件那次 require 一抛，整个 preload 作废（`window.workbench` 不存在、界面 IPC 全死）。真机探针逮到的。
+   ★ 所有 IPC 都从 `call()` 过 —— 唯一出入口：只报通道名 / 成败 / 耗时，**不报参数**。
+   ★★ 必须留在**本文件**里：main.cjs 开的是 `sandbox: true`，沙箱化的 preload 不允许 require
+   自己的模块 —— 拆到兄弟文件那次 require 一抛，整个 preload 作废、界面 IPC 全死（真机逮到的）。
    ══════════════════════════════════════════════════════════════ */
 const stampNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
@@ -143,6 +141,8 @@ const api = {
   projectRulesStatus: (dir) => call('projectRules:status', { dir }),
   projectRulesReload: (dir) => call('projectRules:reload', { dir }),
   projectRulesOpen: (payload) => call('projectRules:open', payload),
+  projectRulesReadFile: (payload) => call('projectRules:readFile', payload),
+  projectRulesWriteFile: (payload) => call('projectRules:writeFile', payload),
 
   shellCwd: () => call('shell:cwd'),
   shellReset: () => call('shell:reset'),

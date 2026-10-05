@@ -47,6 +47,21 @@ export type ChatEvent =
     }
   | {
       requestId: string
+      /*
+       * 工具自己报的进度（真机反馈 9a）—— 只有长任务会发：下载、跑很久的命令。
+       * 事件由 tool-runner 注入的 `ctx.progress` 发出，工具不用知道自己的 call id。
+       */
+      type: 'agent.tool.progress'
+      toolCallId: string
+      name: string
+      /** 0–100；null = 报不出百分比（只知道「还在动」） */
+      percent: number | null
+      note: string
+      /** 这一刻是不是收尾 */
+      done: boolean
+    }
+  | {
+      requestId: string
       type: 'confirm_request'
       confirmId: string
       toolName: string

@@ -46,6 +46,15 @@ export interface Message {
   phase?: AgentPhase
   /** 模型的思考过程（真实后端模式下有值） */
   reasoning?: string
+  /**
+   * 这条压缩点覆盖到第几条**可用消息**（与内核 `compacts[].upTo` 同一口径）。
+   *
+   * 为什么带在消息上：上下文用量必须从压缩点**之后**算起（内核
+   * `session-read.cjs` 的 `toApiMessages` 就是这么切的）—— 否则压过一次之后
+   * 用量还按全部消息算，就永远超过自动线，于是**每一轮都再压一次**（真机反馈 12b）。
+   * 重开会话时由 `stores/app/disk.ts` 从会话文件的 `compacts[].upTo` 还原。
+   */
+  compactUpTo?: number
   /** 这条回复花了多少 token（服务端返回的，没有就是记不上） */
   usage?: UsageBucket
   /** 生成的图片（data URL 或 http URL），显示在消息里 */
@@ -156,6 +165,12 @@ export interface ToolRunRecord {
   ok: boolean
   output: string
   ms?: number
+  /**
+   * 长任务自己报的进度（真机反馈 9a）。
+   * `percent: null` = 只知道还在动、报不出百分比 —— 界面别把这两种画成一样。
+   * 只在跑的时候有值（收尾后记录里不再需要它）。
+   */
+  progress?: { percent: number | null; note: string }
 }
 
 export interface ThreadSettings {

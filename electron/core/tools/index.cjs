@@ -187,9 +187,10 @@ async function execute(name, args, ctx = {}) {
     return '错误：这是临时对话，禁止写入长期记忆。'
   }
 
-  if (ctx.allowNetwork === false && name === 'search_web') {
+  /* 联网门：search_web 与 download 都算「要去网上」—— 本轮说不要联网时都得拦下 */
+  if (ctx.allowNetwork === false && (name === 'search_web' || name === 'download')) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止联网' })
-    return '错误：本轮对话禁止联网，search_web 被运行时拒绝。'
+    return `错误：本轮对话禁止联网，${name} 被运行时拒绝。`
   }
 
   if (ctx.permission === 'readonly' && isWrite) {

@@ -1,6 +1,8 @@
 import type { ConversationState, Message } from '@/types'
+import type { ProviderCapabilityMatrix } from '@/types/model-caps'
 import { uid } from '@/lib/utils'
 import { CONTEXT_BASE_TOKENS } from '@/constants'
+import { infoOf } from '@/lib/modelCapabilityWarn'
 import { appendCompact, compactChat } from '@/lib/backend'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
@@ -27,6 +29,74 @@ export function estimateTokens(text: string): number {
 
 export function estimateMessages(messages: readonly Message[]): number {
   return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0)
+}
+
+/**
+ * 内核那套「可用消息」的口径 —— 两边必须一致，否则压缩点之后算出来的用量对不上。
+ * （`electron/core/session-read.cjs` 的 `toApiMessages`：只留 user / assistant，
+ *   有文字**或者**只有图片（光发一张图）也算一条。）
+ */
+export function usableOf(messages: readonly Message[]): Message[] {
+  return messages.filter(
+    (m) =>
+      (m.role === 'user' || m.role === 'assistant') &&
+      (m.content.trim() !== '' || (m.images?.length ?? 0) > 0),
+  )
+}
+
+/** 最后一个压缩点覆盖到第几条（0 = 没压过） */
+function lastCompactUpTo(messages: readonly Message[], usableCount: number): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const upTo = messages[i]?.compactUpTo ?? 0
+    if (upTo > 0) return Math.min(upTo, usableCount)
+  }
+  return 0
+}
+
+/**
+ * 「这一轮真正会带进上下文的那一段」= 最后一个压缩点之后的消息。
+ *
+ * ★ 真机反馈 12b：以前用量是拿**全部**消息估的，压过一次之后永远超过自动线
+ *   → **每一轮都自动压一次**，摘要互相覆盖、越压越糊。内核切上下文就是按
+ *   `compacts[].upTo` 切的（`session-read.cjs`），这里跟它对齐。
+ */
+export function contextMessages(messages: readonly Message[]): Message[] {
+  const usable = usableOf(messages)
+  const upTo = lastCompactUpTo(messages, usable.length)
+  return upTo > 0 ? usable.slice(upTo) : usable
+}
+
+/** 窗口里留给「输入」的比例 —— 另外 0.2 留给模型写答案（见 resolveLimit） */
+export const MODEL_WINDOW_SHARE = 0.8
+
+/**
+ * 压缩的分母（token 数）：`min(模型窗口 × 0.8, 用户上限)`。
+ *
+ *   · 乘 0.8：窗口是「输入 + 输出」的总量，得给模型写字留出地方；
+ *   · 和用户上限取小：上限是用户在设置里给的**刹车**，不能因为知道窗口更大就绕过它；
+ *   · 模型窗口未知（没有预设、也没手填）→ 只认用户上限（老口径）→ 再退到内核基准。
+ */
+export function resolveLimit(maxTokens: number, modelWindow?: number | null): number {
+  const userCap = Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 0
+  const window =
+    typeof modelWindow === 'number' && Number.isFinite(modelWindow) && modelWindow > 0
+      ? Math.floor(modelWindow * MODEL_WINDOW_SHARE)
+      : 0
+  const limit =
+    window && userCap ? Math.min(window, userCap) : window || userCap || CONTEXT_BASE_TOKENS
+  return Math.max(2000, limit)
+}
+
+/**
+ * 这个模型的上下文窗口（token）。查不到就是 `null` —— **未知，不是 0**。
+ * 来源是主进程下发的能力矩阵（内置预设 / 用户手填），不是探测结果。
+ */
+export function modelWindowOf(
+  matrix: ProviderCapabilityMatrix | undefined,
+  model: string,
+): number | null {
+  const caps = infoOf(matrix, model)?.caps?.context_window
+  return typeof caps === 'number' && caps > 0 ? caps : null
 }
 
 /**
@@ -64,10 +134,11 @@ export function adviseCompact(
   messages: readonly Message[],
   maxTokens: number,
   ratios: CompactRatios = {},
+  modelWindow?: number | null,
 ): CompactAdvice {
-  const used = estimateMessages(messages)
-  /* 0 / 没填 = 内核那边用的基准（见 CONTEXT_BASE_TOKENS 的注释）：两边不能一个 16384 一个 4096 */
-  const limit = Math.max(2000, maxTokens || CONTEXT_BASE_TOKENS)
+  /* 用量只算**压缩点之后**那一段（见 contextMessages） */
+  const used = estimateMessages(contextMessages(messages))
+  const limit = resolveLimit(maxTokens, modelWindow)
   const warnAt = Number.isFinite(ratios.warn) ? Number(ratios.warn) : DEFAULT_WARN_RATIO
   const autoAt = Number.isFinite(ratios.auto) ? Number(ratios.auto) : DEFAULT_AUTO_RATIO
   const ratio = used / limit
@@ -84,6 +155,8 @@ function compactMarker(summary: string, count: number): Message {
     kind: 'text',
     status: 'sent',
     timestamp: Date.now(),
+    /* 覆盖到第几条 —— 上下文用量从此之后算起（真机反馈 12b） */
+    compactUpTo: count,
     /* 摘要正文挂在这里，点开压缩点能看到 */
     reasoning: summary,
   }
@@ -109,7 +182,8 @@ export async function runCompact(threadId: string, silent = false): Promise<Comp
   if (!thread) return { ok: false, error: '找不到这条对话' }
 
   /* 太短就没必要压，压了反而丢信息 */
-  const usable = thread.messages.filter((m) => m.role !== 'system' && m.content.trim())
+  /* 用和内核算用量同一套筛选（见 usableOf）—— 不然 upTo 会和内核切的地方错位 */
+  const usable = usableOf(thread.messages)
   if (usable.length <= KEEP_RECENT + 2) {
     if (!silent) ui.showToast('info', '不需要压缩', `对话还很短（${usable.length} 条）`)
     return { ok: false, error: '对话太短' }
@@ -176,11 +250,12 @@ export async function maybeAutoCompact(
   threadId: string,
   maxTokens: number,
   ratios: CompactRatios = {},
+  modelWindow?: number | null,
 ): Promise<boolean> {
   const thread = useAppStore.getState().threads.find((t) => t.id === threadId)
   if (!thread) return false
 
-  const advice = adviseCompact(thread.messages, maxTokens, ratios)
+  const advice = adviseCompact(thread.messages, maxTokens, ratios, modelWindow)
   if (!advice.auto) return false
 
   const result = await runCompact(threadId, true)

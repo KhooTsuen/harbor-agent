@@ -124,9 +124,35 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     const startedAt = Date.now()
 
     /*
+     * 工具自己能报进度（真机反馈 9a）。
+     *
+     * 把「带 toolCallId 的 progress」注入本次调用的 ctx —— 工具只管
+     * `ctx.progress?.({ percent, note })`，不用自己拼事件名、也不用知道自己的 call id
+     * （那是 runner 的事）。事件名 `agent.tool.progress` 早就登记在 `events.cjs` 里，
+     * 只是一直没人发过，界面上那条进度也一直是死的。
+     */
+    const runCtx = {
+      ...ctx,
+      progress: (payload = {}) => {
+        emit({
+          type: 'agent.tool.progress',
+          toolCallId: call.id,
+          name: call.name,
+          /* 报不出百分比就发 null —— 「还在动」和「0%」是两件事，别混 */
+          percent:
+            typeof payload.percent === 'number' && Number.isFinite(payload.percent)
+              ? Math.max(0, Math.min(100, payload.percent))
+              : null,
+          note: payload.note ? String(payload.note) : '',
+          done: payload.done === true,
+        })
+      },
+    }
+
+    /*
      * AG-016：失败后自动恢复（只读工具才自动重试 —— 理由见 errors.canAutoRecover）。
      */
-    let output = await tools.execute(call.name, args, ctx)
+    let output = await tools.execute(call.name, args, runCtx)
     let autoRetries = 0
     const maxRetries = Number.isFinite(options.budget?.maxRetries)
       ? Math.max(0, options.budget.maxRetries)
@@ -144,7 +170,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
         hint: retryInfo.hint,
       })
       await sleep(errors.backoffMs(retry, retryInfo.kind))
-      output = await tools.execute(call.name, args, ctx)
+      output = await tools.execute(call.name, args, runCtx)
     }
 
     const ok = isToolOk(output)

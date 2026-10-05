@@ -4,17 +4,19 @@ import { useAppStore } from '../useAppStore'
 import { useTaskStore } from '../useTaskStore'
 import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
-import { parseFileCitation, parseSearchCitations, summarizeArgs } from './parseToolOutput'
+import { summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
 import { armUnread } from './unreadArm'
+import { applyToolProgress } from './toolProgress'
+import { citationsOf } from './toolCitations'
 import { handleAttachmentEvent } from './attachmentEvents'
 import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
 import { logError } from '@/lib/actionLog'
 
 /* ══════════════════════════════════════════════════════════════
    流式聊天事件的处理：每种事件怎么落到消息上（turns.ts 只管发起、收尾、中断）。
-   ⚠️ 拆这个文件踩过的坑：只留空函数占位 → tsc 全绿但流式/工具/引用全不更新；
-   这类跨层接线必须真跑一遍（详见 docs/踩坑记录.md）。
+   ⚠️ 拆这个文件踩过的坑：只留空函数占位 → tsc 全绿但流式/工具/引用全不更新，
+   跨层接线必须真跑一遍（详见 docs/踩坑记录.md）。
    ══════════════════════════════════════════════════════════════ */
 
 export interface StreamState {
@@ -128,6 +130,14 @@ export function handleStreamEvent(
       return { handled: true }
     }
 
+    /* 长任务自己报的进度（真机反馈 9a）—— 只改那一条记录，规矩见 toolProgress.ts */
+    case 'agent.tool.progress': {
+      if (applyToolProgress(state.toolRuns, event)) {
+        state.patch({ toolRuns: [...state.toolRuns] })
+      }
+      return { handled: true }
+    }
+
     case 'agent.tool.completed':
     case 'agent.tool.failed': {
       const id = String(event.toolCallId ?? '')
@@ -147,36 +157,19 @@ export function handleStreamEvent(
       else state.toolRuns.push(updated)
 
       /*
-       * AG-005：进度时间线的「动作行」读的是任务台账的 `steps`，
-       * 而任务快照只在几个离散时机刷新（进入对话、对话状态变化）——
-       * 工具执行期间 status 根本不变，于是时间线**永远看不到任何一步**。
-       * 真机验证抓到的（单元测试照不到这种接线）。
-       * 走事件驱动，别轮询；每个工具一次，量很小。
+       * AG-005：进度时间线的「动作行」读的是任务台账的 steps，而任务快照只在
+       * 几个离散时机刷新 —— 工具执行期间 status 不变，时间线就永远看不到任何一步
+       * （真机抓到的，单测照不到这种接线）。走事件驱动，每个工具一次，量很小。
        */
       void useTaskStore.getState().refresh()
       /* 底栏那个运行日志也得跟着走 —— 它以前只在打开时拉一次，工具跑完一条都不动 */
       useAuditStore.getState().bump()
 
-      /*
-       * 工具输出里能捞出可追溯的东西：
-       *   · 搜索结果是网页 → Web Citation（标题/URL/域名/抓取时间）
-       *   · 读取文件 → 文件 Citation
-       * 解析失败一律吞掉 —— 引用是加分项，不能因为格式怪就让整轮对话失败。
-       */
-      try {
-        const path =
-          typeof event.path === 'string'
-            ? event.path
-            : String((event.args as Record<string, unknown>)?.path ?? '')
-        const found = event.name === 'read_file' ? parseFileCitation(output, path) : null
-        const web = event.name === 'search_web' ? parseSearchCitations(output) : []
-        const merged = [...(found ? [found] : []), ...web]
-        if (merged.length > 0) {
-          state.citations.push(...merged)
-          state.patch({ citations: [...state.citations] })
-        }
-      } catch {
-        /* 解析不出来就算了 */
+      /* 工具输出里能捞出引用（文件 / 网页）—— 见 toolCitations.ts */
+      const cited = citationsOf(event, output)
+      if (cited.length > 0) {
+        state.citations.push(...cited)
+        state.patch({ citations: [...state.citations] })
       }
 
       /* 工具跑完 → 那一行从「转圈」变成「耗时」（rounds 顺带同步，成本可忽略） */
