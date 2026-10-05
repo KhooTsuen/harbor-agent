@@ -1,5 +1,12 @@
+import { useState } from 'react'
 import { useConfigStore } from '@/stores/useConfigStore'
-import type { CapabilityDim, ModelCapabilities, ModelCapabilityInfo } from '@/types/backend'
+import type {
+  CapabilityDim,
+  ModelCapabilities,
+  ModelCapabilityInfo,
+  ModelProbeResult,
+} from '@/types/backend'
+import { PROBE_DIMS, probeConflicts, probeLabel, probeProviderModel } from '@/lib/providerProbeApi'
 import { cn } from '@/lib/utils'
 import { STATUS_CLASS } from '@/lib/statusLanguage'
 
@@ -37,10 +44,26 @@ function formatTokens(n: number): string {
 
 export interface ModelCapabilityListProps {
   models: readonly string[]
+  /** 这个供应商的 id —— 点「实测」时得告诉内核测哪一家 */
+  providerId: string
 }
 
-export function ModelCapabilityList({ models }: ModelCapabilityListProps) {
+export function ModelCapabilityList({ models, providerId }: ModelCapabilityListProps) {
   const matrix = useConfigStore((s) => s.config?.capabilities)
+  /*
+   * 实测结果按模型存。**不自动测** —— 那要发真请求（花 token），
+   * 得用户点一下才知道自己想花这个钱。
+   */
+  const [probes, setProbes] = useState<Record<string, ModelProbeResult>>({})
+  const [busy, setBusy] = useState('')
+
+  async function measure(model: string): Promise<void> {
+    setBusy(model)
+    const result = await probeProviderModel(providerId, model)
+    setBusy('')
+    setProbes((prev) => ({ ...prev, [model]: result }))
+  }
+
   if (!matrix || models.length === 0) return null
 
   return (
@@ -51,7 +74,15 @@ export function ModelCapabilityList({ models }: ModelCapabilityListProps) {
       </p>
       <div className="flex flex-col gap-1">
         {models.map((model) => (
-          <ModelRow key={model} model={model} info={matrix.models[model]} labels={matrix.labels} />
+          <ModelRow
+            key={model}
+            model={model}
+            info={matrix.models[model]}
+            labels={matrix.labels}
+            probe={probes[model]}
+            busy={busy === model}
+            onMeasure={() => void measure(model)}
+          />
         ))}
       </div>
       <p className="mt-1.5 text-dense leading-relaxed text-fg-tertiary/80" title={matrix.note}>
@@ -68,12 +99,21 @@ function ModelRow({
   model,
   info,
   labels,
+  probe,
+  busy,
+  onMeasure,
 }: {
   model: string
   info?: ModelCapabilityInfo
   labels: Record<CapabilityDim, string>
+  /** 实测结果（没点过就是 undefined） */
+  probe?: ModelProbeResult
+  busy?: boolean
+  onMeasure?: () => void
 }) {
   const caps: ModelCapabilities | undefined = info?.caps
+  /* 声明与实测对不上的地方（只报工具调用 / 图片 —— 会真让调用失败的那两项） */
+  const conflicts = probeConflicts(caps, probe)
   /* 矩阵是按 provider.models 算的，理论上一定有；没有就一个字都不说，别编 */
   if (!caps) return null
 
@@ -85,6 +125,44 @@ function ModelRow({
       <span className="font-mono text-2xs text-fg-secondary" title={info?.presetNote || model}>
         {model}
       </span>
+
+      {/* 实测：点一下才知道它到底会什么（不自动发请求 —— 那要花 token） */}
+      <button
+        type="button"
+        onClick={onMeasure}
+        disabled={busy}
+        className="text-2xs text-fg-tertiary underline decoration-dotted hover:text-fg-secondary disabled:opacity-50"
+        title="发几个最小请求实测这个模型会什么（只影响提示，不会改你的配置）"
+      >
+        {busy ? '实测中…' : '实测'}
+      </button>
+
+      {probe
+        ? PROBE_DIMS.map((dim) => {
+            const value = probe.results[dim]
+            if (value === undefined) return null
+            return (
+              <span
+                key={dim}
+                className={cn('text-2xs', value ? 'text-fg-tertiary' : 'text-fg-secondary')}
+                title={probe.notes[dim] ?? ''}
+              >
+                实测{value ? '✓' : '✗'}
+                {probeLabel(dim)}
+              </span>
+            )
+          })
+        : null}
+
+      {probe && !probe.ok && probe.error ? (
+        <span className={cn('w-full text-2xs', STATUS_CLASS.warning.text)}>⚠ {probe.error}</span>
+      ) : null}
+
+      {conflicts.map((line) => (
+        <span key={line} className={cn('w-full text-2xs', STATUS_CLASS.warning.text)}>
+          ⚠ {line}
+        </span>
+      ))}
 
       {known ? (
         SHOW.map((dim) => {

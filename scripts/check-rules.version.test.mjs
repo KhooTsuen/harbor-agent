@@ -94,6 +94,67 @@ test('★ 版本降级也算漏（不能拿更低的版本顶）', () => {
   }
 })
 
+/*
+ * 预发布号（2026-10-06 修的盲点）
+ *
+ * 原来只取 `x.y.z` 三段，`1.30.0-beta.1` 和 `1.30.0-beta.2` 都被解析成同一组数字
+ * → beta 之间的升级被判成「没升版本」。这条把 beta 通道整条路堵死了，
+ * 而本项目真的用过 beta.1…beta.40（见 CHANGELOG 的 1.20.0 那一段）。
+ * 按原意修：**预发布号也算数** —— 标准不降（还是「必须更新」），只是能看见它了。
+ */
+test('★ beta 之间也算升（beta.1 → beta.2）', () => {
+  const r = repo()
+  try {
+    r.write('package.json', pkg('1.30.0-beta.1'))
+    r.write('src/a.ts', 'const a = 1\n')
+    r.commit('init')
+
+    r.write('package.json', pkg('1.30.0-beta.2'))
+    r.write('src/a.ts', 'const a = 2\n')
+    r.commit('feat batch 2')
+
+    const out = checkVersionBump(r.root)
+    assert.deepEqual(out.errors, [])
+    assert.equal(out.summary, '1.30.0-beta.1 → 1.30.0-beta.2')
+  } finally {
+    r.done()
+  }
+})
+
+test('★ beta 号往后退也算漏（beta.2 → beta.1）', () => {
+  const r = repo()
+  try {
+    r.write('package.json', pkg('1.30.0-beta.2'))
+    r.write('src/a.ts', 'const a = 1\n')
+    r.commit('init')
+
+    r.write('package.json', pkg('1.30.0-beta.1'))
+    r.write('src/a.ts', 'const a = 2\n')
+    r.commit('往回退')
+
+    assert.ok(checkVersionBump(r.root).errors.length > 0)
+  } finally {
+    r.done()
+  }
+})
+
+test('★ 正式版比任何同号 beta 都新（beta.9 → 正式版）', () => {
+  const r = repo()
+  try {
+    r.write('package.json', pkg('1.30.0-beta.9'))
+    r.write('src/a.ts', 'const a = 1\n')
+    r.commit('init')
+
+    r.write('package.json', pkg('1.30.0'))
+    r.write('src/a.ts', 'const a = 2\n')
+    r.commit('正式版')
+
+    assert.deepEqual(checkVersionBump(r.root).errors, [])
+  } finally {
+    r.done()
+  }
+})
+
 test('只动文档 / 脚本 → 不要求升版本（改文档也要升只会制造噪音）', () => {
   const r = repo()
   try {

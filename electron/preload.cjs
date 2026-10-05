@@ -285,13 +285,13 @@ const api = {
   /* 界面动作（点击了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
   logAction: (entry) => report(entry),
 
+  probeProvider: (providerId, model) => call('provider:probe', { providerId, model }),
+
   /** 渲染层没被捕获的异常（window.onerror / unhandledrejection / ErrorBoundary） */
   logError: (entry) => {
     try {
       ipcRenderer.send('log:error', entry)
-    } catch {
-      /* 忽略 */
-    }
+    } catch {}
   },
 
   isElectron: true,

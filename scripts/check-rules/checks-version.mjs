@@ -13,6 +13,10 @@
  *
  * ── 口径（与 发布检查.md 一致）──
  *   · 本次动了 `src/**` 或 `electron/**` → 版本号必须比上一版**更新**（相等或更低都算漏）；
+ *   · **预发布号也算数**（2026-10-06 修）：`1.30.0-beta.2` 比 `1.30.0-beta.1` 新，
+ *     而 `1.30.0`（正式版）比任何 `1.30.0-beta.N` 都新。
+ *     原来只取前三段数字，于是 beta 之间的升级被判成「没升」—— 把 beta 通道整条路堵死，
+ *     而本项目真的用过 beta.1…beta.40（见 CHANGELOG）；
  *   · 只动文档 / 测试 / 脚本 / CI → **不要求**升（改文档也要升版本只会制造噪音）；
  *   · 拿不到 git 历史（浅克隆、不在仓库里）→ 跳过，**不误报**。
  *
@@ -29,21 +33,42 @@ import path from 'node:path'
 /** 代码目录：只有这些才算「改了代码」（口径与硬约束里说的「改代码」一致） */
 const CODE_DIRS = /^(src|electron)\//
 
-/** `1.21.0` → `[1, 21, 0]`；不是版本号就 null */
+/** `1.21.0` / `1.30.0-beta.2` → `{ num: [1,21,0], pre: 'beta.2' }`；不是版本号就 null */
 function semver(value) {
-  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(value ?? ''))
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(value ?? ''))
+  if (!m) return null
+  return { num: [Number(m[1]), Number(m[2]), Number(m[3])], pre: String(m[4] ?? '') }
 }
 
-/** a 是否比 b 新；任一边不是版本号就返回 null（表示「判不了」，别当成 false） */
+/**
+ * a 是否比 b 新；任一边不是版本号就返回 null（表示「判不了」，别当成 false）。
+ *
+ * 数字段相同时要看预发布号 —— 这条是 2026-10-06 补的：
+ *   · `1.30.0-beta.2` **>** `1.30.0-beta.1`（同类预发布，比数字）
+ *   · `1.30.0` **>** `1.30.0-beta.9`（正式版比任何预发布都新）
+ *   · `1.30.0-alpha.9` < `1.30.0-beta.1`（不同名按字典序，正好符合 alpha < beta < rc）
+ */
 function isNewer(a, b) {
   const left = semver(a)
   const right = semver(b)
   if (!left || !right) return null
+
   for (let i = 0; i < 3; i += 1) {
-    if (left[i] !== right[i]) return left[i] > right[i]
+    if (left.num[i] !== right.num[i]) return left.num[i] > right.num[i]
   }
-  return false
+
+  if (!left.pre && !right.pre) return false
+  if (!left.pre) return true
+  if (!right.pre) return false
+
+  const parts = (pre) => {
+    const [name, n] = pre.split('.')
+    return { name, n: Number(n ?? 0) }
+  }
+  const l = parts(left.pre)
+  const r = parts(right.pre)
+  if (l.name !== r.name) return l.name > r.name
+  return l.n > r.n
 }
 
 export function checkVersionBump(root = process.cwd()) {

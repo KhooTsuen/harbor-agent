@@ -180,7 +180,7 @@ export function ProviderCard({ provider }: ProviderCardProps) {
         </div>
 
         {/* 每个模型会什么（据预设与手填 —— 声明，不是实测） */}
-        <ModelCapabilityList models={provider.models} />
+        <ModelCapabilityList models={provider.models} providerId={provider.id} />
       </div>
 
       <div className="mt-3 flex items-center gap-2">

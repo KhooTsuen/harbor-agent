@@ -55,6 +55,40 @@ function register({ ipcMain }) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
+
+  /*
+   * ── 实测一个模型会什么（能力探测，2026-10-06）──
+   *
+   * 和 `provider:ping` 的区别：ping 只问「网通不通」，这个问「**实际**会什么」
+   * （工具调用 / 图片 / 流式 / usage / 名字在不在清单里）。
+   *
+   * 只回**实测**结果，不掺「声明与预设」—— 声明在 `config.capabilities` 里，
+   * 界面自己两边都拿得到，让它们并排显示、不一致时指出矛盾才是这个功能的用处。
+   */
+  ipcMain.handle('provider:probe', async (_event, payload) => {
+    const { probeModel } = require('../core/model-probe.cjs')
+    const all = config.get().providers
+    const target = payload?.providerId
+      ? all.find((p) => p.id === payload.providerId)
+      : config.activeProvider()
+    if (!target) return { ok: false, error: '没有可用的供应商' }
+    if (!config.hasKey(target)) return { ok: false, error: '这个供应商还没填 API Key' }
+
+    const model = String(payload?.model ?? target.models[0] ?? config.get().assistant.model)
+    if (!model) return { ok: false, error: '没说要测哪个模型' }
+
+    try {
+      const result = await probeModel({
+        provider: target,
+        model,
+        apiKey: config.providerKey(target),
+      })
+      log.info(`能力探测：${target.id} / ${model} → ${result.ok ? '完成' : '未完成'}`)
+      return result
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 }
 
 module.exports = { register }

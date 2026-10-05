@@ -32,6 +32,26 @@ export * from './models'
 /* 浏览器工具的桥在 browser.ts，这里转出去：老引用路径还是 '@/types/backend' */
 export * from './browser'
 /* SafetyBridge 已带上 ProfileBridge，这里不重复列；ErrorsBridge = 右栏「错误」标签 */
+
+/**
+ * 能力探测的**实测**结果（内核 `model-probe.cjs`）。
+ *
+ * `results` 里每项是 `true` / `false` / `null`：**`null` = 没测出来，不等于不支持**。
+ * 界面上这两者画得不一样 —— 把未知画成不支持等于替用户猜了。
+ */
+export interface ModelProbeResult {
+  ok: boolean
+  at: number
+  providerId: string
+  model: string
+  results: Partial<
+    Record<'connection' | 'streaming' | 'tool_call' | 'vision' | 'usage' | 'listed', boolean | null>
+  >
+  /** 为什么这么判（人话，给用户看的那句） */
+  notes: Record<string, string>
+  error?: string
+}
+
 export interface WorkbenchBridge
   extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge, BrowserBridge {
   selfTest: () => Promise<SelfTestReport>
@@ -43,6 +63,8 @@ export interface WorkbenchBridge
   resetConfig: () => Promise<{ ok: boolean; config: AppConfig }>
   pingProvider: (providerId?: string) => Promise<{ ok: boolean; model?: string; error?: string }>
   listModels: (providerId?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>
+  /* 能力探测：**实测**一个模型会什么（只回实测；声明在 config.capabilities，界面两边并排看） */
+  probeProvider?: (providerId: string, model: string) => Promise<ModelProbeResult>
   getWorkdir: () => Promise<string>
   pickWorkdir: () => Promise<{ ok: boolean; workdir?: string; canceled?: boolean }>
   chooseFolder: () => Promise<{ ok: boolean; dir?: string; canceled?: boolean }>
