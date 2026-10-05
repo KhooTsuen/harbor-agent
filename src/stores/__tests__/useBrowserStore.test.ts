@@ -46,7 +46,43 @@ describe('浏览器标签：Agent 请求', () => {
     }
     const state = useBrowserStore.getState()
     expect(state.tabs).toHaveLength(1)
-    expect(state.pending?.action).toBe('type')
+    /* 非导航请求排在导航那条后面（真机反馈：不再互相顶掉） */
+    expect(state.queue.map((q) => q.action)).toEqual(['snapshot', 'click', 'type'])
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════
+   请求排队（真机反馈）
+
+   用户要的是「多标签打开时同时加载」。以前 store 里只有一个槽：
+   Agent 一口气发三个请求，后一个把前一个顶掉（前两个只能等超时），
+   于是看起来「它一次只开一个」。
+   ══════════════════════════════════════════════════════════════ */
+
+describe('浏览器请求：排队', () => {
+  beforeEach(() => {
+    useBrowserStore.getState().closeAll()
+  })
+
+  it('★ 一口气来三个：第一个在跑、后面两个排队，标签三个都已经建好', () => {
+    navIn('r1', 's1', 'https://example.com')
+    navIn('r2', 's1', 'https://example.org')
+    navIn('r3', 's1', 'https://example.net')
+    const state = useBrowserStore.getState()
+    /* 三个标签都建出来了 —— 它们一挂上就开始各自加载（这就是「同时加载」） */
+    expect(state.tabs).toHaveLength(3)
+    expect(state.pending?.id).toBe('r1')
+    expect(state.queue.map((q) => q.id)).toEqual(['r2', 'r3'])
+  })
+
+  it('★ 干完一条自动接下一条，顺序不乱', () => {
+    navIn('r1', 's1', 'https://example.com')
+    navIn('r2', 's1', 'https://example.org')
+    useBrowserStore.getState().clearPending()
+    expect(useBrowserStore.getState().pending?.id).toBe('r2')
+    expect(useBrowserStore.getState().queue).toEqual([])
+    useBrowserStore.getState().clearPending()
+    expect(useBrowserStore.getState().pending).toBeNull()
   })
 })
 

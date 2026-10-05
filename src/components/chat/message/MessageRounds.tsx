@@ -71,7 +71,11 @@ export function MessageRounds({
                 <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
                 正在写回答…（写完一次显示）
               </p>
-            ) : round.content.trim() ? (
+            ) : /*
+             * 最后一轮**只要还在跑**就把内容块渲染出来（哪怕一个字都还没到）——
+             * 光标在里面跟着挂着，见下面的注释。
+             */
+            round.content.trim() || (streaming && isLast) ? (
               <div>
                 {/*
                   只有最后一轮走增量解析：前面的轮次已经写完了，
@@ -82,7 +86,13 @@ export function MessageRounds({
                 ) : (
                   <Markdown text={round.content} />
                 )}
-                {/* 打字光标：和以前一样，只在流式那一段的尾巴上闪 */}
+                {/*
+                  打字光标（真机反馈）：这一轮还在跑就一直挂着 —— 包括「正在思考」
+                  「正在跑工具」这些暂时不出字的空档。
+                  以前外层那段内容块是「有正文才渲染」，空档期整块卸载、下一个字回来又
+                  重新挂上，用户看到的就是「闪一下没了、又闪回来」的抽搐；跑工具时
+                  更是一个光标都没有。
+                */}
                 {streaming && isLast ? <span className="caret" /> : null}
               </div>
             ) : null}

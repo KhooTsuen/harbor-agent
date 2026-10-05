@@ -63,8 +63,10 @@ export interface PendingBrowse {
 interface BrowserState {
   tabs: BrowserTabItem[]
   activeId: string
-  /** Agent 要读的页面 —— BrowserTab 挂载后会消费掉它 */
+  /** 正在处理的那一条（driver 只看它） */
   pending: PendingBrowse | null
+  /** 排队等着处理的（先进先出；一条干完由 `clearPending` 接上下一条） */
+  queue: PendingBrowse[]
   /**
    * Agent 最后一次动网页的时刻（0 = 还没动过）。
    *
@@ -92,6 +94,20 @@ interface BrowserState {
 
 function newTabId(): string {
   return `tab-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+}
+
+/**
+ * 新请求进队：**正在跑的那条不动**，后来的排到队尾（真机反馈）。
+ *
+ * 为什么不是「后来的顶掉前面的」：Agent 一口气开三个网页是很常见的动作，
+ * 顶掉就等于前两个白干（主进程那边只能等到超时），用户看到的是「它一次只开一个」。
+ * 排队不丢，而且顺序跟它请求的一致。
+ */
+function queuedOf(
+  state: { pending: PendingBrowse | null; queue: PendingBrowse[] },
+  request: PendingBrowse,
+): { pending?: PendingBrowse; queue?: PendingBrowse[] } {
+  return state.pending ? { queue: [...state.queue, request] } : { pending: request }
 }
 
 /**
@@ -128,6 +144,7 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
   tabs: [],
   activeId: '',
   pending: null,
+  queue: [],
   agentAt: 0,
 
   /**
@@ -167,7 +184,7 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
         request.action === 'click' ||
         request.action === 'type'
       ) {
-        return { pending: request }
+        return queuedOf(state, request)
       }
       /*
        * 导航：**一个地址一个标签**（真机反馈 3 把上一版改回来了）。
@@ -199,7 +216,7 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
               : t,
           ),
           activeId: existing.id,
-          pending: request,
+          ...queuedOf(state, request),
         }
       }
       const id = newTabId()
@@ -209,11 +226,19 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
           { id, url: request.url ?? '', sessionId: sid, owner: 'agent', reloadKey: 0 },
         ],
         activeId: id,
-        pending: request,
+        ...queuedOf(state, request),
       }
     }),
 
-  clearPending: () => set({ pending: null }),
+  /*
+   * 这一条干完了：把排队的下一条接上来（先进先出）。
+   * 队列空就真的清空 —— driver 盯的是 `pending`，它一变就接着跑下一条。
+   */
+  clearPending: () =>
+    set((state) => {
+      const [next, ...rest] = state.queue
+      return { pending: next ?? null, queue: rest }
+    }),
 
   markAgentActivity: () => set({ agentAt: Date.now() }),
   clearAgentActivity: () => set({ agentAt: 0 }),
@@ -226,12 +251,13 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
    */
   closeAll: (sessionId) =>
     set((state) => {
-      if (!sessionId) return { tabs: [], activeId: '', pending: null, agentAt: 0 }
+      if (!sessionId) return { tabs: [], activeId: '', pending: null, queue: [], agentAt: 0 }
       const tabs = state.tabs.filter((t) => t.sessionId !== sessionId)
       return {
         tabs,
         activeId: tabs.some((t) => t.id === state.activeId) ? state.activeId : '',
         pending: state.pending?.sessionId === sessionId ? null : state.pending,
+        queue: state.queue.filter((item) => item.sessionId !== sessionId),
       }
     }),
 }))
