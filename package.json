@@ -15,6 +15,7 @@
     "release:zip": "node scripts/release-zip.mjs",
     "release:upload": "node scripts/release-upload.mjs",
     "release:prune": "node scripts/release-prune.mjs",
+    "check:release": "node scripts/check-release.mjs",
     "cleanup:heavy": "node scripts/cleanup-heavy.mjs",
     "cleanup:release": "node scripts/cleanup-heavy.mjs --release",
     "test": "node scripts/selftest.mjs",

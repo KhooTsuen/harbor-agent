@@ -4,6 +4,7 @@
  *   npm run release:upload            # 正式版（prerelease: false）
  *   npm run release:upload -- --beta  # Pre-release（prerelease: true）
  *   npm run release:upload -- --dry   # 只打印打算做什么，不发请求
+ *   npm run release:upload -- --tag   # 本地缺 tag 时，代建 + 推到 origin（默认缺 tag 就停）
  *
  * ── 为什么放在 `scripts/` 而不是 `tmp/`（2026-10-06）──
  * 这套流程原来靠 `tmp/gh-release-beta3.cjs` 这类**一次性脚本**，而 `tmp/` 有自己的
@@ -19,6 +20,7 @@
  * Release 已存在就用它；同名资产已存在就跳过上传。重跑安全。
  */
 
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,6 +31,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
 const IS_BETA = argv.includes('--beta')
 const DRY = argv.includes('--dry')
+/* `--tag`：本地缺 tag 时由本工具代建并推（git tag + git push 是写 + 外发，默认不动手） */
+const MAKE_TAG = argv.includes('--tag')
 
 function fail(message) {
   console.error(`发布失败：${message}`)
@@ -37,6 +41,40 @@ function fail(message) {
 
 const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
 const tag = `v${version}`
+
+/**
+ * 本地有没有这个 tag（判不了返回 null）。
+ * ★ tag 守卫（2026-10-07 加）：原来全靠 GitHub API 的 `tag_name` **隐式**建 tag ——
+ * 本地没 tag 时，远端那个 tag 会指向**默认分支 HEAD**（代码还没 push 的话就是错的提交），
+ * 而且本地漏了 tag **不会有任何提示**：`beta.4` … `beta.10` 七版就是这么丢的
+ * （版本号升了、代码提交了，Release 与 tag 一个没建，见 `scripts/check-release.mjs`）。
+ * 现在：缺 tag 默认停；`--tag` 才由本工具代建 —— 要下笔写 git / 往远端推，得你点。
+ * 排在 zip 检查之前：缺 tag 是 git 侧的先决条件，不该等打完包才发现。
+ */
+function hasLocalTag(name) {
+  const res = spawnSync('git', ['tag', '-l', name], { cwd: ROOT, encoding: 'utf8' })
+  return res.status === 0 ? (res.stdout ?? '').trim() === name : null
+}
+
+const localTag = hasLocalTag(tag)
+if (localTag === false) {
+  const hint = `本地没有 tag ${tag}：git tag -a ${tag} -m "Harbor ${version}" && git push origin ${tag}`
+  if (DRY) {
+    console.log(`! ${hint}`)
+  } else if (!MAKE_TAG) {
+    fail(`${hint}\n  （或加 --tag 让本工具代建。不建就发，远端 tag 会指向默认分支 HEAD —— 可能不是这次提交）`)
+  } else {
+    for (const args of [
+      ['tag', '-a', tag, '-m', `Harbor ${version}`],
+      ['push', 'origin', tag],
+    ]) {
+      const res = spawnSync('git', args, { cwd: ROOT, stdio: 'inherit' })
+      if (res.status !== 0) fail(`git ${args.join(' ')} 退出码 ${res.status}`)
+    }
+    console.log(`[tag] 已建并推：${tag}`)
+  }
+}
+
 const zipName = `harbor-${version}-win-x64.zip`
 const zipPath = join(ROOT, 'dist-portable', zipName)
 if (!existsSync(zipPath)) fail(`${zipName} 不存在 —— 先跑 npm run package && npm run release:zip`)
