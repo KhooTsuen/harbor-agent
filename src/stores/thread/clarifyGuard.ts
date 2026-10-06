@@ -19,10 +19,15 @@ import { useUIStore } from '../useUIStore'
  * 离开 `leavingId` 这条对话：如果卡面上那张澄清卡是它的，就收掉并回话给内核。
  *
  * 只收「属于它」的那张 —— 后台可能还有别的对话挂着卡，那不归这次离开管。
+ *
+ * 2026-10-07 补：**权限卡同样要收**（以前只收澄清卡）。不收的话它会变成僵尸卡
+ * 挂在界面上，而 `pickAboveInput` 永远让权限优先 —— 后面所有澄清卡都被挡住。
  */
 export function onLeaveThread(leavingId: string | null | undefined): void {
   const id = String(leavingId ?? '')
   if (!id) return
   const open = useUIStore.getState().clarify
   if (open && open.threadId === id) useUIStore.getState().cancelClarify()
+  const perm = useUIStore.getState().permission
+  if (perm && perm.threadId === id) useUIStore.getState().cancelPermission()
 }

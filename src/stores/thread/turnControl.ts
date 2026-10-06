@@ -2,6 +2,7 @@ import { abortChat, pauseChat } from '@/lib/backend'
 import { useThreadStore } from '../useThreadStore'
 import { useUIStore } from '../useUIStore'
 import { abortMockTurn } from './mockTurn'
+import { clearPermissionForThread } from './confirmEvents'
 
 /* ══════════════════════════════════════════════════════════════
    「在跑的那几个请求」：登记 · 停止 · 暂停 · 跑完接着发排队
@@ -23,6 +24,14 @@ export function beginTurnRequest(threadId: string, requestId: string): void {
 
 /** 这一轮结束了 —— 收尾与「发送中止」都要调，别让它一直挂在那儿 */
 export function endTurnRequest(threadId: string): void {
+  /*
+   * 这一轮结束了（done / aborted / error / 看门狗超时都走它）—— 它上面挂着的
+   * 权限卡也就作废了：主进程在 finally 里已经 `closeOut(requestId)` 按拒绝结算，
+   * 界面只是还没跟上（它永远等不到下一次点击）。不收的话僵尸卡会一直挂在输入框
+   * 上方，而 `pickAboveInput` 永远让权限优先 —— 后面**所有澄清卡都被它挡住**
+   * （2026-10-07 真机复现，见 confirmEvents.clearPermissionForThread）。
+   */
+  clearPermissionForThread(threadId)
   activeRequests.delete(threadId)
 }
 
@@ -55,6 +64,12 @@ export function stopActiveRequest(threadId?: string): void {
   const open = useUIStore.getState().clarify
   if (open && (threadId === undefined || open.threadId === threadId)) {
     useUIStore.getState().cancelClarify()
+  }
+  /* 权限卡同理：停了这条对话，它上面的写操作确认也作废 —— 收卡 + 回话拒绝，
+     别让主进程干等到 5 分钟超时（2026-10-07 补：以前只收澄清卡，权限卡会变僵尸） */
+  const perm = useUIStore.getState().permission
+  if (perm && (threadId === undefined || perm.threadId === threadId)) {
+    useUIStore.getState().cancelPermission()
   }
 
   if (threadId) {

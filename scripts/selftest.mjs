@@ -158,6 +158,7 @@ import { run as editRulesGroup } from './selftest/groups/120-edit-rules.mjs'
 import { run as browseNavGroup } from './selftest/groups/121-browse-nav.mjs'
 import { run as modelProbeGroup } from './selftest/groups/122-model-probe.mjs'
 import { run as subagentGroup } from './selftest/groups/123-subagent.mjs'
+import { run as cardTimeoutGroup } from './selftest/groups/124-card-timeout.mjs'
 
 const GROUPS = [
   basics,
@@ -278,7 +279,7 @@ const GROUPS = [
   projectFactsGroup,
   memoryReflectGroup,
   projectCompleteGroup,
-  urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup,
+  urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
 ]
 
 async function main() {

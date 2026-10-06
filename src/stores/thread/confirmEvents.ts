@@ -138,6 +138,12 @@ export function askPermissionFor(event: Record<string, unknown>): void {
   const remembered = kind === 'write' || kind === 'mcp'
 
   useUIStore.getState().askPermission({
+    /*
+     * ★ 必须带上它：`confirm.timeout` 收卡走的是 `closePermission(confirmId)` 精确匹配，
+     *   卡上没有 confirmId 就永远匹配不上、清不掉（澄清卡一直带着它，审批这条漏了）。
+     *   2026-10-07 真机复现：permission.confirmId 为 undefined，超时事件形同虚设。
+     */
+    confirmId,
     kind: 'run-command',
     title: high
       ? `⚠ 高风险：${KIND_TEXT[kind] ?? toolName}`
@@ -154,6 +160,8 @@ export function askPermissionFor(event: Record<string, unknown>): void {
     diff: Array.isArray(event.diff) ? event.diff : undefined,
     diffNote: String(event.diffNote ?? ''),
     impact: Array.isArray(event.impact) ? event.impact.map(String) : [],
+    /* 这张卡属于哪条对话 —— 切走 / 停任务 / 轮末要收的是它（和澄清卡一样） */
+    threadId: String(event.sessionId ?? event.threadId ?? ''),
     onConfirm: () => void confirmChat(confirmId, true),
     /* 关掉弹窗也算拒绝 —— 不回话的话主进程会一直等到超时 */
     onCancel: () => void confirmChat(confirmId, false),
@@ -185,19 +193,40 @@ function recordClarify(event: Record<string, unknown>, outcome: StoredClarify): 
 }
 
 /**
- * 主进程推来的「离场超时」（AG-053 批③）：用户走开太久，任务按**默认选项**继续了。
+ * 卡「超时作废」—— 两类卡共用这一条（主进程推来）。
  *
- * 要做两件事，缺一件用户回来就懵：
- *   ① **把卡收起来** —— 否则他看到的是一张还在等他的卡，而任务早跑完了；
- *   ② **把这件事记进消息**（`auto: 'timeout'`）—— 回看时知道哪几条是替他定的。
+ *   · `clarify.timeout`（AG-053 批③）：用户走开太久，任务按**默认选项**继续。
+ *     收卡 **+ 记进消息**（`auto: 'timeout'`）—— 回看时知道哪几条是替他定的。
+ *   · `confirm.timeout`（2026-10-07）：审批卡 5 分钟没答复，任务按**拒绝**继续。
+ *     只收卡。以前没有这条，卡会在界面上烂着，而 `pickAboveInput` 永远让权限
+ *     优先 —— 后面**所有澄清卡都被它挡住**，用户「收不到提问卡」、界面一直
+ *     「正在进行中」（真机复现见 CHANGELOG）。不回话：主进程已经结算了。
  *
- * 按 confirmId 精确收：同一对话里可能已经换成下一张卡了，不能无条件关。
+ * 都按 confirmId 精确收：同一对话里可能已经换成下一张卡了，不能无条件关。
  */
-export function onClarifyTimeout(event: Record<string, unknown>): void {
+export function onCardTimeout(event: Record<string, unknown>): void {
   const confirmId = String(event.confirmId ?? '')
+  if (String(event.type ?? '') === 'confirm.timeout') {
+    useUIStore.getState().closePermission(confirmId || undefined)
+    return
+  }
   const pending = useUIStore.getState().clarify
   useUIStore.getState().closeClarify(confirmId)
   /* 卡上那几个问题就是回看要显示的东西（只认**当前这张**，别的卡不动） */
   const questions = pending?.confirmId === confirmId ? (pending.clarify ?? []) : []
   recordClarify(event, { questions, answers: [], skipped: true, auto: 'timeout' })
+}
+
+/**
+ * 一轮结束了（done / aborted / error）：把**这条对话**还挂着的权限卡收掉。
+ *
+ * 主进程在 finally 里已经 `closeOut(requestId)` 把这一轮的确认按拒绝结算了，
+ * 界面只是还没跟上（它永远等不到下一次点击）。按 threadId 认领 —— 别的对话
+ * 可能也挂着一张卡，那不归这次收尾管。
+ */
+export function clearPermissionForThread(threadId: string): void {
+  const id = String(threadId ?? '')
+  if (!id) return
+  const cur = useUIStore.getState().permission
+  if (cur && cur.threadId === id) useUIStore.getState().closePermission()
 }

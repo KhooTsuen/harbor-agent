@@ -70,7 +70,23 @@ interface UIState {
 
   setNextSteps: (value: { threadId: string; outcome: TaskOutcome } | null) => void
   askPermission: (request: PermissionRequest) => void
-  closePermission: () => void
+  /**
+   * 收起权限卡（写操作确认）。
+   *
+   * 传了 `confirmId` 就**只关那一条**：主进程推来的「这张卡超时作废了」
+   * （`confirm.timeout`）可能已经是上一张了 —— 无条件关会把用户正在答的那张清掉。
+   * 这条是 2026-10-07 补的：以前只能无条件清，而超时那条路根本没人清，
+   * 卡就在界面上烂着，还把后面所有澄清卡挡死（见 `confirmEvents.onConfirmTimeout`）。
+   */
+  closePermission: (confirmId?: string) => void
+  /**
+   * 主动收掉权限卡，**并把「拒绝」回给内核**。
+   *
+   * 和 `cancelClarify` 对称，用在「切对话」「停任务」两条路径上：卡不能跟着用户
+   * 跑到别的对话里，也不能让主进程干等到 5 分钟超时（那会被当成用户离场）。
+   * 与 `closePermission` 的区别：那个只是「把界面收起来」，不动内核。
+   */
+  cancelPermission: (confirmId?: string) => void
   /**
    * AG-053：澄清卡（开工前问的几个问题）。
    *
@@ -158,7 +174,16 @@ export const useUIStore = create<UIState>((set, get) => ({
   setNextSteps: (value) => set({ nextSteps: value }),
 
   askPermission: (request) => set({ permission: request }),
-  closePermission: () => set({ permission: null }),
+  closePermission: (confirmId) =>
+    set((s) => (confirmId && s.permission?.confirmId !== confirmId ? {} : { permission: null })),
+  cancelPermission: (confirmId) => {
+    const cur = get().permission
+    /* 传了 id 就只收那一条（和 cancelClarify 一个道理） */
+    if (!cur || (confirmId && cur.confirmId !== confirmId)) return
+    set({ permission: null })
+    /* 先收界面再回话：回话里可能抛（IPC 断了），界面不能因此留在那儿 */
+    cur.onCancel?.()
+  },
   askClarify: (request) => set({ clarify: request }),
   closeClarify: (confirmId) =>
     set((s) => (confirmId && s.clarify?.confirmId !== confirmId ? {} : { clarify: null })),

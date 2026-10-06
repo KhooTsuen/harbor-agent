@@ -11,7 +11,7 @@ import { applyToolProgress } from './toolProgress'
 import { applySubagentEvent } from './subagentEvents'
 import { citationsOf } from './toolCitations'
 import { handleAttachmentEvent } from './attachmentEvents'
-import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
+import { askPermissionFor, applyPauseAfterTurn, onCardTimeout } from './confirmEvents'
 import { logError } from '@/lib/actionLog'
 
 /* ══════════════════════════════════════════════════════════════
@@ -188,12 +188,11 @@ export function handleStreamEvent(
       askPermissionFor(event)
       return { handled: true }
 
-    /*
-     * AG-053 批③：澄清卡**离场超时**（用户走开太久，已按默认选项继续）。
-     * 收卡 + 记进这条回复（实现见 confirmEvents.ts 的 onClarifyTimeout）。
-     */
+    /* 两类卡的「超时作废」都要收卡：澄清 clarify.timeout / 审批 confirm.timeout
+       （审批那条 2026-10-07 补 —— 不收会把后面所有澄清卡挡死，见 onCardTimeout） */
     case 'clarify.timeout':
-      onClarifyTimeout(event)
+    case 'confirm.timeout':
+      runSafely('card.timeout', () => onCardTimeout(event))
       return { handled: true }
 
     /*

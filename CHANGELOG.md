@@ -1,5 +1,55 @@
 # 更新日志
 
+## [1.30.0-beta.10] — 2026-10-07 · 权限卡作废后不放行（僵尸卡挡住澄清卡）
+
+### 这一批做了什么
+
+- **修一个真机复现的 bug：AI 发出提问卡，用户这边收不到，界面一直「正在进行中」。**
+  根因是渲染层的权限卡（`permission`）槽位是个**全局单槽**，而唯一能清它的地方只有
+  权限卡自己的两个按钮（取消 / 允许本次）—— 一旦权限卡「非按钮」地作废，它就烂在槽里；
+  而 `pickAboveInput` 永远让权限优先，于是**后面所有澄清卡都被它按成 `hidden` 挡死**，
+  用户永远看不到提问卡，主进程一直干等到 5 分钟的兜底超时。**三条漏清的路**：
+
+  | 路径 | 主进程 | 渲染层（改前） | 结果 |
+  |---|---|---|---|
+  | 权限卡自然超时（5 分钟按拒绝继续） | 已结算 | **无任何事件**（澄清卡有对称的 `clarify.timeout`，权限卡没有） | 僵尸 |
+  | 用户点「停止生成」 | `closeOut` 轮末结算 | 只 `cancelClarify()`，**不清 permission** | 僵尸 |
+  | 切走 / 新建对话 | — | `clarifyGuard` 只收澄清卡，**不清 permission** | 僵尸 |
+
+- **修法（三处，都是「补上对称」而不是另起一套）**：
+  1. 内核 `handlers/chat-confirm.cjs`：`askUser` 超时时也 `emit` 一条 `confirm.timeout`
+     收卡事件 —— 对称于 `askClarify` 早就有的 `clarify.timeout`。
+  2. 渲染层 `stores/useUIStore.ts`：`permission` 支持按 `confirmId` 精确清（`closePermission`），
+     并新增「清 + 回话」的 `cancelPermission`（对称 `cancelClarify`）。
+  3. 渲染层接线：`confirmEvents` 收 `confirm.timeout`；`turnControl.endTurnRequest`（收尾统一出口）
+     与 `stopActiveRequest`（停止）按对话收权限卡；`clarifyGuard` 切走 / 新建时也收。
+
+- **两个隐藏的不对称（第一版漏了，真机第二次复现才抓出来）**：
+  · `askUser` 的 payload **没带 `sessionId`**（`askClarify` 带了）→ 权限卡 `threadId` 恒为空串
+    → 按 threadId 认领永远匹配不上，**收了通知也清不掉卡**。补齐 payload。
+  · 渲染层 `askPermission` **没传 `confirmId`**（`askClarify` 传了）→ `confirm.timeout` 的
+    精确清匹配不上。补上 `confirmId`。
+  两条都属于 AGENT.md 硬约束 #9「跨模块约定只有一处真相源」那类 —— 两边各自都对，接起来什么都不发生。
+
+### 验证
+
+- **真机复现（改前，源码版 9222）**：让 Agent 跑命令 → 权限卡出现；点「停止生成」→
+  界面「已停止」而**权限卡仍在**（主进程日志「轮末结算 1 条」在，但卡不消失）；
+  再让 Agent `ask_user` → 澄清卡容器 `开工前先对齐` = `hidden`、僵尸权限卡可见。
+  截图 `shots/card-bug/zombie-blocks-clarify.png`。
+- **真机验证（改后）**：同样的停止场景 → `useUIStore.getState().permission === null`，
+  权限卡消失；随后 Agent 的 `ask_user` 澄清卡**正常可见**（3 个问题 + 按钮都在，
+  `perm: false`）。截图 `shots/card-bug/fixed-clarify-visible.png`。
+- 单测 `npm run test:unit`：162 个文件 / 1446 条通过（含新增 `zombiePermission.test.ts` 9 条）。
+- 内核自检 `npm test`：3822 项通过 / 0 失败（新增 `124-card-timeout.mjs` 组，
+  含「收卡事件必须带 sessionId」那条钉子 —— 101 组被撑到 319 行，按职责拆出）。
+- `npm run check:lines`：988 个文件全部 ≤300 行。
+- `npm run verify`：全链 0 退出。
+
+### 已知遗留
+
+- 「设置也被清掉（不止 api key）」是**另一条独立问题**，不在本批范围内。
+
 ## [1.30.0-beta.9] — 2026-10-07 · 切走右侧标签后网页不再卡在右栏
 
 ### 这一批做了什么

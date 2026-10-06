@@ -81,10 +81,12 @@ function exitsIn(answer) {
  * @param {string} [sessionId] 这条对话的 id —— 只用于「需要你确认」那条系统通知
  * @returns {Promise<boolean>}
  */
-function askUser(requestId, request, emit, sessionId = '') {
+function askUser(requestId, request, emit, sessionId = '', timeoutMs = CONFIRM_TIMEOUT_MS) {
+  /* 已经挂上了哪张卡（超时那一步要按它告诉界面「收卡」） */
+  let cardId = ''
   return confirmBridge
     .ask({
-      timeoutMs: CONFIRM_TIMEOUT_MS,
+      timeoutMs,
       /* 属于这一轮：一轮结束时（成功/失败/中断）要把它结算掉，不能悬着 */
       owner: String(requestId ?? ''),
       payload: {
@@ -102,8 +104,18 @@ function askUser(requestId, request, emit, sessionId = '') {
         diff: request.diff ?? null,
         diffNote: request.diffNote ?? '',
         impact: request.impact ?? [],
+        /*
+         * ★ 这条对话的 id —— 渲染层按它「认领」这张卡（轮末 / 停止 / 切对话都要收卡）。
+         *   `askClarify` 一直带着它（见下面那个 payload），审批这条**漏了**：
+         *   渲染层 `threadId` 于是永远是空串，`clearPermissionForThread` 按 threadId
+         *   比对时恒不成立 —— 僵尸卡收不掉，还把后面所有澄清卡挡死
+         *   （2026-10-07 真机复现：事件里没有 sessionId，卡片 threadId 为空）。
+         *   两条往返的事件形状**必须一样**，这条规矩见 AGENT.md 硬约束 #9。
+         */
+        sessionId: String(sessionId ?? ''),
       },
       emitReply: (payload) => {
+        cardId = String(payload.confirmId ?? '')
         emit({ type: 'confirm_request', ...payload })
         /* 卡片已经推出去了，用户要是没在前台，就发条系统通知把他叫回来（P1-3） */
         confirmNotify.tellUser({
@@ -113,8 +125,22 @@ function askUser(requestId, request, emit, sessionId = '') {
         })
       },
     })
-    /* 老路：只取布尔。超时、拒绝、找不到都是 false（与以前一字不差） */
-    .then((reply) => reply.approved === true)
+    /*
+     * 老路：只取布尔。超时、拒绝、找不到都是 false（与以前一字不差）。
+     *
+     * ★ 但超时必须**额外**告诉界面把卡收起来（2026-10-07 真机复现的 bug）：
+     *   渲染层那张权限卡只在用户点「取消/允许」时才会消失，主进程这边超时
+     *   按拒绝继续了，界面却一直挂着 —— 而 `pickAboveInput` 永远让权限优先，
+     *   于是后面**所有澄清卡都被这张僵尸卡挡住**：用户「收不到提问卡」，
+     *   主进程干等到超时，界面一直「正在进行中」。澄清那侧早就有对称的
+     *   `clarify.timeout`（见下面 askClarify），审批这侧漏了。
+     */
+    .then((reply) => {
+      if (reply.timeout === true && cardId) {
+        emit({ type: 'confirm.timeout', confirmId: cardId, sessionId: String(sessionId ?? '') })
+      }
+      return reply.approved === true
+    })
 }
 
 /**

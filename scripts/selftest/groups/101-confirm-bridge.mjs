@@ -246,6 +246,8 @@ export async function run() {
   bridge.reset()
   void other
 
+  /* 卡「作废」时回推收卡事件那一组在 124-card-timeout.mjs（2026-10-07 从本组拆出） */
+
   /* 端到端（内核侧）：工具 → 往返 → 答复 → 回到模型能读到的那段文本 */
   const askedByTool = []
   const toolCall = askUser.run(
