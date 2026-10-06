@@ -28,13 +28,14 @@ import {
 import { checkHooksInstalled } from './check-rules/checks-hooks.mjs'
 import { checkHygiene, LIMITS } from './check-rules/checks-hygiene.mjs'
 import { checkDriftingNumbers } from './check-rules/checks-drift.mjs'
-import { checkVersionBump } from './check-rules/checks-version.mjs'
+import { checkChangelogChange } from './check-rules/checks-changelog.mjs'
 
 /* 门面照旧再导出一次：`import { checkLineLimits } from './check-rules.mjs'` 仍然可用
    （测试就是这么用的 —— 拆文件不该改调用方，见 docs/踩坑记录.md）
    LIMITS 也一起导出：阈值只准有一处定义，测试要能拿到同一份。 */
 export {
   checkAgentMd,
+  checkChangelogChange,
   checkDiffSize,
   checkDriftingNumbers,
   checkHooksInstalled,
@@ -43,7 +44,6 @@ export {
   checkNoNewDeps,
   checkNoSecretsInConfig,
   checkTodos,
-  checkVersionBump,
   LIMITS,
 }
 
@@ -57,9 +57,11 @@ export const CHECKS = [
   ['无 TODO 残留（警告）', checkTodos],
   ['AGENT.md 在且非空', checkAgentMd],
   ['改动文件数（警告）', checkDiffSize],
-  /* 用户要求「每次修复或更新都要升小版本」。发布检查.md 里早有通道规矩，
-     但它只在发版那天人工核对 —— 平时提交忘了升没人拦。这条把它提前到提交那一刻。 */
-  ['改了代码必须升版本号', checkVersionBump],
+  /* 用户当初的要求是「每次修复或更新都要升小版本」，落成检查后版本号成了**提交计数器**：
+     CHANGELOG 攒到 234 个版本段、一天 16 个 beta，其中 beta.4…beta.10 连 tag 都没建
+     （2026-10-07 改口径）。现在拦的是「改了代码没写 CHANGELOG」，
+     版本号只在发布时升 —— 粒度保住了，版本号回到发布事件的频率。 */
+  ['改了代码必须写 CHANGELOG', checkChangelogChange],
   ['约束机制在位（警告）', checkHooksInstalled],
   ['仓库卫生（警告）', checkHygiene],
   ['易漂数字（警告）', checkDriftingNumbers],

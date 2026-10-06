@@ -11,9 +11,12 @@ import { readFileSync } from 'node:fs'
 
    所以这里钉两件事：
 
-   ① `package.json` 与 `CHANGELOG` 的第一条标题必须一致
-      —— 这两处是发布流程真正会读的（打包脚本读 package.json，人看 CHANGELOG），
-        对不上就说明有一处忘了改。
+   ① `package.json` 与 `CHANGELOG` 的第一条标题必须**对得上**：
+      CHANGELOG 第一条要么是 `## [未发布]`（这一版还没发出去 —— 2026-10-07 起，
+      版本号只在发布时升，平时提交只往 `[未发布]` 段里加条目），
+      要么等于 `package.json` 的版本号（已经发布的那一版）。
+      这两处是发布流程真正会读的（打包脚本读 package.json，人看 CHANGELOG），
+      对不上就说明有一处忘了改。
 
    ② README 里**要么不写版本号，写了就必须跟 package.json 一致**；
       并且不写"测试有多少项"这种每版都会变的数字
@@ -29,10 +32,17 @@ export async function run() {
   const version = JSON.parse(read('package.json')).version
   check('package.json 有版本号', typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version))
 
+  /** 这一版发布了吗：首条是 `[未发布]` 就还没发（版本号只在发布时升，见 AGENT.md 硬约束 10） */
+  const UNRELEASED = '未发布'
   const changelogTop = read('CHANGELOG.md').match(/^## \[([^\]]+)\]/m)
-  check('★ CHANGELOG 第一条标题的版本与 package.json 一致', changelogTop?.[1] === version)
-  if (changelogTop && changelogTop[1] !== version) {
+  check(
+    '★ CHANGELOG 第一条标题要么是「未发布」，要么等于 package.json 的版本',
+    changelogTop?.[1] === UNRELEASED || changelogTop?.[1] === version,
+  )
+  if (changelogTop && changelogTop[1] !== UNRELEASED && changelogTop[1] !== version) {
+    const top = changelogTop[1].split(' ')[0]
     check(`（package.json=${version}，CHANGELOG=${changelogTop[1]}）`, false)
+    if (top === version) check('（只是标题多了后缀，版本号本身是对的）', true)
   }
 
   const readme = read('README.md')
