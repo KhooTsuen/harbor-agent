@@ -29,6 +29,7 @@
     "lint:kernel": "node scripts/lint-kernel.mjs",
     "check:format": "prettier --check \"src/**/*.{ts,tsx}\"",
     "check:lines": "node tools/line-limit.mjs",
+    "check:lines:code": "node tools/line-limit.mjs --code-only",
     "check:rules": "node scripts/check-rules.mjs",
     "test:rules": "node scripts/test-rules.mjs",
     "errors": "node scripts/errors.mjs",

@@ -38,6 +38,7 @@
    `src/lib/schemas.ts` 的 zod 校验。
 2. **单文件 ≤ 300 行**（`.ts` / `.tsx` / `.cjs` / `.mjs` 都算，**注释也算**）。
    **检查**：`node tools/line-limit.mjs --all`（CI 同步一步）。加新代码前先想清楚它该住在哪个文件里。
+   贴线时先看**代码行**（`npm run check:lines:code`，注释不计）—— 注释占大头先压注释，代码占大头才拆文件。
    已经踩过两个拆分坑（切片切多 / 拆一半留空占位）—— 细节见 [`docs/踩坑记录.md`](docs/踩坑记录.md)。
 3. **数据只落 `data/`**。**检查**：人工 review 每个新增落盘路径 —— 见 `electron/core/paths.cjs`，
    不许写 C 盘、不许写系统目录。
