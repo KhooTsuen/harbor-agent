@@ -265,7 +265,7 @@
 | 项 | 产物 | 自检组 |
 |---|---|---|
 | **回退到指定检查点**（AG-045） | `changeset-rollback.cjs` + `changeset:rollbackTo` | `66-rollback-to`（43 项） |
-| **上条的界面入口 + 干跑预览 + 中文失败原因**（AG-052） | `checkpointRollbackApi.ts` + `rollback/CheckpointRollbackBar.tsx` + `RollbackRecord.tsx` | `98-rollback-preview`（40 项）+ 真机 `tmp/verify-rollback-ui.cjs`（19 项） |
+| **上条的界面入口 + 干跑预览 + 中文失败原因**（AG-052） | `checkpointRollbackApi.ts` + `rollback/CheckpointRollbackBar.tsx` + `RollbackRecord.tsx` | `98-rollback-preview`（40 项）+ 真机 `tmp/verify-rollback-ui.cjs`（19 项，**该脚本已不在仓库**） |
 | **Artifact 内核落盘 + 版本化**（AG-046） | `core/artifact.cjs` + `handlers/artifact.cjs` + `artifactApi.ts` | `67-artifact` |
 | **Skill 权限声明**（AG-047） | `core/skill-permissions.cjs` + 设置页展示 | `68-skill-perms` |
 
@@ -310,7 +310,7 @@
 **根因**：裁剪只保留最近若干条消息，没有「跨轮次稳定的项目事实」这一层。
 **方向**：需要 Personal Context 那种系统（把「这个仓库是什么/关键约定/当前进度」放在裁剪之外
 且可增量更新）。这是架构级改动，不是补丁 —— **先不做**。
-**关联**：`core/context-compact.cjs` 现在只做「压缩最近对话」，没有跨轮次的稳定层。
+**关联**：`core/compact.cjs` 现在只做「压缩最近对话」，没有跨轮次的稳定层。
 
 ### ❌ 3. 自动化测试不是默认动作
 

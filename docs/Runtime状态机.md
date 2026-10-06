@@ -109,14 +109,10 @@ markCompleted() 返回（或抛错）之后：写 completed:true / ok / outcome 
 
 ## 检查点恢复：怎么验（端到端）
 
-**回归测试脚本**：`tmp/verify-checkpoint-e2e.cjs`
-
-```bash
-E:\nodejs\node.exe tmp/verify-checkpoint-e2e.cjs
-```
-
-它自己建一个**隔离副本**（`tmp/tok/verify`）+ 本地假模型（脚本化 SSE），跑一个真任务、真落盘、
-真回退 —— 不花 token、不碰你自己的 `data/`。退出码恒为 0，**结论看输出**（13 项检查 + 发现清单）。
+**回归测试脚本**：当时的 `tmp/verify-checkpoint-e2e.cjs` **已不在仓库**（`tmp/` 有卫生检查、超限会被清）。
+它当年的做法是：自己建一个**隔离副本** + 本地假模型（脚本化 SSE），跑一个真任务、真落盘、真回退
+—— 不花 token、不碰你自己的 `data/`，退出码恒为 0、**结论看输出**（13 项检查 + 发现清单）。
+现在要端到端验检查点恢复，照这个思路重写一个探针（写法见 [`验证脚本检查清单.md`](验证脚本检查清单.md)）。
 
 **先记住三条前提事实**，否则很容易把「边界」当成 bug：
 
@@ -158,10 +154,10 @@ E:\nodejs\node.exe tmp/verify-checkpoint-e2e.cjs
 
 ### 真机怎么验（改这块界面时必跑）
 
-```bash
-E:\nodejs\node.exe tmp\verify-checkpoint-e2e.cjs   # 内核：13 项
-E:\nodejs\node.exe tmp\verify-rollback-ui.cjs      # 界面：19 项（隔离副本 + 本地假模型，真点按钮）
-```
+> 当时用两个真机脚本跑这段：`tmp/verify-checkpoint-e2e.cjs`（内核 13 项）与
+> `tmp/verify-rollback-ui.cjs`（界面 19 项，隔离副本 + 本地假模型、真点按钮）——
+> **两个都已不在仓库**。现在改这块界面：跑 `npm test` 里对应的自检组（`66-rollback-to` /
+> `98-rollback-preview`），再用 `npm run shot:electron -- --js="…"` 真机点一遍。
 
 ## 开工前澄清的「离场」判定（AG-053）
 
@@ -176,7 +172,7 @@ E:\nodejs\node.exe tmp\verify-rollback-ui.cjs      # 界面：19 项（隔离副
 
 | 问题 | 答案 |
 |---|---|
-| **什么时候用** | 自动化验收需要「人不在」这个前提时（`tmp/verify-clarify-ui.cjs` 的 ④ / ⑨ 段） |
+| **什么时候用** | 自动化验收需要「人不在」这个前提时（当时那批真机探针的 ④ / ⑨ 段就用它） |
 | **怎么用** | 在**启动被测应用的那个进程**里设 `HARBOR_IDLE_SECONDS=9999`（正数、0 都算「设了」；不设 = 不生效） |
 | **为什么必须有它** | 验收脚本跑在用户**正坐着的**那台机器上，一碰键鼠系统空闲计时就清零 → `away()` 恒为 false → 「累计离场超上限」永远到不了。2026-10-02 第一次跑第 ⑨ 段就卡在这儿：诊断行 `[diag] sweep cards=1 away=false` 看着像应用挂了，其实是**设计如此 + 测试前提错了** |
 | **为什么生产绝不能设** | 它**绕过**了唯一的离场证据（系统空闲值）。生产设了 = 在他明明坐在电脑前的时候替他按默认选项做决定。所以这条路只在**显式设了环境变量**时才走，生产一行都不走 |
@@ -211,17 +207,14 @@ E:\nodejs\node.exe tmp\verify-rollback-ui.cjs      # 界面：19 项（隔离副
 
 ### 真机怎么验
 
-```bash
-E:\nodejs\node.exe tmp\verify-clarify-ui.cjs             # 全量 98 项（①–⑪ + ③′ 唤醒）
-E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=9    # 只跑「累计离场超上限」那一段（一分钟）
-E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=10   # 只跑「先不做了」（--only=11 → 换个说法）
-E:\nodejs\node.exe tmp\verify-clarify-ui.cjs --only=8    # 只跑 powerMonitor 探针
-```
+**当时的真机脚本 `tmp/verify-clarify-ui.cjs`（98 项）已不在仓库**。它跑之前会重拷一份隔离副本
+（源是 `dist-portable/Harbor`，所以**改完内核要先 `npm run package`**），复用已有副本时加 `--keep`。
+现在校这条链路用：
 
-`--only=9` 会重拷一份隔离副本（`tmp/tok/clarify-verify`，源是 `dist-portable/Harbor`，
-所以**改完内核要先 `npm run package`**）；想复用已有副本加 `--keep`。
-批⑤ 起自带包断言：`tmp/rebuild-portable-ag053.cjs` 会核对包里真有那两个出口
-（内核 `exitsIn(reply.answer)` + 界面文案），**不核对就很容易拿上一版代码白跑十分钟**。
+- 内核自检 `99`–`103`（`npm test`）—— 校验 / 静音 / 超时 / 通道 / 唤醒这五组；
+- `npm run acceptance`（T9–T11）—— 真实模型下 ≥2/3 会主动问（判据在 `tools/acceptance-cases.mjs`）；
+- 要真机点卡片，用 `npm run shot:electron -- --js="…"` 自己驱动（写探针见
+  [`验证脚本检查清单.md`](验证脚本检查清单.md)）。
 
 ## 谁改状态（排查入口）
 
