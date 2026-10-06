@@ -36,7 +36,8 @@
     "stats": "node scripts/run-stats.mjs",
     "preflight": "node scripts/preflight.mjs",
     "verify": "npm run typecheck && npm run lint && npm run lint:kernel && npm run check:format && npm run check:lines && npm run check:rules && npm run test:rules && npm run test:unit && npm test && npm run build",
-    "acceptance": "node tools/acceptance.mjs"
+    "acceptance": "node tools/acceptance.mjs",
+    "cold-start": "node scripts/cold-start.mjs"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.20",
