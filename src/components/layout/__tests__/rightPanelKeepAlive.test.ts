@@ -77,3 +77,30 @@ describe('右栏：折叠也不卸载', () => {
     expect(app).not.toContain('<RightPanel />')
   })
 })
+
+/* ══════════════════════════════════════════════════════════════
+   同一类问题的第三处：切走标签时，网页要真的**看不见**
+
+   用户报的 bug：点开浏览器看网页，切到别的右侧标签，网页还卡在右栏上。
+
+   右栏那层切走时加的是 `invisible`（visibility:hidden），但 webview 自己
+   内联写了 `visibility: visible` —— **子元素显式 visible 会盖过祖先的 hidden**
+   （这跟 display:none 不一样，visibility 是可继承但可被显式值覆盖的），
+   于是网页照旧铺在内容区最上面（2026-10-07 真机复现：computed 仍是 visible）。
+
+   修法是活跃态写 `inherit`，跟着容器一起藏。这个测试守的就是**别写回 visible**。
+   ══════════════════════════════════════════════════════════════ */
+
+const BROWSER_FILE = join(process.cwd(), 'src/components/layout/BrowserTab.tsx')
+
+describe('右栏：切走时网页要真的藏住', () => {
+  const tab = readFileSync(BROWSER_FILE, 'utf8').replace(/\s+/g, ' ')
+
+  it('活跃 webview 的 visibility 不能写死 visible（会盖过容器的 invisible）', () => {
+    expect(tab).not.toMatch(/visibility:\s*tab\.id === active\?\.id \? 'visible'/)
+  })
+
+  it('活跃 webview 用 inherit，跟着容器一起隐藏', () => {
+    expect(tab).toMatch(/visibility:\s*tab\.id === active\?\.id \? 'inherit'/)
+  })
+})

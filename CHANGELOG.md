@@ -1,5 +1,36 @@
 # 更新日志
 
+## [1.30.0-beta.9] — 2026-10-07 · 切走右侧标签后网页不再卡在右栏
+
+### 这一批做了什么
+
+- **修一个真机复现的 bug：点开浏览器看网页，切到别的右侧标签（审查 / 文件 / 任务…），
+  网页还整张卡在右栏最上面。**
+  右栏那层切走时会加 `invisible`（`visibility:hidden`），但 `BrowserTab` 里 webview
+  自己内联写了 `visibility: visible` —— **子元素显式 `visible` 会盖过祖先的 `hidden`**
+  （这和 `display:none` 不一样：`visibility` 可继承，但可被显式值覆盖），
+  于是网页照旧铺在内容区最上层。修法：活跃态写 `inherit`，跟着容器一起藏，
+  切回来时也自动恢复（`src/components/layout/BrowserTab.tsx`，一行）。
+- **为什么原来的钉子测试没拦住**：`rightPanelKeepAlive.test.ts` 守的是
+  「BrowserTab 别条件渲染 / 别被卸载」（防止切回来网页重新加载），
+  但没守「**切走时它得真的看不见**」—— 而 `visible` 恰好是最顺手的写法。
+  补了两条钉子（不许写回 `visible`、活跃态必须是 `inherit`）。
+
+### 验证
+
+- **真机复现（改前）**：源码版点开浏览器加载 example.com → 切到「审查」标签，
+  webview 的 computed `visibility` 仍是 `visible`（而它上面三层祖先全是 `hidden`）。
+  截图 `shots/browse-bug/before-switch.png`。
+- **对照实验**：把 webview 内联 `visibility` 强制改成 `hidden` 再截图，画面变了
+  （两张图 MD5 不同）—— 坐实就是它，不是别的原因。
+- **真机验证（改后）**：同一个网页，在「审查 → 浏览器 → 文件 → 审查」之间来回切 ——
+  webview 的 computed `visibility` 依次为 `hidden / visible / hidden / hidden`，
+  而网页地址**一直是** `https://example.com/`（webview 没被销毁、切回来不重新加载）。
+  截图 `shots/browse-bug/after-fix-at-diff.png` / `after-fix-at-browser.png`。
+- `npx vitest run src/components/layout/__tests__/rightPanelKeepAlive.test.ts`：
+  8 条通过（本批新增 2 条）。
+- `node tools/line-limit.mjs --all`：986 个文件全部 ≤300 行。
+- `npm run verify`：全链 0 退出（typecheck / lint / 内核 no-undef / 格式 / 行数 / rules / 单测 / 自检 / 构建）。
 ## [1.30.0-beta.8] — 2026-10-07 · 子代理卡片修好（留得住 + 重开会话还在）
 
 ### 这一批做了什么

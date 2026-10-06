@@ -268,10 +268,15 @@ export function BrowserTab() {
                * 再显示时它不一定重排（页面就停在那个小尺寸上，下面一大块是空的）。
                * 现在是 `visibility:hidden` + 绝对定位：元素**始终**是一个完整尺寸，
                * 只是看不见、也不吃鼠标。
+               *
+               * ★ 活跃态写 `inherit` 而不是 `visible`：外层（RightPanel 那层）切到别的
+               * 标签时会加 `invisible`（visibility:hidden），而子元素**显式写 visible 会盖过
+               * 祖先的 hidden** —— 于是网页照旧卡在右栏上（2026-10-07 真机复现）。
+               * inherit 让它跟着容器一起藏，切回来时也自动恢复。
                */
               position: 'absolute',
               inset: 0,
-              visibility: tab.id === active?.id ? 'visible' : 'hidden',
+              visibility: tab.id === active?.id ? 'inherit' : 'hidden',
               pointerEvents: tab.id === active?.id ? 'auto' : 'none',
               zIndex: tab.id === active?.id ? 1 : 0,
             }}
