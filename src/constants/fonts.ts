@@ -37,6 +37,18 @@ export const FONT_OPTIONS: readonly FontOption[] = [
     hint: 'Windows 自带，中文最稳',
   },
   {
+    id: 'pingfang',
+    label: '苹方',
+    /*
+     * 名字写两遍是实测出来的：GDI 只认家族名「苹方-简」，全套名
+     * 「苹方-简 常规体」会**静默**回退到新宋体；而 Chromium（DirectWrite）
+     * 两个名字都能命中 PingFangSC——都写上，哪条路都能落到真字面。
+     * 放到雅黑**前面**：macOS 上本来就有，Windows 上没装也不会更差（下一个就是雅黑）。
+     */
+    stack: `"PingFang SC", "苹方-简", ${FALLBACK}`,
+    hint: 'macOS 自带；Windows 要自己装（装了才生效，否则回退雅黑）',
+  },
+  {
     id: 'noto',
     label: '思源黑体 / Noto Sans SC',
     stack: `"Noto Sans SC", "Source Han Sans SC", "Source Han Sans CN", ${FALLBACK}`,

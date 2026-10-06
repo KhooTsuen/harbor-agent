@@ -22,7 +22,7 @@ export function AppearanceTab() {
 
       <Row
         label="界面字体"
-        hint="中文界面选「微软雅黑」最稳；思源黑体、HarmonyOS Sans 要自己装，没装会自动回退"
+        hint="中文界面选「微软雅黑」最稳；苹方、思源黑体、HarmonyOS Sans 要自己装，没装会自动回退"
       >
         <Select
           value={settings.fontFamily}

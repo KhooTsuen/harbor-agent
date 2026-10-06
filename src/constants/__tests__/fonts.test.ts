@@ -25,6 +25,14 @@ describe('fontStackFor', () => {
     expect(fontStackFor('yahei').startsWith('"Microsoft YaHei')).toBe(true)
   })
 
+  it('苹方：两个名字都在栈里，雅黑兜底', () => {
+    const stack = fontStackFor('pingfang')
+    expect(stack.startsWith('"PingFang SC"')).toBe(true)
+    /* GDI 只认家族名，全套名会静默回退 —— 两个都写上 */
+    expect(stack).toContain('苹方-简')
+    expect(stack).toContain('Microsoft YaHei')
+  })
+
   it('自定义：填了名字就用它，并补上兜底', () => {
     const stack = fontStackFor('custom', 'LXGW WenKai')
     expect(stack).toContain('LXGW WenKai')
