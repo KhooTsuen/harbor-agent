@@ -102,7 +102,10 @@ export async function run() {
    * 提示词版本：改提示词就 +1，升了把这里一起改。
    * 钉死是故意的 —— 一处文案改了版本没动，台账上就分不出「改前改后」。
    */
-  check('提示词版本已升到 /3（浏览器那段：一次一页 → 每次 browse 开一个标签）', promptStackCore.VERSION === 'prompt-stack/3')
+  check(
+    '提示词版本已升到 /4（BROWSER_GUIDE：补上 browse 的 sameTab 这条路）',
+    promptStackCore.VERSION === 'prompt-stack/4',
+  )
 
   const { buildPromptContext } = require(join(ROOT, 'electron/core/loop-prompt.cjs'))
   const built = buildPromptContext({

@@ -92,4 +92,34 @@ export async function run() {
     'utf8',
   )
   check('★ 桥把方向一路带下去', /direction: req\.direction/.test(bridgeSrc))
+
+  /* ══════════════════════════════════════════════════════════════
+     `sameTab`：Agent 自己决定「开新标签」还是「在当前标签里打开」（2026-10-07）
+
+     在这之前工具只有 browse（必然开新标签）和 browse_nav（只能挪历史）——
+     提示词里那句「中转页在当前标签里走完」是**空头支票**，模型只能堆标签。
+     这一组钉的是**字段名的形状对齐**（AGENT.md #9）：工具写出去的键、
+     事件类型里的键、桥透传的键、store 读的键，四处必须是同一个名字；
+     行为本身（不重建 webview、不碰用户标签）由单测
+     `src/stores/__tests__/browserTabPolicy.test.ts` 验。
+     ══════════════════════════════════════════════════════════════ */
+  group('浏览器 / sameTab 的形状对齐')
+
+  const browseSrc2 = readFileSync(join(ROOT, 'electron/core/tools/browse.cjs'), 'utf8')
+  check('★ 工具声明了 sameTab 参数（boolean）', /sameTab:\s*\{[\s\S]{0,200}?'boolean'/.test(browseSrc2))
+  check('★ 工具把 sameTab 发给了 handler', /sameTab:\s*args\?\.sameTab === true/.test(browseSrc2))
+
+  const typesSrc = readFileSync(join(ROOT, 'src/types/browser.ts'), 'utf8')
+  check('★ 事件类型里有 sameTab', /sameTab\?:\s*boolean/.test(typesSrc))
+  check('★ 桥透传的是 req.sameTab（不另起名字）', /sameTab:\s*req\.sameTab === true/.test(bridgeSrc))
+
+  /* storeSrc / bridgeSrc 在上面那两组已经读过了（同一个文件，别重复声明） */
+  check('★ store 读的是 request.sameTab（还是同一个名字）', /if \(request\.sameTab\)/.test(storeSrc))
+
+  const tabsSrc = readFileSync(join(ROOT, 'src/stores/browserTabs.ts'), 'utf8')
+  check('★ owner 真的被读了（agentTabOf —— 以前是个死字段）', /owner === 'agent'/.test(tabsSrc))
+  check(
+    '★ Agent 的操作按 agentTabOf 挑标签（不落在用户自己开的标签上）',
+    /agentTabOf\(state\.tabs, sid, state\.activeId\)/.test(storeSrc),
+  )
 }

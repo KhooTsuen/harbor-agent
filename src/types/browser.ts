@@ -15,6 +15,8 @@ export interface BrowserRequestEvent {
   index?: number
   /** nav: 往哪个方向走（back 上一页 / forward 下一页） */
   direction?: 'back' | 'forward'
+  /** navigate: true = 在当前那个属于 Agent 的标签里打开、不开新标签（工具侧 `browse(url, sameTab: true)`） */
+  sameTab?: boolean
   text?: string
   pressEnter?: boolean
   authorized?: boolean

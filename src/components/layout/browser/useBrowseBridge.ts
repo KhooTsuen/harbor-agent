@@ -108,9 +108,14 @@ export function useBrowseBridge(): void {
        * 把请求放进 store —— BrowserTab 挂载后会消费它。
        * 同时把右侧切到「浏览器」：Agent 不该在用户看不见的地方偷偷开网页。
        */
-      useBrowserStore
-        .getState()
-        .requestBrowse({ id: req.id, action: 'navigate', url: String(req.url), sessionId })
+      useBrowserStore.getState().requestBrowse({
+        id: req.id,
+        action: 'navigate',
+        url: String(req.url),
+        /* 透传「在当前标签里打开」—— AI 靠它压住标签的堆叠（见 tools/browse.cjs） */
+        sameTab: req.sameTab === true,
+        sessionId,
+      })
       useUIStore.getState().setActiveRightTab('browser')
     })
 

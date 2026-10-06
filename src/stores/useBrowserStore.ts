@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { sameUrl } from '@/lib/url'
+import { agentTabOf, tabsOfSession, visibleTabOf, type BrowserTabItem } from './browserTabs'
 
 /* ══════════════════════════════════════════════════════════════
    浏览器标签的状态
@@ -15,29 +16,13 @@ import { sameUrl } from '@/lib/url'
    ⚠️ 这个坑今天踩过一次：`useBulkSelect` 内部用 useState，
    被两个组件各调一次就各拿一份状态，功能静默失效。
    **一个状态只要会被两处读写，就不能放在组件里。**
+
+   `BrowserTabItem` 与「本会话有哪些 / 显示谁 / 驱动谁」三个口径搬去了
+   `browserTabs.ts`（这个文件之前过 300 行了）。这里转出去，老引用照旧。
    ══════════════════════════════════════════════════════════════ */
 
-export interface BrowserTabItem {
-  id: string
-  url: string
-  /**
-   * 这个标签属于**哪个会话**（标签栏按会话隔离，真机反馈 6）。
-   * 会话号就是 `Thread.id`；`''` = 还不知道属于谁（只会在测试里出现）。
-   */
-  sessionId: string
-  /**
-   * 谁开的这个标签。
-   * `user`  = 在地址栏里自己开的：Agent 不许把它当成"自己那一个"拿去改地址；
-   * `agent` = Agent 导航开出来的：同一个会话里永远只复用这一个（真机反馈 1b）。
-   */
-  owner: 'user' | 'agent'
-  /**
-   * 这个标签的 webview 重建计数（手动「重新加载」用）。
-   * 放在**每个标签**上，不是全局一个 —— 以前全局一个，一重载就把当前 webview 换了；
-   * 而标签常驻之后，全局值还会让切标签也跟着重建（见 BrowserTab 的注释）。
-   */
-  reloadKey: number
-}
+export { tabsOfSession, visibleTabOf, agentTabOf }
+export type { BrowserTabItem }
 
 /** 主进程发来、还没被执行的一次浏览请求 */
 export interface PendingBrowse {
@@ -60,6 +45,11 @@ export interface PendingBrowse {
   sessionId?: string
   /** nav 时用：往哪个方向走（back 上一页 / forward 下一页） */
   direction?: 'back' | 'forward'
+  /**
+   * navigate 时用：在当前那个**属于 Agent 的**标签里打开，不开新标签
+   * （工具侧 `browse(url, sameTab: true)`）。见 requestBrowse 里的 sameTab 分支。
+   */
+  sameTab?: boolean
 }
 
 interface BrowserState {
@@ -112,36 +102,6 @@ function queuedOf(
   return state.pending ? { queue: [...state.queue, request] } : { pending: request }
 }
 
-/**
- * 本会话的标签（真机反馈 6：标签栏按会话隔离）。
- *
- * 口径：`sessionId` 等于本会话，或者「还没认领归属的用户标签」——
- * 后者是兜底（地址栏建标签时还没来得及盖章），**别的会话的标签永远不会混进来**。
- * `visibleTabOf` 与 BrowserTab 的标签栏都调它，别各写一遍。
- */
-export function tabsOfSession(
-  tabs: readonly BrowserTabItem[],
-  sessionId: string,
-): BrowserTabItem[] {
-  return tabs.filter((t) => t.sessionId === sessionId || (t.sessionId === '' && t.owner === 'user'))
-}
-
-/**
- * 当前该**显示**、也该被 Agent 驱动的那一个标签。
- *
- * 只看本会话的标签 —— 别的会话的标签留在 DOM 里继续活着，但不显示、也不被驱动。
- * 放在这里当**唯一口径**：BrowserTab（显示谁）、useBrowseBridge（判断「有没有页面」）、
- * useBrowseDriver（驱动哪个元素）三处都调它，不要各写一遍。
- */
-export function visibleTabOf(
-  tabs: readonly BrowserTabItem[],
-  sessionId: string,
-  activeId: string,
-): BrowserTabItem | undefined {
-  const mine = tabsOfSession(tabs, sessionId)
-  return mine.find((t) => t.id === activeId) ?? mine[mine.length - 1]
-}
-
 export const useBrowserStore = create<BrowserState>()((set) => ({
   tabs: [],
   activeId: '',
@@ -180,12 +140,17 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
 
   requestBrowse: (request) =>
     set((state) => {
+      const sid = request.sessionId ?? ''
+
       /*
        * snapshot / click / type / nav 都不开新标签：只操作当前已经打开的页面。
+       * nav（后退/前进）换的是**这个标签自己的历史** —— 为它开新标签等于把
+       * 「退回去」变成「又开一遍刚才那页」，用户看到的也不是它退回去了。
        *
-       * nav（后退/前进）虽然会换页面，但换的是**这个标签自己的历史** ——
-       * 为它再开一个标签，等于把「退回去」变成「又开一遍刚才那页」：
-       * 多一个标签、丢掉筛选和滚动位置，用户看到的也不是它退回去了。
+       * ★ 2026-10-07：这几类动作要**落在 Agent 自己那个标签上**，不碰用户自己开的
+       *   （用户点回自己开的页面看时，不拨回来的话 Agent 的点击/输入就打在他正看的
+       *   那一页上，把人家的页面点走）。本会话还没有 Agent 标签时保持原样 ——
+       *   「用户让我操作我正在看的这个页面」是正常用法，不该拒。
        */
       if (
         request.action === 'snapshot' ||
@@ -193,19 +158,45 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
         request.action === 'type' ||
         request.action === 'nav'
       ) {
-        return queuedOf(state, request)
+        const mine = agentTabOf(state.tabs, sid, state.activeId)
+        return {
+          ...queuedOf(state, request),
+          ...(mine && mine.id !== state.activeId ? { activeId: mine.id } : {}),
+        }
       }
+
+      /*
+       * 导航 + sameTab：在**当前那个 Agent 标签**里打开，不开新的 ——
+       * 这就是「中转页别占标签位」的落地（工具侧 `browse(url, sameTab: true)`）。
+       * 两个讲究：
+       *   · 只认 `owner === 'agent'` 的标签 —— 用户自己开的那个不许拿来改地址。
+       *   · **不改 reloadKey**（不重建 webview）：靠重渲染把 src 换成新地址，
+       *     这样这个标签的**历史留着**，之后 `browse_nav back` 才退得回来。
+       * 本会话没有 Agent 标签时落到下面开新标签（不拿用户的顶替）。
+       */
+      if (request.sameTab) {
+        const mine = agentTabOf(state.tabs, sid, state.activeId)
+        if (mine) {
+          const same = sameUrl(mine.url, request.url ?? '')
+          return {
+            tabs: state.tabs.map((t) =>
+              t.id === mine.id ? { ...t, url: same ? t.url : (request.url ?? t.url) } : t,
+            ),
+            activeId: mine.id,
+            ...queuedOf(state, request),
+          }
+        }
+      }
+
       /*
        * 导航：**一个地址一个标签**（真机反馈 3 把上一版改回来了）。
        *
        * 中间试过「每个会话只留一个 Agent 标签」—— 那是错的：Agent 连读三个页面，
        * 用户只看得见最后一个，「它到底开了哪些网页」完全看不出来。
        * 现在一个地址一个标签，只是**按会话隔离**（别的会话的页面不摆在这条对话的标签栏里）。
-       *
        * 「同一个地址」用 sameUrl 判，不用 `===`：Agent 给的地址写法不统一
        * （`example.com` 与 `example.com/`），严格比较会白开一个标签。
        */
-      const sid = request.sessionId ?? ''
       const existing = state.tabs.find(
         (t) => sameUrl(t.url, request.url ?? '') && (t.sessionId === '' || t.sessionId === sid),
       )
