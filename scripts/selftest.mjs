@@ -33,7 +33,7 @@
  */
 
 import { report } from './selftest/harness.mjs'
-import { setupSandbox, rmSync, SANDBOX } from './selftest/env.mjs'
+import { prepareSelftest, cleanupSelftest } from './selftest/env.mjs'
 
 import { run as basics } from './selftest/groups/01-basics.mjs'
 import { run as skillsMemory } from './selftest/groups/02-skills-memory.mjs'
@@ -157,6 +157,7 @@ import { run as downloadGroup } from './selftest/groups/119-download.mjs'
 import { run as editRulesGroup } from './selftest/groups/120-edit-rules.mjs'
 import { run as browseNavGroup } from './selftest/groups/121-browse-nav.mjs'
 import { run as modelProbeGroup } from './selftest/groups/122-model-probe.mjs'
+import { run as subagentGroup } from './selftest/groups/123-subagent.mjs'
 
 const GROUPS = [
   basics,
@@ -277,19 +278,16 @@ const GROUPS = [
   projectFactsGroup,
   memoryReflectGroup,
   projectCompleteGroup,
-  urlPolicyGroup,
-  safeWriteGroup,
-  downloadGroup,
-  editRulesGroup,
+  urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup,
 ]
 
 async function main() {
-  setupSandbox()
+  /* 数据目录隔离（自检绝不碰用户真凭证）+ 建沙箱 —— 细节见 env.mjs 的 prepareSelftest */
+  prepareSelftest()
 
   for (const run of GROUPS) await run()
 
-  /* ── 清理 ── */
-  rmSync(SANDBOX, { recursive: true, force: true })
+  cleanupSelftest()
 
   process.exit(report())
 }

@@ -49,6 +49,7 @@ function update(id, patch) {
     'result',
     'projectId',
     'workdir',
+    'parentTaskId',
     'plan',
     'planVersions',
     'changeSetId',

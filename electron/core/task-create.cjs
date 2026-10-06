@@ -29,6 +29,8 @@ function create({
   regeneratedFrom = '',
   /** 重新生成的用量基线 {steps, toolCalls, tokens}：预算从这里接着算，不从 0 重来（见 budget.carryOf） */
   budgetCarry = null,
+  /** 子代理：这条任务是哪个父任务派出来的（'' = 不是子代理） */
+  parentTaskId = '',
 } = {}) {
   const task = {
     id: io.newId(),
@@ -40,6 +42,8 @@ function create({
     sessionId,
     projectId,
     workdir,
+    /** 子代理：派出它的父任务 id（'' = 不是子代理）；深度判定靠它（子代理不能再派子代理） */
+    parentTaskId: String(parentTaskId ?? ''),
     /** 模型给出的计划（从回复里解析）；planVersions 是 AG-004 的版本历史（含当前版） */
     plan: [],
     planVersions: [],

@@ -5,6 +5,7 @@ import { AGENT_ACTIONS, runningOf, verbOf, toolLabel } from '@/lib/agentActivity
 import { colorOf } from '@/lib/statusLanguage'
 import { useScrollGuard } from '../scrollGuard'
 import { formatMs, ToolRunRow } from '../ToolRuns'
+import { SubagentCard } from '../SubagentCard'
 
 /* ══════════════════════════════════════════════════════════════
    工具调用**一行说完**（VS Code 那种）
@@ -109,6 +110,15 @@ export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
           <span className="shrink-0 font-mono text-fg-tertiary">· {formatMs(totalMs)}</span>
         ) : null}
       </button>
+
+      {/*
+        子代理卡（v1）：**始终显示、不折叠** —— 子代理读到的原文不进父上下文，
+        用户在对话里能看到的就只剩这张卡（理由见 SubagentCard 的文件头）。
+        `spawn_subagent` 那条记录上没挂 trace 的（老会话 / 别处调）就不渲染。
+      */}
+      {runs.map((run) =>
+        run.subagent ? <SubagentCard key={`sub-${run.id}`} trace={run.subagent} /> : null,
+      )}
 
       {open ? (
         <div

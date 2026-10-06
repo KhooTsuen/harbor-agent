@@ -24,6 +24,7 @@ const scheduler = require('./tool-scheduler.cjs')
 const shared = require('./tools/_shared.cjs')
 const { buildFailureNote } = require('./loop-prompt.cjs')
 const { isAborted } = require('./abort.cjs')
+const { buildRunCtx } = require('./tool-run-ctx.cjs')
 
 /** 工具返回算不算成功 —— 全项目只有这一处判定 */
 function isToolOk(output) {
@@ -124,30 +125,11 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     const startedAt = Date.now()
 
     /*
-     * 工具自己能报进度（真机反馈 9a）。
-     *
-     * 把「带 toolCallId 的 progress」注入本次调用的 ctx —— 工具只管
-     * `ctx.progress?.({ percent, note })`，不用自己拼事件名、也不用知道自己的 call id
-     * （那是 runner 的事）。事件名 `agent.tool.progress` 早就登记在 `events.cjs` 里，
-     * 只是一直没人发过，界面上那条进度也一直是死的。
+     * 这次调用专用的 ctx：`progress`（工具自报进度）+ `subagentEmit`（子代理把内部
+     * 每一步转出来）。两个注入都要贴上 `call.id` —— 工具自己不知道它，理由与形状
+     * 都在 `tool-run-ctx.cjs`（从这儿搬出去的，因为这文件贴着 300 行红线）。
      */
-    const runCtx = {
-      ...ctx,
-      progress: (payload = {}) => {
-        emit({
-          type: 'agent.tool.progress',
-          toolCallId: call.id,
-          name: call.name,
-          /* 报不出百分比就发 null —— 「还在动」和「0%」是两件事，别混 */
-          percent:
-            typeof payload.percent === 'number' && Number.isFinite(payload.percent)
-              ? Math.max(0, Math.min(100, payload.percent))
-              : null,
-          note: payload.note ? String(payload.note) : '',
-          done: payload.done === true,
-        })
-      },
-    }
+    const runCtx = buildRunCtx(ctx, { emit, toolCallId: call.id, toolName: call.name })
 
     /*
      * AG-016：失败后自动恢复（只读工具才自动重试 —— 理由见 errors.canAutoRecover）。

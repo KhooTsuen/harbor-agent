@@ -12,15 +12,14 @@
  *   ⑤ 登记项**不能被覆盖**：`ensureFor` 每次新建会话都会调，顺手把 name 重置成目录名
  *      就等于用户改名白改。
  *
- * ⚠️ 测试绝不碰用户真实数据：所有写操作都指向 `data/selftest-workspace` 下的沙箱文件，
+ * ⚠️ 测试绝不碰用户真实数据：所有写操作都指向隔离目录下的 selftest-workspace 沙箱文件，
  *    并在 finally 里恢复默认路径 + 删掉沙箱文件。
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync } from 'node:fs'
-import { join, require, ROOT } from '../env.mjs'
+import { join, require, ROOT, SANDBOX } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
-const SANDBOX = join(ROOT, 'data', 'selftest-workspace')
 const SANDBOX_FILE = join(SANDBOX, 'projects-selftest.json')
 const REAL_FILE = join(ROOT, 'data', 'projects.json')
 

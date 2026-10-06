@@ -13,12 +13,12 @@
        的文件数与总字节必须与开始时一模一样
 
    ⚠️ 这一组不改用户的 config.json / credentials.json：config.get 与 credentials.get/set
-      都临时换成假的，finally 里还原。沙箱在 data/selftest-workspace/session-crypto。
+      都临时换成假的，finally 里还原。沙箱在隔离数据目录下的 selftest-workspace/session-crypto。
    ✅ 已挂在 `scripts/selftest.mjs`（`sessionCrypto`）；原来那句「还没注册」是过期注释。
 */
 
 import { check, group } from '../harness.mjs'
-import { join, mkdirSync, readFileSync, require, rmSync, ROOT, writeFileSync } from '../env.mjs'
+import { join, mkdirSync, readFileSync, require, rmSync, ROOT, writeFileSync, SANDBOX as SANDBOX_ROOT } from '../env.mjs'
 
 const fs = require('node:fs')
 const crypto = require('node:crypto')
@@ -29,7 +29,7 @@ const configNormalize = require(join(ROOT, 'electron/core/config-normalize.cjs')
 const credentialCore = require(join(ROOT, 'electron/core/credentials.cjs'))
 const secCfg = require(join(ROOT, 'electron/core/config-security.cjs'))
 
-const SANDBOX = join(ROOT, 'data', 'selftest-workspace', 'session-crypto')
+const SANDBOX = join(SANDBOX_ROOT, 'session-crypto')
 const REAL = join(ROOT, 'data', 'sessions')
 
 /** 真实 data/sessions 的（文件数, 总字节）—— 用来钉「绝不动真数据」 */

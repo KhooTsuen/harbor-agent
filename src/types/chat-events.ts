@@ -9,6 +9,7 @@
    所以老路径 `@/types/models` 的 import 全都还能用（别改调用方）。
    ══════════════════════════════════════════════════════════════ */
 
+import type { SubagentStep } from './conversation'
 import type { DiffFile } from './index'
 import type { UsageBucket } from './models-extra'
 
@@ -59,6 +60,30 @@ export type ChatEvent =
       note: string
       /** 这一刻是不是收尾 */
       done: boolean
+    }
+  /*
+   * 子代理 v1：子代理**内部**的每一步实时转给界面（子代理 v0 时这些事件只攒在
+   * 内核里、界面看不见）。
+   *
+   * ★ 走**现有**的 `chat:event` 推送 —— 不新增 IPC 通道。
+   * ★ 这里的 `toolCallId` 是**父侧那次 `spawn_subagent` 调用**的 id（不是子代理的），
+   *   卡片按它归位；子代理自己那次工具调用的 id 在 `step.id` 里（用来配对两态）。
+   */
+  | {
+      requestId: string
+      type: 'subagent.step'
+      /** 父侧 `spawn_subagent` 那次调用的 id（归位用） */
+      toolCallId: string
+      /** 子任务台账 id */
+      subagentTaskId: string
+      kind: 'start' | 'step' | 'done'
+      /** kind='start'：派它去干什么（父给的原话） */
+      goal?: string
+      /** kind='done'：收尾状态与用了多少轮 */
+      status?: 'completed' | 'failed'
+      turns?: number
+      /** kind='step'：这一步是什么 */
+      step?: SubagentStep
     }
   | {
       requestId: string

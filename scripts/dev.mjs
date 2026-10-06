@@ -8,10 +8,15 @@
  * 为什么不装 concurrently / wait-on：
  *   只需要管好「等端口通 → 起 electron → 任一退出就都退出」这三件事，
  *   为它多两个依赖不值。
+ *
+ * 第四件事（2026-10-07 加的）：**监听 electron/，变了就重启主进程**。
+ *   原因很具体：vite 只热更新**渲染层**，改内核（electron/ 下的 .cjs）不重启
+ *   就不生效 —— 「改了内核却看到旧行为」已经不是踩一次了。与其每次手动重开，
+ *   不如让 dev 自己重起。想手动控制时设 DEV_NO_WATCH=1。
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, watch } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
@@ -42,7 +47,11 @@ if (!existsSync(ELECTRON_BIN)) {
 
 const children = []
 
+/* 正在主动退出 —— 重启逻辑靠它区分「用户在退窗口」和「我们为了重启而杀」 */
+let shuttingDown = false
+
 function shutdown(code = 0) {
+  shuttingDown = true
   for (const child of children) {
     if (!child.killed) child.kill()
   }
@@ -103,17 +112,68 @@ console.log('')
 const electronArgs = ['.', `--remote-debugging-port=${DEBUG_PORT}`]
 if (INSPECT_PORT) electronArgs.push(`--inspect=${INSPECT_PORT}`)
 
-const electron = spawn(ELECTRON_BIN, electronArgs, {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: { ...process.env, VITE_DEV_SERVER_URL: URL },
-})
-children.push(electron)
+/* 这一次是我的「重启」杀的它 —— 标志钉在**这个进程对象**上，不用共享变量。
+   踩过的坑（2026-10-07 真机实测）：起先用一个共享的 flag，结果
+   taskkill 的 exit 先把 flag 清掉、被杀 Electron 的 exit 后到，
+   于是走进「用户关窗口」分支 → 整个 dev 退出、新实例根本没起来。
+   钉在进程对象上就没这个先后问题：**杀之前**它已经是 true 了。 */
+let current = null
+let pendingRestart = null
 
-electron.on('exit', (code) => {
-  console.log(`[electron] 退出，代码 ${code}`)
-  shutdown(code ?? 0)
-})
+function startElectron() {
+  const proc = spawn(ELECTRON_BIN, electronArgs, {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, VITE_DEV_SERVER_URL: URL },
+  })
+  children.push(proc)
+  current = proc
+  proc.on('exit', (code) => {
+    if (proc.restarting) return /* 我们主动杀的，准备重起 */
+    console.log(`[electron] 退出，代码 ${code}`)
+    shutdown(code ?? 0)
+  })
+  return proc
+}
+
+startElectron()
+
+/* ── 4. 改 electron/ 就重启主进程 ─────────────────────────── */
+
+/* 用 taskkill /T /F 连子进程一起收：Windows 上只 kill 主进程的话，
+   渲染 / GPU 子进程可能赖着不放**单实例锁**，新实例一起来就被顶回去。 */
+function restartElectron(reason) {
+  const proc = current
+  if (!proc || proc.exitCode !== null || proc.killed) return
+  proc.restarting = true
+  console.log(`\n[dev] ${reason} → 重启主进程（渲染层不动，vite 继续热更新）`)
+  spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore' }).on('exit', () => {
+    /* 等锁释放了再起新的 —— 起早了会被单实例锁顶掉 */
+    setTimeout(() => {
+      if (!shuttingDown) startElectron()
+    }, 500)
+  })
+}
+
+if (process.env.DEV_NO_WATCH !== '1') {
+  try {
+    /* 开头 2 秒内的通知一律不当真：Windows 的 fs.watch(recursive) 会在挂上监听的
+       那一刻丢一批**假事件**（实测报 `handlers\profile.cjs 变了`，而那文件的
+       修改时间还停在几周前）。不挡掉的话，每次 npm run dev 都会立刻空重启一次。 */
+    const startedAt = Date.now()
+    const watcher = watch(resolve(ROOT, 'electron'), { recursive: true }, (_event, file) => {
+      if (!file || !/\.(cjs|mjs|js|json)$/.test(file)) return
+      if (Date.now() - startedAt < 2000) return
+      if (pendingRestart) clearTimeout(pendingRestart)
+      /* 防抖：一次保存可能触发好几个事件，300ms 内只重启一次 */
+      pendingRestart = setTimeout(() => restartElectron(`electron/${file} 变了`), 300)
+    })
+    process.on('exit', () => watcher.close())
+    console.log('监听 electron/ —— 改了主进程代码会自动重启（DEV_NO_WATCH=1 可关）\n')
+  } catch (err) {
+    console.error('[dev] 监听 electron/ 失败，自动重启关闭：', err.message)
+  }
+}
 
 process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))

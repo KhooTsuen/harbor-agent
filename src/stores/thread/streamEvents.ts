@@ -7,6 +7,8 @@ import { usePerfStore } from '../usePerfStore'
 import { summarizeArgs } from './parseToolOutput'
 import { handleNoticeEvent } from './noticeEvents'
 import { applyToolProgress } from './toolProgress'
+/* 子代理 v1：它内部的每一步落到那次 `spawn_subagent` 调用上 */
+import { applySubagentEvent } from './subagentEvents'
 import { citationsOf } from './toolCitations'
 import { handleAttachmentEvent } from './attachmentEvents'
 import { askPermissionFor, applyPauseAfterTurn, onClarifyTimeout } from './confirmEvents'
@@ -133,6 +135,12 @@ export function handleStreamEvent(
       if (applyToolProgress(state.toolRuns, event)) {
         state.patch({ toolRuns: [...state.toolRuns] })
       }
+      return { handled: true }
+    }
+
+    /* 子代理 v1：它内部的每一步（实现在 subagentEvents.ts）—— 同样只改那一条记录 */
+    case 'subagent.step': {
+      if (applySubagentEvent(state.toolRuns, event)) state.patch({ toolRuns: [...state.toolRuns] })
       return { handled: true }
     }
 

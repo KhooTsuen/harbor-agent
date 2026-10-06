@@ -14,7 +14,7 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { check, group } from '../harness.mjs'
-import { join, require, ROOT } from '../env.mjs'
+import { join, paths, require, ROOT } from '../env.mjs'
 
 export async function runSkillPinChecks(netPolicy) {
   const skillPin = require(join(ROOT, 'electron/core/skill-pin.cjs'))
@@ -31,9 +31,11 @@ export async function runSkillPinChecks(netPolicy) {
   check('★ 钉的技能不见了 → 如实说找不到', missing.includes('找不到'))
   check('★ 不见时也不给网络授权（当没钉）', Object.keys(skillPin.ctxGrant({ pinnedSkill: 'no-such-skill-xyz' })).length === 0)
 
-  /* 真的钉一个：在沙箱里现造，别依赖用户机器上装了什么 */
+  /* 真的钉一个：在隔离数据目录里现造，别依赖用户机器上装了什么。
+     ★ 必须走 `paths.DIRS.skills`（自检时是 data/selftest-data/skills），
+     不能写死 `ROOT/data/skills` —— 那会往用户真技能目录里造文件。 */
   const pinnedId = 'selftest-pinned-skill'
-  const pinnedDir = join(ROOT, 'data', 'skills', pinnedId)
+  const pinnedDir = join(paths.DIRS.skills, pinnedId)
 
   try {
     mkdirSync(pinnedDir, { recursive: true })

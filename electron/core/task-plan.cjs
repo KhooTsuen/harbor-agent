@@ -177,7 +177,11 @@ function recordVersion(task, plan, { reason = '', at = Date.now(), title = '' } 
  * 只补在内存里（真正落盘等下一次写）—— 老数据一个字节都不动。
  */
 function migrate(task) {
-  if (!task || Array.isArray(task.planVersions)) return task
+  if (!task) return task
+  /* 子代理：老任务没有 parentTaskId（读出来是 undefined），补成 ''。
+     在**内存里补**、不落盘 —— 老数据一个字节都不动（沿用本文件的迁就规矩）。 */
+  if (task.parentTaskId === undefined) task.parentTaskId = ''
+  if (Array.isArray(task.planVersions)) return task
   const plan = Array.isArray(task.plan) ? task.plan : []
   task.planVersions = []
   /* 先把 task.plan 清掉 —— 否则 recordVersion 会拿它当「当前版」，

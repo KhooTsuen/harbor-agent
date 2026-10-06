@@ -135,11 +135,22 @@ export async function run() {
     String(netBlocked).includes('禁止联网'),
     String(netBlocked).slice(0, 80),
   )
+  /*
+   * 子代理 v1 把「这次调用的 ctx」整块搬进了 `tool-run-ctx.cjs`（tool-runner 贴着
+   * 300 行红线）。所以守卫要钉**两处**：注入本体在新家、tool-runner 真的用它 ——
+   * 只钉一边的话，「搬走了但没接上」这种接错照样能全绿（AGENT.md 第 9 条）。
+   */
+  const ctxSrc = fs.readFileSync(join(ROOT, 'electron/core/tool-run-ctx.cjs'), 'utf8')
+  check(
+    '★ tool-run-ctx 会注入 ctx.progress 并发 agent.tool.progress',
+    ctxSrc.includes("type: 'agent.tool.progress'") && ctxSrc.includes('progress: (payload = {})'),
+    'tool-run-ctx 里找不到进度注入',
+  )
   const runnerSrc = fs.readFileSync(join(ROOT, 'electron/core/tool-runner.cjs'), 'utf8')
   check(
-    '★ tool-runner 会注入 ctx.progress 并发 agent.tool.progress',
-    runnerSrc.includes("type: 'agent.tool.progress'") && runnerSrc.includes('progress: (payload = {})'),
-    'tool-runner 里找不到进度注入',
+    '★ tool-runner 真的调了它（搬走了也要接上）',
+    runnerSrc.includes('buildRunCtx(') && runnerSrc.includes('tool-run-ctx.cjs'),
+    'tool-runner 没接上 tool-run-ctx',
   )
 
   clear()

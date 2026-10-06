@@ -1,4 +1,4 @@
-import { join, require, ROOT } from '../env.mjs'
+import { join, require, ROOT, SANDBOX } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 import { readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 
@@ -18,7 +18,7 @@ import { readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 const cache = require(join(ROOT, 'electron/core/file-cache.cjs'))
 
 const readCore = (rel) => readFileSync(join(ROOT, rel), 'utf8')
-const dir = join(ROOT, 'data', 'selftest-workspace')
+const dir = SANDBOX
 const file = join(dir, 'cache-target.txt')
 
 export async function run() {

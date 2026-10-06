@@ -56,8 +56,8 @@ console.log(`
 还有几件**机器判不了**，按改了什么自己挑（AGENT.md 第 4 节）：
 
   改了 UI / 交互 / 权限 / 发送   → 真机走一遍：
-        node tmp/sync-replica.cjs && node tmp/perf/probe-<对应>.cjs
-        或 npm run shot:electron -- --exe=dist-portable/Harbor/Harbor.exe --js="..." --out=shots/xxx.png
+        npm run shot:electron -- --exe=dist-portable/Harbor/Harbor.exe --js="..." --out=shots/xxx.png
+        （隔离副本那套 tmp/sync-replica.cjs + tmp/perf/* 探针**已不在仓库**，别再照抄）
   改了会话 / 发送 / 流式         → 真发一条消息，看内容真的在动（别只看测试绿）
   改了性能                      → 改前 vs 改后的数字，没数字不算修好
   改了安全边界                  → 同步 docs/安全模型.md，含「这次没做什么」

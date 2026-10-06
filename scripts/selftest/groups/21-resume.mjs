@@ -1,4 +1,4 @@
-import { join, require, ROOT } from '../env.mjs'
+import { join, require, ROOT, SANDBOX } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 import { readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 
@@ -71,7 +71,7 @@ export async function run() {
 
   /* ── 环境检查 ─────────────────────────────────────────── */
   taskCore.update(task.id, { status: 'paused' })
-  const dir = join(ROOT, 'data', 'selftest-workspace')
+  const dir = SANDBOX
   const file = join(dir, 'resume-env-check.txt')
   writeFileSync(file, 'x')
   taskCore.addChangedFile(task.id, file)

@@ -49,8 +49,17 @@ const routerCore = require(join(ROOT, 'electron/core/router.cjs'))
 const projectCore = require(join(ROOT, 'electron/core/project.cjs'))
 const memSim = require(join(ROOT, 'electron/core/memory-similarity.cjs'))
 
-/* 测试用的沙箱目录，跑完删掉 */
-const SANDBOX = join(ROOT, 'data', 'selftest-workspace')
+/*
+ * 测试用的沙箱目录，跑完删掉。
+ *
+ * ★ 必须落在**隔离数据目录**下（`paths.DIRS.data` —— 自检时是
+ *   `data/selftest-data`），不能写成 `join(ROOT, 'data', ...)`：
+ *   否则 `49-injection` 那类「越界写」测试（往 `SANDBOX/..` 写）会把文件落进
+ *   用户的**真 data 根目录**，而且**不清理**（2026-10-07 真机查到 3 个残留：
+ *   injected-outside.txt / injected-outside-full.txt / selftest-outside-secret.txt）。
+ *   放在隔离目录下，`SANDBOX/..` 同样是隔离路径，`cleanupSelftest` 会一并删掉。
+ */
+const SANDBOX = join(paths.DIRS.data, 'selftest-workspace')
 
 /*
  * data/ 是 .gitignore 里的（应用运行时才建），干净 clone 里**没有**这个目录。
@@ -64,6 +73,30 @@ function setupSandbox() {
   mkdirSync(SANDBOX, { recursive: true })
   writeFileSync(join(SANDBOX, 'hello.txt'), 'line one\nline two\nline three\n', 'utf8')
   writeFileSync(join(SANDBOX, 'dup.txt'), 'same\n', 'utf8')
+}
+
+/**
+ * 自检开跑前的准备：① 数据目录切到**隔离目录**并重置；② 建沙箱。
+ *
+ * 数据目录为什么必须隔离：内核自检跑在**纯 Node** 环境，没有 Electron 的
+ * `safeStorage`，而 `credentials.set()` 会把整个凭证文件的 backend 降级成
+ * `plain`、**且不重新加密已有条目** —— 用户用 safeStorage 存过的 API Key 会因此
+ * 解不开，看着就像「我填的 API 被清了」（2026-10-07 真机踩中）。
+ * 跑自检时 `DIRS.data` 指向 `data/selftest-data`（见 electron/core/paths.cjs 的
+ * dataDir()），config / 凭证 / 会话 / 任务 / 事件 / 技能全落那儿，**绝不碰用户真数据**。
+ */
+function prepareSelftest() {
+  const dir = paths.DIRS.data
+  rmSync(dir, { recursive: true, force: true })
+  paths.ensureDirs()
+  console.log(`自检数据目录（隔离，不碰用户真数据）：${dir}\n`)
+  setupSandbox()
+}
+
+/** 自检跑完的清理：沙箱 + 隔离数据目录一起删 */
+function cleanupSelftest() {
+  rmSync(SANDBOX, { recursive: true, force: true })
+  rmSync(paths.DIRS.data, { recursive: true, force: true })
 }
 
 /*
@@ -119,6 +152,8 @@ export {
   ROOT,
   SANDBOX,
   setupSandbox,
+  prepareSelftest,
+  cleanupSelftest,
   disposeTasks,
   ctx,
   asked,

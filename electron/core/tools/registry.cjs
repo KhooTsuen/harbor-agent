@@ -26,6 +26,7 @@ const browseNav = require('./browse-nav.cjs')
 const download = require('./download.cjs')
 const generateImage = require('./generate-image.cjs')
 const askUser = require('./ask_user.cjs')
+const subagentTool = require('./subagent-tool.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -48,6 +49,7 @@ const ALL = [
   remember,
   askUser,
   download,
+  subagentTool,
 ]
 
 /** 哪些工具算「写操作」（只读模式下要拦，ask 模式下要确认） */
