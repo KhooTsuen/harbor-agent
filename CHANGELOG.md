@@ -1,5 +1,42 @@
 # 更新日志
 
+## [1.30.0-beta.11] — 2026-10-07 · 单测不再污染应用真 data（日志）
+
+### 这一批做了什么
+
+- **修一个长期存在的污染：跑 `npm run test:unit`（vitest）会往应用的「真 data/logs」里灌假数据。**
+  单测会 `require` 内核 `.cjs`（`log` / `config-normalize` / `scale-gate` / `url-policy`…），
+  这些模块内部直接 `log.*` 写 `DIRS.logs`；而 vitest 的进程入口不是 `scripts/selftest.mjs`，
+  自检那套隔离判定不认它 → 写的就是用户真日志。**受控实测**：跑一次 `test:unit` 主日志 **+15 行**
+  （`[规模预检] … 会话 ftopic/ale-ok/wander`、`assistant.model「dead-model」…`、`打开外部链接 [test]…`）；
+  历史上 2026-10-04 一天就积了 2359 行。只污染日志、不碰 config/credentials，但排查时会被它带偏。
+
+- **修法（复用自检那套隔离，不另起一套）**：
+  1. `electron/core/paths.cjs`：新增 `isUnitTestRun()`（认 `HARBOR_UNIT_TEST === '1'`），
+     与 `isSelftestRun()` 并列成 `isolationDirName()` —— 自检 → `data/selftest-data`，
+     单测 → `data/unit-test-data`；`dataDir()` 据此切目录（派生子目录一起走）。
+  2. `vitest.config.ts`：`test.env` 注入 `HARBOR_UNIT_TEST: '1'`。
+     用 **env** 而不是入口脚本判断：vitest 没法在 `test.env` 里改 `process.argv`，
+     而 env 在 worker 启动时注入，早于测试模块、也就早于内核 `.cjs` 被 require（时机没问题）。
+  3. `src/lib/__tests__/diagnosticsRedaction.test.ts`：日志路径改走内核 `DIRS.logs`
+     （原来硬编码 `ROOT/data/logs` —— 隔离后会写到真日志、且 `diagnostics.build()` 读 `DIRS.logs` 会读不到 → 假绿）。
+
+- **钉子（防回归）**：新增 `src/lib/__tests__/testDataIsolation.test.ts` —— ① 运行期断言
+  `DIRS.data` 落在 `unit-test-data`、派生目录一致；② 源码层面钉「`vitest.config.ts` 注入的信号名
+  = `paths.cjs` 认的名字」（AGENT.md #9：两边各写一套会静默漂移）。
+
+### 验证
+
+- **改前**：跑一次 `npm run test:unit` → 主日志 2874 → 2889（**+15**）。
+- **改后**：同样跑 → 主日志 2892 → 2892（**+0**）；假数据改为落到 `data/unit-test-data/logs`（17 行）；
+  `config.json` / `credentials.json` 的 mtime 与内容全程未变。
+- 单测 **162 文件 / 1446 用例** 全过（新增 `testDataIsolation` 2 条）；内核自检 **3822 项 / 0 失败**。
+
+### 遗留
+
+- beta.10 已修「自检污染凭证」，本批补齐「单测污染日志」；两处现在都隔离到 `data/` 下的子目录。
+- `data/selftest-data` 与 `data/unit-test-data` 目前**只增不清理**（临时数据）；要不要加清理留给后续。
+
 ## [1.30.0-beta.10] — 2026-10-07 · 权限卡作废后不放行（僵尸卡挡住澄清卡）
 
 ### 这一批做了什么

@@ -1,6 +1,14 @@
 import { createRequire } from 'node:module'
-import { appendFileSync, existsSync, readFileSync, rmSync, statSync, truncateSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  truncateSync,
+} from 'node:fs'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /* ══════════════════════════════════════════════════════════════
@@ -41,13 +49,22 @@ const NAMED_SECRET = fake('sk-', 'diagnostics', '-test-', '9f2c7a41') // 走「�
  * 对不上就让下面的断言红给我看」—— 2026-10-06 内核把 UTC 改成 `log.dayStamp()` 之后
  * 它确实红了（这条断言按设计干活了）。修法不是把日期抄两遍，而是**只有一处实现**。
  */
-const logCore = require('../../../electron/core/log.cjs')
-const todayLog = () => join(ROOT, 'data', 'logs', `${logCore.dayStamp()}.log`)
+/*
+ * 日志目录**跟内核要**（`DIRS.logs`）而不是拼 `ROOT/data/logs`：单测跑在隔离数据
+ * 目录（`data/unit-test-data`，见 vitest.config.ts + `paths.cjs`），硬编码会写到
+ * **用户真日志**；而且 `diagnostics.build()` 读的是 `DIRS.logs`，硬编码会让它读不到
+ * 下面 append 的行 → 本组假绿。一个口径只有一处实现。
+ */
+const paths = require_(join(ROOT, 'electron/core/paths.cjs')) as { DIRS: { logs: string } }
+const logCore = require_(join(ROOT, 'electron/core/log.cjs')) as { dayStamp: () => string }
+const todayLog = () => join(paths.DIRS.logs, `${logCore.dayStamp()}.log`)
 
 let originalSize = 0
 const created: string[] = []
 
 beforeAll(() => {
+  /* 隔离数据目录首次跑可能还没建（log.cjs 写时会建，这里直接 append 得自己建） */
+  mkdirSync(dirname(todayLog()), { recursive: true })
   originalSize = existsSync(todayLog()) ? statSync(todayLog()).size : 0
   redact.remember(NAMED_SECRET, '测试Key')
   /* 直接 append 到日志文件：模拟「由旧版本 / 别的路径写下的行」，绕开 log.cjs 的第一道脱敏 */

@@ -54,7 +54,34 @@ function realDataDir() {
 }
 
 /**
- * 数据根目录。**自检时改到隔离目录**（`<root>/data/selftest-data`）。
+ * 当前进程是不是在跑单元测试（`vitest run`）。
+ *
+ * ★ 单测和自检一样要隔离：单测会 require 内核 `.cjs`（日志、配置、规模预检、
+ *   导航策略…），这些模块内部直接 `log.*` → 写**应用的 data/logs**。
+ *   vitest 的进程入口不是 `scripts/selftest.mjs`，`isSelftestRun()` 为 false，
+ *   于是单测的假数据（`vitest-scale-*` / `dead-model` / 测试外链…）长期灌进
+ *   用户真日志（2026-10-07 受控实测：跑一次 `test:unit` 主日志 +15 行）。
+ *   只污染日志、不写 config/credentials，但会把排查带偏。
+ *
+ * ★ 这里用**环境变量**而不是入口脚本路径（与 `isSelftestRun` 不同）：vitest
+ *   没法在 `test.env` 里改 `process.argv`，而 `test.env`（见 vitest.config.ts）
+ *   是在 worker 启动时注入 `process.env` 的，**早于**测试模块、也就早于内核
+ *   `.cjs` 被 require —— 不存在 selftest 那种「静态 import 早于赋值」的时机问题。
+ */
+function isUnitTestRun() {
+  return process.env.HARBOR_UNIT_TEST === '1'
+}
+
+/** 隔离运行的数据目录名（自检 / 单测各一份）；不在隔离运行时返回 null */
+function isolationDirName() {
+  if (packaged) return null
+  if (isSelftestRun()) return 'selftest-data'
+  if (isUnitTestRun()) return 'unit-test-data'
+  return null
+}
+
+/**
+ * 数据根目录。**自检 / 单测时改到隔离目录**（`<root>/data/<隔离名>`）。
  *
  * 为什么非隔离不可：内核自检是纯 Node 环境，没有 Electron 的 `safeStorage`，
  * 而 `credentials.set()` 会把整个凭证文件的 backend 统一改成「当前后端」
@@ -66,11 +93,11 @@ function realDataDir() {
  * 否则会出现 `DIRS.events` 与 `DIRS.data + '/events'` 指向两个地方的分裂
  * （events.cjs / task-io.cjs 等就是直接拼 `DIRS.data` 的）。
  *
- * 打包版永远走真目录（这个分支对生产无效），只有自检那一条命令会命中。
+ * 打包版永远走真目录（这几个分支对生产无效），只有自检 / 单测那两条命令会命中。
  */
 function dataDir() {
-  if (!packaged && isSelftestRun()) return path.join(realDataDir(), 'selftest-data')
-  return realDataDir()
+  const iso = isolationDirName()
+  return iso ? path.join(realDataDir(), iso) : realDataDir()
 }
 
 const DIRS = {
@@ -205,4 +232,5 @@ module.exports = {
   dataDir,
   realDataDir,
   isSelftestRun,
+  isUnitTestRun,
 }
