@@ -19,9 +19,38 @@ export const StoredMessageSchema = z.object({
       z.object({
         id: z.string(),
         name: z.string(),
+        /** 参数摘要（展示用）—— 不声明它，重开会话后工具行的「读了哪个文件」就没了 */
+        summary: z.string().optional(),
         ok: z.boolean().default(true),
         output: z.string().default(''),
         ms: z.number().optional(),
+        /*
+         * 子代理 v1 的 trace（那次 `spawn_subagent` 调用**内部**干了什么）。
+         * ★ 同样必须在 schema 里声明 —— zod 会把没声明的字段**静静剥掉**：
+         *   不写这一块，落盘的子代理步骤读回来就没了，界面整张卡片消失
+         *   （2026-10-07 真机复现：流式时卡片在、切走再切回就没了）。
+         */
+        subagent: z
+          .object({
+            taskId: z.string().default(''),
+            goal: z.string().default(''),
+            status: z.enum(['running', 'completed', 'failed']).default('running'),
+            turns: z.number().optional(),
+            steps: z
+              .array(
+                z.object({
+                  id: z.string(),
+                  at: z.number().default(0),
+                  tool: z.string(),
+                  args: z.record(z.string(), z.unknown()).default({}),
+                  ok: z.boolean().default(true),
+                  ms: z.number().optional(),
+                  phase: z.enum(['started', 'completed', 'failed']).default('completed'),
+                }),
+              )
+              .default([]),
+          })
+          .optional(),
       }),
     )
     .optional(),

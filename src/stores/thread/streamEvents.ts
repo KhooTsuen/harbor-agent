@@ -151,9 +151,9 @@ export function handleStreamEvent(
       const output = String(event.result ?? '')
 
       const updated: ToolRunRecord = {
+        ...state.toolRuns[index] /* 保住 subagent trace（重建新对象会把它抹掉） */,
         id,
         name: String(event.name ?? '未知工具'),
-        summary: state.toolRuns[index]?.summary,
         ok: event.ok !== false,
         output,
         ms: typeof event.ms === 'number' ? event.ms : undefined,

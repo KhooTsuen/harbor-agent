@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ToolRunRecord } from '@/types'
+import type { Message, ToolRunRecord } from '@/types'
+import { SessionLineSchema } from '@/lib/schemas'
+import { useAuditStore } from '@/stores/useAuditStore'
+import { useTaskStore } from '@/stores/useTaskStore'
 import { applySubagentEvent, stepLabel } from '../subagentEvents'
+import { handleStreamEvent, type StreamState } from '../streamEvents'
 
 /* ══════════════════════════════════════════════════════════════
    子代理 v1：界面卡片的数据链
@@ -23,6 +27,7 @@ function record(overrides: Partial<ToolRunRecord> = {}): ToolRunRecord {
 
 function stepEvent(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    type: 'subagent.step',
     toolCallId: 'call_1',
     subagentTaskId: 'task_child',
     kind: 'step',
@@ -192,5 +197,103 @@ describe('子代理事件 / 接线守卫（跨层形状）', () => {
     expect(block).toContain('args: Record<string, unknown>')
     expect(block).not.toContain('output')
     expect(block).not.toContain('result')
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 真机复现过的坑（2026-10-07）：卡片**留不住** —— 子代理跑时卡片在，
+   父侧工具一收尾（`agent.tool.completed`）**整张消失**；重开会话更没有。
+   两层断点（各自都对、接起来什么都不发生 — AGENT.md 第 9 条）：
+   `streamEvents.ts` 收尾重建了新记录 → 抹掉 `subagent`；
+   `schemas.ts` 的 toolRuns 没声明它 → zod 读回来**静静剥掉**。
+   ══════════════════════════════════════════════════════════════ */
+
+function makeStreamState(): StreamState {
+  return {
+    content: '',
+    reasoning: '',
+    toolRuns: [],
+    rounds: [],
+    citations: [],
+    patch: () => {},
+    /* 只有 done 分支会读它 —— 这两条测试不走 done，给个最小壳就够 */
+    snapshot: () => ({ id: 'msg_1' }) as Message,
+    finish: () => {},
+    threadId: 't1',
+  }
+}
+
+describe('子代理事件 / 卡片留得住（真机复现的那个坑）', () => {
+  beforeEach(() => {
+    /* completed 分支会顺带刷新任务 / 审计 —— 换成 no-op，测接线不必起整个 store */
+    useTaskStore.setState({ refresh: () => Promise.resolve() } as never)
+    useAuditStore.setState({ bump: () => {} } as never)
+  })
+
+  it('★ 父工具收尾（completed）不抹掉子代理 trace', () => {
+    const state = makeStreamState()
+    handleStreamEvent(
+      { type: 'agent.tool.started', toolCallId: 'call_1', name: 'spawn_subagent' },
+      state,
+    )
+    handleStreamEvent(stepEvent({ kind: 'start', goal: '读 3 份' }), state)
+    handleStreamEvent(stepEvent(), state)
+    handleStreamEvent(stepEvent({ kind: 'done', status: 'completed', turns: 2 }), state)
+    expect(state.toolRuns[0].subagent).toMatchObject({ status: 'completed', turns: 2 })
+
+    handleStreamEvent(
+      {
+        type: 'agent.tool.completed',
+        toolCallId: 'call_1',
+        name: 'spawn_subagent',
+        result: 'ok',
+        ms: 41,
+      },
+      state,
+    )
+
+    /* 该补的补上（ms），trace 必须原样留着 —— 抹掉就等于卡片整张消失 */
+    expect(state.toolRuns[0].ms).toBe(41)
+    expect(state.toolRuns[0].subagent).toMatchObject({ status: 'completed', goal: '读 3 份' })
+    expect(state.toolRuns[0].subagent?.steps).toHaveLength(1)
+  })
+
+  it('★ 落盘的 trace 过一遍真 schema 读回来还在（zod 别剥）', () => {
+    const line = {
+      type: 'message',
+      role: 'assistant',
+      content: '结论',
+      toolRuns: [
+        {
+          id: 'call_1',
+          name: 'spawn_subagent',
+          ok: true,
+          output: 'ok',
+          ms: 41,
+          subagent: {
+            taskId: 't_child',
+            goal: '读 3 份',
+            status: 'completed',
+            turns: 2,
+            steps: [
+              {
+                id: 's1',
+                at: 1,
+                tool: 'read_file',
+                args: { path: 'docs/README.md' },
+                ok: true,
+                ms: 9,
+                phase: 'completed',
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const parsed = SessionLineSchema.safeParse(line)
+    if (!parsed.success) throw new Error(`schema 没认这条落盘记录：${parsed.error.message}`)
+    const runs = parsed.data.type === 'message' ? parsed.data.toolRuns : undefined
+    expect(runs?.[0].subagent?.goal).toBe('读 3 份')
+    expect(runs?.[0].subagent?.steps[0].tool).toBe('read_file')
   })
 })
