@@ -25,6 +25,7 @@
 | 了解产品概念 / 升级与迁移 | [`核心概念.md`](核心概念.md) · [`更新与数据迁移.md`](更新与数据迁移.md) |
 | 改字段 / 查磁盘上有什么、谁指向谁 | [`数据模型.md`](数据模型.md) |
 | 改流程 / 查「任务为什么会停、怎么恢复」 | [`Runtime状态机.md`](Runtime状态机.md) |
+| 想知道 Runtime 有哪些**对象**、哪些还没有、**要收敛成什么样** | [`Runtime领域模型.md`](Runtime领域模型.md)（设计稿 · 目标态，不是现状） |
 | 体检自己的数据（悬空引用 / 坏文件） | `npm run doctor`（说明在 [`数据模型.md`](数据模型.md) 末尾） |
 | 看成功率 / 恢复率 / 工具失败率 | `npm run stats`（口径写在 `electron/core/run-stats.cjs` 文件头） |
 | 做验收 / 上手试用 | [`验收核对-通用.md`](验收核对-通用.md) · [`试玩清单.md`](试玩清单.md) |
@@ -62,6 +63,7 @@
 | --- | --- |
 | [`改造任务/`](改造任务/)（含 `PROGRESS.md`） | `AGENT.md` 真相源表、`electron/core/plugins.cjs`、自检组 67 |
 | [`数据模型.md`](数据模型.md) · [`Runtime状态机.md`](Runtime状态机.md) | 改字段 / 改状态的人；`核心概念.md` 的下一层细节 |
+| [`Runtime领域模型.md`](Runtime领域模型.md) | 改 Runtime 核心对象 / 加状态前的对照（目标态）；暂时**只被人读**，没有代码引用它 |
 | [`Token优化实施与测试提示词.md`](Token优化实施与测试提示词.md) | 自检组 85（它按这份定义盯口径） |
 | [`开工前澄清.md`](开工前澄清.md) | 自检组 `99`–`103`、`tools/acceptance-cases.mjs`（T9–T11 的判据）；改 `ask_user` / 澄清卡 / `clarify-config` 前先看它 |
 | [`Agent开屏与彩蛋设计方案.md`](Agent开屏与彩蛋设计方案.md) | `src/types/index.ts`（性格层开关的设计依据） |
