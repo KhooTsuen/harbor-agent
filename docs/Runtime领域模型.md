@@ -99,7 +99,7 @@ Goal → Intent → Task → Capability(能力注册表) → Action
 | P0-7 | Runtime Event Contract | **出口已统一，契约未定义** | 主进程内 `events.cjs`（16 个 `agent.*` 标准名 + 环形缓冲 + 落盘）；推渲染层单通道 `chat:event`（`chat-emit.cjs`，靠 `type` 区分） |
 | P0-8 | 跨层契约测试 | **部分** | 内核自检（`npm test`）+ 单测（`npm run test:unit`）+ 真机 CDP 脚本都有；但没有「Backend→IPC→Renderer→Persistence→Reload」的**整链**用例 |
 | P0-9 | 测试数据隔离（绝不碰真 data） | **已完成** | `data/selftest-data` / `data/unit-test-data`（`paths.cjs` 的 `isolationDirName()`；`vitest.config.ts` 注入 `HARBOR_UNIT_TEST=1`） |
-| P0-10 | Data Doctor 关系完整性 | **基础有，缺关系检查** | `npm run doctor`（`core/data-doctor.cjs`）已在跑；但「Action.runId 必须存在」这类关系要等 Action 落地才有对象可查 |
+| P0-10 | Data Doctor 关系完整性 | **不适用（评测后）** | `npm run doctor`（`core/data-doctor.cjs`）已在做**跨实体**悬空检查（任务→会话、改动事务→任务、成果→任务/会话、索引漂移）。计划里说的「Action.**runId** 必须存在」**不适用**：Action 是**内嵌**在 `task.steps[].action` 的一个字段，**不是独立实体**，没有跨实体关系可查（也没有 Run 实体）。 |
 
 **一句话**：P0-2 / P0-6 / P0-9 **已完成，别重做**；P0-1 / P0-5 / P0-7 **是"半有、要收敛"**；
 P0-3 / P0-4 / P0-10 **是真缺口**，而且 4 依赖 3（Action 是它们的挂靠点）。
@@ -297,7 +297,14 @@ of({ name, args, workdir, userText, limits }) → Action
 
 ---
 
-### 4.4 Risk / Scale / Permission 拆成两个维度（P0-4）
+### 4.4 Risk / Scale / Permission 拆成两个维度（P0-4） ◐ (b)(c) 已成立，第 (a) 待批
+
+> **评估（2026-10-07，逐条对代码核过）**：`risk.cjs` 与 `scale.cjs` **本来就是两个正交模块**
+> （各有自己的门 `tools/risk-gate.cjs` / `tools/scale-gate.cjs`、各自的审计与授权），
+> 计划要的「两个维度」**已经成立**；共同挂靠点 `core/action.cjs` 也已落地（4.2，挂进
+> `agent.tool.started` 与 `task.steps[].action`）。**只剩 (a)**（= `improvement-checklist.md`
+> 的 P4-1「规模闸门按命令形态而非实际规模」）—— 那是**改权限行为**（**硬禁区 10**），
+> 记在 [`安全模型.md`](安全模型.md) §8，**需单独批准**。下面「现状 / 目标 / 规格」是设计时的原样记录。
 
 **现状**：`risk.cjs` 与 `scale.cjs` **各判各的**，没有共同的挂靠点。计划要求把它们变成
 **两个正交维度**：
@@ -313,11 +320,11 @@ Permission 由「Risk + Scale + Scope」共同决定要不要弹卡。
 
 **可执行规格**：
 
-| 步骤 | 动哪 | 做什么 | 验证 |
-|---|---|---|---|
-| a | `core/scale.cjs`（现有 `scale-*`） | 确认规模判据按**实际信号**（文件数 / 字节数）而非**命令形态** | 真机：`dir` 一个大目录 vs 一个小目录，判定不同 |
-| b | `core/risk.cjs` | 与 scale 解耦，输出 `{level, reasons[]}` | 自检：三种示例场景跑到三种不同结论 |
-| c | Action 组装点（4.2 b/c） | 把 risk / scale / scope 一起塞进 Action | 单测：Action 带三样 |
+| 步骤 | 动哪 | 做什么 | 验证 | 状态 |
+|---|---|---|---|---|
+| a | `core/scale.cjs`（现有 `scale-*`） | 确认规模判据按**实际信号**（文件数 / 字节数）而非**命令形态** | 真机：`dir` 一个大目录 vs 一个小目录，判定不同 | ◐ 半：文件数**已能估**（`scale-files.cjs`）；「递归×范围」仍按形态拦（P4-1，**硬禁区 10**，待批） |
+| b | `core/risk.cjs` | 与 scale 解耦，输出 `{level, reasons[]}` | 自检：三种示例场景跑到三种不同结论 | ✅ 本就是 `{level, reasons[], network, writes, …}`，与 scale 无耦合 |
+| c | Action 组装点（4.2 b/c） | 把 risk / scale / scope 一起塞进 Action | 单测：Action 带三样 | ✅ `core/action.cjs`（自检 127） |
 
 > 这里有个**已知欠账**（`improvement-checklist.md` 的 P4-1 记着）：规模闸门现在按**命令形态**拦，
 > 不是按实际规模。这一项顺手把它收回来。
@@ -346,13 +353,13 @@ Permission 由「Risk + Scale + Scope」共同决定要不要弹卡。
 顺序**不是**照抄 P0-1…P0-10，而是按依赖 + 风险 + 能否单独验证重排：
 
 ```text
-1. Domain Model（本文档）          ← 零代码，先把名词定死
-2. Decision 统一（4.1）            ← 真 bug 住在这；底层已统一，风险较低
-3. Event Contract（4.3）           ← 依赖 2 的形状
+1. Domain Model（本文档）          ← 零代码，先把名词定死          ✅ 已落地
+2. Decision 统一（4.1）            ← 真 bug 住在这；底层已统一      ✅ 已落地（809f214）
+3. Event Contract（4.3）           ← 依赖 2 的形状                  ◐ 渲染层侧已落地（3848d82），主进程常量对齐待做
 ─────────── 以上是「低风险、能立刻见效」的前半段 ───────────
-4. Action Model（4.2）             ← 最大一块；动内核关键文件 + 改数据结构
-5. Risk / Scale 拆分（4.4）        ← 依赖 4 的挂靠点
-6. Data Doctor 关系检查（P0-10）   ← 依赖 4 落地才有对象可查
+4. Action Model（4.2）             ← 最大一块；动内核 + 改数据结构  ✅ 1–3 步落地（d567905/ddb05bd/b9e4778），第 4 步待批
+5. Risk / Scale 拆分（4.4）        ← 依赖 4 的挂靠点               ◐ (b)(c) 已成立；只剩 P4-1（硬禁区 10，待批）
+6. Data Doctor 关系检查（P0-10）   ← ④评测后：**不适用**（Action 内嵌，非独立实体，无跨实体关系可查）
 ```
 
 **贯穿**：P0-8（跨层契约测试）**不单独排期** —— 上面每一步都跟着加
