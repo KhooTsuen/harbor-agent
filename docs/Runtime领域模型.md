@@ -92,7 +92,7 @@ Goal → Intent → Task → Capability(能力注册表) → Action
 |---|---|---|---|
 | P0-1 | Runtime Domain Model | **半有** | 四层已分（`Runtime状态机.md`）；但没有独立 `Run` 实体、没有 `Action`/`Decision` 抽象 |
 | P0-2 | 防 Task 膨胀（加字段先证明不属于别的实体） | **已有** | 已升格成硬约束 —— `AGENT.md` 硬禁区 11 |
-| P0-3 | 统一 Action Model | **缺** | 无 Action 对象；散在 `task.steps[].intent`、`task-intent.cjs` 的 `REPLAY_UNSAFE`、`risk.cjs`、`scale.cjs`、`capability.cjs` |
+| P0-3 | 统一 Action Model | **半有**（1–3 步已落地） | 有 `core/action.cjs`（组装 risk/scale/scope/reversibility）+ 挂进 `agent.tool.started` 与 `task.steps[].action`；权限判断尚未收到 Action 上（4.2 步骤 4） |
 | P0-4 | Risk / Scale / Permission 拆两个维度 | **分散** | `risk.cjs`（risk-patterns / risk-targets）与 `scale.cjs`（scale-signals / scale-config / scale-files）各判各的；未挂到同一点 |
 | P0-5 | 统一 Decision Model | **底层已统一，上层两套** | 底层 `confirm-bridge.cjs` 一条往返；上层 `handlers/chat-confirm.cjs` 的 `askUser`（布尔）/ `askClarify`（对象）两套形状 + UI 两种卡 |
 | P0-6 | Subagent 只读 | **已有** | `core/subagent.cjs` 就是只读侦察兵 |
@@ -168,7 +168,11 @@ Decision {
 
 ---
 
-### 4.2 Action Model（P0-3）
+### 4.2 Action Model（P0-3） ◐ 1–3 步已落地（2026-10-07），第 4 步待做
+
+> **落地**：新增 `core/action.cjs`（组装）；`tool-runner` 把 action 挂进
+> `agent.tool.started` 并写 `task.steps[].action`。**第 4 步（权限判断收到 Action 上）
+> 触发硬禁区 10，未做**。下面「现状 / 目标形状 / 规格」是设计时的原样记录。
 
 **现状**：**没有**统一 Action 对象。一次工具调用的信息散在五处：
 
