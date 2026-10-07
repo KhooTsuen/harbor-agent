@@ -82,6 +82,23 @@ const SCALE_RULE = [
   '  绕过去会被同样拦下，还白花一轮。要问就一次问到位。',
 ].join('\n')
 
+/**
+ * 「改了代码就要有验证」这一条 —— 通用，不跟开关（2026-10-07 加，清单 2026-10-03 ❌3）。
+ *
+ * 为什么加：拿 Harbor 做**别的项目**时，「跑测试」是「想到了才做」而不是默认动作 ——
+ * 新项目里没有测试脚本，也没人提醒「先建一个最小的」。内核本来就有「跑没跑测试」的
+ * 判读（`core/task-outcome.cjs`），缺的只是**动手前就想到**这一步。
+ *
+ * ⚠️ 尺度（清单特意点名的）：**不能变成「每个任务都逼着跑测试」** —— 那会把闲聊、
+ * 纯问答、只读任务也拖下水。所以末一句把不适用的场景写死，别删。
+ */
+const TEST_RULE = [
+  '- **改了代码就要有验证方式**：能跑测试就跑到绿再收工，别只靠「我读了一遍」；',
+  '  项目里还没有测试的话，先建一个**最小的**（哪怕就一条断言：跑一遍、看关键输出对不对）——',
+  '  一个能重跑的验证，比一次「我看着没问题」值钱得多。',
+  '  纯问答 / 只读 / 闲聊**不适用**这条，别硬套。',
+].join('\n')
+
 const REST_RULES = [
   '- 改少量内容用 `edit_file`，别用 `write_file` 整篇覆盖。',
   '- `edit_file` 的 oldText 必须逐字一致（包括缩进）并且在文件里唯一。',
@@ -110,6 +127,8 @@ const REST_RULES = [
  * 那时候**规则也不注入**，理由同上。
  * `scaleFirst: false`（A2 的规模层开关）同理去掉「先掂量代价」那一条 ——
  * 闸门都关了还写着「先问规模」，模型只会白问一轮。
+ * `TEST_RULE`（改了代码要有验证）**不跟任何开关** —— 它自带边界（末一句把闲聊/只读排除掉），
+ * 关掉它等于回到「想到了才跑测试」，而那正是加它的原因。
  */
 function workRules(input = {}) {
   /* 两条跟 `ask_user` 走的规矩，共用一个「现在还能不能问他」的判断 */
@@ -120,6 +139,7 @@ function workRules(input = {}) {
     input.planFirst === false ? '' : PLAN_RULE,
     canAsk ? CLARIFY_RULE : '',
     wantScale ? SCALE_RULE : '',
+    TEST_RULE,
     REST_RULES,
   ]
     .filter(Boolean)
@@ -134,6 +154,7 @@ module.exports = {
   PLAN_RULE,
   CLARIFY_RULE,
   SCALE_RULE,
+  TEST_RULE,
   REST_RULES,
   workRules,
   WORK_RULES,

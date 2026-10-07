@@ -147,6 +147,7 @@ import { run as actionGroup } from './selftest/groups/127-action.mjs'
 import { run as scaleTargetGroup } from './selftest/groups/128-scale-target.mjs'
 import { run as actionPermissionGroup } from './selftest/groups/129-action-permission.mjs'
 import { run as cdpHelpersGroup } from './selftest/groups/130-cdp-helpers.mjs'
+import { run as testPromptGroup } from './selftest/groups/131-test-prompt.mjs'
 
 const GROUPS = [
   basics,
@@ -270,6 +271,7 @@ const GROUPS = [
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
   cdpHelpersGroup,
+  testPromptGroup,
 ]
 
 async function main() {
