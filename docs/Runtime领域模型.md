@@ -223,6 +223,38 @@ Action {
 | c | `core/tool-runner.cjs` / `core/loop-tools.cjs` | 每个工具调用产生一条 Action；仍写回 `task.steps[]` | 自检 + 真机跑一次 `run_shell` 看台账 |
 | d | `loop.cjs` / `task.cjs` | 把 Task 的「动作名」与 Action 对齐（**内核关键文件，最谨慎**） | 旧 data 实测能读 + `npm run doctor` |
 
+**接入设计（细化到函数 —— 2026-10-07 补）**
+
+唯一生产点是 `core/tool-runner.cjs` 的 `runOne()`：它已经拿着 `call.name` / `args`
+（第 87 行）、发 `agent.tool.started`（第 124 行）、写台账 `taskCore.addStep`（第 166 行）。
+Action 就在**这一处**组装 —— 别处不要再拼一份（硬约束 9）。
+
+组装函数（步骤 b **已落地**：`electron/core/action.cjs`）：
+
+```text
+of({ name, args, workdir, userText, limits }) → Action
+  risk          ← risk.classify(command)              （只 run_shell）
+  scale         ← scale.inspect({ name, args, … })     （level / kind / scope / estimate）
+  scope         ← scale.scope
+  reversibility ← task-intent.isReplayUnsafe(name) ? 'unsafe' : 'safe'
+```
+
+纯函数、不 require electron；自检 `127-action` 钉「每一条都和**现成的家**一致（不重判）」。
+
+分步落地 —— **每步单独提交、单独验证、可单独回滚**：
+
+| 步 | 动哪 | 风险 | 状态 |
+|---|---|---|---|
+| 1 | 新增 `core/action.cjs` + 自检 `127` | 低（不动内核） | ✅ 已落地 |
+| 2 | `tool-runner` 把 action 挂进 `agent.tool.started` 的 payload | 低（只加字段） | 待做 |
+| 3 | `tool-runner` 写 `step.action` | 中（**改数据结构** — 硬禁区 3） | 待做 |
+| 4 | Permission 判断从各 gate 收到 Action 上（P0-4 / P0-10） | 高（**权限行为**） | 待做 |
+
+步骤 3 触发**硬禁区 3**：只加字段、不删旧；老台账没有 `action` 照常读；**不新建
+`data/actions/`**（复用 `task.steps[]`，防硬禁区 11 的「同义结构比缺字段更难收」）。
+步骤 4 触发**硬禁区 10**（`risk.cjs` 在权限 / 安全模型名单里）：动手前先把「这次不做什么」
+写进 [`安全模型.md`](安全模型.md)。
+
 **最难的一步**是 (c)：`tool-runner` 是所有工具的必经之路，接错了会**静默改坏所有工具**。
 所以这一步必须**真机走一遍**（`AGENT.md` 收工必跑那条：测试全绿 ≠ 能用）。
 
