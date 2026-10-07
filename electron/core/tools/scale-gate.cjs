@@ -165,6 +165,8 @@ function record(audit, ctx, name, args, verdict, decision) {
     files: verdict.estimate.files,
     seconds: verdict.estimate.seconds,
     basis: verdict.estimate.basis,
+    /* P4-1：对「逃出工作目录」的命令，记下目标路径的实际探测结果（known=探到没有） */
+    target: verdict.estimate.target ?? null,
   }
   try {
     audit({

@@ -23,8 +23,14 @@ import { check, group, warn } from '../harness.mjs'
    ══════════════════════════════════════════════════════════════ */
 
 const WORKDIR = 'D:\\proj'
-/** 造一次 shell 调用（workdir 固定，用户那句话按需给） */
-const sh = (command, userText = '') => ({ name: 'run_shell', args: { command }, workdir: WORKDIR, userText })
+/**
+ * ★ P4-1 起：判据会**探目标路径的实际规模**（`scale.cjs` 的 `probe`，默认真读盘）。
+ * 这一组**注入替身**（默认「探不到」= 与改动前一样保守拦），让断言跟跑测试那台机器
+ * 的盘上有什么无关；真正读盘的探测器在 `128-scale-target.mjs` 里单独验。
+ */
+const PROBE_UNKNOWN = () => ({ known: false, files: null })
+/** 造一次 shell 调用（workdir 固定，用户那句话按需给；探测器默认「探不到」） */
+const sh = (command, userText = '', probe = PROBE_UNKNOWN) => ({ name: 'run_shell', args: { command }, workdir: WORKDIR, userText, probe })
 const noopAudit = () => {}
 /** 一次**合规的规模确认提问**（拦截文案要求的：说清范围与代价、选项里写数字） */
 const SCALE_ASK = [

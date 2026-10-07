@@ -105,30 +105,41 @@ function scopeOf(text, workdir) {
     const hit = text.match(DRIVE_ROOT)?.[1] ?? ''
     const letter = String(hit).match(/^([A-Za-z]):/)?.[1]
     if (letter) tokens.push(...driveTokens(letter))
-    return { scope: 'drive-root', tokens }
+    return { scope: 'drive-root', tokens, paths: [] }
   }
   const wd = String(workdir ?? '').toLowerCase()
+  /*
+   * 命中的**具体路径**（可能有多个）单独收一份：`tokens` 仍然按原来的口径只取
+   * **第一个**越界路径（改了会让「用户说了范围」的豁免面变大，那是另一回事）。
+   * `paths` 是给 P4-1 的探测器用的 —— 探的是「命令实际指向哪几个目录」。
+   */
+  const paths = []
+  let firstOutside = false
   for (const path of text.match(ABS_PATH) ?? []) {
     const lowered = path.toLowerCase()
     if (wd && (lowered === wd || lowered.startsWith(`${wd}\\`))) continue
+    paths.push(path)
+    if (firstOutside) continue
+    firstOutside = true
     /* 工作目录之外：记下盘符（各种写法）和最后一段目录名（用户说「扫 D 盘那个项目」也算说清了） */
     const letter = path.match(/^([A-Za-z]):/)?.[1]
     if (letter) tokens.push(...driveTokens(letter))
     const tail = path.split(/[\\/]/).filter(Boolean).at(-1)
     if (tail) tokens.push(tail)
-    return { scope: 'outside', tokens }
   }
+  if (paths.length) return { scope: 'outside', tokens, paths }
   if (/~[\\/]/.test(text) || /(?:^|\s)~(?=\s|$)/.test(text)) {
     tokens.push('~', '家目录', '用户目录')
-    return { scope: 'outside', tokens }
+    return { scope: 'outside', tokens, paths: [] }
   }
   /*
    * 环境变量 / Unix 根：判成「外面」，理由见 `ENV_PATH` 那段注释。
    * 位置在**显式绝对路径之后** —— 有 `C:\Users` 这种说得清的目标时用它自己的 tokens
    * （用户说了「扫 C:\Users」就该豁免），只有光靠绝对路径判不出来时才回落到这里。
+   * ⚠️ 这一支**给不出具体路径**（`paths: []`）—— 运行时才知道指到哪，P4-1 因此不探测、照旧拦。
    */
-  if (ENV_PATH.test(text) || POSIX_ROOT.test(text)) return { scope: 'outside', tokens }
-  return { scope: 'workdir', tokens: [] }
+  if (ENV_PATH.test(text) || POSIX_ROOT.test(text)) return { scope: 'outside', tokens, paths: [] }
+  return { scope: 'workdir', tokens: [], paths: [] }
 }
 
 /** 用户这句话字面上提到过这个范围吗（**不猜意图**，只认字面；去掉空格后比，「C 盘」=「c盘」） */

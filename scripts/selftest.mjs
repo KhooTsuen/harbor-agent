@@ -144,6 +144,7 @@ import { run as cardTimeoutGroup } from './selftest/groups/124-card-timeout.mjs'
 import { run as decisionShapeGroup } from './selftest/groups/125-decision-shape.mjs'
 import { run as eventTypesGroup } from './selftest/groups/126-event-types.mjs'
 import { run as actionGroup } from './selftest/groups/127-action.mjs'
+import { run as scaleTargetGroup } from './selftest/groups/128-scale-target.mjs'
 
 const GROUPS = [
   basics,
@@ -265,7 +266,7 @@ const GROUPS = [
   memoryReflectGroup,
   projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
-  decisionShapeGroup, eventTypesGroup, actionGroup,
+  decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup,
 ]
 
 async function main() {

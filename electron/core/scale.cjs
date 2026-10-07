@@ -41,17 +41,29 @@ const BLOCKED_MARK = '先别做：这次的规模不小'
 /* ── 判规模 ───────────────────────────────────────────────── */
 
 /**
+ * 「逃出工作目录」的递归/批量命令**实际动多大**（P4-1）：探目标路径。
+ *
+ * 默认真读盘（下界口径，见 `scale-files.cjs`）；**可注入**（`inspect` 的 `probe` 入参）——
+ * 自检拿替身喂「小 / 大 / 探不到」三种，免得判据依赖跑测试那台机器的盘上有什么。
+ */
+function defaultProbe(paths, options) {
+  return require('./scale-files.cjs').probePaths(paths, options)
+}
+
+/**
  * 看一次工具调用：规模大不大。
  *
  * @param {{ name: string, args?: object, workdir?: string, userText?: string,
- *           limits?: { hardSeconds?: number, warnSeconds?: number, maxFiles?: number } }} call
+ *           limits?: { hardSeconds?: number, warnSeconds?: number, maxFiles?: number },
+ *           probe?: (paths: string[], options: object) => { known: boolean, files: number|null } }} call
  *   `limits` 由调用方注入（闸门从配置读）—— 不传就回落 `scale-config.cjs` 的默认值，
  *   所以自检与验收判据直接 `inspect(...)` 也能跑。
+ *   `probe` 是 P4-1 的探测器，**默认真读盘**；自检注入替身让判据可离线、确定性。
  * @returns {{ level: 'ok'|'note'|'ask', kind: string|null, scope: string,
- *             reasons: string[], estimate: { files: number|null, seconds: number|null, basis: string },
+ *             reasons: string[], estimate: { files: number|null, seconds: number|null, basis: string, target?: object },
  *             tokens: string[] }}
  */
-function inspect({ name, args = {}, workdir = '', userText = '', limits = {} }) {
+function inspect({ name, args = {}, workdir = '', userText = '', limits = {}, probe = defaultProbe }) {
   const hard = Number.isFinite(Number(limits.hardSeconds)) ? Number(limits.hardSeconds) : HARD_SECONDS
   const warn = Number.isFinite(Number(limits.warnSeconds)) ? Number(limits.warnSeconds) : NOTE_SECONDS
   const maxFiles = Number.isFinite(Number(limits.maxFiles)) ? Number(limits.maxFiles) : HARD_FILES
@@ -113,7 +125,7 @@ function inspect({ name, args = {}, workdir = '', userText = '', limits = {} }) 
 
   if (!recursive && !batch && !external && seconds === null) return none
 
-  const { scope, tokens } = scopeOf(text, workdir)
+  const { scope, tokens, paths } = scopeOf(text, workdir)
   if (scope === 'drive-root' && (recursive || batch)) {
     seconds = Math.max(seconds ?? 0, 300)
     reasons.push('范围是盘根 / 全盘')
@@ -152,13 +164,34 @@ function inspect({ name, args = {}, workdir = '', userText = '', limits = {} }) 
   /*
    * 硬拦四条：
    *   · **批量外联** —— 范围不可控（爬一个站、镜像一个仓库），和它逃不逃出工作目录无关；
-   *   · **递归/批量 且逃出工作目录** —— 「扫全盘」这类，代价值得先问一句。
+   *   · **递归/批量 且逃出工作目录** —— 「扫全盘」这类，代价值得先问一句（**P4-1：现在按实际规模判**）；
    *   · 估时闸门（阈值可从配置改，见 `scale-config.cjs`）。
    *   · 文件数闸门（`scaleMaxFiles`）—— 口径是下界，估不出来（null）就不成立。
+   *
+   * ★ P4-1（2026-10-07）：第二条**不再只看命令形态**。原来「递归/批量 且逃出工作目录」一律拦 ——
+   *   判据是命令**长得像不像**（看到 `-Recurse` / `robocopy` 就拦），不管它实际动多大，于是
+   *   「清理 2 个临时文件」也被拦（`docs/improvement-checklist.md` P4-1 的原话）。
+   *   现在：**先探目标路径的实际规模**——
+   *     · 探得到 且不大（≤ `scaleMaxFiles`）→ **不拦**（降成 note，只留痕）；
+   *     · 探得到 但很大 → 照旧拦；
+   *     · 探不到（环境变量 / 盘根 / glob / 没权限）→ **照旧拦**（不知道就别放行，保守方向）。
    */
+  let byShape = escapes && (recursive || batch)
+  let probed = null
+  if (byShape && scope === 'outside' && paths.length > 0) {
+    probed = probe(paths, { max: maxFiles })
+    if (probed.known && probed.files < maxFiles) {
+      byShape = false
+      reasons.push(`目标是具体路径，实测约 ${probed.files} 个条目（未达阈值，不拦）`)
+    } else {
+      reasons.push(probed.known ? `目标实测约 ${probed.files} 个条目` : '目标规模探不出来（保守起见照旧拦）')
+    }
+    estimate.target = { known: probed.known, files: probed.files }
+  }
+
   const isHard =
     external ||
-    (escapes && (recursive || batch)) ||
+    byShape ||
     (seconds !== null && seconds >= hard) ||
     (estimate.files !== null && estimate.files > maxFiles)
 
