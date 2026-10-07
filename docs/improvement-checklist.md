@@ -33,7 +33,10 @@
   （`loop-prompt.cjs`、`tools/registry.cjs`）
 - ✅ **完整流程**：创建任务 → 工具调用 → 文件改动 → 测试执行 → 结果汇报
   （`task.cjs` + `tools/index.cjs` + `task-outcome.cjs` 认「跑没跑测试、过没过」）
-- ⚠️ **成功率 ≥90%**：**没有量化基线**。项目自己也有这条账 —— 见阶段四 4.1
+- ⚠️ **成功率 ≥90%**：**2026-10-08 有了第一份量化基线**（10 条 Golden Tasks、29 次运行、
+  总成功率 29/29）—— 但那是**任务集内**的成功率，不等于真实使用的成功率。
+  完整数字见 [`Model Interaction Baseline.md`](Model%20Interaction%20Baseline.md) §3；
+  任务定义见 [`Golden Tasks.md`](Golden%20Tasks.md)。「真实任务验收」那条仍见阶段四 4.1
 - ✅ **非核心能力降级**：Model Router 默认关闭（`router.enabled = false`，CHANGELOG 0.24.0 起）；
   多任务并行是显式开的；MCP 要用户自己配服务器
 
@@ -249,9 +252,12 @@
    （「可能陷入重复执行」「连着几次还是转圈」「（继续 / 停止）」）并钉住
    「循环真的调它」。界面那一侧用真机探针验过：造一条 loop-paused 任务，
    界面上出现「已暂停 · 检测到重复执行」+ 证据 + 继续/停止按钮。
-7. **真实任务验收**（4.1）—— **只剩这一条，而且只能你来**：
-   拿 `npm run acceptance` 加 `docs/试玩清单.md` 扩成 5–10 个真实场景、各跑 3 次，
-   把「成功率 ≥90%」量成一个数字；失败的那几条顺带就是根因分析的样本。
+7. **真实任务验收**（4.1）—— **2026-10-08 做了第一轮**：
+   10 条 Golden Tasks（定义见 [`Golden Tasks.md`](Golden%20Tasks.md)）在独立实例上跑了 29 次，
+   29/29 到达 `completed`，数字进了 [`Model Interaction Baseline.md`](Model%20Interaction%20Baseline.md)。
+   这**不等于**「真实使用的成功率」—— 任务集是我设计的，比真实场景窄。
+   下一步（要么你来、要么授权我）：把 `npm run acceptance` 加 `docs/试玩清单.md`
+   扩成 5–10 个**真实**场景、各跑 3 次，失败的那几条顺带就是根因分析的样本。
    （另一个 ❌ 是 GIF/短视频 —— 要录屏，代码补不了。）
 8. ~~**界面上超边界任务的提前提示**（3.1）~~ → ✅ **2026-09-24 已做（v1.18.0）**：
    `core/capability-bounds.cjs`——六条边界（常驻后台 / 云同步 / 多人协作 / 手机端 /

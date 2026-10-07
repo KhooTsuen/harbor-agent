@@ -4,7 +4,9 @@
 > 它不是单元测试（那测的是函数），也不是内核自检（那测的是模块能跑）——
 > 它测的是**「换一个能力一般但可靠的模型，Harbor 还能不能把活干完」**。
 >
-> **状态**：v1 定义稿。**尚未执行**（执行需要真实模型调用 = 花钱，见文末「执行前的红线」）。
+> **状态**：v1 定义稿。**已于 2026-10-08 执行一轮**（29 次运行，总成功率 100%），
+> 实测数字见 [`Model Interaction Baseline.md`](Model%20Interaction%20Baseline.md) §3。
+> 怎么跑的在 §3；跑出来的「没测到什么」也在那份基线里。
 > 配套：[`Model Interaction Baseline.md`](Model%20Interaction%20Baseline.md)（指标口径 + 基线表）。
 >
 > **规模纪律**：任务书明确 **不要一次设计 70 个测试**。v1 只 10 条，每条都要能**手工跑、能看懂、能判定**。
@@ -162,17 +164,25 @@ Observe → Measure → Identify bottleneck → Make smallest change
 
 ---
 
-## 3. 执行前的红线（**要你点头才能跑**）
+## 3. 执行前的红线（**2026-10-08 已按这份规矩跑过一轮**）
 
-1. **花钱**：10 条任务 × 真实模型调用。用 DeepSeek 主力模型跑一轮的成本需要先估。
-2. **不碰真数据**：必须在**隔离目录**跑（沿用项目已有约定：
-   `npm test` 写 `data/selftest-data`、`npm run test:unit` 写 `data/unit-test-data`，
-   由 `electron/core/paths.cjs` 的 `isolationDirName()` 决定）。
-   Golden Tasks 的工作目录另建一个，**不指向 `E:\CodexWorkbench` 或 `E:\Harbor-Dev`**。
-3. **判据要人看**：v1 的判定靠**人工观察**（尤其「不许出现」那几条），不自动判 ——
-   自动判要另写脚本，属于下一步。
-4. **先定口径再跑**：`Model Interaction Baseline.md` 里的指标名与来源文件先冻结，
-   否则跑两遍的口径不一样，数字没法比。
+> **这一轮实际是怎么跑的**（复现照这个来）：
+> ① 复制一份便携版到 `E:\harbor-golden\Harbor`（`robocopy ... /E /XD data`），
+> 再拷 `config.json` + `credentials.json` + `data/chromium/Local State`
+> —— **最后这个是必须的**：Electron 44 的 `safeStorage` 在 Windows 上把密钥存在
+> userData（`data/chromium`）里，不拷过来会报「凭证解密失败」。
+> ② 工作目录 `E:\harbor-golden\workspaces`，`tools.permission` 设成 **ask**（否则确认卡永不弹）。
+> ③ 起实例：`Harbor.exe --remote-debugging-port=9333`，用 `tmp/golden-driver.mjs` 驱动
+> （它走 `tools/shot/cdp.mjs` 那套 CDP 唯一实现；`--name=` / `--prompt-file=` / `--timeout=`）。
+> ④ 每条任务开新会话；改文件的任务跑前调 `tmp/reset-fixture.mjs` 复原素材。
+
+1. **花钱**：✅ 已花（10 条 × 真实调用）。用 DeepSeek 主力模型跑一轮的成本见基线里的 token 数。
+2. **不碰真数据**：✅ 在**另一个目录**（`E:\harbor-golden`）跑的，与
+   `E:\CodexWorkbench\data` 和 `E:\Harbor-Dev\...\data` 完全无关。
+   （**注意**：`paths.cjs` 的隔离机制只对 `npm test` / `test:unit` 生效，
+   真应用跑起来必然写真 data —— 所以只能整份复制，别指望就地跑。）
+3. **判据要人看**：✅ v1 的判定是**人工读回答**（尤其「不许出现」那几条）—— 没写自动判分脚本。
+4. **先定口径再跑**：✅ 指标名与来源在跑之前已经冻结在基线文档里。
 
 ---
 
