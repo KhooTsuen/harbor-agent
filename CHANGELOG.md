@@ -5,6 +5,23 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **真机脚本可靠性：CDP helper 收敛成一处 + 语法预检 / 异常分家 / 退出清理**（清单里标「值得优先」的那条）。
+  以前真机验证靠 `tmp/` 里一堆一次性脚本（`probe-*.js`、`verify-*.mjs`，几十个），每个都把 CDP
+  连接逻辑抄一遍，而 `tmp/` 被 gitignore —— 沉淀不下来。`tools/shot/cdp.mjs` 已经是共享库，但
+  `tools/shot-electron.mjs` 又自己写了一份（第三份）。后果就是清单原话：「测试的 bug 伪装成产品的 bug」，
+  2026-10-03 一夜连着三轮误报都得人肉分辨。这次：
+  · `tools/shot/cdp.mjs` 补齐可靠性三件套 —— `checkExpression`（发出去之前先编译，语法错当场拦，
+    不再变成页面里的 `SyntaxError`）、`evaluate`（页面异常只留第一行 + 带 label；返回 undefined 时
+    警告「是不是漏了 return」）、`makeCleanup`（退出时倒序关子进程 / 连接，node 不再挂住）、
+    `findPageTarget`（连不上端口时报错带「怎么办」）；
+  · `tools/shot-electron.mjs` 删掉自带的那份 `Cdp` / `connect` / `sleep` / `findTarget`，改用共享库；
+  · 新增 `tools/cdp.mjs` —— 真机探针 CLI（连已开的实例：dev 或打包版），把散在 `tmp/` 的那类脚本
+    收成仓库内的一等工具。
+  自检 `130-cdp-helpers`（13 项，纯逻辑不连真机）。
+  验证：内核自检 **3917 → 3930 项 / 0 失败**；真机 `node tools/cdp.mjs --port=9222 --js="document.title"`
+  → `Harbor`（坏语法被当场拦下、不再发到页面）；`npm run shot:electron`（复用共享库后）→ 连上打包版、
+  执行脚本、截图、探针全部正常。
+
 - **文本原子写收敛成一处（4 份 → 1 份），顺带给另外三处补上退避重试**（`docs/improvement-checklist.md`
   2026-10-04 记的「三份原子写」待办，已授权）。以前「别丢用户数据」的那段逻辑散在四处：
   `core/safe-write.cjs`（共享版，**只有它有**「文件被占着」退避重试）、`core/session-crypto.cjs`

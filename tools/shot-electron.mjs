@@ -25,6 +25,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+/* CDP 客户端只有一处实现（tools/shot/cdp.mjs）—— 这里以前自己又写了一份，三份里最旧的那份 */
+import { connect, sleep, findPageTarget, evaluate } from './shot/cdp.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 /*
@@ -81,59 +83,6 @@ if (!existsSync(EXE)) {
 
 mkdirSync(OUT_DIR, { recursive: true })
 
-/* ── CDP 小客户端（和 shot.mjs 同一套写法）────────────────── */
-
-class Cdp {
-  constructor(ws) {
-    this.ws = ws
-    this.seq = 0
-    this.pending = new Map()
-    ws.addEventListener('message', (event) => {
-      const msg = JSON.parse(event.data)
-      const slot = this.pending.get(msg.id)
-      if (!slot) return
-      this.pending.delete(msg.id)
-      if (msg.error) slot.reject(new Error(JSON.stringify(msg.error)))
-      else slot.resolve(msg.result)
-    })
-  }
-
-  send(method, params = {}) {
-    const id = ++this.seq
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.ws.send(JSON.stringify({ id, method, params }))
-    })
-  }
-}
-
-function connect(url) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url)
-    ws.addEventListener('open', () => resolve(new Cdp(ws)), { once: true })
-    ws.addEventListener('error', () => reject(new Error('WebSocket 连接失败')), { once: true })
-  })
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-/** 等 Electron 把调试端口开起来，并找到一个 page 类型的 target */
-async function findTarget(timeoutMs = 30000) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${PORT}/json/list`)
-      const list = await res.json()
-      const page = list.find((t) => t.type === 'page' && t.webSocketDebuggerUrl)
-      if (page) return page
-    } catch {
-      /* 还没起来 */
-    }
-    await sleep(500)
-  }
-  throw new Error('等不到调试端口（Electron 起来了吗？）')
-}
-
 /* ── 主流程 ─────────────────────────────────────────────── */
 
 const app = spawn(EXE, [`--remote-debugging-port=${PORT}`], {
@@ -144,7 +93,7 @@ const app = spawn(EXE, [`--remote-debugging-port=${PORT}`], {
 
 let cdp
 try {
-  const target = await findTarget()
+  const target = await findPageTarget(PORT, { timeoutMs: 30000 })
   cdp = await connect(target.webSocketDebuggerUrl)
   await cdp.send('Page.enable')
   await cdp.send('Runtime.enable')
@@ -153,8 +102,8 @@ try {
   await sleep(2500)
 
   if (SCRIPT) {
-    const result = await cdp.send('Runtime.evaluate', { expression: SCRIPT, awaitPromise: true })
-    console.log('执行脚本 →', result.result?.value ?? '(无返回值)')
+    const value = await evaluate(cdp, SCRIPT, { label: '--js 脚本' })
+    console.log('执行脚本 →', value ?? '(无返回值)')
   }
 
   /* 终端要等 shell 起来并打出提示符 */
@@ -162,14 +111,15 @@ try {
 
   if (TYPE) {
     /* 先把焦点点进终端 */
-    await cdp.send('Runtime.evaluate', {
-      returnByValue: true,
-      expression: `(function () {
+    await evaluate(
+      cdp,
+      `(function () {
         const host = document.querySelector('.xterm-helper-textarea') || document.querySelector('.xterm')
         if (host) host.focus()
         return document.activeElement?.className ?? 'none'
       })()`,
-    })
+      { label: '终端聚焦' },
+    )
 
     /*
      * `;;` 分段，每段敲完回车。
@@ -210,13 +160,13 @@ try {
       if (b) b.click()
       return !!b
     })()`
-    await cdp.send('Runtime.evaluate', { expression: openSettings, returnByValue: true })
+    await evaluate(cdp, openSettings, { label: '打开设置' })
     await sleep(1500)
 
     for (const tabName of TABS) {
-      const clicked = await cdp.send('Runtime.evaluate', {
-        returnByValue: true,
-        expression: `(function () {
+      const clicked = await evaluate(
+        cdp,
+        `(function () {
           var t = [...document.querySelectorAll('nav button')].find(function (x) {
             return (x.textContent || '').trim() === ${JSON.stringify(tabName)}
           })
@@ -226,13 +176,14 @@ try {
           if (body) body.scrollTop = 0
           return 'ok'
         })()`,
-      })
+        { label: `切到标签「${tabName}」` },
+      )
       await sleep(1200)
 
       const one = await cdp.send('Page.captureScreenshot', { format: 'png' })
       const out = resolve(OUT_DIR, `tab-${tabName}.png`)
       writeFileSync(out, Buffer.from(one.data, 'base64'))
-      console.log(`截图 → tab-${tabName}.png（${clicked?.result?.value ?? '?'}）`)
+      console.log(`截图 → tab-${tabName}.png（${clicked ?? '?'}）`)
     }
     app.kill()
     process.exit(0)
@@ -244,20 +195,21 @@ try {
   console.log(`截图 → ${file}`)
 
   /* 顺手报一下页面里的关键状态，比人眼看图更可靠 */
-  const probe = await cdp.send('Runtime.evaluate', {
-    returnByValue: true,
-    expression: `JSON.stringify({
+  const probe = await evaluate(
+    cdp,
+    `JSON.stringify({
       title: document.title,
       xtermCount: document.querySelectorAll('.xterm').length,
       xtermRows: document.querySelectorAll('.xterm-rows > div').length,
       firstLines: [...document.querySelectorAll('.xterm-rows > div')].slice(0, 3)
         .map(d => d.textContent.trim()).filter(Boolean),
     })`,
-  })
-  if (probe.result?.value) {
-    console.log('页面探针 →', probe.result.value)
+    { label: '页面探针' },
+  )
+  if (probe) {
+    console.log('页面探针 →', probe)
   } else {
-    console.log('页面探针 → (取不到)', JSON.stringify(probe).slice(0, 200))
+    console.log('页面探针 → (取不到)')
   }
 } catch (error) {
   console.error('失败：', error instanceof Error ? error.message : error)
