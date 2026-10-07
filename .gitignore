@@ -27,6 +27,13 @@ build/*
 # 里面可能是任意代码。
 data/
 
+# 贴进对话的附件（Harbor 自己落的，`.harbor/attachments/`）。
+# 里面是用户粘贴的原文 —— 可能是任意私有内容。
+# 2026-10-08 查出来它一直没被忽略：`git status` 里挂着 `?? .harbor/attachments/`，
+# 一次 `git add -A` 就把粘贴的内容带进仓库了。这正是下面记过三次的同一类坑。
+# 注意：`.harbor/rules.md` 要进仓库（那是项目规矩），所以只忽略 attachments/ 这一个目录。
+.harbor/attachments/
+
 # 截图（工具生成的，需要时重跑 npm run shot）
 shots/
 
