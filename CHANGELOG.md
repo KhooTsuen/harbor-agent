@@ -1,5 +1,96 @@
 # 更新日志
 ## [未发布]
+- **计划卡不再被空任务顶掉**（2026-10-08）。用户报「计划卡又不显示了」：内核每收到
+  一句新话就新建一条任务（`task-resume.cjs`，只有「继续/接着做」才复用旧的），新建的
+  是空任务 —— 而 `PlanBar.tsx` 按 `updatedAt` 取「本会话最新任务」，于是用户一开口，
+  最新那条变成空任务，卡立刻消失（真机台账可验：一句闲聊就多一条 `plan=0` 的任务）。
+  改成取「本会话最近一条**有计划**的任务」，空任务不再顶掉它。渲染层 1 个文件 +
+  单测 3 条（空任务不顶掉 / 都有计划仍取新的 / 只有空任务则不显示）。
+
+- **附件支持各类文件格式：PDF / Word / Excel / PPT / 压缩包 / 二进制**（2026-10-08）。
+  用户要求「文件上传不止文本类」。主进程新增 `core/file-extract.cjs`（按扩展名分流：
+  文本 / 图片 / 文档 / 压缩包 / 二进制）+ `core/file-extract-docs.cjs`（PDF 走 pdfjs-dist、
+  Word 走 mammoth、Excel 走 SheetJS、PPT 自解 zip 抽 `<a:t>`；四个库一律**懒加载** ——
+  装不上只影响那一类，不会连累 handler 注册）、`handlers/file-attach.cjs`（新通道
+  `file:attach`，可多选、串行解析、单次最多 5 个），已同步 `ipc-channels.cjs` 与 `preload.cjs`。
+  **二进制不假装能读** —— 只登记「文件名 + 大小 + 类型」；压缩包只列条目名（zip 能列，
+  rar/7z 只能登记大小，照实说）；抽出的正文超过 10 万字符标 `truncated`，绝不静默截断。
+  渲染层：`stores/thread/attachments.ts`（附件槽 + `attachBlock` 把正文拼进消息）、
+  `components/chat/composer/FileAttachments.tsx`（附件卡片）、`useComposerAttachments.ts`
+  的 `attachFile` → `attachFiles`。**附件正文直接进用户消息的 `content`** —— 模型这一轮
+  读的就是会话历史，拼进去就一定读得到；太长时 `core/long-paste.cjs` 会在主进程自动落盘、
+  只发开头 + 路径（那条路本来就在）。**新增依赖**：`pdfjs-dist`、`mammoth`、`adm-zip`、
+  `xlsx`（运行时，均纯 JS、无原生 ABI）—— 打包脚本 `build-portable.mjs` 因此改了：
+  主进程第三方包改为**按 `npm ls --omit=dev --all` 自动整份拷**（以前只硬拷 node-pty，
+  下次加依赖必漏）。
+
+- **图片全屏查看器完善**（2026-10-08）。原来放大后只能看中心那一块、也不能拖。
+  渲染层：`ImageLightbox.tsx` 加「适应窗口 / 原始大小 1:1 / 旋转 90° / 另存为 /
+  在文件夹里显示 / 复制到剪贴板」，键盘加 `R` 旋转；新文件 `ImageStage.tsx` 管
+  「拖动平移 + 滚轮以鼠标位置为中心缩放」（拆出来是因为外壳加完按钮贴到 300 行）；
+  `useImageLightbox.ts` 的视图状态扩成 `scale/tx/ty/rotation/actualSize`，
+  缩放范围由 `MIN_SCALE`/`MAX_SCALE` 一处导出（渲染层不再各写一套）。
+  主进程：新文件 `core/image-load.cjs`（把 `file:` / `data:` / `http(s):` 三种来源
+  读成 Buffer，只读用户点名的那一张、不列磁盘）、`handlers/image-file.cjs`
+  （三条新通道 `image:saveAs` / `image:reveal` / `image:copy`），已同步
+  `ipc-channels.cjs` 与 `preload.cjs`；`preload.cjs` 撞了 300 行红线（该文件按
+  sandbox 规矩不能拆）压掉两处注释腾空间。不复用 `fs:reveal` 是因为它把路径锁进
+  工作目录，而生成的图完全可能在工作目录外面（生图可存到用户自选目录）。
+
+- **对话渲染补全：原始 HTML 直通 / 数学公式（KaTeX）/ Mermaid 图表**（2026-10-08）。
+  用户要求「没做的渲染功能都补上，连 HTML 直通也做了」，并在知情风险（可执行脚本）后选择全量直通。
+  解析层（`src/lib/markdown/`）：`types.ts` 新增 `math` / `html` 两类节点（行内 + 块级）；
+  `inline.ts` 加「配对标签优先、单标签兜底」的 HTML 规则（标签白名单 `HTML_TAGS`，避免误吞
+  `useState<string>` 这类泛型）与 `$…$` 行内公式规则（两侧不留空白，`$100 和 $200` 不受影响）；
+  新文件 `blocks-special.ts` 管块级 `$$…$$` 与 HTML 块（`blocks.ts` 已 254 行，不能再塞）；
+  `incremental.ts` 把「光杆 `$$`」按围栏处理 —— 否则含空行的公式块会在空行处被切错
+  （新增对拍用例钉住）；`pending.ts` 让光杆 `$$` 降级成残缺行；`index.ts` 的 `hasMarkdown`
+  认 `<` 与 `$`。渲染层（`src/components/chat/markdown/`）：新文件 `MathNode.tsx`（KaTeX，
+  `throwOnError:false`，解析失败退化成等宽原文）、`RawHtml.tsx`（**直通**，开关
+  `localStorage['harbor.rawHtml']='0'` 可关）、`MermaidBlock.tsx`（动态 import mermaid，
+  `securityLevel:'strict'`，出错退化成代码块）；`Inline.tsx` / `Blocks.tsx` 接线，
+  ```` ```mermaid ```` 走 MermaidBlock 而非代码高亮。
+  **新增依赖**：`katex`、`mermaid`（运行时）+ `@types/katex`（dev）—— 均为纯 JS，无原生依赖。
+  验证：`npm run typecheck` 0 错；新增 `__tests__/extensions.test.ts` 27 条（含「泛型不误吞」
+  「金额不当公式」两组反例 + 6 个样本的增量对拍），markdown 目录 66 条全绿；`npm run lint`
+  0 错。**安全说明**：HTML 直通后，模型输出 / 它读到的网页与仓库内容都可能带脚本
+  （`onerror=`、`<iframe>` 会真的执行；`<script>` 经 innerHTML 插入不执行），这是用户明确
+  要求打开的口子，不是疏漏。
+
+- **设置页给「已过期」记忆一条自己的文案**（2026-10-08）。上一批把过期从「物理删」改成
+  「标 `expired`」之后，界面还在沿用 disabled 的暗色 + 「启用」—— 用户看不出这条是**自己到期**的，
+  还是自己关掉的。现在：徽章「已过期」（走 `colorOf('cancelled')` 的中性灰，不跟「已停用」的
+  黄色警告混），按钮与轻提示改成「恢复」（`enable()` 走 `update({status:'active'})` 会把
+  `expiresAt` 一并清掉，措辞得对得上）。`src/types/safety-types.ts` 的 `MemoryItem['status']`
+  同步补 `'expired'`（不然 `status === 'expired'` 会被 TS 判「两边无交集」）。
+  动了 2 个文件；`MemoryTab.tsx` 压掉一段文件头注释保住 ≤300 行。
+
+- **记忆系统修三个 P0：冲突误取代 / 类型失效 / 过期即删**（2026-10-08，来自对照
+  `docs/Memory设计.md` 的代码盘点）。三处都在 `electron/core/memory*`：
+
+  ① **`findConflicts` 的 `||` 优先级 bug（会静默丢记忆）**。`memory-similarity.cjs` 里写成
+  `(active && 同类型 && 同 scope && similarity>=0.7) || containment>=0.85` —— `&&` 比 `||` 紧，
+  右半边**逃出了**前面三个约束：一条「包含度 ≥ 0.85」的新记忆会把**不同类型、不同 scope、
+  甚至已退场**的旧记忆标成 superseded（不再注入）。注释与文件头一直写着「同类型 + 同 scope」，
+  写得对、代码是错的。修法：加括号把 containment 收回约束内。
+  ② **`remember` 工具一律写死成 `fact/global`**，于是「类型体系 + 冲突检测」在**唯一的模型写入
+  路径**上全失效（`fact` 不在冲突名单里，类型权重也最低）。修法：工具暴露可选 `type`
+  （候选取自 `memory.TYPES`，不在工具里再抄一份），`memory.append` 透传、由 `store.add`
+  按同一张词汇表校验。
+  ③ **过期 = 物理删除**，违反 §56 `Forget ≠ Delete`：`pruneExpired` 以前 `filter` 直接丢掉，
+  用户再也看不到「以前记过什么、什么时候失效的」。修法：标记成 `status:'expired'`（新增状态），
+  注入行为不变（`retrieve` 只取 active），可追溯、点「启用」可恢复（并清 `expiresAt`，
+  否则下次检索立刻又标回 expired）。
+
+  验证：内核自检 **3992 → 4010 项**（新增 `133-memory-conflict-expire` 18 条，含「跨类型 /
+  跨范围 / 已退场不许互相取代」的回归钉）；`npm run verify` 全绿；行数红线 1041 文件全 ≤ 300。
+  遗留：① 原先提的「让 `fact` 也参与冲突判定」**没做** —— 有硬反例：2-gram 相似度分不清
+  「项目 A 的第 0 条」和「第 1 条」（数字被当噪声丢掉），放进去会让 30 条独立事实互相取代，
+  现成的自检 `02-skills-memory` 当场红；② `remember` 只暴露 `type`、**没暴露 `scope`** ——
+  工具 ctx 没有 projectId，记 `project` 范围会变成「永远注入不了」的隐形记忆；③ 设置页对
+  `expired` 状态没有专门文案（沿用 disabled 的暗色 + 「启用」按钮），因为目前没有写入
+  `expiresAt` 的路径，实际见不到。
+
 
 - **`context-builder.cjs` 的预算表删掉 3 个「死键」+ 加一条自检盯着「表里每一项都真的生效」**
   （2026-10-08，来自架构现状审查 `docs/Architecture Reality Audit.md` §7.3）。
