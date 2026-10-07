@@ -19,9 +19,133 @@ interface Rule {
 /* 链接白名单在 linkPolicy.ts（与搜索结果引用共用一个判据）；
    这里只管「像不像链接」，`javascript:` / `file:` 之类一律当普通文字 */
 
+/*
+ * 会被当行内 HTML 的标签名。
+ *
+ * 用白名单而不是「任意 `<xxx>`」是为了少误伤 —— 正文里 `useState<string>`、
+ * `a <b> c` 这类写法很常见，放行任意标签名会把普通回答搅乱。
+ * 标签在名单内即直通（**含属性**，所以 `onerror=` 这类也会执行 —— 见
+ * `RawHtml.tsx` 的安全说明，这是刻意开的口子）。
+ */
+const HTML_TAGS = new Set([
+  'a',
+  'abbr',
+  'audio',
+  'b',
+  'bdi',
+  'bdo',
+  'blockquote',
+  'br',
+  'button',
+  'canvas',
+  'cite',
+  'code',
+  'col',
+  'data',
+  'datalist',
+  'dd',
+  'del',
+  'details',
+  'dfn',
+  'dialog',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hr',
+  'i',
+  'iframe',
+  'img',
+  'input',
+  'ins',
+  'kbd',
+  'label',
+  'legend',
+  'li',
+  'main',
+  'mark',
+  'menu',
+  'meter',
+  'nav',
+  'ol',
+  'optgroup',
+  'option',
+  'output',
+  'p',
+  'picture',
+  'pre',
+  'progress',
+  'q',
+  'rp',
+  'rt',
+  'ruby',
+  's',
+  'samp',
+  'script',
+  'section',
+  'select',
+  'slot',
+  'small',
+  'source',
+  'span',
+  'strong',
+  'style',
+  'sub',
+  'summary',
+  'sup',
+  'svg',
+  'table',
+  'tbody',
+  'td',
+  'template',
+  'textarea',
+  'tfoot',
+  'th',
+  'thead',
+  'time',
+  'tr',
+  'track',
+  'u',
+  'ul',
+  'var',
+  'video',
+  'wbr',
+])
+
 const RULES: Rule[] = [
   /* 行内代码优先级最高：里面的 * 和 _ 都不该被解析 */
   { re: /`([^`\n]+)`/, build: (m) => ({ type: 'code', text: m[1] }) },
+
+  /* 原始 HTML 直通：配对元素优先，其次单标签（标签名单见 HTML_TAGS） */
+  {
+    re: /<([a-zA-Z][\w-]*)(?:"[^"]*"|'[^']*'|[^>])*>([\s\S]*?)<\/\1\s*>/,
+    build: (m) => (HTML_TAGS.has(m[1].toLowerCase()) ? { type: 'html', html: m[0] } : null),
+  },
+  {
+    re: /<\/?([a-zA-Z][\w-]*)(?:"[^"]*"|'[^']*'|[^>])*?\/?>/,
+    build: (m) =>
+      HTML_TAGS.has(m[1].toLowerCase()) || /\/>$/.test(m[0]) || m[0].startsWith('</')
+        ? { type: 'html', html: m[0] }
+        : null,
+  },
+
+  /* 行内公式 $…$（`$$` 归块级；两侧不留空白，免得「$100 和 $200」被吃） */
+  {
+    re: /(?<!\$)\$(?!\$|\s)([^\n$]*?)(?<!\s)\$(?!\$)/,
+    build: (m) => ({ type: 'math', text: m[1] }),
+  },
 
   /* 图片要排在链接前面，否则 `![a](b)` 会被链接规则吃掉开头的 `!` */
   {
@@ -120,6 +244,10 @@ export function plainText(nodes: InlineNode[]): string {
           return node.text
         case 'image':
           return node.alt
+        case 'math':
+          return node.text
+        case 'html':
+          return node.html.replace(/<[^>]*>/g, '')
         case 'br':
           return '\n'
         default:

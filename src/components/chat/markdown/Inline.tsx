@@ -1,12 +1,17 @@
 import { Fragment } from 'react'
 import type { InlineNode } from '@/lib/markdown'
 import { openImageFromDom } from '@/stores/useImageLightbox'
+import { MathSpan } from './MathNode'
+import { RawHtmlInline } from './RawHtml'
 
 /* ══════════════════════════════════════════════════════════════
    行内节点渲染
 
-   全程 React 元素，不用 dangerouslySetInnerHTML ——
-   模型输出是不可信输入，拼 HTML 等于开了个 XSS 口子。
+   全程 React 元素，**除了两处扩展**不用 dangerouslySetInnerHTML ——
+   模型输出是不可信输入，拼 HTML 等于开了个 XSS 口子。两个例外：
+
+     · 公式：KaTeX 生成的受控 HTML（我们自己拼的，不含用户片段）；
+     · 原始 HTML：用户 2026-10-08 明确要求打开的口子，风险与开关见 RawHtml.tsx。
    ══════════════════════════════════════════════════════════════ */
 
 function render(node: InlineNode, key: number) {
@@ -72,6 +77,12 @@ function render(node: InlineNode, key: number) {
           onClick={() => openImageFromDom(node.src)}
         />
       )
+
+    case 'math':
+      return <MathSpan key={key} text={node.text} />
+
+    case 'html':
+      return <RawHtmlInline key={key} html={node.html} />
 
     case 'br':
       return <br key={key} />

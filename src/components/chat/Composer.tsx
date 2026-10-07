@@ -14,6 +14,7 @@ import { NextSteps } from './composer/NextSteps'
 import { ComposerContextRow } from './composer/ContextRow'
 import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
+import { FileAttachments } from './composer/FileAttachments'
 import { CapabilityWarning } from './composer/CapabilityWarning'
 import { PlanBar } from './composer/PlanBar'
 import { useComposerState } from './composer/useComposerState'
@@ -46,7 +47,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
     completions,
     attachFromClipboard,
     pickImage,
-    attachFile,
+    attachFiles,
     insertImageMessage,
     mode,
     setThreadMode,
@@ -185,7 +186,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
             </Tooltip>
 
             <Tooltip content="附加一个文本文件">
-              <IconButton label="添加附件" size={28} onClick={() => void attachFile()}>
+              <IconButton label="添加附件" size={28} onClick={() => void attachFiles()}>
                 <Paperclip size={15} />
               </IconButton>
             </Tooltip>
@@ -236,6 +237,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
 
         {/* 待发送的图片 */}
         <ImageAttachments />
+        {/* 待发送的文件（任何格式） */}
+        <FileAttachments />
         {/* 这活当前模型干得了吗（据声明，不是实测） */}
         <CapabilityWarning />
 

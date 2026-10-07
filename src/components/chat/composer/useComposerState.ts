@@ -61,7 +61,7 @@ export function useComposerState() {
   /* 补全（打 / 出命令、打 @ 出文件）—— 逻辑在 composer/useCompletions.ts */
   const completions = useCompletions(input, setInput, project?.path)
 
-  const { attachFromClipboard, pickImage, attachFile, insertImageMessage } =
+  const { attachFromClipboard, pickImage, attachFiles, insertImageMessage } =
     useComposerAttachments()
 
   /* 当前会话的模式 / 模型 / 推理档位，缺省时回退到全局配置 */
@@ -106,7 +106,7 @@ export function useComposerState() {
     completions,
     attachFromClipboard,
     pickImage,
-    attachFile,
+    attachFiles,
     insertImageMessage,
     mode,
     setThreadMode,

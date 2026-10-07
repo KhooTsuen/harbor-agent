@@ -35,6 +35,8 @@ export function isIncompleteLine(line: string): boolean {
   }
   /* 光杆引用 > */
   if (/^\s*>\s*$/.test(line)) return true
+  /* 光杆公式定界 `$$`（闭合还在后头，或内容没写完） */
+  if (/^\s*\$\$\s*$/.test(line)) return true
   return false
 }
 

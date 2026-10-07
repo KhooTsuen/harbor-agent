@@ -22,6 +22,7 @@ import {
 } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
+import { copyProdDeps, copyNativeDeps } from './prod-deps.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /* 产出的目录名与 exe 名跟着产品名走（Harbor）—— 见 package.json 的 build.productName */
@@ -167,37 +168,8 @@ function copyApp() {
   step(`resources/app/package.json 已写入（v${appVersion}，缺了会静默退出）`)
 }
 
-/**
- * 原生模块（node-pty）必须跟着一起走：它是**运行时**依赖，dist/ 里只有前端 bundle，
- * 主进程 `require('node-pty')` 得在 resources/app/node_modules 下找得到 —— 漏了就是
- * 「终端面板打不开」，报 Cannot find module 'node-pty'。
- *
- * 只拷跑起来必需的，别把 64MB 全搬过来：package.json（require 靠它解析入口）、lib/、
- * prebuilds/win32-x64/（pty.node + conpty.dll + OpenConsole.exe，约 30MB）。不拷
- * darwin-* / win32-arm64 的预编译（28MB，Windows x64 用不到），也不拷 third_party/、src/。
- */
-function copyNativeDeps() {
-  const from = join(ROOT, 'node_modules', 'node-pty')
-  if (!existsSync(from)) {
-    step('⚠️  没找到 node-pty —— 终端功能会不可用（先跑 npm install node-pty）')
-    return
-  }
-
-  const to = join(APP_OUT, 'node_modules', 'node-pty')
-  mkdirSync(to, { recursive: true })
-  for (const item of ['package.json', 'lib']) {
-    cpSync(join(from, item), join(to, item), { recursive: true })
-  }
-
-  const platform = `${process.platform}-${process.arch}`
-  const prebuild = join(from, 'prebuilds', platform)
-  if (existsSync(prebuild)) {
-    cpSync(prebuild, join(to, 'prebuilds', platform), { recursive: true })
-    step(`原生模块已放入：node-pty（${platform}）`)
-  } else {
-    step(`⚠️  node-pty 缺 ${platform} 的预编译产物 —— 终端会不可用`)
-  }
-}
+/* 拷贝主进程依赖的两个函数（copyProdDeps / copyNativeDeps）搬到了 ./prod-deps.mjs ——
+   加完它们这个文件就 339 行，破了 300 行硬约束；这两块又是同一件事的两半，放一起才看得出关系。 */
 
 /* ── 4. 构建清单（build-info.json）────────────────────── */
 
@@ -281,7 +253,8 @@ async function main() {
   prepareOut()
   copyRuntime()
   copyApp()
-  copyNativeDeps()
+  copyNativeDeps(ROOT, APP_OUT, step)
+  copyProdDeps(ROOT, APP_OUT, step)
   copyDocs()
   writeBuildInfo()
   verify()

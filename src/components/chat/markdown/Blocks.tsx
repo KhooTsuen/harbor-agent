@@ -4,6 +4,9 @@ import type { BlockNode, ListItem } from '@/lib/markdown'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from '../CodeBlock'
 import { Inline } from './Inline'
+import { MermaidBlock } from './MermaidBlock'
+import { MathBlock } from './MathNode'
+import { RawHtmlBlock } from './RawHtml'
 import { Table } from './Table'
 
 /* ══════════════════════════════════════════════════════════════
@@ -13,7 +16,9 @@ import { Table } from './Table'
    **输入块数据、输出元素**，不持有任何状态。
 
    两个设计取舍：
-     · **不用 innerHTML** —— 模型输出不可信，拼 HTML 就是 XSS 口子。
+     · **基本不用 innerHTML** —— 默认「模型输出不可信，拼 HTML 就是 XSS 口子」。
+       例外是公式（KaTeX 受控输出）、Mermaid（自己 sanitize）和**原始 HTML 块**
+       （用户明确开的口子，见 RawHtml.tsx）。
      · **每个块一个 memo 组件** —— 增量解析保证「已经写完的块」对象引用不变，
        所以流式时前面那几十个块在这里被 React 直接跳过。
    ══════════════════════════════════════════════════════════════ */
@@ -88,6 +93,10 @@ export const Block = memo(function Block({ node }: { node: BlockNode }) {
        * 计划本身从任务台账读（内核 `task-context.cjs` 已经在解析），见 PlanBar。
        */
       if (String(node.language ?? '').toLowerCase() === 'plan') return null
+      /* ```mermaid 不走代码高亮，交给 MermaidBlock 画成图 */
+      if (String(node.language ?? '').toLowerCase() === 'mermaid') {
+        return <MermaidBlock code={node.code} />
+      }
       return (
         <CodeBlock
           block={{
@@ -143,6 +152,12 @@ export const Block = memo(function Block({ node }: { node: BlockNode }) {
 
     case 'hr':
       return <hr className="my-4 border-line-hairline" />
+
+    case 'math':
+      return <MathBlock text={node.text} />
+
+    case 'html':
+      return <RawHtmlBlock html={node.html} />
 
     default:
       return (

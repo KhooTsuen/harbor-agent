@@ -121,6 +121,10 @@ function registerHandlers(deps) {
   require('./handlers/skills.cjs').register({ ipcMain })
   require('./handlers/extras.cjs').register({ ipcMain })
   require('./handlers/fs.cjs').register({ ipcMain })
+  /* 「附加文件」：任何格式（PDF/Word/Excel/PPT/压缩包/二进制），见 handlers/file-attach.cjs */
+  require('./handlers/file-attach.cjs').register({ ipcMain })
+  /* 图片查看器的「另存为 / 在文件夹显示 / 复制到剪贴板」（见 handlers/image-file.cjs） */
+  require('./handlers/image-file.cjs').register({ ipcMain, getMainWindow })
   require('./handlers/shell.cjs').register({ ipcMain })
   require('./handlers/scene.cjs').register({ ipcMain })
   require('./handlers/diagnostics.cjs').register({ ipcMain })

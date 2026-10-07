@@ -21,6 +21,14 @@ import { parseBlocks } from './blocks'
 
 const RE_FENCE = /^(\s*)(`{3,}|~{3,})/
 const RE_QUOTE = /^\s*>/
+/**
+ * 光杆 `$$`：块级公式的定界行，按围栏处理。
+ *
+ * 必须这么做：公式块里**可以有空行**（`$$\na\n\nb\n$$`），而空行正是切点 ——
+ * 不认它就会在公式块中间切一刀，切出来的两半和全文解析对不上。
+ * 只认「整行就是 $$」（`$$x$$` 单行块不 toggle，否则围栏状态会错乱）。
+ */
+const RE_MATH_FENCE = /^\s*\$\$\s*$/
 
 /** 缓存下来的、已经解析完的稳定前缀 */
 export interface StableCache {
@@ -80,7 +88,7 @@ export function findStablePoint(
     const lineEnd = nl === -1 || nl > limit ? limit : nl
     const line = text.slice(i, lineEnd)
 
-    if (RE_FENCE.test(line)) {
+    if (RE_FENCE.test(line) || RE_MATH_FENCE.test(line)) {
       fence = !fence
     } else if (!fence && line.trim() === '') {
       /* 空行：下一行顶格、不是引用 —— 才算块的分界 */

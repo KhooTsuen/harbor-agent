@@ -7,6 +7,7 @@
 
 export type { Align, BlockNode, InlineNode, ListItem } from './types'
 export { parseFenceInfo } from './blocks'
+export { startsSpecialBlock, trySpecialBlock } from './blocks-special'
 export { parseInline, plainText, extractImageUrls } from './inline'
 export { parseBlocks } from './blocks'
 export { isTableSeparator, splitRow } from './table'
@@ -28,7 +29,7 @@ export {
  * 长对话里这条短路省下的时间不算小。
  */
 export function hasMarkdown(text: string): boolean {
-  return /(^|\n)\s*(```|~~~|#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|[-*_]{3,}|\|)|\*\*|__|`|~~|!\[|\[[^\]]*\]\(|https?:\/\/|\\\n| {2,}\n/.test(
+  return /(^|\n)\s*(```|~~~|#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|[-*_]{3,}|\|)|\*\*|__|`|~~|!\[|\[[^\]]*\]\(|https?:\/\/|\\\n| {2,}\n|<[a-zA-Z/]|\$(?!\s)/.test(
     String(text ?? ''),
   )
 }

@@ -1,9 +1,11 @@
 /* ══════════════════════════════════════════════════════════════
    Markdown：类型
 
-   支持范围（对齐 GFM 常用部分，刻意不做脚注/定义列表/数学公式）：
+   支持范围（对齐 GFM 常用部分，另加公式 / 原始 HTML 两类扩展）：
      块：段落 / 标题 / 代码块 / 列表（嵌套+任务）/ 引用（可嵌套）/ 表格 / 分隔线
+        / 数学公式块（$$…$$）/ 原始 HTML 块
      行内：粗体 / 斜体 / 删除线 / 行内代码 / 链接 / 图片 / 硬换行 / 反斜杠转义
+        / 行内公式（$…$）/ 行内 HTML
 
    嵌套关系直接体现在类型里（children 是 InlineNode[]、blocks 是 BlockNode[]），
    渲染时递归即可，不需要在渲染层再判断一次。
@@ -28,6 +30,10 @@ export type InlineNode =
   | { type: 'strike'; children: InlineNode[] }
   | { type: 'link'; href: string; children: InlineNode[] }
   | { type: 'image'; src: string; alt: string }
+  /** 行内公式 $…$，原文在 text（不含两侧 $） */
+  | { type: 'math'; text: string }
+  /** 行内原始 HTML 片段（**直通**，见 RawHtml 渲染处的安全说明） */
+  | { type: 'html'; html: string }
   | { type: 'br' }
 
 export type BlockNode =
@@ -47,3 +53,7 @@ export type BlockNode =
   | { type: 'quote'; blocks: BlockNode[] }
   | { type: 'table'; align: Align[]; header: InlineNode[][]; rows: InlineNode[][][] }
   | { type: 'hr' }
+  /** 块级公式 $$…$$，原文在 text（不含两侧 $） */
+  | { type: 'math'; text: string }
+  /** 原始 HTML 块（**直通**） */
+  | { type: 'html'; html: string }

@@ -16,8 +16,8 @@ import { PlanBar } from '../PlanBar'
        （2026-10-03 改：原来是硬截 4 条 + 「还有 N 条」，长计划看不全）
    ══════════════════════════════════════════════════════════════ */
 
-function task(plan: string[], sessionId = 's1'): TaskRecord {
-  return { id: 't1', sessionId, plan, updatedAt: 1, status: 'running' } as unknown as TaskRecord
+function task(plan: string[], sessionId = 's1', id = 't1', updatedAt = 1): TaskRecord {
+  return { id, sessionId, plan, updatedAt, status: 'running' } as unknown as TaskRecord
 }
 
 let host: HTMLDivElement
@@ -66,6 +66,30 @@ describe('PlanBar', () => {
   it('计划属于别的对话 → 不显示', () => {
     useTaskStore.setState({ tasks: [task(SIX, 'other')] })
     expect(draw('s1').textContent).toBe('')
+  })
+
+  it('★ 更新的空任务不会把计划卡顶掉（内核每句话都新建一条空任务）', () => {
+    /*
+     * 2026-10-08 用户报的「计划卡又不显示了」：内核收到新消息就新建任务
+     * （task-resume.cjs，只有「继续」才复用），新任务没有计划 —— 以前按
+     * updatedAt 取最新，一开口卡就没了。现在跳过空任务。
+     */
+    useTaskStore.setState({
+      tasks: [task(SIX, 's1', 'old', 100), task([], 's1', 'new', 200)],
+    })
+    expect(draw().textContent).toContain('计划 · 2/6')
+  })
+
+  it('两条都有计划 → 还是取更新的那条（别误伤）', () => {
+    useTaskStore.setState({
+      tasks: [task(['[ ] 老的一步'], 's1', 'old', 100), task(['[ ] 新的一步'], 's1', 'new', 200)],
+    })
+    expect(draw().textContent).toContain('正在做：新的一步')
+  })
+
+  it('整个会话只有空任务 → 一行都不占', () => {
+    useTaskStore.setState({ tasks: [task([], 's1', 'only', 300)] })
+    expect(draw().textContent).toBe('')
   })
 
   it('折叠时显示进度 + 正在进行的那一步', () => {

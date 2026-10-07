@@ -45,10 +45,7 @@ function call(channel, ...args) {
   )
 }
 
-/**
- * 订阅一条主进程推来的事件，返回退订函数。抽出来是因为下面 `on*` 里有 5 处**一字不差**
- * （抄五遍之后「退订返回了吗」得逐个看）；要包形状的（PTY）仍然自己写，不硬套。
- */
+/* 订阅一条主进程推来的事件，返回退订函数。抽出来是因为下面 `on*` 里有 5 处**一字不差**；要包形状的（PTY）仍然自己写，不硬套 */
 function subscribe(channel, callback) {
   const handler = (_event, payload) => callback(payload)
   ipcRenderer.on(channel, handler)
@@ -136,6 +133,12 @@ const api = {
   fsReveal: (target) => call('fs:reveal', target),
   fsPickAndRead: () => call('fs:pickAndRead'),
   pickImageAsDataUrl: () => call('fs:pickImageAsDataUrl'),
+  /* 「附加文件」：任何格式，主进程按扩展名分流解析（见 handlers/file-attach.cjs） */
+  attachFiles: () => call('file:attach'),
+  /* 图片查看器三条：另存为 / 在文件夹里显示 / 复制到剪贴板（见 handlers/image-file.cjs） */
+  imageSaveAs: (src) => call('image:saveAs', { src }),
+  imageReveal: (src) => call('image:reveal', { src }),
+  imageCopy: (src) => call('image:copy', { src }),
 
   /* 项目级规则（<工作目录>/.harbor/rules.md）：状态 / 重新加载 / 打开（create=true 时先建骨架再打开） */
   projectRulesStatus: (dir) => call('projectRules:status', { dir }),
@@ -200,11 +203,8 @@ const api = {
   artifactSave: (draft) => call('artifact:save', draft),
   artifactRemove: (id) => call('artifact:remove', id),
   artifactReveal: (id) => call('artifact:reveal', id),
-  /*
-   * 定时任务（内核在 core/schedule-*.cjs，台账 data/schedules.json）。
-   * `runNow` 是**立刻返回**的 —— 一条任务可能跑几分钟，把 IPC 挂在那儿等，
-   * 渲染层只会看成「点了没反应」；进度去任务台账和那条专属会话里看。
-   */
+  /* 定时任务（core/schedule-*.cjs，台账 data/schedules.json）：`runNow` 立刻返回 ——
+     一条任务可能跑几分钟，把 IPC 挂在那儿等，渲染层只会看成「点了没反应」 */
   schedulesList: () => call('schedules:list'),
   schedulesSave: (input) => call('schedules:save', input),
   schedulesRemove: (id) => call('schedules:remove', id),

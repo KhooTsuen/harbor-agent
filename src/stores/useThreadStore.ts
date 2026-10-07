@@ -10,6 +10,7 @@ import { adviseCompact, modelWindowOf, runCompact } from './thread/compact'
 import { tryHandleCommand } from './thread/commands'
 import { runMockTurn } from './thread/mockTurn'
 import { makeVersionActions } from './thread/messageVersions'
+import { attachBlock, makeAttachmentActions, type AttachmentSlice } from './thread/attachments'
 import { questionTargetOf } from '@/lib/answers'
 import { userRecord } from './thread/userRecord'
 import { getActiveThread, useAppStore } from './useAppStore'
@@ -20,15 +21,10 @@ import { useConfigStore } from './useConfigStore'
    当前线程的输入与生成（Electron 真流式 / 浏览器预览静态回复，两条路产出一样）
    ══════════════════════════════════════════════════════════════ */
 
-interface ThreadState {
+interface ThreadState extends AttachmentSlice {
   input: string
   /** 正在跑的对话 id（按对话记，后端每个请求独立，别的对话不拦） */
   sendingThreads: string[]
-  /** 待发送的图片（data URL）。发出去后清空 */
-  inputImages: string[]
-  addInputImage: (dataUrl: string) => void
-  removeInputImage: (index: number) => void
-  clearInputImages: () => void
   /** 当前会话的「建议回复」（一轮结束后生成，点一下填进输入框） */
   suggestions: string[]
   setSuggestions: (threadId: string, list: string[]) => void
@@ -71,7 +67,8 @@ interface ThreadState {
 export const useThreadStore = create<ThreadState>((set, get) => ({
   input: '',
   sendingThreads: [],
-  inputImages: [],
+  /* 待发送的图片 / 文件（附件那一摊见 thread/attachments.ts） */
+  ...makeAttachmentActions(set),
   suggestions: [],
   queuedMessages: {},
   drafts: {},
@@ -107,8 +104,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
   sendMessage: (override, resumeTaskId) => {
     const raw = (override ?? get().input).trim()
-    /* 只有图片、没有文字也算有效输入 */
-    if (!raw && get().inputImages.length === 0) return
+    const files = get().inputFiles
+    /* 只有图片 / 只有附件、没有文字，也算有效输入 */
+    if (!raw && get().inputImages.length === 0 && files.length === 0) return
 
     const app = useAppStore.getState()
     const ui = useUIStore.getState()
@@ -139,6 +137,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       get().enqueueMessage(threadId, raw)
       get().clearInput()
       get().clearInputImages()
+      get().clearInputFiles()
       /* AG-032：措辞与文档的例子对齐（「已加入队列」）*/
       ui.showToast('info', '已加入队列', '当前任务完成后自动发送')
       return
@@ -188,7 +187,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       id: uid('msg'),
       threadId,
       role: 'user',
-      content: raw,
+      /* 附件正文拼进来 —— 模型这一轮读的就是它（见 thread/attachments.ts 的 attachBlock） */
+      content: raw + attachBlock(files),
       kind: 'text',
       status: 'sent',
       timestamp: Date.now(),
@@ -202,6 +202,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     /* 落盘形态（含图片）见 thread/userRecord.ts —— 那里面记着「为什么必须带 images」 */
     useAppStore.getState().persistMessage(threadId, userRecord(userMessage, parent))
     get().clearInput()
+    get().clearInputFiles()
 
     if (wasUntitled) {
       /* 先用第一句话占个位（titleAuto = true），之后模型起了更好的会覆盖。
@@ -240,15 +241,6 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     if (!taskId) return
     get().sendMessage('继续刚才的任务，从上次停下的地方接着做，别重复已经完成的步骤。', taskId)
   },
-
-  addInputImage: (dataUrl) =>
-    /* 最多 5 张：再多上下文也塞不下，而且多半是误操作 */
-    set((s) => (s.inputImages.length >= 5 ? s : { inputImages: [...s.inputImages, dataUrl] })),
-
-  removeInputImage: (index) =>
-    set((s) => ({ inputImages: s.inputImages.filter((_, i) => i !== index) })),
-
-  clearInputImages: () => set({ inputImages: [] }),
 
   setSuggestions: (threadId, list) => {
     /* 只记当前会话的 —— 切走就作废，免得显示上一个会话的建议 */

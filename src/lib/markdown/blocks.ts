@@ -1,5 +1,6 @@
 import type { BlockNode, InlineNode, ListItem } from './types'
 import { parseInline } from './inline'
+import { startsSpecialBlock, trySpecialBlock } from './blocks-special'
 import { isTableSeparator, parseAlign, parseRow } from './table'
 
 /* ══════════════════════════════════════════════════════════════
@@ -68,6 +69,7 @@ export function parseFenceInfo(info: string): {
 /** 能打断段落的行 */
 function startsBlock(line: string): boolean {
   return (
+    startsSpecialBlock(line) ||
     RE_FENCE.test(line) ||
     RE_HEADING.test(line) ||
     RE_HR.test(line) ||
@@ -92,6 +94,14 @@ function parseLines(lines: string[]): BlockNode[] {
     const line = lines[i]
     if (!line.trim()) {
       i += 1
+      continue
+    }
+
+    /* ── 数学公式块 / HTML 块（判定在 blocks-special）── */
+    const special = trySpecialBlock(lines, i)
+    if (special) {
+      blocks.push(special.node)
+      i = special.next
       continue
     }
 

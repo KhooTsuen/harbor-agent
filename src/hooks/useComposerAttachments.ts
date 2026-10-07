@@ -1,6 +1,5 @@
 import type { ClipboardEvent } from 'react'
 import type { Message } from '@/types'
-import { extToLanguage, fsPickAndRead } from '@/lib/fsApi'
 import { looksLikeImage } from '@/lib/imageFormat'
 import { normalizeDataUrl, normalizeImage } from '@/lib/imageNormalize'
 import { uid } from '@/lib/utils'
@@ -11,7 +10,7 @@ import { useUIStore } from '@/stores/useUIStore'
 /* ══════════════════════════════════════════════════════════════
    Composer 的附件操作
 
-   三类：贴图、加文本文件、把生成的图片插进对话。
+   四类：贴图、选图、附加文件（任何格式）、把生成的图片插进对话。
    从 Composer 拆出来的 —— 那边贴着 300 行，而这些逻辑
    和「输入框长什么样」是两回事。
 
@@ -19,6 +18,10 @@ import { useUIStore } from '@/stores/useUIStore'
      Windows 剪贴板的截图**经常是 BMP**，而选图那条路也允许 .bmp ——
      原样发出去上游会直接 400（只收 webp/png/jpeg/gif）。现在不支持的格式
      转成 PNG、超长边（>2048）等比缩小，合规的原样透传。
+
+   ★ 「附加文件」2026-10-08 起不再只吃文本：主进程按扩展名分流解析
+     （PDF / Word / Excel / PPT / 压缩包 / 二进制，见 electron/core/file-extract.cjs），
+     渲染层只负责把它挂成卡片（stores/thread/attachments.ts）。
    ══════════════════════════════════════════════════════════════ */
 
 export interface ComposerAttachments {
@@ -27,16 +30,15 @@ export interface ComposerAttachments {
   /** 输入框粘贴：收下图就返回 true（调用点据此 preventDefault） */
   attachFromClipboard: (event: ClipboardEvent<HTMLTextAreaElement>) => boolean
   pickImage: () => Promise<void>
-  /** 读一个文本文件，把内容以代码块形式追加到输入框 */
-  attachFile: () => Promise<void>
+  /** 选文件（可多选），按格式解析后挂成附件卡片 */
+  attachFiles: () => Promise<void>
   /** 把生成的图片作为一条消息插进当前对话 */
   insertImageMessage: (prompt: string, image: string) => void
 }
 
 export function useComposerAttachments(): ComposerAttachments {
   const addInputImage = useThreadStore((s) => s.addInputImage)
-  const input = useThreadStore((s) => s.input)
-  const setInput = useThreadStore((s) => s.setInput)
+  const addInputFile = useThreadStore((s) => s.addInputFile)
   const showToast = useUIStore((s) => s.showToast)
 
   function attachImage(dataUrl: string): void {
@@ -78,22 +80,39 @@ export function useComposerAttachments(): ComposerAttachments {
     }
   }
 
-  async function attachFile(): Promise<void> {
-    const result = await fsPickAndRead()
+  async function attachFiles(): Promise<void> {
+    const result = await window.workbench?.attachFiles()
     if (!result) {
       showToast('info', '附件', '浏览器演示没有真实文件系统，直接 @ 提文件名也行')
       return
     }
     if (result.canceled) return
-    if (!result.ok || result.text === undefined) {
+    if (!result.ok || !result.files) {
       showToast('error', '附加失败', result.error ?? '读不到内容')
       return
     }
 
-    const ext = (result.name ?? '').split('.').pop() ?? ''
-    const block = `\n\n\`\`\`${extToLanguage(ext)}\n// ${result.name}\n${result.text}\n\`\`\``
-    setInput(input + block)
-    showToast('success', '已附加', result.name)
+    let added = 0
+    const failed: string[] = []
+    for (const file of result.files) {
+      if (!file.ok) {
+        failed.push(`${file.name}：${file.error ?? '读不到'}`)
+        continue
+      }
+      /* 图片交给现有那条预览条（贴图 / 选图走的是同一处） */
+      if (file.kind === 'image' && file.dataUrl) addInputImage(file.dataUrl)
+      else addInputFile(file)
+      added += 1
+    }
+
+    if (added > 0) {
+      showToast(
+        'success',
+        `已附加 ${added} 个文件`,
+        result.dropped ? `另有 ${result.dropped} 个超出上限，没加` : '',
+      )
+    }
+    if (failed.length > 0) showToast('error', `有 ${failed.length} 个没读成`, failed.join('；'))
   }
 
   function insertImageMessage(prompt: string, image: string): void {
@@ -118,5 +137,5 @@ export function useComposerAttachments(): ComposerAttachments {
     })
   }
 
-  return { attachImage, attachFromClipboard, pickImage, attachFile, insertImageMessage }
+  return { attachImage, attachFromClipboard, pickImage, attachFiles, insertImageMessage }
 }

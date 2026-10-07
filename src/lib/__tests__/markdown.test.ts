@@ -31,8 +31,16 @@ function shape(nodes: InlineNode[]): string {
           return `img(${node.alt})`
         case 'link':
           return `a(${node.href},${shape(node.children)})`
-        default:
+        case 'math':
+          return `math(${node.text})`
+        case 'html':
+          return `html(${node.html})`
+        case 'bold':
+        case 'italic':
+        case 'strike':
           return `${node.type}(${shape(node.children)})`
+        default:
+          return ''
       }
     })
     .join('')

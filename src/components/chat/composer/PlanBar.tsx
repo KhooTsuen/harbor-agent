@@ -36,9 +36,16 @@ export function PlanBar({ threadId }: { threadId: string }) {
   const [open, setOpen] = useState(false)
   const tasks = useTaskStore((s) => s.tasks)
 
-  /* 这条对话最近动过的那个任务 —— 计划跟着它走 */
+  /*
+   * 计划跟着「本会话最近一条**有计划**的任务」走。
+   *
+   * 2026-10-08 用户报「计划卡又不显示了」：内核每收到一句新话就新建一条任务
+   * （`task-resume.cjs`，只有「继续/接着做」才复用旧的），新建的自然是空任务。
+   * 以前按 updatedAt 取最新 —— 用户一开口，最新那条变成空任务，卡立刻被顶掉。
+   * 所以这里跳过没计划的任务：卡只会在「更近的一条也有计划」时被换掉。
+   */
   const latest = tasks
-    .filter((task) => task.sessionId === threadId)
+    .filter((task) => task.sessionId === threadId && (task.plan?.length ?? 0) > 0)
     .reduce<TaskRecord | null>(
       (best, task) => (!best || task.updatedAt > best.updatedAt ? task : best),
       null,
