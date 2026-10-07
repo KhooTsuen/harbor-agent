@@ -142,6 +142,7 @@ import { run as modelProbeGroup } from './selftest/groups/122-model-probe.mjs'
 import { run as subagentGroup } from './selftest/groups/123-subagent.mjs'
 import { run as cardTimeoutGroup } from './selftest/groups/124-card-timeout.mjs'
 import { run as decisionShapeGroup } from './selftest/groups/125-decision-shape.mjs'
+import { run as eventTypesGroup } from './selftest/groups/126-event-types.mjs'
 
 const GROUPS = [
   basics,
@@ -263,7 +264,7 @@ const GROUPS = [
   memoryReflectGroup,
   projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
-  decisionShapeGroup,
+  decisionShapeGroup, eventTypesGroup,
 ]
 
 async function main() {
