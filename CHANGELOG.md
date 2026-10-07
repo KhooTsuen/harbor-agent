@@ -5,6 +5,21 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **浏览器里的跳转也过网络策略（审计问题 20 的另一半）**（`docs/improvement-checklist.md` 2026-10-04
+  记的「browse 三个兄弟不过网络策略」，已授权 · 硬禁区 10）。以前 `security.network`（全局网络策略）
+  只管 `browse` **主动开**的地址；网页里点一个链接跳走那条路只归 `general.browserNavigation` 管 ——
+  于是 `security.network.mode = deny`（禁止联网）时，Agent 仍能「点开一个链接」跳出去。
+  现在 `navigation-policy.decide` 多收一个「目标是否被网络策略**明确禁止**」，且**排在 `mode === 'allow'`
+  前面**（禁止优先于允许）。判据按**跳转的目标 URL**，与 `browse` 同一份实现（`core/net-policy.cjs`
+  的 `kind: 'webview'`，默认由 `defaultNetDeny` 接上，延迟 require 保持模块可测）；`window.open` /
+  `target=_blank` 那条路（`setWindowOpenHandler`）同样过滤。**只接最强档 `deny` / 禁止名单**，
+  `ask` / `allow` 档一个字没改（在 `will-navigate` 里没法弹卡，接 `ask` 只能「放行」或「硬拦」二选一，
+  都比现状差）。「这次不做什么」写在 `docs/安全模型.md` §8。
+  自检 `09-browser` 加 6 项（含「网络禁止 + 导航允许 → 跳转被拦」的端到端）。
+  验证：内核自检 **3930 → 3936 项 / 0 失败**；`npm run verify` 全绿；真机（源码版 dev）起一个本地
+  http server 做**对照实验** —— 禁止名单点名 `localhost` 时点链接，页面停在 A；清掉名单后同样一点
+  就跳到 B。两组都过，证明是网络策略拦的、而不是「链接本来就点不动」。
+
 - **真机脚本可靠性：CDP helper 收敛成一处 + 语法预检 / 异常分家 / 退出清理**（清单里标「值得优先」的那条）。
   以前真机验证靠 `tmp/` 里一堆一次性脚本（`probe-*.js`、`verify-*.mjs`，几十个），每个都把 CDP
   连接逻辑抄一遍，而 `tmp/` 被 gitignore —— 沉淀不下来。`tools/shot/cdp.mjs` 已经是共享库，但

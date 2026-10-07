@@ -5,6 +5,14 @@
  * 但一直**没接线** —— 典型的「有配置没生效」。这个模块负责接上，
  * 并且把 webview 的加固一起做了。
  *
+ * ── 2026-10-07：网络策略的「禁止」也接在这里 ──
+ *
+ * 以前这里是**唯一**管「网页自己跳转」的地方，而 `security.network`（全局网络策略）
+ * 只管 `browse` **主动开**的地址（见 `core/tools/browse.cjs`）—— 两套开关互不知情。
+ * 于是 `security.network.mode = deny`（全局禁止联网）时，网页里点一个链接照样跳走。
+ * 现在 `decide` 多收一个「目标地址是否被网络策略明确禁止」，且**优先于本表的 allow**。
+ * 判据按**跳转的目标 URL**（要去哪），与 `browse` 同一份实现（`core/net-policy.cjs`）。
+ *
  * ⚠️ 一个容易搞错的地方：**`<webview>` 有自己的 webContents**。
  * 只给主窗口挂 `will-navigate` 是管不到 webview 里的跳转的 ——
  * 网页里点个链接照样跳。webview 要通过 `will-attach-webview`（挂载时加固）
@@ -19,9 +27,10 @@ const log = require('./core/log.cjs')
  * @param {string} targetUrl 要去哪
  * @param {string} currentUrl 从哪来
  * @param {'ask' | 'allow' | 'block'} mode
+ * @param {boolean} [netBlocked=false] 网络策略是否**明确禁止**这个目标（deny / 命中禁止名单）
  * @returns {{ action: 'allow' | 'block' | 'ask', host?: string }}
  */
-function decide(targetUrl, currentUrl, mode = 'ask') {
+function decide(targetUrl, currentUrl, mode = 'ask', netBlocked = false) {
   let target = null
   try {
     target = new URL(String(targetUrl))
@@ -40,6 +49,19 @@ function decide(targetUrl, currentUrl, mode = 'ask') {
    */
   if (target.protocol !== 'http:' && target.protocol !== 'https:') return { action: 'block' }
 
+  /*
+   * ★ 网络策略的「禁止」优先于这张表的「允许」（审计问题 20 的另一半，2026-10-07）。
+   *
+   * 以前 `security.network.mode = deny`（全局禁止联网）拦得住 `browse` **主动开**的地址，
+   * 却拦不住网页里**点一个链接跳过去** —— 那条路只归这张表管，于是出现
+   * 「设置里禁止了网络，Agent 却还能点开一个链接」。现在把 deny / 禁止名单这一档接进来，
+   * 而且排在 `mode === 'allow'` 前面：**禁止就是禁止**，导航策略说允许也不算数。
+   *
+   * 判据是**跳转的目标地址**（要去哪），与 `browse` 工具同一套（`net-policy` kind:`webview`）——
+   * 由调用方在主进程算好传进来（本模块保持纯函数，好测）。
+   */
+  if (netBlocked) return { action: 'block' }
+
   if (mode === 'allow') return { action: 'allow' }
 
   let sameSite = false
@@ -55,10 +77,33 @@ function decide(targetUrl, currentUrl, mode = 'ask') {
   return { action: 'ask', host: target.hostname }
 }
 
-/** 把一个 webContents 的跳转接到策略上 */
-function wireNavigationGuard(contents, getMode, label) {
+/**
+ * 默认判据：网络策略是否**明确禁止**这个地址（`net-policy` 的 kind:`webview`，与 `browse` 同源）。
+ * 延迟 require —— 本模块保持「纯函数、不依赖 config」的可测性（`09-browser` 组直接调 `decide`）。
+ * 读不到策略时返回 false（不放大拦截），与 `browse` 的堕落方向一致。
+ */
+function defaultNetDeny(url) {
+  try {
+    const { decide: netDecide } = require('./core/net-policy.cjs')
+    return netDecide({ kind: 'webview', target: url }).action === 'deny'
+  } catch {
+    return false
+  }
+}
+
+/** 把一个 webContents 的跳转接到策略上。`netDeny(url)` 是「网络策略是否明确禁止这个地址」 */
+function wireNavigationGuard(contents, getMode, label, netDeny = defaultNetDeny) {
+  const blocked = (url) => {
+    try {
+      return typeof netDeny === 'function' && netDeny(url) === true
+    } catch {
+      /* 算不出来就别假装禁止（与 browse 的堕落方向一致：读不到策略不放大拦截） */
+      return false
+    }
+  }
+
   contents.on('will-navigate', (event, targetUrl) => {
-    const verdict = decide(targetUrl, contents.getURL(), getMode())
+    const verdict = decide(targetUrl, contents.getURL(), getMode(), blocked(targetUrl))
     if (verdict.action === 'allow') return
     /* 一律拦下：即使是 ask 模式也不自动跳 —— 让用户自己在地址栏输。
        自动跳出去再问，等于已经跳了。 */
@@ -93,10 +138,10 @@ function hardenWebview(webPreferences) {
  * （webview 有独立 webContents，只挂主窗口是拦不住网页里点链接的）。
  * 放一处，改的时候只用看这一处。
  *
- * @param {{ app: object, win: object, getMode: () => string, onPopup?: (url: string) => void }} input
+ * @param {{ app: object, win: object, getMode: () => string, onPopup?: (url: string) => void, netDeny?: (url: string) => boolean }} input
  */
-function install({ app, win, getMode, onPopup }) {
-  wireNavigationGuard(win.webContents, getMode, '主窗口')
+function install({ app, win, getMode, onPopup, netDeny = defaultNetDeny }) {
+  wireNavigationGuard(win.webContents, getMode, '主窗口', netDeny)
 
   /* webview 挂载时强制加固 —— 页面里的属性覆盖不了这一层 */
   win.webContents.on('will-attach-webview', (_event, webPreferences) => {
@@ -109,17 +154,18 @@ function install({ app, win, getMode, onPopup }) {
    */
   app.on('web-contents-created', (_event, contents) => {
     if (contents.getType() !== 'webview') return
-    wireNavigationGuard(contents, getMode, '网页')
+    wireNavigationGuard(contents, getMode, '网页', netDeny)
     /*
      * 网页想弹新窗口：**不给它真窗口**，但把地址交给界面开成一个标签页
      * （2026-10-06 用户拍板：链接要能开新标签，而不是什么都不发生）。
      * 只有 http/https 才接 —— 别的协议连通知都不发，保持原来的"一律拦掉"。
+     * ★ 被网络策略明确禁止的地址也不接（与 will-navigate 同一档：禁止就是禁止）。
      */
     contents.setWindowOpenHandler(({ url }) => {
-      if (onPopup && /^https?:\/\//i.test(url)) onPopup(url)
+      if (onPopup && /^https?:\/\//i.test(url) && netDeny?.(url) !== true) onPopup(url)
       return { action: 'deny' }
     })
   })
 }
 
-module.exports = { decide, wireNavigationGuard, hardenWebview, install }
+module.exports = { decide, wireNavigationGuard, hardenWebview, install, defaultNetDeny }

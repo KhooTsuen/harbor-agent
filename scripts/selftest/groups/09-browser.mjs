@@ -133,6 +133,20 @@ export async function run() {
     nav.decide('不是地址', 'https://a.com/', 'allow').action === 'block',
   )
 
+  /* ── 网络策略「禁止」优先（2026-10-07，审计问题 20 的另一半）──
+   * 以前 security.network=deny 拦得住 browse 主动开的地址，却拦不住网页里点链接跳走。 */
+  const netPolicy = require(join(ROOT, 'electron/core/net-policy.cjs'))
+  const netDenied =
+    netPolicy.decide({ kind: 'webview', target: 'https://b.com/', ctx: { netPolicy: 'deny' } })
+      .action === 'deny'
+  /* 端到端：两个模块用同一份判据串起来 —— net-policy 判 deny，navigation-policy 就拦 */
+  check('★ 网络禁止 → 导航策略说 allow 也要拦', nav.decide('https://b.com/', 'https://a.com/', 'allow', true).action === 'block')
+  check('★ 禁止优先于同站点放行', nav.decide('https://a.com/x', 'https://a.com/', 'allow', true).action === 'block')
+  check('没禁止 → 导航策略照常（不误伤）', nav.decide('https://b.com/', 'https://a.com/', 'allow', false).action === 'allow')
+  check('file:// 永远拦（与 netBlocked 无关）', nav.decide('file:///C:/x', 'https://a.com/', 'allow', false).action === 'block')
+  check('★ 端到端：网络禁止 + 导航允许 → 网页里的跳转被拦', netDenied && nav.decide('https://b.com/', 'https://a.com/', 'allow', netDenied).action === 'block')
+  check('★ 默认配置（非禁止）下 defaultNetDeny 不夸大拦截', nav.defaultNetDeny('https://example.com/') === false)
+
   /* webview 加固：这几条是页面里覆盖不掉的兜底 */
   const prefs = {
     preload: '/evil.js',
