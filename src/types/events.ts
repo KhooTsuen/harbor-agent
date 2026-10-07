@@ -5,15 +5,16 @@
    以前渲染层拿到的是一串裸字符串，两边各写各的 —— 这个文件是渲染层侧的
    **一处清单**，回答「我们认得哪些 type」。
 
-   两侧对齐的真相源在**主进程**：`electron/core/events.cjs` 的 `AGENT_EVENTS`
-   （生命周期 16 个标准名）。这里的 `AGENT_EVENTS` 是它的**镜像** ——
-   自检 `126-event-types` 从两边源码抠出来**断言相等**（谁改了忘同步就报红）。
+   两侧对齐的真相源在**主进程**：`electron/core/event-types.cjs` 的 `AGENT_EVENTS`
+   （生命周期 16 个标准名）与 `CHAT_EVENT_TYPES`（type 全集）。这里的 `AGENT_EVENTS`
+   与 `EVENT_TYPES` 是它们的**镜像** —— 自检 `126-event-types` 从两边源码抠出来
+   **断言相等**（谁改了忘同步就报红）。
 
    ⚠️ 这不是「第二套真值」：处理逻辑仍在 `stores/thread/*.ts`（`handleStreamEvent`
    等）；这里只声明**名字**，自检同时钉「消费点的 case ⊆ 本清单」。
    ══════════════════════════════════════════════════════════════ */
 
-/** 生命周期标准名 —— 与 `electron/core/events.cjs` 的 `AGENT_EVENTS` 逐字一致 */
+/** 生命周期标准名 —— 与 `electron/core/event-types.cjs` 的 `AGENT_EVENTS` 逐字一致 */
 export const AGENT_EVENTS = [
   'agent.started',
   'agent.thinking',
@@ -77,6 +78,8 @@ export const EVENT_TYPES = [
   'context_overflow',
   'review',
   'plan',
+  'loop',
+  'compacted',
 
   /* 有意忽略：意图分类与模型选择（调试信息），台账走 IPC 不走事件流 */
   'mode',

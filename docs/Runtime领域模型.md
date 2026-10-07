@@ -96,7 +96,7 @@ Goal → Intent → Task → Capability(能力注册表) → Action
 | P0-4 | Risk / Scale / Permission 拆两个维度 | **分散** | `risk.cjs`（risk-patterns / risk-targets）与 `scale.cjs`（scale-signals / scale-config / scale-files）各判各的；未挂到同一点 |
 | P0-5 | 统一 Decision Model | **底层已统一，上层两套** | 底层 `confirm-bridge.cjs` 一条往返；上层 `handlers/chat-confirm.cjs` 的 `askUser`（布尔）/ `askClarify`（对象）两套形状 + UI 两种卡 |
 | P0-6 | Subagent 只读 | **已有** | `core/subagent.cjs` 就是只读侦察兵 |
-| P0-7 | Runtime Event Contract | **出口已统一，契约未定义** | 主进程内 `events.cjs`（16 个 `agent.*` 标准名 + 环形缓冲 + 落盘）；推渲染层单通道 `chat:event`（`chat-emit.cjs`，靠 `type` 区分） |
+| P0-7 | Runtime Event Contract | **已落地**（2026-10-07） | 主进程 `electron/core/event-types.cjs` 一处清单（`AGENT_EVENTS` 16 名 + `CHAT_EVENT_TYPES` 全集）；`events.cjs` 从它 require；渲染层 `src/types/events.ts` 镜像对齐；自检 `126-event-types` 四路钉死。推渲染层单通道 `chat:event`（`chat-emit.cjs`，靠 `type` 区分） |
 | P0-8 | 跨层契约测试 | **部分** | 内核自检（`npm test`）+ 单测（`npm run test:unit`）+ 真机 CDP 脚本都有；但没有「Backend→IPC→Renderer→Persistence→Reload」的**整链**用例 |
 | P0-9 | 测试数据隔离（绝不碰真 data） | **已完成** | `data/selftest-data` / `data/unit-test-data`（`paths.cjs` 的 `isolationDirName()`；`vitest.config.ts` 注入 `HARBOR_UNIT_TEST=1`） |
 | P0-10 | Data Doctor 关系完整性 | **不适用（评测后）** | `npm run doctor`（`core/data-doctor.cjs`）已在做**跨实体**悬空检查（任务→会话、改动事务→任务、成果→任务/会话、索引漂移）。计划里说的「Action.**runId** 必须存在」**不适用**：Action 是**内嵌**在 `task.steps[].action` 的一个字段，**不是独立实体**，没有跨实体关系可查（也没有 Run 实体）。 |
@@ -262,7 +262,15 @@ of({ name, args, workdir, userText, limits }) → Action
 
 ---
 
-### 4.3 Runtime Event Contract（P0-7）
+### 4.3 Runtime Event Contract（P0-7） ✅ 已实现（2026-10-07）
+
+> **落地**：新增 `electron/core/event-types.cjs` 作**唯一真相源**（`AGENT_EVENTS` 生命周期 16 名 +
+> `CHAT_EVENT_TYPES` 全集）；`events.cjs` 改为从它 require（去掉重复定义），渲染层
+> `src/types/events.ts` 按它对齐 —— 顺带补上渲染层**漏登**的 `loop`（循环守卫交人）与
+> `compacted`（上下文压缩）。自检 `126-event-types` 四路钉死：① 生命周期名两侧逐字相等；
+> ② 全集两侧逐字相等；③ 主进程所有 `emit` 的 type ⊆ 清单（判据跟着源码里的 `emit({` 走，
+> 不写死文件清单）；④ 渲染层每个 `case` ⊆ 清单。**反向验证过**（故意制造两种漂移都报红）。
+> 下面「现状 / 目标形状 / 规格」是设计时的原样记录，留着看「为什么这么定」。
 
 **现状**：**出口已经统一**，缺的是**渲染层消费侧的显式契约**。
 
@@ -355,7 +363,7 @@ Permission 由「Risk + Scale + Scope」共同决定要不要弹卡。
 ```text
 1. Domain Model（本文档）          ← 零代码，先把名词定死          ✅ 已落地
 2. Decision 统一（4.1）            ← 真 bug 住在这；底层已统一      ✅ 已落地（809f214）
-3. Event Contract（4.3）           ← 依赖 2 的形状                  ◐ 渲染层侧已落地（3848d82），主进程常量对齐待做
+3. Event Contract（4.3）           ← 依赖 2 的形状                  ✅ 已落地（3848d82 渲染层侧 + 主进程侧收口）
 ─────────── 以上是「低风险、能立刻见效」的前半段 ───────────
 4. Action Model（4.2）             ← 最大一块；动内核 + 改数据结构  ✅ 1–3 步落地（d567905/ddb05bd/b9e4778），第 4 步待批
 5. Risk / Scale 拆分（4.4）        ← 依赖 4 的挂靠点               ◐ (b)(c) 已成立；只剩 P4-1（硬禁区 10，待批）

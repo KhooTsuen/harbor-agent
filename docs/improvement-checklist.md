@@ -356,5 +356,11 @@
 >
 > 对代码核过、**已完成别重做**的三项：防 Task 膨胀（已升格成硬禁区 11）、
 > Subagent 只读（`core/subagent.cjs`）、测试数据隔离（`data/selftest-data` / `data/unit-test-data`）。
+>
+> **进展（2026-10-07）**：4.1 Decision 统一（`core/decisions.cjs`）、4.3 Event Contract
+> （`core/event-types.cjs` 一处清单 + 自检 `126-event-types`）**已落地**；4.2 Action Model
+> 前 3 步（`core/action.cjs` + 挂进 `agent.tool.started` / `task.steps[].action`）已落地；
+> 4.4(b)(c) 已成立。**只剩两处「需单独批准」**：4.2 第 4 步（Permission 收到 Action 上）与
+> P4-1（规模闸门按实际规模 —— 已修）。详见 `Runtime领域模型.md`。
 
 

@@ -30,26 +30,11 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const { scrub } = require('./redact.cjs')
 const log = require('./log.cjs')
+/* 事件名清单的唯一真相源（P0-7）—— 这里不再自己定义一套 */
+const { AGENT_EVENTS } = require('./event-types.cjs')
 
-/** 文档 AG-002 列的标准事件名。生命周期事件只用这些。 */
-const AGENT_EVENTS = [
-  'agent.started',
-  'agent.thinking',
-  'agent.planning',
-  'agent.tool.started',
-  'agent.tool.progress',
-  'agent.tool.completed',
-  'agent.tool.failed',
-  'agent.verification.started',
-  'agent.verification.completed',
-  'agent.waiting_user',
-  'agent.retrying',
-  'agent.paused',
-  'agent.resumed',
-  'agent.cancelled',
-  'agent.completed',
-  'agent.failed',
-]
+/* 生命周期标准名 `AGENT_EVENTS`（文档 AG-002 那 16 个）的唯一真相源在
+ * `./event-types.cjs` —— 上面 require 进来。渲染层的镜像见 `src/types/events.ts`。 */
 
 /**
  * 状态机相位 → 标准事件名。
