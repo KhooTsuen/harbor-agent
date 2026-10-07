@@ -86,5 +86,31 @@ export async function run() {
   const left = fs.readdirSync(dir).filter((name) => name.includes('.tmp-'))
   check('★ 失败后不留 .tmp-* 临时文件', left.length === 0, left.join('、') || '（干净）')
 
+  /* ── 只允许一处实现（2026-10-07 收敛）─────────────────────────
+   * 以前 session-crypto / projects / schedule-store 各揣一份自己的原子写，而且都没有
+   * 退避重试 —— 同一个「别丢数据」的东西散在四处，改一处漏三处。现在只有 safe-write。
+   * 这条钉住「不许再冒出第二份实现」。 */
+  const definitions = []
+  for (const file of walkCjs(join(ROOT, 'electron'))) {
+    const text = fs.readFileSync(file, 'utf8')
+    if (/function\s+writeAtomic\s*\(/.test(text)) definitions.push(file.replace(ROOT, '').replace(/\\/g, '/'))
+  }
+  check(
+    '★ 全内核只有一个 writeAtomic 实现',
+    definitions.length === 1 && definitions[0].endsWith('electron/core/safe-write.cjs'),
+    `找到 ${definitions.length} 处：${definitions.join('、') || '（没有）'}`,
+  )
+
   fs.rmSync(dir, { recursive: true, force: true })
+}
+
+/** 递归收集目录下的 .cjs（自己写一个，别为一条自检引依赖） */
+function walkCjs(dir) {
+  const out = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...walkCjs(full))
+    else if (entry.name.endsWith('.cjs')) out.push(full)
+  }
+  return out
 }

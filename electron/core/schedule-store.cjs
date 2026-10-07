@@ -25,6 +25,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+/* 文本原子写只有一处实现（safe-write.cjs，带「文件被占着」退避重试） */
+const { writeAtomic } = require('./safe-write.cjs')
 /* 密钥判据只有一处实现（`memory-schema.cjs` → `redact.cjs` 的模式表） */
 const { looksLikeSecret } = require('./memory-schema.cjs')
 const { validateWhen } = require('./schedule-next.cjs')
@@ -83,13 +85,11 @@ function load() {
   }
 }
 
-/** 原子写：先写临时文件再 rename（rename 是替换，不是追加） */
+/** 原子写（safe-write.writeAtomic；rename 是替换，不是追加） */
 function persist(data) {
   const target = filePath()
-  const temp = `${target}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.writeFileSync(temp, JSON.stringify(data, null, 2), 'utf8')
-  fs.renameSync(temp, target)
+  writeAtomic(target, JSON.stringify(data, null, 2))
 }
 
 /** 给调用方的是副本：外面改了不该影响内存/文件里的那份 */

@@ -32,6 +32,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+/* 文本原子写只有一处实现（safe-write.cjs） */
+const { writeAtomic } = require('./safe-write.cjs')
 /* 路径 / 命名规范（含 `dirIdFor`）拆在 project-paths.cjs —— 这里只管注册表语义 */
 const { dirIdFor, canon, nameOf, newProjectId } = require('./project-paths.cjs')
 
@@ -73,12 +75,10 @@ function load() {
   }
 }
 
-/** 原子写：先写临时文件再 rename —— 登记表被写坏等于用户的项目全没了 */
+/** 原子写（safe-write.writeAtomic）：登记表被写坏等于用户的项目全没了 */
 function persist(data) {
   fs.mkdirSync(DIRS.data, { recursive: true })
-  const tmp = `${filePath()}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-  fs.renameSync(tmp, filePath())
+  writeAtomic(filePath(), JSON.stringify(data, null, 2))
 }
 
 /* ── 读 ──────────────────────────────────────────────────── */

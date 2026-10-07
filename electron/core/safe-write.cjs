@@ -18,9 +18,10 @@
  *    把那份坏文件盖掉** —— 用户攒了几百条的记忆就这么无声无息没了。
  *    留一份至少还能人工抢救。
  *
- * 同功能的原子写在 `session-crypto.cjs` 里也有一份（加密迁移用）。那份**没有挪过来**：
- * `session*.cjs` 是硬禁区，本批只被授权改 session-write / session-io 两个文件。
- * 「三份原子写收敛成一处」记在 `docs/审计修复进度.md` 的待办。
+ * **全内核只有这一份「文本原子写」。** `session-crypto` / `projects` / `schedule-store`
+ * 以前各写各的（而且那三份都**没有**退避重试），2026-10-07 收敛到这里 ——
+ * 自检 `118-safe-write` 钉着「`electron/**` 里只允许一个 `writeAtomic` 实现」。
+ * （`profile.cjs` 存头像是**二进制拷贝**、`rotate-file.cjs` 是轮转，语义不同，各自留着。）
  */
 
 const fs = require('node:fs')

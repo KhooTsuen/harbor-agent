@@ -5,6 +5,17 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **文本原子写收敛成一处（4 份 → 1 份），顺带给另外三处补上退避重试**（`docs/improvement-checklist.md`
+  2026-10-04 记的「三份原子写」待办，已授权）。以前「别丢用户数据」的那段逻辑散在四处：
+  `core/safe-write.cjs`（共享版，**只有它有**「文件被占着」退避重试）、`core/session-crypto.cjs`
+  （加密迁移用）、`core/projects.cjs`（项目登记表）、`core/schedule-store.cjs`（定时任务台账）——
+  后三处是各写各的本地副本，**都没有重试**，Windows 上 rename 撞到 EPERM/EBUSY 时会直接抛。
+  现在三处一律走 `safe-write.writeAtomic`，`session-crypto` 那份本地实现删掉。
+  自检 `118-safe-write` 新增一条钉子：**全内核只允许一个 `writeAtomic` 实现**（递归扫 `electron/**/*.cjs`）。
+  「没顺手动的」：`handlers/profile.cjs` 存头像是**二进制拷贝**、`core/rotate-file.cjs` 是日志轮转、
+  `core/memory.cjs` 是旧文件改名 —— 语义不同，各自留着。
+  验证：内核自检 **3916 → 3917 项 / 0 失败**；`npm run verify` 全绿。
+
 - **P0-3 步骤 4：Permission 收到 Action 上（保守版）—— 只收结论，判断一字未改**（收敛计划 4.2 收尾）。
   以前「这次为什么被拦 / 为什么弹卡」只散在审计与日志里，`Action`（`task.steps[].action`）
   只看得到危险度与规模。现在 `core/action.cjs` 新增 `permission` 字段与 `notePermission()`，

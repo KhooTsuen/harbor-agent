@@ -29,6 +29,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const log = require('./log.cjs')
 const { DIRS } = require('./paths.cjs')
+/* 文本原子写只有一处实现（safe-write.cjs，带「文件被占着」退避重试） */
+const { writeAtomic } = require('./safe-write.cjs')
 
 const PREFIX = 'e1:'
 const ALGO = 'aes-256-gcm'
@@ -189,13 +191,6 @@ function convert(raw, enable, key) {
     return opened.text
   })
   return { text: out.join('\n'), changed }
-}
-
-/** 同目录写临时文件再 rename —— 中途崩了不会留下半个文件 */
-function writeAtomic(file, text) {
-  const tmp = `${file}.tmp-${process.pid}`
-  fs.writeFileSync(tmp, text, 'utf8')
-  fs.renameSync(tmp, file)
 }
 
 /**
