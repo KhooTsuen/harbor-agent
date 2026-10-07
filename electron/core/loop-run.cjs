@@ -15,6 +15,7 @@ const changeset = require('./changeset.cjs')
 const budget = require('./budget.cjs')
 const taskContext = require('./task-context.cjs')
 const taskNotes = require('./task-notes.cjs')
+const gateDenied = require('./gate-denied.cjs')
 
 /**
  * 跑一轮完整的活。
@@ -26,6 +27,8 @@ async function run(options) {
      事务答「改了哪些文件、怎么整批撤」。都不进会话文件（会话是聊天记录）。 */
   const goal = String(options.goal ?? '')
   const sessionId = options.sessionId ?? ''
+  /* 新的一轮 = 用户又说话了 → 上一轮「先别动」的硬拦截作废 */
+  gateDenied.allow(sessionId)
 
   /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，否则
      「不重复已完成步骤」无从谈起）；其余情况新建一条。 */

@@ -45,6 +45,15 @@ export interface PermissionRequest {
    * 每个选项都自带「因为 X 所以 Y」（`effect`），默认选项是 `defaultValue`。
    */
   clarify?: ClarifyQuestion[]
+  /**
+   * A 闸门（2026-10-07）：这是「执行前的计划复核」卡，不是普通澄清。
+   *
+   * 卡片据此只出**两个明确出口**（执行 / 先别动），而不是澄清那四个出口
+   * （跳过 / 先不做了 / 换个说法 / 就这么干 —— 对 gate 语义不符：对 gate 卡，
+   * 那几个的后果其实全是「停手」，措辞与后果相反）。
+   * 标记由内核 `tools/ask-user-gate.cjs` 的往返带上来。
+   */
+  gate?: boolean
   /** 确认按钮（澄清卡不用它 —— 它自己带「就这么干」） */
   onConfirm?: () => void
   /**

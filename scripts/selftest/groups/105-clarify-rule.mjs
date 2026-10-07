@@ -31,13 +31,23 @@ export async function run() {
     '★ 规则要求「要问就调 `ask_user`」，并声明写在正文里不算',
     /必须调 `ask_user`/.test(rules) && /正文/.test(rules),
   )
+  /*
+   * ⚠️ 2026-10-07：判据从「不含 ask_user」收窄成「不含『开工前先对齐』」——
+   *   新加的 PLAN_GATE_RULE（用户说先别动就别自作主张）也提到 ask_user，
+   *   但它**不跟开关**（那是用户当场下的指令）。用整段规则的特征句判，
+   *   才钉得住「这一条不注入」的本意。
+   */
   check(
-    '关掉开关 → 这一条不注入（其余照旧）',
-    !promptStack.workRules({ planFirst: true, clarifyFirst: false }).includes('ask_user'),
+    '关掉开关 → 澄清那一条不注入（其余照旧）',
+    !promptStack.workRules({ planFirst: true, clarifyFirst: false }).includes('开工前先对齐'),
   )
   check(
     '静音时也不注入（提示词里写着「先问」却不让问，模型会来回犹豫）',
-    !promptStack.workRules({ planFirst: true, clarifyMuted: true }).includes('ask_user'),
+    !promptStack.workRules({ planFirst: true, clarifyMuted: true }).includes('开工前先对齐'),
+  )
+  check(
+    '★ 关掉开关也不影响「先别动」那条（用户当场下的指令，不跟开关）',
+    promptStack.workRules({ planFirst: false, clarifyFirst: false }).includes('先别动'),
   )
   check('计划那一条不受这个开关影响', rules.includes('plan 块'))
 }

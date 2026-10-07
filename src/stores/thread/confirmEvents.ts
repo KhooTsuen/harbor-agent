@@ -93,6 +93,12 @@ export function askPermissionFor(event: Record<string, unknown>): void {
     useUIStore.getState().askClarify({
       confirmId,
       kind: 'clarify',
+      /*
+       * A 闸门（2026-10-07）：这一张是「执行前的计划复核」而不是普通澄清 ——
+       * 卡片据此只出「执行 / 先别动」两个出口（见 `components/chat/GateCard`）。
+       * 标记由内核 `tools/ask-user-gate.cjs` 带上来，这里如实透传。
+       */
+      gate: event.gate === true,
       title: '动手前先对齐一下',
       description: '',
       confirmText: '就这么干',

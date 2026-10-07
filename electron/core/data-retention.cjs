@@ -35,6 +35,15 @@ const KEEP_DAYS = 30
 const CRASH_KEEP_MIN = 3
 /** tool-output：同理（长任务的完整输出常常是过几天才回头查的） */
 const OUTPUT_KEEP_MIN = 5
+/*
+ * tool-output **总量上限**（C 案，2026-10-07）：只按年龄/份数清，体积是无界的
+ * —— 一条反复 tail build 日志的长任务，一天就能写几十个 MB 级的完整输出文件，
+ * 30 天内累积到几个 GB。这里再压一道：保留期内的总量不超过 256MB，
+ * 超了就从最旧的开始删（`OUTPUT_KEEP_MIN` 份仍然死活不删）。
+ * ★ 这类文件里是命令原样输出（过了 `redact`，但恢复码之类认不出的敏感串仍在），
+ *   所以要的不是「留久」而是「有界」。
+ */
+const OUTPUT_TOTAL_MAX_BYTES = 256 * 1024 * 1024
 /** token-metrics 单文件上限 —— 和 `log-actions.cjs` 的 6MB 同口径 */
 const METRICS_MAX_BYTES = 6 * 1024 * 1024
 
@@ -93,15 +102,25 @@ function pruneDaily({ dir, re, days = KEEP_DAYS, now = Date.now(), label = '按�
 }
 
 /**
- * 按「年龄 + 至少留 N 份」清理（tool-output / 崩溃转储共用）。
+ * 按「年龄 + 至少留 N 份（+ 可选总量上限）」清理（tool-output / 崩溃转储共用）。
  *
  * 年龄优先取**文件名里的时间戳**（tool-output 带），取不到退回 mtime。
  * 名字形状不认得的**一个都不碰**（约束 1）—— 崩溃目录里可能还有用户自己放的
  * 转储/说明文件。
+ * `maxBytes > 0` 时再多一道总量闸：保留下来的累计体积不超过它，超了从最旧的删。
  *
- * @param {{dir: string, re: RegExp, days?: number, keepMin?: number, now?: number, label?: string}} o
+ * @param {{dir: string, re: RegExp, days?: number, keepMin?: number, maxBytes?: number,
+ *          now?: number, label?: string}} o
  */
-function pruneByAge({ dir, re, days = KEEP_DAYS, keepMin = 0, now = Date.now(), label = '旧文件' }) {
+function pruneByAge({
+  dir,
+  re,
+  days = KEEP_DAYS,
+  keepMin = 0,
+  maxBytes = 0,
+  now = Date.now(),
+  label = '旧文件',
+}) {
   try {
     let entries
     try {
@@ -116,31 +135,44 @@ function pruneByAge({ dir, re, days = KEEP_DAYS, keepMin = 0, now = Date.now(), 
       if (!m) continue
       const fromName = m[1] ? Number(m[1]) : NaN
       let at = Number.isFinite(fromName) && fromName > 0 ? fromName : NaN
-      if (!Number.isFinite(at)) {
-        try {
-          at = fs.statSync(path.join(dir, entry.name)).mtimeMs
-        } catch {
-          at = now /* 读不到时间就算「刚写的」→ 不删 */
-        }
+      let size = 0
+      try {
+        const st = fs.statSync(path.join(dir, entry.name))
+        size = st.size
+        if (!Number.isFinite(at)) at = st.mtimeMs
+      } catch {
+        at = now /* 读不到时间就算「刚写的」→ 不删 */
       }
-      files.push({ name: entry.name, at })
+      files.push({ name: entry.name, at, size })
     }
     if (files.length === 0) return { ok: true, removed: [], kept: 0, reason: '没有可清理的文件' }
 
     files.sort((a, b) => b.at - a.at)
     const limit = now - days * DAY_MS
     const removed = []
-    for (const item of files.slice(keepMin)) {
-      if (item.at >= limit) continue
-      try {
-        fs.unlinkSync(path.join(dir, item.name))
-        removed.push(item.name)
-      } catch {
-        /* 同上 */
+    let keptBytes = 0
+    files.forEach((item, index) => {
+      /* 前 keepMin 份永远不删（约束 2）；其余：太老 或 累计已超总量 → 删 */
+      const spare = index < keepMin
+      const tooOld = item.at < limit
+      const tooBig = maxBytes > 0 && keptBytes + item.size > maxBytes
+      if (!spare && (tooOld || tooBig)) {
+        try {
+          fs.unlinkSync(path.join(dir, item.name))
+          removed.push(item.name)
+        } catch {
+          /* 同上 */
+        }
+      } else {
+        keptBytes += item.size
       }
-    }
+    })
     if (removed.length > 0) {
-      log.warn(`清理${label}：删了 ${removed.length} 个（保留最近 ${days} 天，且至少留 ${keepMin} 份）`)
+      const cap =
+        maxBytes > 0
+          ? `、总量 ≤ ${maxBytes >= 1048576 ? `${Math.round(maxBytes / 1048576)}MB` : `${maxBytes}字节`}`
+          : ''
+      log.warn(`清理${label}：删了 ${removed.length} 个（保留最近 ${days} 天${cap}，且至少留 ${keepMin} 份）`)
     }
     return { ok: true, removed, kept: files.length - removed.length }
   } catch (error) {
@@ -188,6 +220,7 @@ function pruneAll({ now = Date.now(), dirs = {} } = {}) {
           dir: logs,
           re: TOOL_OUTPUT_RE,
           keepMin: OUTPUT_KEEP_MIN,
+          maxBytes: OUTPUT_TOTAL_MAX_BYTES,
           now,
           label: '工具大输出',
         }),
@@ -238,6 +271,7 @@ module.exports = {
   KEEP_DAYS,
   CRASH_KEEP_MIN,
   OUTPUT_KEEP_MIN,
+  OUTPUT_TOTAL_MAX_BYTES,
   METRICS_MAX_BYTES,
   MAIN_LOG_RE,
   ACTIONS_RE,

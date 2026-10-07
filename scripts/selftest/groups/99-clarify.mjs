@@ -7,7 +7,6 @@ import { check, group } from '../harness.mjs'
    需求原话：「AI 在任务开始时，主动把需要用户拿主意的地方摆出来；每个选项下方
    写清『因为 X，所以会有 Y 效果』（具体数字或事实）；用户可以自由回答、跳过；
    用户答完后才进入执行。」
-
    这一组钉四块：
      ① 校验（`core/clarify.cjs`）：条数 / 选项数上限、坏问题剔除并报告、
         effect 没实质内容要**警告**（不剔除）、默认选项缺失要退回第一个并报告；
@@ -219,7 +218,8 @@ export async function run() {
   const bad = await toolRun({ questions: [{ question: '' }] }, { sessionId: 'x', clarify: async () => ({}) })
   check('参数全坏 → 返回说明而不是抛错（不让整轮废掉）', /没能问出去/.test(bad), bad.slice(0, 60))
 
-  /* 「规则注入与开关」那一组已搬到 105-clarify-rule.mjs（这个文件顶到 300 行了） */
+  /* 「执行前的计划复核」在 132-plan-gate.mjs；「规则注入与开关」在 105-clarify-rule.mjs
+     （本文件两次顶过 300 行，各自分出去） */
 
   group('AG-053 / 接线')
   check('工具表里有 ask_user', registry.byName('ask_user')?.name === 'ask_user')
@@ -279,4 +279,20 @@ export async function run() {
     '上限值只有一处定义（别处只引用）',
     !defaults.includes('600000') && !normalizeSrc.includes('600000'),
   )
+
+  group('B / 默认选项保守性：破坏性默认要报警')
+  const riskyOpts = [
+    { label: '删除旧文件', effect: '删掉 12 个文件，不可恢复' },
+    { label: '先备份再删', effect: '多花 5 秒，可回滚' },
+  ]
+  const riskyDefault = clarify.normalize([{ question: '怎么处理？', options: riskyOpts, defaultValue: '删除旧文件' }])
+  check('★ 默认是破坏性操作 → 报警（离场/无人值守会直接采纳它）', riskyDefault.warnings.some((one) => /破坏性/.test(one.warning)), JSON.stringify(riskyDefault.warnings))
+  const riskyFallback = clarify.normalize([{ question: '怎么同步？', options: [
+    { label: '强制推送', effect: '会覆盖远端 3 个提交' },
+    { label: '本地提交就好', effect: '不动远端' },
+  ] }])
+  check('★ 退让到第一个、第一个又破坏性 → 同样报警', riskyFallback.warnings.some((one) => /破坏性/.test(one.warning)))
+  check('★ 安全默认不误报', !clarify.normalize([good()]).warnings.some((one) => /破坏性/.test(one.warning)))
+  check('★ 只报警不改选（默认仍是原来那个）', riskyDefault.questions[0].defaultValue === '删除旧文件')
+  check('RISKY 判定：认得出「删除」、不误伤「跑一遍测试」', clarify.risky('删除旧文件') === true && clarify.risky('跑一遍测试') === false)
 }

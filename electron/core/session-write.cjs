@@ -80,6 +80,20 @@ function append(id, message) {
     ])
   }
   appendEvent(file, { type: 'message', ...message })
+  /*
+   * 收尾那条（非 partial）落盘后顺手看一眼要不要压实（D 案）：
+   * 流式快照会把文件撑大，而读的时候本来就会按 key 把它们收敛掉
+   * （见 session-read.cjs 的 collapseByKey）—— 磁盘上那些是白占地方。
+   * 只在收尾时看（不是每次快照），且超阈值 + 又长够了才真做，开销可忽略。
+   * 细节与三条自我约束见 session-compact.cjs。
+   */
+  if (message?.partial !== true) {
+    try {
+      require('./session-compact.cjs').maybeCompact(id)
+    } catch (error) {
+      log.warn(`会话压实检查失败：${error instanceof Error ? error.message : error}`)
+    }
+  }
   return { ok: true }
 }
 

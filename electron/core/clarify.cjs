@@ -59,6 +59,17 @@ function concrete(text) {
   return MEASURE_WORDS.some((word) => value.includes(word))
 }
 
+/*
+ * B：默认选项命中破坏性词 → 报警（离场 / 无人值守会**直接采纳默认**，用户不在场）。
+ * 只报警**不改选** —— 启发式会误报（「先备份再删」也含「删」），替用户改选风险更大。
+ */
+const RISKY_WORDS = [
+  '删除', '删掉', '移除', '清空', '覆盖', '替换', '移动', '推送',
+  '发布', '上传', '安装', '卸载', '重置', '回滚', '格式化', '强制', '清库',
+]
+
+const risky = (value) => RISKY_WORDS.some((one) => String(value ?? '').includes(one))
+
 /* ══════════════════════════════════════════════════════════════
    校验 + 措辞（纯函数）
 
@@ -133,10 +144,10 @@ function normalize(raw) {
 
     /*
      * 默认选项：模型没标就用第一个（并记下来是「退让」来的）。
-     * ★ 需求：默认必须是「改动最小、最容易回滚、风险最低」的那个 ——
-     *   那是**提示词层**的硬要求（CLARIFY_RULE）；这里只能保证「有一个默认」，
-     *   保证不了它是不是最保守的。填不上默认的问题**不剔除**：
-     *   留一个默认 + 一条警告，比让用户看不到这个问题好。
+     * ★ 需求：默认必须是「改动最小、最易回滚、风险最低」那个（提示词层 CLARIFY_RULE）；
+     *   这里保证「有一个默认」，再补一道启发式：默认命中破坏性词就报警
+     *   （见 RISKY_WORDS）—— 离场 / 无人值守会直接采纳它。只报警不改选。
+     *   填不上默认的问题**不剔除**：留一个默认 + 一条警告，比让他看不到好。
      */
     const asked = text(item?.defaultValue, MAX_LABEL_CHARS)
     const matched = options.find((one) => one.label === asked)
@@ -148,6 +159,14 @@ function normalize(raw) {
     const defaultFrom = matched ? 'model' : 'first'
     if (options.length > 0 && defaultFrom === 'first') {
       out.warnings.push({ question, warning: `没标默认选项，取第一个「${defaultValue}」` })
+    }
+    /* 默认看着是破坏性操作 → 报警（离场 / 无人值守会直接采纳它） */
+    const picked = options.find((one) => one.label === defaultValue)
+    if (picked && (risky(picked.label) || risky(picked.effect))) {
+      out.warnings.push({
+        question,
+        warning: `默认选项「${picked.label}」看着是破坏性操作（离场/无人值守会直接采纳它），建议标一个更保守的默认`,
+      })
     }
 
     out.questions.push({
@@ -270,6 +289,7 @@ module.exports = {
   normalize,
   render,
   concrete,
+  risky,
   /* 按对话记的状态（实现在 clarify-session.cjs，这里转出去） */
   ...session,
 }

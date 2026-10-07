@@ -5,7 +5,7 @@
  *       否则走 `ctx.clarify` 那条往返（渲染层弹卡片，用户选/补充/跳过）→
  *       把答复当**工具结果**返回给模型 → 模型再开工。
  *
- * ★ 三条边界：
+ * ★ 四条边界：
  *   ① **不问就干活不算错，问错才错** —— 参数坏掉（没问题可问）时返回一句说明，
  *      而不是抛错让整轮废掉。
  *   ② **通道没接上时放行**（fail-open）：`ctx.clarify` 不存在（老版本 / 自检）
@@ -13,10 +13,14 @@
  *      把用户的任务卡死。
  *   ③ 它是**只读**工具：不改文件、不跑命令，所以**不进** `WRITE_TOOLS`（ask 档不弹
  *      权限确认 —— 澄清卡本身就是「问用户」，再叠一层权限确认是两遍）。
+ *   ④ **`gate: true`（执行前的计划复核）反过来 fail-closed**：那一条对应用户当场说的
+ *      「先别动、等我确认」。拿不到界面 ≠ 可以自己开工 —— 那就**停手**，把计划留在
+ *      回复里等他。默认选项也是「先别动」。见 `runGate`。
  */
 
 const clarify = require('../clarify.cjs')
 const scaleGate = require('./scale-gate.cjs')
+const gate = require('./ask-user-gate.cjs')
 
 /**
  * 谁能把问题送到界面上？
@@ -42,6 +46,8 @@ function transportOf(ctx) {
   }
 }
 
+/* gate 那条路（`gate: true`）住在 `ask-user-gate.cjs` —— 那边加完这一路这里顶到 318 行，拆出去 */
+
 module.exports = {
   name: 'ask_user',
   description: [
@@ -53,6 +59,8 @@ module.exports = {
     '适合问：需求含糊有多种合理解法、做法不可逆、影响范围说不清。',
     '不适合问：能从代码或文件里查出来的事、纯风格偏好、一句话就能答完的活。',
     '一次最多问 3 个问题，用户答完才开工。',
+    '※ 用户说了「先别动 / 等我确认 / 先分析再决定」这类话时，改用 `gate: true` 做**执行前复核**：',
+    '把计划摆出来后单问一次「就按这个动手吗」，只有他明确点「执行」才动手。',
   ].join(''),
   parameters: {
     type: 'object',
@@ -60,8 +68,7 @@ module.exports = {
       questions: {
         type: 'array',
         description: '要问的问题（最多 3 个）',
-        items: {
-          type: 'object',
+        items: {          type: 'object',
           properties: {
             question: { type: 'string', description: '一句话说清要拿什么主意' },
             options: {
@@ -91,12 +98,25 @@ module.exports = {
           required: ['question', 'options'],
         },
       },
+      gate: {
+        type: 'boolean',
+        description:
+          '执行前的计划复核（不是澄清）：用户说过「先别动、等我确认」时用。传 true 就不必给 questions，' +
+          '工具会拿 question 当摘要、用固定选项问一次「就按这个动手吗」；只有他明确点「执行」才放行，' +
+          '其余（自由回答 / 跳过 / 离开）一律按「没批准」停手。',
+      },
+      question: {
+        type: 'string',
+        description: 'gate 模式的摘要（一句话），显示在确认卡上；详细计划写在回复正文里。',
+      },
     },
-    required: ['questions'],
+    required: [],
   },
 
   async run(args, ctx = {}) {
     const sessionId = String(ctx.sessionId ?? '')
+    /* 执行前的计划复核走单独一条路（fail-closed，见文件头 ④ 与 runGate） */
+    if (args?.gate === true) return gate.runGate(args, ctx, sessionId, { transportOf, clarify })
     const checked = clarify.normalize(args?.questions)
     /* 参数全坏（模型没给问题 / 问题全是空的）：返回一句说明，不让整轮废掉 */
     const unusable = () => {

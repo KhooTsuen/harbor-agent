@@ -181,6 +181,55 @@ export async function run() {
     ),
     'boot-cleanup 里没接保留期，或没包 try',
   )
+
+  /* ── ④″ C 案（2026-10-07）：工具大输出要**有界**，不只是「够老才删」 ── */
+  const outTmp = join(TMP, 'out')
+  mkdirSync(outTmp, { recursive: true })
+  const now2 = Date.now()
+  const mkOut = (stamp, bytes) =>
+    writeFileSync(join(outTmp, `tool-output-${stamp}.log`), 'x'.repeat(bytes), 'utf8')
+  mkOut(now2 - 3000, 40) /* 最旧 */
+  mkOut(now2 - 2000, 40)
+  mkOut(now2 - 1000, 40) /* 最新 */
+  const capped = dataRetention.pruneByAge({
+    dir: outTmp,
+    re: dataRetention.TOOL_OUTPUT_RE,
+    keepMin: 1,
+    maxBytes: 100,
+    now: now2,
+  })
+  check(
+    '★ 总量超上限 → 删最旧的（光按年龄/份数，体积是无界的）',
+    capped.removed.length === 1 && capped.removed[0] === `tool-output-${now2 - 3000}.log`,
+    capped.removed.join(' '),
+  )
+  check('★ 上限内的照常保留', readdirSync(outTmp).length === 2, readdirSync(outTmp).join(' '))
+  check(
+    '★ 至少留 N 份永远不删（上限再小也先保前 N 份）',
+    (() => {
+      mkOut(now2 - 5000, 40) /* 再放一个更旧的，凑成 3 个 */
+      const r = dataRetention.pruneByAge({
+        dir: outTmp,
+        re: dataRetention.TOOL_OUTPUT_RE,
+        keepMin: 2,
+        maxBytes: 1,
+        now: now2,
+      })
+      return r.removed.length === 1 && r.removed[0] === `tool-output-${now2 - 5000}.log`
+    })(),
+  )
+  check(
+    '★ 默认不带 maxBytes 时行为一字不变（老调用方不受影响）',
+    dataRetention.pruneByAge({ dir: outTmp, re: dataRetention.TOOL_OUTPUT_RE, now: now2 })
+      .removed.length === 0,
+  )
+  check('总量常量有值', dataRetention.OUTPUT_TOTAL_MAX_BYTES > 0, String(dataRetention.OUTPUT_TOTAL_MAX_BYTES))
+  check(
+    '★ pruneAll 真的把总量闸接上了（光有常量没人用 = 上限不存在）',
+    readFileSync(join(ROOT, 'electron/core/data-retention.cjs'), 'utf8').includes(
+      'maxBytes: OUTPUT_TOTAL_MAX_BYTES',
+    ),
+  )
   rmSync(TMP, { recursive: true, force: true })
 
   /* ── ⑤ 规则只有一份（本仓库返工最多的一类问题，直接读源码钉住） ── */

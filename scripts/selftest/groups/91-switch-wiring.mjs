@@ -137,9 +137,14 @@ export async function run() {
   group('开关接线 / clarifyFirst（开工前先问清楚）')
   check(
     '★ 开着：规则真的进了提示词',
-    promptStack.workRules({ clarifyFirst: true }).includes('ask_user'),
+    promptStack.workRules({ clarifyFirst: true }).includes('开工前先对齐'),
   )
-  check('★ 关掉：那一条不再注入（其余照旧）', !promptStack.workRules({ clarifyFirst: false }).includes('ask_user'))
+  /* ★ 判据用整段规则的特征句（不是裸的 `ask_user`）—— 2026-10-07 新加的 PLAN_GATE_RULE
+     也提到 ask_user，但它**不跟开关**（用户当场下的指令），用裸词判会误报。 */
+  check(
+    '★ 关掉：澄清那一条不再注入（其余照旧）',
+    !promptStack.workRules({ clarifyFirst: false }).includes('开工前先对齐'),
+  )
   check(
     '★ loop-prompt 按**配置**传进来（不是写死的）',
     read('electron/core/loop-prompt.cjs').includes('clarifyFirst: config.assistant?.clarifyFirst'),

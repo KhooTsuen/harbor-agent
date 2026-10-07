@@ -111,3 +111,40 @@ describe('P0-5 / 兼容：老主进程没带 decisionType 时退回看 kind', ()
     expect(useUIStore.getState().clarify).toBeNull()
   })
 })
+
+describe('A 闸门（2026-10-07）/ gate 标记透传', () => {
+  it('★ gate: true 的事件 → 进澄清槽位，并带上 gate 标记（卡片据此只出两个出口）', () => {
+    act(() => {
+      handleStreamEvent(
+        {
+          type: 'confirm_request',
+          decisionType: 'clarify',
+          confirmId: 'clr_gate',
+          sessionId: 'thread-1',
+          questions: QUESTIONS,
+          gate: true,
+        },
+        state(),
+      )
+    })
+    expect(useUIStore.getState().clarify?.confirmId).toBe('clr_gate')
+    expect(useUIStore.getState().clarify?.gate).toBe(true)
+  })
+
+  it('普通澄清（没带 gate）→ gate 不为 true（还是澄清那张卡）', () => {
+    act(() => {
+      handleStreamEvent(
+        {
+          type: 'confirm_request',
+          decisionType: 'clarify',
+          confirmId: 'clr_plain',
+          sessionId: 'thread-1',
+          questions: QUESTIONS,
+        },
+        state(),
+      )
+    })
+    expect(useUIStore.getState().clarify?.confirmId).toBe('clr_plain')
+    expect(useUIStore.getState().clarify?.gate).not.toBe(true)
+  })
+})

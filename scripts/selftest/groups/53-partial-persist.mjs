@@ -147,6 +147,98 @@ export async function run() {
   )
 
 
+  /* ══════════════════════════════════════════════════════════════
+     D 案（2026-10-07）：压实磁盘上那些「读的时候本来就被收敛掉」的快照。
+     读的一侧**已经**按 key 收敛，所以压实**不许改变任何读出来的结果** —— 这里
+     每条都拿「压实前 load / 压实后 load」对照着钉。
+     ══════════════════════════════════════════════════════════════ */
+  group('会话压实：删磁盘上被收敛掉的快照，读的结果一字不变')
+  const compact = require(join(ROOT, 'electron/core/session-compact.cjs'))
+  const io = require(join(ROOT, 'electron/core/session-io.cjs'))
+  const fsmod = require('node:fs')
+  const line = (o) => JSON.stringify(o)
+
+  const planned = compact.collapseRawLines([
+    line({ type: 'meta', id: 'sess_x' }),
+    line({ type: 'message', role: 'assistant', key: 'm1', partial: true, content: '一' }),
+    line({ type: 'message', role: 'assistant', key: 'm1', partial: true, content: '一二' }),
+    line({ type: 'message', role: 'assistant', key: 'm1', content: '一二三' }),
+    '',
+  ])
+  check('★ 有完整那条 → 快照全删、只留完整的', planned.removed === 2 && planned.lines.length === 2, JSON.stringify(planned.removed))
+  check('★ meta 原样保留', planned.lines[0].includes('"meta"'))
+  check('★ 留下的是完整那条（不带 partial）', planned.lines[1].includes('一二三') && !planned.lines[1].includes('"partial"'))
+
+  const rawSeq = [
+    line({ type: 'message', role: 'user', content: 'u1' }),
+    line({ type: 'message', role: 'assistant', key: 'a', partial: true, content: '半截' }),
+    line({ type: 'message', role: 'user', content: 'u2' }),
+    line({ type: 'message', role: 'assistant', key: 'a', content: '完整' }),
+  ]
+  check(
+    '★ 压实后的行序 == 读的收敛结果（保留者回第一次出现的位置，不然重载顺序会变）',
+    compact
+      .collapseRawLines(rawSeq)
+      .lines.map((l) => JSON.parse(l).content)
+      .join('|') ===
+      read
+        .collapseByKey(rawSeq.map((l) => JSON.parse(l)))
+        .map((m) => m.content)
+        .join('|'),
+    compact
+      .collapseRawLines(rawSeq)
+      .lines.map((l) => JSON.parse(l).content)
+      .join('|'),
+  )
+
+  const kept = compact.collapseRawLines([
+    line({ type: 'meta', id: 'x' }),
+    '这不是 JSON，是坏行',
+    line({ type: 'compact', summary: 's' }),
+    line({ type: 'message', role: 'assistant', key: 'k', partial: true, content: 'a' }),
+    line({ type: 'message', role: 'assistant', key: 'k', partial: true, content: 'ab' }),
+  ])
+  check('★ 解不开的行原样保留（压实不顺手删坏行）', kept.lines.includes('这不是 JSON，是坏行'))
+  check('★ 压缩点等非消息行原样保留', kept.lines.some((l) => l.includes('"compact"')))
+  check('只有快照 → 留最后一条（其余删）', kept.removed === 1)
+
+  const cThread = session.create({ title: '压实', workdir: ROOT })
+  session.append(cThread.id, { role: 'user', content: '问', ts: Date.now() })
+  for (let i = 1; i <= 5; i += 1) {
+    session.append(cThread.id, {
+      role: 'assistant',
+      key: 'msg_c',
+      partial: true,
+      content: 'x'.repeat(i * 100),
+      ts: Date.now(),
+    })
+  }
+  const beforeLoad = session.load(cThread.id)
+  const sizeBefore = fsmod.statSync(io.fileFor(cThread.id)).size
+  const result = compact.compact(cThread.id)
+  const sizeAfter = fsmod.statSync(io.fileFor(cThread.id)).size
+  const afterLoad = session.load(cThread.id)
+  check('★ 真文件：压实删掉了被收敛的快照（5 张 → 留 1 张）', result.removed === 4, JSON.stringify(result))
+  check('★ 真文件：压实后文件确实变小了', sizeAfter < sizeBefore, `${sizeBefore} → ${sizeAfter}`)
+  check(
+    '★ 真文件：压实前后 load 的结果一字不变（内容 + interrupted）',
+    JSON.stringify(beforeLoad.messages) === JSON.stringify(afterLoad.messages),
+  )
+  check('★ 只有快照 → 压实后仍是 interrupted 的那条', afterLoad.messages[1].interrupted === true)
+
+  session.append(cThread.id, { role: 'assistant', key: 'msg_c', content: '完整答案', ts: Date.now() })
+  compact.compact(cThread.id)
+  const fin = session.load(cThread.id)
+  check(
+    '★ 收尾 + 压实后：仍是一条、用完整那条、不再 interrupted',
+    fin.messages.length === 2 && fin.messages[1].content === '完整答案' && !fin.messages[1].interrupted,
+  )
+  session.remove(cThread.id)
+
+  check('★ 写入侧接上了压实（收尾那条落盘后才看）', /maybeCompact\(/.test(readCore('electron/core/session-write.cjs')))
+  check('★ 阈值是 8MB（正常会话远到不了，不会瞎重写）', compact.COMPACT_MIN_BYTES === 8 * 1024 * 1024)
+
+
   /* ── 用户消息的「多版本」也要按 key 收敛（不然改一次就多一条提问）── */
   const edited = session.create({ title: '编辑收敛', workdir: ROOT })
   session.append(edited.id, { role: 'user', key: 'msg_u1', content: '第一版的问题', ts: Date.now() })

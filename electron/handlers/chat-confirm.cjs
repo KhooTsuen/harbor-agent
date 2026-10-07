@@ -177,6 +177,13 @@ function askClarify(input = {}) {
         /* `kind: 'clarify'` 保留（老消费者可能读它）；分流已改用 decisionType */
         kind: 'clarify',
         questions: input.questions ?? [],
+        /*
+         * A 闸门（2026-10-07）：执行前的计划复核（`ask_user` 的 `gate: true`）。
+         * ★ 必须一路带上去 —— 漏了它，渲染层就分不出这张卡，gate 卡会退化成普通澄清卡
+         *   （底部出「跳过 / 换个说法」四个出口，而它们的后果其实全是停手）。
+         *   真机走查逮到过这个漏：只改到工具层没改到这里。
+         */
+        ...(input.gate === true ? { gate: true } : {}),
       },
       /* 走对话自己的 emitter：它才会把 requestId 补上去（看上面那段） */
       emitReply: (payload) => {

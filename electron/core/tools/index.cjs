@@ -23,6 +23,7 @@ const registry = require('./registry.cjs')
 const taskIntent = require('../task-intent.cjs') /* 意图/结果两段落盘，见它的文件头 */
 const { byName, isMcpTool, validateArgs, WRITE_TOOLS } = registry
 const { runWithPathPermission, auditCall, affectedFiles } = require('./permission.cjs')
+const gateDenied = require('../gate-denied.cjs')
 
 function impactFor(name, args, ctx, summary, verdict) {
   const workdir = String(ctx.workdir ?? '')
@@ -52,6 +53,8 @@ function impactFor(name, args, ctx, summary, verdict) {
  */
 async function execute(name, args, ctx = {}) {
   const startedAt = Date.now()
+  /* A 闸门硬拦截：这一轮被「计划复核」否决过 → 后续工具一律不执行（见 core/gate-denied.cjs） */
+  if (gateDenied.stopped(ctx.sessionId)) return gateDenied.STOP_TEXT
   /* 风险确认已经问过一次了吗 —— 同一个动作弹两次窗最招人烦（见下面的写操作确认） */
   let riskApproved = false
 
