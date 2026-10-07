@@ -1,6 +1,25 @@
 # 更新日志
 ## [未发布]
 
+- **一批「贴在 300 行红线」的文件拆开：10 个主文件、新增 10 个子文件**
+  （`docs/improvement-checklist.md` 2026-10-06 记的「留给专门一批」，按 `.github/skills/split-file` 做）。
+  拆的是：`electron/core/errors.cjs`（KINDS/MESSAGE_RULES/STRATEGY_TEXT 三张表 → `error-kinds.cjs`）、
+  `electron/core/config-defaults.cjs`（品牌 + 枚举 → `config-constants.cjs`）、
+  `electron/core/config-normalize.cjs`（小工具函数 + 两个逐项规范化器 → `config-normalize-parts.cjs`）、
+  `src/types/safety.ts`（纯类型 → `safety-types.ts`）、
+  `src/types/models-extra.ts`（会话那一组 → `models-session.ts`）、
+  `src/types/backend.ts`（文件 / 终端那摊方法 → `backend-io.ts`）、
+  `src/components/settings/tabs/SecurityTab.tsx`（命令探针 + PolicySelect → `security/SecurityParts.tsx`）、
+  `src/components/settings/tabs/McpTab.tsx`（服务器列表 → `ServerList.tsx`）、
+  `src/components/chat/TaskRow.tsx`（折叠的详情面板 → `TaskRowDetails.tsx`）、
+  `src/components/chat/Composer.tsx`（输入区状态与逻辑 → `composer/useComposerState.ts`）。
+  **每处都按「主文件留作门面、子文件领一个职责」**：表 / 常量 / 原料 / 类型 / 一摊 UI —— 各自改动理由不同，
+  并且一律从主文件再导出，**调用方一行都不用改**。
+  验证：`npm run typecheck` 0 错误、`npm run lint` 0 错误、内核自检 **3986 项 / 0 失败**、
+  行数红线 **1024 个文件全 ≤ 300 行**。
+  顺带把两条「按源码扫描」的自检指到搬走后的文件（`51-mcp-presets` 找 `useBundledNode`、
+  `44-steering` 找「你改过方向」）—— 拆文件时这类检查最容易静默失效，**它绿不等于功能还在**。
+
 - **A 闸门补上「硬拦截」+ 卡片两个明确出口**（2026-10-07，真机走查逮到的两个洞）。
   走查结论：①「先别动，等我确认」这句话，4 次里只有 1 次真弹出 gate 卡 —— 触发靠的是
   模型自觉，不是强制；②就算弹了、用户选了「先别动」，模型仍可能接着调工具（逮到过一次：

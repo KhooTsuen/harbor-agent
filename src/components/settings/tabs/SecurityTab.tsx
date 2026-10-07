@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
-import type { AuditEntry, CapabilityGrant, CredentialsStatus, RiskVerdict } from '@/types/backend'
-import type { AppConfig, PolicyAction } from '@/types/models'
+import type { AuditEntry, CapabilityGrant, CredentialsStatus } from '@/types/backend'
+import type { AppConfig } from '@/types/models'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { Button } from '@/components/ui/Button'
@@ -10,7 +10,6 @@ import {
   auditList,
   auditStats,
   capabilityList,
-  classifyCommand,
   credentialsStatus,
 } from '@/lib/safetyApi'
 import { Row, SectionTitle } from '../parts'
@@ -19,7 +18,8 @@ import { SessionCryptoPanel } from '../panels/SessionCryptoPanel'
 import { AuditPanel } from '../security/AuditPanel'
 import { GrantsPanel } from '../security/GrantsPanel'
 import { ApprovalHistory } from '../security/ApprovalHistory'
-import { LEVEL_COLOR, LEVEL_FULL_LABEL, POLICY_OPTIONS, SCOPE_OPTIONS } from '../security/meta'
+import { SCOPE_OPTIONS } from '../security/meta'
+import { PolicySelect, RiskProbe, fullPolicy } from '../security/SecurityParts'
 import { colorOf } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
@@ -39,10 +39,6 @@ export function SecurityTab() {
   const [stats, setStats] = useState({ total: 0, failed: 0, denied: 0 })
   const [creds, setCreds] = useState<CredentialsStatus | null>(null)
   const [onlyProblems, setOnlyProblems] = useState(false)
-  const [probe, setProbe] = useState('')
-  const [probeResult, setProbeResult] = useState<{ verdict: RiskVerdict; action: string } | null>(
-    null,
-  )
   const [busy, setBusy] = useState(false)
 
   const tools = config?.tools
@@ -144,43 +140,7 @@ export function SecurityTab() {
         />
       </Row>
 
-      <Row label="试算一条命令" hint="输入命令看它会被判成什么等级（不执行）">
-        <div className="flex flex-col gap-2">
-          <input
-            value={probe}
-            onChange={(e) => setProbe(e.target.value)}
-            placeholder="例如：rm -rf ./build"
-            spellCheck={false}
-            className="w-full rounded-sm border border-line-subtle bg-bg-input px-2 py-1.5 font-mono text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
-          />
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void classifyCommand(probe).then(setProbeResult)}
-            >
-              试算
-            </Button>
-            {probeResult ? (
-              <span className="text-2xs">
-                <span style={{ color: LEVEL_COLOR[probeResult.verdict.level] }}>
-                  {LEVEL_FULL_LABEL[probeResult.verdict.level]}
-                </span>
-                <span className="text-fg-tertiary">
-                  {' '}
-                  · 处置：
-                  {POLICY_OPTIONS.find((p) => p.value === probeResult.action)?.label ??
-                    probeResult.action}
-                  {probeResult.verdict.reasons.length > 0
-                    ? ` · ${probeResult.verdict.reasons.join('；')}`
-                    : ''}
-                </span>
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </Row>
-
+      <RiskProbe />
       <NetworkPolicyPanel />
 
       <SessionCryptoPanel />
@@ -267,34 +227,5 @@ export function SecurityTab() {
         </div>
       </Row>
     </div>
-  )
-}
-
-/** 补全三个键 —— patch 是浅合并，缺的键会把类型搞成可选 */
-function fullPolicy(
-  policy?: Partial<AppConfig['tools']['shellPolicy']>,
-): AppConfig['tools']['shellPolicy'] {
-  return { medium: 'ask', high: 'ask', critical: 'block', ...policy }
-}
-
-function PolicySelect({
-  value,
-  onChange,
-}: {
-  value: PolicyAction
-  onChange: (value: PolicyAction) => void
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as PolicyAction)}
-      className="rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-dense text-fg-primary focus:border-line-focus focus:outline-none"
-    >
-      {POLICY_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
   )
 }

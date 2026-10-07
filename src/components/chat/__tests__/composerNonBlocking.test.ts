@@ -19,7 +19,11 @@ import { describe, expect, it } from 'vitest'
    ══════════════════════════════════════════════════════════════ */
 
 const ROOT = join(__dirname, '..', '..', '..', '..')
-const composer = readFileSync(join(ROOT, 'src/components/chat/Composer.tsx'), 'utf8')
+/* 状态与逻辑拆去了 composer/useComposerState.ts（Composer.tsx 贴到红线的拆分），两份拼起来扫：
+   textarea 在 Composer.tsx，canSend / sending 那些在 hook 里 */
+const composer =
+  readFileSync(join(ROOT, 'src/components/chat/Composer.tsx'), 'utf8') +
+  readFileSync(join(ROOT, 'src/components/chat/composer/useComposerState.ts'), 'utf8')
 const store = readFileSync(join(ROOT, 'src/stores/useThreadStore.ts'), 'utf8')
 
 /** 从 <textarea 到 /> 的那一段 */

@@ -21,7 +21,11 @@ import { useThreadStore } from '@/stores/useThreadStore'
    ══════════════════════════════════════════════════════════════ */
 
 const ROOT = join(__dirname, '..', '..', '..', '..')
-const composerSrc = readFileSync(join(ROOT, 'src/components/chat/Composer.tsx'), 'utf8')
+/* DOM 上限（maxLength / 计数器）在 Composer.tsx；atLimit 与 canSend 的推导在
+   composer/useComposerState.ts —— 拆过文件，两份拼起来扫 */
+const composerSrc =
+  readFileSync(join(ROOT, 'src/components/chat/Composer.tsx'), 'utf8') +
+  readFileSync(join(ROOT, 'src/components/chat/composer/useComposerState.ts'), 'utf8')
 const storeSrc = readFileSync(join(ROOT, 'src/stores/useThreadStore.ts'), 'utf8')
 const constantsSrc = readFileSync(join(ROOT, 'src/constants/index.ts'), 'utf8')
 

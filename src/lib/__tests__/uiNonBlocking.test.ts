@@ -94,7 +94,10 @@ describe('AG-009 / Renderer 不阻塞', () => {
   })
 
   it('发送不再拿 sending 卡住 —— 跑着时排队（AG-025）', () => {
-    const src = readFileSync(join(SRC, 'components', 'chat', 'Composer.tsx'), 'utf8')
+    /* canSend 的推导搬到了 composer/useComposerState.ts（Composer.tsx 贴到 300 行红线）—— 两份拼起来扫 */
+    const src =
+      readFileSync(join(SRC, 'components', 'chat', 'Composer.tsx'), 'utf8') +
+      readFileSync(join(SRC, 'components', 'chat', 'composer', 'useComposerState.ts'), 'utf8')
     expect(src).toContain('const canSend = hasContent')
     /* canSend 不再含 !sending —— 排队由 sendMessage 内部按 sendingThreads 判断 */
     expect(src).not.toContain('const canSend = !sending')

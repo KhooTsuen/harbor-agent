@@ -64,7 +64,8 @@ describe('PlanCard / 接线守卫', () => {
   })
 
   it('★ 任务中心用 PlanCard 展示计划（不再只给一个「N 步」的数字）', () => {
-    const src = readFileSync(join(SRC, 'components/chat/TaskRow.tsx'), 'utf8')
+    /* 详情块拆去了 TaskRowDetails.tsx —— 守卫跟着搬 */
+    const src = readFileSync(join(SRC, 'components/chat/TaskRowDetails.tsx'), 'utf8')
     expect(src).toContain('PlanCard')
     expect(src).toContain('planVersions')
   })

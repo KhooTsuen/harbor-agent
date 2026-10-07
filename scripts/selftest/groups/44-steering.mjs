@@ -252,7 +252,10 @@ export async function run() {
   )
   check(
     '★ 界面上看得见「你改过方向」（记录用户修改）',
-    readFileSync(join(ROOT, 'src/components/chat/TaskRow.tsx'), 'utf8').includes('你改过方向'),
+    /* 「改过方向」那块从 TaskRow.tsx 拆到了 TaskRowDetails.tsx（那边贴到 300 行），读拆过去的那份 */
+    readFileSync(join(ROOT, 'src/components/chat/TaskRowDetails.tsx'), 'utf8').includes(
+      '你改过方向',
+    ),
   )
 
   /* ── ⑥ 真跑一遍：接回原任务时要把「用户改方向」记下来 ── */

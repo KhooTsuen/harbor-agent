@@ -94,13 +94,13 @@ describe('AG-005 / 相位历史', () => {
 
 describe('AG-005 / 接线守卫', () => {
   it('★ 任务中心真的把时间线放进去了', () => {
-    const src = read('components/chat/TaskRow.tsx')
+    const src = read('components/chat/TaskRowDetails.tsx')
     expect(src).toContain("import { ProgressTimeline } from './ProgressTimeline'")
     expect(src).toContain('<ProgressTimeline')
   })
 
   it('★ 时间线的三个数据源都**真的传进去了**（不是只有个名字在旁边）', () => {
-    const src = read('components/chat/TaskRow.tsx')
+    const src = read('components/chat/TaskRowDetails.tsx')
     /*
      * 这里断言的是**具体的传参表达式**，不是「关键词出现过」。
      * 变异测试抓到过一次：把 `phases={phases ?? []}` 换成

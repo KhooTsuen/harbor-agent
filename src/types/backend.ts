@@ -3,15 +3,11 @@
 import type {
   AppConfig,
   BackupInfo,
-  FsReadResult,
-  FsTreeResult,
   ChatEvent,
   ChatSendPayload,
   McpServerStatus,
   McpPreset,
   SearchConfig,
-  ShellData,
-  ShellRunResult,
   SelfTestReport,
   SessionDetail,
   SessionSummary,
@@ -28,6 +24,7 @@ import type { ErrorsBridge } from './errors'
 import type { NotifyBridge } from './notify'
 import type { WorkspaceBridge } from './workspace'
 import type { BrowserBridge } from './browser'
+import type { IoBridge } from './backend-io'
 export * from './models'
 /* 浏览器工具的桥在 browser.ts，这里转出去：老引用路径还是 '@/types/backend' */
 export * from './browser'
@@ -53,7 +50,7 @@ export interface ModelProbeResult {
 }
 
 export interface WorkbenchBridge
-  extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge, BrowserBridge {
+  extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge, BrowserBridge, IoBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
   showWindow: () => Promise<{ ok: boolean }>
@@ -116,18 +113,6 @@ export interface WorkbenchBridge
     limit?: number,
   ) => Promise<Array<{ role: string; content: string }>>
 
-  saveText: (payload: {
-    defaultName: string
-    content: string
-  }) => Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }>
-
-  pickJson: () => Promise<{
-    ok: boolean
-    content?: string
-    path?: string
-    canceled?: boolean
-    error?: string
-  }>
   importSessions: (list: unknown[]) => Promise<unknown[]>
   appendCompact: (
     id: string,
@@ -215,69 +200,6 @@ export interface WorkbenchBridge
     prompt: string,
     size?: string,
   ) => Promise<{ ok: boolean; image?: string; model?: string; error?: string }>
-
-  fsWorkdir: () => Promise<{ workdir: string; exists: boolean }>
-  fsTree: (dir?: string) => Promise<FsTreeResult>
-  fsList: (
-    dir: string,
-  ) => Promise<{ ok: boolean; items?: Array<{ name: string; type: string }>; error?: string }>
-  fsRead: (file: string) => Promise<FsReadResult>
-  fsReveal: (target: string) => Promise<{ ok: boolean; path?: string; error?: string }>
-  pickImageAsDataUrl: () => Promise<{
-    ok: boolean
-    canceled?: boolean
-    dataUrl?: string
-    name?: string
-    error?: string
-  }>
-  fsPickAndRead: () => Promise<{
-    ok: boolean
-    canceled?: boolean
-    name?: string
-    path?: string
-    text?: string
-    size?: number
-    error?: string
-  }>
-
-  shellCwd: () => Promise<{ cwd: string }>
-  shellReset: () => Promise<{ cwd: string }>
-  shellRun: (payload: {
-    command: string
-    requestId: string
-    timeout?: number
-  }) => Promise<ShellRunResult>
-  shellAbort: (requestId: string) => Promise<{ ok: boolean; error?: string }>
-  onShellData: (callback: (data: ShellData) => void) => () => void
-
-  ptyStart: (payload: { id: string; cols?: number; rows?: number; cwd?: string }) => Promise<{
-    ok: boolean
-    id?: string
-    shell?: string
-    pid?: number
-    cols?: number
-    rows?: number
-    error?: string
-  }>
-  ptyWrite: (payload: { id: string; data: string }) => Promise<{ ok: boolean; error?: string }>
-  ptyResize: (payload: {
-    id: string
-    cols: number
-    rows: number
-  }) => Promise<{ ok: boolean; error?: string }>
-  ptyStop: (payload: { id: string }) => Promise<{ ok: boolean }>
-  ptyStopAll: () => Promise<{ ok: boolean; closed?: number }>
-  ptyList: () => Promise<{
-    ok: boolean
-    sessions: Array<{ id: string; pid: number; cols: number; rows: number; startedAt: number }>
-  }>
-  onPtyEvent: (
-    callback: (
-      event:
-        | { type: 'data'; id: string; chunk: string }
-        | { type: 'exit'; id: string; exitCode: number },
-    ) => void,
-  ) => () => void
 
   onEvent: (callback: (event: ChatEvent) => void) => () => void
 

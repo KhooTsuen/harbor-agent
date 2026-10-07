@@ -120,7 +120,8 @@ export async function run() {
   const conn = readFileSync(join(ROOT, 'electron/core/mcp-connection.cjs'), 'utf8')
   check('★ 连接层用了 resolveSpawn', conn.includes('mcpRuntime.resolveSpawn('))
   check('★ 解析出来的 env 并进了白名单 env（没被丢掉）', conn.includes('...resolved.env'))
-  const norm = readFileSync(join(ROOT, 'electron/core/config-normalize.cjs'), 'utf8')
+  /* 逐项规范化器（含 MCP 服务器）搬到了 config-normalize-parts.cjs —— 读那份 */
+  const norm = readFileSync(join(ROOT, 'electron/core/config-normalize-parts.cjs'), 'utf8')
   check('配置里认 useBundledNode 这个字段', norm.includes('useBundledNode'))
   const tab = readFileSync(join(ROOT, 'src/components/settings/tabs/McpTab.tsx'), 'utf8')
   check('★ 设置页会渲染预设', tab.includes('mcpPresets()') && tab.includes('preset.command'))

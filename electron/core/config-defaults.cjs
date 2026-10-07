@@ -1,65 +1,27 @@
 /**
- * 配置：默认值与常量
+ * 配置：默认值
+ *
+ * 品牌标识与枚举搬到了 `config-constants.cjs`（那边改品牌 / 权限档位，这边调默认值）。
  *
  * 从 config.cjs 拆出来的 —— 加完安全相关的新段（capability / shellPolicy /
  * mcp 隔离 / memory / context / router / audit）之后，那边必然超 300 行。
  *
- * 这里只有数据和枚举，没有逻辑。
+ * 这里只有默认值，没有逻辑。
  */
 
 const { NETWORK_MODES, SECURITY_DEFAULTS } = require('./config-security.cjs')
 const { MCP_ENV_ALLOWLIST } = require('./config-mcp-env.cjs')
-
-/* ══════════════════════════════════════════════════════════════
-   品牌
-   ══════════════════════════════════════════════════════════════ */
-
-/** 产品标识。改品牌时只改这里 + package.json，其余地方都引用它 */
-const BRAND = {
-  /** 包名 / npm name / MCP clientInfo */
-  id: 'harbor-agent',
-  /** 界面显示名 */
-  name: 'Harbor',
-  /** 助手默认名字（用户可改） */
-  assistant: 'Agent',
-  /* localStorage/导出文件的命名空间：改品牌时**不要动它** —— 老用户的设置与布局都挂在这个 key 下 */
-  namespace: 'personal-agent',
-  /** 子进程标记环境变量名 */
-  envFlag: 'PERSONAL_AGENT_PTY',
-}
-
-/** 旧品牌遗留的字符串 —— 迁移与清理时用，**新代码不许引用** */
-const LEGACY = {
-  namespace: 'codex-workbench',
-  localStorageKeys: ['codex-workbench:app', 'codex-workbench:settings'],
-  themeIds: ['codex'],
-  envFlag: 'CODEX_WORKBENCH_PTY',
-}
-
-/* ══════════════════════════════════════════════════════════════
-   枚举
-   ══════════════════════════════════════════════════════════════ */
-
-/** 主题 id。**不再用产品名当主题名** */
-const THEMES = ['default', 'chatgpt', 'spec', 'light', 'system']
-
-/** 工具权限三档 */
-const PERMISSIONS = ['full', 'ask', 'readonly']
-
-/** 文件访问范围 */
-const FILE_SCOPES = ['workspace', 'granted', 'full']
-
-/** Shell 风险分级 */
-const RISK_LEVELS = ['low', 'medium', 'high', 'critical']
-
-/** 搜索后端 */
-const SEARCH_PROVIDERS = ['tavily', 'bocha', 'duckduckgo', 'custom']
-
-/** 场景模型 */
-const SCENE_IDS = ['chat', 'title', 'prompt', 'translate', 'suggest', 'compact', 'ocr', 'image']
-
-/** 模型角色（路由器用） */
-const MODEL_ROLES = ['fast', 'reasoning', 'coding', 'vision', 'cheap']
+const {
+  BRAND,
+  LEGACY,
+  THEMES,
+  PERMISSIONS,
+  FILE_SCOPES,
+  RISK_LEVELS,
+  SEARCH_PROVIDERS,
+  SCENE_IDS,
+  MODEL_ROLES,
+} = require('./config-constants.cjs')
 
 /* MCP 的环境变量白名单在 config-mcp-env.cjs（连同「为什么一个都不能删」的说明） */
 

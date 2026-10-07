@@ -1,11 +1,6 @@
-import { useState } from 'react'
 import { ImageIcon, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LAYOUT, MAX_INPUT_LENGTH } from '@/constants'
-import { useAppStore } from '@/stores/useAppStore'
-import { useThreadStore } from '@/stores/useThreadStore'
-import { useSettingsStore } from '@/stores/useSettingsStore'
-import { useConfigStore } from '@/stores/useConfigStore'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
 import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem } from '@/components/ui/Popover'
@@ -14,7 +9,6 @@ import { ModePicker } from './composer/ModePicker'
 import { SendControls } from './composer/SendControls'
 import { QueuedMessages } from './composer/QueuedMessages'
 import { ModelPicker } from './composer/ModelPicker'
-import { useCompletions } from './composer/useCompletions'
 import { SuggestionChips } from './composer/SuggestionChips'
 import { NextSteps } from './composer/NextSteps'
 import { ComposerContextRow } from './composer/ContextRow'
@@ -22,8 +16,7 @@ import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
 import { CapabilityWarning } from './composer/CapabilityWarning'
 import { PlanBar } from './composer/PlanBar'
-import { useComposerAttachments } from '@/hooks/useComposerAttachments'
-import { useAgentActive } from '@/hooks/useAgentActive'
+import { useComposerState } from './composer/useComposerState'
 import { AboveInputCards } from './AboveInputCards'
 
 /* ══════════════════════════════════════════════════════════════ Composer  这是这类工具最有辨识度的组件，结构照它排： ① 输入区 ② 工具行：+ / 模式 / 权限 … 模型 · 推理 · 发送 ③ 上下文行：项目路径 / 提文件 / 命令  发送键是**白色圆形 + 黑色箭头**（实测三张截图一致），不是彩色。 ══════════════════════════════════════════════════════════════ */
@@ -35,75 +28,38 @@ export interface ComposerProps {
 /* ── 主组件 ─────────────────────────────────────────────────── */
 
 export function Composer({ onFocusRequest }: ComposerProps) {
-  const input = useThreadStore((s) => s.input)
-  const setInput = useThreadStore((s) => s.setInput)
-  const sendMessage = useThreadStore((s) => s.sendMessage)
-  const stopGeneration = useThreadStore((s) => s.stopGeneration)
-  const pauseGeneration = useThreadStore((s) => s.pauseGeneration)
-  const activeThreadId = useAppStore((s) => s.activeThreadId)
-  /* AG-025：当前对话排队的消息（跑着时用户又发的）。必须在 activeThreadId 之后声明 */
-  const queuedList = useThreadStore((s) =>
-    activeThreadId ? s.queuedMessages[activeThreadId] : undefined,
-  )
-  const removeQueuedMessage = useThreadStore((s) => s.removeQueuedMessage)
-  const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
-
-  const sending = useAgentActive(thread?.id)
-  const project = useAppStore((s) => s.projects.find((p) => p.id === s.activeProjectId))
-  /* 这条对话所属的文件夹（不是「当前选中的」—— 那是两回事） */
-  const threadFolder = useAppStore((s) => s.projects.find((p) => p.id === thread?.projectId))
-  /* 全局默认工作目录：这条对话没挂文件夹时用它 */
-  const configWorkdir = useAppStore((s) => s.workdir)
-  /* 底部那行显示什么目录：自己的 → 所属文件夹的 → 默认的 */
-  const contextPath =
-    thread?.workdir ||
-    threadFolder?.path ||
-    `${configWorkdir || project?.path || '默认工作目录'}（默认）`
-  const setThreadMode = useAppStore((s) => s.setThreadMode)
-  const setThreadModel = useAppStore((s) => s.setThreadModel)
-  const setThreadReasoning = useAppStore((s) => s.setThreadReasoning)
-  const updateThreadSettings = useAppStore((s) => s.updateThreadSettings)
-
-  const sendOnEnter = useSettingsStore((s) => s.settings.sendOnEnter)
-  /*
-   * 输入框高度：拖动期间只走**本地** state —— 每动一像素就写全局设置的话，
-   * 所有订阅 settings 的组件（含消息列表）都得跟着重渲。松手才落设置。
-   */
-  const savedComposerHeight = useSettingsStore((s) => s.settings.composerHeight)
-  const updateSettings = useSettingsStore((s) => s.updateSettings)
-  const [draggingHeight, setDraggingHeight] = useState<number | null>(null)
-  const composerHeight = draggingHeight ?? savedComposerHeight
-  const configuredModel = useConfigStore((s) => s.config?.assistant.model)
-
-  /* 补全（打 / 出命令、打 @ 出文件）—— 逻辑在 composer/useCompletions.ts */
-  const completions = useCompletions(input, setInput, project?.path)
-
-  const { attachFromClipboard, pickImage, attachFile, insertImageMessage } =
-    useComposerAttachments()
-
-  /* 当前会话的模式 / 模型 / 推理档位，缺省时回退到全局配置 */
-  const mode = thread?.mode ?? 'pair'
-  const model = thread?.model || configuredModel || ''
-  const reasoning = thread?.reasoning ?? 'high'
-
-  const trimmed = input.trim()
-  const atLimit = input.length >= MAX_INPUT_LENGTH /* 只作提示，不拦发送：见 constants */
-  /* 光贴一张图不写字也该能发 —— 截图提问是很常见的用法 */
-  const hasImages = useThreadStore((s) => s.inputImages.length > 0)
-  /*
-   * 「写了东西」和「能发」是两回事：跑着的时候写了东西也发不出去（下面按钮会变成停止）。
-   * 拆开是因为要拿 hasContent 给停止按钮做提示 —— AG-009 留下的「用户以为按钮坏了」。
-   */
-  const hasContent = trimmed.length > 0 || hasImages
-  /* AG-025：sending 时也能发 —— 只是排队（拦不拦由 sendMessage 按 sendingThreads 判断） */
-  const canSend = hasContent /* 长度不参与：能写出来就能发（上限由输入框与 store 卡住） */
-
-  /* 补全菜单开不开 / 有哪些候选项，都由 useCompletions 管 */
-
-  function submit(): void {
-    if (!canSend) return
-    sendMessage()
-  }
+  const {
+    input,
+    setInput,
+    stopGeneration,
+    pauseGeneration,
+    activeThreadId,
+    queuedList,
+    removeQueuedMessage,
+    thread,
+    sending,
+    contextPath,
+    sendOnEnter,
+    composerHeight,
+    setDraggingHeight,
+    updateSettings,
+    completions,
+    attachFromClipboard,
+    pickImage,
+    attachFile,
+    insertImageMessage,
+    mode,
+    setThreadMode,
+    model,
+    setThreadModel,
+    reasoning,
+    setThreadReasoning,
+    atLimit,
+    hasContent,
+    canSend,
+    submit,
+    updateThreadSettings,
+  } = useComposerState()
 
   return (
     <div className="px-4 pb-3">
