@@ -1,4 +1,4 @@
-import { join, require, ROOT } from '../env.mjs'
+import { join, require, ROOT, taskCore } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
@@ -87,4 +87,37 @@ export async function run() {
     '只读工具：risk 为 null、reversibility 为 safe',
     started?.action?.risk === null && started?.action?.reversibility === 'safe',
   )
+
+  group('P0-3 / 落盘：step.action（只加字段，旧台账照读 · 硬禁区 3）')
+  const t = taskCore.create({ goal: 'action 落盘自检', sessionId: 'selftest-action-store' })
+  taskCore.addStep(t.id, {
+    tool: 'run_shell',
+    ok: true,
+    summary: 'x',
+    action: action.of({ name: 'run_shell', args: { command: 'rm -rf /' } }),
+  })
+  const withAction = (taskCore.get(t.id)?.steps ?? [])[0]
+  check(
+    '★ 落盘的 step 带上了 action（危险度可查：critical）',
+    withAction?.action?.risk?.level === 'critical',
+    JSON.stringify(withAction?.action ?? null).slice(0, 140),
+  )
+  check(
+    '★ 落盘的 action **不含命令原文**（免得新开一处泄密面）',
+    withAction?.action != null && !('command' in withAction.action),
+  )
+  check(
+    '可逆性也落了（run_shell = unsafe）',
+    withAction?.action?.reversibility === 'unsafe',
+  )
+
+  /* ★ 只加不换：没传 action 的老写法，step 里**根本不出现** action 这个键 */
+  taskCore.addStep(t.id, { tool: 'read_file', ok: true, summary: 'y' })
+  const withoutAction = (taskCore.get(t.id)?.steps ?? [])[1]
+  check(
+    '★ 老形状一字不变：没传 action 的 step 就没有 action 字段（旧台账照读）',
+    withoutAction != null && !('action' in withoutAction),
+    JSON.stringify(withoutAction ?? null).slice(0, 100),
+  )
+  check('步骤本身还在（只为验证没有把老字段挤掉）', withoutAction?.tool === 'read_file' && withoutAction?.ok === true)
 }

@@ -177,7 +177,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     /* ── 任务台账：这一步干了什么 ── */
     if (options.taskId) {
       try {
-        taskCore.addStep(options.taskId, { tool: call.name, ok, summary: output, ms: run.ms, args })
+        taskCore.addStep(options.taskId, { tool: call.name, ok, summary: output, ms: run.ms, args, action })
         if (call.name === 'run_shell' && typeof args.command === 'string') {
           taskCore.addCommand(options.taskId, args.command, output)
         }

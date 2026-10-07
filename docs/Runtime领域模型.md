@@ -246,12 +246,10 @@ of({ name, args, workdir, userText, limits }) → Action
 | 步 | 动哪 | 风险 | 状态 |
 |---|---|---|---|
 | 1 | 新增 `core/action.cjs` + 自检 `127` | 低（不动内核） | ✅ 已落地 |
-| 2 | `tool-runner` 把 action 挂进 `agent.tool.started` 的 payload | 低（只加字段） | 待做 |
-| 3 | `tool-runner` 写 `step.action` | 中（**改数据结构** — 硬禁区 3） | 待做 |
+| 2 | `tool-runner` 把 action 挂进 `agent.tool.started` 的 payload | 低（只加字段） | ✅ 已落地 |
+| 3 | `tool-runner` 写 `step.action` | 中（**改数据结构** — 硬禁区 3） | ✅ 已落地 |
 | 4 | Permission 判断从各 gate 收到 Action 上（P0-4 / P0-10） | 高（**权限行为**） | 待做 |
 
-步骤 3 触发**硬禁区 3**：只加字段、不删旧；老台账没有 `action` 照常读；**不新建
-`data/actions/`**（复用 `task.steps[]`，防硬禁区 11 的「同义结构比缺字段更难收」）。
 步骤 4 触发**硬禁区 10**（`risk.cjs` 在权限 / 安全模型名单里）：动手前先把「这次不做什么」
 写进 [`安全模型.md`](安全模型.md)。
 

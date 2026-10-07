@@ -5,6 +5,18 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **架构收敛 P0-3（接入·第 3 步）：`step.action` 落盘 —— 一次工具调用的判断结论进了任务台账**。
+  `task-notes.addStep` 现在收 `action`（`core/action.cjs` 组装结果），落进 `task.steps[].action`
+  （危险度 / 规模 / 范围 / 可逆性）—— 「这次 `run_shell` 危不危险、大不大、能不能重跑」
+  从此在一个对象里问得出，不再散在 `risk.cjs` / `scale.cjs` / `task-intent.cjs` 三处拼。
+  - **只加字段**（硬约束 5）：老台账里的 step 没有 `action`，读的时候按「没有判断记录」处理；
+    没传 `action` 的 step **根本不写这个键**（老形状一字不变）。**不迁移、不批量回写**。
+  - **不新建数据结构**：复用 `task.steps[]`，不新开 `data/actions/`（防「同义结构比缺字段更难收」）。
+  - 落盘的 action **不含命令原文**（只留判断结论）—— 命令已在同一条 step 的 `args` 里，
+    多存一份就多一处泄密面。
+  - ⚠️ **触发硬禁区 3（改数据结构），已按「只加不改 + 旧台账照读」落地并验证**。
+  - 验证：自检 127 新增「真建任务 → addStep 带 action → 读回」+「没传 action 的 step 没有该键」；
+    真实旧任务文件仍能 `npm run doctor` / 读回；内核自检 3883 项全绿。
 - **架构收敛 P0-3（接入·第 2 步）：每次工具调用组装 Action，跟着 `agent.tool.started` 推给界面与诊断**。
   上一步落地的 `core/action.cjs` 现在真接上了：`tool-runner.cjs` 的 `runOne()`（所有工具的
   必经之路）在发 `agent.tool.started` 前组装一次 Action（危险度 / 规模 / 可逆性 / 范围），

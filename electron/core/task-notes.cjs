@@ -16,11 +16,49 @@ const io = require('./task-io.cjs')
 const redact = require('./redact.cjs')
 const outcome = require('./task-outcome.cjs')
 
-/** 记一次工具调用 */
-function addStep(id, { tool, ok, summary, ms = 0, args }) {
+/**
+ * Action 落盘前的瘦身（P0-3）。
+ *
+ * 只留「判断结果」（危险度 / 规模 / 范围 / 可逆性），**不留命令原文** ——
+ * 命令已经在同一条 step 的 `args` 里；而 `action.command` 是一段**新的自由文本**，
+ * 多存一份就多一处可能把密钥写进文件的地方（落盘前一律过脱敏，见 redact.cjs）。
+ * 所以这里显式丢掉 `command`，只保留判断结论。
+ */
+function storedAction(action) {
+  if (!action || typeof action !== 'object') return undefined
+  const risk = action.risk
+  const scale = action.scale
+  return {
+    risk: risk
+      ? {
+          level: String(risk.level ?? ''),
+          reasons: Array.isArray(risk.reasons) ? risk.reasons.map(String).slice(0, 5) : [],
+        }
+      : null,
+    scale: scale
+      ? {
+          level: String(scale.level ?? ''),
+          kind: scale.kind ?? null,
+          scope: String(scale.scope ?? ''),
+        }
+      : null,
+    scope: String(action.scope ?? ''),
+    reversibility: action.reversibility === 'unsafe' ? 'unsafe' : 'safe',
+  }
+}
+
+/**
+ * 记一次工具调用。
+ *
+ * `action`（P0-3，可选）：这一次调用的危险度 / 规模 / 可逆性（`core/action.cjs` 组装的）。
+ * **只加字段**：老台账里的 step 没有它，读的时候按「没有判断记录」处理即可 ——
+ * 不迁移、不批量回写（硬约束 5）。不传 `action` 时**根本不写这个键**（老形状一字不变）。
+ */
+function addStep(id, { tool, ok, summary, ms = 0, args, action }) {
   const task = io.get(id)
   if (!task) return null
 
+  const stored = storedAction(action)
   task.steps.push({
     at: Date.now(),
     tool: String(tool ?? ''),
@@ -28,6 +66,7 @@ function addStep(id, { tool, ok, summary, ms = 0, args }) {
     ms,
     summary: String(summary ?? '').slice(0, 300),
     args: args ? redact.scrubLight(args) : undefined,
+    ...(stored ? { action: stored } : {}),
   })
 
   /* 只留最近 200 步 —— 这个文件是给自己看的，不是流水账 */
