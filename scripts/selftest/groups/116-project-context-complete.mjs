@@ -106,6 +106,68 @@ export async function run() {
       `floor=${builder.PROJECT_FLOOR}｜AGENT.md 上限=${project.MAX_CHARS}｜规则上限=${projectRules.MAX_CHARS}`,
     )
     check('空项目上下文仍然不注入空标题', builder.assemble({ maxTokens: 4096, budget: BUDGET, project: '', messages: [] }).systemContext.project === '')
+
+    /*
+     * 预算表里**每一项都必须真的生效**（2026-10-08）。
+     *
+     * 起因：表里曾有 7 个键，而 `assemble` 只用了 4 个 —— 实测把 `budget.system`
+     * 改成 90，各层输出逐字不变。声明了却从不使用的预算，跟「写了没人读的配置」
+     * 是同一个病（`109-scale-config.mjs` 那一组治的也是它），而且更隐蔽：它连
+     * 「有没有人读」都难查，因为它压根不是配置项、只是表里的一行。
+     *
+     * 判据按 109 的口径（2026-10-03 用户拍板）：**看判决（这里是各层实裁长度）变没变，
+     * 不看「表里有这个键」** —— 只断言「键存在」等于给死键留后门。
+     */
+    group('预算表 / 表里每一项都真的生效（没有死键）')
+    const KEYS = Object.keys(builder.DEFAULT_BUDGET)
+    const conv = Array.from({ length: 40 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: 'x'.repeat(3000),
+    }))
+    /* 三层都塞到远超额度，这样任何一项的额度变化都会体现在实裁长度上。
+       ★ 输入必须**大过 90% 那一档**（总字符 49152）—— 否则「默认额度」和「90% 额度»
+       都没触发裁剪，两层长度一样，这条断言就成了空转（第一版就是这么写的，
+       被自检当场逮住：project 层因为 PROJECT_FLOOR 下限把 20000 整个放进去了）。 */
+    const BIG = 60000
+    const measure = (extra) =>
+      builder.assemble({
+        maxTokens: 16384,
+        budget: extra,
+        memory: '记'.repeat(BIG),
+        project: '项'.repeat(BIG),
+        conversationState: '状'.repeat(BIG),
+        messages: conv,
+      })
+    const base = measure({})
+    /** 改动某一项额度后，各层「实裁长度 / 条数」有没有跟着动 */
+    const finger = (r) => [
+      r.systemContext.memory.length,
+      r.systemContext.project.length,
+      r.systemContext.conversationState.length,
+      r.messages.length,
+    ]
+    check(
+      '★ 死键（system / tools / reserve）已从生效表里拿掉',
+      !('system' in builder.DEFAULT_BUDGET) &&
+        !('tools' in builder.DEFAULT_BUDGET) &&
+        !('reserve' in builder.DEFAULT_BUDGET),
+      KEYS.join(','),
+    )
+    for (const key of KEYS) {
+      const bumped = measure({ [key]: 90 })
+      check(
+        `★★ ${key} 改了真的生效（不是声明了没人用）`,
+        JSON.stringify(finger(bumped)) !== JSON.stringify(finger(base)),
+        `默认=${JSON.stringify(finger(base))}｜${key}=90 → ${JSON.stringify(finger(bumped))}`,
+      )
+    }
+    /* 反向对照：老盘上可能还存着 `system` —— 它必须是**真的不管事**（上面那条的另一面） */
+    const withDeadKey = measure({ system: 90 })
+    check(
+      '★ 反向：`system` 这条老键即使传进来也不改变任何一层（它不是「悄悄还在生效」）',
+      JSON.stringify(finger(withDeadKey)) === JSON.stringify(finger(base)),
+      `${JSON.stringify(finger(withDeadKey))}`,
+    )
   } finally {
     rmSync(mid.base, { recursive: true, force: true })
   }

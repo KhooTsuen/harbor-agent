@@ -10,14 +10,34 @@
  */
 const { textOf, countImages } = require('./message-text.cjs')
 
+/**
+ * 各层占上下文预算的百分比 —— **只列 `assemble` 真的会用的那些**。
+ *
+ * ★ 2026-10-08：这里以前有 7 个键（多出 `system` / `tools` / `reserve` 三个），
+ *   但 `assemble` 从来没用过它们。实测：把 `budget.system` 改成 90，各层输出
+ *   **逐字不变**（`memory 2457 / project 21024 / state 4936 / msgs 5`）—— 声明了却从不使用的
+ *   预算是个陷阱：改它的人以为动了那一层的额度，实际什么也没发生，而且**不会有任何测试报红**。
+ *   本项目的 `AGENT.md` 硬约束 8（会涨的数字不写死）讲的是同一个道理的另一面：
+ *   **写在表里就得有人用**。所以现在只留四个真正生效的，并且加一条自检
+ *   （`scripts/selftest/groups/116-project-context-complete.mjs` 的「表里每一项都真的生效」）——
+ *   以后谁再加一个死键，自检当场变红。
+ *
+ * ⚠️ 想给某层加预算：**先让 `assemble` 真的用上它**，再回来加键。顺序反了就是又造一个陷阱。
+ *
+ * ⚠️ 这里删掉的键**不影响老配置** —— `assemble` 里是合并
+ *   （`{ ...DEFAULT_BUDGET, ...(input.budget || {}) }`），老盘 `config.context.budget`
+ *   里那三个键会被原样并进来，只是内核不再假装在管它们（见 `config-defaults.cjs` 的注释）。
+ */
 const DEFAULT_BUDGET = {
-  system: 10,
+  /** 记忆（Relevant Memory）层 */
   memory: 5,
+  /** 项目说明（AGENT.md / .harbor 规则）层 —— 实际额度还会抬到 `PROJECT_FLOOR` 下限 */
   project: 15,
+  /** 会话状态（Conversation State）层。⚠️ 键名是历史遗留（仍叫 `task`）——
+   *  改键名会动老配置，`assemble` 实参里也从来没有 `task` 这一项，别照着名字猜用途 */
   task: 10,
+  /** 近期对话消息 */
   conversation: 30,
-  tools: 20,
-  reserve: 10,
 }
 
 /**
@@ -129,6 +149,11 @@ function assemble(input = {}) {
    *   显式填了值就听用户的（测试也靠这条构造小预算）。
    */
   const maxTokens = Math.max(2000, Number(input.maxTokens) || DEFAULT_CONTEXT_TOKENS)
+  /*
+   * 合并顺序 = 「表里的默认」打底、「传进来的配置」覆盖。
+   * 老盘的 `config.context.budget` 里可能还有 `system` / `tools` / `reserve`
+   * （见 DEFAULT_BUDGET 的注释）—— 它们会被原样并进这个对象，但下面没有任何地方读它们。
+   */
   const budget = { ...DEFAULT_BUDGET, ...(input.budget || {}) }
   const totalChars = maxTokens * 3
   const cap = (name) => Math.max(400, Math.floor(totalChars * (Number(budget[name] ?? 10) / 100)))

@@ -159,15 +159,30 @@ const DEFAULTS = {
 
   context: {
     baseTokens: 16384, // 上下文基准（token），字符预算 = ×3；以前偷用 assistant.maxTokens，已拆开
-    /** 各段占上下文窗口的比例（%） */
+    /**
+     * 各段占上下文窗口的比例（%）。
+     *
+     * ⚠️ 2026-10-08：真正生效的只有 **memory / project / task / conversation** 四个。
+     *   `system` / `tools` / `reserve` 声明了，但 `context-builder.assemble` 从不用它们 ——
+     *   实测把 `budget.system` 改成 90，各层输出**逐字不变**。
+     *
+     *   这三个键**保留**，唯一理由是**让老盘上已经存过它们的配置能原样读回来**；
+     *   但请记住：**调它们不会改变任何行为**（内核不会再假装在管）。
+     *
+     *   「哪些真的生效」的唯一真相源在 `electron/core/context-builder.cjs` 的 `DEFAULT_BUDGET`
+     *   （这个对象必须是它的超集），有自检盯着：`116-project-context-complete` 的
+     *   「表里每一项都真的生效」。
+     */
     budget: {
+      /* ↓ 这三个是真死键：老配置里可能有，内核不管（别再照它们估额度） */
       system: 10,
+      tools: 20,
+      reserve: 10,
+      /* ↓ 这四个真的管用（生效清单的唯一来源见上面注释） */
       memory: 5,
       project: 15,
       task: 10,
       conversation: 30,
-      tools: 20,
-      reserve: 10,
     },
     /** 到这个占比提示可以压缩 */
     compactAt: 0.4,
