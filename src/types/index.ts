@@ -227,6 +227,9 @@ export interface ModelOption {
    —— 这个桶贴着 300 行，加进来就破线。这里只转出去，调用方照旧从 `@/types` 拿。 */
 export type { PermissionKind, PermissionRequest } from './permission'
 export type { ClarifyQuestion, ClarifyReply, StoredClarify } from './clarify'
+/* P0-5：决策类型（审批 / 澄清）—— 与主进程 `core/decisions.cjs` 镜像 */
+export { DECISION_TYPES } from './decision'
+export type { DecisionType } from './decision'
 
 /* ── Toast ─────────────────────────────────────────────────── */
 

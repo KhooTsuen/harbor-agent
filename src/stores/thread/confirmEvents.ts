@@ -76,13 +76,19 @@ export function askPermissionFor(event: Record<string, unknown>): void {
   const kind = String(event.kind ?? '')
 
   /*
-   * AG-053：开工前澄清走**另一张卡**。
+   * AG-053 / P0-5：开工前澄清走**另一张卡**。
    *
    * 它复用同一条 `chat:confirm` 通道（不开新通道），但回话带解释（不是布尔），
    * 所以在这里分流：进 `clarify` 槽位，而不是权限那个 `permission` 槽位 ——
    * 两个槽位由 `lib/clarify.ts` 的 `pickAboveInput` 仲裁谁显示（永不叠）。
+   *
+   * ★ 判据是主进程给的 `decisionType`（'approval' | 'clarify'），**不再靠 `kind` 猜**
+   *   —— 审批的 `kind` 是工具种类（write/mcp/…）、澄清的 `kind` 恒为 'clarify'，
+   *   同一个字段名两套值域（硬约束 9 要消灭的）。老版本主进程没带 `decisionType`
+   *   时退回看 `kind`（兼容）：界面不会因为主进程先后端升级而失能。
    */
-  if (kind === 'clarify') {
+  const decisionType = String(event.decisionType ?? '')
+  if (decisionType === 'clarify' || (decisionType === '' && kind === 'clarify')) {
     const questions = Array.isArray(event.questions) ? event.questions : []
     useUIStore.getState().askClarify({
       confirmId,

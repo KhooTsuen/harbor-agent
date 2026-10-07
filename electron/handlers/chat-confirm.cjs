@@ -18,6 +18,7 @@
  */
 
 const confirmBridge = require('../core/confirm-bridge.cjs')
+const decisions = require('../core/decisions.cjs')
 const clarifyWatch = require('./clarify-watch.cjs')
 const confirmNotify = require('./confirm-notify.cjs')
 const log = require('../core/log.cjs')
@@ -38,38 +39,12 @@ const cardLog = log.tagged('澄清卡')
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 const CLARIFY_TIMEOUT_MS = 5 * 60 * 1000
 
-/**
- * 澄清卡上除了「答」和「跳过」之外的两个**退出口**（AG-053 批⑤）。
- *
- * 它们和「跳过」走同一条 `chat:confirm`（`approved` 也是 false，**不开新通道**），
- * 区别只在回话 JSON 里多一个标记：
- *   · `{ cancel: true }`   → 「先不做了」：这一轮别动手了，写个交接收尾
- *   · `{ rephrase: true }` → 「换个说法」：问题没说清，重新组织一遍再问
- *
- * ★ 旧实现这个分支**直接 return，压根不看 `reply.answer`** —— 那两个出口会被
- *   当成「用户跳过了」。后果不是错一句话，是错一个状态：跳过计数是静音的判据
- *   （连跳两次就不再主动问），而点「先不做了」的人只是「这次先不做」，他却会
- *   被当成「又拒了一次」。拿用户没说过的话去记他，是这里最不能接受的一种错。
- *
- * 解析失败 / 老版本界面 → 返回空对象，仍然当跳过（不能把任务卡住）。
- *
- * @param {unknown} answer 渲染层回的 JSON 字符串
- * @returns {{cancelled?: true, rephrase?: true}}
+/*
+ * 澄清回话的两个「退出口」（AG-053 批⑤）：「先不做了」「换个说法」。
+ * 实现与教训（旧实现不看 `reply.answer` 直接 return，把它们静默当成「跳过」）
+ * 都在 `core/decisions.cjs` 的 `exitsIn()` —— 那里是「决策有哪些类型 / 回话怎么解」的家。
  */
-function exitsIn(answer) {
-  try {
-    const value = JSON.parse(String(answer ?? '') || '{}')
-    const out = {}
-    /* ★ 名字必须是 `cancelled`：渲染层 `types/clarify.ts` 里就叫这个。
-       写成 `cancel`（少一个 l）不会报错、不会抛异常 —— 只是“这两个出口总是被当成跳过”，
-       而自检 107 组的真往返一次就把它抓出来了。 */
-    if (value?.cancelled === true) out.cancelled = true
-    if (value?.rephrase === true) out.rephrase = true
-    return out
-  } catch {
-    return {}
-  }
-}
+const exitsIn = decisions.exitsIn
 
 /**
  * 审批：要不要让这一步执行。
@@ -87,9 +62,17 @@ function askUser(requestId, request, emit, sessionId = '', timeoutMs = CONFIRM_T
   return confirmBridge
     .ask({
       timeoutMs,
+      idPrefix: decisions.idPrefixOf(decisions.DECISION_TYPES.APPROVAL),
       /* 属于这一轮：一轮结束时（成功/失败/中断）要把它结算掉，不能悬着 */
       owner: String(requestId ?? ''),
       payload: {
+        /*
+         * 公共字段（decisionType / sessionId / taskId）由 `decisions.decisionFields`
+         * 一处给出 —— 两条往返形状天然对齐，谁都不会再漏一个。审批这条以前**漏了**
+         * `sessionId`：渲染层 `threadId` 于是永远空串，僵尸卡收不掉、还把后面所有
+         * 澄清卡挡死（2026-10-07 真机复现）。这条规矩见 AGENT.md 硬约束 #9。
+         */
+        ...decisions.decisionFields(decisions.DECISION_TYPES.APPROVAL, { sessionId }),
         /*
          * 审批 id（`approve_…`）**不能叫 requestId** —— 那是**对话的** requestId，
          * 两者同名会被上层展开覆盖，渲染层就收不到这条确认了（见 chat-emit.cjs）。
@@ -104,19 +87,10 @@ function askUser(requestId, request, emit, sessionId = '', timeoutMs = CONFIRM_T
         diff: request.diff ?? null,
         diffNote: request.diffNote ?? '',
         impact: request.impact ?? [],
-        /*
-         * ★ 这条对话的 id —— 渲染层按它「认领」这张卡（轮末 / 停止 / 切对话都要收卡）。
-         *   `askClarify` 一直带着它（见下面那个 payload），审批这条**漏了**：
-         *   渲染层 `threadId` 于是永远是空串，`clearPermissionForThread` 按 threadId
-         *   比对时恒不成立 —— 僵尸卡收不掉，还把后面所有澄清卡挡死
-         *   （2026-10-07 真机复现：事件里没有 sessionId，卡片 threadId 为空）。
-         *   两条往返的事件形状**必须一样**，这条规矩见 AGENT.md 硬约束 #9。
-         */
-        sessionId: String(sessionId ?? ''),
       },
       emitReply: (payload) => {
         cardId = String(payload.confirmId ?? '')
-        emit({ type: 'confirm_request', ...payload })
+        emit({ type: decisions.CONFIRM_REQUEST, ...payload })
         /* 卡片已经推出去了，用户要是没在前台，就发条系统通知把他叫回来（P1-3） */
         confirmNotify.tellUser({
           sessionId,
@@ -137,7 +111,7 @@ function askUser(requestId, request, emit, sessionId = '', timeoutMs = CONFIRM_T
      */
     .then((reply) => {
       if (reply.timeout === true && cardId) {
-        emit({ type: 'confirm.timeout', confirmId: cardId, sessionId: String(sessionId ?? '') })
+        emit(decisions.timeoutEventOf(decisions.DECISION_TYPES.APPROVAL, cardId, sessionId))
       }
       return reply.approved === true
     })
@@ -192,13 +166,16 @@ function askClarify(input = {}) {
        *   而“他在场想 20 分钟”不会被这个定时器打断（那个判据在状态机里）。
        */
       timeoutMs: Number.isFinite(input.timeoutMs) ? input.timeoutMs : CLARIFY_TIMEOUT_MS,
-      idPrefix: 'clr',
+      idPrefix: decisions.idPrefixOf(decisions.DECISION_TYPES.CLARIFY),
       /* 属于哪一轮：从 emitter 上取（见 core/chat-emit.cjs 里那句 `emit.requestId`） */
       owner: String(input.emit?.requestId ?? ''),
       payload: {
+        ...decisions.decisionFields(decisions.DECISION_TYPES.CLARIFY, {
+          sessionId: input.sessionId,
+          taskId: input.taskId,
+        }),
+        /* `kind: 'clarify'` 保留（老消费者可能读它）；分流已改用 decisionType */
         kind: 'clarify',
-        sessionId: input.sessionId ?? '',
-        taskId: input.taskId ?? '',
         questions: input.questions ?? [],
       },
       /* 走对话自己的 emitter：它才会把 requestId 补上去（看上面那段） */
@@ -218,7 +195,7 @@ function askClarify(input = {}) {
            */
           onSettle: () => confirmBridge.settleAsTimeout(cardId),
         })
-        emit({ type: 'confirm_request', ...payload })
+        emit({ type: decisions.CONFIRM_REQUEST, ...payload })
         /* 同 askUser：不在前台就发通知（澄清卡最容易「等在那儿没人知道」）*/
         confirmNotify.tellUser({
           sessionId: String(input.sessionId ?? ''),
@@ -241,9 +218,9 @@ function askClarify(input = {}) {
          * 标记区分 —— `ask_user.cjs` 会先认标记再决定计不计「跳过」。
          */
         if (reply.timeout === true && cardId) {
-          emit({ type: 'clarify.timeout', confirmId: cardId, sessionId: input.sessionId ?? '' })
+          emit(decisions.timeoutEventOf(decisions.DECISION_TYPES.CLARIFY, cardId, input.sessionId))
         }
-        const exits = exitsIn(reply.answer)
+        const exits = decisions.exitsIn(reply.answer)
         return { answers: [], skipped: true, timeout: reply.timeout === true, ...exits }
       }
       try {

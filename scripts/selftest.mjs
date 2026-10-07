@@ -5,27 +5,9 @@
  *
  *   node scripts/selftest.mjs
  *
- * 结构（原本是一个 1193 行的文件，拆开之后好读也好定位）：
- *
- *   scripts/selftest/harness.mjs         记分与汇总
- *   scripts/selftest/env.mjs             公共环境（被 require 的内核模块、路径、沙箱）
- *   scripts/selftest/groups/01-basics.mjs        路径 / 配置 / 会话文件 / 各工具
- *   scripts/selftest/groups/02-…                 技能 / 记忆 / 搜索 / 统计 / 备份
- *   scripts/selftest/groups/03-…                 文件系统与安全（脱敏/凭证/风险/审计）
- *   scripts/selftest/groups/04-…                 可靠性（任务/回滚/错误分类/路由）
- *   scripts/selftest/groups/05-…                 Agent 循环冒烟 + 会话目录分组
- *   scripts/selftest/groups/06-…                 系统提示内容回归 / 状态 / 预算 / 意图路由
- *   scripts/selftest/groups/07-…                请求体适配（中转站兼容）；（流式/看门狗在 79-llm-stream.mjs）
- *   scripts/selftest/groups/08-…                 用量闸（预算）
- *   scripts/selftest/groups/09-…                 浏览器正文清洗 / 导航策略 / browse 工具
- *   scripts/selftest/groups/10-…                 本地插件（加载/校验/执行）
- *   scripts/selftest/groups/11-… / 13-…          图像：异步任务轮询 + generate_image 工具
- *   scripts/selftest/groups/12-…                 模块引用：相对 require 路径都存在
- *   scripts/selftest/groups/14-…                 任务台账注入 / 完整性 / 完成门禁
- *   scripts/selftest/groups/15-…                 AG-001 生命周期状态机
- *   scripts/selftest/groups/79-…                 LLM 流式 / 看门狗
- *   scripts/selftest/groups/80-…                 内核 handler 真调（目录选择：点了没作用的按钮）
- *
+ * 结构（原本是一个 1193 行的文件，拆开之后好读也好定位）：**分组清单见下面 GROUPS**
+ * （一组一行，文件都在 `selftest/groups/`）；公共环境在 `selftest/env.mjs`，记分在 `selftest/harness.mjs`。
+ * 各组干什么读各组的文件头（都写了）。
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
  *
  * 注意：**测试全绿 ≠ 能用**。UI、会话、发送、权限这些必须真的走一遍
@@ -159,6 +141,7 @@ import { run as browseNavGroup } from './selftest/groups/121-browse-nav.mjs'
 import { run as modelProbeGroup } from './selftest/groups/122-model-probe.mjs'
 import { run as subagentGroup } from './selftest/groups/123-subagent.mjs'
 import { run as cardTimeoutGroup } from './selftest/groups/124-card-timeout.mjs'
+import { run as decisionShapeGroup } from './selftest/groups/125-decision-shape.mjs'
 
 const GROUPS = [
   basics,
@@ -280,6 +263,7 @@ const GROUPS = [
   memoryReflectGroup,
   projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
+  decisionShapeGroup,
 ]
 
 async function main() {

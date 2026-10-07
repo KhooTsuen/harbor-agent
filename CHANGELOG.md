@@ -5,6 +5,25 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **架构收敛 P0-5：Decision（决策）统一成一处真相源**（不改通道名，纯收敛）。
+  以前「要用户拿主意」是**两条往返各自组装**：写操作审批（`askUser`，回话布尔）
+  与开工前澄清（`askClarify`，回话对象）。两条共用底层 `confirm-bridge`，但**上层事件形状
+  靠人肉对齐**过 —— 2026-10-07 的僵尸卡 bug 就是审批那条**漏了 `sessionId`**（渲染层认领
+  不到那张卡、还把它后面的澄清卡全挡死）。
+  - 新增 `electron/core/decisions.cjs`：把「决策有哪些类型（`DECISION_TYPES`：approval /
+    clarify）、每种什么脾气（id 前缀 / 超时怎么算 / 超时收卡事件名）、事件的**公共字段**、
+    回话怎么解（`exitsIn`）」定在**一处**。两条往返都过 `decisionFields()` 组装 ——
+    公共字段（`decisionType` / `sessionId` / `taskId`）天然对齐，谁都不会再漏一个。
+  - 事件多了个 `decisionType` 字段。渲染层分流**改看它**，不再靠 `kind` 猜
+    （审批的 `kind` 是工具种类 write/mcp/…、澄清的 `kind` 恒为 'clarify'，同一个字段名
+    两套值域 —— 硬约束 9 要消灭的）。老主进程没带 `decisionType` 时**退回看 `kind`**，
+    界面不会因为主进程先后端升级而失能。`kind` 字段本身**保留**（老消费者可能还在读）。
+  - `chat-confirm.cjs` 的 `exitsIn()` 搬进 `decisions.cjs`（和「决策回话怎么解」同住一处）；
+    `chat-confirm.cjs` 反而降到 300 红线以下（287 行，原 295）。
+  - **验证**：内核自检新增第 125 组（类型集合两边源码抠出来**断言相等** + 两条往返真跑的
+    `confirm_request` 公共字段都齐 + 收卡事件带 `decisionType` + `exitsIn` 搬家后行为不变）；
+    渲染层单测 `src/stores/thread/__tests__/decisionRouting.test.ts` 钉 4 种分流/兼容；
+    内核自检 3853 项全绿 / 单测 1460 用例全绿 / typecheck / lint / lint:kernel 全过。
 - **浏览器：AI 自己决定「开新标签」还是「在当前标签里打开」**（真机反馈「AI 一口气开太多标签」）。
   以前工具只有 `browse`（新地址**必然**开一个新标签）和 `browse_nav`（只能在历史里挪），
   模型没有表达「这个页面只是中转」的路 —— 提示词里那句「中转页在当前标签里走完」是句
