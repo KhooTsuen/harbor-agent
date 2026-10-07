@@ -7,14 +7,13 @@
  *
  * 词汇表与记录形状在 memory-schema.cjs，检索与注入在 memory-recall.cjs。
  *
- * 三个刻意的决定：
+ * 四个刻意的决定：
  *
- * ① **旧的不是删掉，是标 superseded**。用户能看见「以前记过什么、什么时候改的」，
- *    这对「为什么它这么理解我」很重要。
- * ② **用户明说的 vs 模型猜的，分开记 source**。前者 confidence=1 直接生效，
- *    后者要用户确认（策略在 config.memory.autoWrite）。
- * ③ **密钥、令牌一律不记**。这里再做一道过滤 —— 记忆每轮都进上下文，
- *    混进一个 key 就等于每轮都在泄露它。
+ * ① **旧的 / 过期的不是删掉，是标 superseded / expired** —— 用户要能看见「以前记过
+ *    什么、什么时候改的、什么时候失效的」（§56 Forget ≠ Delete）。
+ * ② **用户明说的 vs 模型猜的，分开记 source**；前者 confidence=1 直接生效，后者待确认。
+ * ③ **密钥、令牌一律不记** —— 记忆每轮都进上下文，混进一个 key 就是每轮都在泄露。
+ * ④ **类型由模型自己说清**（`append` 的 type）：它决定检索权重与会不会取代旧的。
  */
 
 const fs = require('node:fs')
@@ -61,16 +60,10 @@ function persist(data) {
 /* ── 写 ──────────────────────────────────────────────────── */
 
 /**
- * 加一条记忆。
- *
- * @param {object} input
- * @param {string} input.content
- * @param {string} [input.type]
- * @param {string} [input.scope]
- * @param {string} [input.source]
- * @param {number} [input.importance]
- * @param {string} [input.projectId]
- * @returns {{ ok: boolean, item?: object, superseded?: string[], error?: string, skipped?: string }}
+ * 加一条记忆。合法值校验都在这里按 `memory-schema.cjs` 那份词汇表做。
+ * @param {{ content: string, type?: string, scope?: string, source?: string,
+ *   importance?: number, confidence?: number, expiresAt?: number, projectId?: string }} input
+ * @returns {{ ok: boolean, item?: object, superseded?: string[], error?: string, deduped?: boolean }}
  */
 function add(input) {
   const content = String(input?.content ?? '').trim()
@@ -158,7 +151,11 @@ function update(id, patch) {
   }
   if (TYPES.includes(patch.type)) item.type = patch.type
   if (SCOPES.includes(patch.scope)) item.scope = patch.scope
-  if (STATUSES.includes(patch.status)) item.status = patch.status
+  if (STATUSES.includes(patch.status)) {
+    item.status = patch.status
+    /* 启用 = 再生效：不清 expiresAt 的话，下次检索立刻又把它标回 expired */
+    if (patch.status === 'active') item.expiresAt = 0
+  }
   if (patch.importance !== undefined)
     item.importance = clamp(patch.importance, 0, 1, item.importance)
   if (patch.confidence !== undefined)
@@ -170,11 +167,8 @@ function update(id, patch) {
 }
 
 /**
- * 只记「这条被用上了」，不算修改。
- *
- * 以前检索完是调 `update(id, {})` —— 那个会把 updatedAt 顶到现在，
- * 于是界面上的「最近更新」实际显示的是「最近被注入」，一次编辑都没发生。
- * 而且每条都要重写一遍 memory.json。
+ * 只记「这条被用上了」，不算修改 —— 以前调 `update(id, {})` 会把 updatedAt 顶到现在，
+ * 界面的「最近更新」显示的实际是「最近被注入」，而且每轮都要重写一遍 memory.json。
  */
 function touch(ids) {
   const list = Array.isArray(ids) ? ids : [ids]
@@ -216,11 +210,7 @@ function clear() {
 
 /* ── 读 ──────────────────────────────────────────────────── */
 
-/**
- * 列出记忆。
- *
- * @param {{ status?: string, scope?: string, type?: string, projectId?: string, includeSuperseded?: boolean }} options
- */
+/** 列出记忆（options：status / scope / type / projectId / includeSuperseded） */
 function list(options = {}) {
   const data = load()
   let items = data.items
@@ -249,14 +239,22 @@ function search(query, options = {}) {
   )
 }
 
-/** 过期清扫 */
+/*
+ * 过期清扫：标记成 expired，**不删除**（§56 Forget ≠ Delete；理由见 docs/Memory设计.md）。
+ * 标记后 retrieve 只取 active，注入行为不变；不动 updatedAt，否则过期条目在条数
+ * 上限淘汰里会显得「很新」，反而最后才被清。
+ */
 function pruneExpired() {
   const data = load()
   const now = Date.now()
-  const before = data.items.length
-  data.items = data.items.filter((item) => !(item.expiresAt && item.expiresAt < now))
-  if (data.items.length !== before) persist(data)
-  return { ok: true, removed: before - data.items.length }
+  let expired = 0
+  for (const item of data.items) {
+    if (item.status !== 'active' || !item.expiresAt || item.expiresAt >= now) continue
+    item.status = 'expired'
+    expired += 1
+  }
+  if (expired > 0) persist(data)
+  return { ok: true, expired }
 }
 
 function stats() {

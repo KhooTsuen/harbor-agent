@@ -132,6 +132,7 @@ import { run as probeGroup } from './selftest/groups/112-probe.mjs'
 import { run as verifyHintGroup } from './selftest/groups/113-verify-hint.mjs'
 import { run as projectFactsGroup } from './selftest/groups/114-project-facts.mjs'
 import { run as memoryReflectGroup } from './selftest/groups/115-memory-reflect.mjs'
+import { run as memoryConflictGroup } from './selftest/groups/133-memory-conflict-expire.mjs'
 import { run as projectCompleteGroup } from './selftest/groups/116-project-context-complete.mjs'
 import { run as urlPolicyGroup } from './selftest/groups/117-url-policy.mjs'
 import { run as safeWriteGroup } from './selftest/groups/118-safe-write.mjs'
@@ -268,6 +269,7 @@ const GROUPS = [
   verifyHintGroup,
   projectFactsGroup,
   memoryReflectGroup,
+  memoryConflictGroup,
   projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,

@@ -21,15 +21,8 @@ import { colorOf } from '@/lib/statusLanguage'
 /* ══════════════════════════════════════════════════════════════
    设置 → 记忆
 
-   刻意做成**列表**而不是一个文本框：记忆是长期攒下来的东西，
-   用户需要能一条条看清「它记住了什么、哪来的、什么时候记的」，
-   并且能单独停用一条 —— 改一个字就整套重写的文本框做不到这些。
-
-   每条都显示来源：
-     · 你明说的         → 直接生效
-     · 你确认过的       → 直接生效
-     · 模型建议被采纳的 → 直接生效
-     · 从旧版本导入的   → 需要你过一眼
+   刻意做成**列表**：用户要能一条条看清「记住了什么、哪来的、什么时候记的」，
+   还要能单独停用一条 —— 改一个字就整套重写的文本框做不到这些。
    ══════════════════════════════════════════════════════════════ */
 
 const TYPE_LABEL: Record<MemoryItem['type'], string> = {
@@ -58,6 +51,12 @@ const SCOPE_LABEL: Record<MemoryItem['scope'], string> = {
   workspace: '工作目录',
   task: '任务',
   session: '本次会话',
+}
+
+/* 「过期」不是用户关掉的，是它自己到期的 —— 措辞给「恢复」。
+   `enable()` 走 `update({status:'active'})`，会连 `expiresAt` 一起清掉（memory-store.cjs）。 */
+function enableLabel(status: MemoryItem['status']): string {
+  return status === 'expired' ? '恢复' : '启用'
 }
 
 export function MemoryTab() {
@@ -119,7 +118,11 @@ export function MemoryTab() {
     const disabling = item.status === 'active'
     if (disabling) await memoryDisable(item.id)
     else await memoryEnable(item.id)
-    showToast('success', disabling ? '已停用' : '已启用', item.content.slice(0, 40))
+    showToast(
+      'success',
+      disabling ? '已停用' : `已${enableLabel(item.status)}`,
+      item.content.slice(0, 40),
+    )
     void refresh()
   }
 
@@ -257,6 +260,10 @@ export function MemoryTab() {
                     <span style={{ color: colorOf('warning') }}>已停用</span>
                   ) : null}
                   {item.status === 'superseded' ? <span>已被新的取代</span> : null}
+                  {/* 过期既不是「你关的」也不是「被取代」：它自己到期了，颜色走中性的已取消灰 */}
+                  {item.status === 'expired' ? (
+                    <span style={{ color: colorOf('cancelled') }}>已过期</span>
+                  ) : null}
                 </p>
               </div>
               <Button
@@ -265,7 +272,7 @@ export function MemoryTab() {
                 icon={item.status === 'active' ? <Ban size={12} /> : <Check size={12} />}
                 onClick={() => void toggle(item)}
               >
-                {item.status === 'active' ? '停用' : '启用'}
+                {item.status === 'active' ? '停用' : enableLabel(item.status)}
               </Button>
               <Button
                 variant="ghost"
@@ -281,7 +288,7 @@ export function MemoryTab() {
       )}
 
       <p className="pt-3 text-dense text-fg-tertiary">
-        共 {items.length} 条（含已取代）。超过上限时会自动清理最旧的临时记忆。
+        共 {items.length} 条（含已取代 / 已过期）。超过上限时会自动清理最旧的临时记忆。
       </p>
 
       <MemoryExplainPanel projectId={projectId} />

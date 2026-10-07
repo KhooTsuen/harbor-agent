@@ -181,7 +181,7 @@ export interface MemoryItem {
   lastUsedAt: number
   expiresAt: number
   projectId: string
-  status: 'active' | 'superseded' | 'disabled'
+  status: 'active' | 'superseded' | 'disabled' | 'expired'
   supersededBy: string
 }
 

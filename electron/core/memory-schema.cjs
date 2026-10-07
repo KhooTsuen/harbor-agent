@@ -10,7 +10,7 @@
  *   source       user_explicit / user_confirmed / model_suggested / imported / system
  *   confidence   0..1
  *   importance   0..1（检索排序用）
- *   status       active / superseded / disabled
+ *   status       active / superseded / disabled / expired
  *   supersededBy 被哪条取代（保留历史，但不再注入）
  *
  * 这一个文件只管「合法值有哪些」和「小工具」，
@@ -35,7 +35,7 @@ const TYPES = [
 
 const SCOPES = ['global', 'project', 'workspace', 'task', 'session']
 const SOURCES = ['user_explicit', 'user_confirmed', 'model_suggested', 'imported', 'system']
-const STATUSES = ['active', 'superseded', 'disabled']
+const STATUSES = ['active', 'superseded', 'disabled', 'expired']
 
 function filePath() {
   return path.join(DIRS.data, 'memory.json')

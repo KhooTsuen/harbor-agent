@@ -5,6 +5,14 @@ const memory = require('../memory.cjs')
  *
  * 这是写操作：ask 权限下会弹确认。理由是「记忆会影响之后所有对话」，
  * 记错了比改错一个文件影响更久。
+ *
+ * `type` 是**可选**的：不填按 fact 记。让模型自己说清「这是约束还是偏好」
+ * 比一律塞成 fact 有用得多 —— 类型既决定检索时该不该被优先遵守
+ * （`memory-explain.cjs` 的权重表），也决定新的一条会不会取代旧的
+ * （`memory-similarity.cjs` 的 CONFLICT_TYPES，fact 不在其中）。
+ *
+ * 候选值**直接引用内核那份词汇表**（`memory.TYPES`），不在这里再抄一遍 ——
+ * 抄了就会漂（AGENT.md 硬约束 9：跨模块约定只有一处真相源）。
  */
 module.exports = {
   name: 'remember',
@@ -17,6 +25,12 @@ module.exports = {
         type: 'string',
         description: '要记的内容，一句话，比如「打包产物不要超过 500KB」',
       },
+      type: {
+        type: 'string',
+        enum: memory.TYPES,
+        description:
+          '这条记忆属于哪一类（不填按 fact）。约束/要求/项目规则这类「必须遵守」的别记成 fact，否则检索时不会被优先遵守。',
+      },
     },
     required: ['content'],
   },
@@ -25,11 +39,11 @@ module.exports = {
     const text = String(args.content ?? '').trim()
     if (!text) throw new Error('内容是空的')
 
-    const result = memory.append(text)
+    const result = memory.append({ content: text, type: args.type })
     if (!result.ok) throw new Error(result.error ?? '写入失败')
 
     const stats = memory.stats()
-    const tail = stats.overLimit ? `（记忆已有 ${stats.length} 字，偏长了，建议清理）` : ''
+    const tail = stats.overLimit ? `（记忆已有 ${stats.count} 条，偏长了，建议清理）` : ''
     return result.skipped ? `这条已经在记忆里了，没重复写。${tail}` : `记下了。${tail}`
   },
 
