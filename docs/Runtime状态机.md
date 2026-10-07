@@ -99,6 +99,24 @@ markCompleted() 返回（或抛错）之后：写 completed:true / ok / outcome 
 > ⚠️ 一次调用在 `steps[]` 里是**两条**记录（意图那条 + 带 `args` 的那条流水）。
 > 统计、展示时二选一，别双计。
 
+## 等你拍板：决策（Decision）
+
+任务状态里的 `waiting_user` 就是「它停下来等你点一下」。这类往返（「决策」）的类型与
+形状定在**一处**：`core/decisions.cjs`。
+
+| 类型 | 什么时候 | 超时算 |
+|---|---|---|
+| `approval` | 写操作 / 跑命令前问「允不允许」 | **拒绝**（他可能就是不想批） |
+| `clarify` | 开工前问「这个方案行不行」 | **按默认选项继续**（他人不在，不是拒绝） |
+
+两条共用一条通道（`chat:confirm`）与一个事件名（`confirm_request`），靠 payload 的
+`decisionType` 区分；`confirmId` 前缀按类型给（`cfm_` / `clr_`）。一条往返的完整链路是：
+主进程发卡（`confirm_request`）→ 你点 → 渲染层回话 → 主进程 `settle` 结算。
+超时 / 作废时主进程**回推收卡事件**（`confirm.timeout` / `clarify.timeout`），渲染层按
+`confirmId` 精确收那张卡 —— 漏了这一步卡会在界面上烂着、并把后面所有卡挡死
+（2026-10-07 真机踩过，见 [`../CHANGELOG.md`](../CHANGELOG.md)）。类型定义与对齐测试见
+[`Runtime领域模型.md`](Runtime领域模型.md) 4.1。
+
 ## 恢复
 
 | 场景 | 怎么认出来 | 做了什么 |
