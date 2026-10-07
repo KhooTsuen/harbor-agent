@@ -25,6 +25,8 @@ const shared = require('./tools/_shared.cjs')
 const { buildFailureNote } = require('./loop-prompt.cjs')
 const { isAborted } = require('./abort.cjs')
 const { buildRunCtx } = require('./tool-run-ctx.cjs')
+const actionCore = require('./action.cjs')
+const { lastUserText } = require('./loop-route.cjs')
 
 /** 工具返回算不算成功 —— 全项目只有这一处判定 */
 function isToolOk(output) {
@@ -121,7 +123,19 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     }
     const duplicateInvalid = duplicate && scheduler.isReadonly(item.name)
 
-    emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args, parallel })
+    /*
+     * P0-3：这一次调用的 **Action**（危险度 / 规模 / 可逆性 / 范围）——「一次工具调用
+     * 一个对象」。组装只此一处（见 `docs/Runtime领域模型.md` 4.2）；判据仍来自
+     * risk / scale / task-intent 各自那个家，这里只收拢、不重判。
+     * 跟着 `agent.tool.started` 推给渲染层与诊断（事件落盘会过 `redact.scrub`）。
+     */
+    const action = actionCore.of({
+      name: call.name,
+      args,
+      workdir: ctx?.workdir ?? '',
+      userText: lastUserText(options?.history),
+    })
+    emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args, parallel, action })
     const startedAt = Date.now()
 
     /*

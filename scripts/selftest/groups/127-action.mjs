@@ -48,4 +48,43 @@ export async function run() {
   const empty = action.of()
   check('of() 无参不抛，返回对象', empty != null && empty.tool === '' && empty.risk === null)
   check('describe(undefined) 不抛、给兜底话', typeof action.describe(undefined) === 'string')
+
+  group('P0-3 / 接入：agent.tool.started 事件带上 action（真跑一次执行器）')
+  const { executeToolCalls } = require(join(ROOT, 'electron/core/tool-runner.cjs'))
+  const events = []
+  const messages = []
+  try {
+    await executeToolCalls({
+      toolCalls: [
+        { id: 'c1', name: 'read_file', arguments: JSON.stringify({ path: '不存在的文件-xyz.txt' }) },
+      ],
+      ctx: { workdir: ROOT, sessionId: 'selftest-action', taskId: '' },
+      /* history 用来验「用户原话」口径（规模豁免看它）—— 这里只走通链路 */
+      options: { history: [{ role: 'user', content: '读一下这个文件' }] },
+      messages,
+      toolRuns: [],
+      emit: (event) => events.push(event),
+      turn: 0,
+    })
+  } catch {
+    /* 工具本身可能抛（文件不存在等）—— 不影响**已经发出**的 started 事件 */
+  }
+  const started = events.find((event) => event.type === 'agent.tool.started')
+  check(
+    '★ started 事件真的带上了 action（渲染层 / 诊断一眼看得到这次调用的危险度与规模）',
+    started?.action != null && started.action.tool === 'read_file',
+    JSON.stringify(started?.action ?? null).slice(0, 120),
+  )
+  check(
+    '★ action 的形状对（risk / scale / reversibility 都在）',
+    started?.action != null &&
+      'risk' in started.action &&
+      typeof started.action.scale?.level === 'string' &&
+      typeof started.action.reversibility === 'string',
+    JSON.stringify(started?.action ?? null).slice(0, 120),
+  )
+  check(
+    '只读工具：risk 为 null、reversibility 为 safe',
+    started?.action?.risk === null && started?.action?.reversibility === 'safe',
+  )
 }

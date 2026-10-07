@@ -39,13 +39,25 @@ function providerForRun(config) {
   return provider
 }
 
+/**
+ * 这一轮的用户原话（历史里最后一条 user 消息）。
+ *
+ * 口径只有这一处：意图路由拿它判意图，Action（`core/action.cjs` 里规模的
+ * 「用户这轮说了这个范围」豁免也拿它）—— 两边各抠一次就会漂（硬约束 9）。
+ * 所以抠法收在这里、转出去，别处不要再写一份。
+ */
+function lastUserText(history) {
+  const lastUser = [...(history ?? [])].reverse().find((m) => m.role === 'user')
+  return typeof lastUser?.content === 'string' ? lastUser.content : ''
+}
+
 /** @returns {{ userText: string, provider: object, model: string }} */function resolveRoute({ config, provider, options, emit }) {
   /*
    * 路由：不同活儿派不同模型。关掉时（默认）就是始终用 assistant.model。
    * 判定依据是「最后一条用户消息」和「有没有带图」。
    */
   const lastUser = [...(options.history ?? [])].reverse().find((m) => m.role === 'user')
-  const userText = typeof lastUser?.content === 'string' ? lastUser.content : ''
+  const userText = lastUserText(options.history)
   const hasImages = Array.isArray(lastUser?.content)
   const modeDecision = modeRouter.resolve(userText, options.forcedMode ?? '')
   emit({
@@ -88,4 +100,4 @@ function providerForRun(config) {
   return { userText, provider: useProvider, model: useModel }
 }
 
-module.exports = { resolveRoute, providerForRun }
+module.exports = { resolveRoute, providerForRun, lastUserText }

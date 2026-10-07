@@ -5,6 +5,15 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **架构收敛 P0-3（接入·第 2 步）：每次工具调用组装 Action，跟着 `agent.tool.started` 推给界面与诊断**。
+  上一步落地的 `core/action.cjs` 现在真接上了：`tool-runner.cjs` 的 `runOne()`（所有工具的
+  必经之路）在发 `agent.tool.started` 前组装一次 Action（危险度 / 规模 / 可逆性 / 范围），
+  挂进事件 payload —— 渲染层与诊断「一眼看得见这次调用的危险度与规模」。
+  - 「用户原话」这个口径抽成 `loop-route.cjs` 的 `lastUserText()`（**一处真相源**）：
+    意图路由与 Action 的规模豁免都从它取，不各抠一份（硬约束 9）。
+  - **只加字段**：事件 payload 多一个 `action`，老的消费者（渲染层 `agent.tool.started` 只读
+    `toolCallId`/`name`/`args`）看不到它照常工作。**没碰数据结构**（`step.action` 是下一步）。
+  - 验证：自检第 127 组新增「真跑一次执行器、断言 started 事件带 action」；内核自检 3878 项全绿。
 - **架构收敛 P0-3（第一步）：新增 `core/action.cjs` —— 一次工具调用的统一对象**。
   以前「这次操作危不危险 / 大不大 / 能不能重跑」散在 `risk.cjs` / `scale.cjs` /
   `task-intent.cjs` 三处、没有共同挂靠点。`action.of()` 把它们收成一个对象
