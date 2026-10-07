@@ -29,6 +29,8 @@ const configCore = require('../config.cjs')
 const scale = require('../scale.cjs')
 const scaleConfig = require('../scale-config.cjs')
 const scaleAsk = require('./scale-ask.cjs')
+/* P0-3 步骤 4：权限结论收到 Action 上（`notePermission`，只记不改判断） */
+const actionCore = require('../action.cjs')
 
 const { KINDS, HARD_SECONDS, HARD_FILES, NOTE_SECONDS, BLOCKED_MARK, inspect, kindOf } = scale
 
@@ -211,7 +213,10 @@ function gate({ name, args = {}, ctx = {}, audit = auditCore.record, dry = false
    *   危险命令该拦照拦、该问照问。这个开关是规模层的回滚开关，不是「关掉安全检查」
    *   （自检里有一条专门钉这个语义：关掉之后「递归删盘」仍然会被危险度拦下）。
    */
-  if (!enabled) return { level: 'ok', disabled: true }
+  if (!enabled) {
+    actionCore.notePermission(ctx, 'scale', 'disabled')
+    return { level: 'ok', disabled: true }
+  }
 
   /*
    * ★ 模型跑去干别的工具 → 那次拦截的 pending 立刻作废（审计问题 7）。
@@ -239,23 +244,29 @@ function gate({ name, args = {}, ctx = {}, audit = auditCore.record, dry = false
         : {}),
     }
   }
-  if (verdict.level === 'ok') return { level: 'ok', kind: verdict.kind ?? undefined }
+  if (verdict.level === 'ok') {
+    actionCore.notePermission(ctx, 'scale', 'ok')
+    return { level: 'ok', kind: verdict.kind ?? undefined }
+  }
 
   const sessionId = String(ctx.sessionId ?? '')
 
   /* 有界重活（note）：**不拦**，只留痕。提示词层会要求模型主动说一句规模。 */
   if (verdict.level === 'note') {
+    actionCore.notePermission(ctx, 'scale', 'note')
     record(audit, ctx, name, args, verdict, 'note')
     return { level: 'note', kind: verdict.kind, estimate: verdict.estimate, reasons: verdict.reasons }
   }
 
   /* 本对话已经批过同类 —— 记一行（这也是「授权省掉了几次打扰」的数据） */
   if (granted(sessionId, verdict.kind)) {
+    actionCore.notePermission(ctx, 'scale', 'granted')
     record(audit, ctx, name, args, verdict, 'granted')
     return { level: 'ok', kind: verdict.kind, granted: true }
   }
 
   if (sessionId) pending.set(sessionId, verdict.kind)
+  actionCore.notePermission(ctx, 'scale', 'blocked')
   record(audit, ctx, name, args, verdict, 'blocked')
   return {
     level: 'blocked',

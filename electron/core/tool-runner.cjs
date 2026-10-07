@@ -144,6 +144,8 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
      * 都在 `tool-run-ctx.cjs`（从这儿搬出去的，因为这文件贴着 300 行红线）。
      */
     const runCtx = buildRunCtx(ctx, { emit, toolCallId: call.id, toolName: call.name })
+    /* P0-3 步骤 4：把这次调用的 Action 一并交给执行层 —— 各 gate 把权限结论回填到它上面 */
+    runCtx.action = action
 
     /*
      * AG-016：失败后自动恢复（只读工具才自动重试 —— 理由见 errors.canAutoRecover）。

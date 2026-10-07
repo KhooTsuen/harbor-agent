@@ -145,6 +145,7 @@ import { run as decisionShapeGroup } from './selftest/groups/125-decision-shape.
 import { run as eventTypesGroup } from './selftest/groups/126-event-types.mjs'
 import { run as actionGroup } from './selftest/groups/127-action.mjs'
 import { run as scaleTargetGroup } from './selftest/groups/128-scale-target.mjs'
+import { run as actionPermissionGroup } from './selftest/groups/129-action-permission.mjs'
 
 const GROUPS = [
   basics,
@@ -266,7 +267,7 @@ const GROUPS = [
   memoryReflectGroup,
   projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
-  decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup,
+  decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
 ]
 
 async function main() {

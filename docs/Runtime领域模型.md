@@ -168,11 +168,14 @@ Decision {
 
 ---
 
-### 4.2 Action Model（P0-3） ◐ 1–3 步已落地（2026-10-07），第 4 步待做
+### 4.2 Action Model（P0-3） ✅ 4 步全落地（2026-10-07）
 
 > **落地**：新增 `core/action.cjs`（组装）；`tool-runner` 把 action 挂进
-> `agent.tool.started` 并写 `task.steps[].action`。**第 4 步（权限判断收到 Action 上）
-> 触发硬禁区 10，未做**。下面「现状 / 目标形状 / 规格」是设计时的原样记录。
+> `agent.tool.started` 并写 `task.steps[].action`。**第 4 步**（Permission 收到 Action 上）
+> 用户 2026-10-07 批准做了**保守版**：各层门把**结论**回填到 `Action.permission`
+> （risk / scale / path），**判据与触发一个字没改** —— 理由与「这次不做什么」写在
+> [`安全模型.md`](安全模型.md) §8。自检 `129-action-permission`。
+> 下面「现状 / 目标形状 / 规格」是设计时的原样记录。
 
 **现状**：**没有**统一 Action 对象。一次工具调用的信息散在五处：
 
@@ -252,7 +255,7 @@ of({ name, args, workdir, userText, limits }) → Action
 | 1 | 新增 `core/action.cjs` + 自检 `127` | 低（不动内核） | ✅ 已落地 |
 | 2 | `tool-runner` 把 action 挂进 `agent.tool.started` 的 payload | 低（只加字段） | ✅ 已落地 |
 | 3 | `tool-runner` 写 `step.action` | 中（**改数据结构** — 硬禁区 3） | ✅ 已落地 |
-| 4 | Permission 判断从各 gate 收到 Action 上（P0-4 / P0-10） | 高（**权限行为**） | 待做 |
+| 4 | Permission 判断从各 gate 收到 Action 上（P0-4 / P0-10） | 高（**权限行为**） | ✅ 已落地（保守版：只收结论，不改判断） |
 
 步骤 4 触发**硬禁区 10**（`risk.cjs` 在权限 / 安全模型名单里）：动手前先把「这次不做什么」
 写进 [`安全模型.md`](安全模型.md)。
@@ -365,7 +368,7 @@ Permission 由「Risk + Scale + Scope」共同决定要不要弹卡。
 2. Decision 统一（4.1）            ← 真 bug 住在这；底层已统一      ✅ 已落地（809f214）
 3. Event Contract（4.3）           ← 依赖 2 的形状                  ✅ 已落地（3848d82 渲染层侧 + 主进程侧收口）
 ─────────── 以上是「低风险、能立刻见效」的前半段 ───────────
-4. Action Model（4.2）             ← 最大一块；动内核 + 改数据结构  ✅ 1–3 步落地（d567905/ddb05bd/b9e4778），第 4 步待批
+4. Action Model（4.2）             ← 最大一块；动内核 + 改数据结构  ✅ 全 4 步落地（第 4 步只收结论，不改判断）
 5. Risk / Scale 拆分（4.4）        ← 依赖 4 的挂靠点               ◐ (b)(c) 已成立；只剩 P4-1（硬禁区 10，待批）
 6. Data Doctor 关系检查（P0-10）   ← ④评测后：**不适用**（Action 内嵌，非独立实体，无跨实体关系可查）
 ```

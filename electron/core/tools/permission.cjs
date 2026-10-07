@@ -10,6 +10,8 @@ const audit = require('../audit.cjs')
 const capability = require('../capability.cjs')
 const approvals = require('./approval.cjs')
 const { FILE_WRITERS } = require('./registry.cjs')
+/* P0-3 步骤 4：权限结论收到 Action 上（`notePermission`，只记不改判断） */
+const actionCore = require('../action.cjs')
 
 /**
  * 跑一个工具；如果因为「路径在工作目录之外 / 敏感文件」被拒：
@@ -31,6 +33,7 @@ async function runWithPathPermission(tool, args, ctx) {
     const what = error.sensitive ? `敏感文件（${error.sensitive}）` : '工作目录之外的文件'
 
     if (ctx.permission === 'full') {
+      actionCore.notePermission(ctx, 'path', 'bypassed')
       /*
        * 完全访问 = 不问。但**不能悄悄放行**：审计里留一条、界面上弹一条 toast。
        * 走的是同一条授权 + 重试，只是跳过了「问」这一步。
@@ -80,7 +83,11 @@ async function runWithPathPermission(tool, args, ctx) {
       sensitive: error.sensitive,
       summary: `让 Agent 访问 ${error.target}\n${error.reason}`,
     })
-    if (!approved) return `用户拒绝了这个操作：访问 ${error.target}（${error.reason}）`
+    if (!approved) {
+      actionCore.notePermission(ctx, 'path', 'denied')
+      return `用户拒绝了这个操作：访问 ${error.target}（${error.reason}）`
+    }
+    actionCore.notePermission(ctx, 'path', 'granted')
 
     capability.grant(error.target, {
       mode: 'session',

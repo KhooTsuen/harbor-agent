@@ -21,6 +21,8 @@
 
 const approvals = require('./approval.cjs')
 const risk = require('../risk.cjs')
+/* P0-3 步骤 4：权限结论收到 Action 上（`notePermission`，只记不改判断） */
+const actionCore = require('../action.cjs')
 
 /** 这一次要不要弹窗问用户 */
 function shouldAsk(decided, permission) {
@@ -40,6 +42,7 @@ async function gate({ name, args, ctx, verdict, summary, startedAt, audit, impac
   const label = risk.describe(verdict)
 
   if (decided.action === 'block') {
+    actionCore.notePermission(ctx, 'risk', 'blocked')
     audit({
       tool: name,
       args,
@@ -57,6 +60,7 @@ async function gate({ name, args, ctx, verdict, summary, startedAt, audit, impac
   }
 
   if (!shouldAsk(decided, ctx.permission)) {
+    actionCore.notePermission(ctx, 'risk', 'allowed')
     /* 不问就放行（完全访问 / 低风险）→ 留痕：审计里记下它是哪个风险等级进来的 */
     if (risk.rank(verdict.level) >= risk.rank('medium')) {
       audit({
@@ -73,6 +77,7 @@ async function gate({ name, args, ctx, verdict, summary, startedAt, audit, impac
   }
 
   if (typeof ctx.confirm !== 'function') {
+    actionCore.notePermission(ctx, 'risk', 'blocked')
     audit({
       tool: name,
       args,
@@ -96,6 +101,7 @@ async function gate({ name, args, ctx, verdict, summary, startedAt, audit, impac
     impact,
   })
   if (approved !== true) {
+    actionCore.notePermission(ctx, 'risk', 'denied')
     audit({
       tool: name,
       args,
@@ -107,6 +113,7 @@ async function gate({ name, args, ctx, verdict, summary, startedAt, audit, impac
     })
     return { label, asked: true, approved: false }
   }
+  actionCore.notePermission(ctx, 'risk', 'asked')
   return { label, asked: true, approved: true }
 }
 

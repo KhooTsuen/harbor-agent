@@ -19,7 +19,7 @@ const outcome = require('./task-outcome.cjs')
 /**
  * Action 落盘前的瘦身（P0-3）。
  *
- * 只留「判断结果」（危险度 / 规模 / 范围 / 可逆性），**不留命令原文** ——
+ * 只留「判断结果」（危险度 / 规模 / 范围 / 可逆性 / **权限结论**），**不留命令原文** ——
  * 命令已经在同一条 step 的 `args` 里；而 `action.command` 是一段**新的自由文本**，
  * 多存一份就多一处可能把密钥写进文件的地方（落盘前一律过脱敏，见 redact.cjs）。
  * 所以这里显式丢掉 `command`，只保留判断结论。
@@ -44,6 +44,14 @@ function storedAction(action) {
       : null,
     scope: String(action.scope ?? ''),
     reversibility: action.reversibility === 'unsafe' ? 'unsafe' : 'safe',
+    /*
+     * P0-3 步骤 4：各层门的**权限结论**（`risk` / `scale` / `path` → 结论字符串）。
+     * 只记结论、不记判据细节；值一律转字符串，防脏值。没回填过就是 null。
+     */
+    permission:
+      action.permission && typeof action.permission === 'object'
+        ? Object.fromEntries(Object.entries(action.permission).map(([k, v]) => [k, String(v)]))
+        : null,
   }
 }
 

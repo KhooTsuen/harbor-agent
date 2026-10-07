@@ -5,6 +5,21 @@
 > 这一版**还没发出去**。改了代码就往这一段里加一笔（`AGENT.md` 硬约束 10）；
 > 发布时把本段改名成 `## [x.y.z] — 日期`、升 `package.json`、打 tag（见 `docs/发布检查.md`）。
 
+- **P0-3 步骤 4：Permission 收到 Action 上（保守版）—— 只收结论，判断一字未改**（收敛计划 4.2 收尾）。
+  以前「这次为什么被拦 / 为什么弹卡」只散在审计与日志里，`Action`（`task.steps[].action`）
+  只看得到危险度与规模。现在 `core/action.cjs` 新增 `permission` 字段与 `notePermission()`，
+  三层门判完顺手把**结论**回填：危险度 `tools/risk-gate.cjs`（allowed / asked / denied / blocked）、
+  规模 `tools/scale-gate.cjs`（ok / note / granted / blocked / disabled）、路径 `tools/permission.cjs`
+  （granted / denied / bypassed）。`tool-runner` 把组装好的 Action 挂成 `ctx.action` 交给执行层；
+  `core/task-notes.cjs` 的落盘白名单（`storedAction`）补上 `permission`（仍是**只留结论**，
+  依然**不含命令原文** —— 自检 `127-action` 钉着这条）。
+  **判据与触发一个字没改**（该问照问、该拦照拦），没挂 Action 时一律空操作、老路径不变 ——
+  「这次不做什么」写在 `docs/安全模型.md` §8（含「为什么不复用 `action.scale`」的取舍）。
+  自检 `129-action-permission`（16 项）。
+  验证：内核自检 **3898 → 3914 项 / 0 失败**；`npm run verify` 全绿；真机四场景
+  （critical → 拦 + `risk:blocked`；盘根递归 → 拦 + `scale:blocked`；小命令 → 放行 + `risk:allowed`/`scale:ok`；
+  完全访问档读越界文件 → 不问但留痕 `path:bypassed`）。
+
 - **P0-7 收尾：事件 type 的清单定死一处，两侧对齐钉进自检**（收敛计划 4.3 步骤 b，主进程侧）。
   以前「主进程会发哪些 type」只散落在各模块的 `emit(...)` 里，渲染层的 `EVENT_TYPES` 是
   手抄的第二份 —— 改一处漏一处，编译器一点忙帮不上（.ts 与 .cjs 间没有类型传递）。
