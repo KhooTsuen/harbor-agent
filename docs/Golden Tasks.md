@@ -175,6 +175,11 @@ Observe → Measure → Identify bottleneck → Make smallest change
 > ③ 起实例：`Harbor.exe --remote-debugging-port=9333`，用 `tmp/golden-driver.mjs` 驱动
 > （它走 `tools/shot/cdp.mjs` 那套 CDP 唯一实现；`--name=` / `--prompt-file=` / `--timeout=`）。
 > ④ 每条任务开新会话；改文件的任务跑前调 `tmp/reset-fixture.mjs` 复原素材。
+>
+> ⚠️ **这几个脚本现在住在 `tmp/`（giignore，会被 `tmp/` 卫生检查清掉）** —— 下一轮要么照上面
+> ①②③ 重写，要么按 `tools/cdp.mjs` 的先例搬进 `tools/`（那个文件头写着为什么「一次性脚本
+> 沉淀不下来」是踩过的坑）。**要不要搬，等定**（新增一个 tracked 工具文件 = 动到硬禁区 1）。
+> 素材（`sample-project` 等）是这轮现造的，内容见各任务的「场景」描述。
 
 1. **花钱**：✅ 已花（10 条 × 真实调用）。用 DeepSeek 主力模型跑一轮的成本见基线里的 token 数。
 2. **不碰真数据**：✅ 在**另一个目录**（`E:\harbor-golden`）跑的，与
