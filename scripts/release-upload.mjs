@@ -89,14 +89,30 @@ try {
   fail(error instanceof Error ? error.message : String(error))
 }
 
-/** Release 正文直接取 CHANGELOG 里这一节 —— 正文只写一份，别在这儿再抄一遍 */
-function releaseBody() {
-  const changelog = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8')
-  const at = changelog.indexOf(`## [${version}]`)
-  if (at < 0) return `Harbor ${version}`
-  const rest = changelog.slice(at)
+/** 发布正文的取材处：主文件（`[未发布]` + 当前发布周期）+ 归档文件（更早的版本） */
+const CHANGELOG_FILES = ['CHANGELOG.md', join('docs', 'CHANGELOG-归档.md')]
+
+/** 从某份 CHANGELOG 文本里切出这一版那一节（找不到返回 null） */
+function sectionOf(text, ver) {
+  const at = text.indexOf(`## [${ver}]`)
+  if (at < 0) return null
+  const rest = text.slice(at)
   const next = rest.indexOf('\n## [', 1)
   return (next > 0 ? rest.slice(0, next) : rest).trim()
+}
+
+/** Release 正文直接取 CHANGELOG 里这一节 —— 正文只写一份，别在这儿再抄一遍。
+ *  两份都翻：更早的版本归档在 `docs/CHANGELOG-归档.md`，重发老版本时也能取到正文。 */
+function releaseBody() {
+  for (const rel of CHANGELOG_FILES) {
+    try {
+      const body = sectionOf(readFileSync(join(ROOT, rel), 'utf8'), version)
+      if (body) return body
+    } catch {
+      /* 这份没了就翻下一份 */
+    }
+  }
+  return `Harbor ${version}`
 }
 
 let key = ''
