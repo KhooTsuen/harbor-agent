@@ -13,7 +13,9 @@
    规矩：所有等待共享一条预算，且渲染层**必须**在预算内回话 ——
    宁可自己说清「等太久了」，也不要让主进程用一句猜出来的原因替它发言。
 
-   另外两条也是真机上逮到的：
+   另外两条也是真机上逮到的（B2–B4 后，这两条已随脚本一起搬到**主进程**
+   —— 见 `electron/core/browse-read.cjs` 的空正文重试、`browse-ops.cjs` 的
+   `evaluateWithRetry`；渲染层这边不再往页面里跑脚本）：
    · `GUEST_VIEW_MANAGER_CALL: Script failed to execute` —— webview 的 guest
      还没就绪（或被摘挂过）时 `executeJavaScript` 会抛；要等 dom-ready 重试。
    · 有些 SPA 加载完才开始填内容，第一次读是空。空不等于「没有正文」，
@@ -126,95 +128,7 @@ export function waitForLoad(view: WebviewElement, budget: Budget): Promise<void>
 }
 
 /**
- * 等「后退 / 前进**真的动了**没有」。
- *
- * ★ 为什么不先问 `canGoBack()`（2026-10-06 真机 bug ①）：
- *   页面自报 hl=2（确实有上一页，页面里 `history.back()` 一次就退回列表、
- *   连筛选词都恢复了），而 webview 的 `canGoBack()` 返回 **false** ——
- *   于是 `browse_nav` 回了一句「到头了：没有上一页可以后退」。
- *   而它根本没到头（bug ②：那句话把「有上一页」也误判成到头）。
- *   同一份判据还牵着界面上那两个按钮的灰显，所以这一条不能拿来当结论。
- *
- * 现在的口径：**动手之后核实** ——
- *   · 先记下地址，由调用方去调 goBack / goForward
- *   · 等 `did-navigate` / `did-navigate-in-page` / `did-finish-load`，
- *     或者轮询地址真的变了（有些站点的页内导航不发事件）
- *   · 过了这段时间还没动静 → 返回 false，由调用方决定要不要兜底 / 报「到头了」
- *
- * 这样「到头了」才是一句**验证过的**结论，而不是一次猜测。
- *
- * @param before 动手之前的地址（拿它比出“变没变”）
- * @returns 真的换了页面 / 地址就 true
+ * ★ 原来这里还有一个 `waitForNavMove`（等「后退/前进真的动了没有」）——
+ *   B4 之后，换历史改由**主进程**经 CDP 做（`electron/core/browse-history.cjs`
+ *   里的轮询版 `waitForMove`），渲染层不再监听导航事件，这个函数已删。
  */
-export function waitForNavMove(
-  view: WebviewElement,
-  before: string,
-  budget: Budget,
-  cap = 2500,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    let settled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let poll: ReturnType<typeof setInterval> | undefined
-    const names = ['did-navigate', 'did-navigate-in-page', 'did-finish-load']
-
-    const done = (moved: boolean): void => {
-      if (settled) return
-      settled = true
-      if (timer) clearTimeout(timer)
-      if (poll) clearInterval(poll)
-      for (const name of names) view.removeEventListener(name, onEvent)
-      resolve(moved)
-    }
-
-    const onEvent = (): void => done(true)
-    for (const name of names) view.addEventListener(name, onEvent)
-
-    const current = (): string => {
-      try {
-        return view.getURL?.() ?? ''
-      } catch {
-        return ''
-      }
-    }
-    poll = setInterval(() => {
-      const now = current()
-      if (now && now !== before) done(true)
-    }, 100)
-
-    timer = setTimeout(() => done(false), budget.slice(cap))
-  })
-}
-
-/** 在 webview 里跑一段脚本的结果 */ export type ScriptOutcome<T> =
-  { ok: true; value: T | undefined } | { ok: false; error: string }
-
-/**
- * 在 webview 里跑一段脚本 —— **失败会重试**。
- *
- * 真机上见过 `Error invoking remote method 'GUEST_VIEW_MANAGER_CALL':
- * Error: Script failed to execute`：多半是 guest 刚被摘挂/还没附加好。
- * 这类失败等一下再试通常就成了，不该直接把「读不了」甩给模型。
- */
-export async function runScript<T>(
-  view: WebviewElement,
-  code: string,
-  budget: Budget,
-  tries = 3,
-): Promise<ScriptOutcome<T>> {
-  let last = ''
-  for (let attempt = 1; attempt <= tries; attempt += 1) {
-    if (budget.expired) break
-    try {
-      if (!view.executeJavaScript) return { ok: false, error: '这个环境不支持在网页里执行脚本' }
-      const value = (await view.executeJavaScript(code)) as T | undefined
-      return { ok: true, value }
-    } catch (error) {
-      last = error instanceof Error ? error.message : String(error)
-      /* 还没就绪：等一下 + 再等一次 dom-ready，然后再试 */
-      await waitForDomReady(view, budget)
-      await sleep(250)
-    }
-  }
-  return { ok: false, error: last || '在网页里执行脚本失败' }
-}

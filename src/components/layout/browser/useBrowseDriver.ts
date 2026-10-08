@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
-import { navBlockedText, stepHistory } from './navStep'
 import {
   BROWSE_BUDGET_MS,
   Budget,
@@ -15,7 +14,8 @@ import {
    执行 Agent 的浏览请求（真正操作 webview 的那一半）
 
    `useBrowseBridge`（挂在 RightPanel）负责接请求、开标签，
-   这里负责等 webview 挂上 → 导航 → 读正文 → 回话。
+   这里负责等 webview 挂上 → 导航 → 报就绪（读正文 / 读元素 / 点 / 打字 / 换历史
+   全交**主进程**经 CDP 做，见 `electron/core/browse-*.cjs`）。
 
    分两半是因为：接请求的地方必须**一直挂着**（不然没人接），
    而操作 webview 必须等 BrowserTab 挂载（切过去才有元素）。
@@ -60,26 +60,9 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
 
     const reply = (result: {
       ok: boolean
-      text?: string
-      html?: string
-      title?: string
-      url?: string
-      snapshot?: unknown
-      click?: string
-      /** click: 落点在派发时被遮挡（带 force=true 强点时的回报） */
-      obstructed?: boolean
-      /** click: 已校验的落点坐标（主进程据此派发真鼠标事件） */
-      x?: number
-      y?: number
-      type?: string
-      into?: string
-      password?: boolean
-      needsConfirm?: boolean
-      /** nav 成功时回「往哪个方向走的」（主进程据它写人话） */
-      nav?: string
       /** wcid：当前 webview 的 webContents id */
       webContentsId?: number
-      /** ★ 页面已就绪 —— 正文由主进程经 CDP 读（B2），这里不再回 text/html */
+      /** ★ 页面已就绪 —— 正文/元素/落点/历史全由主进程经 CDP 做（B2/B3/B4） */
       ready?: boolean
       error?: string
     }): void => {
@@ -115,25 +98,11 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         }
 
         /*
-         * nav：在当前标签里后退 / 前进（不开新标签）。
-         * 「怎么判断真的动了」、以及为什么不能信 canGoBack()，全在 navStep.ts 的文件头
-         * —— 那是 2026-10-06 真机 bug 留下的教训，别搬回来。
+         * nav（后退 / 前进）在 B4（2026-10-09）后不再由渲染层做 —— 渲染层只等
+         * 「webview 就绪」并回报 wcid，历史移动由**主进程**经 CDP 完成
+         * （`core/browse-history.cjs`）。所以 nav 与 snapshot/click/type/navigate
+         * 一样，走到下面的通用「报 ready」即可。
          */
-        if (pending!.action === 'nav') {
-          const step: 'back' | 'forward' = pending!.direction === 'forward' ? 'forward' : 'back'
-          const outcome = await stepHistory(view, step, budget)
-          if (!outcome.moved) {
-            reply({ ok: false, error: navBlockedText(step, outcome, view.getURL?.() ?? '') })
-            return
-          }
-
-          await waitForLoad(view, budget)
-          if (!alive) return
-
-          /* 页面就绪即可 —— 正文由主进程经 CDP 读（B2），这里只报 id 与方向 */
-          reply({ ok: true, ready: true, webContentsId: view.getWebContentsId?.() ?? 0, nav: step })
-          return
-        }
 
         if (pending!.action === 'navigate') {
           /*

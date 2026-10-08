@@ -5,6 +5,22 @@
 
 ## [未发布]
 
+- **浏览器「后退 / 前进」改由主进程经 CDP 做**（2026-10-09，浏览器 CDP 化 B4）。
+  承接 B2/B3：`browse_nav` 原来由渲染层做 —— 调 webview 的 `goBack()`、再在页面里
+  `history.back()` 兜底，同时监听 webview 导航事件核实「真的动了没有」
+  （`src/.../browser/navStep.ts`）。现在渲染层只负责「webview 就绪 + 报 webContentsId」，
+  换历史由主进程经 `core/cdp.cjs` 的 `Page.getNavigationHistory` +
+  `Page.navigateToHistoryEntry` 完成（新增 `core/browse-history.cjs`），
+  兜底仍是页面自己的 `history.back()/forward()`，核实改成轮询地址。
+  正路的判据从「webview 自报的 `canGoBack()`」换成 **CDP 那份历史（DevTools 看到的
+  同一份）**，比自报可靠 —— 2026-10-06 真机 bug 就是被 `canGoBack()` 撒谎坑的
+  （页面明明有上一页，它回 false，于是把一条能成的路说成「到头了」）。
+  渲染层的 `navStep.ts` 删除；`browseWait.ts` 里只服务于它的 `waitForNavMove` /
+  `runScript` / `ScriptOutcome` 一并删掉（脚本重试已随 B2/B3 搬到主进程）。
+  自检钉子同步：`121-browse-nav` 改盯主进程接线，新增自检组 `138-browse-history`
+  （纯函数 `targetEntryId` / `navBlockedText` + 源码守卫）。
+  真机证据：真 `<webview>` 里造两页历史，经 CDP 后退 / 前进精准回到目标页。
+
 - **页面操作（读元素 / 点 / 输入）改由主进程经 CDP 做**（2026-10-09，浏览器 CDP 化 B3）。
   承接 B2：`browse_elements` / `browse_click` / `browse_type` 的三个脚本
   （`SNAPSHOT_SCRIPT` / `clickPointScript` / `focusScript`，原来在渲染层

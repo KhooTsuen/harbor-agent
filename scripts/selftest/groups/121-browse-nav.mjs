@@ -57,35 +57,24 @@ export async function run() {
     /wrapWebText/.test(browseSrc) && /wrapWebText/.test(navSrc),
   )
 
-  group('浏览器 / browse_nav 的渲染层接线')
+  group('浏览器 / browse_nav 的接线（B4：换历史搬到主进程）')
 
   /*
-   * 光有工具、渲染层不认这个动作的话，请求会被**静默丢掉**：
+   * 光有工具、主进程不认这个动作的话，请求会被**静默丢掉**：
    * AI 等到 45 秒超时，用户什么也看不到（这类错最难查）。
+   * B4 之后 nav 由**主进程**经 CDP 做（`core/browse-history.cjs`），渲染层只报 ready。
    */
   const driverSrc = readFileSync(
     join(ROOT, 'src/components/layout/browser/useBrowseDriver.ts'),
     'utf8',
   )
-  check('★ 驱动层认识 nav 动作', /action === 'nav'/.test(driverSrc))
+  check('★ 驱动层不再自己挪历史（nav 交主进程）', !/stepHistory|goInView/.test(driverSrc))
 
-  /*
-   * ★ 这一条是 2026-10-06 那个真机 bug 的根：当时拿 `canGoBack()` 当结论，
-   *   而它会在「确实有上一页」时回 false（页面报 hl=2、history.back() 一下就退回去了）。
-   *   现在的契约是**动手 + 核实**，两条兜底都必须活着 —— 拆到 navStep.ts 之后
-   *   这几条线跟着契约走（拆文件不该把守卫留在原地变成空手段）。
-   */
-  const stepSrc = readFileSync(join(ROOT, 'src/components/layout/browser/navStep.ts'), 'utf8')
-  check('★ 动手之后核实（不拿 canGoBack 当结论）', /waitForNavMove\(view, before/.test(stepSrc))
-  check('★ 兜底会用页面自己的 history.back / forward', /history\.\$\{step\}\(\)/.test(stepSrc))
-  check('★ 失败信息里带上 canGoBack / canGoForward 诊断值', /canGoBack=\$\{outcome\.back\}/.test(stepSrc))
+  const handlerSrc = readFileSync(join(ROOT, 'electron/handlers/browser.cjs'), 'utf8')
+  check('★ 主进程 handler 认领 nav 动作', /entry\.action === 'nav'/.test(handlerSrc))
 
   const storeSrc = readFileSync(join(ROOT, 'src/stores/useBrowserStore.ts'), 'utf8')
   check('★ nav 归到「不开新标签」那一类', /request\.action === 'nav'/.test(storeSrc))
-
-  const waitSrc = readFileSync(join(ROOT, 'src/components/layout/browser/browseWait.ts'), 'utf8')
-  check('★ 那个“动没动”的等待真的在监听导航事件', /waitForNavMove/.test(waitSrc))
-  check('★ 也轮询地址（有些页内导航不发事件）', /now !== before/.test(waitSrc))
 
   const bridgeSrc = readFileSync(
     join(ROOT, 'src/components/layout/browser/useBrowseBridge.ts'),

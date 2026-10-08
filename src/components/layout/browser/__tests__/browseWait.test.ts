@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   BROWSE_BUDGET_MS,
   Budget,
-  runScript,
   waitForDomReady,
   waitForElement,
   waitForLoad,
@@ -18,30 +17,10 @@ import {
      ② webview 的 guest 没就绪时 `executeJavaScript` 会抛
         （`GUEST_VIEW_MANAGER_CALL: Script failed to execute`）——
         要等一下重试，不能直接把「读不了」甩给模型。
+        ★ 这条重试在 B2–B4 后搬到了**主进程**（`core/browse-ops.cjs` 的
+        `evaluateWithRetry`），渲染层不再往页面里跑脚本，所以这里的
+        `runScript` 用例已随函数一起删掉。
    ══════════════════════════════════════════════════════════════ */
-
-/** 假 webview：只实现我们用到的几个方法（真元素是 Electron 的私有自定义元素） */
-function fakeView(scripts: Array<string | Error>): WebviewElement & { calls: number } {
-  const el = document.createElement('div') as unknown as WebviewElement & { calls: number }
-  el.calls = 0
-  let domReady = false
-  el.getURL = () => (domReady ? 'https://example.com/' : '')
-  el.executeJavaScript = async () => {
-    el.calls += 1
-    const next = scripts.shift() ?? ''
-    if (next instanceof Error) throw next
-    domReady = true
-    return JSON.parse(next) as unknown
-  }
-  Object.defineProperty(el, 'addEventListener', {
-    value: (type: string, cb: () => void) => {
-      /* 只模拟 dom-ready：立刻触发，等于「已经就绪」 */
-      if (type === 'dom-ready') setTimeout(cb, 0)
-    },
-  })
-  Object.defineProperty(el, 'removeEventListener', { value: () => {} })
-  return el
-}
 
 describe('browseWait / 预算', () => {
   beforeEach(() => {
@@ -79,43 +58,6 @@ describe('browseWait / 预算', () => {
     const budget = new Budget(5_000)
     const el = document.createElement('div')
     expect(await waitForElement(() => el, budget, 500)).toBe(el)
-  })
-})
-
-describe('browseWait / 在网页里执行脚本', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-  })
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('★ guest 没就绪（抛错）时会重试，最终成功', async () => {
-    const view = fakeView([
-      new Error(
-        "Error invoking remote method 'GUEST_VIEW_MANAGER_CALL': Error: Script failed to execute",
-      ),
-      '{"text":"正文来了"}',
-    ])
-    const budget = new Budget(60_000)
-    const promise = runScript<{ text: string }>(view, 'read', budget)
-    await vi.advanceTimersByTimeAsync(1_000)
-    const out = await promise
-    expect(out.ok).toBe(true)
-    expect(out.ok && out.value?.text).toBe('正文来了')
-    expect(view.calls).toBe(2)
-  })
-
-  it('一直失败就把原因带回去（不许编一个「没有正文」）', async () => {
-    /* 同一个错误给两次：第二次重试也要拿到它，而不是夹具自己造的解析错 */
-    const boom = new Error('Script failed to execute')
-    const view = fakeView([boom, boom])
-    const budget = new Budget(60_000)
-    const promise = runScript(view, 'read', budget, 2)
-    await vi.advanceTimersByTimeAsync(2_000)
-    const out = await promise
-    expect(out.ok).toBe(false)
-    expect(out.ok === false && out.error).toContain('Script failed to execute')
   })
 })
 

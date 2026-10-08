@@ -20,6 +20,7 @@ const { createSettler, onAbort } = require('../core/abort.cjs')
 const { extractText, pickSource } = require('../core/browser-text.cjs')
 const browseRead = require('../core/browse-read.cjs')
 const browseOps = require('../core/browse-ops.cjs')
+const browseHistory = require('../core/browse-history.cjs')
 const webviewPermissions = require('../core/webview-permissions.cjs')
 
 /** 等界面的上限。读一个页面比「用户点确认」快得多，不需要五分钟 */
@@ -125,6 +126,30 @@ function request(action, payload, signal) {
   })
 }
 
+/**
+ * 读正文并结算这条请求（navigate / nav 的成功路径共用）。
+ *
+ * @param {{ resolve: Function, action: string }} entry
+ * @param {number} wcid
+ * @param {string|undefined} nav browse_nav 时「往哪个方向走的」（工具要拿它写人话）
+ */
+async function readBodyInto(entry, wcid, nav) {
+  const page = await withTimeout(
+    browseRead.readPageText(wcid),
+    READ_TIMEOUT_MS,
+    '读网页超时（页面卡住了或一直没响应）',
+  )
+  const picked = pickSource(page)
+  entry.resolve({
+    ok: true,
+    text: extractText(picked.raw, { maxChars: 12_000 }),
+    title: page.title,
+    url: page.url,
+    nav,
+    truncated: picked.raw.length > 12_000,
+  })
+}
+
 function register() {
   /*
    * 网页标签的权限闸：默认全拒（审计问题 21）—— 理由见 core/webview-permissions.cjs。
@@ -203,24 +228,31 @@ function register() {
           } else {
             entry.resolve({ ok: false, error: String(focus?.error ?? '输入失败') })
           }
-        } else {
-          /* navigate / nav：读正文 */
-          const page = await withTimeout(
-            browseRead.readPageText(wcid),
+        } else if (entry.action === 'nav') {
+          /*
+           * ★ B4（2026-10-09）：后退 / 前进也改由**主进程**经 CDP 做
+           * （`Page.getNavigationHistory` + `Page.navigateToHistoryEntry`，见
+           * `core/browse-history.cjs`）。渲染层只负责「webview 就绪 + 报 wcid」，
+           * 不再自己挪历史。省掉的是渲染层那一套「goBack + 页面 history 兜底 +
+           * 监听导航事件核实」，也顺手把导航历史换成 DevTools 那份（比 canGoBack 可靠）。
+           */
+          const step = entry.payload.direction === 'forward' ? 'forward' : 'back'
+          const outcome = await withTimeout(
+            browseHistory.stepHistory(wcid, step),
             READ_TIMEOUT_MS,
-            '读网页超时（页面卡住了或一直没响应）',
+            '换页超时（页面卡住了或一直没响应）',
           )
-          const picked = pickSource(page)
-          const text = extractText(picked.raw, { maxChars: 12_000 })
-          entry.resolve({
-            ok: true,
-            text,
-            title: page.title,
-            url: page.url,
-            /* browse_nav 多一个「往哪个方向走的」：工具要拿它写人话 */
-            nav: result.nav === undefined ? undefined : String(result.nav),
-            truncated: picked.raw.length > 12_000,
-          })
+          if (!outcome.moved) {
+            entry.resolve({
+              ok: false,
+              error: browseHistory.navBlockedText(step, outcome, outcome.before),
+            })
+          } else {
+            await readBodyInto(entry, wcid, step)
+          }
+        } else {
+          /* navigate：读正文 */
+          await readBodyInto(entry, wcid, undefined)
         }
       } catch (error) {
         entry.resolve({
