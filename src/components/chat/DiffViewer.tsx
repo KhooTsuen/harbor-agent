@@ -72,6 +72,17 @@ function lineBg(type: DiffLine['type']): string {
   return 'transparent'
 }
 
+/*
+ * 双栏里「这一侧没有对应行」的空位底色。
+ *
+ * 原来写的是 `var(--bg-raised/20)` —— 那**不是合法的 CSS 变量引用**（自定义属性名里
+ * 不能有 `/`），浏览器把它当无效值直接丢掉，连 `transparent` 都不会写上。
+ * 2026-10-08 真机量过：那些格子的 `getComputedStyle().backgroundColor` 是
+ * `rgba(0, 0, 0, 0)`，内联 style 里压根没有 background 这一条。
+ * 要走 Tailwind 那套通道值（见 tailwind.config.js 顶部），通道值每个主题都有。
+ */
+const EMPTY_SIDE_BG = 'rgb(var(--bg-raised-rgb) / 0.2)'
+
 function DiffFileBlock({
   file,
   defaultCollapsed,
@@ -120,14 +131,14 @@ function DiffFileBlock({
                 {hunk.header}
               </div>
               {view === 'unified' ? (
-                <div className="font-mono text-xs leading-[1.65]">
+                <div className="w-max min-w-full font-mono text-xs leading-[1.65]">
                   {hunk.lines.map((line, lineIndex) => {
                     const isAdd = line.type === 'add'
                     const isRemove = line.type === 'remove'
                     return (
                       <div
                         key={lineIndex}
-                        className="flex min-h-[1.65em]"
+                        className="flex min-h-[1.65em] w-full"
                         style={{ background: lineBg(line.type) }}
                       >
                         <span className="w-9 shrink-0 select-none pr-2 text-right text-fg-tertiary">
@@ -148,7 +159,7 @@ function DiffFileBlock({
                         >
                           {isAdd ? '+' : isRemove ? '−' : ' '}
                         </span>
-                        <span className="min-w-0 flex-1 whitespace-pre pr-3">
+                        <span className="whitespace-pre pr-3">
                           <DiffLineContent content={line.content} language={language} />
                         </span>
                       </div>
@@ -156,13 +167,13 @@ function DiffFileBlock({
                   })}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 font-mono text-xs leading-[1.65]">
+                <div className="grid w-max min-w-full grid-cols-2 font-mono text-xs leading-[1.65]">
                   {pairLines(hunk.lines).map((row, rowIndex) => (
                     <div key={rowIndex} className="contents">
                       <div
                         className="flex min-h-[1.65em] border-r border-line-subtle"
                         style={{
-                          background: row.left ? lineBg(row.left.type) : 'var(--bg-raised/20)',
+                          background: row.left ? lineBg(row.left.type) : EMPTY_SIDE_BG,
                         }}
                       >
                         <span className="w-8 shrink-0 select-none pr-2 text-right text-fg-tertiary">
@@ -179,7 +190,7 @@ function DiffFileBlock({
                         >
                           {row.left?.type === 'remove' ? '−' : ' '}
                         </span>
-                        <span className="min-w-0 flex-1 whitespace-pre pr-3">
+                        <span className="whitespace-pre pr-3">
                           {row.left ? (
                             <DiffLineContent content={row.left.content} language={language} />
                           ) : null}
@@ -188,7 +199,7 @@ function DiffFileBlock({
                       <div
                         className="flex min-h-[1.65em]"
                         style={{
-                          background: row.right ? lineBg(row.right.type) : 'var(--bg-raised/20)',
+                          background: row.right ? lineBg(row.right.type) : EMPTY_SIDE_BG,
                         }}
                       >
                         <span className="w-8 shrink-0 select-none pr-2 text-right text-fg-tertiary">
@@ -205,7 +216,7 @@ function DiffFileBlock({
                         >
                           {row.right?.type === 'add' ? '+' : ' '}
                         </span>
-                        <span className="min-w-0 flex-1 whitespace-pre pr-3">
+                        <span className="whitespace-pre pr-3">
                           {row.right ? (
                             <DiffLineContent content={row.right.content} language={language} />
                           ) : null}
