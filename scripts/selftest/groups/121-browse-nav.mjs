@@ -62,7 +62,8 @@ export async function run() {
   /*
    * 光有工具、主进程不认这个动作的话，请求会被**静默丢掉**：
    * AI 等到 45 秒超时，用户什么也看不到（这类错最难查）。
-   * B4 之后 nav 由**主进程**经 CDP 做（`core/browse-history.cjs`），渲染层只报 ready。
+   * B4 之后 nav 由**主进程**经 CDP 做（`core/browse-history.cjs`）；B5 之后
+   * 主进程经 `core/browse-act.cjs` 直连，渲染层只推 webContentsId。
    */
   const driverSrc = readFileSync(
     join(ROOT, 'src/components/layout/browser/useBrowseDriver.ts'),
@@ -71,16 +72,26 @@ export async function run() {
   check('★ 驱动层不再自己挪历史（nav 交主进程）', !/stepHistory|goInView/.test(driverSrc))
 
   const handlerSrc = readFileSync(join(ROOT, 'electron/handlers/browser.cjs'), 'utf8')
-  check('★ 主进程 handler 认领 nav 动作', /entry\.action === 'nav'/.test(handlerSrc))
+  const actSrc = readFileSync(join(ROOT, 'electron/core/browse-act.cjs'), 'utf8')
+  check(
+    '★ 主进程认领 nav：handler 交 browse-act，那边处理 nav',
+    /action === 'navigate' \? navigateRequest/.test(handlerSrc) && /action === 'nav'/.test(actSrc),
+  )
 
   const storeSrc = readFileSync(join(ROOT, 'src/stores/useBrowserStore.ts'), 'utf8')
-  check('★ nav 归到「不开新标签」那一类', /request\.action === 'nav'/.test(storeSrc))
+  check(
+    '★ B5：操作类动作不再进 store（只有 navigate 走 requestBrowse）',
+    !/request\.action === 'nav'/.test(storeSrc) && storeSrc.includes('selectAgentTab'),
+  )
 
   const bridgeSrc = readFileSync(
     join(ROOT, 'src/components/layout/browser/useBrowseBridge.ts'),
     'utf8',
   )
-  check('★ 桥把方向一路带下去', /direction: req\.direction/.test(bridgeSrc))
+  check(
+    '★ 方向一路带到主进程动作层（工具发 direction、browse-act 读 payload.direction）',
+    /direction/.test(navSrc) && /payload\.direction/.test(actSrc),
+  )
 
   /* ══════════════════════════════════════════════════════════════
      `sameTab`：Agent 自己决定「开新标签」还是「在当前标签里打开」（2026-10-07）

@@ -3,72 +3,88 @@
  *
  * ⚠️ 为什么要有这一层：
  * `<webview>` 是**渲染进程里的 DOM 元素**，主进程碰不到它。
- * 所以「Agent 用浏览器」必须是：
+ * 所以「Agent 用浏览器」是：**开标签**这一步走渲染层，其余全在主进程。
  *
- *     工具（主进程）→ 发请求 → 渲染层操作 webview → 回话 → 工具拿到结果
+ * ★ 两条路（B5，2026-10-09，浏览器 CDP 化收尾）：
  *
- * 这和「写操作确认」是**同一套往返**（`chat.cjs` 的 askUser），
- * 所以这里照抄那个模式，不另造一套。
+ *   · **navigate（开 / 复用标签）** —— 只有这一步必须请渲染层做（webview 是它的
+ *     DOM 元素）。走 `browser:request`（主→渲染）→ 渲染层开好标签、等就绪 →
+ *     推 `browser:active`（渲染→主）→ 这里读正文、resolve。
  *
- * 界面那边如果没人应答（比如用户把浏览器标签关了），会在超时后返回失败 ——
+ *   · **其余动作（读元素 / 点 / 打字 / 换历史 / 取 wcid）** —— 目标页面**已经开着**，
+ *     主进程只要知道那个 webview 的 `webContentsId` 就能经 CDP 直连做，**不必等回话**。
+ *     wcid 由渲染层在标签就绪 / 切换时推 `browser:active` 缓存到这里（`activeTabs`）。
+ *     所以这条路是：`browser:request`（只用于点亮界面角标 / 选中 agent 标签，**不等回话**）
+ *     + 直接开干（动作实现在 `core/browse-act.cjs`）。
+ *
+ * 界面那边如果没人应答（用户把浏览器标签关了），navigate 超时后返回失败 ——
  * 不能让工具永久挂着。
  */
 
 const { ipcMain, BrowserWindow, app, session } = require('electron')
 const log = require('../core/log.cjs')
 const { createSettler, onAbort } = require('../core/abort.cjs')
-const { extractText, pickSource } = require('../core/browser-text.cjs')
-const browseRead = require('../core/browse-read.cjs')
-const browseOps = require('../core/browse-ops.cjs')
-const browseHistory = require('../core/browse-history.cjs')
+const cdp = require('../core/cdp.cjs')
+const browseAct = require('../core/browse-act.cjs')
 const webviewPermissions = require('../core/webview-permissions.cjs')
 
-/** 等界面的上限。读一个页面比「用户点确认」快得多，不需要五分钟 */
+/** 等界面的上限（navigate 那条往返用）。读一个页面比「用户点确认」快得多 */
 const REQUEST_TIMEOUT_MS = 45_000
 
-/**
- * 主进程读正文的上限（B2，2026-10-09）。
- *
- * 正文改由主进程经 CDP 读之后，读这一步**不再受 `REQUEST_TIMEOUT_MS` 约束** ——
- * 那条计时器在渲染层回话（`browser:result`）当场就停了，读发生在它之后。
- * 页面 JS 若卡死，`Runtime.evaluate` 会**永不返回**，工具就挂到天荒地老（比旧版更糟：
- * 旧版读在渲染层，45 秒那条还能兜住）。所以给读单独一条上限。
- */
-const READ_TIMEOUT_MS = 15_000
-
-/** 给一个 promise 套超时：超时后 reject（原 promise 仍在跑，但没人认领了） */
-function withTimeout(promise, ms, message) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
-
-/** id -> { resolve, timer } */
+/** id -> { resolve, timer }（只给 navigate 那条往返用） */
 const pending = new Map()
+
+/**
+ * sessionId -> webContentsId。
+ *
+ * 渲染层在「标签就绪 / 切换」时推 `browser:active` 写进来（B5）。主进程靠它
+ * 直连那个 webview，不必每次都问渲染层。取用时校验 webContents 还活着，
+ * 死了就删掉（页面关了）。
+ */
+const activeTabs = new Map()
 
 function newId() {
   return `brw_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
+/** 取某个会话当前那个 webview 的 webContents id；没有 / 已关就 0 */
+function wcidFor(sessionId) {
+  const key = String(sessionId ?? '')
+  const id = activeTabs.get(key)
+  if (!id) return 0
+  try {
+    cdp.resolve(id)
+  } catch {
+    activeTabs.delete(key)
+    return 0
+  }
+  return id
+}
+
 /**
- * 请求渲染层做一件事。
+ * 只点亮界面（角标 / 选中 agent 标签 / 面板切到浏览器）—— **不等回话**。
  *
- * @param {string} action  'navigate'（打开并读正文）
- * @param {object} payload
- * @param {AbortSignal} [signal]  用户点停止时用它把这条请求撤掉
+ * 其余动作的正文/元素/历史都由主进程直连做，所以这条 `browser:request` 只是
+ * 给界面一个「Agent 在动网页」的信号（用户得看见）。渲染层收到后只做界面动作。
+ */
+function notify(action, payload) {
+  const windows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
+  for (const win of windows) {
+    win.webContents.send('browser:request', { id: newId(), action, ...payload })
+  }
+  require('./browse-notify.cjs').tellUser({
+    sessionId: String(payload?.sessionId ?? ''),
+    action,
+    url: String(payload?.url ?? ''),
+  })
+}
+
+/**
+ * navigate：请渲染层开 / 复用标签，等它推 `browser:active` 回话。
+ *
  * @returns {Promise<{ ok: boolean, error?: string, text?: string, title?: string, url?: string }>}
  */
-function request(action, payload, signal) {
+function navigateRequest(payload, signal) {
   return new Promise((resolve) => {
     const windows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
     if (windows.length === 0) {
@@ -89,65 +105,78 @@ function request(action, payload, signal) {
       return finish(value)
     }
 
-    /*
-     * AG-011：点停止时把这条请求也撤掉。
-     *
-     * 渲染层那边的 `executeJavaScript` 是**中断不了的**（浏览器就没给这个能力），
-     * 所以这里只能做到「不再等它」—— 但这就够了：Agent 循环不必陪着卡 45 秒，
-     * 结果回来了也没人认领（pending 里已经没有了）。
-     */
-    off = onAbort(signal, () => {
-      settle({ ok: false, error: '已被用户中断' })
-    })
+    /* AG-011：点停止时把这条请求也撤掉（不再等它） */
+    off = onAbort(signal, () => settle({ ok: false, error: '已被用户中断' }))
 
     const timer = setTimeout(() => {
       settle({ ok: false, error: '界面没有在 45 秒内回应（浏览器标签可能被关了）' })
     }, REQUEST_TIMEOUT_MS)
 
-    /* 记住这次请求的**动作和参数** —— `ready` 回话时主进程要用它决定做什么（B3） */
-    pending.set(id, { resolve: settle, timer, action, payload: payload ?? {} })
+    pending.set(id, { resolve: settle, timer, action: 'navigate', payload: payload ?? {} })
 
-    /*
-     * 「Agent 在动网页，而你没在看」→ 一条系统通知（收尾第一步）。
-     *
-     * 放在这里是因为这是**所有浏览请求的唯一入口**（navigate / snapshot /
-     * click / type 四路都过它）—— 挂在四个工具里迟早漏一个。
-     * 能不能发（不在前台 / 这条对话发过没有）由通知器判断，这里只管把上下文告诉它。
-     */
     require('./browse-notify.cjs').tellUser({
       sessionId: String(payload?.sessionId ?? ''),
-      action,
+      action: 'navigate',
       url: String(payload?.url ?? ''),
     })
 
     for (const win of windows) {
-      win.webContents.send('browser:request', { id, action, ...payload })
+      win.webContents.send('browser:request', { id, action: 'navigate', ...payload })
     }
   })
 }
 
-/**
- * 读正文并结算这条请求（navigate / nav 的成功路径共用）。
- *
- * @param {{ resolve: Function, action: string }} entry
- * @param {number} wcid
- * @param {string|undefined} nav browse_nav 时「往哪个方向走的」（工具要拿它写人话）
- */
-async function readBodyInto(entry, wcid, nav) {
-  const page = await withTimeout(
-    browseRead.readPageText(wcid),
-    READ_TIMEOUT_MS,
-    '读网页超时（页面卡住了或一直没响应）',
-  )
-  const picked = pickSource(page)
-  entry.resolve({
-    ok: true,
-    text: extractText(picked.raw, { maxChars: 12_000 }),
-    title: page.title,
-    url: page.url,
-    nav,
-    truncated: picked.raw.length > 12_000,
+/** 把「动作还没回来那段」和「用户点停止」赛跑（照抄 navigateRequest 的口径） */
+function raceAbort(promise, signal) {
+  return new Promise((resolve, reject) => {
+    let off = () => {}
+    off = onAbort(signal, () => {
+      off()
+      resolve({ ok: false, error: '已被用户中断' })
+    })
+    promise.then(
+      (value) => {
+        off()
+        resolve(value)
+      },
+      (error) => {
+        off()
+        reject(error)
+      },
+    )
   })
+}
+
+/**
+ * 其余动作：给界面一个信号，然后**直接用缓存的 wcid 经 CDP 做**（不等渲染层回话）。
+ *
+ * @param {string} action 'snapshot' | 'click' | 'type' | 'nav' | 'wcid'
+ */
+async function act(action, payload, signal) {
+  notify(action, payload)
+
+  const wcid = wcidFor(payload?.sessionId)
+  if (!wcid) return { ok: false, error: '浏览器里还没有打开的页面，先 browse 打开一个网页' }
+
+  try {
+    return await raceAbort(browseAct.runOp(action, wcid, payload), signal)
+  } catch (error) {
+    return {
+      ok: false,
+      error: `操作网页失败：${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
+/**
+ * 工具入口（`browse*` 工具都走它）。
+ *
+ * @param {string} action  'navigate' | 'snapshot' | 'click' | 'type' | 'nav' | 'wcid'
+ * @param {object} payload
+ * @param {AbortSignal} [signal]  用户点停止时用它把这条请求撤掉
+ */
+function request(action, payload, signal) {
+  return action === 'navigate' ? navigateRequest(payload, signal) : act(action, payload, signal)
 }
 
 function register() {
@@ -155,7 +184,6 @@ function register() {
    * 网页标签的权限闸：默认全拒（审计问题 21）—— 理由见 core/webview-permissions.cjs。
    * 挂 `whenReady` 而不是就地装：`register()` 是**启动早期**跑的
    * （`main.cjs` 在模块顶层就调它），那时候 `session` 模块还不能用。
-   * 反正网页标签要等用户点开才加载，装得再晚也来得及。
    *
    * 那个 `typeof` 判断是给自检留的：自检在**纯 Node** 里跑，假 electron 只有
    * 它 stub 出来的那几个方法（没有 whenReady）。
@@ -166,121 +194,49 @@ function register() {
     })
   }
 
-  /* ── 渲染层回话 ── */
-  ipcMain.handle('browser:result', async (_event, payload) => {
-    const id = String(payload?.id ?? '')
+  /*
+   * ── 渲染层推「当前标签的 webContents id」（B5，取代旧的 browser:result）──
+   *
+   * 两种用途：
+   *   · 纯缓存更新（无 `requestId`）：标签就绪 / 切换时推一下，主进程记下来直连用。
+   *   · 回 navigate 的话（带 `requestId`）：主进程读正文、resolve 那条请求。
+   */
+  ipcMain.handle('browser:active', async (_event, payload) => {
+    const sessionId = String(payload?.sessionId ?? '')
+    const wcid = Number(payload?.webContentsId) || 0
+    if (wcid) activeTabs.set(sessionId, wcid)
+    else activeTabs.delete(sessionId)
+
+    const id = String(payload?.requestId ?? '')
+    if (!id) return { ok: true } // 只是缓存更新，没人在等
     const entry = pending.get(id)
-    if (!entry) return { ok: false, error: '这个请求已经过期' }
+    if (!entry) return { ok: true }
 
     clearTimeout(entry.timer)
     pending.delete(id)
 
-    const result = payload?.result ?? {}
-    if (result.ok !== true) {
+    if (payload?.ok !== true) {
       entry.resolve({
         ok: false,
-        error: String(result.error ?? '读取失败'),
+        error: String(payload?.error ?? '读取失败'),
         /* 密码框会走这条：先不填，让工具回去问用户 */
-        needsConfirm: result.needsConfirm === true,
+        needsConfirm: payload?.needsConfirm === true,
       })
       return { ok: true }
     }
 
-    /*
-     * ★ B2/B3（2026-10-09）：渲染层只报「页面已就绪 + 它的 webContents id」，
-     * 具体动作由**主进程**做 —— 读正文（CDP Runtime.evaluate）、读元素、算落点、
-     * 聚焦，全在 `core/browse-read.cjs` / `core/browse-ops.cjs`。
-     * 渲染层的活儿缩到「导航 + 等就绪 + 回 wcid」。
-     * 这一条必须排在 click / type / snapshot / wcid **之前**：那三种旧回复里也会带
-     * `webContentsId`，抢在后面就把 ready 当成别的了。
-     */
-    if (result.ready === true) {
-      const wcid = Number(result.webContentsId) || 0
-      try {
-        if (entry.action === 'snapshot') {
-          entry.resolve({ ok: true, snapshot: await browseOps.runSnapshot(wcid) })
-        } else if (entry.action === 'click') {
-          const point = await browseOps.runClickPoint(wcid, entry.payload.index, entry.payload.force)
-          if (point?.ok) {
-            entry.resolve({
-              ok: true,
-              click: point.label ?? '',
-              obstructed: point.obstructed === true,
-              x: Number(point.x) || 0,
-              y: Number(point.y) || 0,
-              webContentsId: wcid,
-            })
-          } else {
-            entry.resolve({ ok: false, error: String(point?.error ?? '点击失败') })
-          }
-        } else if (entry.action === 'type') {
-          const focus = await browseOps.runFocus(wcid, entry.payload.index, entry.payload.authorized)
-          if (focus?.ok) {
-            entry.resolve({
-              ok: true,
-              into: focus.into ?? '',
-              password: focus.password === true,
-              webContentsId: wcid,
-            })
-          } else if (focus?.needsConfirm) {
-            /* 密码框：先不填，回去让工具问用户 */
-            entry.resolve({ ok: false, needsConfirm: true, error: '需要用户确认' })
-          } else {
-            entry.resolve({ ok: false, error: String(focus?.error ?? '输入失败') })
-          }
-        } else if (entry.action === 'nav') {
-          /*
-           * ★ B4（2026-10-09）：后退 / 前进也改由**主进程**经 CDP 做
-           * （`Page.getNavigationHistory` + `Page.navigateToHistoryEntry`，见
-           * `core/browse-history.cjs`）。渲染层只负责「webview 就绪 + 报 wcid」，
-           * 不再自己挪历史。省掉的是渲染层那一套「goBack + 页面 history 兜底 +
-           * 监听导航事件核实」，也顺手把导航历史换成 DevTools 那份（比 canGoBack 可靠）。
-           */
-          const step = entry.payload.direction === 'forward' ? 'forward' : 'back'
-          const outcome = await withTimeout(
-            browseHistory.stepHistory(wcid, step),
-            READ_TIMEOUT_MS,
-            '换页超时（页面卡住了或一直没响应）',
-          )
-          if (!outcome.moved) {
-            entry.resolve({
-              ok: false,
-              error: browseHistory.navBlockedText(step, outcome, outcome.before),
-            })
-          } else {
-            await readBodyInto(entry, wcid, step)
-          }
-        } else {
-          /* navigate：读正文 */
-          await readBodyInto(entry, wcid, undefined)
-        }
-      } catch (error) {
-        entry.resolve({
-          ok: false,
-          error: `操作网页失败：${error instanceof Error ? error.message : String(error)}`,
-        })
-      }
-      return { ok: true }
+    try {
+      entry.resolve(await browseAct.readBody(wcid, undefined))
+    } catch (error) {
+      entry.resolve({
+        ok: false,
+        error: `操作网页失败：${error instanceof Error ? error.message : String(error)}`,
+      })
     }
-
-    /*
-     * wcid：单问「当前 webview 的 webContents id」（browse_ax 读无障碍树要用，
-     * 独立于某次操作）。browse_ax 自己会再经 CDP 读树。
-     */
-    if (result.webContentsId !== undefined) {
-      entry.resolve({ ok: true, webContentsId: Number(result.webContentsId) || 0 })
-      return { ok: true }
-    }
-
-    /*
-     * 走到这里 = 渲染层回了个**认不出来**的形状。直接判失败，别让工具干等到超时。
-     * 正常路径只有两种形状：`ready`（页面就绪，动作交主进程做）与 `wcid`（单问 id）。
-     */
-    entry.resolve({ ok: false, error: '渲染层回了个无法识别的结果' })
     return { ok: true }
   })
 
   return { request }
 }
 
-module.exports = { register, request, REQUEST_TIMEOUT_MS }
+module.exports = { register, request, REQUEST_TIMEOUT_MS, wcidFor }

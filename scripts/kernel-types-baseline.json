@@ -1,6 +1,6 @@
 {
   "note": "内核 .cjs 的 checkJs 基线：只许下调（修一条改一条），不许上涨。重拍：npm run typecheck:kernel -- --write-baseline",
-  "total": 208,
+  "total": 193,
   "entries": {
     "electron/boot-cleanup.cjs": {
       "TS2339": 1
@@ -184,24 +184,6 @@
       "TS2339": 1
     },
     "electron/core/tools/approval.cjs": {
-      "TS2339": 1
-    },
-    "electron/core/tools/browse-ax.cjs": {
-      "TS2339": 1
-    },
-    "electron/core/tools/browse-click.cjs": {
-      "TS2339": 5
-    },
-    "electron/core/tools/browse-elements.cjs": {
-      "TS2339": 1
-    },
-    "electron/core/tools/browse-nav.cjs": {
-      "TS2339": 1
-    },
-    "electron/core/tools/browse-type.cjs": {
-      "TS2339": 6
-    },
-    "electron/core/tools/browse.cjs": {
       "TS2339": 1
     },
     "electron/core/tools/generate-image.cjs": {

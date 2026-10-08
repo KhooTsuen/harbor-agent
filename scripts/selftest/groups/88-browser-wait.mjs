@@ -31,6 +31,7 @@ export async function run() {
   const handlerSrc = readFileSync(join(ROOT, 'electron/handlers/browser.cjs'), 'utf8')
   const readSrc = readFileSync(join(ROOT, 'electron/core/browse-read.cjs'), 'utf8')
   const opsSrc = readFileSync(join(ROOT, 'electron/core/browse-ops.cjs'), 'utf8')
+  const actSrc = readFileSync(join(ROOT, 'electron/core/browse-act.cjs'), 'utf8')
 
   group('浏览器 / 等待的时间账 + CDP 化')
 
@@ -41,7 +42,7 @@ export async function run() {
     rendererMs > 0 && mainMs > 0 && rendererMs < mainMs,
     `渲染层 ${rendererMs}ms vs 主进程 ${mainMs}ms`,
   )
-  const readMs = numberConst(handlerSrc, 'READ_TIMEOUT_MS')
+  const readMs = numberConst(actSrc, 'READ_TIMEOUT_MS')
   check(
     '★ 主进程读正文有独立上限，且 < 等界面上限（页面卡死时兜得住）',
     readMs > 0 && readMs < mainMs,
@@ -54,10 +55,10 @@ export async function run() {
       /waitForLoad\(view, budget\)/.test(driverSrc),
   )
 
-  /* ── B2/B3：页面操作全在**主进程经 CDP**做，渲染层只报 ready ── */
+  /* ── B2/B3/B5：页面操作全在**主进程经 CDP**做，渲染层只推 webContentsId ── */
   check(
-    '★ B2/B3：渲染层只报 ready + webContentsId（不再跑任何页面脚本）',
-    driverSrc.includes('ready: true') &&
+    '★ B5：渲染层只推 webContentsId（经 browserActive），不再跑任何页面脚本',
+    driverSrc.includes('browserActive') &&
       driverSrc.includes('webContentsId') &&
       !driverSrc.includes('READ_SCRIPT') &&
       !driverSrc.includes('SNAPSHOT_SCRIPT') &&
@@ -89,4 +90,40 @@ export async function run() {
   )
   /* 主进程那句误导人的话还在（它是兜底），但渲染层必须能先回话 */
   check('主进程的超时兜底仍然保留', handlerSrc.includes('界面没有在 45 秒内回应'))
+
+  /* ══════════════════════════════════════════════════════════════
+     B5（2026-10-09，浏览器 CDP 化收尾）：操作类动作不再往返渲染层
+
+     `browser:result`（渲染层回话）换成 `browser:active`（渲染层推 wcid）——
+     页面操作主进程拿着 wcid 经 CDP 直连做。这几条线漂了都是**静默**的：
+     通道登记漏了、preload 没换、SKIP 没跟上，都只有真机才现形。
+     ══════════════════════════════════════════════════════════════ */
+  group('浏览器 / B5：操作动作走主进程直连')
+
+  const handlerFull = readFileSync(join(ROOT, 'electron/handlers/browser.cjs'), 'utf8')
+  check(
+    '★ handler 注册 browser:active、不再注册 browser:result',
+    handlerFull.includes("ipcMain.handle('browser:active'") &&
+      !handlerFull.includes("'browser:result'"),
+  )
+  check('★ handler 分了「navigate 往返」与「其余直连」两条路', /action === 'navigate' \? navigateRequest/.test(handlerFull))
+  check('★ 直连前先校验缓存里的 wcid 还活着', handlerFull.includes('function wcidFor') && handlerFull.includes('cdp.resolve'))
+
+  const channelsSrc = readFileSync(join(ROOT, 'electron/ipc-channels.cjs'), 'utf8')
+  check(
+    '★ 通道清单：登记 browser:active、去掉 browser:result',
+    channelsSrc.includes("'browser:active'") && !channelsSrc.includes("'browser:result'"),
+  )
+
+  const preloadSrc = readFileSync(join(ROOT, 'electron/preload.cjs'), 'utf8')
+  check(
+    '★ preload：暴露 browserActive、不再有 browserResult',
+    preloadSrc.includes('browserActive:') && !preloadSrc.includes('browserResult:'),
+  )
+
+  const logSrc = readFileSync(join(ROOT, 'electron/core/log-actions.cjs'), 'utf8')
+  check('★ 高频通道 SKIP 跟上（browser:active 不写流水）', logSrc.includes("'browser:active'"))
+
+  check('★ 动作实现独立成 core/browse-act.cjs（handler 不再过 300 行）', /runOp/.test(actSrc))
+  check('★ browse-act 顶层不 require electron（能被纯 Node 检查）', !/require\(['"]electron['"]\)/.test(actSrc))
 }

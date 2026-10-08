@@ -37,7 +37,7 @@ const EXPECTED_CHANNELS = [
   'backup:open',
   'backup:remove',
   'backup:restore',
-  'browser:result',
+  'browser:active',
   /* 能力探测（实测一个模型会什么）—— 和 provider:ping / provider:listModels 一组 */
   'provider:probe',
   'capability:grant',

@@ -17,8 +17,10 @@ import {
    这里负责等 webview 挂上 → 导航 → 报就绪（读正文 / 读元素 / 点 / 打字 / 换历史
    全交**主进程**经 CDP 做，见 `electron/core/browse-*.cjs`）。
 
-   分两半是因为：接请求的地方必须**一直挂着**（不然没人接），
-   而操作 webview 必须等 BrowserTab 挂载（切过去才有元素）。
+   ★ B5（2026-10-09）：这里现在**只处理 `navigate`**（开 / 复用标签）——
+     那是唯一必须由渲染层做的事（`<webview>` 是它的 DOM 元素）。其余动作主进程
+     手里有 webContentsId 就直连了，不再往这儿派。就绪时把 wcid 推给主进程
+     （`browserActive`），主进程据此读正文 / 缓存下来直连。
 
    ★ 全部等待共享一条总预算（见 `browseWait.ts`）：主进程等 45 秒，
      这条预算是 30 秒 —— 渲染层**必须**先回话。真机踩过：三段等待各管各的，
@@ -27,17 +29,49 @@ import {
    ══════════════════════════════════════════════════════════════ */
 
 /**
- * 消费 store 里的 pending 请求。
+ * 消费 store 里的 pending 请求（B5 后只会是 navigate），并**把当前标签的 wcid 推给主进程**。
  *
  * @param webviewRef 指向 BrowserTab 里那个 webview 元素
+ * @param sessionId  当前会话号（推 wcid 时带上，主进程按会话缓存）
+ * @param activeId   当前**显示**的标签 id（换标签要重新推 —— 驱动的是另一个 webview）
  */
-export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | null>): void {
+export function useBrowseDriver(
+  webviewRef: React.RefObject<WebviewElement | null>,
+  sessionId: string,
+  activeId: string,
+): void {
   const pending = useBrowserStore((s) => s.pending)
   const clearPending = useBrowserStore((s) => s.clearPending)
   /* 正在处理的那一个，避免重复执行 */
   const busyRef = useRef<string | null>(null)
   /* 上一次 effect 还活着吗 —— 见下面那道闸的注释 */
   const liveRef = useRef(false)
+
+  /*
+   * ★ B5（2026-10-09）：把**当前**标签的 webContentsId 推给主进程。
+   *
+   * 主进程靠它经 CDP 直连这个 webview（读正文 / 读元素 / 点 / 打字 / 换历史），
+   * 不必每次动作都往返渲染层。三种时机都要推：切换标签（驱动的是另一个 webview）、
+   * `dom-ready`（页面就绪，wcid 才可用）、页内导航后（同上）。
+   *
+   * ⚠️ 只能推**当前那个**：webviewRef 的回调只把 active 的那个赋进来（见 BrowserTab 的 ref），
+   * 所以这里拿到的就是「正在被 Agent 驱动」的那个，不会推错成别的标签。
+   */
+  useEffect(() => {
+    const view = webviewRef.current
+    if (!view) return
+    const push = (): void => {
+      const wcId = view.getWebContentsId?.()
+      if (typeof wcId !== 'number') return
+      void window.workbench?.browserActive?.({ sessionId, webContentsId: wcId })
+    }
+    push()
+    const names = ['dom-ready', 'did-navigate', 'did-navigate-in-page', 'did-finish-load']
+    for (const name of names) view.addEventListener(name, push)
+    return () => {
+      for (const name of names) view.removeEventListener(name, push)
+    }
+  }, [webviewRef, sessionId, activeId])
 
   useEffect(() => {
     if (!pending) return
@@ -58,17 +92,14 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
      */
     let replied = false
 
-    const reply = (result: {
-      ok: boolean
-      /** wcid：当前 webview 的 webContents id */
-      webContentsId?: number
-      /** ★ 页面已就绪 —— 正文/元素/落点/历史全由主进程经 CDP 做（B2/B3/B4） */
-      ready?: boolean
-      error?: string
-    }): void => {
+    const push = (result: { ok: boolean; webContentsId?: number; error?: string }): void => {
       replied = true
       /* 拿 id 的这一刻就记牢：cleanup 里再读 pending 可能已经是下一条了 */
-      void window.workbench?.browserResult?.(pending!.id, result)
+      void window.workbench?.browserActive?.({
+        requestId: pending!.id,
+        sessionId: pending!.sessionId ?? '',
+        ...result,
+      })
     }
 
     async function run(): Promise<void> {
@@ -77,7 +108,7 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
       const view = await waitForElement(() => webviewRef.current, budget)
       if (!alive) return
       if (!view) {
-        reply({
+        push({
           ok: false,
           error: `等浏览器标签出来超时（已等 ${Math.round(BROWSE_BUDGET_MS / 1000)} 秒）。右侧那个「浏览器」标签手动点开一下，再让我读。`,
         })
@@ -90,54 +121,38 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         await waitForDomReady(view, budget)
         if (!alive) return
 
-        /* wcid：单问当前 webview 的 webContents id（browse_ax 读无障碍树要用） */
-        if (pending!.action === 'wcid') {
-          const wcId = view.getWebContentsId?.()
-          reply({ ok: true, webContentsId: typeof wcId === 'number' ? wcId : 0 })
-          return
-        }
-
         /*
-         * nav（后退 / 前进）在 B4（2026-10-09）后不再由渲染层做 —— 渲染层只等
-         * 「webview 就绪」并回报 wcid，历史移动由**主进程**经 CDP 完成
-         * （`core/browse-history.cjs`）。所以 nav 与 snapshot/click/type/navigate
-         * 一样，走到下面的通用「报 ready」即可。
+         * 导航：新标签的 `src` 已经是目标地址了，webview 自己会去 —— 这种情况不用再
+         * loadURL（多调一次会白闪一下）。只有复用旧标签、地址不一致时才手动导。
+         * 比地址用 sameUrl：`example.com` 和 `example.com/` 是同一个页面，严格比较
+         * 会判定成不一致 → 白 loadURL 一次 → 页面重新加载（表单就没了）。
          */
-
-        if (pending!.action === 'navigate') {
-          /*
-           * 导航：新标签的 `src` 已经是目标地址了，webview 自己会去 —— 这种情况不用再
-           * loadURL（多调一次会白闪一下）。只有复用旧标签、地址不一致时才手动导。
-           * 比地址用 sameUrl：`example.com` 和 `example.com/` 是同一个页面，严格比较
-           * 会判定成不一致 → 白 loadURL 一次 → 页面重新加载（表单就没了）。
-           */
-          const current = view.getURL?.() ?? ''
-          if (current && !sameUrl(current, pending!.url)) {
-            const loading = view.loadURL?.(pending!.url)
-            if (loading && typeof loading.then === 'function') await loading.catch(() => undefined)
-            await waitForLoad(view, budget)
-          }
+        const current = view.getURL?.() ?? ''
+        if (current && !sameUrl(current, pending!.url)) {
+          const loading = view.loadURL?.(pending!.url)
+          if (loading && typeof loading.then === 'function') await loading.catch(() => undefined)
+          await waitForLoad(view, budget)
         }
 
         /*
-         * snapshot / click / type / navigate / nav 走到这儿 = **页面就绪**。
-         * 动作全交**主进程**经 CDP 做（B2 读正文、B3 读元素/算落点/聚焦）——
+         * 走到这儿 = **页面就绪**。读正文 / 读元素 / 点 / 打字 / 换历史全交
+         * **主进程**经 CDP 做（见 `electron/core/browse-*.cjs`）——
          * 渲染层只负责「开标签 + 导航 + 等就绪 + 报 webContentsId」。
          *
          * 但超时仍要**渲染层自己说**：不让主进程用「界面没有在 45 秒内回应」这种
          * 猜出来的原因替它发言（真机上就是这么误导的：界面其实在干活）。
          */
         if (budget.expired) {
-          reply({
+          push({
             ok: false,
             error: `等页面就绪超时（已等 ${Math.round(BROWSE_BUDGET_MS / 1000)} 秒，这个站点可能太慢或一直加载中）`,
           })
           return
         }
-        reply({ ok: true, ready: true, webContentsId: view.getWebContentsId?.() ?? 0 })
+        push({ ok: true, webContentsId: view.getWebContentsId?.() ?? 0 })
       } catch (error) {
         if (!alive) return
-        reply({ ok: false, error: error instanceof Error ? error.message : String(error) })
+        push({ ok: false, error: error instanceof Error ? error.message : String(error) })
       } finally {
         clearPending()
       }
@@ -164,7 +179,7 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
        */
       const current = useBrowserStore.getState().pending
       if (!replied && current?.id !== pending!.id) {
-        reply({
+        push({
           ok: false,
           error:
             '页面已切换：这条浏览请求在执行途中被打断了（浏览器标签换了、被关了，或者面板被切走）。重新发起一次，或先手动点开右侧「浏览器」再试。',

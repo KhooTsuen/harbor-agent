@@ -59,23 +59,20 @@ describe('浏览器标签：sameTab（中转页不开新标签）', () => {
 describe('浏览器标签：Agent 的操作不落在用户自己开的标签上', () => {
   beforeEach(() => useBrowserStore.getState().closeAll())
 
-  it('★ 用户切回自己那个标签看时，Agent 的点击拨回 Agent 的标签', () => {
+  it('★ 用户切回自己那个标签看时，Agent 要操作就把它拨回 Agent 的标签', () => {
     nav('r1', 's1', 'https://example.com')
     const agentId = useBrowserStore.getState().tabs[0]?.id
     /* 用户自己开一个 → activeId 指向它 */
     useBrowserStore.getState().open('https://user.example', 's1')
-    useBrowserStore
-      .getState()
-      .requestBrowse({ id: 'p1', action: 'click', url: '', index: 0, sessionId: 's1' })
+    /* B5：操作类动作不走 store，靠 selectAgentTab 把当前标签拨回 Agent 那个 */
+    useBrowserStore.getState().selectAgentTab('s1')
     expect(useBrowserStore.getState().activeId).toBe(agentId)
   })
 
   it('本会话没有 Agent 标签时保持原样（用户让我操作他正看的页面）', () => {
     useBrowserStore.getState().open('https://user.example', 's1')
     const userId = useBrowserStore.getState().tabs[0]?.id
-    useBrowserStore
-      .getState()
-      .requestBrowse({ id: 'p1', action: 'click', url: '', index: 0, sessionId: 's1' })
+    useBrowserStore.getState().selectAgentTab('s1')
     expect(useBrowserStore.getState().activeId).toBe(userId)
   })
 

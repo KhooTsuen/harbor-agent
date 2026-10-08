@@ -28,30 +28,19 @@ export interface BrowserBridge {
   onBrowserRequest: (callback: (request: BrowserRequestEvent) => void) => () => void
   /** 网页里 window.open / target=_blank 的地址（主进程拦下真窗口后转过来的） */
   onBrowserOpenTab?: (callback: (url: string) => void) => () => void
-  browserResult: (
-    id: string,
-    result: {
-      ok: boolean
-      text?: string
-      html?: string
-      title?: string
-      url?: string
-      snapshot?: unknown
-      click?: string
-      /** click: 落点被遮挡（force 强点时的回报） */
-      obstructed?: boolean
-      /** click: 已校验的落点坐标（主进程据此派发真鼠标事件） */
-      x?: number
-      y?: number
-      type?: string
-      into?: string
-      password?: boolean
-      needsConfirm?: boolean
-      /** nav 成功时回一句「往哪个方向走的」（主进程据此写人话） */
-      nav?: string
-      /** wcid / click / type：当前 webview 的 webContents id（主进程派发真事件要用） */
-      webContentsId?: number
-      error?: string
-    },
-  ) => Promise<{ ok: boolean; error?: string }>
+  /**
+   * 把「当前标签的 webContents id」（B5）推给主进程 —— 主进程据此经 CDP 直连，
+   * 不必每次都问渲染层。两种用途：① 纯缓存更新（带 sessionId + webContentsId）；
+   * ② 回 navigate 的话（再带 `requestId` + `ready`）。
+   */
+  browserActive: (payload: {
+    sessionId?: string
+    webContentsId?: number
+    /** 回哪一条 navigate 请求（纯缓存更新时不带） */
+    requestId?: string
+    /** 页面已就绪（回 navigate 时带） */
+    ready?: boolean
+    ok?: boolean
+    error?: string
+  }) => Promise<{ ok: boolean; error?: string }>
 }

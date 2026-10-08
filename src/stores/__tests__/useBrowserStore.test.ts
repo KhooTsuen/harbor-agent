@@ -39,15 +39,26 @@ describe('浏览器标签：Agent 请求', () => {
     expect(useBrowserStore.getState().tabs).toHaveLength(2)
   })
 
-  it('snapshot / click / type 只操作当前页面，绝不开新标签', () => {
-    nav('r1', 'https://example.com')
-    for (const action of ['snapshot', 'click', 'type'] as const) {
-      useBrowserStore.getState().requestBrowse({ id: `p-${action}`, action, url: '' })
-    }
-    const state = useBrowserStore.getState()
-    expect(state.tabs).toHaveLength(1)
-    /* 非导航请求排在导航那条后面（真机反馈：不再互相顶掉） */
-    expect(state.queue.map((q) => q.action)).toEqual(['snapshot', 'click', 'type'])
+  it('★ B5：Agent 的操作动作（snapshot/click/type/nav）不再经过 store', () => {
+    /* 只有 navigate 走 requestBrowse（开标签）；其余动作用 selectAgentTab，不建标签 */
+    useBrowserStore.getState().open('https://user.example', 's1')
+    const userId = useBrowserStore.getState().tabs[0]?.id
+    navIn('r1', 's1', 'https://example.com')
+    const agentId = useBrowserStore.getState().tabs[1]?.id
+    const before = useBrowserStore.getState().tabs.length
+
+    /* 用户切回自己那个标签看 → Agent 要操作时把它拨回自己那个（但不新建标签、不入队） */
+    useBrowserStore.getState().select(userId ?? '')
+    useBrowserStore.getState().selectAgentTab('s1')
+    expect(useBrowserStore.getState().activeId).toBe(agentId)
+    expect(useBrowserStore.getState().tabs).toHaveLength(before)
+
+    /* 本会话没有 Agent 标签时保持原样（用户让我操作他正看的页面） */
+    useBrowserStore.getState().closeAll()
+    useBrowserStore.getState().open('https://user.example', 's1')
+    const onlyUser = useBrowserStore.getState().activeId
+    useBrowserStore.getState().selectAgentTab('s1')
+    expect(useBrowserStore.getState().activeId).toBe(onlyUser)
   })
 })
 

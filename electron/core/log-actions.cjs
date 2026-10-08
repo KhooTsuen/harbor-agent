@@ -34,7 +34,7 @@ const SKIP = new Set([
   'shell:data',
   'shell:write',
   'shell:resize',
-  'browser:result',
+  'browser:active',
   'chat:event',
   'chat:confirm',
   'log:action',

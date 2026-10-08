@@ -5,6 +5,21 @@
 
 ## [未发布]
 
+- **浏览器操作不再每次往返渲染层：`browser:result` 换成 `browser:active`**（2026-10-09，
+  浏览器 CDP 化收尾 B5）。B1–B4 之后，页面的读正文 / 读元素 / 点 / 打字 / 换历史
+  已经在主进程经 CDP 做，但**每次动作仍要渲染层回一次话**（`browser:result`）才算完。
+  B5 把那次往返也去掉：渲染层在标签就绪 / 切换时把当前 webview 的 `webContentsId`
+  推给主进程（新通道 `browser:active`，取代 `browser:result`），主进程缓存下来
+  （`handlers/browser.cjs` 的 `activeTabs`），之后的操作**直接经 CDP 做**，不再等界面。
+  `browser:request` 仍保留 —— 「开标签」只有渲染层做得了（`<webview>` 是它的 DOM 元素），
+  所以 `navigate` 走一趟往返（渲染层开好标签、等就绪、推 `browser:active` → 主进程读正文）；
+  其余动作只借 `browser:request` **点亮界面**（角标 / 选中 agent 标签），主进程不等它。
+  动作实现从 handler 拆到 `core/browse-act.cjs`（handler 收在 300 行内）。
+  `preload` 的 `browserResult` → `browserActive`；通道清单与 `log-actions` 的高频 SKIP
+  同步换名。自检钉子随迁（`88-browser-wait` 加 B5 组、`121-browse-nav` 改盯主进程）。
+  真实 IPC 端到端（真 `<webview>` + 真 preload 走 `browser:active` 播种缓存 → snapshot /
+  type / click / nav 全直连）9/9 通过。
+
 - **浏览器「后退 / 前进」改由主进程经 CDP 做**（2026-10-09，浏览器 CDP 化 B4）。
   承接 B2/B3：`browse_nav` 原来由渲染层做 —— 调 webview 的 `goBack()`、再在页面里
   `history.back()` 兜底，同时监听 webview 导航事件核实「真的动了没有」

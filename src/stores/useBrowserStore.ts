@@ -74,8 +74,10 @@ interface BrowserState {
   select: (id: string) => void
   close: (id: string) => void
   reload: () => void
-  /** Agent 请求读某个页面：开标签 + 交给 BrowserTab 执行 */
+  /** Agent 请求读某个页面：开标签 + 交给 BrowserTab 执行（B5 后只 navigate 走它） */
   requestBrowse: (request: PendingBrowse) => void
+  /** Agent 要操作某个标签：把它选出来（只切 activeId，不开新标签，也不碰用户的标签） */
+  selectAgentTab: (sessionId: string) => void
   /** BrowserTab 处理完了 */
   clearPending: () => void
   /** Agent 动了网页（点/读/打字）——点亮右栏「浏览器」标签上的角标 */
@@ -145,30 +147,10 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
       const sid = request.sessionId ?? ''
 
       /*
-       * snapshot / click / type / nav 都不开新标签：只操作当前已经打开的页面。
-       * nav（后退/前进）换的是**这个标签自己的历史** —— 为它开新标签等于把
-       * 「退回去」变成「又开一遍刚才那页」，用户看到的也不是它退回去了。
+       * ★ B5（2026-10-09）：只有 `navigate`（开 / 复用标签）会走到这里 —— 其余动作
+       * （snapshot/click/type/nav/wcid）主进程拿着 webContentsId 经 CDP 直连做了，
+       * 不再进 store。所以下面只剩「导航」这一条路。
        *
-       * ★ 2026-10-07：这几类动作要**落在 Agent 自己那个标签上**，不碰用户自己开的
-       *   （用户点回自己开的页面看时，不拨回来的话 Agent 的点击/输入就打在他正看的
-       *   那一页上，把人家的页面点走）。本会话还没有 Agent 标签时保持原样 ——
-       *   「用户让我操作我正在看的这个页面」是正常用法，不该拒。
-       */
-      if (
-        request.action === 'snapshot' ||
-        request.action === 'click' ||
-        request.action === 'type' ||
-        request.action === 'nav' ||
-        request.action === 'wcid'
-      ) {
-        const mine = agentTabOf(state.tabs, sid, state.activeId)
-        return {
-          ...queuedOf(state, request),
-          ...(mine && mine.id !== state.activeId ? { activeId: mine.id } : {}),
-        }
-      }
-
-      /*
        * 导航 + sameTab：在**当前那个 Agent 标签**里打开，不开新的 ——
        * 这就是「中转页别占标签位」的落地（工具侧 `browse(url, sameTab: true)`）。
        * 两个讲究：
@@ -231,6 +213,16 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
         activeId: id,
         ...queuedOf(state, request),
       }
+    }),
+
+  /*
+   * Agent 要操作某个标签（B5）：把它选出来即可，不开新标签、不碰用户的标签。
+   * 主进程经 CDP 直连那个 webview 做真正的动作，这里只管界面上的「选中」。
+   */
+  selectAgentTab: (sessionId) =>
+    set((state) => {
+      const mine = agentTabOf(state.tabs, sessionId, state.activeId)
+      return mine && mine.id !== state.activeId ? { activeId: mine.id } : {}
     }),
 
   /*

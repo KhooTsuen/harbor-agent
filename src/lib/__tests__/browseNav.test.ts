@@ -38,38 +38,48 @@ describe('browse_nav 在渲染层的口径', () => {
     expect(again.notice).toBeNull()
   })
 
-  it('★ nav 在当前标签里执行：**不开新标签**（这是它存在的意义）', () => {
-    useBrowserStore.getState().open('https://example.com/list', 'sess-1')
+  it('★ B5：nav 不再经过 store（后退/前进改由主进程经 CDP 直连）', () => {
+    /* 只有 navigate 会进 store；nav 由 selectAgentTab 在界面上选中 Agent 标签就够 */
+    useBrowserStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          url: 'https://example.com/list',
+          sessionId: 'sess-1',
+          owner: 'agent',
+          reloadKey: 0,
+        },
+      ],
+      activeId: 't1',
+      pending: null,
+      queue: [],
+    })
     const before = tabsOfSession(useBrowserStore.getState().tabs, 'sess-1').length
 
-    useBrowserStore
-      .getState()
-      .requestBrowse({ id: 'r1', action: 'nav', url: '', direction: 'back', sessionId: 'sess-1' })
+    /* 用户切走 → nav 时把它拨回 Agent 的标签 */
+    useBrowserStore.getState().open('https://user.example/page', 'sess-1')
+    useBrowserStore.getState().selectAgentTab('sess-1')
 
-    expect(tabsOfSession(useBrowserStore.getState().tabs, 'sess-1').length).toBe(before)
-
-    /* 方向要一路带到 driver（它靠这个决定 goBack 还是 goForward） */
-    expect(useBrowserStore.getState().pending?.action).toBe('nav')
-    expect(useBrowserStore.getState().pending?.direction).toBe('back')
+    expect(useBrowserStore.getState().activeId).toBe('t1')
+    /* 不开新标签：用户那个标签照在，Agent 标签也照在 */
+    expect(tabsOfSession(useBrowserStore.getState().tabs, 'sess-1').length).toBe(before + 1)
+    /* 也不进 pending（没人等回话） */
+    expect(useBrowserStore.getState().pending).toBeNull()
   })
 
-  it('一个页面都没开时也不开标签（桥那边会当面回一句「先 browse 打开」）', () => {
-    useBrowserStore
-      .getState()
-      .requestBrowse({ id: 'r2', action: 'nav', url: '', sessionId: 'sess-1' })
-
-    expect(tabsOfSession(useBrowserStore.getState().tabs, 'sess-1')).toHaveLength(0)
-    expect(useBrowserStore.getState().pending?.action).toBe('nav')
-  })
-
-  it('nav 走队列，不顶掉正在跑的那一条（并发顺序跟请求一致）', () => {
-    useBrowserStore.getState().open('https://example.com/a', 'sess-1')
-    useBrowserStore
-      .getState()
-      .requestBrowse({ id: 'r1', action: 'nav', url: '', direction: 'back', sessionId: 'sess-1' })
-    useBrowserStore
-      .getState()
-      .requestBrowse({ id: 'r2', action: 'nav', url: '', sessionId: 'sess-1' })
+  it('navigate 才走队列（B5 后唯有它会入队）', () => {
+    useBrowserStore.getState().requestBrowse({
+      id: 'r1',
+      action: 'navigate',
+      url: 'https://example.com/a',
+      sessionId: 'sess-1',
+    })
+    useBrowserStore.getState().requestBrowse({
+      id: 'r2',
+      action: 'navigate',
+      url: 'https://example.com/b',
+      sessionId: 'sess-1',
+    })
 
     expect(useBrowserStore.getState().pending?.id).toBe('r1')
     expect(useBrowserStore.getState().queue.map((item) => item.id)).toEqual(['r2'])

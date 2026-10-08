@@ -66,8 +66,6 @@ export function BrowserTab() {
   /* 前进/后退能不能点（webview 的 API 是同步的，但按钮要重渲才知道） */
   const [nav, setNav] = useState({ back: false, forward: false })
 
-  useBrowseDriver(webviewRef)
-
   /* 前进/后退：调用一律走 webviewNav —— 那边裹了 try/catch（没就绪时调它会抛） */
   function go(step: 'back' | 'forward'): void {
     goInView(webviewRef.current, step)
@@ -108,6 +106,9 @@ export function BrowserTab() {
       for (const name of names) view.removeEventListener(name, sync)
     }
   }, [active?.id])
+
+  /* ★ B5：把当前标签的 wcid 推给主进程，交给 useBrowseDriver（它已拿着 webviewRef）。 */
+  useBrowseDriver(webviewRef, sessionId, active?.id ?? '')
 
   function open(input: string): void {
     const url = normalizeUrl(input)

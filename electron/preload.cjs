@@ -279,8 +279,8 @@ const api = {
   /** 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
   onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
 
-  /** 把浏览结果回给主进程（不回的话那边会一直等） */
-  browserResult: (id, result) => call('browser:result', { id, result }),
+  /** 把「当前标签的 webContents id / 就绪」推给主进程（B5：主进程据此直连，不必每次往返） */
+  browserActive: (payload) => call('browser:active', payload),
 
   /* 界面动作（点击了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
   logAction: (entry) => report(entry),

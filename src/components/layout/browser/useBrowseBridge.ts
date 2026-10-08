@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useBrowserStore, visibleTabOf, type PendingBrowse } from '@/stores/useBrowserStore'
+import { useBrowserStore, type PendingBrowse } from '@/stores/useBrowserStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { getActiveThread } from '@/stores/app/selectors'
@@ -10,11 +10,14 @@ import type { BrowserRequestEvent } from '@/types/backend'
    接住主进程来的浏览请求
 
    `<webview>` 是渲染进程里的 DOM 元素，主进程碰不到 ——
-   所以「Agent 用浏览器」要走一个往返：
+   所以「Agent 用浏览器」里，**开标签**这一步必须走渲染层；其余动作（读正文 /
+   读元素 / 点 / 打字 / 换历史）主进程拿着 webContentsId 经 CDP 直连做了（B5）：
 
-     工具（主进程）→ browser:request → 这里 → 开标签 → 切到浏览器 tab
-                                     → BrowserTab 读正文 → browser:result
-                                                        → 主进程 resolve
+     navigate：工具（主进程）→ browser:request → 这里 → 开/复用标签 → 切到浏览器 tab
+                                                              → BrowserTab 导航、等就绪
+                                                              → browser:active → 主进程读正文
+     其余动作：工具（主进程）→ browser:request → 这里只点亮界面（角标 / 选中 agent 标签）
+                                  主进程**不等回话**，同时已经在直连做了
 
    **这个 hook 挂在 RightPanel 上（一直挂着的那个），不是 BrowserTab。**
    因为请求来的时候浏览器标签可能根本没开 —— 挂在 BrowserTab 里就没人接，
@@ -66,58 +69,30 @@ export function useBrowseBridge(): void {
         if (notice) toastRef.current(notice.level, notice.title, notice.detail)
       }
 
-      if (
-        req.action === 'snapshot' ||
-        req.action === 'click' ||
-        req.action === 'type' ||
-        req.action === 'nav' ||
-        req.action === 'wcid'
-      ) {
+      if (req.action === 'navigate') {
         /*
-         * 读 / 点 / 打字 / 回退：都在**当前**这个标签里做，不开新标签（nav 走的是
-         * 它自己的历史，见 useBrowserStore.requestBrowse 里的注释）。
-         * 前提是浏览器里已经有打开的页面 —— 没有就直说，别让主进程干等 45 秒。
-         *
-         * 「有没有页面」按**本会话**看（真机反馈 6）：别的会话开着页面不算 ——
-         * 那些页面拿不来给这个会话点/打字（可能完全是另一个站点）。
+         * 把请求放进 store —— BrowserTab 挂载后会消费它（开标签 / 换当前标签的地址）。
+         * 同时把右侧切到「浏览器」：Agent 不该在用户看不见的地方偷偷开网页。
          */
-        const { tabs, activeId } = useBrowserStore.getState()
-        if (!visibleTabOf(tabs, sessionId, activeId)) {
-          void window.workbench?.browserResult?.(req.id, {
-            ok: false,
-            error: '浏览器里还没有打开的页面，先 browse 打开一个网页',
-          })
-          return
-        }
+        if (!req.url) return
         useBrowserStore.getState().requestBrowse({
           id: req.id,
-          action: req.action,
-          url: '',
-          index: req.index,
-          text: req.text,
-          pressEnter: req.pressEnter,
-          authorized: req.authorized,
-          force: req.force,
-          direction: req.direction,
+          action: 'navigate',
+          url: String(req.url),
+          /* 透传「在当前标签里打开」—— AI 靠它压住标签的堆叠（见 tools/browse.cjs） */
+          sameTab: req.sameTab === true,
           sessionId,
         })
         useUIStore.getState().setActiveRightTab('browser')
         return
       }
-      if (req.action !== 'navigate' || !req.url) return
 
       /*
-       * 把请求放进 store —— BrowserTab 挂载后会消费它。
-       * 同时把右侧切到「浏览器」：Agent 不该在用户看不见的地方偷偷开网页。
+       * 其余动作（读元素 / 点 / 打字 / 换历史 / 取 wcid）：**主进程已经拿着 wcid
+       * 经 CDP 直连做了**（B5）—— 这条 request 只是给界面看的：点亮角标、把 Agent
+       * 那个标签选出来、面板切到浏览器。这里**不设 pending、不回话**，主进程没在等。
        */
-      useBrowserStore.getState().requestBrowse({
-        id: req.id,
-        action: 'navigate',
-        url: String(req.url),
-        /* 透传「在当前标签里打开」—— AI 靠它压住标签的堆叠（见 tools/browse.cjs） */
-        sameTab: req.sameTab === true,
-        sessionId,
-      })
+      useBrowserStore.getState().selectAgentTab(sessionId)
       useUIStore.getState().setActiveRightTab('browser')
     })
 
@@ -147,5 +122,10 @@ export function failPending(reason: string): void {
   const pending: PendingBrowse | null = useBrowserStore.getState().pending
   if (!pending) return
   useBrowserStore.getState().clearPending()
-  void window.workbench?.browserResult?.(pending.id, { ok: false, error: reason })
+  void window.workbench?.browserActive?.({
+    requestId: pending.id,
+    sessionId: pending.sessionId ?? '',
+    ok: false,
+    error: reason,
+  })
 }
