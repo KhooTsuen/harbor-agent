@@ -18,16 +18,12 @@
  */
 
 const { formatAxTree } = require('../ax-tree.cjs')
+const cdp = require('../cdp.cjs')
 
-/** 拿 webContents 读无障碍树（主进程能力，渲染层给不了） */
+/** 拿 webContents 读无障碍树（主进程能力，渲染层给不了）—— CDP 那层在 core/cdp.cjs */
 async function readAxTree(webContentsId) {
-  const { webContents } = require('electron')
-  const wc = webContents.fromId(Number(webContentsId))
-  if (!wc || wc.isDestroyed()) throw new Error('那个网页已经关了')
   try {
-    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
-    const res = await wc.debugger.sendCommand('Accessibility.getFullAXTree')
-    return formatAxTree(res?.nodes ?? [])
+    return formatAxTree(await cdp.getFullAxTree(webContentsId))
   } catch (e) {
     throw new Error('读无障碍树失败：' + (e?.message ?? String(e)))
   }

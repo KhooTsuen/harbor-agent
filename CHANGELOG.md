@@ -5,6 +5,13 @@
 
 ## [未发布]
 
+- **CDP 调用收进一处（浏览器 CDP 化的地基）**（2026-10-09）。主进程用
+  `webContents.debugger` 直连 webview 的 webContents（取无障碍树 / 跑脚本 / 派输入）
+  这件事，原来散在各处自己 `attach` + `sendCommand`（`browse-ax.cjs`、`selftest-report.cjs`）。
+  新增 `electron/core/cdp.cjs` 收敛成 `attach` / `send` / `evaluate` / `getFullAxTree`，
+  并把「页面抛错只留第一行、别把堆栈灌给模型」抽成纯函数 `valueOfEvaluate`（可纯 Node 自检）。
+  `browse-ax.cjs` 改走它。新增自检组 `135-cdp`。
+
 - **IPC 通道清单不再是「漂了没人知道」**（2026-10-09）。自检挨个点名的
   `electron/ipc-channels.cjs` 那份手写通道清单，实测**真漂了**：源码里注册了 152 个通道，
   清单漏登记 `log:action` / `log:error` 两个（`handlers/log.cjs` 里走 `ipcMain.on` 注册的
