@@ -1,0 +1,277 @@
+{
+  "note": "内核 .cjs 的 checkJs 基线：只许下调（修一条改一条），不许上涨。重拍：npm run typecheck:kernel -- --write-baseline",
+  "total": 208,
+  "entries": {
+    "electron/boot-cleanup.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/action.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/artifact.cjs": {
+      "TS2741": 1,
+      "TS2367": 1
+    },
+    "electron/core/audit.cjs": {
+      "TS2339": 2
+    },
+    "electron/core/capability.cjs": {
+      "TS2339": 3,
+      "TS2353": 1,
+      "TS2322": 1
+    },
+    "electron/core/clarify-timeout.cjs": {
+      "TS2339": 1,
+      "TS2322": 1
+    },
+    "electron/core/config-model.cjs": {
+      "TS2339": 2
+    },
+    "electron/core/data-doctor.cjs": {
+      "TS2322": 1
+    },
+    "electron/core/data-retention.cjs": {
+      "TS2349": 1
+    },
+    "electron/core/decisions.cjs": {
+      "TS2322": 1
+    },
+    "electron/core/diagnostics.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/error-observer.cjs": {
+      "TS2304": 1,
+      "TS1005": 1
+    },
+    "electron/core/error-reader.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/error-rules.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/errors.cjs": {
+      "TS2339": 5,
+      "TS2322": 1
+    },
+    "electron/core/file-cache.cjs": {
+      "TS2339": 1,
+      "TS2353": 1
+    },
+    "electron/core/image-task.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/image-watch.cjs": {
+      "TS2339": 7,
+      "TS2345": 1
+    },
+    "electron/core/llm-probe.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/llm.cjs": {
+      "TS2339": 8
+    },
+    "electron/core/loop-model.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/loop-prompt.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/loop-run.cjs": {
+      "TS2339": 11
+    },
+    "electron/core/loop-tools.cjs": {
+      "TS2345": 3,
+      "TS2353": 1
+    },
+    "electron/core/loop.cjs": {
+      "TS2353": 3,
+      "TS2339": 1,
+      "TS2556": 1
+    },
+    "electron/core/mcp-connection.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/mcp-runtime.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/mcp.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/net-policy.cjs": {
+      "TS2322": 6
+    },
+    "electron/core/prewarm.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/project-facts.cjs": {
+      "TS2322": 1
+    },
+    "electron/core/provider-capabilities.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/redact.cjs": {
+      "TS2322": 1
+    },
+    "electron/core/risk-targets.cjs": {
+      "TS2339": 1,
+      "TS2322": 1
+    },
+    "electron/core/risk.cjs": {
+      "TS2339": 4,
+      "TS2322": 3
+    },
+    "electron/core/rotate-file.cjs": {
+      "TS2741": 1
+    },
+    "electron/core/router.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/scale-signals.cjs": {
+      "TS2353": 5
+    },
+    "electron/core/scale.cjs": {
+      "TS2339": 3,
+      "TS2322": 5,
+      "TS2345": 1,
+      "TS2365": 2
+    },
+    "electron/core/scene.cjs": {
+      "TS2353": 2,
+      "TS2345": 2
+    },
+    "electron/core/search.cjs": {
+      "TS2339": 3
+    },
+    "electron/core/session-answers.cjs": {
+      "TS8024": 1
+    },
+    "electron/core/session-crypto.cjs": {
+      "TS2741": 1
+    },
+    "electron/core/session-write.cjs": {
+      "TS2339": 2
+    },
+    "electron/core/skills.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/subagent.cjs": {
+      "TS2739": 1,
+      "TS2353": 2
+    },
+    "electron/core/task-context.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/task-create.cjs": {
+      "TS2741": 1,
+      "TS2339": 3
+    },
+    "electron/core/task-intent.cjs": {
+      "TS2339": 2
+    },
+    "electron/core/task-notes.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/task-resume.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/task-steering.cjs": {
+      "TS2339": 7
+    },
+    "electron/core/tool-runner.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/tools/_shared.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/tools/approval.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/tools/browse-ax.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/tools/browse-click.cjs": {
+      "TS2339": 5
+    },
+    "electron/core/tools/browse-elements.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/tools/browse-nav.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/tools/browse-type.cjs": {
+      "TS2339": 6
+    },
+    "electron/core/tools/browse.cjs": {
+      "TS2339": 1
+    },
+    "electron/core/tools/generate-image.cjs": {
+      "TS2345": 2,
+      "TS2339": 6
+    },
+    "electron/core/tools/index.cjs": {
+      "TS2345": 1,
+      "TS2353": 1
+    },
+    "electron/core/tools/permission.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/tools/read_file.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/tools/remember.cjs": {
+      "TS2339": 2
+    },
+    "electron/core/tools/risk-gate.cjs": {
+      "TS2353": 1
+    },
+    "electron/core/tools/scale-gate.cjs": {
+      "TS2353": 2,
+      "TS2322": 1
+    },
+    "electron/core/url-policy.cjs": {
+      "TS2345": 1
+    },
+    "electron/core/write-diff.cjs": {
+      "TS2741": 1
+    },
+    "electron/handlers/artifact.cjs": {
+      "TS2345": 1
+    },
+    "electron/handlers/chat-confirm.cjs": {
+      "TS2339": 3
+    },
+    "electron/handlers/chat.cjs": {
+      "TS2339": 1
+    },
+    "electron/handlers/clarify-watch.cjs": {
+      "TS2741": 1,
+      "TS2353": 2,
+      "TS2339": 1,
+      "TS2322": 3
+    },
+    "electron/handlers/diagnostics.cjs": {
+      "TS2339": 2
+    },
+    "electron/handlers/image-file.cjs": {
+      "TS2339": 1
+    },
+    "electron/handlers/provider.cjs": {
+      "TS2345": 2
+    },
+    "electron/handlers/scene.cjs": {
+      "TS2345": 6
+    },
+    "electron/main.cjs": {
+      "TS2345": 1
+    },
+    "electron/register-handlers.cjs": {
+      "TS2353": 1
+    },
+    "electron/selftest-report.cjs": {
+      "TS2339": 1
+    },
+    "electron/tray.cjs": {
+      "TS2339": 2
+    }
+  }
+}
