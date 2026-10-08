@@ -1,9 +1,15 @@
 name: CI
 
-# 每次 push / PR 都跑一遍：类型 → 风格 → 前端单测 → 内核自检 → 构建。
+# 每次 push / PR 都跑一遍。**只跑 `npm run verify`** —— 步骤清单的唯一真相源是
+# `package.json` 里那条 verify 链，CI **不再自己抄一份**。
 #
-# 两个刻意的选择：
-#   1. **不下载 Electron 二进制**（ELECTRON_SKIP_BINARY_DOWNLOAD）—— CI 只跑 Node 侧的东西
+# 为什么这么改（2026-10-09）：以前 CI 各写一份 10 步清单，靠人记得和本地对齐 ——
+# 真漂过一次（CI 有 prettier、本地没有），CI 从 v1.11.0 起**连红 15 次**、前 13 次
+# 没人发现。现在结构上漂不了：CI 跑的就是 `npm run verify`（pre-push 钩子、preflight
+# 用的也是同一条命令）。
+#
+# 两个刻意的选择（不变）：
+#   1. **不下载 Electron 二进制**（ELECTRON_SKIP_BINARY_DOWNLOAD）—— verify 链只碰 Node 侧
 #      （类型检查、前端单测、内核自检、前端构建），不需要那个 100MB 的运行时。
 #   2. **不跑 `npm run package`** —— 打便携版 exe 要 Windows + 几分钟，属于 Release 的事，
 #      不放在每次 push 的路径上。
@@ -36,47 +42,8 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: 类型检查（tsc --noEmit，零容忍）
-        run: npx tsc --noEmit
-
-      - name: 代码风格（eslint）
-        run: npx eslint src --ext .ts,.tsx
-
-      # AGENT.md 硬约束 #9：跨模块的约定只有一处真相源。
-      # 这一条专扫「内核 .cjs 里引用了未定义的名字」—— `.cjs` 不过 tsc、
-      # `node --check` 只查语法，所以这类写错**只能靠真跑到那一步才现形**
-      # （2026-10-01 踩了两次：`pendingConfirms` / `inspectCommand`）。
-      # 和 `npm run verify` 里的同名步骤一字不差。
-      - name: 内核未定义标识符（no-undef）
-        run: npm run lint:kernel
-
-      - name: 格式检查（prettier）
-        run: npx prettier --check "src/**/*.{ts,tsx}"
-
-      # 硬约束 #2（单文件 ≤ 300 行）。以前这条规则**没有自动检查**，
-      # 2026-09-23 实测：破了 3 个文件、任何测试都没报出来。
-      - name: 行数红线（单文件 ≤ 300 行）
-        run: node tools/line-limit.mjs
-
-      # 能机械查的规矩一次跑完（行数 / 依赖两侧一致 / 明文密钥 / TODO / AGENT.md / 约束机制在位 /
-      # 改了代码必须写 CHANGELOG）。
-      # 和上面那条行数检查故意重复：那条是硬约束本身，这条是「一次看全」。
-      # 它同时在 pre-commit 钩子和 `npm run verify`（→ pre-push）里；CI 这一份保证
-      # 「本地用 --no-verify 绕过钩子也躲不过去」。
-      - name: 规范检查（check-rules）
-        run: npm run check:rules
-
-      # check-rules **自己的**测试（清单结构 + 每一项的行为）。
-      # 以前文档写的是「人 / CI」，实际谁都没跑 —— 检查脚本本身坏了不会被发现。
-      # 并进 verify（pre-push）后，钩子与 CI 两处都会跑。
-      - name: 规则检查的自测（check-rules 的测试）
-        run: npm run test:rules
-
-      - name: 前端单元测试
-        run: npm run test:unit
-
-      - name: 内核自检（不联网）
-        run: node scripts/selftest.mjs
-
-      - name: 构建渲染层
-        run: npm run build
+      # 全链：typecheck → lint(src) → lint:kernel(electron 的 no-undef) → 格式 →
+      #      行数红线 → check-rules → check-rules 自测 → 前端单测 → 内核自检 → 构建。
+      # 与本地 `npm run verify`、pre-push 钩子**同一条命令**（唯一真相源 = package.json 里那条链）。
+      - name: verify 全链（与本地 npm run verify 同一条）
+        run: npm run verify

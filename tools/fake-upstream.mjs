@@ -15,6 +15,7 @@
  *   http://127.0.0.1:9977/v1-garbage   → 200 但二进制垃圾
  *   http://127.0.0.1:9977/v1-replan    → 同一个任务里先后给两版计划（AG-004 用）
  *   http://127.0.0.1:9977/v1-loop      → 永远 A B A B 地调两个工具（AG-041 用）
+ *   http://127.0.0.1:9977/v1-confirm   → 第 1 轮调一次 run_shell（冒烟验证确认卡用）
  *   http://127.0.0.1:9977/v1           → 正常（对照组）
  *
  * 坏法：
@@ -25,6 +26,7 @@
  *   garbage   200 但返回一段随机二进制
  *   replan    第 1 轮给计划 A，第 2 轮给计划 B（多一条），第 3 轮起不给
  *   loop      永远交替调 `read_file`（同一个文件）与 `list_dir` —— 检测重复执行用
+ *   confirm   第 1 轮调一次 `run_shell`（medium → 弹确认卡），第 2 轮收尾 —— 冒烟用
  *   ok        正常返回（对照组）
  */
 
@@ -36,6 +38,8 @@ const PORT = Number(process.env.FAKE_PORT ?? 9977)
 let planRounds = 0
 /* loop 模式的轮次计数（AG-041）：偶数轮 A、奇数轮 B */
 let loopRounds = 0
+/* confirm 模式的轮次计数（冒烟用）：第 1 轮给一次工具调用，之后收尾 */
+let confirmRounds = 0
 
 function sseChunk(delta) {
   return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
@@ -133,6 +137,48 @@ const server = createServer((req, res) => {
     return
   }
 
+  if (mode === 'confirm') {
+    /*
+     * 冒烟用（`tools/smoke-ui.mjs`）：专门验证**权限确认卡**那条链路 ——
+     * 项目踩过的第三次「测试全绿 ≠ 能用」就跟确认卡有关。
+     *
+     * 第 1 轮发一次 `run_shell` 工具调用：`echo … > 文件` 在 `risk.cjs` 里判 **medium**，
+     * 而默认 `shellPolicy.medium = 'ask'` → 界面该弹「等待确认」卡。
+     * 用户点「允许本次」后工具才执行、文件才出现 —— 这就是判据。
+     * 第 2 轮起发普通文本收尾，别再无限调工具。
+     */
+    confirmRounds += 1
+    if (confirmRounds === 1) {
+      const call = {
+        index: 0,
+        id: 'call_confirm_1',
+        type: 'function',
+        function: {
+          name: 'run_shell',
+          arguments: JSON.stringify({ command: 'echo smoke-ok > smoke-shell-ok.txt' }),
+        },
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      res.write(sseChunk({ tool_calls: [call] }))
+      res.write('data: [DONE]' + String.fromCharCode(10, 10))
+      res.end()
+      return
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    })
+    res.write(sseChunk({ content: '确认卡冒烟：这一步已经处理完了。' }))
+    res.write('data: [DONE]' + String.fromCharCode(10, 10))
+    res.end()
+    return
+  }
+
   if (mode === 'replan') {
     /*
      * AG-004 真机验证。前两轮各给一版计划（第二版多一条）。
@@ -184,6 +230,6 @@ const server = createServer((req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(
     `假上游就绪：http://127.0.0.1:${PORT}/v1-<模式>/
-  模式：html | truncate | slow | empty | garbage | replan | （无后缀=正常）`,
+  模式：html | truncate | slow | empty | garbage | replan | confirm | （无后缀=正常）`,
   )
 })
