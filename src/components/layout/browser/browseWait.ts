@@ -25,6 +25,8 @@ export interface WebviewElement extends HTMLElement {
   getURL?: () => string
   executeJavaScript?: (code: string) => Promise<unknown>
   loadURL?: (url: string) => Promise<void>
+  /** 这个 webview 在**主进程**侧的 webContents id（browse_ax 读无障碍树要用） */
+  getWebContentsId?: () => number
 }
 
 /**

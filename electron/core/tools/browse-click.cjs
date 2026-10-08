@@ -20,6 +20,11 @@ module.exports = {
         type: 'integer',
         description: '要点的元素索引，来自 browse_elements 返回的 [N]',
       },
+      force: {
+        type: 'boolean',
+        description:
+          '落点被别的元素挡住时是否强制点击。默认否（拒绝并告诉你被谁挡住了）。只有确认遮挡可忽略时才带 true。落点在视口外时 force 也不放行。',
+      },
     },
     required: ['index'],
   },
@@ -39,10 +44,25 @@ module.exports = {
 
     const browser = require('../../handlers/browser.cjs')
     /* sessionId 跟着下去：主进程要用它做「浏览通知」的去重与点击跳转 */
-    const result = await browser.request('click', { index, sessionId: ctx?.sessionId }, ctx?.signal)
+    const result = await browser.request(
+      'click',
+      { index, force: args?.force === true, sessionId: ctx?.sessionId },
+      ctx?.signal,
+    )
     if (!result.ok) {
       throw new Error(result.error)
     }
-    return `已点击 <${result.click || '元素'}>。页面可能变了，需要的话再 browse_elements 看新状态。`
+    /*
+     * 真点击由**主进程**派发（sendInputEvent → isTrusted: true）。
+     * 渲染层只算好了落点 + webContentsId —— 见 core/real-input.cjs 的文件头。
+     */
+    const realInput = require('../real-input.cjs')
+    const fired = realInput.clickAt(result.webContentsId, result.x, result.y)
+    if (!fired.ok) throw new Error(fired.error)
+
+    const forced = result.obstructed
+      ? '（注意：这个元素当时被遮住了，是按 force 强点的，事件未必真落到它身上）'
+      : ''
+    return `已点击 <${result.click || '元素'}>${forced}。页面可能变了，需要的话再 browse_elements 看新状态。`
   },
 }

@@ -3,41 +3,12 @@
  *
  * 为什么单独一个文件：这些脚本是「眼睛 + 手」的核心，snapshot 和 click
  * 必须用**完全一样的遍历逻辑**，否则索引对不上 —— 点错元素比点不中还糟。
- * 抽到一起 + 共用 __walkInteractive，保证这一点。
+ * 三种脚本共用的片段抽在 `scriptParts.ts`（那边不容易撞 300 行红线）。
  *
  * 转义提醒：TS 模板字符串里的 `\\s` 到最终脚本里才是 `\s`（正则）。
  */
 
-/** 可交互元素的选择器（snapshot 和 click 共用） */
-const INTERACTIVE_SEL =
-  'a,button,input,textarea,select,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="radio"],[contenteditable="true"],[onclick]'
-
-/**
- * 遍历可交互元素的函数体。
- * 过滤规则：去掉重复的、零尺寸的、视口外的、隐藏的。
- * snapshot 和 click 都内联这一份，保证「第 N 个元素」两边是同一个。
- */
-const WALK_FN = `
-  function __walkInteractive() {
-    var all = document.querySelectorAll('${INTERACTIVE_SEL}')
-    var seen = new Set()
-    var vw = window.innerWidth || 0
-    var vh = window.innerHeight || 0
-    var out = []
-    for (var k = 0; k < all.length; k++) {
-      var el = all[k]
-      if (seen.has(el)) continue
-      seen.add(el)
-      var rect = el.getBoundingClientRect()
-      if (rect.width < 4 || rect.height < 4) continue
-      if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue
-      var cs = window.getComputedStyle(el)
-      if (cs.display === 'none' || cs.visibility === 'hidden') continue
-      out.push(el)
-    }
-    return out
-  }
-`
+import { INTERACTIVE_SEL, WALK_FN, CLICK_HELP_FN, SNAP_SAVE, snapCheckSnippet } from './scriptParts'
 
 /**
  * 读正文的脚本。优先 innerText（渲染后的可见文本），HTML 只兜底。
@@ -61,6 +32,9 @@ export const READ_SCRIPT = `
 /**
  * 可交互元素清单。每个元素：索引、标签、类型、角色、文本、中心坐标 + 尺寸。
  * 坐标从 getBoundingClientRect 拿，是精确的（不像视觉推理会漂）。
+ *
+ * 顺带把这次遍历到的元素对象记到 window 上（SNAP_SAVE）—— 后面的 click/type
+ * 靠它核对「还是不是这些元素」，见 scriptParts.ts 的 snapCheckSnippet。
  */
 export const SNAPSHOT_SCRIPT = `
   (function () {
@@ -69,6 +43,7 @@ export const SNAPSHOT_SCRIPT = `
       var MAX = 80
       var items = []
       var list = __walkInteractive()
+      ${SNAP_SAVE}
       for (var k = 0; k < list.length && items.length < MAX; k++) {
         var el = list[k]
         var rect = el.getBoundingClientRect()
@@ -125,19 +100,44 @@ export function toIndex(value: unknown): number {
 }
 
 /**
- * 按索引点击（index 是 SNAPSHOT_SCRIPT 返回的 i）
+ * 按索引算**点击落点**（index 是 SNAPSHOT_SCRIPT 返回的 i）。
+ *
+ * 只算点、不点 —— 真点击由**主进程** `sendInputEvent` 派发（isTrusted: true）。
+ * 渲染层在沙箱里派发的 `target.click()` 是合成事件（isTrusted: false），
+ * 查可信度的站点会忽略它。所以这里只做校验 + 回坐标，见 `core/real-input.cjs`。
+ *
+ * 两道核对（学 dsh-browser）：
+ *   ① 身份（snapCheckSnippet）：还是不是 browse_elements 时那个元素？跨页/重渲染就拒绝。
+ *   ② 落点：被别的元素挡住就**默认拒绝**（click-point-and-interception）。force=true 才放行，
+ *      并把 `obstructed` 写进回报。落点在视口外一律拒绝，force 也不放行。
  */
-export function clickScript(index: number): string {
+export function clickPointScript(index: number, force = false): string {
   return `
     (function () {
       try {
         ${WALK_FN}
+        ${CLICK_HELP_FN}
         var target = __walkInteractive()[${index}]
         if (!target) return { ok: false, error: '索引 ${index} 不存在（页面元素可能变了，重新 browse_elements 看当前页面）' }
+        ${snapCheckSnippet(index)}
         var tag = target.tagName.toLowerCase()
         var text = (target.innerText || target.value || '').toString().trim().slice(0, 60)
-        target.click()
-        return { ok: true, clicked: tag + (text ? ' "' + text + '"' : '') }
+        var label = tag + (text ? ' "' + text + '"' : '')
+        var rect = target.getBoundingClientRect()
+        var cx = rect.left + rect.width / 2
+        var cy = rect.top + rect.height / 2
+        var vw = window.innerWidth || 0
+        var vh = window.innerHeight || 0
+        if (cx < 0 || cy < 0 || cx > vw || cy > vh) {
+          return { ok: false, error: '<' + label + '> 的中心点 (' + Math.round(cx) + ',' + Math.round(cy) + ') 在视口外，点不到 —— 先滚动页面或重新 browse_elements' }
+        }
+        var hit = __pointAt(document, cx, cy)
+        var onTarget = hit === target || __within(hit, target)
+        if (!onTarget && !(${force === true})) {
+          var hitTag = hit && hit.tagName ? hit.tagName.toLowerCase() : '别的元素（或什么都没有）'
+          return { ok: false, error: '<' + label + '> 的落点被 <' + hitTag + '> 挡住了，点下去到不了它。确认要强点就带 force:true；否则先关掉遮挡层再点' }
+        }
+        return { ok: true, x: Math.round(cx), y: Math.round(cy), label: label, obstructed: !onTarget }
       } catch (e) {
         return { ok: false, error: String(e) }
       }
@@ -146,38 +146,28 @@ export function clickScript(index: number): string {
 }
 
 /**
- * 按索引往输入框打字（index 来自 SNAPSHOT_SCRIPT）。
+ * 按索引**聚焦 + 校验**输入框（index 来自 SNAPSHOT_SCRIPT）。
  *
- * ⚠️ 不能直接写 `el.value = text` —— React/Vue 的**受控组件**会忽略
- * 直接赋值（它们的内部 state 没变，下一次渲染还会把值盖回去）。
- * 必须用原型上的 native setter 赋值，再 dispatch `input` 事件，
- * 框架才会收到「用户改了值」的信号。这是自动化填表最容易踩的坑。
+ * 只聚焦、不写字 —— 真文字由**主进程** `webContents.insertText()` 插入（真实
+ * beforeinput/input 事件，isTrusted: true），回车由主进程 `sendInputEvent` 派发。
+ * 见 `core/real-input.cjs`。
  *
- * text 用 JSON.stringify 嵌进去：用户输入里可能有引号/换行/反引号，
- * 直接拼进脚本字符串会把脚本写坏。
+ * 派发前先问页面「这个控件收不收文本」（学 dsh-browser 的 typing-actionability）：
+ * 不问的话回报会是假的 —— 往 readonly/disabled 框里塞值，工具回「已输入」而框里
+ * 一直是空的，模型以为填好了、接着去提交一个空表单。所以这里**一个字符都不打**。
+ *
+ * 顺序：先判元素自己的状态（disabled/readonly），再看焦点落没落上。反过来先判焦点
+ * 的话，禁用的框会因为「聚焦失败」被报成「焦点没落上」，真正的原因（disabled）
+ * 永远传不出来 —— 这正是 dsh 真机上踩过的坑。
  */
-export function typeScript(
-  index: number,
-  text: string,
-  pressEnter: boolean,
-  authorized = false,
-): string {
-  const enterBlock = pressEnter
-    ? `
-        /* 回车：keydown/keypress/keyup 都发一遍 —— 不同站点监听的事件不一样 */
-        var KE = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }
-        target.dispatchEvent(new KeyboardEvent('keydown', KE))
-        target.dispatchEvent(new KeyboardEvent('keypress', KE))
-        target.dispatchEvent(new KeyboardEvent('keyup', KE))
-    `
-    : ''
-
+export function focusScript(index: number, authorized = false): string {
   return `
     (function () {
       try {
         ${WALK_FN}
         var target = __walkInteractive()[${index}]
         if (!target) return { ok: false, error: '索引 ${index} 不存在（页面元素可能变了，重新 browse_elements 看当前页面）' }
+        ${snapCheckSnippet(index)}
         var tag = target.tagName.toLowerCase()
         var isField = tag === 'input' || tag === 'textarea' || target.isContentEditable
         if (!isField) return { ok: false, error: '第 ${index} 个元素是 <' + tag + '>，不是输入框，打不了字' }
@@ -192,23 +182,19 @@ export function typeScript(
           return { ok: false, needsConfirm: true, label: '密码框' }
         }
 
-        var value = ${JSON.stringify(text)}
+        if (target.disabled === true) {
+          return { ok: false, error: '第 ${index} 个元素被禁用了（disabled），它收不了输入 —— 什么都没打。先 browse_elements 看看当前页面状态' }
+        }
+        if (target.readOnly === true) {
+          return { ok: false, error: '第 ${index} 个元素是只读的（readonly），它收不了输入 —— 什么都没打。先 browse_elements 看看当前页面状态' }
+        }
 
         target.focus()
-        if (tag === 'input' || tag === 'textarea') {
-          var proto = tag === 'input' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype
-          var setter = Object.getOwnPropertyDescriptor(proto, 'value').set
-          setter.call(target, value)
-          target.dispatchEvent(new Event('input', { bubbles: true }))
-          target.dispatchEvent(new Event('change', { bubbles: true }))
-        } else {
-          target.textContent = value
-          target.dispatchEvent(new Event('input', { bubbles: true }))
+        var __active = document.activeElement
+        if (__active !== target && !(target.contains && __active && target.contains(__active))) {
+          return { ok: false, error: '焦点没落到第 ${index} 个元素上（页面没让它聚焦），文字会跑到别处 —— 什么都没打。先 browse_elements 看看当前页面状态' }
         }
-        ${enterBlock}
-        /* 密码不回显 —— 返回值会进模型上下文和对话记录 */
-        var echoed = isPassword ? '••••••（已隐藏）' : value.slice(0, 60)
-        return { ok: true, typed: echoed, into: tag, password: isPassword }
+        return { ok: true, into: tag, password: isPassword }
       } catch (e) {
         return { ok: false, error: String(e) }
       }

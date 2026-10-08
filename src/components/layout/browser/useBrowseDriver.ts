@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
-import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickScript, typeScript, toIndex } from './scripts'
+import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickPointScript, focusScript, toIndex } from './scripts'
 import { navBlockedText, stepHistory } from './navStep'
 import {
   BROWSE_BUDGET_MS,
@@ -69,12 +69,19 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
       url?: string
       snapshot?: unknown
       click?: string
+      /** click: 落点在派发时被遮挡（带 force=true 强点时的回报） */
+      obstructed?: boolean
+      /** click: 已校验的落点坐标（主进程据此派发真鼠标事件） */
+      x?: number
+      y?: number
       type?: string
       into?: string
       password?: boolean
       needsConfirm?: boolean
       /** nav 成功时回「往哪个方向走的」（主进程据它写人话） */
       nav?: string
+      /** wcid：当前 webview 的 webContents id */
+      webContentsId?: number
       error?: string
     }): void => {
       replied = true
@@ -110,39 +117,47 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
           return
         }
 
-        /* click：按索引点击当前页面的元素（不导航） */
+        /* wcid：把当前 webview 的 webContents id 回给主进程（browse_ax 读无障碍树要用） */
+        if (pending!.action === 'wcid') {
+          const wcId = view.getWebContentsId?.()
+          reply({ ok: true, webContentsId: typeof wcId === 'number' ? wcId : 0 })
+          return
+        }
+
+        /* click：算落点（真点击由主进程 sendInputEvent 派发，见 core/real-input.cjs） */
         if (pending!.action === 'click') {
-          const out = await runScript<{ ok?: boolean; error?: string; clicked?: string }>(
-            view,
-            clickScript(toIndex(pending!.index)),
-            budget,
-          )
+          const out = await runScript<{
+            ok?: boolean
+            error?: string
+            label?: string
+            obstructed?: boolean
+            x?: number
+            y?: number
+          }>(view, clickPointScript(toIndex(pending!.index), pending!.force === true), budget)
           if (!alive) return
           if (!out.ok) reply({ ok: false, error: out.error })
-          else if (out.value?.ok) reply({ ok: true, click: out.value.clicked ?? '' })
+          else if (out.value?.ok)
+            reply({
+              ok: true,
+              click: out.value.label ?? '',
+              obstructed: out.value.obstructed === true,
+              x: out.value.x ?? 0,
+              y: out.value.y ?? 0,
+              webContentsId: view.getWebContentsId?.() ?? 0,
+            })
           else reply({ ok: false, error: String(out.value?.error ?? '点击失败') })
           return
         }
 
-        /* type：按索引往输入框打字（不导航） */
+        /* type：聚焦 + 校验（真文字由主进程 insertText 插入，见 core/real-input.cjs） */
         if (pending!.action === 'type') {
           const out = await runScript<{
             ok?: boolean
             error?: string
-            typed?: string
             into?: string
             password?: boolean
             needsConfirm?: boolean
-          }>(
-            view,
-            typeScript(
-              toIndex(pending!.index),
-              String(pending!.text ?? ''),
-              Boolean(pending!.pressEnter),
-              pending!.authorized === true,
-            ),
-            budget,
-          )
+          }>(view, focusScript(toIndex(pending!.index), pending!.authorized === true), budget)
           if (!alive) return
           const raw = out.ok ? out.value : undefined
           if (!out.ok) {
@@ -150,9 +165,9 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
           } else if (raw?.ok) {
             reply({
               ok: true,
-              type: raw.typed ?? '',
               into: raw.into ?? '',
               password: raw.password === true,
+              webContentsId: view.getWebContentsId?.() ?? 0,
             })
           } else if (raw?.needsConfirm) {
             /* 密码框：先不填，回去让宿主问用户 */

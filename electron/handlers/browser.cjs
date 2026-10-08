@@ -131,26 +131,43 @@ function register() {
       return { ok: true }
     }
 
+    /* click：算好的落点，透传给工具（工具再让主进程 sendInputEvent 派发真鼠标事件） */
+    if (result.click !== undefined) {
+      entry.resolve({
+        ok: true,
+        click: result.click,
+        obstructed: result.obstructed === true,
+        x: Number(result.x) || 0,
+        y: Number(result.y) || 0,
+        webContentsId: Number(result.webContentsId) || 0,
+      })
+      return { ok: true }
+    }
+
+    /* type：聚焦 + 校验结果，透传（工具再让主进程 insertText 插入真文字） */
+    if (result.into !== undefined) {
+      entry.resolve({
+        ok: true,
+        into: result.into,
+        password: result.password === true,
+        webContentsId: Number(result.webContentsId) || 0,
+      })
+      return { ok: true }
+    }
+
     /* snapshot：可交互元素列表，直接透传（不用正文清洗） */
     if (result.snapshot) {
       entry.resolve({ ok: true, snapshot: result.snapshot })
       return { ok: true }
     }
 
-    /* click：点击结果，直接透传 */
-    if (result.click !== undefined) {
-      entry.resolve({ ok: true, click: result.click })
-      return { ok: true }
-    }
-
-    /* type：输入结果，直接透传 */
-    if (result.type !== undefined) {
-      entry.resolve({
-        ok: true,
-        type: result.type,
-        into: result.into,
-        password: result.password === true,
-      })
+    /*
+     * wcid：单问「当前 webview 的 webContents id」（browse_ax 读无障碍树要用）。
+     * ⚠️ 必须排在 click / type / snapshot **之后** —— 那三种回复里现在也带
+     * webContentsId 字段，抢在前面会把它们当成 wcid 回掉（只回一个 id）。
+     */
+    if (result.webContentsId !== undefined) {
+      entry.resolve({ ok: true, webContentsId: Number(result.webContentsId) || 0 })
       return { ok: true }
     }
 

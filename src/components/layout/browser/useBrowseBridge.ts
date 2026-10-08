@@ -70,7 +70,8 @@ export function useBrowseBridge(): void {
         req.action === 'snapshot' ||
         req.action === 'click' ||
         req.action === 'type' ||
-        req.action === 'nav'
+        req.action === 'nav' ||
+        req.action === 'wcid'
       ) {
         /*
          * 读 / 点 / 打字 / 回退：都在**当前**这个标签里做，不开新标签（nav 走的是
@@ -96,6 +97,7 @@ export function useBrowseBridge(): void {
           text: req.text,
           pressEnter: req.pressEnter,
           authorized: req.authorized,
+          force: req.force,
           direction: req.direction,
           sessionId,
         })

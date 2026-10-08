@@ -4,9 +4,9 @@
  * index 来自 browse_elements 返回的 [N]，必须是输入框/文本域（不是就报错，
  * 而不是静默什么都不做 —— 那样模型会以为打进去了，继续往下走）。
  *
- * ⚠️ 这个动作对「受控组件」有坑：直接设 `el.value` 会被 React/Vue 忽略，
- * 真正的赋值逻辑在 src/components/layout/browser/scripts.ts 的 typeScript 里
- * （用原型上的 native setter + dispatch input 事件）。
+ * ⚠️ 真文字由**主进程** insertText 插入（真实 input 事件，React 受控组件也认），
+ * 渲染层只负责聚焦 + 校验（只读/禁用/焦点没落上 → 一个字符都不打），
+ * 见 core/real-input.cjs 与 src/components/layout/browser/scripts.ts 的 focusScript。
  *
  * ── 密码框：光靠提示词约束不够 ──
  * 「帮用户填密码」是用户自己都该盯一眼的动作，所以这里**卡一道**：
@@ -96,7 +96,17 @@ module.exports = {
 
     if (!result.ok) throw new Error(result.error)
 
+    /*
+     * 真文字由**主进程**插入（insertText → 真实 input 事件；回车走 sendInputEvent），
+     * 渲染层已经把焦点落上去了 —— 见 core/real-input.cjs 的文件头。
+     */
+    const realInput = require('../real-input.cjs')
+    const fired = realInput.typeText(result.webContentsId, text, pressEnter)
+    if (!fired.ok) throw new Error(fired.error)
+
+    /* 密码不回显 —— 返回值会进模型上下文和对话记录 */
+    const echoed = result.password ? '••••••（已隐藏）' : text.slice(0, 60)
     const enter = pressEnter ? '，并回车' : ''
-    return `已在 <${result.into || '输入框'}> 输入「${result.type || ''}」${enter}。页面可能变了，需要的话再 browse_elements 看新状态。`
+    return `已在 <${result.into || '输入框'}> 输入「${echoed}」${enter}。页面可能变了，需要的话再 browse_elements 看新状态。`
   },
 }

@@ -27,8 +27,8 @@ export type { BrowserTabItem }
 /** 主进程发来、还没被执行的一次浏览请求 */
 export interface PendingBrowse {
   id: string
-  /** navigate=导航读正文；snapshot=读元素；click=点；type=打字；nav=历史后退/前进 */
-  action: 'navigate' | 'snapshot' | 'click' | 'type' | 'nav'
+  /** navigate=导航读正文；snapshot=读元素；click=点；type=打字；nav=历史后退/前进；wcid=取 webContents id */
+  action: 'navigate' | 'snapshot' | 'click' | 'type' | 'nav' | 'wcid'
   url: string
   /** click / type 时用：目标元素索引（snapshot 返回的 i） */
   index?: number
@@ -38,6 +38,8 @@ export interface PendingBrowse {
   pressEnter?: boolean
   /** type 时用：用户已明确授权填密码（由确认弹窗得到） */
   authorized?: boolean
+  /** click 时用：落点被遮挡也强制点（工具侧 `browse_click(index, force: true)`） */
+  force?: boolean
   /**
    * 哪个会话发起的。渲染层从当前会话盖章（主进程发的事件里没有这个字段）。
    * 用来让 AI 在同一个会话里复用同一个标签 —— 见 `requestBrowse` 里的注释。
@@ -156,7 +158,8 @@ export const useBrowserStore = create<BrowserState>()((set) => ({
         request.action === 'snapshot' ||
         request.action === 'click' ||
         request.action === 'type' ||
-        request.action === 'nav'
+        request.action === 'nav' ||
+        request.action === 'wcid'
       ) {
         const mine = agentTabOf(state.tabs, sid, state.activeId)
         return {

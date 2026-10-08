@@ -1,6 +1,40 @@
 # 更新日志
 ## [未发布]
 
+- **浏览器动作改用真事件（isTrusted）**（2026-10-09）。学 dsh-browser 的 `input.ts`：
+  点击/打字/回车不再用页面里的 `target.click()` / `dispatchEvent(new KeyboardEvent(...))`
+  （合成事件，`isTrusted: false`，查可信度的站点会忽略），改成 Electron 原生注入 ——
+  点击 `webContents.sendInputEvent`（mouseDown/Up）、文字 `webContents.insertText`、
+  回车 `sendInputEvent`。分工：渲染层仍负责校验 + 算落点/聚焦（A/B 不变），真事件由
+  **主进程**派发（新增 `electron/core/real-input.cjs`）。渲染层脚本 `clickScript`/`typeScript`
+  相应改为 `clickPointScript`（只回坐标）/`focusScript`（只聚焦+校验）。真机证据：页面收到的
+  click / input / keydown 事件 `isTrusted === true`（新增测试页记录）。
+
+- **新增 `browse_ax`：读页面的无障碍树**（2026-10-09）。学 dsh-browser 的 `aria.ts` ——
+  读的是页面**自己声明**的语义（CDP `Accessibility.getFullAXTree`），而不是从 CSS 标签猜
+  「哪些元素能点」，菜单/表单/表格这类结构上更准（真机输出：`textbox "只读框" [readonly]`）。
+  只读、不改页面；要点击/输入仍用 `browse_elements` 拿索引。实现：新增 `electron/core/ax-tree.cjs`
+  （纯转换，可单测）+ `core/tools/browse-ax.cjs`；渲染层新增 `wcid` 动作回传 webContents id
+  （无障碍树只有主进程取得到，得先知道是哪个 webview）；registry 注册 + 人话表同步。
+
+- **旧索引不再点错元素**（2026-10-09）。学 dsh-browser 的「ref 属于页面、不属于快照」：
+  `browse_elements` 时把这次遍历到的**元素对象**记在页面 window 上，`browse_click`/
+  `browse_type` 派发前核对「第 N 个还是不是那些元素」—— 页面变了（元素被换掉、或整个文档
+  换了）就拒绝，让模型重新 `browse_elements`，而不是拿旧索引静默点到别的元素还回报「已点击」。
+  判据是对象身份（同一元素文字变了也不误报）。新增 `scriptParts.ts`（拆出共用脚本片段，
+  给 `scripts.ts` 腾出 300 行红线）；单测 +4。
+
+- **浏览器点击/输入不再「假成功」**（2026-10-09）。学 dsh-browser 的两个动作前置校验：
+  ① `browse_type` 派发前先问页面收不收文本 —— 禁用框（disabled）、只读框（readonly）、
+  焦点没落上，**一个字符都不打**，直接报原因（以前往只读框里塞值：原生 setter 照设、
+  `input`/`change` 照发，工具回「已输入」而框里一直是空的）；② `browse_click` 派发前
+  核对落点 —— 目标中心被别的元素挡住（`elementFromPoint` 钻 shadow DOM）**默认拒绝**并
+  点名接收者，新增 `force:true` 才强点、回报里带 `obstructed`；落点在视口外一律拒绝
+  （`force` 也不放行）。涉及 `src/components/layout/browser/scripts.ts`（+ `force` 透传：
+  `src/types/browser.ts` · `src/stores/useBrowserStore.ts` · `browser/useBrowseBridge.ts` ·
+  `useBrowseDriver.ts`）、`electron/core/tools/browse-click.cjs`、`electron/handlers/browser.cjs`；
+  单测 +6（真在 jsdom 里跑脚本）。
+
 - **修右栏「审查」面板的 diff 底色两处显示 bug**（2026-10-08）。用户报「删除和新增的
   两个区块、两个界面的颜色显示都有 bug」。真机上量出来是两个独立原因，都在
   `components/chat/DiffViewer.tsx`：

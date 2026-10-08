@@ -9,7 +9,7 @@
 /** 主进程把一次浏览器动作交给渲染层去执行（真正点页面的是渲染层的 webview） */
 export interface BrowserRequestEvent {
   id: string
-  action: 'navigate' | 'snapshot' | 'click' | 'type' | 'nav'
+  action: 'navigate' | 'snapshot' | 'click' | 'type' | 'nav' | 'wcid'
   url?: string
   /** click/type: index 目标元素；type: text 内容、pressEnter 回车、authorized 已授权填密码 */
   index?: number
@@ -20,6 +20,8 @@ export interface BrowserRequestEvent {
   text?: string
   pressEnter?: boolean
   authorized?: boolean
+  /** click: true = 落点被遮挡也强制点（跳过命中核对，工具侧 `browse_click(index, force: true)`） */
+  force?: boolean
 }
 
 export interface BrowserBridge {
@@ -36,12 +38,19 @@ export interface BrowserBridge {
       url?: string
       snapshot?: unknown
       click?: string
+      /** click: 落点被遮挡（force 强点时的回报） */
+      obstructed?: boolean
+      /** click: 已校验的落点坐标（主进程据此派发真鼠标事件） */
+      x?: number
+      y?: number
       type?: string
       into?: string
       password?: boolean
       needsConfirm?: boolean
       /** nav 成功时回一句「往哪个方向走的」（主进程据此写人话） */
       nav?: string
+      /** wcid / click / type：当前 webview 的 webContents id（主进程派发真事件要用） */
+      webContentsId?: number
       error?: string
     },
   ) => Promise<{ ok: boolean; error?: string }>
