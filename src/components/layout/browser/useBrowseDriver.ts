@@ -1,12 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
-import { SNAPSHOT_SCRIPT, clickPointScript, focusScript, toIndex } from './scripts'
 import { navBlockedText, stepHistory } from './navStep'
 import {
   BROWSE_BUDGET_MS,
   Budget,
-  runScript,
   waitForDomReady,
   waitForElement,
   waitForLoad,
@@ -109,73 +107,10 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
         await waitForDomReady(view, budget)
         if (!alive) return
 
-        /* snapshot：读当前页面的可交互元素，不导航 */
-        if (pending!.action === 'snapshot') {
-          const out = await runScript<Record<string, unknown>>(view, SNAPSHOT_SCRIPT, budget)
-          if (!alive) return
-          if (!out.ok) reply({ ok: false, error: out.error })
-          else reply({ ok: true, snapshot: out.value })
-          return
-        }
-
-        /* wcid：把当前 webview 的 webContents id 回给主进程（browse_ax 读无障碍树要用） */
+        /* wcid：单问当前 webview 的 webContents id（browse_ax 读无障碍树要用） */
         if (pending!.action === 'wcid') {
           const wcId = view.getWebContentsId?.()
           reply({ ok: true, webContentsId: typeof wcId === 'number' ? wcId : 0 })
-          return
-        }
-
-        /* click：算落点（真点击由主进程 sendInputEvent 派发，见 core/real-input.cjs） */
-        if (pending!.action === 'click') {
-          const out = await runScript<{
-            ok?: boolean
-            error?: string
-            label?: string
-            obstructed?: boolean
-            x?: number
-            y?: number
-          }>(view, clickPointScript(toIndex(pending!.index), pending!.force === true), budget)
-          if (!alive) return
-          if (!out.ok) reply({ ok: false, error: out.error })
-          else if (out.value?.ok)
-            reply({
-              ok: true,
-              click: out.value.label ?? '',
-              obstructed: out.value.obstructed === true,
-              x: out.value.x ?? 0,
-              y: out.value.y ?? 0,
-              webContentsId: view.getWebContentsId?.() ?? 0,
-            })
-          else reply({ ok: false, error: String(out.value?.error ?? '点击失败') })
-          return
-        }
-
-        /* type：聚焦 + 校验（真文字由主进程 insertText 插入，见 core/real-input.cjs） */
-        if (pending!.action === 'type') {
-          const out = await runScript<{
-            ok?: boolean
-            error?: string
-            into?: string
-            password?: boolean
-            needsConfirm?: boolean
-          }>(view, focusScript(toIndex(pending!.index), pending!.authorized === true), budget)
-          if (!alive) return
-          const raw = out.ok ? out.value : undefined
-          if (!out.ok) {
-            reply({ ok: false, error: out.error })
-          } else if (raw?.ok) {
-            reply({
-              ok: true,
-              into: raw.into ?? '',
-              password: raw.password === true,
-              webContentsId: view.getWebContentsId?.() ?? 0,
-            })
-          } else if (raw?.needsConfirm) {
-            /* 密码框：先不填，回去让宿主问用户 */
-            reply({ ok: false, needsConfirm: true, error: '需要用户确认' })
-          } else {
-            reply({ ok: false, error: String(raw?.error ?? '输入失败') })
-          }
           return
         }
 
@@ -200,25 +135,28 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
           return
         }
 
-        /*
-         * ② 导航。
-         * 新标签的 `src` 已经是目标地址了，webview 自己会去 —— 这种情况不用再 loadURL
-         * （多调一次会白闪一下）。只有复用旧标签、地址不一致时才手动导。
-         *
-         * 比地址用 sameUrl：`example.com` 和 `example.com/` 是同一个页面，
-         * 严格比较会判定成不一致 → 白 loadURL 一次 → 页面重新加载（表单就没了）。
-         */
-        const current = view.getURL?.() ?? ''
-        if (current && !sameUrl(current, pending!.url)) {
-          const loading = view.loadURL?.(pending!.url)
-          if (loading && typeof loading.then === 'function') await loading.catch(() => undefined)
-          await waitForLoad(view, budget)
+        if (pending!.action === 'navigate') {
+          /*
+           * 导航：新标签的 `src` 已经是目标地址了，webview 自己会去 —— 这种情况不用再
+           * loadURL（多调一次会白闪一下）。只有复用旧标签、地址不一致时才手动导。
+           * 比地址用 sameUrl：`example.com` 和 `example.com/` 是同一个页面，严格比较
+           * 会判定成不一致 → 白 loadURL 一次 → 页面重新加载（表单就没了）。
+           */
+          const current = view.getURL?.() ?? ''
+          if (current && !sameUrl(current, pending!.url)) {
+            const loading = view.loadURL?.(pending!.url)
+            if (loading && typeof loading.then === 'function') await loading.catch(() => undefined)
+            await waitForLoad(view, budget)
+          }
         }
 
         /*
-         * 页面就绪即可 —— 正文由**主进程**经 CDP 读（B2，`core/browse-read.cjs`）。
-         * 但超时仍要**渲染层自己说**：不让主进程用「界面没有在 45 秒内回应」
-         * 这种猜出来的原因替它发言（真机上就是这么误导的：界面其实在干活）。
+         * snapshot / click / type / navigate / nav 走到这儿 = **页面就绪**。
+         * 动作全交**主进程**经 CDP 做（B2 读正文、B3 读元素/算落点/聚焦）——
+         * 渲染层只负责「开标签 + 导航 + 等就绪 + 报 webContentsId」。
+         *
+         * 但超时仍要**渲染层自己说**：不让主进程用「界面没有在 45 秒内回应」这种
+         * 猜出来的原因替它发言（真机上就是这么误导的：界面其实在干活）。
          */
         if (budget.expired) {
           reply({

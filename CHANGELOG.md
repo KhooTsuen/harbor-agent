@@ -5,6 +5,17 @@
 
 ## [未发布]
 
+- **页面操作（读元素 / 点 / 输入）改由主进程经 CDP 做**（2026-10-09，浏览器 CDP 化 B3）。
+  承接 B2：`browse_elements` / `browse_click` / `browse_type` 的三个脚本
+  （`SNAPSHOT_SCRIPT` / `clickPointScript` / `focusScript`，原来在渲染层
+  `scripts.ts`+`scriptParts.ts`）搬到主进程 `electron/core/browse-ops.cjs`，经
+  `core/cdp.cjs` 的 `Runtime.evaluate` 执行（含就绪重试）。渲染层 `useBrowseDriver`
+  对 snapshot/click/type 只回 `{ready:true, webContentsId}`，不再跑脚本；
+  `handlers/browser.cjs` 的 `browser:result` 在 `ready` 分支里**按动作分发**
+  （store 把 action/args 记进 pending）。渲染层的 `scripts.ts` / `scriptParts.ts` 删除。
+  脚本的行为覆盖（jsdom 真跑：密码不外泄 / 遮挡拒绝 / 跨页校验）跟着搬到
+  `scripts.test.ts`——它现在 import 主进程模块；另加自检组 `137-browse-ops`。
+
 - **读网页正文改由主进程经 CDP 读**（2026-10-09，浏览器 CDP 化 B2）。原来「读正文」是
   渲染层用 `webview.executeJavaScript` 跑脚本、再把 text/html/title/url 回给主进程；
   现在渲染层只负责**导航 + 等就绪**，回 `{ ready: true, webContentsId }`，正文由主进程经

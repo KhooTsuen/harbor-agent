@@ -153,6 +153,7 @@ import { run as planGateGroup } from './selftest/groups/132-plan-gate.mjs'
 import { run as ipcChannelsGroup } from './selftest/groups/134-ipc-channels.mjs'
 import { run as cdpGroup } from './selftest/groups/135-cdp.mjs'
 import { run as browseReadGroup } from './selftest/groups/136-browse-read.mjs'
+import { run as browseOpsGroup } from './selftest/groups/137-browse-ops.mjs'
 
 const GROUPS = [
   basics,
@@ -279,7 +280,7 @@ const GROUPS = [
   cdpHelpersGroup,
   testPromptGroup,
   planGateGroup,
-  ipcChannelsGroup, cdpGroup, browseReadGroup,
+  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup,
 ]
 
 async function main() {

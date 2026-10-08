@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { SNAPSHOT_SCRIPT, clickPointScript, focusScript, toIndex } from '../scripts'
+/* 脚本（snapshot / 落点 / 聚焦）已从渲染层搬到主进程 `electron/core/browse-ops.cjs`（B3）——
+   这里仍在 jsdom 里 eval 真跑一遍，覆盖跟着代码走。 */
+import {
+  SNAPSHOT_SCRIPT,
+  clickPointScript,
+  focusScript,
+  toIndex,
+} from '../../../../../electron/core/browse-ops.cjs'
 
 /* ══════════════════════════════════════════════════════════════
    浏览器操作的脚本生成

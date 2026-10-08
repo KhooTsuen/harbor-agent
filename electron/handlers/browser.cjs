@@ -19,6 +19,7 @@ const log = require('../core/log.cjs')
 const { createSettler, onAbort } = require('../core/abort.cjs')
 const { extractText, pickSource } = require('../core/browser-text.cjs')
 const browseRead = require('../core/browse-read.cjs')
+const browseOps = require('../core/browse-ops.cjs')
 const webviewPermissions = require('../core/webview-permissions.cjs')
 
 /** 等界面的上限。读一个页面比「用户点确认」快得多，不需要五分钟 */
@@ -102,7 +103,8 @@ function request(action, payload, signal) {
       settle({ ok: false, error: '界面没有在 45 秒内回应（浏览器标签可能被关了）' })
     }, REQUEST_TIMEOUT_MS)
 
-    pending.set(id, { resolve: settle, timer })
+    /* 记住这次请求的**动作和参数** —— `ready` 回话时主进程要用它决定做什么（B3） */
+    pending.set(id, { resolve: settle, timer, action, payload: payload ?? {} })
 
     /*
      * 「Agent 在动网页，而你没在看」→ 一条系统通知（收尾第一步）。
@@ -160,74 +162,78 @@ function register() {
     }
 
     /*
-     * ★ B2（2026-10-09）：渲染层只报「页面已就绪 + 它的 webContents id」，
-     * 正文由**主进程**经 CDP 读（`core/browse-read.cjs`）—— 不再让渲染层跑
-     * `executeJavaScript` 读、再把正文回传。渲染层的活儿缩到「导航 + 等就绪」。
-     * 这一条必须排在 click / type / snapshot / wcid **之前**：那三种回复里也会带
+     * ★ B2/B3（2026-10-09）：渲染层只报「页面已就绪 + 它的 webContents id」，
+     * 具体动作由**主进程**做 —— 读正文（CDP Runtime.evaluate）、读元素、算落点、
+     * 聚焦，全在 `core/browse-read.cjs` / `core/browse-ops.cjs`。
+     * 渲染层的活儿缩到「导航 + 等就绪 + 回 wcid」。
+     * 这一条必须排在 click / type / snapshot / wcid **之前**：那三种旧回复里也会带
      * `webContentsId`，抢在后面就把 ready 当成别的了。
      */
     if (result.ready === true) {
       const wcid = Number(result.webContentsId) || 0
       try {
-        const page = await withTimeout(
-          browseRead.readPageText(wcid),
-          READ_TIMEOUT_MS,
-          '读网页超时（页面卡住了或一直没响应）',
-        )
-        const picked = pickSource(page)
-        const text = extractText(picked.raw, { maxChars: 12_000 })
-        entry.resolve({
-          ok: true,
-          text,
-          title: page.title,
-          url: page.url,
-          /* browse_nav 多一个「往哪个方向走的」：工具要拿它写人话 */
-          nav: result.nav === undefined ? undefined : String(result.nav),
-          truncated: picked.raw.length > 12_000,
-        })
+        if (entry.action === 'snapshot') {
+          entry.resolve({ ok: true, snapshot: await browseOps.runSnapshot(wcid) })
+        } else if (entry.action === 'click') {
+          const point = await browseOps.runClickPoint(wcid, entry.payload.index, entry.payload.force)
+          if (point?.ok) {
+            entry.resolve({
+              ok: true,
+              click: point.label ?? '',
+              obstructed: point.obstructed === true,
+              x: Number(point.x) || 0,
+              y: Number(point.y) || 0,
+              webContentsId: wcid,
+            })
+          } else {
+            entry.resolve({ ok: false, error: String(point?.error ?? '点击失败') })
+          }
+        } else if (entry.action === 'type') {
+          const focus = await browseOps.runFocus(wcid, entry.payload.index, entry.payload.authorized)
+          if (focus?.ok) {
+            entry.resolve({
+              ok: true,
+              into: focus.into ?? '',
+              password: focus.password === true,
+              webContentsId: wcid,
+            })
+          } else if (focus?.needsConfirm) {
+            /* 密码框：先不填，回去让工具问用户 */
+            entry.resolve({ ok: false, needsConfirm: true, error: '需要用户确认' })
+          } else {
+            entry.resolve({ ok: false, error: String(focus?.error ?? '输入失败') })
+          }
+        } else {
+          /* navigate / nav：读正文 */
+          const page = await withTimeout(
+            browseRead.readPageText(wcid),
+            READ_TIMEOUT_MS,
+            '读网页超时（页面卡住了或一直没响应）',
+          )
+          const picked = pickSource(page)
+          const text = extractText(picked.raw, { maxChars: 12_000 })
+          entry.resolve({
+            ok: true,
+            text,
+            title: page.title,
+            url: page.url,
+            /* browse_nav 多一个「往哪个方向走的」：工具要拿它写人话 */
+            nav: result.nav === undefined ? undefined : String(result.nav),
+            truncated: picked.raw.length > 12_000,
+          })
+        }
       } catch (error) {
         entry.resolve({
           ok: false,
-          error: `读网页失败：${error instanceof Error ? error.message : String(error)}`,
+          error: `操作网页失败：${error instanceof Error ? error.message : String(error)}`,
         })
       }
       return { ok: true }
     }
 
-    /* click：算好的落点，透传给工具（工具再让主进程 sendInputEvent 派发真鼠标事件） */
-    if (result.click !== undefined) {
-      entry.resolve({
-        ok: true,
-        click: result.click,
-        obstructed: result.obstructed === true,
-        x: Number(result.x) || 0,
-        y: Number(result.y) || 0,
-        webContentsId: Number(result.webContentsId) || 0,
-      })
-      return { ok: true }
-    }
-
-    /* type：聚焦 + 校验结果，透传（工具再让主进程 insertText 插入真文字） */
-    if (result.into !== undefined) {
-      entry.resolve({
-        ok: true,
-        into: result.into,
-        password: result.password === true,
-        webContentsId: Number(result.webContentsId) || 0,
-      })
-      return { ok: true }
-    }
-
-    /* snapshot：可交互元素列表，直接透传（不用正文清洗） */
-    if (result.snapshot) {
-      entry.resolve({ ok: true, snapshot: result.snapshot })
-      return { ok: true }
-    }
-
     /*
-     * wcid：单问「当前 webview 的 webContents id」（browse_ax 读无障碍树要用）。
-     * ⚠️ 必须排在 click / type / snapshot **之后** —— 那三种回复里现在也带
-     * webContentsId 字段，抢在前面会把它们当成 wcid 回掉（只回一个 id）。
+     * wcid：单问「当前 webview 的 webContents id」（browse_ax 读无障碍树要用，
+     * 独立于某次操作）。browse_ax 自己会再经 CDP 读树。
      */
     if (result.webContentsId !== undefined) {
       entry.resolve({ ok: true, webContentsId: Number(result.webContentsId) || 0 })
@@ -236,8 +242,7 @@ function register() {
 
     /*
      * 走到这里 = 渲染层回了个**认不出来**的形状。直接判失败，别让工具干等到超时。
-     * 正常路径都有分支：navigate / nav → `ready`；click / type / snapshot / wcid 各一条。
-     * （正文清洗 `pickSource` / `extractText` 现在在 `ready` 分支里做。）
+     * 正常路径只有两种形状：`ready`（页面就绪，动作交主进程做）与 `wcid`（单问 id）。
      */
     entry.resolve({ ok: false, error: '渲染层回了个无法识别的结果' })
     return { ok: true }
