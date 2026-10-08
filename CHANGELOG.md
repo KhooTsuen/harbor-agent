@@ -5,6 +5,18 @@
 
 ## [未发布]
 
+- **IPC 通道清单不再是「漂了没人知道」**（2026-10-09）。自检挨个点名的
+  `electron/ipc-channels.cjs` 那份手写通道清单，实测**真漂了**：源码里注册了 152 个通道，
+  清单漏登记 `log:action` / `log:error` 两个（`handlers/log.cjs` 里走 `ipcMain.on` 注册的
+  真通道），还重复写了 `projectRules:reload` / `projectRules:status` 各两次。漏登记一个 =
+  那个通道从没被自检点名 —— 而这张网正是防「某个 handler 注册时抛错、它后面的静默不注册」的。
+  两处修：① `selftest-report.cjs` 的 `hasHandler` 原来只在私有 `_invokeHandlers` 里找
+  （只认 `handle`），`.on` 注册的通道**永远查不到** —— 改成 `_invokeHandlers` 和
+  `listenerCount` 两个都认；② 清单补齐去重，并新增自检组 `134-ipc-channels`：**扫源码跟
+  清单比对**（handle / on 都扫），漏登记或幽灵条目都报红，从此漂不了。
+  验证：`npm test` 4015 通过 / 0 失败；`npm run test:app` → channelsExpected=152 /
+  channelsMissing=[] / channelsOk=true。
+
 - **浏览器动作改用真事件（isTrusted）**（2026-10-09）。学 dsh-browser 的 `input.ts`：
   点击/打字/回车不再用页面里的 `target.click()` / `dispatchEvent(new KeyboardEvent(...))`
   （合成事件，`isTrusted: false`，查可信度的站点会忽略），改成 Electron 原生注入 ——

@@ -150,6 +150,7 @@ import { run as actionPermissionGroup } from './selftest/groups/129-action-permi
 import { run as cdpHelpersGroup } from './selftest/groups/130-cdp-helpers.mjs'
 import { run as testPromptGroup } from './selftest/groups/131-test-prompt.mjs'
 import { run as planGateGroup } from './selftest/groups/132-plan-gate.mjs'
+import { run as ipcChannelsGroup } from './selftest/groups/134-ipc-channels.mjs'
 
 const GROUPS = [
   basics,
@@ -276,6 +277,7 @@ const GROUPS = [
   cdpHelpersGroup,
   testPromptGroup,
   planGateGroup,
+  ipcChannelsGroup,
 ]
 
 async function main() {

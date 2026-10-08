@@ -286,7 +286,7 @@ export async function run() {
     'workspace:scan',
     'task:testStatus',
   ]
-  const missing = channels.EXPECTED_CHANNELS.filter((c) => !registeredChannels.includes(c))
+  const missing = channels.EXPECTED_CHANNELS.filter((c) => !registeredChannels.includes(c) && !listenedChannels.includes(c))
   check(
     '★ 通道清单上的通道都真被注册了（缺口只能是那几条早有归属的）',
     missing.every((c) => elsewhere.includes(c)),

@@ -219,13 +219,18 @@ async function runSelfTest(win) {
      * （那个只列 `.on` 注册的），listenerCount 对 handle 也恒为 0。
      * 真正存 handle 的是私有的 `_invokeHandlers` Map —— 实测过。
      * 私有 API 有失效风险，所以留了一条退路：真拿不到就退回 listenerCount。
+     *
+     * ⚠ 两类都得认：`handle` 看 `_invokeHandlers`，`on` 看 `listenerCount`。
+     *   原来只认 `_invokeHandlers`，于是 `ipcMain.on` 注册的通道永远查不到
+     *   （`log:action` / `log:error` 就是因此漏了也没被发现，2026-10-09）。
      */
     const invokeHandlers = ipcMain._invokeHandlers
-    const hasHandler = (channel) =>
-      invokeHandlers && typeof invokeHandlers.has === 'function'
-        ? invokeHandlers.has(channel)
-        : ipcMain.listenerCount(channel) > 0
-    report.channelsCheckMethod = invokeHandlers?.has ? '_invokeHandlers' : 'listenerCount(退路)'
+    const viaInvoke = (channel) =>
+      !!invokeHandlers && typeof invokeHandlers.has === 'function' && invokeHandlers.has(channel)
+    const hasHandler = (channel) => viaInvoke(channel) || ipcMain.listenerCount(channel) > 0
+    report.channelsCheckMethod = invokeHandlers?.has
+      ? '_invokeHandlers + listenerCount'
+      : 'listenerCount(退路)'
     const missing = EXPECTED_CHANNELS.filter((channel) => !hasHandler(channel))
     report.channelsExpected = EXPECTED_CHANNELS.length
     report.channelsMissing = missing

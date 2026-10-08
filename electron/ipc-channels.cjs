@@ -10,7 +10,11 @@
  * 而且要点到才知道。
  *
  * 所以把通道名写死一份，验收时挨个查 listenerCount。
- * 新增通道时**记得同步这里**（自检会告诉你漏没漏）。
+ *
+ * 新增通道时记得同步这里 —— 忘了也不要紧：`scripts/selftest/groups/134-ipc-channels.mjs`
+ * 会**扫源码跟这份清单比对**（handle / on 两类都扫），对不上就报红。
+ * 加这个检查之前它真漂过（2026-10-09 查出来）：漏登记了 `log:action` / `log:error`
+ * 两个（`ipcMain.on` 注册的），还重复写了 `projectRules:reload` / `projectRules:status`。
  */
 
 const EXPECTED_CHANNELS = [
@@ -58,6 +62,9 @@ const EXPECTED_CHANNELS = [
   'diagnostics:copy',
   'diagnostics:openDir',
   'errors:list',
+  /* 兜底日志：渲染层主动报上来的（界面动作 / 未捕获异常）—— 走 ipcMain.on 注册 */
+  'log:action',
+  'log:error',
   'diagnostics:save',
   'export:saveText',
   'file:attach',
@@ -99,8 +106,6 @@ const EXPECTED_CHANNELS = [
   'projectRules:reload',
   'projectRules:status',
   'projectRules:writeFile',
-  'projectRules:reload',
-  'projectRules:status',
   'projects:list',
   'projects:remove',
   'projects:save',
