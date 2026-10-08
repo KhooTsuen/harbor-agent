@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 import { sameUrl } from '@/lib/url'
-import { READ_SCRIPT, SNAPSHOT_SCRIPT, clickPointScript, focusScript, toIndex } from './scripts'
+import { SNAPSHOT_SCRIPT, clickPointScript, focusScript, toIndex } from './scripts'
 import { navBlockedText, stepHistory } from './navStep'
 import {
   BROWSE_BUDGET_MS,
   Budget,
-  readPage,
   runScript,
   waitForDomReady,
   waitForElement,
@@ -82,6 +81,8 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
       nav?: string
       /** wcid：当前 webview 的 webContents id */
       webContentsId?: number
+      /** ★ 页面已就绪 —— 正文由主进程经 CDP 读（B2），这里不再回 text/html */
+      ready?: boolean
       error?: string
     }): void => {
       replied = true
@@ -194,20 +195,8 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
           await waitForLoad(view, budget)
           if (!alive) return
 
-          /* 退回去之后把正文一并读回来 —— 模型十有八九就是想看那一页的内容 */
-          const out = await readPage(view, READ_SCRIPT, budget)
-          if (!alive) return
-          const raw = out.ok
-            ? (out.value as { text?: string; html?: string; title?: string; url?: string })
-            : undefined
-          reply({
-            ok: true,
-            nav: step,
-            text: String(raw?.text ?? ''),
-            html: raw?.text ? '' : String(raw?.html ?? ''),
-            title: String(raw?.title ?? ''),
-            url: String(raw?.url ?? view.getURL?.() ?? ''),
-          })
+          /* 页面就绪即可 —— 正文由主进程经 CDP 读（B2），这里只报 id 与方向 */
+          reply({ ok: true, ready: true, webContentsId: view.getWebContentsId?.() ?? 0, nav: step })
           return
         }
 
@@ -226,35 +215,19 @@ export function useBrowseDriver(webviewRef: React.RefObject<WebviewElement | nul
           await waitForLoad(view, budget)
         }
 
-        /* 读正文：空会重试几次（SPA 加载完才开始填内容），失败也会重试（guest 没就绪） */
-        const out = await readPage(view, READ_SCRIPT, budget)
-        if (!alive) return
-
-        if (!out.ok) {
-          /*
-           * ★ 一定把原因说清楚，而且**是渲染层自己说** ——
-           *   不能让主进程用「界面没有在 45 秒内回应」这种猜出来的原因替它发言
-           *   （真机上就是这么误导的：界面其实在干活，只是还没读完）。
-           */
+        /*
+         * 页面就绪即可 —— 正文由**主进程**经 CDP 读（B2，`core/browse-read.cjs`）。
+         * 但超时仍要**渲染层自己说**：不让主进程用「界面没有在 45 秒内回应」
+         * 这种猜出来的原因替它发言（真机上就是这么误导的：界面其实在干活）。
+         */
+        if (budget.expired) {
           reply({
             ok: false,
-            error: budget.expired
-              ? `等页面就绪超时（已等 ${Math.round(BROWSE_BUDGET_MS / 1000)} 秒，这个站点可能太慢或一直加载中）：${out.error}`
-              : `读网页失败：${out.error}`,
+            error: `等页面就绪超时（已等 ${Math.round(BROWSE_BUDGET_MS / 1000)} 秒，这个站点可能太慢或一直加载中）`,
           })
           return
         }
-
-        const raw = out.value as
-          { text?: string; html?: string; title?: string; url?: string } | undefined
-        reply({
-          ok: true,
-          text: String(raw?.text ?? ''),
-          /* 有 text 就不用发 html —— innerText 已经是干净的可见文本了 */
-          html: raw?.text ? '' : String(raw?.html ?? ''),
-          title: String(raw?.title ?? ''),
-          url: String(raw?.url ?? pending!.url),
-        })
+        reply({ ok: true, ready: true, webContentsId: view.getWebContentsId?.() ?? 0 })
       } catch (error) {
         if (!alive) return
         reply({ ok: false, error: error instanceof Error ? error.message : String(error) })

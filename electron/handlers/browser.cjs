@@ -18,10 +18,38 @@ const { ipcMain, BrowserWindow, app, session } = require('electron')
 const log = require('../core/log.cjs')
 const { createSettler, onAbort } = require('../core/abort.cjs')
 const { extractText, pickSource } = require('../core/browser-text.cjs')
+const browseRead = require('../core/browse-read.cjs')
 const webviewPermissions = require('../core/webview-permissions.cjs')
 
 /** 等界面的上限。读一个页面比「用户点确认」快得多，不需要五分钟 */
 const REQUEST_TIMEOUT_MS = 45_000
+
+/**
+ * 主进程读正文的上限（B2，2026-10-09）。
+ *
+ * 正文改由主进程经 CDP 读之后，读这一步**不再受 `REQUEST_TIMEOUT_MS` 约束** ——
+ * 那条计时器在渲染层回话（`browser:result`）当场就停了，读发生在它之后。
+ * 页面 JS 若卡死，`Runtime.evaluate` 会**永不返回**，工具就挂到天荒地老（比旧版更糟：
+ * 旧版读在渲染层，45 秒那条还能兜住）。所以给读单独一条上限。
+ */
+const READ_TIMEOUT_MS = 15_000
+
+/** 给一个 promise 套超时：超时后 reject（原 promise 仍在跑，但没人认领了） */
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
 
 /** id -> { resolve, timer } */
 const pending = new Map()
@@ -112,7 +140,7 @@ function register() {
   }
 
   /* ── 渲染层回话 ── */
-  ipcMain.handle('browser:result', (_event, payload) => {
+  ipcMain.handle('browser:result', async (_event, payload) => {
     const id = String(payload?.id ?? '')
     const entry = pending.get(id)
     if (!entry) return { ok: false, error: '这个请求已经过期' }
@@ -128,6 +156,41 @@ function register() {
         /* 密码框会走这条：先不填，让工具回去问用户 */
         needsConfirm: result.needsConfirm === true,
       })
+      return { ok: true }
+    }
+
+    /*
+     * ★ B2（2026-10-09）：渲染层只报「页面已就绪 + 它的 webContents id」，
+     * 正文由**主进程**经 CDP 读（`core/browse-read.cjs`）—— 不再让渲染层跑
+     * `executeJavaScript` 读、再把正文回传。渲染层的活儿缩到「导航 + 等就绪」。
+     * 这一条必须排在 click / type / snapshot / wcid **之前**：那三种回复里也会带
+     * `webContentsId`，抢在后面就把 ready 当成别的了。
+     */
+    if (result.ready === true) {
+      const wcid = Number(result.webContentsId) || 0
+      try {
+        const page = await withTimeout(
+          browseRead.readPageText(wcid),
+          READ_TIMEOUT_MS,
+          '读网页超时（页面卡住了或一直没响应）',
+        )
+        const picked = pickSource(page)
+        const text = extractText(picked.raw, { maxChars: 12_000 })
+        entry.resolve({
+          ok: true,
+          text,
+          title: page.title,
+          url: page.url,
+          /* browse_nav 多一个「往哪个方向走的」：工具要拿它写人话 */
+          nav: result.nav === undefined ? undefined : String(result.nav),
+          truncated: picked.raw.length > 12_000,
+        })
+      } catch (error) {
+        entry.resolve({
+          ok: false,
+          error: `读网页失败：${error instanceof Error ? error.message : String(error)}`,
+        })
+      }
       return { ok: true }
     }
 
@@ -172,24 +235,11 @@ function register() {
     }
 
     /*
-     * ★ 正文在这里清洗 + 截断，不在渲染层做。
-     *
-     * 两个理由：渲染层传原始 HTML 过来会白占一次 IPC 序列化；
-     * 更重要的是**清洗逻辑要在能被单测的地方**（browser-text.cjs）。
+     * 走到这里 = 渲染层回了个**认不出来**的形状。直接判失败，别让工具干等到超时。
+     * 正常路径都有分支：navigate / nav → `ready`；click / type / snapshot / wcid 各一条。
+     * （正文清洗 `pickSource` / `extractText` 现在在 `ready` 分支里做。）
      */
-    /* 挑来源用 pickSource，不能写 `html ?? text` —— 见那里的注释（空字符串的坑） */
-    const picked = pickSource(result)
-    const text = extractText(picked.raw, { maxChars: 12_000 })
-
-    entry.resolve({
-      ok: true,
-      text,
-      title: String(result.title ?? ''),
-      url: String(result.url ?? ''),
-      /* browse_nav 多一个「往哪个方向走的」：工具要拿它写人话 */
-      nav: result.nav === undefined ? undefined : String(result.nav),
-      truncated: picked.raw.length > 12_000,
-    })
+    entry.resolve({ ok: false, error: '渲染层回了个无法识别的结果' })
     return { ok: true }
   })
 

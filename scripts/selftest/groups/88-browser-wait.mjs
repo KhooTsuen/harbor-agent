@@ -30,6 +30,8 @@ export async function run() {
     'utf8',
   )
   const handlerSrc = readFileSync(join(ROOT, 'electron/handlers/browser.cjs'), 'utf8')
+  const readSrc = readFileSync(join(ROOT, 'electron/core/browse-read.cjs'), 'utf8')
+  const scriptsSrc = readFileSync(join(ROOT, 'src/components/layout/browser/scripts.ts'), 'utf8')
 
   group('浏览器 / 等待的时间账')
 
@@ -40,11 +42,27 @@ export async function run() {
     rendererMs > 0 && mainMs > 0 && rendererMs < mainMs,
     `渲染层 ${rendererMs}ms vs 主进程 ${mainMs}ms`,
   )
+  const readMs = numberConst(handlerSrc, 'READ_TIMEOUT_MS')
   check(
-    '★ 三段等待共用同一条预算（不是各等各的）',
+    '★ 主进程读正文有独立上限，且 < 等界面上限（页面卡死时兜得住）',
+    readMs > 0 && readMs < mainMs,
+    `读 ${readMs}ms vs 等界面 ${mainMs}ms`,
+  )
+  check(
+    '★ 等待共用同一条预算（不是各等各的）',
     driverSrc.includes('new Budget()') &&
       /waitForElement\(\(\) => webviewRef\.current, budget\)/.test(driverSrc) &&
-      /readPage\(view, READ_SCRIPT, budget\)/.test(driverSrc),
+      /waitForLoad\(view, budget\)/.test(driverSrc),
+  )
+  check(
+    '★ B2：读正文搬到主进程（渲染层只报 ready + webContentsId）',
+    driverSrc.includes('ready: true') &&
+      driverSrc.includes('webContentsId') &&
+      !driverSrc.includes('READ_SCRIPT'),
+  )
+  check(
+    '★ 读正文脚本只有一处（渲染层的同名导出已删）',
+    readSrc.includes('READ_SCRIPT') && !scriptsSrc.includes('READ_SCRIPT'),
   )
   check(
     '★ guest 没就绪时执行脚本会重试（真机见过 Script failed to execute）',
@@ -57,8 +75,8 @@ export async function run() {
     driverSrc.includes('等页面就绪超时') && driverSrc.includes('budget.expired'),
   )
   check(
-    '★ 空正文会再读几次（SPA 加载完才填内容）',
-    waitSrc.includes('填内容') && /attempt === tries/.test(waitSrc),
+    '★ 空正文会再读几次（SPA 加载完才填内容）—— 现在在主进程',
+    readSrc.includes('填内容') && /attempt === tries/.test(readSrc),
   )
   /* 主进程那句误导人的话还在（它是兜底），但渲染层必须能先回话 */
   check(

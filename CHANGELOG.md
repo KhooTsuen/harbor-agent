@@ -5,6 +5,18 @@
 
 ## [未发布]
 
+- **读网页正文改由主进程经 CDP 读**（2026-10-09，浏览器 CDP 化 B2）。原来「读正文」是
+  渲染层用 `webview.executeJavaScript` 跑脚本、再把 text/html/title/url 回给主进程；
+  现在渲染层只负责**导航 + 等就绪**，回 `{ ready: true, webContentsId }`，正文由主进程经
+  `core/cdp.cjs` 的 `Runtime.evaluate` 读（新增 `core/browse-read.cjs`，含 SPA 空正文重试）。
+  读正文脚本 `READ_SCRIPT` 随之**只剩主进程一处**（渲染层同名导出已删）。`handlers/browser.cjs`
+  的 `browser:result` 加 `ready` 分支（排在 click / type / snapshot / wcid 之前）。
+  另给主进程的读补了一条**独立超时** `READ_TIMEOUT_MS`（15s）—— 读搬到主进程后不再受
+  「等界面」那条 45 秒计时器约束，页面 JS 卡死时 `Runtime.evaluate` 会永不返回，
+  必须自己兜住。
+  自检钉子同步：`88-browser-wait` 改盯 `ready`；新增自检组 `136-browse-read`
+  （空重试逻辑从 vitest 搬到内核自检）。
+
 - **CDP 调用收进一处（浏览器 CDP 化的地基）**（2026-10-09）。主进程用
   `webContents.debugger` 直连 webview 的 webContents（取无障碍树 / 跑脚本 / 派输入）
   这件事，原来散在各处自己 `attach` + `sendCommand`（`browse-ax.cjs`、`selftest-report.cjs`）。

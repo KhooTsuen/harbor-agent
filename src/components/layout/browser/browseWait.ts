@@ -218,37 +218,3 @@ export async function runScript<T>(
   }
   return { ok: false, error: last || '在网页里执行脚本失败' }
 }
-
-/** 读出来的一页正文 */
-export interface PageText {
-  text: string
-  html: string
-  title: string
-  url: string
-}
-
-/**
- * 读当前页面的正文：**空不算结果**。
- *
- * 有些站点（SPA）`did-finish-load` 之后才开始填内容，第一次读是空 ——
- * 直接把它当「这个页面没有可读的正文」报回去，模型就只能自己想办法了。
- * 所以空的话再等一小会儿看几次。
- */
-export async function readPage(
-  view: WebviewElement,
-  readScript: string,
-  budget: Budget,
-  tries = 3,
-): Promise<ScriptOutcome<Record<string, unknown>>> {
-  let last: ScriptOutcome<Record<string, unknown>> = { ok: true, value: undefined }
-  for (let attempt = 1; attempt <= tries; attempt += 1) {
-    last = await runScript<Record<string, unknown>>(view, readScript, budget, 2)
-    if (!last.ok) return last
-    const text = String(last.value?.text ?? '')
-    const html = String(last.value?.html ?? '')
-    /* 有正文就交付；只剩没几次机会了也别再等（宁可早点回话） */
-    if (text.length > 0 || html.length > 0 || attempt === tries || budget.left() < 1500) break
-    await sleep(900)
-  }
-  return last
-}

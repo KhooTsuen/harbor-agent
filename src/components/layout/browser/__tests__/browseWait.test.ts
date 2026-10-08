@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   BROWSE_BUDGET_MS,
   Budget,
-  readPage,
   runScript,
   waitForDomReady,
   waitForElement,
@@ -117,26 +116,6 @@ describe('browseWait / 在网页里执行脚本', () => {
     const out = await promise
     expect(out.ok).toBe(false)
     expect(out.ok === false && out.error).toContain('Script failed to execute')
-  })
-
-  it('① 第一次读是空（SPA 还没填内容）→ 会再读一次', async () => {
-    const view = fakeView(['{"text":""}', '{"text":"填好了"}'])
-    const budget = new Budget(60_000)
-    const promise = readPage(view, 'read', budget)
-    await vi.advanceTimersByTimeAsync(2_000)
-    const out = await promise
-    expect(out.ok).toBe(true)
-    expect(view.calls).toBe(2)
-    expect(out.ok && String(out.value?.text)).toBe('填好了')
-  })
-
-  it('预算快用完时不再空等（宁可早点回话）', async () => {
-    const view = fakeView(['{"text":""}'])
-    const budget = new Budget(1_000)
-    vi.advanceTimersByTime(900)
-    const out = await readPage(view, 'read', budget)
-    expect(out.ok).toBe(true)
-    expect(view.calls).toBe(1)
   })
 })
 

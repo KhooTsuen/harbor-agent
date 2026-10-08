@@ -11,25 +11,6 @@
 import { INTERACTIVE_SEL, WALK_FN, CLICK_HELP_FN, SNAP_SAVE, snapCheckSnippet } from './scriptParts'
 
 /**
- * 读正文的脚本。优先 innerText（渲染后的可见文本），HTML 只兜底。
- */
-export const READ_SCRIPT = `
-  (function () {
-    try {
-      var body = document.body ? document.body.innerText : ''
-      return {
-        text: body || '',
-        html: document.documentElement ? document.documentElement.outerHTML : '',
-        title: document.title || '',
-        url: location.href || ''
-      }
-    } catch (e) {
-      return { text: '', html: '', title: '', url: '', error: String(e) }
-    }
-  })()
-`
-
-/**
  * 可交互元素清单。每个元素：索引、标签、类型、角色、文本、中心坐标 + 尺寸。
  * 坐标从 getBoundingClientRect 拿，是精确的（不像视觉推理会漂）。
  *
