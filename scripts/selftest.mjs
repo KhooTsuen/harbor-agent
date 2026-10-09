@@ -155,6 +155,7 @@ import { run as cdpGroup } from './selftest/groups/135-cdp.mjs'
 import { run as browseReadGroup } from './selftest/groups/136-browse-read.mjs'
 import { run as browseOpsGroup } from './selftest/groups/137-browse-ops.mjs'
 import { run as browseHistoryGroup } from './selftest/groups/138-browse-history.mjs'
+import { run as browseSettleGroup } from './selftest/groups/139-browse-settle.mjs'
 
 const GROUPS = [
   basics,
@@ -279,7 +280,7 @@ const GROUPS = [
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
   cdpHelpersGroup, testPromptGroup, planGateGroup,
-  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup,
+  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup,
 ]
 
 async function main() {

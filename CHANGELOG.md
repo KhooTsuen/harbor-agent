@@ -5,6 +5,28 @@
 
 ## [未发布]
 
+- **修：读网页元素「动手太早」—— 读元素 / 点 / 打字前先等页面加载完**（2026-10-09）。
+  用户真机反馈：网络慢或 SPA 还没渲染完时，`browse_elements` 会拿**当时那一刻**的快照
+  当即时结论（「这页没东西可点」），或者照旧索引去点、被「页面变了」拦下 ——
+  病根不是那些保护错了，是**页面还没加载完就动手**。读正文早就有「空则重读」，
+  读元素没有。新增 `electron/core/browse-settle.cjs`：在页面里跑探针（`readyState` +
+  可交互元素数），主进程侧循环采样，`readyState === 'complete'` 且元素数连续几次不变
+  才算「安静」；到上限（8s）还没安静就**如实返回 `settled:false`**。
+  `browse-act.cjs` 的 snapshot / click / type 三条路都先 settle 再动手；读元素若
+  空且没安静，再给两次机会重读。没安静下来时，给模型的清单里会明写
+  「页面似乎还没加载完…重要操作前稍等再读一次」，而不是当成最终状态。
+  钉子：新增自检组 `139-browse-settle`（判定纯函数真跑 + 三个动作都等过的源码钉子）；
+  探针脚本在 `browseSettle.test.ts`（jsdom）里真跑。
+
+- **修：浏览器面板一打开就报错（`getWebContentsId` 炸面板）**（2026-10-09）。
+  B5 在 `useBrowseDriver` 加的「把当前标签 webContentsId 推给主进程」那段 effect
+  里，一跑就**立即**调一次 `view.getWebContentsId()`，而此时 webview 刚进 DOM、
+  guest 还没发 `dom-ready` → 该方法**抛**「must be attached to the DOM and the
+  dom-ready event emitted」，且未裹 try/catch，异常从 effect 冒出去被错误边界接住，
+  **整个浏览器面板变成「这一块出错了」**。修法：把这次调用裹进 try/catch，拿不到就
+  跳过、等 `dom-ready` 事件再推（复用已就绪标签的路径照旧立刻推）—— 与
+  `webviewNav.ts` 早就写明的规矩一致（每条 webview 方法调用都要裹 try/catch）。
+
 - **浏览器操作不再每次往返渲染层：`browser:result` 换成 `browser:active`**（2026-10-09，
   浏览器 CDP 化收尾 B5）。B1–B4 之后，页面的读正文 / 读元素 / 点 / 打字 / 换历史
   已经在主进程经 CDP 做，但**每次动作仍要渲染层回一次话**（`browser:result`）才算完。

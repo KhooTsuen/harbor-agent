@@ -18,6 +18,7 @@ const { extractText, pickSource } = require('./browser-text.cjs')
 const browseRead = require('./browse-read.cjs')
 const browseOps = require('./browse-ops.cjs')
 const browseHistory = require('./browse-history.cjs')
+const browseSettle = require('./browse-settle.cjs')
 
 /**
  * 读正文 / 换页的上限（B2/B4，2026-10-09）。
@@ -63,10 +64,35 @@ async function readBody(wcid, nav) {
   }
 }
 
+/** 快照里一个可交互元素都没读到（读失败不算「空」—— 那是另一回事） */
+function isEmptySnapshot(snapshot) {
+  return !snapshot?.error && Array.isArray(snapshot?.items) && snapshot.items.length === 0
+}
+
+/**
+ * 读元素：先等页面安静再读。
+ *
+ * 页面还没安静**又**读到空，就再给它两次机会 —— 有些 SPA 静下来之后才开始填内容，
+ * 一次读空不等于「这页没东西」。安静了还空，才当真的没有。settle 的结论一起带回去，
+ * 让工具能如实告诉模型「可能还在加载」（见 `tools/browse-elements.cjs`）。
+ */
+async function snapshotOp(wcid) {
+  const settle = await browseSettle.settle(wcid)
+  let snapshot = await browseOps.runSnapshot(wcid)
+  for (let attempt = 1; attempt <= 2 && !settle.settled && isEmptySnapshot(snapshot); attempt += 1) {
+    const again = await browseSettle.settle(wcid, { timeoutMs: 2_000 })
+    snapshot = await browseOps.runSnapshot(wcid)
+    if (again.settled) break
+  }
+  return { ok: true, snapshot, settle }
+}
+
 /** 按索引算落点（真点击由工具再调 `real-input` 派发） */
 async function clickOp(wcid, payload) {
+  /* 点之前先等页面安静 —— 治「页面还在加载 / 刚重排就点，被『页面变了』拦下」 */
+  const settle = await browseSettle.settle(wcid)
   const point = await browseOps.runClickPoint(wcid, payload.index, payload.force)
-  if (!point?.ok) return { ok: false, error: String(point?.error ?? '点击失败') }
+  if (!point?.ok) return { ok: false, error: String(point?.error ?? '点击失败'), settle }
   return {
     ok: true,
     click: point.label ?? '',
@@ -74,18 +100,21 @@ async function clickOp(wcid, payload) {
     x: Number(point.x) || 0,
     y: Number(point.y) || 0,
     webContentsId: wcid,
+    settle,
   }
 }
 
 /** 聚焦 + 校验输入框（真文字由工具再调 `real-input` 插入） */
 async function typeOp(wcid, payload) {
+  /* 打字前也先等页面安静 —— 输入框可能还在异步渲染 / 重排 */
+  const settle = await browseSettle.settle(wcid)
   const focus = await browseOps.runFocus(wcid, payload.index, payload.authorized)
   if (focus?.ok) {
-    return { ok: true, into: focus.into ?? '', password: focus.password === true, webContentsId: wcid }
+    return { ok: true, into: focus.into ?? '', password: focus.password === true, webContentsId: wcid, settle }
   }
   /* 密码框：先不填，回去让工具问用户 */
-  if (focus?.needsConfirm) return { ok: false, needsConfirm: true, error: '需要用户确认' }
-  return { ok: false, error: String(focus?.error ?? '输入失败') }
+  if (focus?.needsConfirm) return { ok: false, needsConfirm: true, error: '需要用户确认', settle }
+  return { ok: false, error: String(focus?.error ?? '输入失败'), settle }
 }
 
 /** 换历史（后退 / 前进），成了就把新页正文一起读回来 */
@@ -110,7 +139,7 @@ async function navOp(wcid, payload) {
  * @param {object} payload
  */
 async function runOp(action, wcid, payload) {
-  if (action === 'snapshot') return { ok: true, snapshot: await browseOps.runSnapshot(wcid) }
+  if (action === 'snapshot') return snapshotOp(wcid)
   if (action === 'click') return clickOp(wcid, payload)
   if (action === 'type') return typeOp(wcid, payload)
   if (action === 'nav') return navOp(wcid, payload)

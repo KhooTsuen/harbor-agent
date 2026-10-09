@@ -61,9 +61,21 @@ export function useBrowseDriver(
     const view = webviewRef.current
     if (!view) return
     const push = (): void => {
-      const wcId = view.getWebContentsId?.()
-      if (typeof wcId !== 'number') return
-      void window.workbench?.browserActive?.({ sessionId, webContentsId: wcId })
+      /*
+       * ⚠️ 必须裹 try/catch：webview 刚挂进 DOM、还没发 `dom-ready` 时，
+       * 调任何方法都抛「must be attached to the DOM and the dom-ready event
+       * emitted」。而这个 push 在 effect 里会**立即**跑一次（下一行），
+       * 异常从 effect 冒出去就被错误边界接住 → 整个浏览器面板「这一块出错了」
+       * （2026-10-09 真机，B5 引入）。拿不到先不推，`dom-ready` 响了会再推。
+       * 与 `webviewNav.ts` 的规矩一致：宁可拿不到状态，也不能把面板炸掉。
+       */
+      try {
+        const wcId = view.getWebContentsId?.()
+        if (typeof wcId !== 'number') return
+        void window.workbench?.browserActive?.({ sessionId, webContentsId: wcId })
+      } catch {
+        /* 还没 dom-ready —— 等事件，这次不推 */
+      }
     }
     push()
     const names = ['dom-ready', 'did-navigate', 'did-navigate-in-page', 'did-finish-load']
