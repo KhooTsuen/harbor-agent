@@ -197,6 +197,16 @@ export function TooltipFloating({
 
   if (!open || !content) return null
 
+  /*
+   * ★ 挂到**最近的浮层根**（`[data-layer-root]`），找不到才退回 body。
+   * 弹窗（Modal）自身是 `z-modal`(70) 的层叠上下文；提示若还挂 body、只带
+   * `z-dropdown`(40)，就会被弹窗整块盖住 —— 2026-10-10 真机 bug：设置弹窗里
+   * 预设卡片的「+」提示看不见，还会从面板右侧透出来。
+   * 挂进同一个层叠上下文后，40 > 面板的 10，提示就在面板之上；
+   * 非弹窗场景（侧栏等）找不到 layer root → 照旧 body，行为不变。
+   */
+  const layerRoot = reference.closest('[data-layer-root]') ?? document.body
+
   return createPortal(
     <TooltipBox
       id={id}
@@ -212,6 +222,6 @@ export function TooltipFloating({
     >
       {content}
     </TooltipBox>,
-    document.body,
+    layerRoot,
   )
 }

@@ -145,6 +145,10 @@ export function Modal({
     <AnimatePresence>
       {open ? (
         <div
+          /* 标记成「浮层根」：弹窗里的提示（useTooltip）会挂进这里，
+             而不是 body —— 否则它只有 z-dropdown(40)，会被这层 z-modal(70) 盖住。
+             见 useTooltip.tsx 的 TooltipFloating。 */
+          data-layer-root
           className={
             anchoredHere
               ? 'fixed inset-x-0 z-modal flex justify-start pointer-events-none'
