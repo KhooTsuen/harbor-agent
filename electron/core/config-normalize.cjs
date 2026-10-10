@@ -24,6 +24,21 @@ const {
 } = require('./config-normalize-parts.cjs')
 const securityCfg = require('./config-security.cjs')
 
+/**
+ * 上下文基准（token）取值 + **旧默认值迁移**。
+ *
+ * 2026-10-11 起 `0 = 跟随模型窗口`（新默认）。但旧版本这字段是死值、默认 16384，
+ * 而 `config.cjs` 的 `save()` 会把默认值一起落盘 —— 老盘上几乎都存着 `baseTokens: 16384`。
+ * 若把它当成「用户上限」，跟随窗口对老用户**永远不生效**（正是这次要修的病）。
+ * 所以：**旧默认值 16384 视同「没设过」→ 0**。想钉上限填别的值即可（16384 不再是合法默认）。
+ */
+const LEGACY_BASE_TOKENS = 16384
+function contextBaseTokensOf(raw) {
+  const n = Number(raw)
+  if (n === LEGACY_BASE_TOKENS) return 0
+  return clampNumber(n || C.DEFAULTS.context.baseTokens, 0, 1000000, C.DEFAULTS.context.baseTokens)
+}
+
 function normalize(raw) {
   const g = obj(raw)
   const general = obj(g.general)
@@ -149,8 +164,8 @@ function normalize(raw) {
     },
 
     context: {
-      /* 0/不填 → 默认；有效值夹 2000–128000（下限与 context-builder 对齐，详见进度文档） */
-      baseTokens: clampNumber(Number(context.baseTokens) || C.DEFAULTS.context.baseTokens, 2000, 128000, C.DEFAULTS.context.baseTokens),
+      /* 0 = 跟随模型窗口（默认）；显式值 = 用户上限，夹 0–1000000；旧死值 16384 见上面的迁移 */
+      baseTokens: contextBaseTokensOf(context.baseTokens),
       budget: Object.fromEntries(
         Object.entries(C.DEFAULTS.context.budget).map(([key, value]) => [
           key,

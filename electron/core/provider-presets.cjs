@@ -105,20 +105,25 @@ const PRESETS = [
     caps: { chat: true, streaming: true, vision: true },
     note: 'DeepSeek-VL 系：能读图；工具调用没查到明确说法，留成未知' },
   /*
-   * V4 系（flash / v4-pro）**已经能读图了** —— 以前的宽规则 `/^deepseek/` 把它
-   * 当成纯文本，于是用户一贴图就弹「这张图会失败」的警告，哪怕模型其实看得见。
-   * 这条必须放在 `deepseek-chat` **前面**（match 按顺序取第一条命中的）。
+   * V4 系。**flash 与 v4-pro 的图像能力不同**（官方定价页 2026-10-11：
+   * Flash「图像理解 支持」、V4-Pro「不支持」）—— 所以拆两条，v4-pro 放前面
+   * （match 按顺序取第一条命中的）。以前是一条 `/^deepseek-(flash|v4)/`
+   * 把两者都判成能读图，对 v4-pro 是**错的声明**。
    *
-   * 2026-09-28 真机复现确认：同一天用户报「DeepSeek 支持多模态了还说看不见图」，
-   * 那次的**真正原因在内核**（图片被上下文预算切掉了，见 context-builder.cjs），
-   * 这条预设只是把「本来能读图却被告知读不了」的另一半补齐。
+   * 数值同样以官方定价页为准：上下文 **1M**、输出**最大 384K**（旧值 128K/8K 已过时）。
+   * 这条链上的窗口数字此前只有渲染层用（压缩提示）；内核的上下文预算按窗口算是
+   * 2026-10-11 才接上的（见 `context-window.cjs`）。
    *
    * 声明口径照旧：以官方文档为准，用户可在「设置 → 供应商 → 模型能力」里覆盖。
    */
-  { id: 'deepseek-v4-vision', test: /^deepseek-(flash|v4)/,
+  { id: 'deepseek-v4-pro', test: /^deepseek-v4-pro/,
+    caps: { chat: true, streaming: true, tool_call: true, vision: false, structured_output: true,
+      attachments: false, context_window: 1_000_000, max_output: 384_000 },
+    note: 'DeepSeek-V4-Pro：官方**不支持**图像理解；上下文 1M、输出最大 384K（api-docs.deepseek.com）' },
+  { id: 'deepseek-flash', test: /^deepseek-(flash|v4)/,
     caps: { chat: true, streaming: true, tool_call: true, vision: true, structured_output: true,
-      attachments: false, context_window: 128_000, max_output: 8_192 },
-    note: 'DeepSeek V4 系（flash / v4-pro）：支持读图；附件维度没查到明确说法，留成未知' },
+      attachments: false, context_window: 1_000_000, max_output: 384_000 },
+    note: 'DeepSeek V4 系（flash / 历史名 v4-flash）：支持读图；上下文 1M、输出最大 384K' },
   { id: 'deepseek-chat', test: /^deepseek/,
     caps: { chat: true, streaming: true, tool_call: true, vision: false, structured_output: true,
       attachments: false, context_window: 65_536, max_output: 8_192 },

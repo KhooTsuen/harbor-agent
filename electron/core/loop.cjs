@@ -76,7 +76,7 @@ async function runLoop(options) {
 
   /* 环境 / 工具清单 / 记忆 / 项目说明 / 分层系统提示 —— 见 loop-prompt.cjs */
   const { messages, promptVersion } = buildPromptContext({
-    config, workdir, mode, history, threadSettings, options,
+    config, workdir, mode, history, threadSettings, options, model: useModel, provider: useProvider,
   })
   /* ②-1：提示词版本也记进台账（和模型一样，是「为什么这次不一样」的线索） */
   if (options.taskId) taskCore.recordPromptVersion(options.taskId, promptVersion)

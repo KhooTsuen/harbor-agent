@@ -194,22 +194,47 @@ export async function run() {
   )
 
   /*
-   * ── 上下文基准 vs 输出上限：这两件事拆开了（2026-10-04）──
+   * ── 上下文基准：跟随模型窗口（2026-10-11）──
    *
-   * `loop-prompt` 传给 `contextBuilder.assemble()` 的那个 `maxTokens` 是**上下文**
-   * 预算基准（字符 = ×3）。以前传的是设置页的 `assistant.maxTokens`（输出上限）——
-   * 于是一个管「能写多长」的数字顺带决定了系统提示 / 项目文件 / 记忆能占多少。
-   * 现在各归各，这一组只钉「谁读谁」。
+   * `loop-prompt` 传给 `contextBuilder.assemble()` 的 `maxTokens` 是**上下文**预算基准
+   * （字符 = ×3）。它错过两次：先错拿设置页的 `assistant.maxTokens`（输出上限），
+   * 又变成死值 `context.baseTokens`（16384）—— **与模型窗口脱钩**，换成 1M 窗口的
+   * 模型也没用（对话层照旧 14745 字符）。现在基准 = `min(模型窗口 × 80%, 用户上限)`，
+   * 算法只在 `context-window.cjs` 一处，与渲染层 `compact.ts` 的 `resolveLimit` 同口径
+   * （各算各的 → 用户会看到「圈才到 50%，它却自己压了」）。这一组钉「谁读谁 + 算法本身」。
    */
-  group('开关接线 / 上下文基准与输出上限拆开')
+  group('开关接线 / 上下文基准跟随模型窗口')
   const loopPromptSrc = read('electron/core/loop-prompt.cjs')
   check(
-    '★ 提示层读 context.baseTokens（不再读 assistant.maxTokens）',
-    /^\s*maxTokens:\s*config\.context\?\.baseTokens,?\s*$/m.test(loopPromptSrc) &&
+    '★ 提示层用 context-window 的算法算基准（不再直读某个固定字段）',
+    loopPromptSrc.includes('contextWindow.effectiveBaseTokens(') &&
       !loopPromptSrc.includes('config.assistant.maxTokens'),
+  )
+  check(
+    '★ loop 把「这轮实际用的模型/供应商」传给提示层（窗口按它算）',
+    read('electron/core/loop.cjs').includes('model: useModel, provider: useProvider'),
   )
   check(
     '★ 输出那条路没被跟着改（还是 assistant.maxTokens）',
     read('electron/core/loop-model.cjs').includes('config.assistant.maxTokens'),
+  )
+  const ctxWin = require(join(ROOT, 'electron/core/context-window.cjs'))
+  const capsCore = require(join(ROOT, 'electron/core/provider-capabilities.cjs'))
+  const { DEFAULT_CONTEXT_TOKENS } = require(join(ROOT, 'electron/core/context-builder.cjs'))
+  const base = (baseTokens, model) => ctxWin.effectiveBaseTokens({ config: { context: { baseTokens } }, model, provider: {} })
+  check('★ 1M 窗口 → 基准 80 万（不再被 16384 压住）', base(0, 'deepseek-v4-pro') === 800_000)
+  check('★ 用户上限是刹车：窗口再大，填了 32000 就用 32000', base(32000, 'deepseek-v4-pro') === 32000)
+  check('★ 窗口未知 → 退回死值基准（不是 0，也不是忽略）', base(0, '没有预设的模型') === DEFAULT_CONTEXT_TOKENS)
+  check('★ 显式上限 + 窗口未知 → 听用户的', base(32000, '没有预设的模型') === 32000)
+  check(
+    '★ 声明随官方更新：v4-pro = 1M/384K 且**不支持读图**，flash 支持读图',
+    (() => {
+      const pro = capsCore.resolve('deepseek-v4-pro', {}).caps
+      const flash = capsCore.resolve('deepseek-flash', {}).caps
+      return (
+        pro.context_window === 1_000_000 && pro.max_output === 384_000 && pro.vision === false &&
+        flash.vision === true && flash.context_window === 1_000_000
+      )
+    })(),
   )
 }

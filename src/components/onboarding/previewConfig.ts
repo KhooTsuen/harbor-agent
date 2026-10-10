@@ -69,8 +69,8 @@ export const PREVIEW_CONFIG: AppConfig = {
   },
   memory: { autoWrite: 'ask', injectLimit: 12, maxItems: 800, retrieve: true },
   context: {
-    /** 上下文基准（token）——和 `assistant.maxTokens`（输出上限）是两件事 */
-    baseTokens: 16384,
+    /** 上下文基准（token）：0 = 跟随模型窗口；非 0 = 用户钉死的上限；与 output 上限是两件事 */
+    baseTokens: 0,
     budget: {
       system: 10,
       memory: 5,

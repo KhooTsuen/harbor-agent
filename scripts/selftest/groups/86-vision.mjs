@@ -171,8 +171,8 @@ export async function run() {
     JSON.stringify(presets.match('deepseek-flash')?.caps),
   )
   check(
-    'deepseek-v4-pro 同理（同一个 V4 系）',
-    presets.match('deepseek-v4-pro')?.caps?.vision === true,
+    'deepseek 只有 flash 系声明支持读图；**v4-pro 官方不支持**（2026-10-11 照定价页更正）',
+    presets.match('deepseek-v4-pro')?.caps?.vision === false,
     JSON.stringify(presets.match('deepseek-v4-pro')?.caps),
   )
   check(

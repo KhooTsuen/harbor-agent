@@ -158,7 +158,13 @@ const DEFAULTS = {
   },
 
   context: {
-    baseTokens: 16384, // 上下文基准（token），字符预算 = ×3；以前偷用 assistant.maxTokens，已拆开
+    /**
+     * 上下文基准（token），字符预算 = ×3。**0 = 跟随模型窗口**（默认）——
+     * 内核按 `min(窗口 × 80%, 本值)` 算；本值非 0 = 用户钉死的上限（刹车）。
+     * 窗口未知且本值为 0 → 退回 `DEFAULT_CONTEXT_TOKENS`（见 context-window.cjs）。
+     * 2026-10-11 前是 16384 死值，跟窗口脱钩 —— 换 1M 窗口的模型也没用。
+     */
+    baseTokens: 0,
     /**
      * 各段占上下文窗口的比例（%）。
      *

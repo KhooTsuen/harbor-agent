@@ -3,6 +3,29 @@
 > 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
 > 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
 
+## [未发布]
+
+- **上下文预算改为跟随模型窗口**（2026-10-11）。病根：内核的上下文基准一直是死值
+  `context.baseTokens`（默认 16384），**与模型真实窗口脱钩** —— 把模型换成 1M 窗口的
+  DeepSeek V4，发出去的对话层还是 `16384×3×30% = 14745 字符`，窗口等于白给。
+  同时渲染层的压缩提示线早就按 `min(窗口×80%, 用户上限)` 算，两套口径各算各的。
+  改法：
+  ① 新增 `electron/core/context-window.cjs`：内核侧唯一的基准算法
+  `min(模型窗口×80%, 用户上限)`，与渲染层 `compact.ts` 的 `resolveLimit` 同口径；
+  `config.context.baseTokens` 语义改为 **0=跟随窗口（默认）/ 非0=用户钉死的上限（刹车）**。
+  ② `loop-prompt.cjs` 改用它算基准；`loop.cjs` 把「这轮实际用的模型/供应商」传下去。
+  ③ `config-defaults.cjs` 默认 `baseTokens: 0`；`config-normalize.cjs` 夹取区间
+  `2000–128000` → `0–1000000`（原来是 128K 时代的产物）。
+  ④ `provider-presets.cjs`：DeepSeek V4 声明更新为官方口径 **1M / 384K**（旧值 128K/8K），
+  并按官方把 **V4-Pro（不支持读图）** 与 **Flash（支持读图）** 拆成两条规则。
+  ⑤ **旧默认值迁移**：`config.cjs` 的 `save()` 会把默认值一起落盘，老用户盘上几乎都存着
+  `baseTokens: 16384` —— 不迁移的话它会被当成「用户上限」，跟随窗口对老用户**永远不生效**。
+  故 `config-normalize.cjs` 把旧死值 `16384` 视同「没设过」→ 0（实测本机 `data/config.json`
+  由 16384 → 0 → v4-pro 基准 800000）。
+  验证：`npm test` 自检组 `91-switch-wiring` 新增 6 条断言（算法 + 声明 + 接线）；
+  渲染层 `contextBaseSplit.test.ts` 随语义更新；端到端实测（贴 90 万字符）对话层
+  从 **14745 字符 → 720000 字符（≈48.8×）**。
+
 ## [1.30.0-beta.15] — 2026-10-10
 
 - **修：弹窗里的提示（tooltip）被弹窗盖住 / 从面板右侧透出来**（2026-10-10）。

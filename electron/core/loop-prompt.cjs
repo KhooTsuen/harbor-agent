@@ -28,6 +28,7 @@ const machineEnv = require('./machine-env.cjs')
 const mcpHint = require('./mcp-hint.cjs')
 const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, workRules, BROWSER_GUIDE } = promptStack
 const contextBuilder = require('./context-builder.cjs')
+const contextWindow = require('./context-window.cjs')
 const conversationState = require('./conversation-state.cjs')
 const sessionCore = require('./session.cjs')
 const contextDiag = require('./context-diag.cjs')
@@ -105,10 +106,10 @@ function toolsSection() {
  * 装配这一轮要发出去的消息。
  *
  * @param {{ config: object, workdir: string, mode: string, history: Array,
- *           threadSettings: object, options: object }} input
+ *           threadSettings: object, options: object, model?: string, provider?: object }} input
  * @returns {{ messages: Array, promptVersion: string }}
  */
-function buildPromptContext({ config, workdir, mode, history, threadSettings, options }) {
+function buildPromptContext({ config, workdir, mode, history, threadSettings, options, model, provider }) {
   /* AG-037：这段（提示词拼装 + 记忆召回 + 项目说明）自己计时，循环那边只管编排 */
   const startedAt = Date.now()
   const traceId = String(options?.traceId || options?.taskId || '')
@@ -184,8 +185,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
       ? { ...baseBudget, memory: Math.max(1, Math.floor((Number(baseBudget.memory) || 5) / 2)) }
       : baseBudget
   const assembled = contextBuilder.assemble({
-    /* 上下文基准读 context.baseTokens（2026-10-04 拆开：输出上限不再影响上下文），详见进度文档 */
-    maxTokens: config.context?.baseTokens,
+    /* 基准 = min(模型窗口×80%, 用户上限)；算法只在 context-window.cjs 一处（见该文件头） */
+    maxTokens: contextWindow.effectiveBaseTokens({ config, provider, model }),
     budget: softBudget,
     memory: memorySection,
     project: projectSection,

@@ -24,7 +24,7 @@ export interface MemoryConfig {
 }
 
 export interface ContextConfig {
-  baseTokens: number // 上下文基准（token），字符预算 = ×3；与 assistant.maxTokens（输出上限）无关
+  baseTokens: number // 上下文基准（token）：0 = 跟随模型窗口；非 0 = 用户钉死的上限；与 assistant.maxTokens（输出上限）无关
   budget: Record<string, number>
   compactAt: number
   autoCompactAt: number
