@@ -6,6 +6,7 @@ import { subscribeImageDone } from '@/lib/subscriptions'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useTaskNotifications } from '@/hooks/useTaskNotifications'
+import { useDownloadNotifications } from '@/hooks/useDownloadNotifications'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -25,6 +26,13 @@ export function useBackendSubscriptions(): void {
    * 和下面几项同一性质 —— 事情发生时用户可能根本没在看这条对话。
    */
   useTaskNotifications()
+
+  /*
+   * 下载的开始 / 完成 / 失败提示。
+   * 它同时是**下载事件的唯一订阅点** —— 面板按标签条件渲染，订阅放那儿的话，
+   * 用户在内置浏览器里点下载时没人接（见 hook 的文件头）。
+   */
+  useDownloadNotifications()
 
   /*
    * 未完成任务：启动、对话运行状态变化、窗口重新可见时刷新。

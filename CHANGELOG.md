@@ -5,6 +5,18 @@
 
 ## [未发布]
 
+- **下载的开始 / 完成 / 失败改成全局提示**（2026-10-11）。病根：下载事件的订阅长在
+  `DownloadsPanel` 里，而那个面板是**按标签条件渲染**的（`RightPanel.tsx`：
+  `activeRightTab === 'downloads'`）—— 用户在内置**浏览器**里点一个下载链接时，右栏
+  多半没停在「下载」标签 → 面板根本没挂载 → 事件推到渲染层**没人接** → 「点了下载
+  什么反应都没有」，失败了也不知道。改法：把订阅搬到常驻的
+  `src/hooks/useDownloadNotifications.ts`（在 `useBackendSubscriptions` 里挂一次），
+  它同时干两件事 —— ① 把事件喂给 `useDownloadsStore`（面板没开数据也保持最新）；
+  ② 对「开始 / 完成 / 失败」三种跃迁各弹一条 toast（带「查看」→ 切到下载标签）。
+  `progress` 不弹（每 200ms 一条，弹它等于刷屏）；`paused` / `queued` / `removed` /
+  `cleared` 多是用户自己点的，也不弹。`DownloadsPanel` 相应去掉自己的订阅、只管渲染。
+  单元测试见 `npm run test:unit` 输出。
+
 - **浏览器下载接进内置下载器**（2026-10-11）。以前网页里点「下载」走的是 Chromium
   自己的下载（没有队列 / 速度 / 续传，界面上也看不见）。病根：内置浏览器是独立分区的
   `<webview>`（分区 `persist:agent-browser`），它的 `session` 上**没人挂 `will-download`**。

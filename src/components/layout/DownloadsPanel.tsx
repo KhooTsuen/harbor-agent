@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, Pause, Play, RotateCcw, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { subscribeDownloadsEvent } from '@/lib/subscriptions'
 import {
   fileNameFromUrl,
   humanBytes,
@@ -17,8 +16,11 @@ import { useDownloadsStore } from '@/stores/useDownloadsStore'
 /* ══════════════════════════════════════════════════════════════
    右栏「下载」标签：任务队列 + 限速 + 进度
 
-   进度是**推**来的（`downloads:event`），组件挂载时先拉一次整表补状态。
-   后端是唯一真相源，这里不自己算「还剩多久」之类会漂的东西。
+   进度是**推**来的（`downloads:event`）—— 但订阅不在这个文件里：
+   这个面板按标签条件渲染（`RightPanel.tsx`），订阅放这儿的话，用户在内置
+   浏览器里点下载时面板根本没挂载、事件没人接（2026-10-11 真机踩到）。
+   现在订阅常驻在 `hooks/useDownloadNotifications.ts`，这里只管渲染，
+   挂载时拉一次整表补状态。后端依然是唯一真相源。
    ══════════════════════════════════════════════════════════════ */
 
 const STATUS_STYLE: Record<string, string> = {
@@ -134,7 +136,6 @@ export function DownloadsPanel() {
   const error = useDownloadsStore((s) => s.error)
   const loaded = useDownloadsStore((s) => s.loaded)
   const refresh = useDownloadsStore((s) => s.refresh)
-  const applyEvent = useDownloadsStore((s) => s.applyEvent)
   const act = useDownloadsStore((s) => s.act)
   const add = useDownloadsStore((s) => s.add)
   const clearFinished = useDownloadsStore((s) => s.clearFinished)
@@ -157,8 +158,7 @@ export function DownloadsPanel() {
 
   useEffect(() => {
     void refresh()
-    return subscribeDownloadsEvent(applyEvent)
-  }, [refresh, applyEvent])
+  }, [refresh])
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
