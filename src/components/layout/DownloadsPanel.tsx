@@ -41,6 +41,14 @@ function Row({
   return (
     <div className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5">
       <div className="flex items-center gap-2">
+        {item.origin === 'browser' ? (
+          <span
+            className="shrink-0 rounded-sm bg-bg-overlay px-1 text-2xs text-fg-tertiary"
+            title="来自内置浏览器"
+          >
+            网页
+          </span>
+        ) : null}
         <span className="min-w-0 flex-1 truncate text-2xs text-fg-primary" title={item.file}>
           {item.name}
         </span>

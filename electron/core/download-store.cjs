@@ -38,16 +38,8 @@ const STATUSES = ['queued', 'running', 'paused', 'done', 'failed']
 
 /** patch() 认得、且可以落盘的字段 */
 const FIELDS = [
-  'total',
-  'received',
-  'status',
-  'error',
-  'updatedAt',
-  'finishedAt',
-  'connections',
-  'attempts',
-  'resumedFrom',
-  'speedBps',
+  'total', 'received', 'status', 'error', 'updatedAt',
+  'finishedAt', 'connections', 'attempts', 'resumedFrom', 'speedBps',
 ]
 
 /** 并发上限与限速的默认值（内核是真相源，界面只显示） */
@@ -89,7 +81,12 @@ function load() {
     /* 只收「id + file 都可用」的：缺 file 的旧记录（早期草稿的 path 形状）会在界面上变成幽灵行 */
     const usable = (item) => Boolean(item) && typeof item.id === 'string' && item.id && typeof item.file === 'string' && item.file
     const items = Array.isArray(parsed.items)
-      ? parsed.items.filter(usable).map((item) => ({ ...item, status: normalizeStatus(item.status) }))
+      ? parsed.items.filter(usable).map((item) => ({
+          ...item,
+          status: normalizeStatus(item.status),
+          /* 旧记录没有 origin —— 一律当「手动加的」（迁移只补默认值，不动旧数据） */
+          origin: item.origin === 'browser' ? 'browser' : 'user',
+        }))
       : []
     if (Array.isArray(parsed.items) && items.length !== parsed.items.length) {
       log.warn(`下载台账里有 ${parsed.items.length - items.length} 条缺 id / file，已丢弃`)
@@ -182,6 +179,8 @@ function add(input) {
     url,
     file,
     name: path.basename(file),
+    /* 来源：'browser' = 网页里点的（见 download-intake.cjs）；'user' = 手填地址加的 */
+    origin: raw.origin === 'browser' ? 'browser' : 'user',
     total: numberOr(raw.total, 0),
     received: 0,
     status: 'queued',

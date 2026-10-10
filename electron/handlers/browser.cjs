@@ -22,11 +22,13 @@
  */
 
 const { ipcMain, BrowserWindow, app, session } = require('electron')
+const fs = require('node:fs')
 const log = require('../core/log.cjs')
 const { createSettler, onAbort } = require('../core/abort.cjs')
 const cdp = require('../core/cdp.cjs')
 const browseAct = require('../core/browse-act.cjs')
 const webviewPermissions = require('../core/webview-permissions.cjs')
+const downloadIntake = require('../core/download-intake.cjs')
 
 /** 等界面的上限（navigate 那条往返用）。读一个页面比「用户点确认」快得多 */
 const REQUEST_TIMEOUT_MS = 45_000
@@ -42,6 +44,37 @@ const pending = new Map()
  * 死了就删掉（页面关了）。
  */
 const activeTabs = new Map()
+
+/** 浏览器下载落盘目录：配置了就用配置的，没配就用当前会话工作目录 */
+function browserDownloadDir() {
+  try {
+    const configured = String(require('../core/config.cjs').get().downloads?.browserDir ?? '').trim()
+    if (configured) return configured
+  } catch {
+    /* 配置读不到就退回工作目录 */
+  }
+  try {
+    return require('./workdir.cjs').currentWorkdir()
+  } catch {
+    return require('../core/paths.cjs').DIRS.workspace
+  }
+}
+
+/** 这个路径是不是已经被占（磁盘上有了，或台账里有一条没跑完的） */
+function browserPathTaken(file) {
+  try {
+    if (fs.existsSync(file)) return true
+  } catch {
+    /* 查不了就当没占 */
+  }
+  try {
+    return require('../core/download-queue.cjs')
+      .snapshot()
+      .items.some((item) => item.file === file && item.status !== 'done' && item.status !== 'failed')
+  } catch {
+    return false
+  }
+}
 
 function newId() {
   return `brw_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -190,7 +223,19 @@ function register() {
    */
   if (typeof app.whenReady === 'function') {
     app.whenReady().then(() => {
-      webviewPermissions.install(session.fromPartition(webviewPermissions.PARTITION), log)
+      const ses = session.fromPartition(webviewPermissions.PARTITION)
+      webviewPermissions.install(ses, log)
+      /*
+       * 网页里的「下载」接进内置下载管理器（见 core/download-intake.cjs）：
+       * 公开文件（http/https）交给内置引擎（分段 / 续传 / 进队列面板）；
+       * blob: / 需登录的放行给 Chromium 自己的下载（它带着网页的 cookie）。
+       */
+      downloadIntake.install(ses, {
+        dir: browserDownloadDir,
+        isTaken: browserPathTaken,
+        add: (input) => require('../core/download-queue.cjs').add(input),
+        log,
+      })
     })
   }
 

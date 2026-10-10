@@ -41,6 +41,7 @@ interface ConfigState {
   patchMcp: (servers: AppConfig['mcp']['servers']) => Promise<void>
   patchScene: (id: SceneId, patch: Partial<SceneConfig>) => Promise<void>
   patchImage: (patch: Partial<AppConfig['image']>) => Promise<void>
+  patchDownloads: (patch: Partial<AppConfig['downloads']>) => Promise<void>
   updateProvider: (id: string, patch: Partial<ProviderConfig>) => Promise<void>
   addProvider: () => Promise<void>
   removeProvider: (id: string) => Promise<void>
@@ -85,6 +86,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   patchImage: async (patch) => {
     const config = await pushConfig({ image: patch })
+    if (config) set({ config })
+  },
+
+  patchDownloads: async (patch) => {
+    const config = await pushConfig({ downloads: patch })
     if (config) set({ config })
   },
 

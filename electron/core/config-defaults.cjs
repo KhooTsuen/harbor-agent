@@ -127,6 +127,12 @@ const DEFAULTS = {
     dir: '',
   },
 
+  /* 下载：网页里点下载时文件存哪（见 core/download-intake.cjs） */
+  downloads: {
+    /** 浏览器下载的落盘目录。**空 = 当前会话工作目录**（和 download 工具同口径） */
+    browserDir: '',
+  },
+
   mcp: {
     /**
      * 每个 server：

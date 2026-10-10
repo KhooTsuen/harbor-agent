@@ -154,9 +154,11 @@ describe('问题 21：网页标签的权限闸（默认全拒）', () => {
     expect(read('src/components/layout/BrowserTab.tsx')).toContain(
       `partition="${webviewPerm.PARTITION}"`,
     )
-    expect(read('electron/handlers/browser.cjs')).toContain(
-      'webviewPermissions.install(session.fromPartition(webviewPermissions.PARTITION), log)',
-    )
+    /* 主进程接线：从**这个分区**取 session，再把权限闸装上（表达式在
+       2026-10-11 拆成两句 —— 同一个 session 还要给下载接管用，见 download-intake） */
+    const browserSrc = read('electron/handlers/browser.cjs')
+    expect(browserSrc).toContain('session.fromPartition(webviewPermissions.PARTITION)')
+    expect(browserSrc).toContain('webviewPermissions.install(ses, log)')
   })
 })
 

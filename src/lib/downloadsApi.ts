@@ -28,6 +28,8 @@ export type DownloadItem = {
   received: number
   /** queued / running / paused / done / failed */
   status: string
+  /** 来源：'user' = 手填地址加的；'browser' = 内置网页里点下载接进来的 */
+  origin: string
   error: string
   createdAt: number
   updatedAt: number

@@ -170,6 +170,7 @@ function patch(partial) {
     fallback: { ...current.fallback, ...(partial.fallback ?? {}) },
     audit: { ...current.audit, ...(partial.audit ?? {}) },
     changeset: { ...current.changeset, ...(partial.changeset ?? {}) },
+    downloads: { ...current.downloads, ...(partial.downloads ?? {}) },
     mcp: partial.mcp ?? current.mcp,
     scenes: { ...current.scenes, ...(partial.scenes ?? {}) },
     providers: partial.providers ?? current.providers,

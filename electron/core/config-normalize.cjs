@@ -59,7 +59,6 @@ function normalize(raw) {
 
   const limits = obj(g.limits)
   const budgetRaw = budgetCore.legacyUnlimited(obj(g.budget)).value
-
   const providers =
     Array.isArray(g.providers) && g.providers.length > 0
       ? g.providers.map(normalizeProvider)
@@ -198,6 +197,11 @@ function normalize(raw) {
       enabled: changeset.enabled !== false,
       maxFileBytes: clampNumber(changeset.maxFileBytes, 1024, 64 * 1024 * 1024, 4 * 1024 * 1024),
       maxFiles: clampNumber(changeset.maxFiles, 1, 2000, 200),
+    },
+
+    /* 下载：浏览器下载落盘目录（空 = 当前会话工作目录，见 core/download-intake.cjs） */
+    downloads: {
+      browserDir: str(obj(g.downloads).browserDir).slice(0, 500),
     },
 
     /*

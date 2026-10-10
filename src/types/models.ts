@@ -102,6 +102,8 @@ export interface AppConfig {
   scenes: SceneMap
   /** 生图相关：保存目录等 */
   image: { dir: string }
+  /** 下载：网页里点下载时文件存哪（空 = 当前会话工作目录） */
+  downloads: { browserDir: string }
   assistant: {
     name: string
     systemPrompt: string

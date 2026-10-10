@@ -5,6 +5,21 @@
 
 ## [未发布]
 
+- **浏览器下载接进内置下载器**（2026-10-11）。以前网页里点「下载」走的是 Chromium
+  自己的下载（没有队列 / 速度 / 续传，界面上也看不见）。病根：内置浏览器是独立分区的
+  `<webview>`（分区 `persist:agent-browser`），它的 `session` 上**没人挂 `will-download`**。
+  改法：
+  ① 新增 `electron/core/download-intake.cjs` —— 在那个分区的 session 上挂 `will-download`：
+  公开文件（http/https）`preventDefault` 后转成 `origin='browser'` 的内置任务（分段 /
+  续传 / 进队列面板）；`blob:` / 需登录（cookie）的**放行**给 Chromium 自己的下载
+  （它带着网页 cookie，拦了会「点了没反应」）。同名文件自动让位（`a.zip → a(1).zip`）。
+  ② `handlers/browser.cjs` 在已有的 `whenReady` 里挂上它。
+  ③ 新增配置项 `downloads.browserDir`（设置 → 对话 → 下载；空 = 当前会话工作目录）。
+  ④ 台账 `items` 加 `origin` 字段（`'user'` / `'browser'`），旧记录读出来兜底 `'user'`
+  （只补默认、不动旧数据）；下载面板给浏览器来的任务标一个「网页」角标。
+  验证：`npm test`（内核自检，含 browser.cjs 接线）+ `npm run test:unit`（新增 intake
+  纯函数 / will-download 假 session / 台账 origin 断言，条数看输出，不在此写死）。
+
 - **下载管理器：并行分段 / 断点续传 / 失败重试 + 任务队列 / 限速 / 进度面板**（2026-10-11）。
   参照开源下载管理器（Ketch）的**功能思路**重写，不是搬代码（用户口径：只参照功能）。
   病根：`download.cjs` 一直是**单连接、全下内存、200MB 上限、无续传**，几 GB 的文件

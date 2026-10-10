@@ -99,6 +99,7 @@ export const PREVIEW_CONFIG: AppConfig = {
   },
 
   image: { dir: '' },
+  downloads: { browserDir: '' },
   mcp: { servers: [] },
   search: { provider: 'duckduckgo', apiKey: '', endpoint: '', maxResults: 5 },
 }
