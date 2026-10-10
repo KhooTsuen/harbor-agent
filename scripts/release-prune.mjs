@@ -42,33 +42,38 @@ for (const item of releases) {
   const kept = keep.includes(item.tag_name)
   console.log(`  ${kept ? '保留' : '删除'} ${item.tag_name}（${item.prerelease ? 'beta' : '正式版'}）${item.name ? ` · ${item.name}` : ''}`)
 }
+/*
+ * ★ 结束分支**不调 `process.exit()`**（2026-10-11）：
+ * `fetch()` 发过请求之后再 `process.exit()`，Node 24 在 Windows 上会撞 libuv 断言
+ * —— `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c:94`，
+ * 退出码 0xC0000409。表现是**输出全对、进程崩着退**，最容易误判成「没事」。
+ * 最小复现已确认：fetch 后 `process.exit(0)` 必崩，`dispatcher.close()` 也救不了；
+ * 改成让控制流走完、进程**自然退出**就干净。`--keep` 缺失那处 exit(1) 留在原地没动
+ * —— 它在第一个 fetch 之前，没有未决 handle，是安全的。
+ */
 if (doomed.length === 0) {
   console.log('没有要删的 —— 已经是「最新 1 个正式版 + 1 个 beta」了')
-  process.exit(0)
-}
-if (!APPLY) {
+} else if (!APPLY) {
   console.log(`\n--dry：上面这 ${doomed.length} 个会被删。真删加 --apply${WITH_TAGS ? '（含 tag）' : ''}`)
-  process.exit(0)
+} else {
+  for (const item of doomed) {
+    const removed = await ghApi(`/repos/${owner}/${repo}/releases/${item.id}`, {
+      token,
+      method: 'DELETE',
+    })
+    console.log(`${removed.ok ? '已删 Release' : `删 Release 失败（${removed.status}）`} ${item.tag_name}`)
+
+    if (!WITH_TAGS) continue
+    /* 远端 tag 走 API；本地那份也要删，否则下次 push --follow-tags 会把它复活 */
+    const gone = await ghApi(`/repos/${owner}/${repo}/git/refs/tags/${item.tag_name}`, {
+      token,
+      method: 'DELETE',
+    })
+    const local = spawnSync('git', ['tag', '-d', item.tag_name], { cwd: process.cwd(), encoding: 'utf8' })
+    console.log(
+      `  远端 tag：${gone.ok || gone.status === 404 ? '已删' : `失败（${gone.status}）`}` +
+        `；本地 tag：${local.status === 0 ? '已删' : '本来就没有'}`,
+    )
+  }
+  console.log(`\n完成。留下的：${keep.join('、')}`)
 }
-
-for (const item of doomed) {
-  const removed = await ghApi(`/repos/${owner}/${repo}/releases/${item.id}`, {
-    token,
-    method: 'DELETE',
-  })
-  console.log(`${removed.ok ? '已删 Release' : `删 Release 失败（${removed.status}）`} ${item.tag_name}`)
-
-  if (!WITH_TAGS) continue
-  /* 远端 tag 走 API；本地那份也要删，否则下次 push --follow-tags 会把它复活 */
-  const gone = await ghApi(`/repos/${owner}/${repo}/git/refs/tags/${item.tag_name}`, {
-    token,
-    method: 'DELETE',
-  })
-  const local = spawnSync('git', ['tag', '-d', item.tag_name], { cwd: process.cwd(), encoding: 'utf8' })
-  console.log(
-    `  远端 tag：${gone.ok || gone.status === 404 ? '已删' : `失败（${gone.status}）`}` +
-      `；本地 tag：${local.status === 0 ? '已删' : '本来就没有'}`,
-  )
-}
-
-console.log(`\n完成。留下的：${keep.join('、')}`)
