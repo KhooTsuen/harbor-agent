@@ -192,6 +192,42 @@ export async function downloadsSetLimits(
   }
 }
 
+/* ── 保存位置：文件夹 + 文件名（像浏览器那样） ─────────────── */
+
+/**
+ * 从地址里猜文件名 —— 像浏览器那样，但**还没发包**，所以只能从路径末段猜，
+ * 拿不到服务器给的 `Content-Disposition`。查询串 / 片段剥掉，百分号解开。
+ * 猜不出（`.../download?id=1`）返回空串 —— 界面据此留空让用户自己填，不编假名字。
+ */
+export function fileNameFromUrl(raw: string): string {
+  let pathname = ''
+  try {
+    pathname = new URL(String(raw ?? '').trim()).pathname
+  } catch {
+    return ''
+  }
+  const last = pathname.split('/').filter(Boolean).pop() ?? ''
+  if (!last) return ''
+  try {
+    return decodeURIComponent(last)
+  } catch {
+    return last
+  }
+}
+
+/**
+ * 把「保存文件夹 + 文件名」拼成一条路径交给内核。
+ * 文件夹留空 → 只给文件名，由内核按工作目录展开（与 download 工具同一条约定）。
+ */
+export function joinTarget(dir: string, name: string): string {
+  const base = String(name ?? '').trim()
+  if (!base) return ''
+  const folder = String(dir ?? '')
+    .trim()
+    .replace(/[\\/]+$/, '')
+  return folder ? `${folder}\\${base}` : base
+}
+
 /* ── 展示用小工具（界面多处要用，收在一处） ─────────────────── */
 
 export function humanBytes(bytes: number): string {

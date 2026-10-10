@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, Pause, Play, RotateCcw, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { subscribeDownloadsEvent } from '@/lib/subscriptions'
 import {
+  fileNameFromUrl,
   humanBytes,
   humanSpeed,
+  joinTarget,
   percentOf,
   statusText,
   type DownloadItem,
@@ -131,8 +133,19 @@ export function DownloadsPanel() {
   const setLimits = useDownloadsStore((s) => s.setLimits)
 
   const [url, setUrl] = useState('')
-  const [path, setPath] = useState('')
+  const [dir, setDir] = useState('')
+  const [name, setName] = useState('')
   const [formError, setFormError] = useState('')
+  /** 上一次由地址自动带出的文件名 —— 用户手改过之后就不再覆盖它 */
+  const autoNameRef = useRef('')
+
+  /** 地址一变就带出文件名；只在「空着」或「还是上次自动那个」时才覆盖 */
+  const changeUrl = (value: string) => {
+    setUrl(value)
+    const guess = fileNameFromUrl(value)
+    setName((current) => (current === '' || current === autoNameRef.current ? guess : current))
+    autoNameRef.current = guess
+  }
 
   useEffect(() => {
     void refresh()
@@ -142,11 +155,13 @@ export function DownloadsPanel() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setFormError('')
-    const result = await add(url.trim(), path.trim())
+    const result = await add(url.trim(), joinTarget(dir, name))
     if (!result.ok) setFormError(result.error ?? '加入失败')
     else {
       setUrl('')
-      setPath('')
+      setDir('')
+      setName('')
+      autoNameRef.current = ''
     }
   }
 
@@ -215,22 +230,29 @@ export function DownloadsPanel() {
       >
         <input
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => changeUrl(e.target.value)}
           placeholder="http/https 地址"
           aria-label="下载地址"
           className="rounded-sm border border-line-subtle bg-bg-base px-2 py-1 text-2xs text-fg-primary placeholder:text-fg-tertiary"
         />
         <div className="flex items-center gap-1">
           <input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder="保存到（相对工作目录，或绝对路径）"
-            aria-label="保存路径"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="文件名"
+            aria-label="文件名"
+            className="min-w-0 flex-1 rounded-sm border border-line-subtle bg-bg-base px-2 py-1 text-2xs text-fg-primary placeholder:text-fg-tertiary"
+          />
+          <input
+            value={dir}
+            onChange={(e) => setDir(e.target.value)}
+            placeholder="保存到文件夹（留空 = 工作目录）"
+            aria-label="保存文件夹"
             className="min-w-0 flex-1 rounded-sm border border-line-subtle bg-bg-base px-2 py-1 text-2xs text-fg-primary placeholder:text-fg-tertiary"
           />
           <button
             type="submit"
-            disabled={!url.trim() || !path.trim()}
+            disabled={!url.trim() || !name.trim()}
             className="shrink-0 rounded-sm bg-accent px-2 py-1 text-2xs text-fg-on-emphasis transition-opacity disabled:opacity-40"
           >
             下载
@@ -248,7 +270,7 @@ export function DownloadsPanel() {
               description={
                 loaded && error
                   ? error
-                  : '在上面填地址和保存路径，或让 Agent 用 download 工具下载 —— 两边共用同一个队列。'
+                  : '填地址和文件名（文件夹留空就存到工作目录），或让 Agent 用 download 工具下载 —— 两边共用同一个队列。'
               }
             />
           </div>

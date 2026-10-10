@@ -1,13 +1,9 @@
 /**
- * 下载引擎：一个文件怎么下才靠得住。参照开源下载管理器（Ketch）的**功能思路**
- * 重写（不是搬代码）：① 并行分段（探 `Range`，支持就切段、多连接同时下）；
- * ② 断点续传（进度记在 `<目标>.part.json`，下次从断点接着下）；
- * ③ 失败重试（某条连接断了只重下这一段，从已收位置继续）。
+ * 下载引擎：一个文件怎么下才靠得住。① 并行分段（探 `Range`，支持就切段多连接）；
+ * ② 断点续传（进度记 `<目标>.part.json`，下次从断点接着下）；③ 失败重试。
  *
  * 边界：不支持 Range 的服务器**回退单连接**（硬切段会写出错位数据）；小文件
- * （< `MIN_SEGMENT_BYTES`）不切；落盘写 `.part` 再 rename（不占内存），中途磁盘
- * 上会有 `.part` / `.part.json`（由 queue 的 remove 负责清）。
- * 不 require electron、不碰台账 —— 只认「给我 url 和目标路径，我把字节弄上磁盘」。
+ * （< `MIN_SEGMENT_BYTES`）不切；落盘写 `.part` 再 rename（不占内存）。
  */
 
 const fs = require('node:fs')
@@ -96,6 +92,13 @@ function planFor(total, connections, acceptRanges) {
   return { wanted, segments: planSegments(total, wanted) }
 }
 
+/** 建父目录 —— **已存在就跳过**。父目录是盘根时（填 `E:\x.iso`），Windows 上
+ *  `mkdirSync('E:\')` 会抛 EPERM —— 而盘根明明存在（2026-10-11 真机踩到）。 */
+function ensureDir(dir) {
+  if (fs.existsSync(dir)) return
+  fs.mkdirSync(dir, { recursive: true })
+}
+
 function readMeta(metaFile) {
   try {
     return JSON.parse(fs.readFileSync(metaFile, 'utf8'))
@@ -152,15 +155,7 @@ async function runSegment(options) {
   flushMeta()
 }
 
-/**
- * 下一个文件。
- *
- * @param {{ url: string, file: string, connections?: number,
- *           onProgress?: (p: { received: number, total: number }) => void,
- *           gate?: (bytes: number) => Promise<void>, signal?: AbortSignal,
- *           retries?: number }} options
- * @returns {Promise<{ bytes: number, total: number, resumed: boolean, connections: number }>}
- */
+/** 下一个文件。返回 { bytes, total, resumed, connections }（调用方 download-queue.cjs） */
 async function downloadFile(options) {
   const {
     url,
@@ -174,7 +169,7 @@ async function downloadFile(options) {
 
   const partFile = `${file}.part`
   const metaFile = `${file}.part.json`
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+  ensureDir(path.dirname(file))
 
   const probe = await probeUrl(url, signal)
   const total = probe.total
@@ -295,6 +290,7 @@ module.exports = {
   probeUrl,
   planSegments,
   planFor,
+  ensureDir,
   downloadFile,
   cleanupParts,
 }

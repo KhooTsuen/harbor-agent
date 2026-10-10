@@ -6,12 +6,14 @@
  * （这套「替换全局函数造错误/造响应」的写法与 118-safe-write 同一路子。）
  */
 import fs from 'node:fs'
+import path from 'node:path'
 import { join, require, ROOT, SANDBOX, ctx } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 const download = require(join(ROOT, 'electron/core/tools/download.cjs'))
 const tools = require(join(ROOT, 'electron/core/tools/index.cjs'))
 const registry = require(join(ROOT, 'electron/core/tools/registry.cjs'))
+const engine = require(join(ROOT, 'electron/core/download-engine.cjs'))
 
 /** 用假的 fetch 跑一段，结束后一定恢复（真 fetch 别被留下） */
 async function withFakeFetch(spec, fn) {
@@ -260,6 +262,18 @@ export async function run() {
   check('★ register-handlers 装上了 handlers/downloads', regSrc.includes('handlers/downloads.cjs'))
   const tabsSrc = fs.readFileSync(join(ROOT, 'src/components/layout/RightTabs.tsx'), 'utf8')
   check('★ 右栏有「下载」标签', tabsSrc.includes("id: 'downloads'"))
+
+  /* ★ 盘根不炸：父目录是盘根（E:\）时 mkdirSync 在 Windows 上抛 EPERM —— ensureDir
+     得「已存在就跳过」。真跑一次盘根路径（2026-10-11 真机踩到）。 */
+  const root = path.parse(process.cwd()).root
+  const rootOk = (() => { try { engine.ensureDir(root); return true } catch { return false } })()
+  check('★ 父目录是盘根时 ensureDir 不抛（mkdir EPERM 那道坑）', rootOk, `根=${root}`)
+
+  /* 保存位置拆成「文件名 + 文件夹」两个框 —— 不许退回「一个框填完整路径」。 */
+  const panelSrc = fs.readFileSync(join(ROOT, 'src/components/layout/DownloadsPanel.tsx'), 'utf8')
+  const twoInputs =
+    panelSrc.includes('aria-label="文件名"') && panelSrc.includes('aria-label="保存文件夹"')
+  check('★ 下载面板有「文件名」与「保存文件夹」两个框（不再是一个框填完整路径）', twoInputs)
 
   /* 硬约束 9：限速默认值只能有一处真相源 —— 界面那份「兜底」必须与内核同值 */
   const apiSrc = fs.readFileSync(join(ROOT, 'src/lib/downloadsApi.ts'), 'utf8')

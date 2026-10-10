@@ -1,4 +1,3 @@
-const fs = require('node:fs')
 const path = require('node:path')
 const { resolvePath } = require('./_shared.cjs')
 const engine = require('../download-engine.cjs')
@@ -53,7 +52,7 @@ module.exports = {
     if (!/^https?:\/\//i.test(url)) throw new Error(`只支持 http/https 地址：${url || '（空）'}`)
 
     const file = resolvePath(args.path, ctx.workdir, ctx)
-    fs.mkdirSync(path.dirname(file), { recursive: true })
+    engine.ensureDir(path.dirname(file))
 
     /* 先探一次拿大小，超上限就当场拒，别下到一半才发现 */
     let probe
