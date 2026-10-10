@@ -223,17 +223,10 @@ export async function run() {
 
   const segs = engine.planSegments(10 * 1024 * 1024, 4)
   const contiguous = segs.every((s, i) => (i === 0 ? s.start === 0 : s.start === segs[i - 1].end + 1))
-  check(
-    '★ 分段连续且覆盖到末尾',
-    segs.length === 4 && contiguous && segs[3].end === 10 * 1024 * 1024 - 1,
-    JSON.stringify(segs),
-  )
-  check(
-    '★ 小文件 / 未知大小 / 不支持 Range → 都不切段（回退单连接）',
-    engine.planFor(1024, 4, true).segments.length === 1 &&
-      engine.planFor(0, 4, true).segments.length === 1 &&
-      engine.planFor(10 * 1024 * 1024, 4, false).segments.length === 1,
-  )
+  const segOk = segs.length === 4 && contiguous && segs[3].end === 10 * 1024 * 1024 - 1
+  const noSeg = [engine.planFor(1024, 4, true), engine.planFor(0, 4, true), engine.planFor(10 * 1024 * 1024, 4, false)]
+  check('★ 分段连续且覆盖到末尾', segOk, JSON.stringify(segs))
+  check('★ 小文件 / 未知大小 / 不支持 Range → 都不切段（回退单连接）', noSeg.every((p) => p.segments.length === 1))
   check(
     '★ 够大又支持 Range → 才切成 connections 段',
     engine.planFor(10 * 1024 * 1024, 4, true).segments.length === 4,
@@ -285,6 +278,11 @@ export async function run() {
     fallbackGot === fallbackWant,
     `界面=${fallbackGot} 内核=${fallbackWant}`,
   )
+
+  /* 加固：没有可用 file 的旧记录（早期草稿的 path 形状）要被丢弃，绝不变成界面上的幽灵行 */
+  fs.writeFileSync(ledger, '{"version":1,"items":[{"id":"legacy","path":"old.bin","status":"error"},{"id":"nofile","url":"u"},{"id":"okfile","url":"u","file":"ok.bin"}]}')
+  const kept = store.list()
+  check('★ 缺 file / 缺 id 的旧记录直接丢弃（不变成幽灵行）', kept.length === 1 && kept[0].id === 'okfile', `kept=${kept.map((i) => i.id).join(',')}`)
 
   /* 收工：把台账指回默认，别让后面的组读到本组造的条目 */
   store.setFilePathForTest('')

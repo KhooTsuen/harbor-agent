@@ -86,13 +86,13 @@ function numberOr(value, fallback = 0) {
 function load() {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath(), 'utf8'))
+    /* 只收「id + file 都可用」的：缺 file 的旧记录（早期草稿的 path 形状）会在界面上变成幽灵行 */
+    const usable = (item) => Boolean(item) && typeof item.id === 'string' && item.id && typeof item.file === 'string' && item.file
     const items = Array.isArray(parsed.items)
-      ? parsed.items
-          .filter((item) => item && typeof item.id === 'string' && item.id)
-          .map((item) => ({ ...item, status: normalizeStatus(item.status) }))
+      ? parsed.items.filter(usable).map((item) => ({ ...item, status: normalizeStatus(item.status) }))
       : []
     if (Array.isArray(parsed.items) && items.length !== parsed.items.length) {
-      log.warn(`下载台账里有 ${parsed.items.length - items.length} 条读不出 id，已跳过`)
+      log.warn(`下载台账里有 ${parsed.items.length - items.length} 条缺 id / file，已丢弃`)
     }
     const limits = { ...DEFAULT_LIMITS, ...(parsed.limits && typeof parsed.limits === 'object' ? parsed.limits : {}) }
     return { version: VERSION, limits, items }
