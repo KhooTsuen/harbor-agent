@@ -3,6 +3,29 @@
 > 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
 > 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
 
+## [未发布]
+
+- **下载管理器：并行分段 / 断点续传 / 失败重试 + 任务队列 / 限速 / 进度面板**（2026-10-11）。
+  参照开源下载管理器（Ketch）的**功能思路**重写，不是搬代码（用户口径：只参照功能）。
+  病根：`download.cjs` 一直是**单连接、全下内存、200MB 上限、无续传**，几 GB 的文件
+  根本下不了；而且「任务队列 / 限速 / 进度」在界面上完全看不见。
+  改法：
+  ① 新增 `electron/core/download-engine.cjs`：探 `Range` → 支持就切段并行下；
+  进度记 `<目标>.part.json`，断了从断点接着下；单段失败退避重试（从已收位置继续）。
+  不支持 Range 的服务器**回退单连接**（硬切段会写出错位数据）。落盘写 `.part` 再
+  `rename`，不占内存。
+  ② 新增 `electron/core/download-store.cjs`（台账 `data/downloads.json`，带 version）
+  与 `electron/core/download-queue.cjs`（并发上限 + 令牌桶全局限速 + 状态机）。
+  ③ 新增 `handlers/downloads.cjs` 与 `downloads:*` 通道（清单同步进 `ipc-channels.cjs`
+  与 `preload.cjs`，含 `downloads:event` 进度推送；**通道数看那两份文件，不在这里写死**）。
+  ④ 工具 `download.cjs` 改用引擎：上限 **200MB → 2GB**，支持续传与并行分段。
+  ⑤ 界面：右栏新增「下载」标签（`DownloadsPanel.tsx` + `useDownloadsStore.ts` +
+  `downloadsApi.ts`），可加任务、暂停/继续/重试/删除、改并发与限速、看进度/速度。
+  验证：`npm test` 自检组 119 新增断言（台账回落时机、限速夹取、分段连续性、切段阈值、
+  渲染层兜底限速与内核默认值同值、preload/register/右栏接线）——断言条数以 `npm test`
+  输出为准，不在此写死；另跑三种真机场景（本地 HTTP 服务造「支持 Range / 不支持 Range /
+  慢速中断续传」）：sha 全部一致、`.part` 无残留、续传从断点（1.28MB 处暂停）接上。
+
 ## [1.30.0-beta.16] — 2026-10-11
 
 - **上下文预算改为跟随模型窗口**（2026-10-11）。病根：内核的上下文基准一直是死值

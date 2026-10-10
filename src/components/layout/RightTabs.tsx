@@ -1,5 +1,6 @@
 import {
   Activity,
+  Download,
   FileCode2,
   GitCompareArrows,
   Globe,
@@ -33,6 +34,7 @@ export const TABS: readonly { id: RightTab; label: string; icon: typeof FileCode
   { id: 'browser', label: '浏览器', icon: Globe },
   { id: 'artifacts', label: '成果', icon: Package },
   { id: 'tasks', label: '任务', icon: ListTodo },
+  { id: 'downloads', label: '下载', icon: Download },
   { id: 'state', label: '状态', icon: Activity },
   /* 内核记的错误（只读）—— 排查「刚才那个按钮为什么没反应」时的第一站 */
   { id: 'errors', label: '错误', icon: ShieldAlert },

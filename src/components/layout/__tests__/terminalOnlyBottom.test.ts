@@ -24,8 +24,11 @@ describe('终端只在底栏', () => {
 
   it('★ 右栏标签类型里没有 terminal（类型即文档）', () => {
     const types = read('src/types/index.ts')
-    const line = types.split('\n').find((l) => l.includes('export type RightTab')) ?? ''
-    expect(line).not.toContain('terminal')
+    /* 取整段声明：prettier 可能把 union 折成多行，只看单行会漏 */
+    const at = types.indexOf('export type RightTab')
+    const end = types.indexOf('\n\n', at)
+    const decl = at < 0 ? '' : types.slice(at, end < 0 ? types.length : end)
+    expect(decl).not.toContain('terminal')
   })
 
   it('★ 命令面板的「打开终端」开的是底栏，不是右栏', () => {

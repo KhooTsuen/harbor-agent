@@ -83,8 +83,11 @@ describe('错误面板：接线（测试照不到的那一层）', () => {
   const panel = stripComments(read('src/components/layout/ErrorsPanel.tsx'))
 
   it('RightTab 里有 errors', () => {
-    const line = types.split('\n').find((l) => l.includes('export type RightTab')) ?? ''
-    expect(line).toContain("'errors'")
+    /* 类型可能被 prettier 折成多行，所以取「整段声明」而不是单行（否则格式化一下就红） */
+    const at = types.indexOf('export type RightTab')
+    const end = types.indexOf('\n\n', at)
+    const decl = at < 0 ? '' : types.slice(at, end < 0 ? types.length : end)
+    expect(decl).toContain("'errors'")
   })
 
   it('标签表里有一项，并且面板真的被渲染（不是只注册了没人用）', () => {

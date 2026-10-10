@@ -1,5 +1,6 @@
 import type { ChatEvent, WorkbenchBridge } from '@/types/backend'
 import type { TaskEndPayload } from '@/types/notify'
+import type { DownloadEvent, DownloadsBridge } from '@/lib/downloadsApi'
 
 /* 订阅类桥接：和 backend.ts 分开，因为那边已经接近 300 行上限。
    这里只放「主进程 → 渲染层的推送事件」订阅。 */
@@ -70,4 +71,20 @@ export function subscribeNotificationClick(
 ): () => void {
   if (!bridge?.onNotificationClick) return () => {}
   return bridge.onNotificationClick(callback)
+}
+
+/**
+ * 下载进度 / 状态跃迁（`downloads:event`，见 `handlers/downloads.cjs`）。
+ *
+ * 和聊天事件分开：下载是后台跑的，跟当前这条对话没关系，混进 `chat:event`
+ * 会让「进度」和「正文」两套形状互相干扰。桥类型从 `downloadsApi` 借
+ * （`types/backend.ts` 已超 200 行，不往里塞）。
+ */
+export function subscribeDownloadsEvent(callback: (payload: DownloadEvent) => void): () => void {
+  const downloadBridge =
+    typeof window !== 'undefined'
+      ? (window.workbench as unknown as DownloadsBridge | undefined)
+      : undefined
+  if (typeof downloadBridge?.onDownloadsEvent !== 'function') return () => {}
+  return downloadBridge.onDownloadsEvent(callback)
 }

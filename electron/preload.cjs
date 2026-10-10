@@ -1,7 +1,4 @@
-/**
- * 预加载脚本 —— 主进程与渲染层之间唯一的桥。原则：**白名单**：渲染层能调什么
- * 全在这个文件里列清楚，不做「暴露整个 ipcRenderer」那种偷懒写法。
- */
+/* 预加载脚本 —— 主进程与渲染层之间唯一的桥。原则：**白名单**，不做「暴露整个 ipcRenderer」那种偷懒写法。 */
 
 const { contextBridge, ipcRenderer } = require('electron')
 
@@ -63,20 +60,16 @@ const api = {
   quitApp: () => call('app:quit'),
   showWindow: () => call('app:showWindow'),
   setTitleBar: (colors) => call('window:titleBar', colors),
-
   getConfig: () => call('config:get'),
   patchConfig: (partial) => call('config:patch', partial),
   resetConfig: () => call('config:reset'),
-
   pingProvider: (providerId) => call('provider:ping', providerId),
   listModels: (providerId) => call('provider:listModels', providerId),
-
   getWorkdir: () => call('workdir:get'),
   pickWorkdir: () => call('workdir:pick'),
   /** 只挑目录，不改全局默认（给单条对话挂目录用） */
   chooseFolder: () => call('workdir:choose'),
   workspaceScan: (dir) => call('workspace:scan', dir),
-
   listSessions: () => call('session:list'),
   searchSessions: (query, limit) => call('session:search', query, limit),
   listWorkdirs: () => call('session:workdirs'),
@@ -87,18 +80,15 @@ const api = {
   removeSession: (id) => call('session:remove', id),
   removeAllSessions: () => call('session:removeAll'),
   sessionToApiMessages: (id, limit) => call('session:toApiMessages', id, limit),
-
   saveText: (payload) => call('export:saveText', payload),
   pickJson: () => call('import:pickJson'),
   importSessions: (list) => call('session:import', list),
   appendCompact: (id, summary, upTo) =>
     call('session:appendCompact', id, summary, upTo),
-
   listSkills: () => call('skills:list'),
   createSkill: (name, description) => call('skills:create', name, description),
   removeSkill: (id) => call('skills:remove', id),
   openSkillsDir: () => call('skills:openDir'),
-
   getMemory: () => call('memory:get'),
   setMemory: (text) => call('memory:set', text),
   clearMemory: () => call('memory:clear'),
@@ -110,14 +100,11 @@ const api = {
   memoryEnable: (id) => call('memory:enable', id),
   memoryRemove: (id) => call('memory:remove', id),
   memoryExplain: (options) => call('memory:explain', options),
-
   searchProviders: () => call('search:providers'),
   testSearch: (override) => call('search:test', override),
-
   diagnosticsCopy: () => call('diagnostics:copy'),
   diagnosticsSave: () => call('diagnostics:save'),
   diagnosticsOpenDir: () => call('diagnostics:openDir'),
-
   sceneSnapshot: () => call('scene:snapshot'),
   sceneTitle: (messages) => call('scene:title', { messages }),
   sceneOptimize: (text) => call('scene:optimize', { text }),
@@ -203,13 +190,21 @@ const api = {
   artifactSave: (draft) => call('artifact:save', draft),
   artifactRemove: (id) => call('artifact:remove', id),
   artifactReveal: (id) => call('artifact:reveal', id),
-  /* 定时任务（core/schedule-*.cjs，台账 data/schedules.json）：`runNow` 立刻返回 ——
-     一条任务可能跑几分钟，把 IPC 挂在那儿等，渲染层只会看成「点了没反应」 */
+  /* 定时任务（core/schedule-*.cjs，台账 data/schedules.json）：runNow 立刻返回，不 await（可能跑几分钟） */
   schedulesList: () => call('schedules:list'),
   schedulesSave: (input) => call('schedules:save', input),
   schedulesRemove: (id) => call('schedules:remove', id),
   schedulesToggle: (id, enabled) => call('schedules:toggle', id, enabled),
   schedulesRunNow: (id) => call('schedules:runNow', id),
+  /* 下载管理器（core/download-queue.cjs，台账 data/downloads.json）：动作走这里，进度走 onDownloadsEvent */
+  downloadsList: () => call('downloads:list'),
+  downloadsAdd: (payload) => call('downloads:add', payload),
+  downloadsPause: (id) => call('downloads:pause', id),
+  downloadsResume: (id) => call('downloads:resume', id),
+  downloadsRetry: (id) => call('downloads:retry', id),
+  downloadsRemove: (id) => call('downloads:remove', id),
+  downloadsClear: () => call('downloads:clear'),
+  downloadsSetLimits: (patch) => call('downloads:setLimits', patch),
   metricsRecent: (payload) => call('metrics:recent', payload),
 
   credentialsStatus: () => call('credentials:status'),
@@ -264,6 +259,9 @@ const api = {
 
   /** 订阅插件热插拔事件（新增/删除插件时主进程通知） */
   onPluginsChanged: (callback) => subscribe('plugins:changed', callback),
+
+  /** 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
+  onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
 
   /* 订阅「生图完成 / 失败」：生图是异步的（提交完就返回，出图可能几分钟后），那轮对话早结束了 → 靠推事件把图插进对话 */
   onImageDone: (callback) =>

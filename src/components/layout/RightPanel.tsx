@@ -15,6 +15,7 @@ import { useBrowseBridge } from './browser/useBrowseBridge'
 import { ArtifactsPanel } from '@/components/chat/ArtifactsPanel'
 import { StatePanel } from '@/components/chat/StatePanel'
 import { TaskCenter } from '@/components/chat/TaskCenter'
+import { DownloadsPanel } from './DownloadsPanel'
 import { RollbackRecord } from '@/components/chat/rollback/RollbackRecord'
 import { ErrorsPanel } from './ErrorsPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -226,6 +227,7 @@ export function RightPanel() {
 
         {activeRightTab === 'artifacts' ? <ArtifactsPanel /> : null}
         {activeRightTab === 'tasks' ? <TaskCenter /> : null}
+        {activeRightTab === 'downloads' ? <DownloadsPanel /> : null}
         {activeRightTab === 'state' ? <StatePanel /> : null}
         {activeRightTab === 'errors' ? <ErrorsPanel /> : null}
 

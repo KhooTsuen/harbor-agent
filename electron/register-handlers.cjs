@@ -141,6 +141,8 @@ function registerHandlers(deps) {
    */
   const schedules = require('./handlers/schedules.cjs')
   schedules.register({ ipcMain })
+  /* 下载管理器（并行分段 / 续传 / 重试 + 队列 / 限速），台账在 data/downloads.json */
+  require('./handlers/downloads.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })
   /* 项目（一等实体）：登记表在 data/projects.json，见 core/projects.cjs */
   require('./handlers/projects.cjs').register({ ipcMain })
   /* 项目级规则（<工作目录>/.harbor/rules.md）：状态 / 重新加载 / 打开，逻辑在 core/project-rules.cjs */
