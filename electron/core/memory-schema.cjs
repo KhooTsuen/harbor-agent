@@ -86,6 +86,22 @@ function limitFromConfig() {
   }
 }
 
+/**
+ * 读时规整一条记忆（轻量迁移，不改文件）：补 `sessionId` / `projectId` 空串。
+ *
+ * `sessionId` 是 2026-10-11 为 SEC-065 加的字段 —— 老记录里没有它。补空串等于
+ * 「没有会话归属」，检索会话作用域时不会被注入（fail-closed），既不丢老数据、
+ * 也不把会话私有内容漏到别的会话。**不写回文件**：只在读出来时补默认值，
+ * 真正落盘由下一次 add/update 正常带出。
+ */
+function normalizeItem(item) {
+  return {
+    ...item,
+    projectId: typeof item.projectId === 'string' ? item.projectId : '',
+    sessionId: typeof item.sessionId === 'string' ? item.sessionId : '',
+  }
+}
+
 module.exports = {
   TYPES,
   SCOPES,
@@ -95,6 +111,7 @@ module.exports = {
   filePath,
   newId,
   nextSeq,
+  normalizeItem,
   clamp,
   limitFromConfig,
 }

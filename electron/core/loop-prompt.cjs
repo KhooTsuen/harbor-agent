@@ -153,6 +153,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
         : memory.buildPromptSection({
             query: typeof lastUser?.content === 'string' ? lastUser.content : '',
             projectId: options.projectId ?? '',
+            /* 会话私有记忆只在本会话注入（SEC-065）——没有 sessionId 就一条都不注入 */
+            sessionId: options.sessionId ?? '',
           })
   } catch (error) {
     log.warn(`读记忆失败：${error instanceof Error ? error.message : error}`)

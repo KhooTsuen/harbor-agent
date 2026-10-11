@@ -31,15 +31,31 @@ module.exports = {
         description:
           '这条记忆属于哪一类（不填按 fact）。约束/要求/项目规则这类「必须遵守」的别记成 fact，否则检索时不会被优先遵守。',
       },
+      scope: {
+        type: 'string',
+        enum: memory.SCOPES,
+        description:
+          '这条记忆管到哪（不填按 global = 所有对话）。只跟**这一次对话**有关的，填 session —— ' +
+          '它只在当前这条对话里被想起，换一条对话就不出现（避免串台）。',
+      },
     },
     required: ['content'],
   },
 
-  async run(args) {
+  async run(args, ctx = {}) {
     const text = String(args.content ?? '').trim()
     if (!text) throw new Error('内容是空的')
 
-    const result = memory.append({ content: text, type: args.type })
+    /*
+     * `scope` 由模型指定；填 `session` 时绑**当前会话**（ctx.sessionId）——
+     * 会话私有记忆只在本会话注入（SEC-065）。没有 sessionId 就落空串 = 不注入。
+     */
+    const result = memory.append({
+      content: text,
+      type: args.type,
+      scope: args.scope,
+      sessionId: ctx?.sessionId,
+    })
     if (!result.ok) throw new Error(result.error ?? '写入失败')
 
     const stats = memory.stats()

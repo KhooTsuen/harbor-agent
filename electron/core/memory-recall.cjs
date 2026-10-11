@@ -69,7 +69,8 @@ function retrieve({ query = '', projectId = '', sessionId = '', limit, scope = '
   /*
    * SEC-065：**会话私有**记忆只在**当前会话**里注入。没有会话上下文（或这条没绑
    * 会话）就一律不注入 —— fail-closed，绝不让某个会话的私事漏到别的会话里。
-   * （完整的「按会话绑定」需要 store 记 sessionId，那属数据结构变更，另立一项。）
+   * 会话绑定落在 `memory-store.cjs`：写入时记 `sessionId`（工具/界面传当前会话 id），
+   * 这里按它匹配；老记录没有该字段 → 读时补空串 → 不会被注入。
    */
   items = items.filter((i) => i.scope !== 'session' || (sessionId !== '' && i.sessionId === sessionId))
   if (scope) items = items.filter((i) => i.scope === scope)
@@ -104,11 +105,11 @@ function retrieve({ query = '', projectId = '', sessionId = '', limit, scope = '
  * 签名和返回值**都没变**（还是返回一段字符串，调用方在 loop-prompt.cjs）。
  * 顺手多记一份「这次为什么是这几条」的账，给界面用 —— 见 lastInjection()。
  *
- * @param {{ query?: string, projectId?: string }} [options]
+ * @param {{ query?: string, projectId?: string, sessionId?: string }} [options]
  */
-function buildPromptSection({ query = '', projectId = '' } = {}) {
+function buildPromptSection({ query = '', projectId = '', sessionId = '' } = {}) {
   const budget = injectLimit()
-  const picked = retrieve({ query, projectId, explain: true })
+  const picked = retrieve({ query, projectId, sessionId, explain: true })
   const items = picked.map((entry) => entry.item)
   /* total 在 retrieve 之后再取：pruneExpired 该先跑完（顺序和以前一致） */
   const total = store.stats().active

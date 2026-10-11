@@ -56,6 +56,7 @@ function normalize(raw) {
   const fallback = obj(g.fallback)
   const audit = obj(g.audit)
   const changeset = obj(g.changeset)
+  const image = obj(g.image)
 
   const limits = obj(g.limits)
   const budgetRaw = budgetCore.legacyUnlimited(obj(g.budget)).value
@@ -197,6 +198,18 @@ function normalize(raw) {
       enabled: changeset.enabled !== false,
       maxFileBytes: clampNumber(changeset.maxFileBytes, 1024, 64 * 1024 * 1024, 4 * 1024 * 1024),
       maxFiles: clampNumber(changeset.maxFiles, 1, 2000, 200),
+    },
+
+    /*
+     * 生图保存目录（空 = 工作目录下的 generated/，见 core/image-save.cjs）。
+     *
+     * 2026-10-11 补：这一段以前**漏在 normalize 里** —— `config-defaults.cjs` 有它、
+     * 界面也让它改，但读回来过 normalize 时被丢掉，于是「设置里改了生图保存位置、
+     * 保存后不生效」。加字段进白名单是老毛病（同类：`provider.extraBody`、
+     * `mcp.env` 都专门写过注释），这次漏的是它。
+     */
+    image: {
+      dir: str(image.dir).slice(0, 500),
     },
 
     /* 下载：浏览器下载落盘目录（空 = 当前会话工作目录，见 core/download-intake.cjs） */

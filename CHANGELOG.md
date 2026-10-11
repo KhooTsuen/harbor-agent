@@ -5,6 +5,28 @@
 
 ## [未发布]
 
+- **四笔遗留清理：生图保存位置不再被丢 / 会话记忆完整绑定 / 构建面分别查 / 真失败注入**（2026-10-11）。
+
+  · **`image.dir` 保存后不生效（既存 bug，报过几轮）**：`electron/core/config-normalize.cjs`
+    的 `normalize()` **漏了 `image` 段** —— `config-defaults.cjs` 有它、设置界面能改，但读回来
+    过 normalize 时被静默丢掉。补上白名单（`image: { dir }`），新增自检断言
+    「生图保存目录能过 normalize」。
+  · **SEC-065 完整修法（此前只是 fail-closed）**：`session` 作用域记忆**真正绑会话**——
+    `memory-store` 记录新增 `sessionId`，`add()` 落它，`memory-schema.normalizeItem()`
+    读时给老记录补空串（轻量迁移，不改文件、不丢数据）；`retrieve()` / `buildPromptSection()`
+    收 `sessionId`，`scope:'session'` 只认同会话、否则不注入。`loop-prompt.cjs` 透传
+    `options.sessionId`；`remember` 工具加 `scope` 参数并绑 `ctx.sessionId`（模型能正确创建
+    会话私有记忆）。断言从「不注入」扩到「**绑对了在本会话能注入**（功能没被砍）+ 换会话看不到」。
+  · **SEC-080 生产/开发构建分别查**：开发面（源码主窗口三项 + webview 沙箱）+ 生产面
+    （`dist/index.html` CSP + `dist-portable` 产物主进程三项 + preload 已打包）。未打包时如实
+    改为核对「打包脚本整目录拷 electron/」，不假装测过产物。
+  · **失败注入（文档 §12）真做**：新增 `scripts/security/suites/downloads-injection.mjs` ——
+    **真掐断连接 / 真 SIGKILL 子进程 / 真往不可用路径写**，观察行为（不留半截成品、`.part`
+    保留可续传），不看源码字符串。
+  · 顺带：`memory-store.cjs` 顶到 300 行红线、`MemoryTab.tsx` 本就贴着线 —— 会话记忆的
+    **用户手选入口**（下拉加「本次会话」）因此**未加**，如实记为遗留（模型入口已可用）。
+  · 验证：`npm run verify` 全绿；`npm run security` **PASS 83 · FAIL 0**；自检 **4104 / 0**。
+
 - **安全：全量安全回归的 2 个 FAIL 已修，安全门禁转绿**（2026-10-11）。84 项全量落地后
   跑出 2 个 FAIL，本笔修掉：
   · **SEC-077（P0）**：生产依赖 `xlsx` 换到 SheetJS 官方 CE 版 `0.20.3`

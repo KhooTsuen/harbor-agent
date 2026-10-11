@@ -110,14 +110,23 @@ function trimKeepsConstraints(promptStack, contextBuilder) {
   sec('SEC-064', t.length <= 50 && /裁剪/.test(t), `裁剪在预算内且标明（${t.length} 字符）`)
 }
 
-/** SEC-065：跨会话历史泄漏 —— 项目级已隔离；会话级边界（见发现） */
+/** SEC-065：跨会话历史泄漏 —— 项目级 / 会话级双双隔离，且**绑对了就能注入**（完整修法） */
 function crossSession(memory) {
   memory.clear()
   memory.add({ content: '项目A标记-ALPHA', scope: 'project', projectId: 'A' })
-  memory.add({ content: '会话私有标记-OMEGA', scope: 'session' })
+  memory.add({ content: '会话私有标记-OMEGA', scope: 'session', sessionId: 'S1' })
   const inB = memory.retrieve({ projectId: 'B' }).map((i) => String(i.content ?? ''))
   sec('SEC-065', !inB.some((c) => c.includes('项目A标记-ALPHA')), '项目 A 的私有记忆不注入项目 B')
   sec('SEC-065', !inB.some((c) => c.includes('会话私有标记-OMEGA')), '会话私有记忆不注入别的会话（无会话上下文时也不注入）')
+
+  /* 完整修法之后：绑了会话的记忆**在本会话里确实能注入**（不是一刀切关掉） */
+  const inS1 = memory.retrieve({ sessionId: 'S1' }).map((i) => String(i.content ?? ''))
+  sec('SEC-065', inS1.some((c) => c.includes('会话私有标记-OMEGA')), '会话私有记忆在本会话里能注入（功能没被砍掉）')
+  const inS2 = memory.retrieve({ sessionId: 'S2' }).map((i) => String(i.content ?? ''))
+  sec('SEC-065', !inS2.some((c) => c.includes('会话私有标记-OMEGA')), '换一条会话就看不到（绑会话真的生效）')
+  /* 注入段（真正进系统提示的那段）也按会话隔离 */
+  const sectionS2 = memory.buildPromptSection({ sessionId: 'S2' })
+  sec('SEC-065', !sectionS2.includes('会话私有标记-OMEGA'), '会话 B 的注入段里没有会话 A 的私事')
   memory.clear()
 }
 

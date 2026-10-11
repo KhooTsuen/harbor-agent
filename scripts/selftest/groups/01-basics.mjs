@@ -63,6 +63,14 @@ export async function run() {
 
   const saved = configModule.save({ ...defaults, general: { ...defaults.general, fontScale: 123 } })
   check('保存后立即生效', configModule.get().general.fontScale === 123)
+  /*
+   * 2026-10-11：`image` 段以前漏在 normalize 的白名单外 —— 设置里改「生图保存位置」
+   * 保存后会被静默丢掉（改了不生效）。这条钉住「它现在在名单里、值能过一遍读回来」。
+   */
+  check(
+    '生图保存目录能过 normalize（不再被丢掉）',
+    configModule.normalize({ image: { dir: 'D:\\pics' } }).image.dir === 'D:\\pics',
+  )
   const rendered = configModule.forRenderer()
   check(
     'forRenderer 藏了 key',

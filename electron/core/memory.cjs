@@ -103,7 +103,7 @@ function write(text) {
 /** 追加一条（`remember` 工具走这里） */
 
 /**
- * @param {string | { content?: string, type?: string, scope?: string }} input
+ * @param {string | { content?: string, type?: string, scope?: string, sessionId?: string, projectId?: string }} input
  *   老调用方传字符串（当 content）；`remember` 工具传对象，可以带 type/scope。
  *   type/scope 由 store.add 按 `memory-schema.cjs` 那份词汇表校验 —— 认不出的
  *   一律退回 fact / global，调用方不用自己再判一遍（形状只有一处）。
@@ -124,6 +124,9 @@ function append(input) {
     /* 模型能说清这是偏好还是约束 —— 类型决定「该不该被遵守」和「会不会取代旧的」 */
     type: fromString ? undefined : input?.type,
     scope: fromString ? undefined : input?.scope,
+    /* 会话作用域记忆要绑会话（SEC-065）——空串 = 无会话 = 不注入，由 store 落字段 */
+    sessionId: fromString ? undefined : input?.sessionId,
+    projectId: fromString ? undefined : input?.projectId,
     /* 工具调用前面已经过一次用户确认（remember 算写操作），所以是「用户已确认」 */
     source: 'user_confirmed',
     confidence: 1,

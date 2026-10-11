@@ -30,6 +30,7 @@ const {
   filePath,
   newId,
   nextSeq,
+  normalizeItem,
   clamp,
   limitFromConfig,
 } = require('./memory-schema.cjs')
@@ -43,7 +44,7 @@ function load() {
   }
   try {
     const parsed = JSON.parse(raw)
-    const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && typeof i.content === 'string') : []
+    const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && typeof i.content === 'string').map(normalizeItem) : []
     return { version: 1, items }
   } catch (error) {
     /* 解不开：先留一份 —— 不然接下来任何一次 add/touch 写盘都会把它盖成空列表 */
@@ -62,7 +63,8 @@ function persist(data) {
 /**
  * 加一条记忆。合法值校验都在这里按 `memory-schema.cjs` 那份词汇表做。
  * @param {{ content: string, type?: string, scope?: string, source?: string,
- *   importance?: number, confidence?: number, expiresAt?: number, projectId?: string }} input
+ *   importance?: number, confidence?: number, expiresAt?: number, projectId?: string,
+ *   sessionId?: string }} input
  * @returns {{ ok: boolean, item?: object, superseded?: string[], error?: string, deduped?: boolean }}
  */
 function add(input) {
@@ -102,6 +104,7 @@ function add(input) {
     lastUsedAt: 0,
     expiresAt: Number(input.expiresAt) || 0,
     projectId: String(input.projectId ?? ''),
+    sessionId: String(input.sessionId ?? ''),
     status: 'active',
     supersededBy: '',
   }

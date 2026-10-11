@@ -258,27 +258,35 @@ npm run security:gate            # 严格发布门禁：P0 有 FAIL/BLOCKED/NOT_
 | §12 | 附 **commit + 时间戳** | ✅ | `report.commit` / `report.timestamp` |
 | §12 | 覆盖率**三口径** | ✅ | 实现率 / 执行率 / 通过率（分母不含 NOT_RUN） |
 | §12 | 漏洞数与通过率**分开报告** | ✅ | `coverage.vulnerabilities` 单列，报告里也分开写 |
-| §12 | 适用 P0 全 PASS（不得 FAIL/BLOCKED/NOT_RUN） | ❌ **当前不满足** | 严格档 `npm run security:gate` 判；缺口见下 |
-| §12 | 生产 / 开发构建分别查 Electron/IPC | ✅ | SEC-080：构建产物 `dist/index.html` CSP 与源码一致 |
-| §12 | 失败注入（进程退出/磁盘满/…） | ✅ | SEC-050/051/053（网络失败/取消/启动回落/写盘失败） |
+| §12 | 适用 P0 全 PASS（不得 FAIL/BLOCKED/NOT_RUN） | ✅ | 严格档 `npm run security:gate` 通过（P0 45/45 PASS） |
+| §12 | 生产 / 开发构建分别查 Electron/IPC | ✅ | SEC-080：**开发面**（源码主窗口 + webview 沙箱三项）、**生产面**（`dist/index.html` CSP + `dist-portable` 产物主进程沙箱三项 + preload 已打包） |
+| §12 | 失败注入（进程退出/磁盘满/…） | ✅ | **真注入**（`downloads-injection.mjs`）：真掐断连接、真 SIGKILL 子进程、真往不可用路径写；另有模拟类（5xx / 取消 / 启动回落 / 写盘失败） |
 | §13 首批 20 项 | 20 项落地 | ✅ | 20/20 全有断言（本批补齐 SEC-013/014/018/021/037） |
 
-**全 84 项：实现率 100%、执行率 98.8%（1 项 N/A）、通过率 97.6%。** 数字会随实现变，看
+**全 84 项：实现率 100%、执行率 98.8%（1 项 N/A）、通过率 100%（PASS 83 · FAIL 0）。** 数字会随实现变，看
 `npm run security` 输出。
 
 ## 五、本批发现（2 项 FAIL，需人决策）
 
-### F-4 · SEC-065｜`session` 作用域记忆未按会话隔离（P1）→ **已修（fail-closed）**
+### F-4 · SEC-065｜`session` 作用域记忆未按会话隔离（P1）→ **已完整修（绑会话）**
 
 - **位置**：`electron/core/memory-recall.cjs` 的 `retrieve()` —— 只按 `project` 过滤作用域，
   没有按会话过滤；而 `memory-schema.cjs` 的 `SCOPES` 含 `'session'`。
 - **最小复现**：加一条 `scope: 'session'` 的记忆，在**任意**会话 `retrieve({})` 都能取到。
-- **做了什么**：`retrieve()` 现在对 `scope: 'session'` 的记忆**按会话匹配、否则不注入**
-  （无会话上下文 = fail-closed）。这样会话私事绝不会漏到别的会话。
+- **做了什么（完整修法，不再只是 fail-closed）**：
+  - `memory-store` 的记录新增 `sessionId` 字段；`add()` 落它；`memory-schema.normalizeItem()`
+    在**读时**给老记录补空串（轻量迁移，不改文件、不丢数据）。
+  - `retrieve()` / `buildPromptSection()` 收 `sessionId`：`scope:'session'` 的记忆
+    **只认同会话**，否则不注入（无会话上下文 = fail-closed）。
+  - `loop-prompt.cjs` 把 `options.sessionId` 透传下去；`remember` 工具加 `scope` 参数，
+    填 `session` 时绑 `ctx.sessionId` —— 模型能正确创建会话私有记忆。
+- **断言**（`security:memory` 的 SEC-065）：跨项目/跨会话不注入、**绑对了在本会话能注入**
+  （功能没被砍）、换会话看不到、注入段也按会话隔离。
 - **连带**：`71-memory-explain` 的种子 scope 由 session 改 task（等价更新），并**另补一条**
   直接测 `explain()` 对 session 条目的解释 —— 证明解释能力没被砍。
-- **遗留**：完整的「按会话绑定」要 `memory-store` 记 `sessionId`（数据结构变更 + 迁移），
-  本轮**未做**；因此当前 `session` 作用域记忆**不再被注入**（安全方向，宁可少注入）。
+- **遗留**：设置页「记忆归属」下拉暂只有「全局 / 当前项目」，**没有**让用户手选「本次会话」
+  —— `MemoryTab.tsx` 本来就贴着 300 行红线，硬塞会破硬约束。会话私有记忆目前由模型经
+  `remember(scope:'session')` 创建（用户手选入口留待把该 Tab 拆小后再加）。
 
 ### F-5 · SEC-077｜生产依赖 `xlsx` 有 high 漏洞（P0）→ **已修（换 SheetJS CE）**
 
@@ -291,7 +299,7 @@ npm run security:gate            # 严格发布门禁：P0 有 FAIL/BLOCKED/NOT_
   的 **high 归零**，`require('xlsx')` 仍可用（0.20.3），Excel 解析路径不受影响。
 - **注意**：依赖来源改成官方 CDN tarball —— 以后装依赖需要能访问 `cdn.sheetjs.com`。
 
-> 结论：**两条 FAIL 均已修** → `npm run security` PASS 82 · FAIL 0；严格发布门禁
+> 结论：**两条 FAIL 均已修** → `npm run security` PASS 83 · FAIL 0（1 项 N/A）；严格发布门禁
 > （`npm run security:gate`）**通过**。修复都附了回归断言，未为「变绿」而弱化任何断言。
 
 

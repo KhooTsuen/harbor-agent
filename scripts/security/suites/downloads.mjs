@@ -7,6 +7,7 @@
 
 import { sec } from '../harness.mjs'
 import { fs, path, require, ROOT, tmpDir, startMockServer } from '../sandbox.mjs'
+import { failureInjection } from './downloads-injection.mjs'
 
 const join = path.join
 
@@ -233,6 +234,7 @@ export async function run() {
     ['SEC-054 并发限速与资源上限', () => limits(store)],
     ['SEC-056 下载校验', () => verification(engine)],
     ['SEC-055 旧台账 / 损坏台账迁移', () => ledgerMigration(store)],
+    ['失败注入（断连 / 强杀 / 写不进去）', () => failureInjection(engine, binaryServer)],
   ]
   for (const [label, fn] of steps) {
     console.log(`\n· ${label}`)
