@@ -21,8 +21,7 @@ const ops = require_(join(process.cwd(), 'electron/core/browse-ops.cjs')) as {
 }
 
 /** 在 jsdom 的窗口上下文里跑一段页面脚本（脚本里的 window/document/location 才在） */
-const run = (src: string): Record<string, unknown> =>
-  window.eval(src) as Record<string, unknown>
+const run = (src: string): Record<string, unknown> => window.eval(src) as Record<string, unknown>
 
 beforeEach(() => {
   document.body.innerHTML = ''
