@@ -34,10 +34,22 @@ function isHttpUrl(raw) {
   }
 }
 
-/** 把服务器给的名字洗成能落盘的文件名（去路径、去非法字符、限长） */
+/**
+ * 把服务器给的名字洗成能落盘的文件名（去路径、去非法字符、限长）。
+ *
+ * ★ 去路径这步**不能用 `path.basename()`**（2026-10-12 修）：它**看平台办事** ——
+ * Windows 把 `\` 当路径分隔符、Linux 不当。于是同一个 `a/b\c:d?.zip` 在 Windows 上
+ * 清成 `c_d_.zip`、在 Linux 上清成 `b_c_d_.zip`；CI 跑在 Linux、开发机是 Windows，
+ * 同一条断言两边结果不同 —— CI 从这文件落地那天起连红 15 次，本地却一直是绿的。
+ * 下载文件名来自外站，`\` 一律当分隔符切掉本来也更安全，顺带两端一致。
+ */
 function safeName(raw) {
-  const base = path
-    .basename(String(raw ?? '').trim())
+  const last = String(raw ?? '')
+    .trim()
+    .replace(/[\\/]+$/, '') // 去掉尾随分隔符（`a/b/` → `a/b`），等价于原来 basename 的行为
+    .split(/[\\/]/)
+    .pop()
+  const base = String(last ?? '')
     .replace(ILLEGAL, '_')
     .replace(/^\.+/, '')
     .slice(0, 120)
