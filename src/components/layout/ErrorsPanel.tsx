@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { Check, Copy, FolderOpen, RefreshCw } from 'lucide-react'
-import type { ErrorEntry, ErrorListResult, ErrorSeverity } from '@/types/errors'
-import { formatReport, listErrors } from '@/lib/errorsApi'
+import type { ErrorEntry, ErrorSeverity } from '@/types/errors'
+import { formatReport } from '@/lib/errorsApi'
 import { openDataDir } from '@/lib/diagnosticsApi'
+import { useErrorsStore } from '@/stores/useErrorsStore'
 import { STATUS_CLASS, type UiStatus } from '@/lib/statusLanguage'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +22,10 @@ import { cn } from '@/lib/utils'
      · 打开时拉一次 + 手动刷新，**不轮询**（和「空闲不动」的原则一致）
      · `ok: false` 要照实说「读不出来」，不能显示成「一切正常」——
        把读失败显示成没错误，是最误导人的一种显示
+
+   ★ Phase 1 · A1：抓取已收到 `useErrorsStore`（角标与这里读**同一份**）。
+     打开面板只把「未读」提示清零（acknowledge），**不**把错误标记为已处理 ——
+     错误仍在清单里、仍是未解决（面板只读，不删不改）。
 
    颜色一律走 `statusLanguage` 那一份（有测试盯着：组件里直接写 var(--danger) 会红）。
    ══════════════════════════════════════════════════════════════ */
@@ -48,20 +53,25 @@ function fmtTime(ts: number): string {
 
 export function ErrorsPanel(): ReactElement {
   const [days, setDays] = useState(7)
-  const [result, setResult] = useState<ErrorListResult | null>(null)
-  const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [notice, setNotice] = useState('')
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setResult(await listErrors({ days }))
-    setLoading(false)
-  }, [days])
+  /* 同一份数据来自 store（角标也读它）—— 面板不再自己抓一份 */
+  const result = useErrorsStore((s) => s.snapshot)
+  const loading = useErrorsStore((s) => s.loading)
+
+  /* 打开这一页 = 看过了：只清「未读」提示，不声称已处理（错误照旧列在下面） */
+  useEffect(() => {
+    useErrorsStore.getState().acknowledge()
+  }, [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void useErrorsStore.getState().refresh(days)
+  }, [days])
+
+  const load = useCallback(() => {
+    void useErrorsStore.getState().refresh(days)
+  }, [days])
 
   /** 按严重性分组（顺序由后端给，别在组件里另排一套） */
   const groups = useMemo(() => {
@@ -140,13 +150,24 @@ export function ErrorsPanel(): ReactElement {
         </button>
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={load}
           aria-label="刷新错误清单"
           className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-secondary hover:bg-bg-hover hover:text-fg-primary"
         >
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
+
+      {/*
+        Phase 1 · A1：把「未读」和「未解决」说清楚 —— 打开这一页只清掉角标，
+        不代表问题被处理了。有记录时才显示这句，没记录时不占地方。
+      */}
+      {result && result.ok && result.entries.length > 0 ? (
+        <p className="shrink-0 border-b border-line-subtle px-2 py-1 text-2xs text-fg-tertiary">
+          这里只记录、不改动。打开这一页只清掉「未读」提示 ——
+          错误本身不会消失，也不会被标记为已处理。
+        </p>
+      ) : null}
 
       {notice ? <p className="shrink-0 px-2 py-1 text-2xs text-fg-secondary">{notice}</p> : null}
 

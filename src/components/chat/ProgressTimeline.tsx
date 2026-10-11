@@ -165,6 +165,16 @@ export function ProgressTimeline({ phases, steps, plan }: ProgressTimelineProps)
       })}
 
       {/* ── 待办行：计划里还没勾掉的（第一条是「当前」，AG-027）── */}
+      {todo.length > 0 ? (
+        /*
+         * Phase 1 · B1：这一段的文字来自**模型写的计划**（勾选也是模型自己打的），
+         * 不是内核记的执行步骤 —— 单独标一行，别让用户把计划读成执行进度。
+         * 上面两段（阶段行 / 动作行）才是真实执行状态。
+         */
+        <div className="mt-1.5 text-[11px] font-medium tracking-wide text-fg-tertiary">
+          计划（模型给的 · 未执行）
+        </div>
+      ) : null}
       {todo.map((item, index) => {
         const state = index === 0 ? 'current' : 'todo'
         return (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ListChecks } from 'lucide-react'
 import { colorOf } from '@/lib/statusLanguage'
+import { planProgressLabel } from './taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    执行计划（AG-004）
@@ -116,7 +117,7 @@ export function PlanCard({ versions }: { versions: PlanVersion[] }) {
       <div className="flex items-center gap-1.5">
         <ListChecks size={12} className="shrink-0 text-fg-tertiary" />
         <span className="text-2xs text-fg-secondary">
-          执行计划 · {doneCount}/{current.plan.length} 步
+          {planProgressLabel(doneCount, current.plan.length)}
           {versions.length > 1 ? ` · 第 ${versions.length} 版` : ''}
         </span>
       </div>

@@ -5,6 +5,35 @@
 
 ## [未发布]
 
+- **UI Phase 1：安全可见性 / 成果语义 / 任务进度语义 / 状态栏术语（纯展示层）**（2026-10-11）。
+  按《UI 信息架构与工作台体验调研规范》与 Phase 0 真机补测报告，只改展示层，
+  不触碰 Runtime / IPC / 权限 / 事件契约 / 任务持久化 / 数据结构。
+  · **A1 错误未读角标**：新增 `lib/errorSignal.ts`（纯函数：什么算「严重」= P0/P1、
+    什么算「未读」= lastSeen 晚于上次已读）、`stores/useErrorsStore.ts`（**唯一**抓取
+    入口，`error:list` 只读、无推送、按事件触发）、`hooks/useErrorSignal.ts`（挂载 /
+    窗口可见 / 一轮跑完触发，**无定时器、不轮询**）。右栏「错误」标签补角标（颜色走
+    `statusLanguage`）；`ErrorsPanel` 的抓取收敛到 store（不再自己 `listErrors`），
+    打开面板只 `acknowledge()` 清「未读」，**不声称问题已处理**，面板里写明这句。
+  · **A2 折叠/窄窗可见**：`AppTitleBar` 的「切换右侧面板」按钮带上同一个未读信号
+    （右栏收起或标签被裁掉时仍能发现严重错误）。
+  · **B1/B2 计划 vs 执行**：三处「计划进度」措辞统一到 `planProgressLabel`（任务行 /
+    计划卡 / 恢复卡都改说「计划 N/M 步」），`ProgressTimeline` 把模型计划那段单独标
+    「计划（模型给的 · 未执行）」。**不显示任何百分比**（无可信分母）。
+  · **B3 成果与文件修改**：`ArtifactsPanel` 空态说清「成果只放正式产出（artifact）」，
+    并给「去『审查』看本次修改的 N 个文件」入口；**不**把工作区改动冒充成正式成果。
+  · **D 状态栏术语**：`pair`/`high` 等内核原值改读同一份中文常量（`modeMeta().label`
+    / `REASONING_LABEL`），不再出现内部字段。
+  · 回归：新增 `lib/__tests__/errorSignal.test.ts`、`stores/__tests__/useErrorsStore.test.ts`、
+    `layout/__tests__/phase1Display.test.ts`（接线守卫）。单测 178 文件 / 1587 用例全绿。
+  · **真机对照抓到的两个事实**（隔离假模型 + CDP，非单测能发现）：
+    ① `ErrorEntry.lastSeen` **类型声明是 `number`，真实数据是 ISO 字符串**（内核
+       `error-reader.cjs` 把记录的 `ts` 原样透传）。字符串与数字比较恒 false →
+       角标永远不亮，而单测全绿（夹具用数字）。`errorSignal.ts` 已对两种形状都兼容；
+       **类型/内核侧的对齐没动**（属内核改动，见 Phase 1 报告待批项）。
+    ② 错误观察哨是**攒着 + 15 秒定时 flush**，刚发生的错误十几秒后才落盘 ——
+       角标不是「瞬间」亮起，而是在下一个触发点（再跑一轮 / 切回窗口 / 重开应用）时亮。
+       要「立刻亮」需内核在一轮结束时 flush（Runtime 改动，本轮不做，已列入报告）。
+
 - **修三处：脱敏把会话记录写成坏 JSON / 坏文件拖垮任务索引 / 已坏的磁盘记录**（2026-10-11）。
   排查「长会话读回显示『这条回复没写完』」时抓到一条**会生产坏数据**的真 bug：
   · **根因**：`session-io.cjs` 的 `serializeLine` 对**已序列化的 JSON 文本**又过了一遍 `redact`，

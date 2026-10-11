@@ -38,6 +38,21 @@ export function taskProgress(task: TaskRecord): { done: number; total: number } 
   return { done: plan.filter(isPlanDone).length, total: plan.length }
 }
 
+/*
+ * Phase 1 · B1：**计划进度**的措辞（唯一一份）。
+ *
+ * `done/total` 数的是**模型写的计划**里勾了几条 —— 勾选也是模型自己打的
+ * （`- [x]`），**不是**内核记的执行步骤。以前这三处（任务行 / 计划卡 / 恢复卡）
+ * 各写各的「N/M 步」「已完成 N/M 步」，读着像「任务执行到 N/M」，
+ * 容易把「计划勾了几条」当成「任务完成了多少」。统一叫「计划 N/M 步」，
+ * 让用户一眼看出这是计划，执行进度要看时间线里的阶段/工具行。
+ *
+ * 不显示百分比：分母是模型给的计划条数，不是可信总量（Phase 1 · B2）。
+ */
+export function planProgressLabel(done: number, total: number): string {
+  return `计划 ${done}/${total} 步`
+}
+
 /** 任务中心那行「当前步骤」；已结束任务改说结果，不假装还有当前步骤。 */
 export function currentStepOf(task: TaskRecord): string {
   const pending = (task.plan ?? []).find((line) => !isPlanDone(line))

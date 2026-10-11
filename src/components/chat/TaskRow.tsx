@@ -11,7 +11,7 @@ import { taskDiagnose } from '@/lib/safetyApi'
 import { rowStatusSummary, rowStepPrefix } from './TaskRowParts'
 import type { TaskDiagnosis } from '@/types/safety'
 import { TaskRowDetails } from './TaskRowDetails'
-import { currentStepOf, taskProgress } from './taskCenterModel'
+import { currentStepOf, planProgressLabel, taskProgress } from './taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    任务中心的一行（AG-028）
@@ -127,7 +127,7 @@ export function TaskRow({
             {/* 状态与进度在右边 —— 一行说清「是什么、到哪了」 */}
             <span className="shrink-0 text-2xs font-medium" style={{ color: statusColor }}>
               {statusSummary}
-              {progress.total > 0 ? ` · ${progress.done}/${progress.total} 步` : ''}
+              {progress.total > 0 ? ` · ${planProgressLabel(progress.done, progress.total)}` : ''}
             </span>
           </span>
           {/* 正在做 / 下一步（没有就不占位 —— 空行会把整行撑高） */}

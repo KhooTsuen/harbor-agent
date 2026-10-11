@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { formatCount, formatTokens } from '@/lib/format'
+import { REASONING_LABEL, modeMeta } from '@/constants'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -71,9 +72,17 @@ export function StatusBar() {
         </span>
       ) : null}
 
-      <span className="font-mono">{mode}</span>
+      {/*
+        Phase 1 · D：这里以前直接显示内核字段原值（`pair` / `high`），
+        而界面别处（模式选择器 / 模型选择器）用的是中文标签 —— 同一件事
+        两种说法。改成读**同一份**常量：模式走 `modeMeta().label`、
+        推理走 `REASONING_LABEL`，不在这里另建一套映射。
+      */}
+      <span>{modeMeta(mode).label}</span>
       <span className="font-mono">{thread?.model ?? '—'}</span>
-      <span className="hidden font-mono sm:inline">{thread?.reasoning ?? '—'}</span>
+      <span className="hidden sm:inline">
+        {thread?.reasoning ? REASONING_LABEL[thread.reasoning] : '—'}
+      </span>
 
       {/*
         个人资料（头像 / 名字首字）搬到状态栏最右端了 —— 侧栏底部那块地方太挤，

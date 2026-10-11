@@ -3,7 +3,7 @@ import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { taskUpdate } from '@/lib/safetyApi'
 import { colorOf } from '@/lib/statusLanguage'
-import { formatUpdated, taskProgress } from '@/components/chat/taskCenterModel'
+import { formatUpdated, planProgressLabel, taskProgress } from '@/components/chat/taskCenterModel'
 import type { TaskRecoveryItem } from '@/types/safety'
 
 /* ══════════════════════════════════════════════════════════════
@@ -55,7 +55,7 @@ export function ResumeCard({
                     {task.title || task.goal || '未命名任务'}
                   </span>
                   <span className="mt-0.5 block text-2xs text-fg-secondary">
-                    上次任务{stopped}停止 · 已完成 {progress.done}/{progress.total} 步
+                    上次任务{stopped}停止 · {planProgressLabel(progress.done, progress.total)}
                   </span>
                   {envChanged.length > 0 ? (
                     <span className="mt-0.5 block text-2xs" style={{ color: colorOf('warning') }}>

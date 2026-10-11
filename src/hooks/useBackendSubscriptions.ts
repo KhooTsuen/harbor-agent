@@ -7,6 +7,7 @@ import { useTaskStore } from '@/stores/useTaskStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useTaskNotifications } from '@/hooks/useTaskNotifications'
 import { useDownloadNotifications } from '@/hooks/useDownloadNotifications'
+import { useErrorSignal } from '@/hooks/useErrorSignal'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -33,6 +34,12 @@ export function useBackendSubscriptions(): void {
    * 用户在内置浏览器里点下载时没人接（见 hook 的文件头）。
    */
   useDownloadNotifications()
+
+  /*
+   * Phase 1 · A1：右栏「错误」标签的「未读严重错误」信号。
+   * 同一套触发方式（挂载 / 窗口可见 / 一轮跑完），空闲不轮询。
+   */
+  useErrorSignal()
 
   /*
    * 未完成任务：启动、对话运行状态变化、窗口重新可见时刷新。
