@@ -5,6 +5,18 @@
 
 ## [未发布]
 
+- **安全回归基线：84 项元数据表 + 9 个套件 + JSON 报告**（2026-10-11）。按《Harbor Agent
+  自动化安全测试清单》v1.0 落地：`scripts/security/`（`cases.mjs` 84 项元数据 /`harness.mjs`
+  五态断言 /`sandbox.mjs` 隔离运行 /`run.mjs` 入口 + `security-results.json` 报告 + 9 个
+  `suites/*.mjs`）。复用现有测试设施（selftest 的隔离思路、vitest 的 jsdom），不引依赖。
+  首批 20 项里能在隔离环境真跑的已落地：渲染层 XSS（SEC-001~004，`securityHtml.test.tsx`，
+  jsdom + 真渲染器）、WebPreferences / preload 暴露面 / IPC 入口参数 / CSP（SEC-005/006/008/010）、
+  授权 scope / TOCTOU（SEC-016/017）、路径穿越 / 符号链接 / Shell 注入（SEC-025/027/029）、
+  SSRF（SEC-040）、项目级记忆隔离（SEC-057）、哨兵密钥（SEC-067）。运行 `npm run security`。
+  覆盖映射见 `docs/security-coverage-map.md`（含 3 个 P0 发现：HTML 直通默认开启、
+  无 IPC sender 校验、allow 档放行云元数据地址）。**暂未接入 `verify`** —— 上述 P0 未决前
+  会挡掉 pre-push，待决后追加 `npm run security` 到 verify 链。
+
 - **下载的开始 / 完成 / 失败改成全局提示**（2026-10-11）。病根：下载事件的订阅长在
   `DownloadsPanel` 里，而那个面板是**按标签条件渲染**的（`RightPanel.tsx`：
   `activeRightTab === 'downloads'`）—— 用户在内置**浏览器**里点一个下载链接时，右栏

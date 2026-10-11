@@ -85,6 +85,8 @@ tmp/*
 # 不进版本库。2026-09-25 差点被 `git add -A` 一起提交。
 acc-live.txt
 acc-report.json
+# 安全回归报告（scripts/security/run.mjs 每次跑都会重新生成，不进版本库）
+security-results.json
 # 一次性的排查脚本（核实完之后没有保留价值）
 tools/import-rikkahub.py
 
