@@ -3,7 +3,7 @@
 > 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
 > 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
 
-## [未发布]
+## [1.30.0-beta.17] — 2026-10-12
 
 - **UI Phase 4 · 批次 4：收敛 10/11px 硬编码字号（P4-4，Phase 4 最后一次代码改动）**（2026-10-12）。
   纯展示层：4 处孤立的小字号硬编码收敛到既有标准 token。不触 Runtime / IPC /
