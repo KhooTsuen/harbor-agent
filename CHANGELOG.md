@@ -5,6 +5,19 @@
 
 ## [未发布]
 
+- **UI Phase 4 · 批次 1：字号 token 归并（只做真·同值那 1 处）**（2026-10-12）。
+  · **改了 1 处**：`src/components/ui/Modal.tsx` 的弹窗标题 `text-md` → `text-body` ——
+    两者**完全同值**（16px，line-height 1.5），零视觉变化。
+  · **暂缓 32 处**（`text-sm`→`text-dense`、`text-base`→`text-meta`）：真机实测这两对
+    **字号相同、行高不同**（14px：1.5 vs `--leading-meta` 1.43；15px：1.55 vs 1.43），
+    归并会让每行少 1~1.8px —— 与「零视觉变化」红线冲突，故**记入技术债**
+    （标记写在 `tailwind.config.js` 的 fontSize 段注释里）。要真正归并须先统一行高口径
+    （动 `index.css` 的 `--leading-meta`，属单独报批项，本次未动）。
+  · 未动 `index.css` 数值、未动 `src/constants/design.ts`、未碰 Markdown 标题阶梯
+    （lg/xl/md/base）、`BootSequence`、`XtermTerminal`。
+  · 真机对照（隔离副本 + CDP）：改前 / 改后 `tmp/p4-probe.mjs` 的**三栏宽度 / 可见标签数 /
+    输入框宽度**逐项一致（A 240-1318-360 / 8·8 / 758 … G 240-298-360 / 8·8 / 264）。
+
 - **Phase 4 前置微任务：M1 错误观察哨按轮冲刷 / M2 时间戳形状注释 / M3 一轮开始补刷台账**（2026-10-12）。
   三处均为既定批准的收尾补点；不触 Runtime 状态机 / IPC 通道 / 事件契约 / 权限模型 / 任务台账结构。
   · **M1**：`electron/handlers/chat.cjs` 的 `finally` 里，一轮结束（成功 / 失败 / 中断）

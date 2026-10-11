@@ -102,6 +102,14 @@ export default {
        * 字号：规范要求三层（14 / 16 / 24）。
        * 旧的 11/12/13/18/20 全部保留但在下面标注 [过渡]，
        * 新写的组件请用 meta / body / title / dense。
+       *
+       * ⚠️ 技术债（Phase 4 批次 1 真机实测记录，本次**不处理**）：
+       *   `sm` 与 `dense` **字号同（14px）而行高不同**（1.5 vs --leading-meta=1.43）；
+       *   `base` 与 `meta` 同理（15px，1.55 vs 1.43）。所以 `sm→dense` / `base→meta`
+       *   **不是**零变化改名 —— 归并会让每行少 1~1.8px。要真正归并，得先统一行高口径
+       *   （那要动 index.css 的 --leading-meta，属单独报批项）。
+       *   在那之前：**新代码请直接用 `dense` / `meta`**，别再新增 `sm` / `base`。
+       *   （`md→body` 是真·同值 16px/1.5，最后一处已在 Phase 4 批次 1 改过去。）
        */
       fontSize: {
         meta: ['var(--text-meta)', { lineHeight: 'var(--leading-meta)' }],

@@ -197,7 +197,7 @@ export function Modal({
           >
             <header className="flex items-start gap-3 border-b border-line-subtle px-5 py-4">
               <div className="min-w-0 flex-1">
-                <h2 id="modal-title" className="text-md font-semibold text-fg-primary">
+                <h2 id="modal-title" className="text-body font-semibold text-fg-primary">
                   {title}
                 </h2>
                 {description ? (
