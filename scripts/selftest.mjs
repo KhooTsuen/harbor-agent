@@ -156,6 +156,7 @@ import { run as browseReadGroup } from './selftest/groups/136-browse-read.mjs'
 import { run as browseOpsGroup } from './selftest/groups/137-browse-ops.mjs'
 import { run as browseHistoryGroup } from './selftest/groups/138-browse-history.mjs'
 import { run as browseSettleGroup } from './selftest/groups/139-browse-settle.mjs'
+import { run as shellHeartbeatGroup } from './selftest/groups/140-shell-heartbeat.mjs'
 
 const GROUPS = [
   basics,
@@ -218,8 +219,7 @@ const GROUPS = [
   versionSync,
   taskReuse,
   answers,
-  logging,
-  actionLog,
+  logging, actionLog,
   selectorStability,
   answerPick,
   destructive,
@@ -280,7 +280,7 @@ const GROUPS = [
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
   cdpHelpersGroup, testPromptGroup, planGateGroup,
-  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup,
+  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup,
 ]
 
 async function main() {

@@ -17,6 +17,30 @@ import { clearPermissionForThread } from './confirmEvents'
 /** 正在进行的真实请求：threadId → requestId */
 const activeRequests = new Map<string, string>()
 
+/*
+ * A3（Phase 5）：每轮对话的「兜底时钟」收尾器。
+ *
+ * 看门狗是 `runElectronTurn` 闭包里的局部量，原本只有 `finish()` 能 dispose 它。
+ * 而用户按「停止」走的是 `stopActiveRequest`（不经过 finish）—— 于是那个 300s
+ * 定时器还挂着，到点会把**用户已经停掉的**那一轮标成 error、并写「长时间没有新内容」
+ * （用户看到「我明明停了，它过几分钟自己变错误」）。
+ * 这里按对话登记它的 dispose，让「停止」也能把它拆掉（消灭那条遗留定时炸弹）。
+ */
+const activeWatchdogs = new Map<string, () => void>()
+
+/** 这一轮开始时登记它的兜底时钟（`runElectronTurn` 调） */
+export function registerTurnWatchdog(threadId: string, dispose: () => void): void {
+  activeWatchdogs.set(threadId, dispose)
+}
+
+/** 拆掉这条对话的兜底时钟（收尾 / 停止都调；幂等，没登记就算了） */
+export function disposeTurnWatchdog(threadId: string): void {
+  const dispose = activeWatchdogs.get(threadId)
+  if (!dispose) return
+  dispose()
+  activeWatchdogs.delete(threadId)
+}
+
 /** 这一轮开始了（`runElectronTurn` 里登记） */
 export function beginTurnRequest(threadId: string, requestId: string): void {
   activeRequests.set(threadId, requestId)
@@ -73,10 +97,16 @@ export function stopActiveRequest(threadId?: string): void {
   }
 
   if (threadId) {
+    /*
+     * A3（Phase 5）：先把这条对话的兜底时钟拆了 —— 用户已经停了，别再让它在
+     * 300s 后醒来把这一轮标成 error（RC-4）。
+     */
+    disposeTurnWatchdog(threadId)
     const id = activeRequests.get(threadId)
     if (id) void abortChat(id)
     activeRequests.delete(threadId)
   } else {
+    for (const id of [...activeWatchdogs.keys()]) disposeTurnWatchdog(id)
     for (const id of activeRequests.values()) void abortChat(id)
     activeRequests.clear()
   }

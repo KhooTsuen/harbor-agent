@@ -43,6 +43,23 @@ const DANGEROUS = [
 
 const MAX_OUTPUT = 8000
 
+/*
+ * B1（Phase 5）：长命令期间的心跳间隔。
+ *
+ * 渲染层的兜底时钟判的是「连续多久没收到事件」（300s），而这里单条命令允许跑到
+ * 600s —— 不发心跳的话，一条**正常**的长命令（`npm run verify` 那类）会被必然
+ * 误判成卡死：界面放弃接收、后台还在跑（见 docs/research/phase5-turn-lifecycle-design.md）。
+ * 15s 远小于 300s 的阈值，也远小于这里的 600s 上限 —— 稳稳跑在阈值之内。
+ *
+ * `HARBOR_SHELL_HEARTBEAT_MS` 是**测试用的口子**（自检 140 组调小到几百毫秒真跑一遍）；
+ * 真机不设它。★ 每次调用时读 —— 模块级常量不行：别的自检组会先把本模块 require 进来，
+ * 那时 env 还没设，常量就永远停在默认值（第 1 版就栽在这儿，心跳 0 次）。
+ */
+function heartbeatMs() {
+  const override = Number(process.env.HARBOR_SHELL_HEARTBEAT_MS)
+  return override > 0 ? override : 15 * 1000
+}
+
 /**
  * 网络策略这一关：**只会把 allow 变严，永远不会把 ask 变松**。
  *
@@ -147,10 +164,17 @@ module.exports = {
          那时 child 还是 null —— killTree(null) 是安全的，这条顺序能兜住 */
       let child = null
       let timer = null
+      let heartbeat = null
+      /* 心跳也要在每条死亡路径上停掉（否则白醒、拖住进程退出） */
+      const stopHeartbeat = () => {
+        if (heartbeat) clearInterval(heartbeat)
+        heartbeat = null
+      }
       /* 两条死亡路径（中断 / 超时）都要摘监听、停 timer，收在一处 */
       const done = () => {
         if (timer) clearTimeout(timer)
         timer = null
+        stopHeartbeat()
         off()
       }
       let off = () => {}
@@ -179,9 +203,24 @@ module.exports = {
        */
       timer = setTimeout(() => {
         killTree(child)
+        stopHeartbeat()
         /* 和中断同一套：不等 callback（管道要等子进程全退才关），立刻结算 */
         finish(`[进程被超时杀掉（${timeoutSec}s）：已连同子进程一起终止]`)
       }, timeoutSec * 1000)
+
+      /*
+       * B1（Phase 5）：跑起来之后每 HEARTBEAT_MS 报一次平安。
+       * 走的是工具早已铺好、却一直没人用的 `ctx.progress`（事件 `agent.tool.progress`，
+       * 见 tool-run-ctx.cjs）—— 渲染层收到任何事件都会把它的兜底时钟往后推，
+       * 于是「长命令静默」不再被当成「卡死」（RC-2）。
+       */
+      heartbeat = setInterval(() => {
+        try {
+          ctx.progress?.({ note: '命令还在跑', percent: null })
+        } catch {
+          /* 报平安失败不该影响命令本身 */
+        }
+      }, heartbeatMs())
 
       /*
        * ★ 输出按**字节**收（encoding: 'buffer'），再交给 shell-encoding 去解。

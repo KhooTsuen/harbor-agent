@@ -3,6 +3,40 @@
 > 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
 > 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
 
+## [未发布]
+
+- **Phase 5：一轮收尾的事件生命周期修复（A1+A2+A3+B1）**（2026-10-12）。
+  病根：**UI 的「运行中」是 `thread.phase` 推出来的，而 `phase` 只进不退** —— 终止事件一旦
+  没到达渲染层，`phase` 永远停在 `executing`，界面永久假死，**代码里没有自动复位路径**。
+  而终止事件为什么会丢：主进程允许一条 `run_shell` 静默跑 **600s**，渲染层却把「静默 **300s**」
+  判成卡死并退订 —— 两个模块各有一套数，且长命令不发心跳 → 一条正常的长命令被必然误判。
+  定位与证据见 [`docs/research/phase5-turn-lifecycle-design.md`](docs/research/phase5-turn-lifecycle-design.md)。
+  不触 IPC 通道清单 / 权限模型 / 任务台账 / 数据结构 / 迁移。
+  · **A1（渲染层）收口 phase**：新增 `src/stores/thread/turnPhase.ts` ——
+    `finish(reason)` 里按 reason 补上缺失的终态转移（done→completed / aborted→cancelled /
+    timeout·error→failed）。只**补**主进程没给的那次：主进程已推终态（权威 AG-001）就不覆盖。
+  · **A2（渲染层）兜底超时真叫停主进程**：`onTurnTimeout` 调 `stopActiveRequest(threadId)`
+    （**复用现有 `chat:abort`，不新增 IPC 通道**）—— 只「放弃接收」不叫停的话，后台继续跑到完，
+    稍后那个 `done` 落进已退订的订阅被静默丢弃。
+  · **A3（渲染层）「停止」拆掉兜底时钟**：`turnControl.ts` 新增按对话登记表
+    （`registerTurnWatchdog` / `disposeTurnWatchdog`），`stopActiveRequest` 里拆除 ——
+    否则 300s 定时器留着，到点把用户**已经停掉**的那轮标成 error（遗留定时炸弹）。
+  · **B1（主进程，破例）`run_shell` 周期心跳**：跑起来后每 **15s** 走早已铺好却一直没人用的
+    `ctx.progress`（事件 `agent.tool.progress`）报一次平安；三条死亡路径（中断 / 超时 / 正常
+    callback）都经 `done()` 停掉心跳。→ 从根上让「长命令静默」不再被当成「卡死」（RC-2）。
+  · **B2 只登记不实施**（把「一轮在不在跑」的权威判定收回主进程）—— 改动面更大，本轮不做。
+  · **回归**：`src/stores/__tests__/turns.test.ts` 新增 4 条（长命令有心跳不误杀 /
+    真静默超阈值→叫停+收口 phase / 强制中断并发→终态+队列不死锁 / 停止后兜底时钟被拆）；
+    新增 `src/stores/thread/__tests__/turnLifecycleNails.test.ts` 两条**源码钉子**
+    （收尾路径必写 phase；`run_shell` 必有周期心跳）。`turns.ts` 贴 300 行红线，
+    拆出 `turnPhase.ts` / `turnPayload.ts` 两个纯模块。
+  · **真机/CDP 复现验证（隔离副本 + 本地假上游，未打包、未 taskkill 用户实例）**：
+    · **330s 静默长命令**：界面全程保持「停止生成」（运行中），**未出现「长时间没有新内容」**，
+      命令跑完自动回 idle（主进程日志「对话完成：2 轮，1 次工具调用，用时 331.5 秒」）。旧代码正是在这里触发兜底退订。
+    · **心跳端到端坐实**：隔离副本事件流落盘 **22 条 `agent.tool.progress`**
+      （note「命令还在跑」，每 15s 一条，首末**跨度 315s**）—— 覆盖整条长命令，证明心跳到得了渲染层（渲染层 `turns.ts` 对每条事件都 `watchdog.touch()`）。
+    · 自动化复现见上（单测 + 自检 140 组），真机脚本用完即删（`tmp/` 不进仓库）。
+
 ## [1.30.0-beta.17] — 2026-10-12
 
 - **UI Phase 4 · 批次 4：收敛 10/11px 硬编码字号（P4-4，Phase 4 最后一次代码改动）**（2026-10-12）。
