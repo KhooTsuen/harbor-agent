@@ -104,6 +104,16 @@ async function senderCheck() {
   /* 接线钉子：registerHandlers 真的把判据传给了包装层（不能只是定义了函数） */
   const src = fs.readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8')
   sec('SEC-007', /wrapInvokeHandlers\(ipcMain,\s*isTrustedEvent\)/.test(src), 'registerHandlers 把来源判据接进了包装层')
+
+  /*
+   * ★ 审计加固（Phase C 的 MUT-03 抓出的盲区）：上面两条用的是**测试自造**的 isTrusted，
+   * 只证明「包装层会调用传入的判据」，**没**证明**真实判据 trustedSender** 本身对 ——
+   * 把 register-handlers.cjs 里 `sender !== win.webContents` 那半句删掉，上面照样 PASS。
+   * 这里真跑真实判据。
+   */
+  const liveWin = { isDestroyed: () => false, webContents: winWebContents }
+  sec('SEC-007', rh.trustedSender(() => liveWin, { sender: winWebContents }) === true, '真实判据：主窗口来源放行')
+  sec('SEC-007', rh.trustedSender(() => liveWin, { sender: { id: 99 } }) === false, '真实判据：非主窗口来源被拒')
 }
 
 /** SEC-009：外部链接与导航 —— 只有 http/https/mailto 能交给系统；非 http(s) 一律拦 */

@@ -5,6 +5,23 @@
 
 ## [未发布]
 
+- **安全测试有效性审计 + 受控缺陷注入验证（Phase A–F）**（2026-10-11）。按《Harbor Agent 安全测试
+  有效性审计与缺陷注入验证规范》v1.0，对基线 `1c67a3d2b` 做测试有效性审计（不是再跑一遍）：
+  · **基线复核**：`security:audit` / `security` / `security:gate` / `verify` 四条命令真实退出码全 0；
+  84 项唯一；SEC-081 N/A 依据独立核实（无更新依赖、无 `autoUpdater`）。
+  · **84 项断言审计**：STRONG 73 · PARTIAL 10 · N/A 1，**P0 无 WEAK/UNVERIFIED**；逐项映射见
+  `docs/security-assertion-map.md`。
+  · **25 个受控缺陷注入**（隔离副本 `data/mutation/wt`）**全部击杀**，Kill Rate 100%；工具固化在
+  `scripts/security/mutation/`（带 README 与安全护栏）。
+  · **门禁负例 12/12**：P0 FAIL/BLOCKED/NOT_RUN/缺失/重复/未知状态/套件抛异常均非零。
+  · **修复 3 处**（只加强、不降标）：SEC-007 补真跑真实 `trustedSender` 判据（原测试只跑自造判据，
+  MUT-03 曾存活）；SEC-069 建立凭证关联 + hasKey 对照（原观测字段从不引用凭证，假绿，新增 MUT-25）；
+  `run.mjs` 捕获套件异常并强制非零（原套件崩了默认档 exit=0，`verify` 会假绿）。
+  · **新增** `scripts/security/gate.mjs`（门禁判据一处真相源，`run.mjs` 与审计夹具共用）。
+  · **如实标注未完成**：第二台干净环境（Phase F）`BLOCKED`；SEC-040 对 IPv6/域名型/其它厂商元数据
+  地址未硬拒；SEC-013/014 为确定性边界（未调模型）。报告：`docs/security-effectiveness-audit.md` 等 4 份 +
+  `security-effectiveness-results.json`。
+
 - **四笔遗留清理：生图保存位置不再被丢 / 会话记忆完整绑定 / 构建面分别查 / 真失败注入**（2026-10-11）。
 
   · **`image.dir` 保存后不生效（既存 bug，报过几轮）**：`electron/core/config-normalize.cjs`

@@ -76,11 +76,26 @@ async function noExfil() {
 
 /** SEC-069：IPC / 前端状态不泄漏完整密钥 */
 function rendererNoKey(config, credentials) {
-  credentials.set('sec069:key', SENTINEL_KEY)
-  const view = config.forRenderer()
-  sec('SEC-069', !JSON.stringify(view).includes(SENTINEL_KEY), 'forRenderer 输出里没有完整密钥')
-  const provider = (view.providers ?? [])[0] ?? {}
-  sec('SEC-069', !String(provider.apiKey ?? '').includes(SENTINEL_KEY), '渲染层拿到的 provider 不带明文 apiKey')
+  const ref = 'sec069:key'
+  credentials.set(ref, SENTINEL_KEY)
+  /*
+   * ★ 审计加固（Phase C 的 MUT-22 抓出的 WEAK 断言）：原版只是把哨兵塞进凭证库，
+   * 再读 provider[0].apiKey —— 但 **provider[0] 根本没引用这个凭证**，它看到的是一个
+   * 本来就空/掩码的字段，所以「不含明文密钥」永远成立（假绿）。这里先让界面看到的那个
+   * provider **真的引用**这个凭证，断言才有观测对象；再补一条 hasKey 对照证明不是空跑。
+   */
+  const before = config.get()
+  try {
+    const providers = before.providers.map((p, i) => (i === 0 ? { ...p, credentialRef: ref } : p))
+    config.save({ ...before, providers })
+    const view = config.forRenderer()
+    sec('SEC-069', !JSON.stringify(view).includes(SENTINEL_KEY), 'forRenderer 输出里没有完整密钥')
+    const provider = (view.providers ?? [])[0] ?? {}
+    sec('SEC-069', provider.hasKey === true, '该 provider 确实配了凭证（hasKey=true，证明下面那条不是空跑）')
+    sec('SEC-069', !String(provider.apiKey ?? '').includes(SENTINEL_KEY), '渲染层拿到的 provider 不带明文 apiKey')
+  } finally {
+    config.save(before)
+  }
 }
 
 /** SEC-070：配置备份/导出不含敏感数据 */

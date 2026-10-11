@@ -1,0 +1,1583 @@
+{
+  "schemaVersion": "1.0",
+  "baseCommit": "1c67a3d2b6201d09364306f3df5f86414617e7f4",
+  "auditCommit": "1c67a3d2b6201d09364306f3df5f86414617e7f4",
+  "environment": {
+    "os": "win32",
+    "node": "v24.19.0",
+    "mode": "isolated-test",
+    "secondMachine": "unavailable"
+  },
+  "caseAssessments": [
+    {
+      "caseId": "SEC-001",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "原始 HTML 脚本执行隔离",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "renderer",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-002",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "图片错误事件 XSS",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "renderer",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-01"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-003",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "iframe / srcdoc 隔离",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "renderer",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-02"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-004",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "Markdown/HTML 混合注入",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "renderer",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-005",
+      "priority": "P0",
+      "suite": "static",
+      "productionEntry": "Electron WebPreferences",
+      "testFile": "scripts/security/suites/static.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "窗口 WebPreferences 是配置面，只能读 main.cjs 源码断言；运行期等价物归 SEC-080"
+    },
+    {
+      "caseId": "SEC-006",
+      "priority": "P0",
+      "suite": "static",
+      "productionEntry": "preload 最小 API",
+      "testFile": "scripts/security/suites/static.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-007",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "IPC sender 校验",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-03"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-008",
+      "priority": "P0",
+      "suite": "static",
+      "productionEntry": "IPC 参数校验",
+      "testFile": "scripts/security/suites/static.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-04"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-009",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "外部链接与导航",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-05"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-010",
+      "priority": "P0",
+      "suite": "static",
+      "productionEntry": "CSP 与资源加载",
+      "testFile": "scripts/security/suites/static.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "CSP 写在 vite.config.ts，静态读源码；构建产物注入由 SEC-080 覆盖"
+    },
+    {
+      "caseId": "SEC-011",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "窗口关闭后权限失效",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-06"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-012",
+      "priority": "P0",
+      "suite": "ipc",
+      "productionEntry": "UI 与不可信内容隔离",
+      "testFile": "scripts/security/suites/ipc.mjs",
+      "testType": "renderer",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-02"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-013",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "网页间接提示注入",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [
+        "MUT-07"
+      ],
+      "note": "确定性边界：断言网页正文被包成「数据非指令」，未调用模型证明模型不服从"
+    },
+    {
+      "caseId": "SEC-014",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "文档间接提示注入",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "确定性边界：断言文档正文不提升为系统指令，未调用模型"
+    },
+    {
+      "caseId": "SEC-015",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "工具输出伪造",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-016",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "跨轮授权继承",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-08"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-017",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "参数替换 TOCTOU",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-09"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-018",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "子 Agent 权限边界",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-10"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-019",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "暂停/取消竞态",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-11"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-020",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "工具调用预算",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-021",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "不可信内容诱导泄密",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-12"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-022",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "权限持久化污染",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-023",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "计划与执行一致性",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-024",
+      "priority": "P0",
+      "suite": "agent",
+      "productionEntry": "危险操作失败闭合",
+      "testFile": "scripts/security/suites/agent.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-025",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "路径穿越",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-13"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-026",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "Windows 路径边界",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-13"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-027",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "符号链接与 junction",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-14"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-028",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "路径竞态",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-029",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "Shell 注入",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-15"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-030",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "环境变量泄露",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-031",
+      "priority": "P0",
+      "suite": "filesystem",
+      "productionEntry": "删除/覆盖保护",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-032",
+      "priority": "P1",
+      "suite": "filesystem",
+      "productionEntry": "批量操作上限",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-033",
+      "priority": "P1",
+      "suite": "filesystem",
+      "productionEntry": "回滚完整性",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-034",
+      "priority": "P1",
+      "suite": "filesystem",
+      "productionEntry": "ZIP Slip / 解压炸弹",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-035",
+      "priority": "P1",
+      "suite": "filesystem",
+      "productionEntry": "文件上传/附件解析",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-036",
+      "priority": "P1",
+      "suite": "filesystem",
+      "productionEntry": "临时文件权限",
+      "testFile": "scripts/security/suites/filesystem.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-037",
+      "priority": "P0",
+      "suite": "browser",
+      "productionEntry": "CDP 非授权标签",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-16"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-038",
+      "priority": "P0",
+      "suite": "browser",
+      "productionEntry": "导航后旧元素索引",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "renderer",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-039",
+      "priority": "P0",
+      "suite": "browser",
+      "productionEntry": "iframe / 弹窗越界",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-040",
+      "priority": "P0",
+      "suite": "browser",
+      "productionEntry": "SSRF：回环/内网/元数据",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [
+        "MUT-17"
+      ],
+      "note": "IPv4 169.254.0.0/16 硬拒；IPv6 链路本地 / 域名型 / 其它厂商元数据 IP 在 allow 档未拒（见 limitations）"
+    },
+    {
+      "caseId": "SEC-041",
+      "priority": "P0",
+      "suite": "browser",
+      "productionEntry": "DNS 重绑定/重定向",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-18"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-042",
+      "priority": "P1",
+      "suite": "browser",
+      "productionEntry": "CDP 断线/页面关闭竞态",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-043",
+      "priority": "P1",
+      "suite": "browser",
+      "productionEntry": "站点登录态与 cookie",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-044",
+      "priority": "P1",
+      "suite": "browser",
+      "productionEntry": "浏览器下载入口与台账",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-045",
+      "priority": "P1",
+      "suite": "browser",
+      "productionEntry": "页面稳定等待超时",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-046",
+      "priority": "P1",
+      "suite": "browser",
+      "productionEntry": "网络失败与重试",
+      "testFile": "scripts/security/suites/browser.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-047",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "服务端不支持 Range",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-048",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "Range 响应异常/错位",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-049",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "续传时资源变化",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-050",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "网络断开/重试/取消",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-051",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "强杀进程后恢复",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-052",
+      "priority": "P0",
+      "suite": "downloads",
+      "productionEntry": "文件名穿越与特殊字符",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-19"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-053",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "磁盘写满/权限拒绝",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-054",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "并发限速与资源上限",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-055",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "旧台账/损坏台账迁移",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-056",
+      "priority": "P1",
+      "suite": "downloads",
+      "productionEntry": "下载校验",
+      "testFile": "scripts/security/suites/downloads.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-057",
+      "priority": "P0",
+      "suite": "memory",
+      "productionEntry": "项目 A 记忆注入项目 B",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-20"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-058",
+      "priority": "P0",
+      "suite": "memory",
+      "productionEntry": "不可信文档写入记忆",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-059",
+      "priority": "P0",
+      "suite": "memory",
+      "productionEntry": "Memory 携带工具指令",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-060",
+      "priority": "P1",
+      "suite": "memory",
+      "productionEntry": "同名不同 Scope",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-061",
+      "priority": "P1",
+      "suite": "memory",
+      "productionEntry": "用户纠正已存记忆",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-062",
+      "priority": "P1",
+      "suite": "memory",
+      "productionEntry": "Expired/Superseded/Inactive",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-063",
+      "priority": "P1",
+      "suite": "memory",
+      "productionEntry": "记忆数据损坏/迁移失败",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-064",
+      "priority": "P1",
+      "suite": "memory",
+      "productionEntry": "长上下文裁剪",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-065",
+      "priority": "P1",
+      "suite": "memory",
+      "productionEntry": "跨会话历史泄漏",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-21"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-066",
+      "priority": "P2",
+      "suite": "memory",
+      "productionEntry": "记忆召回可解释性",
+      "testFile": "scripts/security/suites/memory.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-067",
+      "priority": "P0",
+      "suite": "privacy",
+      "productionEntry": "API Key 在日志中出现",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-22"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-068",
+      "priority": "P0",
+      "suite": "privacy",
+      "productionEntry": "敏感信息发送到未授权域",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-069",
+      "priority": "P0",
+      "suite": "privacy",
+      "productionEntry": "IPC/前端状态泄漏密钥",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-25"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-070",
+      "priority": "P1",
+      "suite": "privacy",
+      "productionEntry": "配置备份/导出含敏感数据",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-071",
+      "priority": "P1",
+      "suite": "privacy",
+      "productionEntry": "用户数据目录权限",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-072",
+      "priority": "P1",
+      "suite": "privacy",
+      "productionEntry": "崩溃日志与异常堆栈",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-073",
+      "priority": "P1",
+      "suite": "privacy",
+      "productionEntry": "原子写入",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-074",
+      "priority": "P1",
+      "suite": "privacy",
+      "productionEntry": "数据删除/重置",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-075",
+      "priority": "P1",
+      "suite": "privacy",
+      "productionEntry": "更新/迁移回滚",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-076",
+      "priority": "P2",
+      "suite": "privacy",
+      "productionEntry": "日志保留与容量限制",
+      "testFile": "scripts/security/suites/privacy.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-077",
+      "priority": "P0",
+      "suite": "release",
+      "productionEntry": "生产依赖已知严重漏洞",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [
+        "MUT-23"
+      ],
+      "note": ""
+    },
+    {
+      "caseId": "SEC-078",
+      "priority": "P0",
+      "suite": "release",
+      "productionEntry": "发布产物混入密钥/本地数据",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "依赖 check-rules 的密钥扫描行 + 文件存在性，属静态字符串检查"
+    },
+    {
+      "caseId": "SEC-079",
+      "priority": "P1",
+      "suite": "release",
+      "productionEntry": "锁文件一致性",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "只断言 lockfile 存在与版本号可读，未验证 integrity 与离线可装"
+    },
+    {
+      "caseId": "SEC-080",
+      "priority": "P1",
+      "suite": "release",
+      "productionEntry": "Electron 安全配置回归",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [
+        "MUT-24"
+      ],
+      "note": "读源码 + 读构建产物做一致性比对，属配置面静态检查（无运行期窗口）"
+    },
+    {
+      "caseId": "SEC-081",
+      "priority": "P1",
+      "suite": "release",
+      "productionEntry": "更新包来源/完整性",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "N/A",
+      "mutationIds": [],
+      "note": "本项目无自动更新机制（package.json 无更新依赖、代码无 autoUpdater），无来源/签名可校验"
+    },
+    {
+      "caseId": "SEC-082",
+      "priority": "P1",
+      "suite": "release",
+      "productionEntry": "生产构建调试能力",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "读 main.cjs 源码判断 DevTools 分支与调试端口，属静态检查"
+    },
+    {
+      "caseId": "SEC-083",
+      "priority": "P2",
+      "suite": "release",
+      "productionEntry": "SBOM / 依赖清单",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "PARTIAL",
+      "mutationIds": [],
+      "note": "调用 npm ls 列依赖，证明可生成清单，未做完整性哈希"
+    },
+    {
+      "caseId": "SEC-084",
+      "priority": "P2",
+      "suite": "release",
+      "productionEntry": "安全审计日志",
+      "testFile": "scripts/security/suites/release.mjs",
+      "testType": "unit/integration",
+      "assessment": "STRONG",
+      "mutationIds": [],
+      "note": ""
+    }
+  ],
+  "mutations": [
+    {
+      "mutationId": "MUT-01",
+      "target": [
+        "SEC-002"
+      ],
+      "guard": "HTML 直通默认值",
+      "expected": [
+        "SEC-002"
+      ],
+      "actual": [
+        "SEC-002:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-012:FAIL",
+        "SEC-080:BLOCKED"
+      ]
+    },
+    {
+      "mutationId": "MUT-02",
+      "target": [
+        "SEC-003",
+        "SEC-012"
+      ],
+      "guard": "不可信 HTML 隔离（总直通）",
+      "expected": [
+        "SEC-003",
+        "SEC-012"
+      ],
+      "actual": [
+        "SEC-003:FAIL",
+        "SEC-012:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-002:FAIL",
+        "SEC-004:FAIL",
+        "SEC-080:BLOCKED"
+      ]
+    },
+    {
+      "mutationId": "MUT-03",
+      "target": [
+        "SEC-007"
+      ],
+      "guard": "IPC sender 来源判定",
+      "expected": [
+        "SEC-007"
+      ],
+      "actual": [
+        "SEC-007:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-011:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-04",
+      "target": [
+        "SEC-008"
+      ],
+      "guard": "IPC 参数夹取",
+      "expected": [
+        "SEC-008"
+      ],
+      "actual": [
+        "SEC-008:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-002:FAIL",
+        "SEC-003:FAIL",
+        "SEC-004:FAIL",
+        "SEC-011:FAIL",
+        "SEC-012:FAIL",
+        "SEC-054:FAIL",
+        "SEC-080:BLOCKED"
+      ]
+    },
+    {
+      "mutationId": "MUT-05",
+      "target": [
+        "SEC-009"
+      ],
+      "guard": "外链协议白名单",
+      "expected": [
+        "SEC-009"
+      ],
+      "actual": [
+        "SEC-009:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-002:FAIL",
+        "SEC-003:FAIL",
+        "SEC-004:FAIL",
+        "SEC-008:FAIL",
+        "SEC-011:FAIL",
+        "SEC-012:FAIL",
+        "SEC-054:FAIL",
+        "SEC-080:BLOCKED"
+      ]
+    },
+    {
+      "mutationId": "MUT-06",
+      "target": [
+        "SEC-011"
+      ],
+      "guard": "来源判定 fail-closed",
+      "expected": [
+        "SEC-011"
+      ],
+      "actual": [
+        "SEC-011:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-002:FAIL",
+        "SEC-003:FAIL",
+        "SEC-004:FAIL",
+        "SEC-008:FAIL",
+        "SEC-009:FAIL",
+        "SEC-012:FAIL",
+        "SEC-054:FAIL",
+        "SEC-080:BLOCKED"
+      ]
+    },
+    {
+      "mutationId": "MUT-07",
+      "target": [
+        "SEC-013"
+      ],
+      "guard": "网页内容「数据非指令」包装",
+      "expected": [
+        "SEC-013"
+      ],
+      "actual": [
+        "SEC-013:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-08",
+      "target": [
+        "SEC-016"
+      ],
+      "guard": "授权按会话隔离",
+      "expected": [
+        "SEC-016"
+      ],
+      "actual": [
+        "SEC-016:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-09",
+      "target": [
+        "SEC-017"
+      ],
+      "guard": "判定基于实时真实路径",
+      "expected": [
+        "SEC-017"
+      ],
+      "actual": [
+        "SEC-017:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-027:FAIL",
+        "SEC-028:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-10",
+      "target": [
+        "SEC-018"
+      ],
+      "guard": "只读权限门",
+      "expected": [
+        "SEC-018"
+      ],
+      "actual": [
+        "SEC-018:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-023:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-11",
+      "target": [
+        "SEC-019"
+      ],
+      "guard": "被否决后停手",
+      "expected": [
+        "SEC-019"
+      ],
+      "actual": [
+        "SEC-019:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-12",
+      "target": [
+        "SEC-021"
+      ],
+      "guard": "联网门",
+      "expected": [
+        "SEC-021"
+      ],
+      "actual": [
+        "SEC-021:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-030:FAIL",
+        "SEC-067:FAIL",
+        "SEC-068:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-13",
+      "target": [
+        "SEC-025",
+        "SEC-026"
+      ],
+      "guard": "路径边界",
+      "expected": [
+        "SEC-025",
+        "SEC-026"
+      ],
+      "actual": [
+        "SEC-025:FAIL",
+        "SEC-026:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-016:FAIL",
+        "SEC-017:FAIL",
+        "SEC-022:FAIL",
+        "SEC-027:FAIL",
+        "SEC-028:FAIL",
+        "SEC-031:FAIL",
+        "SEC-059:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-14",
+      "target": [
+        "SEC-027"
+      ],
+      "guard": "符号链接真实路径解析",
+      "expected": [
+        "SEC-027"
+      ],
+      "actual": [
+        "SEC-027:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-017:FAIL",
+        "SEC-028:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-15",
+      "target": [
+        "SEC-029"
+      ],
+      "guard": "Shell 危险度分级",
+      "expected": [
+        "SEC-029"
+      ],
+      "actual": [
+        "SEC-029:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-023:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-16",
+      "target": [
+        "SEC-037"
+      ],
+      "guard": "CDP 只驱动授权标签",
+      "expected": [
+        "SEC-037"
+      ],
+      "actual": [
+        "SEC-037:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-17",
+      "target": [
+        "SEC-040"
+      ],
+      "guard": "云元数据硬拒绝",
+      "expected": [
+        "SEC-040"
+      ],
+      "actual": [
+        "SEC-040:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-18",
+      "target": [
+        "SEC-041"
+      ],
+      "guard": "主机名归一化（结尾点）",
+      "expected": [
+        "SEC-041"
+      ],
+      "actual": [
+        "SEC-041:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-19",
+      "target": [
+        "SEC-052"
+      ],
+      "guard": "下载文件名清洗",
+      "expected": [
+        "SEC-052"
+      ],
+      "actual": [
+        "SEC-052:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-044:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-20",
+      "target": [
+        "SEC-057"
+      ],
+      "guard": "项目级记忆隔离",
+      "expected": [
+        "SEC-057"
+      ],
+      "actual": [
+        "SEC-057:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-065:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-21",
+      "target": [
+        "SEC-065"
+      ],
+      "guard": "会话级记忆隔离",
+      "expected": [
+        "SEC-065"
+      ],
+      "actual": [
+        "SEC-065:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-22",
+      "target": [
+        "SEC-067"
+      ],
+      "guard": "密钥脱敏",
+      "expected": [
+        "SEC-067"
+      ],
+      "actual": [
+        "SEC-067:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-030:FAIL",
+        "SEC-058:FAIL",
+        "SEC-070:FAIL",
+        "SEC-072:FAIL",
+        "SEC-084:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-23",
+      "target": [
+        "SEC-077"
+      ],
+      "guard": "门禁解析器（受控模拟输入）",
+      "expected": [
+        "SEC-077"
+      ],
+      "actual": [
+        "SEC-077:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    },
+    {
+      "mutationId": "MUT-24",
+      "target": [
+        "SEC-080"
+      ],
+      "guard": "生产/开发构建 Electron 配置一致",
+      "expected": [
+        "SEC-080"
+      ],
+      "actual": [
+        "SEC-080:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": [
+        "SEC-005:FAIL"
+      ]
+    },
+    {
+      "mutationId": "MUT-25",
+      "target": [
+        "SEC-069"
+      ],
+      "guard": "forRenderer 对界面藏密钥",
+      "expected": [
+        "SEC-069"
+      ],
+      "actual": [
+        "SEC-069:FAIL"
+      ],
+      "exitCode": 1,
+      "verdict": "KILLED",
+      "collateral": []
+    }
+  ],
+  "gateNegativeTests": [
+    {
+      "name": "B-1 全 PASS → 门禁通过",
+      "gate": true,
+      "expectNonZero": false,
+      "actualExit": 0,
+      "verdict": "PASS"
+    },
+    {
+      "name": "B-2 全 PASS → 默认档零",
+      "gate": false,
+      "expectNonZero": false,
+      "actualExit": 0,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-1 P0 FAIL → 非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-2 P0 BLOCKED → 非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-3 P0 NOT_RUN → 非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-4a P0 条目缺失 → 非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-4b id 重复 → 非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-4c 未知状态 → 非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "X-1 默认档 P0 NOT_RUN 不挡（设计如此）",
+      "gate": false,
+      "expectNonZero": false,
+      "actualExit": 0,
+      "verdict": "PASS"
+    },
+    {
+      "name": "X-2 默认档 P1 FAIL 也挡",
+      "gate": false,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-5 套件抛异常（默认档）→ 必须非零",
+      "gate": false,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "D-5 套件抛异常（gate档）→ 必须非零",
+      "gate": true,
+      "expectNonZero": true,
+      "actualExit": 1,
+      "verdict": "PASS"
+    }
+  ],
+  "limitations": [
+    "Phase F 未完成：无第二台干净 Windows 机器/VM，跨机复现记 BLOCKED。",
+    "SEC-040 只硬拒 IPv4 169.254.0.0/16；IPv6 链路本地 / 域名型 / 其它厂商元数据 IP 在 allow 档未拒。",
+    "SEC-005/010/080/082 属配置面静态断言，无运行期等价物。",
+    "SEC-013/014 为确定性边界测试，未调用模型，不能证明模型必不服从恶意指令。",
+    "xlsx 依赖来源为 cdn.sheetjs.com tarball，离线安装复现未验证。",
+    "门禁不读 security-results.json（在内存算），故「旧报告缓存冒充成功」不可发生；但缺 schemaVersion 读取侧校验。"
+  ],
+  "summary": {
+    "cases": 84,
+    "assessment": {
+      "STRONG": 73,
+      "PARTIAL": 10,
+      "N/A": 1
+    },
+    "p0WeakOrUnverified": [],
+    "mutations": {
+      "total": 25,
+      "killed": 25,
+      "survived": 0,
+      "invalid": 0,
+      "killRate": 1,
+      "p0KillRate": 1
+    },
+    "gateNegative": {
+      "total": 12,
+      "passed": 12
+    }
+  }
+}

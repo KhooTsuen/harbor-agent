@@ -18,9 +18,10 @@
  */
 
 import { CASES, SUITES } from './cases.mjs'
-import { settle, STATUS } from './harness.mjs'
+import { settle, resultOf, mark, STATUS } from './harness.mjs'
 import { cleanup, prepare, ROOT } from './sandbox.mjs'
 import { build, writeJson, writeMarkdown } from './report.mjs'
+import { p0NotPassing, securityExitCode } from './gate.mjs'
 import path from 'node:path'
 
 const argv = process.argv.slice(2)
@@ -62,10 +63,7 @@ function audit() {
   return 0
 }
 
-/** P0 里每一个不是 PASS 的（FAIL / BLOCKED / NOT_RUN 都算）—— 严格门禁的判据 */
-function p0NotPassing(report) {
-  return report.cases.filter((c) => c.priority === 'P0' && c.status !== STATUS.PASS)
-}
+/** 判据在 gate.mjs（一处真相源）—— 这里转出，老引用照旧 */
 
 async function main() {
   if (auditOnly) process.exit(audit())
@@ -82,11 +80,23 @@ async function main() {
 
   prepare()
   globalThis.__harborSecurityStartedAt = new Date().toISOString()
+  /** 抛异常的套件（★ 审计修复 D-5：套件崩了绝不能变成「全绿」） */
+  const runnerErrors = []
   try {
     for (const name of toRun) {
       console.log(`\n════ security:${name} ════`)
-      const mod = await import(new URL(`./suites/${name}.mjs`, import.meta.url))
-      await mod.run()
+      try {
+        const mod = await import(new URL(`./suites/${name}.mjs`, import.meta.url))
+        await mod.run()
+      } catch (error) {
+        const why = `套件抛异常：${error instanceof Error ? error.message : String(error)}`
+        runnerErrors.push({ suite: name, error: why })
+        console.log(`  ❌ ${name} ${why}`)
+        /* 该套件里还没跑出结论的项 → BLOCKED（绝不静默留成 NOT_RUN 再被当成「没写」） */
+        for (const c of CASES.filter((x) => x.suite === name)) {
+          if (resultOf(c.id).status === STATUS.NOT_RUN) mark(c.id, STATUS.BLOCKED, why)
+        }
+      }
     }
   } finally {
     settle()
@@ -120,11 +130,15 @@ async function main() {
     console.log('════════════════════════════════\n')
 
     /*
-     * 退出码：默认只挡 FAIL（不然 NOT_RUN 一多，每次提交都被拦）。
-     * --gate 时按文档第 12 节，P0 不许有任何非 PASS。
+     * 退出码：判据在 gate.mjs（一处真相源）。默认只挡 FAIL（不然 NOT_RUN 一多，
+     * 每次提交都被拦）；--gate 按文档第 12 节，P0 不许任何非 PASS / 缺失 / 重复。
+     * ★ 另加：任何套件**抛异常**都强制非零（审计 Phase D 的 D-5：套件崩了不能算全绿）。
      */
-    if (gate) process.exit(p0bad.length > 0 || summary.fail > 0 ? 1 : 0)
-    process.exit(summary.fail > 0 ? 1 : 0)
+    if (runnerErrors.length > 0) {
+      console.log(`\n  ⛔ ${runnerErrors.length} 个套件抛异常 → 强制非零`)
+      process.exit(1)
+    }
+    process.exit(securityExitCode(report, summary, gate))
   }
 }
 
