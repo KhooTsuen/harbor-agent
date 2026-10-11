@@ -40,7 +40,7 @@
     "security": "node scripts/security/run.mjs",
     "security:audit": "node scripts/security/run.mjs --audit",
     "preflight": "node scripts/preflight.mjs",
-    "verify": "npm run typecheck && npm run lint && npm run lint:kernel && npm run typecheck:kernel && npm run check:format && npm run check:lines && npm run check:rules && npm run test:rules && npm run test:unit && npm test && npm run build",
+    "verify": "npm run typecheck && npm run lint && npm run lint:kernel && npm run typecheck:kernel && npm run check:format && npm run check:lines && npm run check:rules && npm run test:rules && npm run test:unit && npm test && npm run security && npm run build",
     "acceptance": "node tools/acceptance.mjs",
     "smoke": "node tools/smoke-ui.mjs",
     "cold-start": "node scripts/cold-start.mjs"

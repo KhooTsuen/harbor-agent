@@ -35,11 +35,11 @@ npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一
 | ID | 优先级 | 状态 | 本轮实现位置 | 既有依据 |
 |---|---|---|---|---|
 | SEC-001 | P0 | ➕ | `securityHtml.test.tsx`（script 经 innerHTML 不执行） | — |
-| SEC-002 | P0 | **✗** |同上 + `suites/ipc.mjs`（默认开关断言） | — |
+| SEC-002 | P0 | ➕ | `securityHtml.test.tsx` + `suites/ipc.mjs`（默认已关） | — |
 | SEC-003 | P0 | ➕ | `securityHtml.test.tsx`（iframe/srcdoc 关闭后不进 DOM） | — |
 | SEC-005 | P0 | ➕ | `suites/static.mjs`（webPreferences） | `09-browser`「webview 加固」 |
 | SEC-006 | P0 | ➕ | `suites/static.mjs`（假 electron 真枚举 preload 面） | — |
-| SEC-007 | P0 | **✗** | `suites/ipc.mjs`（sender 校验源码断言） | — |
+| SEC-007 | P0 | ➕ | `suites/ipc.mjs`（真跑包装层） | `register-handlers.cjs` isTrustedEvent |
 | SEC-008 | P0 | ➕ | `suites/static.mjs`（真注册 handler 喂坏参数） | `127-action` / `schemas` |
 | SEC-013 | P0 | ▢ | — | `49-injection`（提示层，部分） |
 | SEC-014 | P0 | ▢ | — | — |
@@ -51,7 +51,7 @@ npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一
 | SEC-027 | P0 | ➕ | `suites/filesystem.mjs`（junction 越界） | — |
 | SEC-029 | P0 | ➕ | `suites/filesystem.mjs`（Shell 注入） | `03-fs-safety` / `61-destructive` |
 | SEC-037 | P0 | ▢ | — | `browserTabPolicy` / `135-cdp`（部分） |
-| SEC-040 | P0 | **✗** | `suites/browser.mjs`（SSRF） | `73-net-policy` / `117-url-policy`（部分） |
+| SEC-040 | P0 | ➕ | `suites/browser.mjs`（三档都拦元数据） | `73-net-policy` / `117-url-policy`（部分） |
 | SEC-057 | P0 | ➕ | `suites/memory.mjs`（项目级隔离） | `71-memory-explain`「数据隔离」 |
 | SEC-067 | P0 | ➕ | `suites/privacy.mjs`（哨兵密钥） | `03-fs-safety` / `62-redact` / `74-session-crypto` |
 
@@ -62,12 +62,12 @@ npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一
 | ID | 状态 | 既有依据 / 本轮实现 |
 |---|---|---|
 | SEC-001 | ➕ | `securityHtml.test.tsx` |
-| SEC-002 | ✗ | 默认 `harbor.rawHtml=true`，直通时 onerror 会执行（见「本轮发现」） |
+| SEC-002 | ➕ | 默认已关（`DEFAULT_ENABLED=false`）+ `securityHtml.test.tsx` |
 | SEC-003 | ➕ | `securityHtml.test.tsx` |
 | SEC-004 | ➕ | `securityHtml.test.tsx` + `markdown.test.ts`「危险协议当普通文字」 |
 | SEC-005 | ➕ | `static.mjs` + `09-browser` |
 | SEC-006 | ➕ | `static.mjs`（枚举 168 个具名方法，通道全部登记） |
-| SEC-007 | ✗ | 主进程无 sender 来源校验（见「本轮发现」） |
+| SEC-007 | ➕ | `register-handlers.cjs` 的 isTrustedEvent + `static`/`ipc` 真跑 |
 | SEC-008 | ➕ | `static.mjs` + 各工具 schema |
 | SEC-009 | ▢ | `117-url-policy` / `batch5UrlPolicy`（外链白名单，属既有但未接进套件） |
 | SEC-010 | ➕ | `static.mjs`（vite CSP + 构建产物 meta） |
@@ -115,7 +115,7 @@ npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一
 | SEC-037 | ◐ | `browserTabPolicy`「不碰用户标签」/ `135-cdp` |
 | SEC-038 | ◐ | `browse-ops`（元素索引）/ `137-browse-ops` |
 | SEC-039 | ▢ | — |
-| SEC-040 | ✗ | `browser.mjs`（deny/ask 档全覆盖，allow 档元数据地址漏，见「本轮发现」） |
+| SEC-040 | ➕ | `browser.mjs`（deny/ask/allow 三档都拦元数据）+ `net-policy.cjs` |
 | SEC-041 | ▢ | — |
 | SEC-042 | ◐ | `139-browse-settle` / `88-browser-wait` |
 | SEC-043 | ◐ | `74-session-crypto`（密文不含明文） |
@@ -181,40 +181,41 @@ npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一
 | SEC-083 | ▢ | — |
 | SEC-084 | ▢ | — |
 
-## 三、本轮发现（需要人决策的 P0）
+## 三、本轮发现与处置（三个 P0，已修）
 
-三个 **P0 未通过**。都是**如实记录**，未为了让测试变绿而弱化断言。
+首轮跑出 3 个 P0 FAIL —— **如实记录**，没有为了让测试变绿而弱化断言。
+三项已按「修复」处置（见下），`npm run security` 现已全绿，并接入 `verify` 链。
 
-### F-1 · SEC-002｜HTML 直通默认开启，onerror 会执行
+### F-1 · SEC-002｜HTML 直通默认开启 → **已改为默认关**
 
-- **位置**：`src/components/chat/markdown/RawHtml.tsx`（`DEFAULT_ENABLED = true`）
-- **现状**：渲染层有一条**行内/块级 HTML 直通**（`dangerouslySetInnerHTML`），
-  默认开启。`<img src=x onerror=…>` 会执行、`<iframe>` 会加载外链。
-  `<script>` 经 innerHTML 插入**不执行**（浏览器规范），所以 SEC-001 通过。
-- **来由**：文件头写明 **2026-10-08 用户主动要求打开**（「后来的使用者直接写 HTML 就能出效果」）。
-- **纵深**：脚本跑在 `sandbox:true` + `contextIsolation:true` + `nodeIntegration:false`
-  的渲染层（SEC-005 已证），拿不到 Node/原生 IPC；CSP `connect-src 'self'` 挡住外发（SEC-010）。
-  但 `window.workbench` 上的具名方法仍在范围内（其主进程校验见 SEC-008）。
-- **选项**：① 把 `DEFAULT_ENABLED` 改 `false`（默认不直通，仍可 `harbor.rawHtml=1` 打开）——
-  1 行改动；② 保留默认开启，把本项改判 NOT_APPLICABLE 并写明理由。
+- **位置**：`src/components/chat/markdown/RawHtml.tsx`
+- **做了什么**：`DEFAULT_ENABLED` 由 `true` 改 **`false`**。默认聊天展示不再执行
+  不可信脚本（清单第 1 节口径）。想保留直通能力的人：`localStorage` 设
+  `harbor.rawHtml = '1'` 打开（行内/块级两条路径都认这个开关）。
+- **代价**：这是**改变 2026-10-08 用户主动钦定的默认行为** —— 用户于 2026-10-11 明确
+  选择「按安全清单默认关」。既有测试 `renderExtensions.test.tsx` 已同步为
+  「默认关/显式开」两态。
 
-### F-2 · SEC-007｜主进程无 IPC sender 来源校验
+### F-2 · SEC-007｜主进程无 IPC sender 来源校验 → **已加来源校验收口**
 
-- **位置**：`electron/`（`ipcMain.handle` 一带都没有 `senderFrame` / 来源白名单）
-- **现状**：主进程不校验「这条 IPC 来自哪个 renderer」。
-- **影响面**：当前只有主窗口带 preload，webview 无 preload（网页发不了 IPC），
-  所以**暂无第二个 IPC 来源**；属**纵深缺失**，不是可直接利用的漏洞。
-- **选项**：① 加一层 `senderFrame` 校验（只允许主窗口，拒绝其它）；② 记 NOT_APPLICABLE（附理据）。
+- **位置**：`electron/register-handlers.cjs`
+- **做了什么**：`wrapInvokeHandlers(ipcMain, isTrusted)` 加一层来源校验；
+  `registerHandlers` 注入 `isTrustedEvent`（只接受主窗口的 `webContents`）。
+  非受信来源一律拒绝 + 留痕（动作流水 + 主日志）。
+  `getMainWindow()` 拿不到时（启动早期）**放行**，有窗口后生效。
+- **为什么不粗暴掐死**：当前只有主窗口带 preload，webview 无 preload；这一层是
+  **纵深防御**（防以后给某个 webContents 加桥），不是修一个可利用漏洞。
+- **验证**：`suites/ipc.mjs` 真跑包装层 —— 受信来源放行、非受信来源被拒。
 
-### F-3 · SEC-040｜`allow` 档下云元数据地址被放行（SSRF 纵深）
+### F-3 · SEC-040｜`allow` 档下云元数据地址被放行 → **已加硬拒绝**
 
-- **位置**：`electron/core/net-policy.cjs`（只按用户选的档裁决，无内网/元数据清单）
-- **现状**：`deny`/`ask` 档下回环/内网/`169.254.169.254` 都被正确拦住；
-  但用户把网络策略设成 **`allow`** 时，`http://169.254.169.254/latest/meta-data/`
-  会被**放行** → 若模型/网页内容能诱导一次请求，可打到云元数据服务。
-- **选项**：① 在 `net-policy.cjs` 加一条「元数据/链路本地地址始终拒绝」（不受档位影响）；
-  ② 记 NOT_APPLICABLE 并写明「本应用不主张联网默认安全，完全由用户档位决定」。
+- **位置**：`electron/core/net-policy.cjs`（新增 `metadataBlocked`）
+- **做了什么**：`169.254.0.0/16`（云元数据 / 链路本地）在 `decide()` 里**不受档位影响、
+  一律拒绝**。刻意**只**收窄这一个网段：不碰 `127.0.0.1`/localhost（本地 dev server
+  要逛）、不碰私网整体（内网服务是用户的正常工作对象）。
+- **验证**：`suites/browser.mjs` —— deny/ask/allow 三档都拒元数据，localhost 在 allow 档照常放行。
 
-> **为什么现在没接进 `verify`**：以上三项任一未决，`npm run security` 都返回非零；
-> 此刻接进 `verify` 会让 **pre-push 直接失败**（提交/推送被挡）。
-> 三项处理完（修好或改判 NOT_APPLICABLE）即可把 `npm run security` 追加到 `verify` 链。
+> **已接入 `verify`**：三项处置后 `npm run security` 退出码为 0，
+> 已在 `package.json` 的 `verify` 链尾追加 `&& npm run security`。
+> 从此有 P0 FAIL 会一并挡 CI / pre-push / preflight。
+

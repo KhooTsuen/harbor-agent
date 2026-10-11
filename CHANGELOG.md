@@ -14,8 +14,15 @@
   授权 scope / TOCTOU（SEC-016/017）、路径穿越 / 符号链接 / Shell 注入（SEC-025/027/029）、
   SSRF（SEC-040）、项目级记忆隔离（SEC-057）、哨兵密钥（SEC-067）。运行 `npm run security`。
   覆盖映射见 `docs/security-coverage-map.md`（含 3 个 P0 发现：HTML 直通默认开启、
-  无 IPC sender 校验、allow 档放行云元数据地址）。**暂未接入 `verify`** —— 上述 P0 未决前
-  会挡掉 pre-push，待决后追加 `npm run security` 到 verify 链。
+  无 IPC sender 校验、allow 档放行云元数据地址）。
+  会挡掉 pre-push。（这三项已于本轮修好并接入 verify，见下一条。）
+
+- **安全：首轮跑出的 3 个 P0 已修 + `npm run security` 接入 verify 链**（2026-10-11）。
+  ① SEC-002：`RawHtml.tsx` 的 HTML 直通由**默认开改默认关**（保留 `harbor.rawHtml=1` 开关）——
+  默认聊天展示不再执行不可信脚本；② SEC-007：`register-handlers.cjs` 加 IPC sender 来源校验
+  （只接受主窗口，非受信来源拒绝 + 留痕）；③ SEC-040：`net-policy.cjs` 把 `169.254.0.0/16`
+  （云元数据/链路本地）列为**不受档位影响**的硬拒绝（不碰 localhost / 私网）。`npm run security`
+  现全绿，已在 `verify` 链尾追加 `&& npm run security`（有 P0 FAIL 会一并挡 CI / pre-push / preflight）。
 
 - **下载的开始 / 完成 / 失败改成全局提示**（2026-10-11）。病根：下载事件的订阅长在
   `DownloadsPanel` 里，而那个面板是**按标签条件渲染**的（`RightPanel.tsx`：

@@ -118,8 +118,26 @@ function inspect(kind, target) {
 
 /* ── 裁决 ────────────────────────────────────────────────── */
 
+/** @returns {{ action: 'allow', reason: string }} */
 const allow = (reason) => ({ action: 'allow', reason })
+/** @returns {{ action: 'deny', reason: string }} */
 const deny = (reason) => ({ action: 'deny', reason })
+
+/**
+ * 云元数据 / 链路本地地址 —— **不受档位影响的硬拒绝**（安全清单 SEC-040）。
+ *
+ * 为什么单列：169.254.0.0/16（含云厂商的 169.254.169.254 元数据服务）几乎只会
+ * 出现在 SSRF 尝试里 —— 应用自己没有连它的正当理由。用户把网络策略设成「允许」
+ * 时，回环/内网地址随之放行是合理的（本地开发），但**元数据地址不该被任何档位
+ * 放行**：命中它基本只有一个解释，有人想诱导一次请求去读云凭据。
+ *
+ * ⚠️ 刻意**只**收窄这一个网段：不碰 127.0.0.1 / localhost（浏览器标签要逛本地
+ * dev server），不碰私网整体（不少内网服务是用户的正常工作对象）。
+ */
+const METADATA_HOST_RE = /^169\.254\.\d{1,3}\.\d{1,3}$/
+function metadataBlocked(hosts) {
+  return (hosts ?? []).find((h) => METADATA_HOST_RE.test(String(h ?? '').trim()))
+}
 
 /**
  * 这次动作放不放行。
@@ -146,6 +164,15 @@ function decide({ kind = 'shell', target, ctx = {} } = {}) {
 
   /* ⓪ 与网络无关（也没被主机名单点名）：网络策略不管 */
   if (!info.network && !blocked) return allow('这一步不涉及网络，网络策略不管它。')
+
+  /* ⓪·5 云元数据/链路本地地址：**硬拒绝，任何档位都不放行**（安全清单 SEC-040） */
+  const meta = metadataBlocked(info.hosts)
+  if (meta) {
+    return deny(
+      `${meta} 是云元数据/链路本地地址（169.254.0.0/16）。这类地址只会在「诱导一次请求去读云凭据」的` +
+        '攻击里出现，所以不受网络策略档位影响、一律拒绝。如果你确实要连它（极少见），请改用别的地址。',
+    )
+  }
 
   /* ① 技能声明优先于全局设置 —— 钉子，别调顺序 */
   if (ctx.networkGrant === 'deny') {

@@ -34,11 +34,21 @@ const SLOW_IPC_MS = 1000
  * 却查不到任何线索）。包在这里是最省事、也最全的位置 —— 加新通道自动被包上。
  *
  * 记两份：成败/耗时进**动作流水**（机器看），失败和慢调用另外进**主日志**（人看）。
+ *
+ * ── 安全清单 SEC-007：IPC sender 来源校验 ──
+ * 传了 `isTrusted` 时，非受信来源（不是应用主窗口发来的）一律拒绝并留痕，
+ * 再进 handler。不传时保持旧行为（自检 / 单测直接调它时不做来源限制）——
+ * 调用方在 `registerHandlers` 里注入「只信主窗口」的判据。
  */
-function wrapInvokeHandlers(ipcMain) {
+function wrapInvokeHandlers(ipcMain, isTrusted) {
   const raw = ipcMain.handle.bind(ipcMain)
   ipcMain.handle = (channel, listener) =>
     raw(channel, async (event, ...args) => {
+      if (typeof isTrusted === 'function' && !isTrusted(event)) {
+        actions.record({ kind: 'ipc', name: channel, ok: false, ms: 0, detail: '来源不受信，拒绝' })
+        log.warn(`通道 ${channel}：来源不受信，已拒绝`)
+        throw new Error(`IPC 来源不受信，已拒绝：${channel}`)
+      }
       const at = Date.now()
       try {
         const result = await listener(event, ...args)
@@ -71,8 +81,25 @@ function registerHandlers(deps) {
   const { powerMonitor } = deps
   const { currentWorkdir, resolveWorkdir } = deps.workdir
 
-  /* 先包一层，后面所有 register() 注册的通道都自动在网里 */
-  wrapInvokeHandlers(ipcMain)
+  /**
+   * IPC 来源判据（安全清单 SEC-007）：只接受**应用主窗口**发来的调用。
+   *
+   * 现状：当前只有主窗口带 preload，网页标签（webview）没有 → 本来也发不出 IPC。
+   * 这一层是纵深防御：万一以后给某个 webContents 加了桥，或在特殊模式下注入了
+   * 别的 renderer，非主窗口的调用会被这一层拒掉并留痕。
+   *
+   * `getMainWindow()` 拿不到（启动早期 / 自检）时**放行** —— 不能因为「还没建窗口」
+   * 把正常启动挡死；有窗口之后才真正生效。
+   */
+  function isTrustedEvent(event) {
+    const win = getMainWindow?.()
+    if (!win || typeof win.isDestroyed !== 'function' || win.isDestroyed()) return true
+    const sender = event?.sender
+    return Boolean(sender) && sender === win.webContents
+  }
+
+  /* 先包一层，后面所有 register() 注册的通道都自动在网里（含来源校验，见 SEC-007） */
+  wrapInvokeHandlers(ipcMain, isTrustedEvent)
 
   /* 错误清单（右栏「错误」标签，只读；见 handlers/errors.cjs） */
   require('./handlers/errors.cjs').register({ ipcMain })

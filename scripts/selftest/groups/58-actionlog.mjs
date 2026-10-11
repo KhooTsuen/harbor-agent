@@ -128,7 +128,7 @@ export async function run() {
   const reg = readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8')
   check(
     '★ ipcMain.handle 被包住（新通道自动在网里）',
-    reg.includes('function wrapInvokeHandlers(ipcMain)'),
+    reg.includes('function wrapInvokeHandlers(ipcMain'),
   )
   check(
     '成功记进动作流水',
@@ -141,7 +141,7 @@ export async function run() {
   check('慢调用也记一行', reg.includes('慢调用 ${channel}'))
   check(
     '包在注册之前（不然前面注册的通道漏网）',
-    reg.indexOf('wrapInvokeHandlers(ipcMain)') < reg.indexOf("handlers/window.cjs').register"),
+    reg.indexOf('wrapInvokeHandlers(ipcMain') < reg.indexOf("handlers/window.cjs').register"),
   )
 
   /* ── ⑥ 未捕获异常的两端 ───────────────────────────────── */

@@ -12,7 +12,7 @@
 
 import { CASES } from '../cases.mjs'
 import { mark, sec } from '../harness.mjs'
-import { fs, path, ROOT, WORKSPACE } from '../sandbox.mjs'
+import { fs, path, require, ROOT, WORKSPACE } from '../sandbox.mjs'
 import { execFileSync } from 'node:child_process'
 
 const join = path.join
@@ -75,23 +75,37 @@ function rawHtmlDefault() {
     `默认不开启 HTML 直通（当前 DEFAULT_ENABLED=${enabled ? 'true（onerror 会执行）' : 'false'}；见 RawHtml.tsx 文件头）`)
 }
 
-/** SEC-007：IPC sender 来源校验 */
-function senderCheck() {
-  const root = join(ROOT, 'electron')
-  const hits = []
-  const walk = (d) => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = join(d, e.name)
-      if (e.isDirectory()) walk(p)
-      else if (e.name.endsWith('.cjs')) {
-        const text = fs.readFileSync(p, 'utf8')
-        if (/senderFrame|validateSender|isTrustedSender/.test(text)) hits.push(path.relative(ROOT, p))
-      }
-    }
+/** SEC-007：IPC sender 来源校验 —— 真跑 `wrapInvokeHandlers` 的包装层 */
+async function senderCheck() {
+  const rh = require(join(ROOT, 'electron/register-handlers.cjs'))
+  const registered = {}
+  const fakeIpc = { handle: (channel, fn) => { registered[channel] = fn } }
+  const winWebContents = { id: 7 }
+  const isTrusted = (event) => Boolean(event?.sender) && event.sender === winWebContents
+  rh.wrapInvokeHandlers(fakeIpc, isTrusted)
+
+  registered['demo:op'] = null
+  fakeIpc.handle('demo:op', () => 'done')
+
+  let trusted = null
+  try {
+    trusted = await registered['demo:op']({ sender: winWebContents })
+  } catch (error) {
+    trusted = `throw:${error.message}`
   }
-  walk(root)
-  sec('SEC-007', hits.length > 0,
-    `主进程有 sender 来源校验（命中文件：${hits.join(', ') || '无'}。当前只有主窗口带 preload，webview 无 preload，属纵深缺失）`)
+  sec('SEC-007', trusted === 'done', `受信来源（主窗口）调用放行（结果=${trusted}）`)
+
+  let rejected = false
+  try {
+    await registered['demo:op']({ sender: { id: 99 } })
+  } catch {
+    rejected = true
+  }
+  sec('SEC-007', rejected, '非受信来源（别的 webContents）调用被拒绝')
+
+  /* 接线钉子：registerHandlers 真的把判据传给了包装层（不能只是定义了函数） */
+  const src = fs.readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8')
+  sec('SEC-007', /wrapInvokeHandlers\(ipcMain,\s*isTrustedEvent\)/.test(src), 'registerHandlers 把来源判据接进了包装层')
 }
 
 export async function run() {
@@ -99,7 +113,11 @@ export async function run() {
   runRender()
   rawHtmlDefault()
   console.log('\n· SEC-007 IPC sender 校验')
-  senderCheck()
+  try {
+    await senderCheck()
+  } catch (error) {
+    sec('SEC-007', false, `套件抛错：${error instanceof Error ? error.message : error}`)
+  }
   console.log('\n· SEC-009 / 011 / 012')
   for (const c of CASES.filter((c) => ['SEC-009', 'SEC-011', 'SEC-012'].includes(c.id))) {
     mark(c.id, 'NOT_RUN', '待实现（下一批）')

@@ -35,14 +35,26 @@ function draw(text: string): void {
 }
 
 describe('HTML 直通（渲染层）', () => {
-  it('<b> 变成真的粗体元素', () => {
+  it('★ 默认关：没设置过开关时不直通（安全清单 SEC-002）', () => {
+    globalThis.localStorage?.removeItem('harbor.rawHtml')
     draw('前 <b>粗</b> 后')
-    expect(container.querySelector('b')?.textContent).toBe('粗')
+    expect(container.querySelector('b')).toBeNull()
+    expect(container.textContent).toContain('<b>粗</b>')
   })
 
-  it('★ 属性原样落地（onerror 会被保留 —— 这就是打开口子的代价）', () => {
+  it('显式打开后才直通：<b> 变成真的粗体元素', () => {
+    globalThis.localStorage?.setItem('harbor.rawHtml', '1')
+    /* 文本要与上面的用例不同 —— Markdown 是 memo 的，相同 props 不会重渲 */
+    draw('打开 <b>粗体</b> 看效果')
+    expect(container.querySelector('b')?.textContent).toBe('粗体')
+    globalThis.localStorage?.removeItem('harbor.rawHtml')
+  })
+
+  it('★ 打开时属性原样落地（onerror 会被保留 —— 这就是打开口子的代价）', () => {
+    globalThis.localStorage?.setItem('harbor.rawHtml', '1')
     draw('<img src="x" onerror="window.__pwn=1">')
     expect(container.querySelector('img')?.getAttribute('onerror')).toBe('window.__pwn=1')
+    globalThis.localStorage?.removeItem('harbor.rawHtml')
   })
 
   it('★ 开关关掉后退化成纯文本', () => {
