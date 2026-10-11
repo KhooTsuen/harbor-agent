@@ -59,7 +59,11 @@ PARTIAL 的 10 项集中在：`SEC-005/010/080/082`（WebPreferences / CSP / 构
 主工作区与用户真数据未被触碰；每个变异前把**所有涉及文件**还原，杜绝污染累积。
 
 **结果：25 / 25 KILLED（Kill Rate 100%）**，逐项证据在
-[`security-effectiveness-results.json`](../security-effectiveness-results.json) 的 `mutations[]`。
+[`security-effectiveness-results.json`](../security-effectiveness-results.json) 的 `mutations[]` ——
+每条含 `expected / actual / exitCode / verdict / collateral / durationMs / evidence`，其中 `evidence`
+以**相对路径**引用脱敏的原始日志（`data/audit-logs/mutation-1-13.json`、`mutation-14-25.json`，不入库）。
+> 收口时用固化工具**两批重跑**了全量 25 变异，并把 `mutations[]` 的结果字段**全量同步到这次权威日志**
+> （此前单条 `collateral` 残留了更早运行的旧值）。重跑结果不变：25/25 KILLED。
 
 | 变异 | 目标 | 受控缺陷 | 判定 |
 |---|---|---|---|

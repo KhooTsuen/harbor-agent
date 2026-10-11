@@ -5,6 +5,15 @@
 
 ## [未发布]
 
+- **审计收口：补齐结果 JSON 的 §5 字段 + 权威变异重跑**（2026-10-11）。核对交付物时发现
+  `security-effectiveness-results.json` 的 `mutations[]` **缺规范 §5 明列的 `evidence` 字段**，
+  且单条 `collateral` 残留**更早一次运行**的结果（MUT-01 还带着 `SEC-080:BLOCKED`，那是隔离副本
+  的 `dist` junction 修好之前的旧值）。用固化后的 `scripts/security/mutation/mutate.mjs` **两批重跑
+  全量 25 变异**（`mutation-1-13.json` + `mutation-14-25.json`），把 `expected/actual/exitCode/verdict/
+  collateral/durationMs` **全量同步到权威日志**，并给每条补 `evidence`（相对路径引用脱敏日志）。
+  `auditCommit` 由「= baseCommit 的占位」改为审计产出提交 `c1b4e22`。结果不变：**25/25 KILLED**。
+  另给 `gateNegativeTests[]` 补 `evidence`（`data/audit-logs/gate-negative.json`）。**不改任何断言或产品语义。**
+
 - **安全测试有效性审计 + 受控缺陷注入验证（Phase A–F）**（2026-10-11）。按《Harbor Agent 安全测试
   有效性审计与缺陷注入验证规范》v1.0，对基线 `1c67a3d2b` 做测试有效性审计（不是再跑一遍）：
   · **基线复核**：`security:audit` / `security` / `security:gate` / `verify` 四条命令真实退出码全 0；

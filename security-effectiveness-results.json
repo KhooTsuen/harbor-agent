@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "baseCommit": "1c67a3d2b6201d09364306f3df5f86414617e7f4",
-  "auditCommit": "1c67a3d2b6201d09364306f3df5f86414617e7f4",
+  "auditCommit": "c1b4e22d5a634340e0beaf6f2e112383f2acf025",
   "environment": {
     "os": "win32",
     "node": "v24.19.0",
@@ -1004,9 +1004,10 @@
       "exitCode": 1,
       "verdict": "KILLED",
       "collateral": [
-        "SEC-012:FAIL",
-        "SEC-080:BLOCKED"
-      ]
+        "SEC-012:FAIL"
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-01)",
+      "durationMs": 29201
     },
     {
       "mutationId": "MUT-02",
@@ -1027,9 +1028,10 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-002:FAIL",
-        "SEC-004:FAIL",
-        "SEC-080:BLOCKED"
-      ]
+        "SEC-004:FAIL"
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-02)",
+      "durationMs": 25497
     },
     {
       "mutationId": "MUT-03",
@@ -1047,7 +1049,9 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-011:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-03)",
+      "durationMs": 26336
     },
     {
       "mutationId": "MUT-04",
@@ -1064,14 +1068,10 @@
       "exitCode": 1,
       "verdict": "KILLED",
       "collateral": [
-        "SEC-002:FAIL",
-        "SEC-003:FAIL",
-        "SEC-004:FAIL",
-        "SEC-011:FAIL",
-        "SEC-012:FAIL",
-        "SEC-054:FAIL",
-        "SEC-080:BLOCKED"
-      ]
+        "SEC-054:FAIL"
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-04)",
+      "durationMs": 24294
     },
     {
       "mutationId": "MUT-05",
@@ -1087,16 +1087,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": [
-        "SEC-002:FAIL",
-        "SEC-003:FAIL",
-        "SEC-004:FAIL",
-        "SEC-008:FAIL",
-        "SEC-011:FAIL",
-        "SEC-012:FAIL",
-        "SEC-054:FAIL",
-        "SEC-080:BLOCKED"
-      ]
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-05)",
+      "durationMs": 27575
     },
     {
       "mutationId": "MUT-06",
@@ -1112,16 +1105,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": [
-        "SEC-002:FAIL",
-        "SEC-003:FAIL",
-        "SEC-004:FAIL",
-        "SEC-008:FAIL",
-        "SEC-009:FAIL",
-        "SEC-012:FAIL",
-        "SEC-054:FAIL",
-        "SEC-080:BLOCKED"
-      ]
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-06)",
+      "durationMs": 24421
     },
     {
       "mutationId": "MUT-07",
@@ -1137,7 +1123,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-07)",
+      "durationMs": 24917
     },
     {
       "mutationId": "MUT-08",
@@ -1153,7 +1141,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-08)",
+      "durationMs": 23199
     },
     {
       "mutationId": "MUT-09",
@@ -1172,7 +1162,9 @@
       "collateral": [
         "SEC-027:FAIL",
         "SEC-028:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-09)",
+      "durationMs": 24251
     },
     {
       "mutationId": "MUT-10",
@@ -1190,7 +1182,9 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-023:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-10)",
+      "durationMs": 23520
     },
     {
       "mutationId": "MUT-11",
@@ -1206,7 +1200,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-11)",
+      "durationMs": 22366
     },
     {
       "mutationId": "MUT-12",
@@ -1226,7 +1222,9 @@
         "SEC-030:FAIL",
         "SEC-067:FAIL",
         "SEC-068:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-12)",
+      "durationMs": 29391
     },
     {
       "mutationId": "MUT-13",
@@ -1253,7 +1251,9 @@
         "SEC-028:FAIL",
         "SEC-031:FAIL",
         "SEC-059:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-1-13.json (id=MUT-13)",
+      "durationMs": 25855
     },
     {
       "mutationId": "MUT-14",
@@ -1272,7 +1272,9 @@
       "collateral": [
         "SEC-017:FAIL",
         "SEC-028:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-14)",
+      "durationMs": 31188
     },
     {
       "mutationId": "MUT-15",
@@ -1290,7 +1292,9 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-023:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-15)",
+      "durationMs": 28386
     },
     {
       "mutationId": "MUT-16",
@@ -1306,7 +1310,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-16)",
+      "durationMs": 25941
     },
     {
       "mutationId": "MUT-17",
@@ -1322,7 +1328,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-17)",
+      "durationMs": 27708
     },
     {
       "mutationId": "MUT-18",
@@ -1338,7 +1346,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-18)",
+      "durationMs": 27288
     },
     {
       "mutationId": "MUT-19",
@@ -1356,7 +1366,9 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-044:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-19)",
+      "durationMs": 28958
     },
     {
       "mutationId": "MUT-20",
@@ -1374,7 +1386,9 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-065:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-20)",
+      "durationMs": 25879
     },
     {
       "mutationId": "MUT-21",
@@ -1390,7 +1404,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-21)",
+      "durationMs": 25328
     },
     {
       "mutationId": "MUT-22",
@@ -1412,7 +1428,9 @@
         "SEC-070:FAIL",
         "SEC-072:FAIL",
         "SEC-084:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-22)",
+      "durationMs": 25183
     },
     {
       "mutationId": "MUT-23",
@@ -1428,7 +1446,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-23)",
+      "durationMs": 21069
     },
     {
       "mutationId": "MUT-24",
@@ -1446,7 +1466,9 @@
       "verdict": "KILLED",
       "collateral": [
         "SEC-005:FAIL"
-      ]
+      ],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-24)",
+      "durationMs": 24451
     },
     {
       "mutationId": "MUT-25",
@@ -1462,7 +1484,9 @@
       ],
       "exitCode": 1,
       "verdict": "KILLED",
-      "collateral": []
+      "collateral": [],
+      "evidence": "data/audit-logs/mutation-14-25.json (id=MUT-25)",
+      "durationMs": 25856
     }
   ],
   "gateNegativeTests": [
@@ -1471,84 +1495,96 @@
       "gate": true,
       "expectNonZero": false,
       "actualExit": 0,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "B-2 全 PASS → 默认档零",
       "gate": false,
       "expectNonZero": false,
       "actualExit": 0,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-1 P0 FAIL → 非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-2 P0 BLOCKED → 非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-3 P0 NOT_RUN → 非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-4a P0 条目缺失 → 非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-4b id 重复 → 非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-4c 未知状态 → 非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "X-1 默认档 P0 NOT_RUN 不挡（设计如此）",
       "gate": false,
       "expectNonZero": false,
       "actualExit": 0,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "X-2 默认档 P1 FAIL 也挡",
       "gate": false,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-5 套件抛异常（默认档）→ 必须非零",
       "gate": false,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     },
     {
       "name": "D-5 套件抛异常（gate档）→ 必须非零",
       "gate": true,
       "expectNonZero": true,
       "actualExit": 1,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "evidence": "data/audit-logs/gate-negative.json"
     }
   ],
   "limitations": [
