@@ -1,6 +1,7 @@
 import { RightPanel } from './RightPanel'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
+import { useRootFontScale } from '@/hooks/useRootFontScale'
 import { cn } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -29,20 +30,33 @@ interface Props {
 }
 
 export function RightPanelHost({ visible, width, min, max, onToggle, onResize }: Props) {
+  /*
+   * P4-3：宽度随根字号等比缩放。
+   *
+   * 栏宽这个 px 是写死的，而标签等 rem 尺寸会随「字号缩放」长大 ——
+   * 150% 时标签被挤出栏外、进而顶出文档横向滚动条。按「当前根字号 ÷ 16」
+   * 放大栏宽即可（默认 100% 时倍率恰好为 1 → 与改动前逐像素一致）。
+   *
+   * 存的是**用户选的 px**（未缩放，落 localStorage），只在这里换算显示值；
+   * 反过来把拖拽结果除以倍率再回存 —— 所以持久化数据形状不变、无需迁移。
+   */
+  const scale = useRootFontScale()
+  const shownWidth = Math.round(width * scale)
+
   return (
     <>
       {visible ? (
         <ResizeHandle
           side="left"
           label="调整右侧面板宽度"
-          value={width}
-          min={min}
-          max={max}
-          onChange={onResize}
+          value={shownWidth}
+          min={Math.round(min * scale)}
+          max={Math.round(max * scale)}
+          onChange={(next) => onResize(Math.round(next / scale))}
         />
       ) : null}
 
-      <div className={cn('shrink-0', !visible && 'hidden')} style={{ width }}>
+      <div className={cn('shrink-0', !visible && 'hidden')} style={{ width: shownWidth }}>
         <ErrorBoundary>
           <RightPanel />
         </ErrorBoundary>
