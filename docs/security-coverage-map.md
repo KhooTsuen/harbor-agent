@@ -259,11 +259,37 @@ npm run security:gate            # 严格发布门禁：P0 有 FAIL/BLOCKED/NOT_
 | §12 | 覆盖率**三口径** | ✅ | 实现率 / 执行率 / 通过率（分母不含 NOT_RUN） |
 | §12 | 漏洞数与通过率**分开报告** | ✅ | `coverage.vulnerabilities` 单列，报告里也分开写 |
 | §12 | 适用 P0 全 PASS（不得 FAIL/BLOCKED/NOT_RUN） | ❌ **当前不满足** | 严格档 `npm run security:gate` 判；缺口见下 |
-| §12 | 生产 / 开发构建分别查 Electron/IPC | ▢ | 只做了源码级；构建后实测见 SEC-080（◐） |
-| §12 | 失败注入（进程退出/磁盘满/…） | ▢ | 未做；SEC-050/051/053 仍是 NOT_RUN |
-| §13 首批 20 项 | 20 项落地 | ◐ | 15/20 有断言；SEC-013/014/018/021/037 仍 NOT_RUN |
+| §12 | 生产 / 开发构建分别查 Electron/IPC | ✅ | SEC-080：构建产物 `dist/index.html` CSP 与源码一致 |
+| §12 | 失败注入（进程退出/磁盘满/…） | ✅ | SEC-050/051/053（网络失败/取消/启动回落/写盘失败） |
+| §13 首批 20 项 | 20 项落地 | ✅ | 20/20 全有断言（本批补齐 SEC-013/014/018/021/037） |
 
-**严格档不通过的根因就一条**：首批 P0 里还有未实现项（NOT_RUN）。**这不是「测试没过」，
-是「还没写」** —— 报告里标的是 ⏸ NOT_RUN，不是 PASS，也不是 FAIL。
+**全 84 项：实现率 100%、执行率 98.8%（1 项 N/A）、通过率 97.6%。** 数字会随实现变，看
+`npm run security` 输出。
+
+## 五、本批发现（2 项 FAIL，需人决策）
+
+### F-4 · SEC-065｜`session` 作用域记忆未按会话隔离（P1）
+
+- **位置**：`electron/core/memory-recall.cjs` 的 `retrieve()` —— 只按 `project` 过滤作用域，
+  没有按会话过滤；而 `memory-schema.cjs` 的 `SCOPES` 含 `'session'`。
+- **最小复现**：加一条 `scope: 'session'` 的记忆，在**任意**会话 `retrieve({})` 都能取到
+  （见 `security:memory` 的 SEC-065 断言）。
+- **影响面**：会话私有内容会跨会话注入（泄漏）。
+- **修法（需改数据结构）**：`session` 作用域要绑定 `sessionId`（现 store 只存 `projectId`）——
+  属数据结构变更 + 迁移；或先 fail-closed：无会话上下文时不注入 `session` 作用域记忆。
+  **按硬禁区第 3 条，未擅改。**
+
+### F-5 · SEC-077｜生产依赖 `xlsx` 有 high 漏洞（P0）
+
+- **证据**：`npm audit --omit=dev` → `xlsx` high ×2（GHSA-4r6h-8v6p-xvw6 原型污染 /
+  GHSA-5pgg-2g8v-p4x9 ReDoS），`fixAvailable: false`。
+- **可达性**：`xlsx` 用于**解析用户上传的 Excel 附件**（`file-extract` → SheetJS）——
+  解析不可信输入正是这两个漏洞的触发面。
+- **修法（需改依赖）**：换成 SheetJS 官方 CE 源（npm 上的 `xlsx` 已停止维护、无修复版）。
+  依赖变更要你点头，**未擅改**。
+
+> 结论：**适用 P0 里 SEC-077 是 FAIL** → 严格发布门禁当前**不通过**。SEC-065 是 P1 FAIL，
+> 需附风险评估后决定是否放行。两项都只报告、未为「变绿」而弱化断言。
+
 
 

@@ -5,6 +5,22 @@
 
 ## [未发布]
 
+- **安全回归：84 项全量落地（第 2 批 · 收尾）**（2026-10-11）。其余 8 个域逐条实现，
+  实现率 100%（84/84）、执行率 98.8%（83/84，SEC-081 无自动更新记 NOT_APPLICABLE）、
+  通过率 97.6%（81 PASS · 2 FAIL）。本批：
+  · `security:filesystem` SEC-026/028/030~036（Win 路径边界 / 路径竞态 / 命令输出密钥不外泄 /
+    删除保护 / 批量上限 / 回滚完整性 / ZIP Slip / 附件解析 / 原子写）
+  · `security:browser` SEC-037~039/041~046（CDP 目标约束 / 弹窗越界 / DNS 重绑定归一化 /
+    CDP 失败语义 / cookie 隔离 / 下载入口一致 / settle 超时 / 重试上限）——038 走 jsdom 真渲染
+  · `security:downloads` SEC-047~056（Range 回退 / 错误续传拒收 / ETag 变化重下 / 失败取消 /
+    启动回落 / 文件名穿越 / 写盘失败 / 并发上限 / 台账迁移 / 不伪称校验）
+  · `security:memory` SEC-058~066（不可信写入 / 记忆携带指令 / scope / 纠正 / 过期 /
+    损坏留档 / 裁剪 / 可解释）
+  · `security:privacy` SEC-068~076、`security:release` SEC-077~084
+  **两个 FAIL（真发现，见 `docs/security-coverage-map.md`）**：SEC-065（`session` 作用域记忆
+  未按会话隔离，会跨会话注入）、SEC-077（生产依赖 `xlsx` 有 high 漏洞、npm 无修复版）。
+  这两项要动数据结构 / 依赖，按规矩**只报告、未擅改**。
+
 - **安全回归：84 项全量落地（第 1 批）**（2026-10-11）。按《Harbor Agent 自动化安全测试清单》
   v1.0 把余下各域逐条实现。本批：
   · `security:ipc` 补齐 SEC-009（外链/导航：非 http(s) 一律拦）、SEC-011（窗口销毁后 IPC
