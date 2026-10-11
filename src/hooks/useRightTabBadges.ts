@@ -1,0 +1,69 @@
+import { useAppStore } from '@/stores/useAppStore'
+import { useDownloadsStore } from '@/stores/useDownloadsStore'
+import { useErrorsStore } from '@/stores/useErrorsStore'
+import { useTaskStore } from '@/stores/useTaskStore'
+
+/* ══════════════════════════════════════════════════════════════
+   右栏标签角标的数据（Phase 2 · C）
+
+   抽成 hook 有两个理由：
+
+     ① `RightPanel.tsx` 已经 270+ 行、贴着 300 行红线 —— 角标这件事本身
+        就自成一摊（四个 store 的只读订阅），塞进主文件只会更难拆；
+     ② 顶栏兜底（`AppTitleBar`）要的是**同几个数**，放一处才只有一个真相源，
+        不会「右栏算一套、顶栏再算一套」。
+
+   **只读订阅：没有任何请求、没有定时器** —— 数据全部来自既有 store，
+   不新增轮询（省得又变成「空闲也在读磁盘」）。
+   ══════════════════════════════════════════════════════════════ */
+
+export interface RightTabBadges {
+  /** 「审查」：未提交改动的文件数（0 就不显示） */
+  diffCount: number
+  /** 「错误」：未读的严重（P0/P1）错误条数（0 就不显示） */
+  errorUnread: number
+  /** 未读里最严重的一级 —— 角标颜色据此选（仍走 statusLanguage） */
+  errorWorst: 'P0' | 'P1' | null
+  /** 「任务」：有未完成 / 在跑的任务（「有内容」提示，不是错误） */
+  taskPending: boolean
+  /** 「下载」：列表里有条目（在进行或已完成待看） */
+  downloadsActive: boolean
+  /** 「成果」：当前会话内存里确有正式产物 */
+  artifactPresent: boolean
+  /** 顶栏兜底：**正在跑**的后台任务数 */
+  runningTasks: number
+}
+
+export function useRightTabBadges(): RightTabBadges {
+  const diffCount = useTaskStore((s) => s.diff?.files.length ?? 0)
+  const errorUnread = useErrorsStore((s) => s.unreadSevere)
+  const errorWorst = useErrorsStore((s) => s.worstUnread)
+
+  const taskPending = useTaskStore(
+    (s) => s.unfinished.length > 0 || s.tasks.some((t) => t.status === 'running'),
+  )
+  const runningTasks = useTaskStore((s) => s.tasks.filter((t) => t.status === 'running').length)
+  const downloadsActive = useDownloadsStore((s) => s.items.length > 0)
+
+  /*
+   * 「成果」的「有内容」提示取自**当前会话内存里的正式产物**（消息上的 artifacts）——
+   * 纯 selector、零 IPC、零轮询。
+   *
+   * 内核那份 `artifact:list`（有版本历史、关掉会话还在）由面板自己去拉：
+   * **面板才是成果的真相源**。这个点只表达「里面可能有东西」，不作计数依据，
+   * 所以内存里查一次就够；宁可少提示，也不编一个和面板对不上的数字。
+   */
+  const artifactPresent = useAppStore((s) =>
+    s.threads.some((t) => t.messages.some((m) => (m.artifacts?.length ?? 0) > 0)),
+  )
+
+  return {
+    diffCount,
+    errorUnread,
+    errorWorst,
+    taskPending,
+    downloadsActive,
+    artifactPresent,
+    runningTasks,
+  }
+}

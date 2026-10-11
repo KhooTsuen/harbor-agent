@@ -8,6 +8,8 @@ import { BRAND_NAME } from '@/constants'
 import { createBrandClickState, registerBrandClick } from '@/lib/nightVoyage'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTaskStore } from '@/stores/useTaskStore'
+import { useRightTabBadges } from '@/hooks/useRightTabBadges'
+import { colorOf } from '@/lib/statusLanguage'
 import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { sumDiff } from '@/components/chat/DiffViewer'
@@ -43,6 +45,17 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
 
   const rightPanelVisible = useUIStore((s) => s.rightPanelVisible)
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel)
+
+  /*
+   * Phase 1 · A2 / Phase 2 · C：右栏折叠或窄窗口时，标签栏可能被裁掉甚至整个收起，
+   * 所以把「需要留意的工作状态」挂到这个**始终可见**的顶栏按钮上：
+   *   · 未读的严重错误（Phase 1）
+   *   · 正在运行的后台任务数（Phase 2）
+   *   · 未提交的改动文件数（Phase 2）
+   * 数据与右栏角标**同源**（useRightTabBadges），不是第二份。
+   */
+  const badges = useRightTabBadges()
+  const { errorUnread, errorWorst, runningTasks } = badges
 
   /* 当前这条对话在不在跑（别的对话跑着是别的事） */
   const sending = useAgentActive(thread?.id)
@@ -83,6 +96,17 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
   /* AG-036：和右栏「审查」读同一份（改动事务里算出来的），不再各算一套 */
   const diffs = useTaskStore((s) => s.diff)?.files ?? []
   const { additions, deletions } = sumDiff(diffs)
+
+  /*
+   * Phase 2 · C：右栏折叠 / 窄窗时，把「需要留意的工作状态」并进右栏按钮的
+   * 悬停提示 —— 这样不占地方，却不会「折叠了就什么都不知道」。
+   */
+  const rightPanelNotes: string[] = []
+  if (errorUnread > 0) rightPanelNotes.push(`${errorUnread} 条未读的严重错误`)
+  if (runningTasks > 0) rightPanelNotes.push(`${runningTasks} 个后台任务在运行`)
+  if (diffs.length > 0) rightPanelNotes.push(`${diffs.length} 个文件未提交改动`)
+  const rightPanelLabel =
+    rightPanelNotes.length > 0 ? `切换右侧面板（${rightPanelNotes.join(' · ')}）` : '切换右侧面板'
 
   return (
     <header
@@ -170,14 +194,54 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
           <PanelBottom size={15} />
         </IconButton>
 
+        {/*
+          Phase 2 · C：在「未读错误提示」**旁边**复用同一机制，把另外两项
+          「关键工作状态」也透传出来 —— 右栏折叠时它们不会跟着消失。
+          颜色 / 形状刻意与错误区分：「运行中」是状态色圆点，改动数是等宽数字，
+          都不是那个红/橙的错误点。
+        */}
+        {runningTasks > 0 ? (
+          <span
+            className="hidden shrink-0 items-center gap-1 text-2xs text-fg-tertiary sm:flex"
+            title={`${runningTasks} 个后台任务在运行`}
+          >
+            <span
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ background: colorOf('running') }}
+              aria-hidden
+            />
+            <span className="font-mono">{runningTasks}</span>
+          </span>
+        ) : null}
+
+        {/* 窄窗下上面的「+N −M」会隐藏，用紧凑的改动计数兜底 */}
+        {diffs.length > 0 ? (
+          <span
+            className="shrink-0 font-mono text-2xs text-fg-tertiary sm:hidden"
+            title={`${diffs.length} 个文件未提交改动`}
+          >
+            ±{diffs.length}
+          </span>
+        ) : null}
+
         <IconButton
-          label="切换右侧面板"
+          label={rightPanelLabel}
           hint=""
           size={28}
           active={rightPanelVisible}
           onClick={toggleRightPanel}
         >
-          <PanelRight size={15} />
+          <span className="relative grid place-items-center">
+            <PanelRight size={15} />
+            {/* 与「错误」标签同一个点：P0 失败色 / P1 警告色（statusLanguage 唯一来源） */}
+            {errorUnread > 0 ? (
+              <span
+                className="absolute -right-1 -top-1 size-1.5 rounded-full"
+                style={{ background: colorOf(errorWorst === 'P0' ? 'failed' : 'warning') }}
+                aria-hidden
+              />
+            ) : null}
+          </span>
         </IconButton>
       </div>
     </header>

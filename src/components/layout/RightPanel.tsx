@@ -26,6 +26,9 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useBrowserStore } from '@/stores/useBrowserStore'
+/* 只用它的 ack 动作（数据走 useRightTabBadges）—— 打开「错误」时把未读清零 */
+import { useErrorsStore } from '@/stores/useErrorsStore'
+import { useRightTabBadges } from '@/hooks/useRightTabBadges'
 import { isElectron } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -99,6 +102,14 @@ export function RightPanel() {
   const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
   const setRightPanelVisible = useUIStore((s) => s.setRightPanelVisible)
 
+  /*
+   * Phase 2 · C：标签角标（含 Phase 1 的「未读严重错误」）统一从 useRightTabBadges 取 ——
+   * ① 不把这一堆 store 订阅塞进本文件（它贴着 300 行红线）；
+   * ② 顶栏兜底要的是同一批数，放一处才只有一个真相源。
+   * 这里只读，不再自己去调 error:list / 也不新增任何轮询。
+   */
+  const badges = useRightTabBadges()
+
   const [openFile, setOpenFile] = useState<FileNode | null>(null)
   const [realTree, setRealTree] = useState<FileNode | null>(null)
   const [treeError, setTreeError] = useState('')
@@ -145,12 +156,22 @@ export function RightPanel() {
     >
       <RightTabs
         activeRightTab={activeRightTab}
-        diffCount={diffs.length}
+        diffCount={badges.diffCount}
         agentUsedBrowser={agentUsedBrowser}
+        errorUnread={badges.errorUnread}
+        errorWorst={badges.errorWorst}
+        taskPending={badges.taskPending}
+        downloadsActive={badges.downloadsActive}
+        artifactPresent={badges.artifactPresent}
         onSelect={(tab) => {
           setActiveRightTab(tab)
           /* 用户自己点开「浏览器」看过了 —— 角标减掉 */
           if (tab === 'browser') useBrowserStore.getState().clearAgentActivity()
+          /*
+           * 点开「错误」= 看过了 → 只把**未读**清零（acknowledge），
+           * 不声称问题已处理：错误照旧在清单里（面板只读，不删不改）。
+           */
+          if (tab === 'errors') useErrorsStore.getState().acknowledge()
         }}
         onClose={() => setRightPanelVisible(false)}
       />
@@ -186,6 +207,11 @@ export function RightPanel() {
                     <span style={{ color: 'var(--diff-remove)' }}>−{deletions}</span>
                   </span>
                 </div>
+                {/* Phase 2 · C：这一栏是**工作区改动**，正式产物不在这里 —— 一句静态说明，
+                    不做跳转也能懂（互指文案写在内容区，不塞进标签栏）。 */}
+                <p className="shrink-0 border-b border-line-subtle px-3 py-1 text-2xs text-fg-tertiary">
+                  这里列的是工作区里被改动的文件；Agent 的正式产出（artifact）在「成果」标签。
+                </p>
                 <div className="min-h-0 flex-1 overflow-y-auto p-2">
                   {skipped.length > 0 ? (
                     <p className="mb-2 text-2xs" style={{ color: colorOf('warning') }}>
@@ -200,7 +226,7 @@ export function RightPanel() {
                 <EmptyState
                   icon={<GitCompareArrows size={28} />}
                   title="没有待审查的改动"
-                  description="让 Agent 改点东西，diff 会出现在这里。也可以用 /review 主动发起一次审查。"
+                  description="让 Agent 改点东西，diff 会出现在这里。也可以用 /review 主动发起一次审查。Agent 的正式产出（artifact）在「成果」标签。"
                 />
               </div>
             )}
