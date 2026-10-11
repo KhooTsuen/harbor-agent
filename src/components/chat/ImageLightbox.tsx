@@ -182,7 +182,8 @@ export function ImageLightbox() {
           active={actualSize}
           onClick={() => setActualSize(!actualSize)}
         >
-          <span className="font-mono text-[10px] leading-none">1:1</span>
+          {/* P4-4：原 10px 硬编码 → text-2xs(12px)。按钮 size-28 固定，不影响布局 */}
+          <span className="font-mono text-2xs leading-none">1:1</span>
         </IconButton>
         <IconButton label="旋转 90°" hint="顺时针转 90°（R）" size={28} onClick={() => rotate(90)}>
           <RotateCw size={15} />

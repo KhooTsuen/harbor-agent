@@ -95,7 +95,8 @@ export function StatusBar() {
           onClick={() => openSettings('profile')}
           aria-label="个人资料"
           className={cn(
-            'ml-auto grid size-5 shrink-0 place-items-center overflow-hidden rounded-pill bg-bg-raised text-[10px] font-semibold text-fg-secondary',
+            /* P4-4：原 10px 硬编码 —— 孤立层级，收敛到 text-2xs(12px)。容器 size-5 固定，不影响条高 */
+            'ml-auto grid size-5 shrink-0 place-items-center overflow-hidden rounded-pill bg-bg-raised text-2xs font-semibold text-fg-secondary',
             'transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary',
           )}
         >

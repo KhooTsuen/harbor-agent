@@ -100,7 +100,8 @@ export function ProgressTimeline({ phases, steps, plan }: ProgressTimelineProps)
 
   return (
     <div className="flex flex-col gap-1 text-xs">
-      <div className="mb-0.5 text-[11px] font-medium tracking-wide text-fg-tertiary">执行进度</div>
+      {/* P4-4：原 11px 硬编码 —— 孤立的 11px 层级，收敛到标准 token text-2xs(12px) */}
+      <div className="mb-0.5 text-2xs font-medium tracking-wide text-fg-tertiary">执行进度</div>
 
       {/* ── 阶段行：走过的 + 正在走的 ── */}
       {phases.map((phase, index) => {
@@ -170,8 +171,9 @@ export function ProgressTimeline({ phases, steps, plan }: ProgressTimelineProps)
          * Phase 1 · B1：这一段的文字来自**模型写的计划**（勾选也是模型自己打的），
          * 不是内核记的执行步骤 —— 单独标一行，别让用户把计划读成执行进度。
          * 上面两段（阶段行 / 动作行）才是真实执行状态。
+         * P4-4：标题原 11px 硬编码 → text-2xs(12px)。
          */
-        <div className="mt-1.5 text-[11px] font-medium tracking-wide text-fg-tertiary">
+        <div className="mt-1.5 text-2xs font-medium tracking-wide text-fg-tertiary">
           计划（模型给的 · 未执行）
         </div>
       ) : null}
