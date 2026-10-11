@@ -15,7 +15,18 @@
   SSRF（SEC-040）、项目级记忆隔离（SEC-057）、哨兵密钥（SEC-067）。运行 `npm run security`。
   覆盖映射见 `docs/security-coverage-map.md`（含 3 个 P0 发现：HTML 直通默认开启、
   无 IPC sender 校验、allow 档放行云元数据地址）。
-  会挡掉 pre-push。（这三项已于本轮修好并接入 verify，见下一条。）
+
+- **安全报告补齐文档 §11/§12 的产物与口径**（2026-10-11）。上一版只产出了
+  `security-results.json`，且覆盖率只印了一个粗数。这轮按《清单》补齐：① 新增
+  `scripts/security/report.mjs`，同时写 `security-results.json`（**加 `timestamp` /
+  `coverage`**；case 加 `durationMs` / `command` / `repro`）与**人工审查版
+  `security-report.md`**；② 覆盖率按第 12 节**三口径分开算**（实现率 / 执行率 / 通过率，
+  通过率分母 = PASS+FAIL **不含 NOT_RUN**），**漏洞数（FAIL 数）单列**，不与通过率合成
+  「安全评分」；③ 新增九个独立脚本名 `security:static`…`security:release`（文档第 9 节）；
+  ④ 新增**严格门禁档** `npm run security:gate`（P0 有 FAIL/BLOCKED/**NOT_RUN** 就非零，
+  即第 12 节口径）——`verify` 挂的仍是**默认档**（只挡 FAIL），因为严格档当前**不通过**
+  （首批 20 项仍有 5 项 NOT_RUN、其余 P0 未实现）。报告与门禁**如实标注**这一点，未拿
+  NOT_RUN 充 PASS。对账表见 `docs/security-coverage-map.md` 第四节。
 
 - **安全：首轮跑出的 3 个 P0 已修 + `npm run security` 接入 verify 链**（2026-10-11）。
   ① SEC-002：`RawHtml.tsx` 的 HTML 直通由**默认开改默认关**（保留 `harbor.rawHtml=1` 开关）——

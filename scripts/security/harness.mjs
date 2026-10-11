@@ -18,21 +18,36 @@ const STATUS = {
   NOT_APPLICABLE: 'NOT_APPLICABLE',
 }
 
-/** id -> { assertions, failed: string[], evidence: string[], status, observed } */
+/** id -> { t0, lastAt, assertions, failed: string[], evidence: string[], status, observed } */
 const state = new Map()
 
-function slot(id) {
+/**
+ * 取/建一个 case 的槽。`startAt` 传 true 时把「首次触碰」的时间戳记成 t0 ——
+ * 后面 `settle()` 用它和 `lastAt` 算 `durationMs`（清单第 11 节的报告字段）。
+ * 时间戳只在这里取，套件自己不用管。
+ */
+function slot(id, startAt = false) {
   let s = state.get(id)
   if (!s) {
-    s = { assertions: 0, failed: [], evidence: [], status: STATUS.NOT_RUN, observed: '' }
+    const now = Date.now()
+    s = {
+      t0: now,
+      lastAt: now,
+      assertions: 0,
+      failed: [],
+      evidence: [],
+      status: STATUS.NOT_RUN,
+      observed: '',
+    }
     state.set(id, s)
   }
+  if (!startAt) s.lastAt = Date.now()
   return s
 }
 
 /** 跑一条断言。`ok` 为假时该项最终 FAIL；`evidence` 在半数情况下也当证据留档 */
 export function sec(id, ok, evidence = '') {
-  const s = slot(id)
+  const s = slot(id, true)
   s.assertions += 1
   if (ok) {
     if (evidence) s.evidence.push(evidence)
@@ -45,7 +60,7 @@ export function sec(id, ok, evidence = '') {
 
 /** 直接落定一个非「断言」状态（BLOCKED / NOT_APPLICABLE / 由外部 runner 承载的结果） */
 export function mark(id, status, observed = '', evidence = []) {
-  const s = slot(id)
+  const s = slot(id, true)
   s.status = status
   s.observed = observed
   if (evidence.length) s.evidence.push(...evidence)
@@ -78,8 +93,15 @@ export function settle() {
 
 export function resultOf(id) {
   const s = state.get(id)
-  if (!s) return { status: STATUS.NOT_RUN, observed: '', evidence: [] }
-  return { status: s.status, observed: s.observed, evidence: s.evidence }
+  if (!s) return { status: STATUS.NOT_RUN, observed: '', evidence: [], durationMs: null }
+  const ran = s.assertions > 0 || s.status !== STATUS.NOT_RUN
+  return {
+    status: s.status,
+    observed: s.observed,
+    evidence: s.evidence,
+    /* 没跑过就 null（清单第 11 节：NOT_RUN 的 durationMs 是 null，不是 0） */
+    durationMs: ran ? s.lastAt - s.t0 : null,
+  }
 }
 
 export function allIds() {

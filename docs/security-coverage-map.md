@@ -9,14 +9,29 @@
 ## 怎么跑
 
 ```bash
-npm run security                 # 跑 9 个套件，写 security-results.json
+npm run security                 # 跑 9 个套件，写两份报告
 npm run security -- ipc agent    # 只跑指定套件
+npm run security:ipc             # 单独跑某一个套件（9 个都有独立脚本名，见 package.json）
 npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一 / 9 套件不重叠
+npm run security:gate            # 严格发布门禁：P0 有 FAIL/BLOCKED/NOT_RUN 就非零
 ```
 
-套件实现落在 `scripts/security/suites/<name>.mjs`，元数据表在 `scripts/security/cases.mjs`。
+套件实现落在 `scripts/security/suites/<name>.mjs`，元数据表在 `scripts/security/cases.mjs`，
+报告生成在 `scripts/security/report.mjs`，隔离夹具在 `scripts/security/sandbox.mjs`。
 渲染层用例（SEC-001~004）由 `src/lib/__tests__/securityHtml.test.tsx` 承载 —— jsdom + 真渲染器，
 因为清单第 0 节禁止「凭源码字符串判定安全」。
+
+### 产物与退出码（别混两个档）
+
+| 产物 / 脚本 | 说明 |
+|---|---|
+| `security-results.json` | 机器读。文档第 11 节契约：`schemaVersion` / `commit` / `timestamp` / `environment` / `cases` / `coverage` / `summary` |
+| `security-report.md` | 人工审查版（自动生成，别手改）。含覆盖率三口径 + 门禁结论 + 逐条明细 |
+| `npm run security` | 退出码：**有 FAIL 才非零**。NOT_RUN 不挡（否则「还没写的用例」会拦住每次提交） |
+| `npm run security:gate` | 退出码：**P0 有 FAIL / BLOCKED / NOT_RUN 就非零**（文档第 12 节口径）。发布前用 |
+
+覆盖率按文档第 12 节**三口径分开算**：实现率 / 执行率 / 通过率（分母 = PASS+FAIL，不含 NOT_RUN）。
+**漏洞数（FAIL 数）单列**，不与通过率合成一个「安全评分」。
 
 ## 状态口径
 
@@ -215,7 +230,40 @@ npm run security:audit           # 只查元数据表：84 项齐 / 编号唯一
   要逛）、不碰私网整体（内网服务是用户的正常工作对象）。
 - **验证**：`suites/browser.mjs` —— deny/ask/allow 三档都拒元数据，localhost 在 allow 档照常放行。
 
-> **已接入 `verify`**：三项处置后 `npm run security` 退出码为 0，
-> 已在 `package.json` 的 `verify` 链尾追加 `&& npm run security`。
-> 从此有 P0 FAIL 会一并挡 CI / pre-push / preflight。
+> **已接入 `verify`**：`package.json` 的 `verify` 链尾已追加 `&& npm run security`，
+> 从此有 P0 **FAIL** 会一并挡 CI / pre-push / preflight。
+>
+> ⚠️ **口径要说清楚**：`verify` 挂的是**默认档**（只挡 FAIL）。文档第 12 节要求的
+> 「P0 不得 FAIL / **BLOCKED** / **NOT_RUN**」是**严格档** —— 由 `npm run security:gate`
+> 承载，发布前跑。当前严格档**不通过**（28 个 P0 仍未跑），原因就是「首批只做到 20 项」，
+> 详见下一节。
+
+## 四、文档逐条对账（§0 / §9 / §11 / §12 / §13）
+
+> 只记「文档写了、实现上要交代」的条目。数字一律不给（会变），看 `npm run security` 输出。
+
+| 文档条 | 要求 | 现状 | 落在哪 |
+|---|---|---|---|
+| §0 使用方式 | 独立临时数据目录，不碰真数据 | ✅ | `sandbox.mjs` 的 `markPackaged(BASE)`（`data/security-data`） |
+| §0 | 网络只发本机 mock | ✅ | `sandbox.mjs` 的 `startMockServer`（`127.0.0.1`） |
+| §0 | 每用例记 8 项（ID/commit/系统/命令/预期/实际/日志位置/复现） | ✅ | `report.mjs` 的 case 字段（含 `command` / `repro` / `evidencePaths`） |
+| §0 | 失败证据脱敏，不写真密钥 | ✅ | 假密钥哨兵（`sandbox.mjs` 的 `SENTINEL_KEY` / `SENTINEL_PAT`） |
+| §0 | 复用现有测试设施 | ✅ | 沿用 selftest 隔离思路 + vitest/jsdom |
+| §0 | 以行为断言、不靠文件名/行数 | ◐ | 多数行为断言；`static.mjs` 里 WebPreferences/preload 属**配置面**，只能读源码 |
+| §0 | 修复必带回归、不弱化断言 | ✅ | 3 个 P0 修复各自补了断言（见 F-1~F-3） |
+| §9 套件名 | 9 个建议套件 | ✅ | `package.json` 有 `security:static` … `security:release` 九个脚本名 |
+| §11 JSON 契约 | `security-results.json` | ✅ | `report.mjs`，含 `coverage` |
+| §11 | `security-report.md`（人工） | ✅ | `report.mjs` 的 `writeMarkdown` |
+| §11 | case 含 `durationMs` | ✅ | `harness.mjs` 记首次/末次时间戳 |
+| §12 | 附 **commit + 时间戳** | ✅ | `report.commit` / `report.timestamp` |
+| §12 | 覆盖率**三口径** | ✅ | 实现率 / 执行率 / 通过率（分母不含 NOT_RUN） |
+| §12 | 漏洞数与通过率**分开报告** | ✅ | `coverage.vulnerabilities` 单列，报告里也分开写 |
+| §12 | 适用 P0 全 PASS（不得 FAIL/BLOCKED/NOT_RUN） | ❌ **当前不满足** | 严格档 `npm run security:gate` 判；缺口见下 |
+| §12 | 生产 / 开发构建分别查 Electron/IPC | ▢ | 只做了源码级；构建后实测见 SEC-080（◐） |
+| §12 | 失败注入（进程退出/磁盘满/…） | ▢ | 未做；SEC-050/051/053 仍是 NOT_RUN |
+| §13 首批 20 项 | 20 项落地 | ◐ | 15/20 有断言；SEC-013/014/018/021/037 仍 NOT_RUN |
+
+**严格档不通过的根因就一条**：首批 P0 里还有未实现项（NOT_RUN）。**这不是「测试没过」，
+是「还没写」** —— 报告里标的是 ⏸ NOT_RUN，不是 PASS，也不是 FAIL。
+
 
