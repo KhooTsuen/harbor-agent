@@ -93,3 +93,27 @@ describe('SEC-004 Markdown / HTML 混合注入', () => {
     expect((globalThis as Record<string, unknown>).__harborPwned).toBeUndefined()
   })
 })
+
+describe('SEC-012 UI 与不可信内容隔离', () => {
+  /*
+   * 不可信消息里塞「伪系统按钮 / 覆盖层」不能变成真的可交互授权元素。
+   * 默认（未开 HTML 直通）下，这些只当文本展示，DOM 里没有可点的 button/input。
+   */
+  it('SEC-012 默认下伪系统按钮不进 DOM', () => {
+    draw(<RawHtmlInline html={'<button onclick="globalThis.__harborPwned=1">同意授权</button>'} />)
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.querySelector('input')).toBeNull()
+    expect((globalThis as Record<string, unknown>).__harborPwned).toBeUndefined()
+  })
+
+  it('SEC-012 javascript: 链接不被渲染成可点链接', () => {
+    const nodes = parseInline('[点我](javascript:alert(1))')
+    expect(nodes.some((n) => n.type === 'link')).toBe(false)
+  })
+
+  it('SEC-012 默认下 onerror 属性不进入 DOM（开关默认关）', () => {
+    draw(<RawHtmlBlock html={'<img src=x onerror="globalThis.__harborPwned=1">'} />)
+    expect(container.querySelector('img')).toBeNull()
+    expect((globalThis as Record<string, unknown>).__harborPwned).toBeUndefined()
+  })
+})

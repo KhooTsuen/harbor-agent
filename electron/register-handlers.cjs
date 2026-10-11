@@ -27,6 +27,35 @@ const observer = require('./core/error-observer.cjs')
 const SLOW_IPC_MS = 1000
 
 /**
+ * IPC 来源判据（安全清单 SEC-007 / SEC-011）：只接受**应用主窗口**发来的调用。
+ *
+ * 现状：当前只有主窗口带 preload，网页标签（webview）没有 → 本来也发不出 IPC。
+ * 这一层是纵深防御：万一以后给某个 webContents 加了桥，或在特殊模式下注入了
+ * 别的 renderer，非主窗口的调用会被这一层拒掉并留痕。
+ *
+ * ★ SEC-011：窗口**不存在**（还没建 / 已销毁并清理）时**拒绝**（fail-closed）。
+ * 渲染层的 IPC 只可能来自某个 webContents，没有主窗口就没有合法渲染层 ——
+ * 所以「拿不到窗口」不该是放行的理由。旧版这里是「拿不到就放行」，
+ * 那样一旦窗口销毁，任何来源都能继续使唤主进程（旧引用 / 残留 renderer）。
+ * 正常启动不受影响：应用起来之前渲染层还没发出 IPC。
+ *
+ * 判据是纯函数（注入 `getMainWindow`），所以安全套件能拿假窗口真跑，不必起 Electron。
+ *
+ * @param {() => ({ isDestroyed?: () => boolean, webContents?: object } | null | undefined)} getMainWindow
+ * @param {{ sender?: object } | null | undefined} event
+ * @returns {boolean}
+ */
+function trustedSender(getMainWindow, event) {
+  const win = getMainWindow?.()
+  if (!win || typeof win.isDestroyed !== 'function' || win.isDestroyed()) return false
+  const sender = event?.sender
+  if (!sender || sender !== win.webContents) return false
+  /* 主窗口还在，但它自己的 webContents 已经销毁（窗口正在拆）→ 同样不信 */
+  if (typeof sender.isDestroyed === 'function' && sender.isDestroyed()) return false
+  return true
+}
+
+/**
  * 把 `ipcMain.handle` 包一层 —— **所有通道的兜底**。
  *
  * 为什么要它：一个通道抛异常，以前渲染层会收到错误、弹个 toast，
@@ -81,24 +110,8 @@ function registerHandlers(deps) {
   const { powerMonitor } = deps
   const { currentWorkdir, resolveWorkdir } = deps.workdir
 
-  /**
-   * IPC 来源判据（安全清单 SEC-007）：只接受**应用主窗口**发来的调用。
-   *
-   * 现状：当前只有主窗口带 preload，网页标签（webview）没有 → 本来也发不出 IPC。
-   * 这一层是纵深防御：万一以后给某个 webContents 加了桥，或在特殊模式下注入了
-   * 别的 renderer，非主窗口的调用会被这一层拒掉并留痕。
-   *
-   * `getMainWindow()` 拿不到（启动早期 / 自检）时**放行** —— 不能因为「还没建窗口」
-   * 把正常启动挡死；有窗口之后才真正生效。
-   */
-  function isTrustedEvent(event) {
-    const win = getMainWindow?.()
-    if (!win || typeof win.isDestroyed !== 'function' || win.isDestroyed()) return true
-    const sender = event?.sender
-    return Boolean(sender) && sender === win.webContents
-  }
-
-  /* 先包一层，后面所有 register() 注册的通道都自动在网里（含来源校验，见 SEC-007） */
+  /* 先包一层，后面所有 register() 注册的通道都自动在网里（含来源校验，见 SEC-007 / SEC-011） */
+  const isTrustedEvent = (event) => trustedSender(getMainWindow, event)
   wrapInvokeHandlers(ipcMain, isTrustedEvent)
 
   /* 错误清单（右栏「错误」标签，只读；见 handlers/errors.cjs） */
@@ -214,4 +227,4 @@ function registerHandlers(deps) {
   return { notifier, schedules }
 }
 
-module.exports = { registerHandlers, wrapInvokeHandlers }
+module.exports = { registerHandlers, wrapInvokeHandlers, trustedSender }

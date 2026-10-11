@@ -5,6 +5,18 @@
 
 ## [未发布]
 
+- **安全回归：84 项全量落地（第 1 批）**（2026-10-11）。按《Harbor Agent 自动化安全测试清单》
+  v1.0 把余下各域逐条实现。本批：
+  · `security:ipc` 补齐 SEC-009（外链/导航：非 http(s) 一律拦）、SEC-011（窗口销毁后 IPC
+    来源 fail-closed）、SEC-012（不可信内容不能变成可交互授权元素，jsdom 真渲染）。
+    ★ **SEC-011 是实修**：`electron/register-handlers.cjs` 的 `trustedSender()` 由「拿不到
+    窗口就放行」改成**拒绝** —— 旧行为会让窗口销毁后任意来源继续调主进程。函数提出来可测，
+    `registerHandlers` 注入它。
+  · `security:agent` 补齐 SEC-013~024 共 12 项（注入边界包装 / 文档当数据 / 伪造批准
+    fail-closed / 子代理只读封顶 / 取消竞态 / 预算与转圈 / mock 端点外发计数为 0 /
+    权限文件畸形不生效 / 计划 vs 实际动作重判 / 超时按拒）。除 SEC-016/017 外均为本轮新增。
+  运行 `npm run security`，见 `security-report.md`。
+
 - **安全回归基线：84 项元数据表 + 9 个套件 + JSON 报告**（2026-10-11）。按《Harbor Agent
   自动化安全测试清单》v1.0 落地：`scripts/security/`（`cases.mjs` 84 项元数据 /`harness.mjs`
   五态断言 /`sandbox.mjs` 隔离运行 /`run.mjs` 入口 + `security-results.json` 报告 + 9 个
