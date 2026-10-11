@@ -10,6 +10,12 @@ import { useDownloadNotifications } from '@/hooks/useDownloadNotifications'
 import { useErrorSignal } from '@/hooks/useErrorSignal'
 import { uid } from '@/lib/utils'
 
+/**
+ * M3：一轮开始后，等内核把任务写进台账再补刷一次的时间。
+ * 只在**跑起来那一刻**用一次（`setTimeout`），不是周期定时器。
+ */
+const TASK_REFRESH_DELAY_MS = 2000
+
 /* ══════════════════════════════════════════════════════════════
    主进程推来的「非对话流」事件
 
@@ -44,6 +50,8 @@ export function useBackendSubscriptions(): void {
   /*
    * 未完成任务：启动、对话运行状态变化、窗口重新可见时刷新。
    * 空闲时不轮询；任务不会凭空变化，20 秒常驻定时器只会重复读磁盘。
+   *
+   * M3：除此之外，「一轮**开始**」时再补一发**一次性**刷新 —— 见下面注释。
    */
   useEffect(() => {
     if (!useRealBackend) return
@@ -53,7 +61,28 @@ export function useBackendSubscriptions(): void {
     }
     refreshVisible()
     document.addEventListener('visibilitychange', refreshVisible)
-    return () => document.removeEventListener('visibilitychange', refreshVisible)
+    /*
+     * M3 · 一轮开始时补一次台账刷新。
+     *
+     * 这个 effect 依赖 `runningCount`（= 正在跑的对话数），所以它变了本就会重跑
+     * 一次 —— 但**跑开始那一刻刷得太早**：这时内核多半还没把任务写进台账
+     * （任务要在这一轮真正跑起来、头几步之后才落盘），于是「后台任务在运行」
+     * 这个数会一直等到**这一轮结束**（runningCount 回落）才更新，中间是滞后的
+     * （Phase 2 真机实测到过：流式中顶栏不亮，手动打开「任务」面板触发一次刷新
+     * 后立刻变准）。
+     *
+     * 补法：跑开始后**延迟一次**再刷，等内核把台账写完。刻意用 `setTimeout`
+     * 而不是 `setInterval` —— 只补这一发，绝不退化成常驻轮询（那正是本项目
+     * 反复强调不要做的）。延迟是启发值，真机验证时对过数（见 Phase 4 报告）。
+     */
+    let timer = 0
+    if (runningCount > 0) {
+      timer = window.setTimeout(refreshVisible, TASK_REFRESH_DELAY_MS)
+    }
+    return () => {
+      document.removeEventListener('visibilitychange', refreshVisible)
+      if (timer) window.clearTimeout(timer)
+    }
   }, [runningCount])
 
   /* 插件热插拔：发现新增/删除插件时弹个轻提示（不打断） */

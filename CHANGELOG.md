@@ -5,6 +5,26 @@
 
 ## [未发布]
 
+- **Phase 4 前置微任务：M1 错误观察哨按轮冲刷 / M2 时间戳形状注释 / M3 一轮开始补刷台账**（2026-10-12）。
+  三处均为既定批准的收尾补点；不触 Runtime 状态机 / IPC 通道 / 事件契约 / 权限模型 / 任务台账结构。
+  · **M1**：`electron/handlers/chat.cjs` 的 `finally` 里，一轮结束（成功 / 失败 / 中断）
+    立刻 `require('../core/error-observer.cjs').flush()` —— 之前没人按轮调它，右栏「错误」
+    角标要等观察哨的 15s 定时器或进程退出才亮。**为什么放 finally 不放 `done`**：`done`
+    只在成功那条路发，而「这一轮刚记过错误」最可能的情形恰恰是**失败**；finally 是三路
+    唯一汇聚点。调用**包在独立 try-catch 里**（`catch` 只 `console.error`），异常绝不影响
+    其后的收尾（taskEnd / metrics / closeOut）。**未碰 `loop.cjs`**（硬禁区 §3.8）——
+    自检新增三条源码钉子：有 / 独立 try-catch / 不在 loop.cjs。真机实测：一轮失败后
+    错误角标在 **1s 内**亮（改前要等 15s 定时器）。
+  · **M2**：`src/types/errors.ts` 的 `firstSeen` / `lastSeen` 注释更正为
+    「毫秒数（前端按 `number | ISO 字符串` 兼容）」。**不改内核** `error-reader.cjs`
+    （Phase 3 已实测：它输出的本就是毫秒数），保留前端防御层（`lib/errorSignal.ts` 的 `epochOf`）。
+  · **M3**：`src/hooks/useBackendSubscriptions.ts` 补一发「一轮开始后延迟一次」的台账刷新 ——
+    原来的刷新在**跑开始那一刻**太早（内核常还没把任务写进台账），导致「后台任务在运行」
+    要等这一轮结束才准。用**一次性** `setTimeout`（不是 `setInterval`，不轮询），
+    延迟 2s。真机实测：顶栏「1 个后台任务在运行」在 **t≈2.5s** 出现（改前要手动打开「任务」
+    面板才亮）。**不动任何 IPC 契约或事件结构**。
+  · 回归：`scripts/selftest/groups/89-error-observer.mjs` 新增 M1 三条源码钉子。
+
 - **UI Phase 3：中央对话降噪（跨轮聚合 / 未闭合降级 / Markdown 缺口对拍 / Prompt 无废话）**（2026-10-12）。
   纯展示层 + 一处 Prompt 文案；不触 Runtime / IPC / 权限 / 事件契约 / 任务持久化 / 数据结构。
   · **跨轮同类聚合**（展示层派生）：新增 `src/components/chat/message/groupRounds.ts`（纯函数）

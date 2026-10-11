@@ -1,8 +1,6 @@
 /**
- * 对话 IPC
- *
- * 这是「界面」和「agent 循环」之间的那层。它负责：装配 loop 需要的上下文（配置、工作目录、模式）、
- * 把 loop 吐出来的事件转成渲染层能懂的消息、用 Promise 把「写操作确认」变成一次 IPC 往返。
+ * 对话 IPC：界面与 agent 循环之间的那层 —— 装配 loop 上下文（配置 / 工作目录 / 模式），
+ * 把 loop 的事件转成渲染层能懂的消息，并把「写操作确认」变成一次 IPC 往返。
  */
 
 const loop = require('../core/loop.cjs')
@@ -28,12 +26,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const requestId = payload?.requestId ?? `req_${Date.now().toString(36)}`
     const rawHistory = Array.isArray(payload?.messages) ? payload.messages : []
     const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId : ''
-    /*
-     * 这一轮是**怎么起来的**（渲染层给）：用户发送 / 点继续 / 编辑后重答 /
-     * 重新生成 / 切提问版本。加它的原因是查一个 bug 查了四轮：日志里只看到
-     * 「又跑了一轮」，完全不知道是谁让它跑的（切版本？自动重试？还是用户自己发的），
-     *   只能靠时间戳猜。现在这一行直接说出来。
-     */
+    /* 这一轮是**怎么起来的**（渲染层给）：用户发送 / 继续 / 编辑重答 / 重新生成 / 切版本。 */
     const reason = typeof payload?.reason === 'string' && payload.reason ? payload.reason : '未标注'
     const historyLimit = currentHistoryLimit()
     const history = historyLimit > 0 ? rawHistory.slice(-historyLimit) : []
@@ -200,10 +193,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           /* 会话 id：审计、授权、任务记录都靠它串起来 */
           sessionId,
           projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
-          /*
-           * 事件流的 key（和任务台账的 id 是两回事）。
-           * 状态转移订阅、总线落盘都用它 —— 之前拿任务 id 去比，永远对不上。
-           */
+          /* 事件流的 key（≠ 任务台账 id）：状态转移订阅、总线落盘都用它 —— 以前拿任务 id 去比，永远对不上 */
           traceId: phaseKey,
           /*
            * 把未完成任务的台账注入提示（taskState 层）—— 模型以前不知道
@@ -237,7 +227,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
         })
 
         const spent = ((Date.now() - (payload?.requestTime || startedAt)) / 1000).toFixed(1)
-        here.info(`对话完成：${result.turns} 轮，${result.toolRuns.length} 次工具调用，用时 ${spent} 秒`)
+        here.info(
+          `对话完成：${result.turns} 轮，${result.toolRuns.length} 次工具调用，用时 ${spent} 秒`,
+        )
       } catch (error) {
         const aborted = error instanceof Error && error.name === 'AbortError'
         if (aborted) {
@@ -251,6 +243,18 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
       } finally {
         /* AG-029：这轮结束（成功/失败/中断都走 finally）→ 交给主进程决定要不要通知 */
         void taskEnd?.({ sessionId })
+
+        /*
+         * M1：一轮结束 → 立刻冲一次错误观察哨（别等它的 15s 定时器 / 进程退出，否则
+         * 右栏「错误」角标滞后）。放 finally 不放上面的 `done`：done 只在成功路发，
+         * 刚记过错误往往是失败路，而 finally 是成功 / 失败 / 中断三路唯一汇聚点。
+         * 独立 try-catch 是双保险：异常只记日志，绝不挡住后面的收尾。
+         */
+        try {
+          require('../core/error-observer.cjs').flush()
+        } catch (error) {
+          console.error('flush error', error)
+        }
 
         /* AG-011：最后一段增量还在缓存里 —— 不冲掉就永远看不见了 */
         flush()
@@ -281,11 +285,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     return { ok: true }
   })
 
-  /* ── 暂停（AG-011）──
-   * abort 立刻断（正在跑的工具也杀），pause 是**做完手上这步**再停。
-   * 这里只置个标记，真正停在哪由 loop 每轮开头决定 —— 那个位置上
-   * 上一轮工具已全部跑完，才是「完成当前安全操作」的准确含义。
-   */
+  /* ── 暂停（AG-011）：abort 立刻断（在跑的工具也杀），pause 是**做完手上这步**再停。
+   * 这里只置标记，真正停在哪由 loop 每轮开头决定（那时上一轮工具已全部跑完）。 */
   ipcMain.handle('chat:pause', (_event, requestId) => {
     const entry = streams.get(requestId)
     if (!entry) return { ok: false, error: '这个请求已经结束了' }

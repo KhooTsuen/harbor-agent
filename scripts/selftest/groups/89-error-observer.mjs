@@ -71,8 +71,16 @@ export async function run() {
     first = null
   }
 
-  check('flush 落到 data 下的当天 jsonl', written === 1 && text.trim().split('\n').length === 1, `写了 ${written} 条，文件 ${name}`)
-  check('记录了来源与位置', first?.source === 'ipc' && first?.location === 'chat:send', JSON.stringify([first?.source, first?.location]))
+  check(
+    'flush 落到 data 下的当天 jsonl',
+    written === 1 && text.trim().split('\n').length === 1,
+    `写了 ${written} 条，文件 ${name}`,
+  )
+  check(
+    '记录了来源与位置',
+    first?.source === 'ipc' && first?.location === 'chat:send',
+    JSON.stringify([first?.source, first?.location]),
+  )
   check(
     '★ 落盘前过脱敏（密钥不落盘）',
     !text.includes(SECRET) && text.includes('已隐藏'),
@@ -85,7 +93,8 @@ export async function run() {
   )
 
   /* ── ③ 同一个错刷很多次：折成幂次行，不丢「它还在发生」这件事 ── */
-  for (let i = 0; i < 7; i++) observer.record(new Error('一模一样的错'), { source: 'tool', location: 'run_shell' })
+  for (let i = 0; i < 7; i++)
+    observer.record(new Error('一模一样的错'), { source: 'tool', location: 'run_shell' })
   observer.flush()
   const repeats = readFileSync(file, 'utf8')
     .trim()
@@ -110,12 +119,20 @@ export async function run() {
   } catch (error) {
     thrown = error
   }
-  check('★ 畸形输入不抛异常（它自己抛会把原始错误盖掉）', thrown === null, thrown ? String(thrown) : '')
+  check(
+    '★ 畸形输入不抛异常（它自己抛会把原始错误盖掉）',
+    thrown === null,
+    thrown ? String(thrown) : '',
+  )
 
   const before = observer.stats().failed
   observer.dispose()
   observer.record(new Error('dispose 之后这条不该写'))
-  check('dispose 后关闸', observer.flush() === 0 && observer.stats().enabled === false, `failed=${before}`)
+  check(
+    'dispose 后关闸',
+    observer.flush() === 0 && observer.stats().enabled === false,
+    `failed=${before}`,
+  )
 
   /* ── ⑤ 真起子进程：定时器不能拦住它退出（否则自检会「卡住不动」） ── */
   const probe = [
@@ -134,7 +151,11 @@ export async function run() {
   /* ── ⑥ 源码钉子：record() 焊在哪几个 catch 里（层间接线，测试照不到） ── */
   const src = (p) => readFileSync(join(ROOT, p), 'utf8')
   const sites = [
-    ['electron/register-handlers.cjs', "observer.record(error, { source: 'ipc'", 'IPC 通道兜底（139 个通道一处覆盖）'],
+    [
+      'electron/register-handlers.cjs',
+      "observer.record(error, { source: 'ipc'",
+      'IPC 通道兜底（139 个通道一处覆盖）',
+    ],
     ['electron/core/tool-runner.cjs', "source: 'tool'", '工具失败'],
     ['electron/core/loop-model.cjs', "source: 'model'", '模型调用失败'],
     ['electron/core/mcp.cjs', "source: 'mcp'", 'MCP 服务器起不来'],
@@ -149,6 +170,33 @@ export async function run() {
     '★ 主进程只在非 headless 模式装观察哨',
     /if \(!HEADLESS\) require\(.*error-observer\.cjs.*\)\.install\(\)/.test(mainSrc),
     '没找到守卫 —— 那样 --self-test 会把假错误写进用户数据',
+  )
+
+  /*
+   * ── M1（Phase 4 前置）：一轮结束立刻冲一次观察哨 ──
+   * 否则右栏「错误」角标要等观察哨的 15s 定时器或进程退出才亮。
+   * 落点是 `handlers/chat.cjs` 的 finally（成功 / 失败 / 中断三路的唯一汇聚点；
+   * 上面那个 `done` 只在**成功**那条路发，会漏掉「最该冲」的失败场景）。
+   *
+   * 三条一起钉：**有**（chat.cjs 真调了）、**包在独立 try-catch 里**（异常绝不
+   * 能挡住 done 之后的收尾）、**不在 loop.cjs**（loop.cjs 是硬禁区 §3.8，
+   * 这是拍板时定的边界）。哪天谁把它挪进 loop.cjs，这条立刻红。
+   */
+  const chatSrc = src('electron/handlers/chat.cjs')
+  check(
+    '★ M1：一轮结束时（chat.cjs 的 finally）冲一次错误观察哨',
+    /error-observer\.cjs'\)\.flush\(\)/.test(chatSrc),
+    'chat.cjs 里没找到 observer.flush() —— 错误角标会退回等 15s 定时器',
+  )
+  check(
+    '★ M1：flush 包在独立 try-catch 里（异常绝不能影响 done 之后的收尾）',
+    /try\s*\{\s*require\('\.\.\/core\/error-observer\.cjs'\)\.flush\(\)\s*\}\s*catch/.test(chatSrc),
+    '没找到独立 try-catch 包裹 —— 按实施指令必须双保险',
+  )
+  check(
+    '★ M1：flush 不落在 loop.cjs（硬禁区 §3.8，拍板时定的边界）',
+    !src('electron/core/loop.cjs').includes('error-observer'),
+    'loop.cjs 里出现了 error-observer —— 越界了',
   )
 
   /*
@@ -180,9 +228,17 @@ export async function run() {
     const { scan } = await import('../../scan-errors.mjs')
     const result = scan({ dataDir: TMP, since: 0 })
     const found = (result.entries ?? []).filter((e) => e.source === 'observer')
-    check('读取侧（scripts/errors.mjs）能扫到观察哨的输出', result.ok === true && found.length > 0, `扫到 ${found.length} 条`)
+    check(
+      '读取侧（scripts/errors.mjs）能扫到观察哨的输出',
+      result.ok === true && found.length > 0,
+      `扫到 ${found.length} 条`,
+    )
     const dup = found.find((e) => e.message === '一模一样的错')
-    check('重复计数在聚合时被折回次数', Number(dup?.count) === 7, `count=${dup?.count}（期望 7 = 循环里报了 7 次）`)
+    check(
+      '重复计数在聚合时被折回次数',
+      Number(dup?.count) === 7,
+      `count=${dup?.count}（期望 7 = 循环里报了 7 次）`,
+    )
   } catch (error) {
     check('读取侧（scripts/errors.mjs）能扫到观察哨的输出', false, String(error?.message ?? error))
   }

@@ -23,9 +23,16 @@ export interface ErrorEntry {
   origin: string
   /** 能去查的坐标，如 `ipc:pty:resize` */
   location: string
-  /** 首次出现（毫秒时间戳） */
+  /**
+   * 首次出现。
+   *
+   * 正常运行是**毫秒数**（`error-reader.cjs` 的 `parseLine` 里 `ts = Date.parse(...)`）；
+   * 声明按 `number` 写。前端在 `lib/errorSignal.ts` 的 `epochOf` 里对
+   * `number | ISO 字符串` **两种形状都吃**（防御旧数据 / 别的来源），所以即便
+   * 某个路径给出 ISO 字符串也不会算错。详见那儿的来历说明。
+   */
   firstSeen: number
-  /** 最后一次出现 */
+  /** 最后一次出现（形状同 firstSeen；前端按 number | ISO 字符串兼容） */
   lastSeen: number
   /** 合并了几次（含观察哨折叠的重复计数） */
   count: number
