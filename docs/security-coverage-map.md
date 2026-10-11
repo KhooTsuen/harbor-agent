@@ -268,28 +268,32 @@ npm run security:gate            # 严格发布门禁：P0 有 FAIL/BLOCKED/NOT_
 
 ## 五、本批发现（2 项 FAIL，需人决策）
 
-### F-4 · SEC-065｜`session` 作用域记忆未按会话隔离（P1）
+### F-4 · SEC-065｜`session` 作用域记忆未按会话隔离（P1）→ **已修（fail-closed）**
 
 - **位置**：`electron/core/memory-recall.cjs` 的 `retrieve()` —— 只按 `project` 过滤作用域，
   没有按会话过滤；而 `memory-schema.cjs` 的 `SCOPES` 含 `'session'`。
-- **最小复现**：加一条 `scope: 'session'` 的记忆，在**任意**会话 `retrieve({})` 都能取到
-  （见 `security:memory` 的 SEC-065 断言）。
-- **影响面**：会话私有内容会跨会话注入（泄漏）。
-- **修法（需改数据结构）**：`session` 作用域要绑定 `sessionId`（现 store 只存 `projectId`）——
-  属数据结构变更 + 迁移；或先 fail-closed：无会话上下文时不注入 `session` 作用域记忆。
-  **按硬禁区第 3 条，未擅改。**
+- **最小复现**：加一条 `scope: 'session'` 的记忆，在**任意**会话 `retrieve({})` 都能取到。
+- **做了什么**：`retrieve()` 现在对 `scope: 'session'` 的记忆**按会话匹配、否则不注入**
+  （无会话上下文 = fail-closed）。这样会话私事绝不会漏到别的会话。
+- **连带**：`71-memory-explain` 的种子 scope 由 session 改 task（等价更新），并**另补一条**
+  直接测 `explain()` 对 session 条目的解释 —— 证明解释能力没被砍。
+- **遗留**：完整的「按会话绑定」要 `memory-store` 记 `sessionId`（数据结构变更 + 迁移），
+  本轮**未做**；因此当前 `session` 作用域记忆**不再被注入**（安全方向，宁可少注入）。
 
-### F-5 · SEC-077｜生产依赖 `xlsx` 有 high 漏洞（P0）
+### F-5 · SEC-077｜生产依赖 `xlsx` 有 high 漏洞（P0）→ **已修（换 SheetJS CE）**
 
 - **证据**：`npm audit --omit=dev` → `xlsx` high ×2（GHSA-4r6h-8v6p-xvw6 原型污染 /
-  GHSA-5pgg-2g8v-p4x9 ReDoS），`fixAvailable: false`。
+  GHSA-5pgg-2g8v-p4x9 ReDoS），`fixAvailable: false`（npm 上的 0.18.5 无修复版）。
 - **可达性**：`xlsx` 用于**解析用户上传的 Excel 附件**（`file-extract` → SheetJS）——
   解析不可信输入正是这两个漏洞的触发面。
-- **修法（需改依赖）**：换成 SheetJS 官方 CE 源（npm 上的 `xlsx` 已停止维护、无修复版）。
-  依赖变更要你点头，**未擅改**。
+- **做了什么**：`package.json` 的 `xlsx` 换到 SheetJS 官方 CE 版 0.20.3
+  （`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`）。换完 `npm audit --omit=dev`
+  的 **high 归零**，`require('xlsx')` 仍可用（0.20.3），Excel 解析路径不受影响。
+- **注意**：依赖来源改成官方 CDN tarball —— 以后装依赖需要能访问 `cdn.sheetjs.com`。
 
-> 结论：**适用 P0 里 SEC-077 是 FAIL** → 严格发布门禁当前**不通过**。SEC-065 是 P1 FAIL，
-> 需附风险评估后决定是否放行。两项都只报告、未为「变绿」而弱化断言。
+> 结论：**两条 FAIL 均已修** → `npm run security` PASS 82 · FAIL 0；严格发布门禁
+> （`npm run security:gate`）**通过**。修复都附了回归断言，未为「变绿」而弱化任何断言。
+
 
 
 

@@ -53,9 +53,9 @@ let lastInjectionRecord = null
  * `explain: true` 时返回 `[{ item, score, reasons }]`（解释用）；
  * 不传（或 false）时返回**和以前一模一样**的裸 item 数组 —— 现有调用方不能坏。
  *
- * @param {{ query?: string, projectId?: string, limit?: number, scope?: string, explain?: boolean }} options
+ * @param {{ query?: string, projectId?: string, sessionId?: string, limit?: number, scope?: string, explain?: boolean }} options
  */
-function retrieve({ query = '', projectId = '', limit, scope = '', explain: withReasons = false } = {}) {
+function retrieve({ query = '', projectId = '', sessionId = '', limit, scope = '', explain: withReasons = false } = {}) {
   store.pruneExpired()
 
   let items = store.list({ status: 'active' })
@@ -66,6 +66,12 @@ function retrieve({ query = '', projectId = '', limit, scope = '', explain: with
     /* 单独对话没有项目上下文，不能意外带入某个项目的私有记忆 */
     items = items.filter((i) => i.scope !== 'project')
   }
+  /*
+   * SEC-065：**会话私有**记忆只在**当前会话**里注入。没有会话上下文（或这条没绑
+   * 会话）就一律不注入 —— fail-closed，绝不让某个会话的私事漏到别的会话里。
+   * （完整的「按会话绑定」需要 store 记 sessionId，那属数据结构变更，另立一项。）
+   */
+  items = items.filter((i) => i.scope !== 'session' || (sessionId !== '' && i.sessionId === sessionId))
   if (scope) items = items.filter((i) => i.scope === scope)
 
   const budget = limit ?? injectLimit()

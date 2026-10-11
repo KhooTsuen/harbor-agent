@@ -5,6 +5,19 @@
 
 ## [未发布]
 
+- **安全：全量安全回归的 2 个 FAIL 已修，安全门禁转绿**（2026-10-11）。84 项全量落地后
+  跑出 2 个 FAIL，本笔修掉：
+  · **SEC-077（P0）**：生产依赖 `xlsx` 换到 SheetJS 官方 CE 版 `0.20.3`
+    （`package.json` 指向 `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`）——
+    npm 上的 `xlsx` 停在 0.18.5、对两个 high 漏洞无修复版。换完 `npm audit --omit=dev`
+    的 high 归零，`require('xlsx')` 仍可用（0.20.3）。
+  · **SEC-065（P1）**：`electron/core/memory-recall.cjs` 的 `retrieve()` 现在对
+    `scope: 'session'` 的记忆**按会话匹配、否则不注入**（fail-closed）—— 关闭「会话私有
+    记忆跨会话注入」的泄漏。连带**等价更新**了 `71-memory-explain` 的种子与两条断言
+    （种子 scope session→task，并**另补一条**直接测 `explain()` 对 session 条目的解释，
+    证明解释能力没被砍）。
+  两处修完：`npm run security` PASS 82 · FAIL 0；`npm test` 4103 · 0；`verify` 转绿。
+
 - **格式化安全浏览器用例**（2026-10-11）：`src/lib/__tests__/securityBrowser.test.tsx` 过 `prettier`。
   上一笔提交漏跑了 `check:format`，导致 `verify` 在推送前闸门卡在格式检查。
 

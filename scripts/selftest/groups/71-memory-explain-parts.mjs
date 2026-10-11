@@ -46,9 +46,25 @@ export function runReasonChecks({ explainer, items, explained, query }) {
     JSON.stringify(byKey('type')),
   )
   check(
-    'session 范围拿满 5 分，标签是「本次会话」',
-    byKey('scope')?.weight === 5 && byKey('scope')?.label === '本次会话',
+    'task 范围拿满 4 分，标签是「当前任务」',
+    byKey('scope')?.weight === 4 && byKey('scope')?.label === '当前任务',
     JSON.stringify(byKey('scope')),
+  )
+  /*
+   * ★ SEC-065 之后：`session` 作用域的记忆**不再从 retrieve 注入**（没会话上下文就
+   *   fail-closed），所以种子里它换成了 task。但 `explain()` 是纯函数 —— 对一条 session
+   *   记忆照样能给解释，这份能力没被砍，这里单独钉住。
+   */
+  check(
+    'session 范围仍是最高权重 5，标签「本次会话」（解释能力保留）',
+    (() => {
+      const one = explainer.explain(
+        { content: 'x', type: 'fact', scope: 'session', importance: 0.5, createdAt: at },
+        { now: at },
+      )
+      const s = one.reasons.find((r) => r.key === 'scope')
+      return s?.weight === 5 && s?.label === '本次会话'
+    })(),
   )
   check('重要度 0.9 → 1.8 分', byKey('importance')?.weight === 1.8, JSON.stringify(byKey('importance')))
   check(
@@ -120,7 +136,7 @@ export function runSummaryChecks({ explainer, explained }) {
   check('总结是人话（含中文）', summaries.every((s) => /[\u4e00-\u9fa5]/.test(s)))
   check(
     '最高分那条总结出了类型、范围和相关性',
-    summaries[0].includes('约束类') && summaries[0].includes('本次会话范围') && summaries[0].includes('本次提问'),
+    summaries[0].includes('约束类') && summaries[0].includes('当前任务范围') && summaries[0].includes('本次提问'),
     summaries[0],
   )
   check('空理由也返回一句话，不是空串', explainer.summarize({ reasons: [] }).length > 0)

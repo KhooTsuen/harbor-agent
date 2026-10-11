@@ -56,7 +56,7 @@ export async function run() {
     group('记忆可解释 / 解释的分就是排序的分')
     store.clear()
     const items = [
-      seed({ content: '提交前必须跑 npm run verify', type: 'constraint', scope: 'session', importance: 0.9 }),
+      seed({ content: '提交前必须跑 npm run verify', type: 'constraint', scope: 'task', importance: 0.9 }),
       seed({ content: '回答尽量短，别写成小作文', type: 'preference', scope: 'global', importance: 0.4 }),
       seed({
         content: '部署脚本放在 scripts/deploy.mjs',
