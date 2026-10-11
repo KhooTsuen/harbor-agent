@@ -70,4 +70,38 @@ export async function run() {
   const legacyRaw = readFileSync(session.fileFor(legacyThread.id), 'utf8')
   check('★ 整体重写会清掉旧会话里的明文密钥', !legacyRaw.includes('legacy-secret-token'))
   session.remove(legacyThread.id)
+
+  /*
+   * ★ 回归：脱敏不能把会话记录改成**坏 JSON**。
+   *
+   * 曾经 `serializeLine` 对**已序列化的 JSON 文本**又过了一遍 `redact`，而那条
+   * 「显式字段」正则的值字符类没排除反斜杠 —— 于是 JSON 里的 `\"` 被吃掉 `\`，
+   * 那个 `"` 把字符串提前闭合，整行报废。真机代价：一条会话 39 行回复记录解析失败、
+   * 读回全被丢掉、只剩 partial 快照（界面显示「这条回复没写完」）。
+   *
+   * 下面内容里正好有 `"session:xxx"`（bash 里搜会话的常见写法）—— 就是当时踩中的形态。
+   */
+  const tricky = session.create({ title: 'JSON 结构安全' })
+  session.append(tricky.id, {
+    role: 'assistant',
+    key: 'msg_tricky',
+    content: '2. findstr "session:append" electron/handlers/*.cjs\n3. 再看 session:secret 这类',
+  })
+  const trickyRaw = readFileSync(session.fileFor(tricky.id), 'utf8')
+  let badLines = 0
+  for (const line of trickyRaw.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      JSON.parse(line)
+    } catch {
+      badLines += 1
+    }
+  }
+  check('★ 落盘后每一行都是合法 JSON（脱敏不改坏结构）', badLines === 0, `坏行 ${badLines}`)
+  const trickyLoaded = session.load(tricky.id)
+  check(
+    '★ 含 session:xxx" 的回复能读回（结构没坏就不会整条丢）',
+    (trickyLoaded?.messages ?? []).some((m) => String(m.content ?? '').includes('findstr')),
+  )
+  session.remove(tricky.id)
 }

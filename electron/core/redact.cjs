@@ -105,7 +105,7 @@ const PATTERNS = [
    * 这里宁可多打几条码，也不许密钥落盘。代价见下方「已知取舍」。
    */
   [
-    /((?:api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|access[_-]?key|auth[_-]?token|bearer[_-]?token|private[_-]?token|session[_-]?id|token|secret|password|passwd|pwd|credentials?|authorization|session)["']?\s*[:=]\s*["']?)([^\s"',;&)\]}]{6,})/gi,
+    /((?:api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|access[_-]?key|auth[_-]?token|bearer[_-]?token|private[_-]?token|session[_-]?id|token|secret|password|passwd|pwd|credentials?|authorization|session)["']?\s*[:=]\s*["']?)([^\s"',;&)\]}\\]{6,})/gi,
     `$1${PLACEHOLDER}`,
   ],
 ]

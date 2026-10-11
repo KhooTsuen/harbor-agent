@@ -206,6 +206,44 @@ export async function run() {
       taskIo.ids = realIds
     }
     check('★ 热路径连目录也不重扫（索引在内存里）', scandir === 0, `扫了 ${scandir} 次`)
+
+    /* ── ⑤ ★ 坏文件（解不开）不能让每次读都全量重建 ─────── */
+    group('AG-039 / 坏任务文件不再拖垮索引')
+    /*
+     * 真机：一个 6.8KB 全 NUL 的任务文件，让日志里「读任务失败」刷了 4992 次。
+     * 根因是它永远进不了索引 → `items.length` 永远比目录文件数少 1 →
+     * `load()` 的「条数相等」判据每次都不成立 → **每次列任务都全量重建**。
+     * 修法：重建时把解不开的文件登记成「空壳」，让它计数、但不出现在列表里。
+     */
+    const brokenId = 'selftest-broken-task'
+    const brokenPath = join(taskIo.root(), `${brokenId}.json`)
+    writeFileSync(brokenPath, '\u0000\u0000\u0000\u0000全零的坏文件', 'utf8')
+    taskIndex.reset()
+    taskCore.list({ limit: 5 }) /* 第一次必然重建（发现坏文件）—— 这次不算 */
+    taskIndex.reset() /* 模拟重启：索引文件在盘上，内存缓存清空 */
+
+    let readsBroken = 0
+    fs.readFileSync = function counted(...args) {
+      readsBroken += 1
+      return realRead.apply(this, args)
+    }
+    try {
+      taskCore.list({ limit: 5 })
+      taskCore.list({ limit: 5 })
+    } finally {
+      fs.readFileSync = realRead
+    }
+    check(
+      '★ 目录里有坏文件时，列任务不再全量重建',
+      readsBroken <= 20,
+      `读了 ${readsBroken} 个文件（全表通读会是 60+）`,
+    )
+    check(
+      '★ 坏文件不会冒出来当任务',
+      taskCore.list({ limit: 5000 }).every((t) => t && t.id !== brokenId),
+    )
+    rmSync(brokenPath, { force: true })
+    taskIndex.reset()
   } finally {
     cleanup()
     taskIndex.reset()

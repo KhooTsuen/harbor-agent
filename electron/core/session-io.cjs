@@ -108,7 +108,18 @@ function readLines(id) {
  * 追加与整体重写必须都走这里，否则改标题时可能把旧密钥原样写回去。
  */
 function serializeLine(line) {
-  return sealLine(redact(JSON.stringify(scrubStorage(line))))
+  /*
+   * ★ 这里**只脱敏一次** —— `scrubStorage` 已经递归处理了对象里的每个字符串值
+   *   （见 redact.cjs 的 walkStorage：字符串叶子都过了一遍 redact）。
+   *
+   *   曾经写成 `redact(JSON.stringify(scrubStorage(line)))`：第二道 `redact` 作用在
+   *   **已序列化的 JSON 文本**上，而它的「显式字段」正则会把 `\"` 里的反斜杠一起吃掉
+   *   （值字符类没排除 `\`），于是那个 `"` 把 JSON 字符串提前闭合 → 整行报废。
+   *   真机代价：一条会话里 39 行回复记录变成解析失败，读回时全被丢掉、只剩 partial
+   *   快照 → 界面显示「这条回复没写完」，而内容其实写下去了。
+   *   口径由自检 `31-session-redact` 的「落盘后仍是合法 JSON」钉住。
+   */
+  return sealLine(JSON.stringify(scrubStorage(line)))
 }
 
 function writeLines(id, lines) {

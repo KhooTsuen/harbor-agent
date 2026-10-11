@@ -93,6 +93,27 @@ function fileCount() {
 }
 
 /**
+ * 解不开的任务文件（坏了 / 全 NUL）也要在索引里占一个位置。
+ *
+ * ★ 不占位的话 `items.length` 永远比目录文件数少 —— 而 `load()` 的判据是
+ *   「条数相等」→ **每一次读任务都触发一次全量重建**。真机实测：一个 6.8KB 的
+ *   全 NUL 坏文件，让日志里「读任务失败」刷了 4992 次、每次重建约 22ms。
+ *   空壳带 `broken` 标记，`list()` 会跳过它 —— 既不读它、也不返回它。
+ */
+function brokenSummary(id) {
+  return {
+    id,
+    updatedAt: 0,
+    status: '',
+    sessionId: '',
+    workdir: '',
+    projectId: '',
+    title: '',
+    broken: true,
+  }
+}
+
+/**
  * 重建：老老实实读一遍所有任务（慢路径）。
  * 只在「索引不可用」或「文件数对不上」时走这里。
  */
@@ -100,7 +121,8 @@ function rebuild() {
   const items = []
   for (const id of io.ids()) {
     const task = io.get(id)
-    if (task) items.push(summaryOf(task))
+    /* 坏文件也登记（见 brokenSummary）：否则条数永远对不上 → 每次读都重建 */
+    items.push(task ? summaryOf(task) : brokenSummary(id))
   }
   writeFile(items)
   cache = { version: VERSION, items, count: items.length }
@@ -180,6 +202,8 @@ function list({ limit = 50, status = '', statuses = null, sessionId = '', workdi
 
   const out = []
   for (const item of matched) {
+    /* 空壳（重建时解不开的文件）→ 不读、不返回，也不刷「读任务失败」的日志 */
+    if (item.broken) continue
     const task = io.get(item.id)
     /* 索引里有、文件没了（外面删过）→ 跳过并在下次 load 时重建 */
     if (task) out.push(task)
