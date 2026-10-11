@@ -99,19 +99,37 @@ export const FONT_SANS =
 
 export const FONT_MONO = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Cascadia Mono', monospace"
 
-/* ── 字号：三层 ────────────────────────────────────────────── */
+/* ── 字号：三层 + dense 例外 ───────────────────────────────── */
 
+/*
+ * ⚠️ 这份声明是**给人看的规范**，运行时不读它（全项目无引用）。
+ * 真正决定字号的是下游这两处，改字号时三处一起看：
+ *   · `src/index.css` 的 `--text-*`（CSS 变量的**实际值**）
+ *   · `tailwind.config.js` 的 `fontSize`（meta/body/title/dense → 引用那些变量）
+ *
+ * 2026-10-12（Phase 4 · D2/D3）：声明曾与实现脱节（meta 写 14 实际 15、
+ * dense 写 13 实际 14）。本批只把声明**贴回现状**去对齐，没动 CSS 实现 ——
+ * 因为全局改那 1px 的布局抖动不可控，宁可让声明让步。
+ */
 export const FONT_SIZE = {
-  /** 辅助：14px */
-  meta: { size: 14, lineHeight: 1.43 },
-  /** 正文：16px */
+  /** 辅助：15px / 1.43（= index.css 的 `--text-meta`，tailwind `text-meta`） */
+  meta: { size: 15, lineHeight: 1.43 },
+  /** 正文：16px / 1.5（= `--text-body`，tailwind `text-body`） */
   body: { size: 16, lineHeight: 1.5 },
-  /** 标题：24px（**上限**，禁止更大） */
+  /** 标题：24px / 1.33（= `--text-title`，tailwind `text-title`。**上限**，禁止更大） */
   title: { size: 24, lineHeight: 1.33 },
 } as const
 
-/** 面板里的小字（线程行、状态栏）允许用 13px，这是唯一的例外 */
-export const FONT_SIZE_DENSE = 13
+/**
+ * 面板里的小字（线程行、状态栏）—— 紧凑层级。
+ *
+ * **实际 14px**（= `--text-dense`，tailwind `text-dense`，行高 `--leading-meta` 1.43）。
+ * 声明曾写 13px，但实现一直是 14px；本批贴回现状。
+ *
+ * 注：还有一层 **12px（`text-2xs`）** 不在这份声明里 —— 它是「微号 / 紧凑 UI 专用层」，
+ * 定义与用途见 `tailwind.config.js` 与 `index.css` 的 `--text-*` 说明。
+ */
+export const FONT_SIZE_DENSE = 14
 
 export const FONT_WEIGHT = {
   regular: 400,

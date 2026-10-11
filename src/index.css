@@ -111,11 +111,22 @@
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
   --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Cascadia Mono', monospace;
 
-  /* ── 字号：三层【规范】── */
-  --text-meta: 0.9375rem; /* 15px */
-  --text-body: 1rem; /* 16px */
-  --text-title: 1.5rem; /* 24px */
-  --text-dense: 0.875rem; /* 14px，面板小字 */
+  /*
+   * ── 字号：三层 + dense 例外【规范】──
+   *
+   * ⚠️ **只增注释，值一律不动**（Phase 4 · D2/D3：改声明，不改 CSS 实现 ——
+   * 全局改那 1px 的布局抖动不可控）。这里是**运行时的实际值**，tailwind 的
+   * meta / body / title / dense 正引用它们；`src/constants/design.ts` 的
+   * `FONT_SIZE` 是给人看的声明，2026-10-12 已贴回现状与本处一致。
+   *
+   * 另有**一层不在变量里**：tailwind 的 `text-2xs`（0.75rem = **12px** / 行高 1.45）——
+   * 它是「**微号 / 紧凑 UI 专用层**」（徽标、角标、状态栏、次要元信息），
+   * 全项目用得最多的一层，属于设计系统的正式层级，定义见 `tailwind.config.js`。
+   */
+  --text-meta: 0.9375rem; /* 15px，辅助文字（次要说明、行内提示） */
+  --text-body: 1rem; /* 16px，正文 */
+  --text-title: 1.5rem; /* 24px，标题（上限） */
+  --text-dense: 0.875rem; /* 14px，面板小字（线程行、状态栏等紧凑处） */
 
   --leading-meta: 1.43;
   --leading-body: 1.5;

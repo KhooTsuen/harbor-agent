@@ -5,6 +5,22 @@
 
 ## [未发布]
 
+- **UI Phase 4 · 批次 2：字体 token 规范声明落地（只改声明，不改 CSS 实现）**（2026-10-12）。
+  D2/D3 拍板：**让声明向现状让步**，不动 index.css 的数值 —— 因为全局改那 1px
+  的布局抖动不可控（117 个文件依赖 12px、24 处在用 sm/base）。本批**不写任何渲染逻辑**。
+  · **`src/constants/design.ts`**：`FONT_SIZE.meta` 14 → **15px**、`FONT_SIZE_DENSE`
+    13 → **14px**（贴回实际渲染值），并补注释写明它们与 `index.css` 的 `--text-*`、
+    `tailwind.config.js` 的 `fontSize` 的对应关系。**这两处声明全仓库无引用、无测试钉住**
+    （`findstr` 实测只有定义处），改它零运行时影响。
+  · **`src/index.css`**：`--text-meta` / `--text-dense` 等**只增注释、值一字不改** ——
+    注明实际渲染尺寸与适用场景；并把 `text-2xs`（0.75rem = **12px** / 行高 1.45）
+    正式登记为「**微号 / 紧凑 UI 专用层**」（徽标、角标、状态栏、次要元信息）。
+  · 回归：本批**未动** `src/components/**`、`tailwind.config.js`、Markdown 标题阶梯、
+    BootSequence、XtermTerminal；那 32 处 `text-sm`/`text-base` 归并仍留作技术债。
+  · **验证**（新标准：探针数值 + 行高直方图 + 模态框截图）：`tmp/p4-probe.mjs` 改前 / 改后
+    **逐行完全一致**（8 场景数值全同）；`p4-D`（设置弹窗）截图 sha256 改前 = 改后
+    = `95ab20e23c32ea37`；行高直方图 `16px|24px` 桶计数不变。`npm run verify` 全绿。
+
 - **UI Phase 4 · 批次 1：字号 token 归并（只做真·同值那 1 处）**（2026-10-12）。
   · **改了 1 处**：`src/components/ui/Modal.tsx` 的弹窗标题 `text-md` → `text-body` ——
     两者**完全同值**（16px，line-height 1.5），零视觉变化。
