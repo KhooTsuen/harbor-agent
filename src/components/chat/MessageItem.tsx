@@ -135,6 +135,8 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                 toolRuns={message.toolRuns ?? []}
                 streaming={isStreaming}
                 hideStreamingContent={!streamOutput}
+                /* 有澄清卡 → 不跨轮聚合（Phase 3，理由见 groupRounds.ts） */
+                clarify={Boolean(message.clarify)}
               />
             ) : isStreaming ? (
               /*

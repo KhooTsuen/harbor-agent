@@ -5,6 +5,40 @@
 
 ## [未发布]
 
+- **UI Phase 3：中央对话降噪（跨轮聚合 / 未闭合降级 / Markdown 缺口对拍 / Prompt 无废话）**（2026-10-12）。
+  纯展示层 + 一处 Prompt 文案；不触 Runtime / IPC / 权限 / 事件契约 / 任务持久化 / 数据结构。
+  · **跨轮同类聚合**（展示层派生）：新增 `src/components/chat/message/groupRounds.ts`（纯函数）
+    与 `MessageRounds.tsx` 接入 —— 连续、可聚合的若干轮（无正文、无失败/等待、无子代理）
+    折成一组，工具用一个 `ToolLine` 一次说完（展开仍是 100 条原始明细，一条不少）。
+    **强制打断**（单测钉死）：`run.ok !== true`（失败 / 等确认 / 被拦）、出现正文、子代理卡、
+    有澄清卡 → 立刻断开；**失败绝不与成功折进同一张卡**（用户会误以为一切顺利）。
+  · **未闭合跨行块降级**：新增 `src/lib/markdown/unclosed.ts` + `StreamingMarkdown.tsx` 的
+    `TailBlock` 接入 —— 流式期间未闭合的 `$$` / 围栏整段当纯文本（不再被 `trySpecialBlock`
+    吞进公式块、闭合后整段再吐出来），闭合后自然升级。**只作用于尾巴**：未闭合块永远在
+    尾巴里（`findStablePoint` 在围栏内不切），稳定块的引用不变（`StableBlocks`）策略未动。
+    真机实测：闭合 → 上方锚点位移 **0px**、收尾 → 位移 **0px**（硬指标通过）。
+  · **Markdown 缺口对拍**（Q1 选 B：不引第三方库）：新增 `gfm-cases.ts` + `gfm-gap.test.ts`，
+    35 条 CommonMark/GFM 样例跑自研解析器，缺口记为「已知差异」（setext / 缩进代码块 /
+    `<url>` autolink / 相对链接）；补了唯一一个「**显示错误**」类高频缺口 —— **HTML 实体**
+    （新增 `entities.ts`，`&amp;` 不再原样露出）。
+  · **Prompt 配合**：`prompt-rules.cjs` 加 `NO_FILLER_RULE`（别写没价值的过渡语，
+    **保留**「该解释的要解释」那半句）；`prompt-stack.cjs` 的 `VERSION`
+    `prompt-stack/4` → `/5`，同步 `93-machine-prompt.mjs` 的断言；11 个提示词版本回归项全绿。
+  · 回归：新增 `message/__tests__/groupRounds.test.ts`（11）、`markdown/__tests__/unclosed.test.ts`（8）、
+    `markdown/__tests__/gfm-gap.test.ts`（2）。单测 182 文件 / 1625 用例全绿；内核自检 4108/0；
+    安全 83 PASS / 0 FAIL；行数 1110 文件无超 300。
+  · **真机对照**（隔离假模型 + CDP）：6 轮读文件 → 3 行（2 个聚合组 + 失败轮**单独成项**）；
+    未闭合公式先作纯文本、闭合后升级 KaTeX，全程锚点位移 **0px**。
+  · **前置微任务定位（**未改内核**）**：
+    ① **M1** —— `observer.flush()` 已导出，只是没人按轮调；「一轮结束」的落点在 `electron/core/loop.cjs`
+       （**触硬禁区 §3.8**）或 `electron/handlers/chat.cjs` 的 `done`（不触）—— 落点选定前不动。
+    ② **M2** —— **实测更正**：`error-reader.cjs` 的 `parseLine` 里 `ts = Date.parse(...)`，
+       输出**一直是毫秒数**；Phase 1 报告「真机是 ISO 字符串」**有误**（那是 `data/errors/*.jsonl`
+       磁盘原始记录的 `ts`）。CLI（`scripts/errors.mjs` 的 `new Date(x)`）两种形状都能吃。
+       **无需改内核**；前端 `errorSignal.ts` 的兼容层保留为防御，注释已更正。
+    ③ **M3** —— 台账刷新滞后是**前端「没触发」**（刷新只在运行时状态变化 / 窗口可见时跑），
+       **不是内核写入滞后**（Phase 2 真机已证：打开任务面板手动刷新后顶栏立刻亮）。
+
 - **UI Phase 2：右栏信息层级（纯展示层，方案甲）**（2026-10-12）。
   八个标签与全部面板**一个不减**，只调权重 / 顺序 / 角标语义。不触 Runtime / IPC /
   权限 / 事件契约 / 任务持久化 / 数据结构。

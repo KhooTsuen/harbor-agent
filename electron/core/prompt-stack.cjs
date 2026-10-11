@@ -105,8 +105,11 @@ const BROWSER_GUIDE = [
  *   /3 → /4 —— BROWSER_GUIDE 的「什么时候开新标签」重写：补上 `browse(url, sameTab: true)`
  *              这条路（在这之前，提示词里那句「中转页在当前标签里走完」是**空头支票** ——
  *              工具层根本没有这个动作，模型只能一个地址一个标签地堆）。
+ *   /4 → /5 —— 加 `NO_FILLER_RULE`（「别写没价值的过渡语」，并保留「该解释的要解释」）：
+ *              模型动手前 / 每个工具后都爱来一句「让我来看看」这类不携带信息的预告，
+ *              把真正的结果往下挤（Phase 3 · 中央对话降噪的 Prompt 侧配合）。
  */
-const VERSION = 'prompt-stack/4'
+const VERSION = 'prompt-stack/5'
 
 /*
  * 层的顺序 = 模型看到的顺序。

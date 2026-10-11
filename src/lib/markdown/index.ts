@@ -11,6 +11,8 @@ export { startsSpecialBlock, trySpecialBlock } from './blocks-special'
 export { parseInline, plainText, extractImageUrls } from './inline'
 export { parseBlocks } from './blocks'
 export { isTableSeparator, splitRow } from './table'
+/* 流式：未闭合跨行块降级（Phase 3）—— 渲染层从这里取 */
+export { splitUnclosedBlock } from './unclosed'
 /* 流式增量解析（AG-021/AG-022）—— 渲染层从这里取，别从深路径 require */
 export {
   EMPTY_CACHE,

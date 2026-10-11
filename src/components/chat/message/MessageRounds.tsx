@@ -4,6 +4,7 @@ import { ThinkBlock } from '../ProcessBlocks'
 import { ToolLine } from './ToolLine'
 import { Markdown } from '../Markdown'
 import { StreamingMarkdown } from '../markdown/StreamingMarkdown'
+import { groupRounds } from './groupRounds'
 
 /* ══════════════════════════════════════════════════════════════
    一轮一轮地排（VS Code 那种时间线）
@@ -17,6 +18,11 @@ import { StreamingMarkdown } from '../markdown/StreamingMarkdown'
    正文一段段长到 4300 字符 —— 三段堆叠会把过程全糊在一起。
 
    这里按 `rounds` 的顺序画。**最后一轮**才吃流式状态（正在思考 / 正在输出）。
+
+   ── Phase 3：跨轮同类聚合 ──────────────────────────────────
+   连续、可聚合的若干轮（无正文、无失败、无子代理）折成一组，工具用一个
+   `ToolLine` 一次说完（展开仍是 100 条原始明细）。规则与强制打断都在
+   `groupRounds.ts`（纯函数，单测钉死）—— 渲染层只负责按它给的结果画。
    ══════════════════════════════════════════════════════════════ */
 
 export function MessageRounds({
@@ -24,6 +30,7 @@ export function MessageRounds({
   toolRuns,
   streaming,
   hideStreamingContent = false,
+  clarify = false,
 }: {
   rounds: MessageRound[]
   /** 全部工具记录；`round.tools` 里存的是它的下标 */
@@ -36,6 +43,8 @@ export function MessageRounds({
    * 不逐字蹦。`useSmoothText` 那条摊平的逻辑在这里就不需要了（内容还没上屏）。
    */
   hideStreamingContent?: boolean
+  /** 这条消息开头挂了澄清卡 → 不跨轮聚合（理由见 groupRounds.ts 的 GroupOptions） */
+  clarify?: boolean
 }) {
   const lastIndex = rounds.length - 1
   /*
@@ -53,17 +62,38 @@ export function MessageRounds({
    */
   const smoothLast = useSmoothText(rounds[lastIndex]?.content ?? '', streaming)
 
+  /* Phase 3：跨轮同类工具聚合成一组（纯展示层派生，规则见 groupRounds.ts） */
+  const items = groupRounds(rounds, toolRuns, { clarify })
+
   return (
     <div className="flex flex-col">
-      {rounds.map((round, index) => {
-        const isLast = index === lastIndex
+      {items.map((item) => {
+        /* ── 聚合组：连续几轮的思考逐条画，工具一次说完 ── */
+        if (item.kind === 'group') {
+          return (
+            <div
+              key={`g-${item.from}`}
+              data-round={item.from}
+              data-round-span={item.to - item.from + 1}
+              className="flex flex-col"
+            >
+              {item.rounds.map((round, k) =>
+                round.reasoning.trim() ? <ThinkBlock key={k} text={round.reasoning} /> : null,
+              )}
+              <ToolLine runs={item.runs} />
+            </div>
+          )
+        }
+
+        const round = item.round
+        const isLast = item.index === lastIndex
         /* 下标可能越界（落盘/读回之间版本不一致时）—— 过滤掉，别渲染空的 */
         const runs = round.tools.map((at) => toolRuns[at]).filter(Boolean)
         /* 最后一轮还没出正文 = 正在思考（这样才会显示「正在思考…」） */
         const thinking = streaming && isLast && !round.content.trim()
 
         return (
-          <div key={index} data-round={index} className="flex flex-col">
+          <div key={item.index} data-round={item.index} className="flex flex-col">
             {round.reasoning.trim() ? (
               <ThinkBlock text={round.reasoning} streaming={thinking} />
             ) : null}

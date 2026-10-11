@@ -1,7 +1,13 @@
 import { memo, useMemo, useRef } from 'react'
 import type { BlockNode } from '@/lib/markdown'
 import { parseBlocks } from '@/lib/markdown'
-import { EMPTY_CACHE, parseIncremental, splitPendingLine, type StableCache } from '@/lib/markdown'
+import {
+  EMPTY_CACHE,
+  parseIncremental,
+  splitPendingLine,
+  splitUnclosedBlock,
+  type StableCache,
+} from '@/lib/markdown'
 import { Block } from './Blocks'
 
 /* ══════════════════════════════════════════════════════════════
@@ -54,10 +60,17 @@ export const StableBlocks = memo(function StableBlocks({
  *
  * 每次重渲（内容短，开销可控）。`contain: layout` 把内部布局变化关在盒子里，
  * 不让它影响外部排版 —— 这也是「不跳」的一半原因。
+ *
+ * Phase 3：解析前先过一道 `splitUnclosedBlock` —— 未闭合的跨行块
+ * （`$$` / 围栏）整段当**纯文本**，别被 `parseBlocks` 吞进公式块 / 代码块
+ * 再吐出来（那样就是「一大块内容来回变」）。闭合之后它自然升级回块。
  */
 export function TailBlock({ text }: { text: string }) {
   if (!text) return null
-  const { settled, pending } = splitPendingLine(text)
+  const outer = splitUnclosedBlock(text)
+  const { settled, pending } = splitPendingLine(outer.settled)
+  /* 未闭合整段优先（它更长）；没有才是那半行 */
+  const plain = outer.unclosed || pending
   const blocks = settled ? parseBlocks(settled) : []
 
   return (
@@ -66,14 +79,14 @@ export function TailBlock({ text }: { text: string }) {
         <Block key={`${index}-${node.type}`} node={node} />
       ))}
       {/*
-       * 只在「还有半行没写完」时才加这层盒：contain 把它的布局变化关在内部，
-       * 不影响外部排版。那一行写完盒就消失 —— 所以**收尾后的 DOM 与整篇解析
-       * 完全一致**（验收 e：切到 <Markdown> 不重排）。
+       * 只在「还有纯文本要垫」时才加这层盒：contain 把它的布局变化关在内部，
+       * 不影响外部排版。写完盒就消失 —— 所以**收尾后的 DOM 与整篇解析
+       * 一致**（验收 e：切到 <Markdown> 不重排）。
        */}
-      {pending ? (
+      {plain ? (
         <div style={{ contain: 'layout' }}>
-          {/* 残缺的半行不解析，直接纯文本 —— 避免「先像段落、写完变列表」的横跳 */}
-          <p className="my-1.5 whitespace-pre-wrap break-words">{pending}</p>
+          {/* 未闭合块 / 残缺半行都不解析，直接纯文本 —— 避免「先像段落、写完变块」的横跳 */}
+          <p className="my-1.5 whitespace-pre-wrap break-words">{plain}</p>
         </div>
       ) : null}
     </>

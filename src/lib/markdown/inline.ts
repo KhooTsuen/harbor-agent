@@ -1,5 +1,6 @@
 import type { InlineNode } from './types'
 import { isSafeHref } from '@/lib/linkPolicy'
+import { decodeEntities } from './entities'
 
 /* ══════════════════════════════════════════════════════════════
    行内解析
@@ -198,7 +199,7 @@ export function parseInline(input: string): InlineNode[] {
     }
 
     if (!best) {
-      nodes.push({ type: 'text', text: rest })
+      nodes.push({ type: 'text', text: decodeEntities(rest) })
       break
     }
 
@@ -206,12 +207,13 @@ export function parseInline(input: string): InlineNode[] {
     if (!built) {
       /* 规则拒了（危险链接等）：把这段当普通文字，越过它继续 */
       const end = best.index + best.match[0].length
-      nodes.push({ type: 'text', text: rest.slice(0, end) })
+      nodes.push({ type: 'text', text: decodeEntities(rest.slice(0, end)) })
       rest = rest.slice(end)
       continue
     }
 
-    if (best.index > 0) nodes.push({ type: 'text', text: rest.slice(0, best.index) })
+    if (best.index > 0)
+      nodes.push({ type: 'text', text: decodeEntities(rest.slice(0, best.index)) })
     nodes.push(built)
     rest = rest.slice(best.index + best.match[0].length)
   }
