@@ -1,5 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/safetyApi', async (importOriginal) => {
@@ -19,6 +21,8 @@ vi.mock('@/lib/safetyApi', async (importOriginal) => {
 })
 import type { TaskRecord, TaskRecoveryItem } from '@/types/safety'
 import { TaskRow } from '../TaskRow'
+
+const SRC = join(__dirname, '..', '..', '..')
 
 /* AG-035：「诊断」是**按需**拉的一份报告 —— 这里用假的桥替身，别的测试不受影响 */
 const h = vi.hoisted(() => ({ calls: [] as string[], replies: [] as string[] }))
@@ -255,5 +259,36 @@ describe('AG-028 / 任务行（真渲染）', () => {
     expect(text).toContain('这个任务暂停之后 1 个文件被改过（run.js）')
     expect(text).toContain('接着做之前它会先重读')
     expect(text).not.toContain('你离开之后')
+  })
+
+  /* Phase 5：任务行要显示**真实执行步数** —— 真渲染才验得了「计划没勾也照样显示」 */
+  it('★ 计划一条没勾时，任务行仍显示真实执行步数（不再只卡在 0/N）', () => {
+    const el = draw(
+      task({
+        plan: ['[ ] 一', '[ ] 二', '[ ] 三'],
+        steps: [
+          { at: 1, tool: 'read_file', ok: true, ms: 5, summary: 'a' },
+          { at: 2, tool: 'run_shell', ok: true, ms: 9, summary: 'b' },
+          { at: 3, tool: 'edit_file', ok: true, ms: 3, summary: 'c' },
+        ],
+      }),
+    )
+    expect(el.textContent).toContain('计划 0/3 步')
+    expect(el.textContent).toContain('已执行 3 步')
+  })
+
+  it('一步没跑时不显示「已执行 0 步」（别和卡死的 0/M 一样误导）', () => {
+    expect(draw(task({ steps: [] })).textContent).not.toContain('已执行')
+  })
+
+  it('★ 两种进度的口径挂在 title 上（免得把「计划 0/5」读成「没进展」）', () => {
+    const el = draw(task({ steps: [{ at: 1, tool: 'a', ok: true, ms: 1, summary: '' }] }))
+    const titles = [...el.querySelectorAll('[title]')].map((n) => n.getAttribute('title') ?? '')
+    expect(titles.some((t) => t.includes('内核记录的真实工具调用步数'))).toBe(true)
+  })
+
+  it('★ 任务行接了 execProgressLabel（不是只有计划的勾）', () => {
+    const src = readFileSync(join(SRC, 'components/chat/TaskRow.tsx'), 'utf8')
+    expect(src).toContain('execProgressLabel')
   })
 })

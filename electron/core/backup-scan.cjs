@@ -24,6 +24,18 @@ const ITEMS = [
   { name: 'memory.json', dir: false },
   { name: 'sessions', dir: true },
   { name: 'skills', dir: true },
+  /*
+   * 2026-10-13 扩容：这两样也是**不可重建**的用户硬数据 ——
+   *   · `tasks`      —— 任务台账（他自己攒出来的活），删了就没有了；
+   *   · `changesets` —— 改动事务（回滚凭据），删了就**撤不回去**。
+   *
+   * ★ **凭证库有意不在清单里**：它已由 `safe-write` 的原子写 + 损坏留档兜底
+   *   （E2 专项），而备份它会把 DPAPI 密文**再多复制一份**（纯 Node 无 safeStorage
+   *   时甚至是明文），且与既有断言「备份项里不含凭证库」的意图冲突。
+   *   取舍见 docs/research/ui-phase5-progress-design.md §5。
+   */
+  { name: 'tasks', dir: true },
+  { name: 'changesets', dir: true },
 ]
 
 function backupRoot() {

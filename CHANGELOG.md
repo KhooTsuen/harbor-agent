@@ -5,6 +5,37 @@
 
 ## [未发布]
 
+- **改：任务行显示真实执行进展（UI Phase 5 第一批）+ 备份范围扩容**（2026-10-13）。
+  · **现象**：任务行只有一个「计划 N/M 步」，且**永远卡在 0/M**。
+    **断点（实测定位，见 `docs/research/ui-phase5-progress-design.md`）**：
+    那个数字数的是**模型在计划块里打的 `[x]`**，而模型只在每次发送的**第 1 个 LLM 轮次**
+    输出正文（计划块在里面），后续工具轮没有正文 → 内核再没看到过新计划块
+    （`loop.cjs:206` 每轮都跑 `capturePlan`，但输入是那一轮的正文）。
+    同时 UI 上**没有**任何地方显示内核记的真实执行步数（`task.steps`）——
+    对，它早就在台账里、前端每次工具跑完也**已经**重读（`streamEvents` 的 AG-005），
+    只是没人拿它显示。
+  · **改法（只动展示层，零字段 / 零 IPC / 零事件契约变更）**：
+    `taskCenterModel.ts` 新增 `execSummary()` / `execProgressLabel()`（纯函数，只读已有的
+    `steps` / `checkpoints` / `changedFiles`）；`TaskRow` 状态区并列显示
+    `计划 1/5 步 · 已执行 12 步`，两段各带 `title` 说明口径（`PROGRESS_TITLE`）；
+    `PlanCard` 标题行也挂同一份口径说明。
+    ★ **不建立「计划第 N 条 ↔ 哪个工具」的映射** —— 内核里没有这个归属事实，按顺序硬配
+    就是编（沿用 `ProgressTimeline.tsx:27-28` 的既定原则）；也不用正则解析自然语言。
+  · **备份范围扩容**：`backup-scan.cjs` 的 `ITEMS` 加 `tasks`（任务台账）与 `changesets`
+    （改动事务）—— 都是**不可重建**的用户硬数据。**凭证库有意不备**：它已由
+    `safe-write` 的原子写 + 损坏留档兜底（E2 专项），备份它只会把 DPAPI 密文多复制
+    一份（纯 Node 无 safeStorage 时甚至是明文），且与既有断言「备份项里不含凭证库」
+    的设计意图冲突。自检 `04-reliability` 的 ITEMS 白名单同步扩容。
+  · **验证**：单测新增 10 条（`taskCenter.test.ts` 的 `execSummary` 纯函数 6 条 +
+    `taskRow.test.tsx` 真渲染 4 条）；**负向实验**——把 `TaskRow` 里那段执行进度摘掉后，
+    核心断言「计划一条没勾时，任务行仍显示真实执行步数」**当场变红**（脚本自动还原并校验
+    字节一致）；内核自检 4127/0；备份日志实测含 `tasks`（`changesets` 不存在时按既有
+    「空项跳过」处理）；`npm run verify` 全绿。
+  · **遗留**：`ResumeCard`（上次任务停止卡）仍只显示计划勾选 —— 不在本轮诉求内，未动。
+    恢复备份会**先删再拷**（`backup.cjs:172`）：加了 `tasks` / `changesets` 后，
+    「运行中恢复备份」会把当前任务台账与未提交的改动事务一起换掉（`changesets` 被换掉
+    = 撤不回去）——属既有恢复语义，本轮未改，登记备查。
+
 - **修：会话行写入保护 —— writeLines 原子写 + 整篇损坏不再静默**（2026-10-13）。
   `electron/core/session-io.cjs` 的 `writeLines()` 原来直接 `fs.writeFileSync(整个文件)`
   （「先截断、再写」）：新建会话写那行 meta 时写到一半崩溃 / 磁盘满，用户刚建的会话就只剩半行。

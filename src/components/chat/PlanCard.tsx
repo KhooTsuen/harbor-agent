@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ListChecks } from 'lucide-react'
 import { colorOf } from '@/lib/statusLanguage'
-import { planProgressLabel } from './taskCenterModel'
+import { planProgressLabel, PROGRESS_TITLE } from './taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    执行计划（AG-004）
@@ -116,7 +116,9 @@ export function PlanCard({ versions }: { versions: PlanVersion[] }) {
     <div className="mt-1 rounded-sm border border-line-hairline bg-bg-raised/40 px-2.5 py-1.5">
       <div className="flex items-center gap-1.5">
         <ListChecks size={12} className="shrink-0 text-fg-tertiary" />
-        <span className="text-2xs text-fg-secondary">
+        {/* Phase 5：这一行数的是**模型勾选的计划条数**（模型不重发计划块就不会变）——
+            挂个 title 说清它不等于执行进度，真实执行看任务行的「已执行 N 步」与时间线 */}
+        <span className="text-2xs text-fg-secondary" title={PROGRESS_TITLE}>
           {planProgressLabel(doneCount, current.plan.length)}
           {versions.length > 1 ? ` · 第 ${versions.length} 版` : ''}
         </span>

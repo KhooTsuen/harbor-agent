@@ -1,7 +1,9 @@
-# UI Phase 5 · 任务动态进度追踪 —— 只读调研与方案（**待确认，未实施**）
+# UI Phase 5 · 任务动态进度追踪 —— 只读调研与方案
 
-> **性质**：只读调研 + 方案说明。**未改任何代码**。改动面预判在「展示层 + 状态映射」内。
-> **基线**：`HEAD = a8510d0`（E2 四项已收口），工作区干净，`v1.30.0-beta.17`。
+> **状态**：**方案已拍板并在第一批实施**（2026-10-13，提交见 `CHANGELOG.md` 的 `[未发布]`）：
+> 动态进度按 **A+B** 做（并列显示真实执行进展 + 口径说明）；备份扩容**只加 `tasks` +
+> `changesets`**，**不带 credentials**（理由见 §5）。方案 C（plan↔step 映射）**不做**。
+> **基线**：调研基线 `HEAD = a8510d0`（E2 四项已收口）。
 > **日期**：2026-10-13。证据规矩同其它文档：每条指得住 `文件:行号`。
 > **用户 symptom**：「实际工作已全部完成，UI 进度却卡死在 0/5」。
 
@@ -158,9 +160,38 @@ task-plan.cjs:156     recordVersion：与上一版比，变了才写
 
 ---
 
-## 7. 待你拍板的两件事
+## 7. 拍板结果（2026-10-13）
 
-1. **动态进度按哪个口径做**：A（并列显示执行进展，推荐）/ B（只改措辞）/ A+B。
-2. **credentials 是否纳入备份**：纳入（需同步改 SEC-070 口径 + 处理明文降级）/ 不纳入（只加 tasks + changesets，最保守）。
+1. **动态进度** → **A+B 一起做**：`taskCenterModel` 新增 `execSummary` / `execProgressLabel`
+   （纯函数，只读已有字段）；`TaskRow` 并列显示 `计划 N/M 步 · 已执行 K 步`，两段各带
+   `title` 口径说明；`PlanCard` 标题行挂同一份说明。**`ResumeCard` 未动**（不在本轮诉求内）。
+2. **备份扩容** → **只加 `tasks` + `changesets`**，**不带 credentials**。理由（用户定的三条）：
+   ① `privacy.mjs` 的「备份产物里没有密钥」是**真扫描**，纯 Node 无 `safeStorage` 时凭证是
+   **明文**，备份它测试必红 —— 这其实是在保护用户；② SEC-070 明确表达了「备份项里不含
+   凭证库」的设计意图，不该轻易破坏；③ E2 已用 `writeAtomic` + `keepCorruptCopy` 给凭证
+   建了强兜底，备份的风险大于收益。
 
-**本轮到此停止，等你确认后再进入实施。**
+**方案 C（plan↔step 映射）不做** —— 缺归属事实，只能靠猜，撞本阶段边界。
+
+### 实施落点（已做）
+
+| 文件 | 改了什么 |
+|---|---|
+| `src/components/chat/taskCenterModel.ts` | +`ExecSummary` / `execSummary()` / `execProgressLabel()` / `PROGRESS_TITLE` |
+| `src/components/chat/TaskRow.tsx` | 状态区并列显示执行进展 + 口径 title |
+| `src/components/chat/PlanCard.tsx` | 标题行挂口径 title |
+| `electron/core/backup-scan.cjs` | `ITEMS` +`tasks` +`changesets`（凭证有意不备，注释写明理由） |
+| `scripts/selftest/groups/04-reliability.mjs` | ITEMS 白名单断言同步扩容 |
+| 测试 | `taskCenter.test.ts` +6、`taskRow.test.tsx` +4（含真渲染 + 接线守卫） |
+
+### 验证
+
+- 单测 185 文件 / **1648 用例**（1638 → +10）；内核自检 **4127/0**；安全 83 PASS / 漏洞 0；
+  `npm run verify` 退出码 0；行数全 ≤ 300。
+- **负向实验**：摘掉 `TaskRow` 里那段执行进度后，核心断言「计划一条没勾时，任务行仍显示
+  真实执行步数」**当场变红**（脚本自动还原并校验字节一致）。
+- **未做真机截图**：`tools/shot-electron.mjs` 的前置是「先 `npm run package`」，而打包输出
+  正是 `dist-portable/Harbor` —— 它同时是**当前正在运行**的那个 exe（本会话就跑在里面）。
+  在 Windows 上替换正在运行的 exe 有留下半损坏应用的风险，**没做**。替代证据是 jsdom
+  **真挂载** `TaskRow` 并读回 DOM 文本（渲染结果，不是源码守卫）。
+

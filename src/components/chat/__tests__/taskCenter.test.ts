@@ -6,6 +6,8 @@ import {
   TASK_GROUPS,
   currentStepOf,
   elapsedMs,
+  execProgressLabel,
+  execSummary,
   formatDuration,
   groupTasks,
   taskProgress,
@@ -83,6 +85,76 @@ describe('AG-028 / 任务中心数据', () => {
     expect(groups.get('running')).toEqual([running])
     expect(groups.get('paused')).toEqual([paused])
     expect(groups.get('completed')).toEqual([])
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════
+   Phase 5：真实执行进展（和「计划的勾」是两条链）
+
+   背景：UI 上唯一带 N/M 的进度是计划勾选，而它只在模型重发计划块时才变 ——
+   模型只在每次发送的第 1 个 LLM 轮次输出正文，之后工具轮无正文 → 恒为 0/M。
+   这里改用内核记的真实执行事实，**不建立计划↔工具的映射**（内核没这个事实）。
+   定位见 docs/research/ui-phase5-progress-design.md。
+   ══════════════════════════════════════════════════════════════ */
+describe('Phase 5 / 执行进展', () => {
+  it('★ 计划一条没勾，也能量出真实执行了多少步（这正是「卡死 0/5」的反例）', () => {
+    const exec = execSummary(
+      task({
+        plan: ['[ ] 一', '[ ] 二', '[ ] 三'],
+        steps: [
+          { at: 1, tool: 'read_file', ok: true, ms: 5, summary: 'a' },
+          { at: 2, tool: 'run_shell', ok: true, ms: 9, summary: 'b' },
+          { at: 3, tool: 'edit_file', ok: true, ms: 3, summary: 'c' },
+        ],
+      }),
+    )
+    expect(taskProgress(task()).done).toBe(1)
+    expect(exec.steps).toBe(3)
+    expect(execProgressLabel(exec)).toBe('已执行 3 步')
+  })
+
+  it('失败步单独计数（不混进成功里）', () => {
+    const exec = execSummary(
+      task({
+        steps: [
+          { at: 1, tool: 'a', ok: true, ms: 1, summary: '' },
+          { at: 2, tool: 'b', ok: false, ms: 1, summary: '' },
+        ],
+      }),
+    )
+    expect(exec).toMatchObject({ steps: 2, ok: 1, failed: 1 })
+    expect(execProgressLabel(exec)).toBe('已执行 2 步（1 次失败）')
+  })
+
+  it('检查点 / 改动文件也算执行事实（不只 Tool）', () => {
+    const exec = execSummary(
+      task({
+        checkpoints: [
+          { at: 1, label: 'x', note: '' },
+          { at: 2, label: 'y', note: '' },
+        ],
+        changedFiles: [{ path: 'a.ts', at: 1 }],
+      }),
+    )
+    expect(exec).toMatchObject({ checkpoints: 2, files: 1 })
+  })
+
+  it('★ 一步没跑时返回空串 —— 不显示「已执行 0 步」（那和卡死的 0/M 一样误导）', () => {
+    expect(execProgressLabel(execSummary(task({ steps: [] })))).toBe('')
+  })
+
+  it('老任务缺字段（steps 为空数组的常态）不炸', () => {
+    const exec = execSummary(task({ steps: [], checkpoints: [], changedFiles: [] }))
+    expect(exec).toMatchObject({ steps: 0, ok: 0, failed: 0, checkpoints: 0, files: 0 })
+  })
+
+  it('★ 不做「计划第 N 条 ↔ 工具」的映射（内核没这个事实，硬配就是编）', () => {
+    /* 本轮改动的语义边界：进度只做「并列展示」，不做「映射」——
+       按下标拿 plan[i] 去对第 i 个 step，就是编一个对不上的对应关系。 */
+    const model = readFileSync(join(SRC, 'components/chat/taskCenterModel.ts'), 'utf8')
+    const row = readFileSync(join(SRC, 'components/chat/TaskRow.tsx'), 'utf8')
+    expect(model).not.toMatch(/plan\s*\[\s*(?:i|index)\s*\]/)
+    expect(row).not.toMatch(/plan\s*\[\s*(?:i|index)\s*\]/)
   })
 })
 

@@ -11,7 +11,14 @@ import { taskDiagnose } from '@/lib/safetyApi'
 import { rowStatusSummary, rowStepPrefix } from './TaskRowParts'
 import type { TaskDiagnosis } from '@/types/safety'
 import { TaskRowDetails } from './TaskRowDetails'
-import { currentStepOf, planProgressLabel, taskProgress } from './taskCenterModel'
+import {
+  currentStepOf,
+  execProgressLabel,
+  execSummary,
+  planProgressLabel,
+  PROGRESS_TITLE,
+  taskProgress,
+} from './taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    任务中心的一行（AG-028）
@@ -72,6 +79,8 @@ export function TaskRow({
   const statusColor = colorOf(uiStatus)
   const Icon = iconOf(uiStatus)
   const progress = taskProgress(task)
+  /* Phase 5：真实执行进展（内核记的工具步）—— 和「计划的勾」是两回事，并列显示 */
+  const exec = execProgressLabel(execSummary(task))
   const envChanged = recovery?.envChanged ?? []
   const changed = task.changedFiles.length
   const statusSummary = rowStatusSummary(task.status, {
@@ -124,10 +133,17 @@ export function TaskRow({
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg-primary">
               {task.title || task.goal || '(没有标题的任务)'}
             </span>
-            {/* 状态与进度在右边 —— 一行说清「是什么、到哪了」 */}
-            <span className="shrink-0 text-2xs font-medium" style={{ color: statusColor }}>
+            {/* 状态与进度在右边 —— 一行说清「是什么、到哪了」。
+                Phase 5：后面再补一段**真实执行**步数 —— 那个只数计划勾的数字
+                （模型不重发计划块就不会变）以前是这一行唯一的「进度」。 */}
+            <span
+              className="shrink-0 text-2xs font-medium"
+              style={{ color: statusColor }}
+              title={PROGRESS_TITLE}
+            >
               {statusSummary}
               {progress.total > 0 ? ` · ${planProgressLabel(progress.done, progress.total)}` : ''}
+              {exec ? ` · ${exec}` : ''}
             </span>
           </span>
           {/* 正在做 / 下一步（没有就不占位 —— 空行会把整行撑高） */}

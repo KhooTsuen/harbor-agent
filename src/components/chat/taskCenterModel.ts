@@ -38,6 +38,61 @@ export function taskProgress(task: TaskRecord): { done: number; total: number } 
   return { done: plan.filter(isPlanDone).length, total: plan.length }
 }
 
+/**
+ * 真实执行事实的汇总（Phase 5）。
+ *
+ * 为什么需要它：UI 上唯一带「N/M」形状的进度就是 `planProgressLabel`，它数的是
+ * **模型在计划块里打的 `[x]`** —— 而模型只在每次发送的**第 1 个 LLM 轮次**输出正文
+ * （计划块在里面），后续工具轮没有正文，内核再没看到过新计划块，于是那个数字
+ * 永远停在 `0/M`（定位与实测见 `docs/research/ui-phase5-progress-design.md`）。
+ *
+ * 这里改用**内核记录的真实执行事实**（`steps` / `checkpoints` / `changedFiles`）——
+ * 它们本来就在台账里，且前端每次工具跑完都会重读（`streamEvents` 的 AG-005）。
+ * **零新字段、零猜测**：**不**建立「计划第 N 条 ↔ 哪个工具」的映射 ——
+ * 内核里没有这个归属事实，按顺序硬配就是编（同 `ProgressTimeline` 的既定原则）。
+ */
+export interface ExecSummary {
+  /** 内核记下的工具调用次数（含失败） */
+  steps: number
+  ok: number
+  failed: number
+  checkpoints: number
+  files: number
+}
+
+export function execSummary(task: TaskRecord): ExecSummary {
+  const steps = task.steps ?? []
+  const failed = steps.filter((step) => step.ok === false).length
+  return {
+    steps: steps.length,
+    ok: steps.length - failed,
+    failed,
+    checkpoints: (task.checkpoints ?? []).length,
+    files: (task.changedFiles ?? []).length,
+  }
+}
+
+/**
+ * 执行进展的一句话（任务行用）。
+ *
+ * 没有任何执行事实时返回空串 —— 宁可不显示，也不显示「已执行 0 步」
+ * （那和计划那个卡死的 `0/M` 一样，只会让人以为「它没动」）。
+ */
+export function execProgressLabel(exec: ExecSummary): string {
+  if (exec.steps === 0) return ''
+  return exec.failed > 0
+    ? `已执行 ${exec.steps} 步（${exec.failed} 次失败）`
+    : `已执行 ${exec.steps} 步`
+}
+
+/**
+ * 两种进度的**口径说明**（挂在 `title` 上，悬停可见）。
+ *
+ * 一句话说清它们不是一回事，免得「计划 0/5 步」被读成「任务没进展」。
+ */
+export const PROGRESS_TITLE =
+  '计划 = 模型在计划块里勾选的条数（模型不重发计划块就不会变）· 已执行 = 内核记录的真实工具调用步数'
+
 /*
  * Phase 1 · B1：**计划进度**的措辞（唯一一份）。
  *
