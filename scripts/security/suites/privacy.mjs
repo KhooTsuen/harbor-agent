@@ -147,6 +147,75 @@ function atomicWrite() {
   }
   sec('SEC-073', threw, '写盘失败会抛出（不静默）')
   sec('SEC-073', JSON.parse(fs.readFileSync(target, 'utf8')).ok === 1, '失败后原文件保持完整（原子写）')
+
+  /* ── 任务台账（task-io）：它同样是用户数据，必须受同一套保护 ──────────
+   * 注入手法：把 fs.writeFileSync 换成「先按 'w' 截断、只写前 N 字节、再抛 ENOSPC」——
+   * 忠实还原「写到一半磁盘满」，看旧台账还在不在。 */
+  taskLedgerInjection()
+}
+
+function taskLedgerInjection() {
+  const io = require(join(ROOT, 'electron/core/task-io.cjs'))
+  const real = fs.writeFileSync
+  /* 截断写到 n 字节、再抛 ENOSPC —— 只对「目标文件及其 .tmp-* 临时文件」生效 */
+  const breaking = (file, n) => (p, data, ...rest) => {
+    if (typeof p === 'string' && p.startsWith(file)) {
+      real.call(fs, p, String(data).slice(0, n), 'utf8')
+      const error = new Error('ENOSPC: no space left on device')
+      error.code = 'ENOSPC'
+      throw error
+    }
+    return real.call(fs, p, data, ...rest)
+  }
+
+  /* ① 覆盖写中断：旧台账必须一字未改、且失败要抛出去 */
+  const id = 'sec073_ledger'
+  io.write({ id, title: '安全回归任务', status: 'running', updatedAt: 1 })
+  const file = io.fileFor(id)
+  const before = fs.readFileSync(file, 'utf8')
+  fs.writeFileSync = breaking(file, 12)
+  let threw = false
+  try {
+    io.write({ id, title: '改过的标题', status: 'completed', updatedAt: 2 })
+  } catch {
+    threw = true
+  } finally {
+    fs.writeFileSync = real
+  }
+  sec('SEC-073', threw, '任务台账写入失败会抛出（不假报成功）')
+  sec('SEC-073', fs.readFileSync(file, 'utf8') === before, '任务台账写入中断后，旧内容一字未改')
+  sec('SEC-073', io.get(id)?.status === 'running', '中断后旧任务仍能正常读回（没被截断）')
+
+  /* ② 负向：同样的注入打在「裸写」上 → 旧文件确实被截断。
+   *    证明上面的保护断言不是恒真 —— 一旦退回 fs.writeFileSync，它就会失败。 */
+  const bare = join(tmpDir('atomic3'), 'bare.json')
+  real.call(fs, bare, 'ORIGINAL-LEDGER-CONTENT-0123456789', 'utf8')
+  fs.writeFileSync = breaking(bare, 8)
+  try {
+    fs.writeFileSync(bare, 'REPLACEMENT-LEDGER-CONTENT', 'utf8')
+  } catch {
+    /* 裸写抛了就对了 */
+  } finally {
+    fs.writeFileSync = real
+  }
+  sec('SEC-073', fs.readFileSync(bare, 'utf8') !== 'ORIGINAL-LEDGER-CONTENT-0123456789',
+    '（负向）退回裸写时同样的注入会截断旧文件 —— 证明上面的保护断言能失败')
+
+  /* ③ 损坏读取：留档 + 不崩 + 不重复留档 + 不删原文件 + 不把「不存在」误判成损坏 */
+  const badId = 'sec073_corrupt'
+  const badFile = io.fileFor(badId)
+  real.call(fs, badFile, '{ 这不是合法 JSON', 'utf8')
+  const corruptCount = () =>
+    fs.readdirSync(io.root()).filter((f) => f.startsWith(`${badId}.json.corrupt-`)).length
+  const keptBefore = corruptCount()
+  const r1 = io.get(badId)
+  const r2 = io.get(badId)
+  sec('SEC-073', r1 === null && r2 === null, '损坏的任务文件读不出来（返回 null，不崩）')
+  sec('SEC-073', corruptCount() - keptBefore === 1,
+    `损坏文件恰好留档一份（重复读取不重复留档：+${corruptCount() - keptBefore}）`)
+  sec('SEC-073', fs.existsSync(badFile), '损坏的原始文件没有被删除或覆盖')
+  const ghost = io.get('sec073_never_created')
+  sec('SEC-073', ghost === null && corruptCount() === keptBefore + 1, '不存在的任务不被误判为损坏（不留档）')
 }
 
 /** SEC-074：删除/重置只清目标，不误伤其他数据 */

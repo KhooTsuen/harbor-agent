@@ -96,6 +96,34 @@ export async function run() {
     const broken = join(io.root(), 'task_selftest_broken.json')
     mkdirSync(io.root(), { recursive: true })
     writeFileSync(broken, '{ 这不是 JSON', 'utf8')
+    /*
+     * ★ 「不静默」这一条得单独验，而且要在**首次**读到这个坏文件时验 ——
+     *   留档是去重的（同一份坏文件重复读不再记一遍，见 `task-io.cjs` 的 `get()`）。
+     *   坏文件是用户数据的损坏：走 error 级，并先留一份 `.corrupt-<时间戳>` 档；
+     *   原件不删、不覆盖。
+     */
+    const nodeFs = require('node:fs')
+    const errors = []
+    const originalError = logCore.error
+    logCore.error = (message) => errors.push(String(message))
+    let firstRead
+    try {
+      firstRead = taskCore.get('task_selftest_broken')
+    } finally {
+      logCore.error = originalError
+    }
+    check('坏文件当成「没有这条」', firstRead === null)
+    check(
+      '★ 读坏文件要留痕（不许静默吞掉）',
+      errors.some((m) => m.includes('任务文件解不开')),
+    )
+    const corruptCopies = () =>
+      nodeFs.readdirSync(io.root()).filter((f) => f.startsWith('task_selftest_broken.json.corrupt-'))
+    check(
+      '★ 坏文件被留档、原件不删（可人工抢救）',
+      nodeFs.existsSync(broken) && corruptCopies().length === 1,
+    )
+
     /* 任何失败都变成「一个值」而不是抛出去 —— 断言才有机会把话说清楚 */
     const safely = (fn) => {
       try {
@@ -110,31 +138,12 @@ export async function run() {
       listed.threw === undefined,
       String(listed.threw),
     )
-    check(
-      '坏文件当成「没有这条」',
-      safely(() => taskCore.get('task_selftest_broken')).value === null,
-    )
     check('不存在的任务也返回 null', safely(() => taskCore.get('task_不存在')).value === null)
-
-    /*
-     * ★ 「不静默」这一条得单独验。
-     *   拆文件时 `list()` 里留了个已被删掉的 `fs` 引用，ReferenceError 被空
-     *   catch 吞掉，列表永远空、界面毫无提示（只有自检里 20 条断言在报警）。
-     *   所以「读不出来必须留痕」是个要求，不是顺手写的日志。
-     */
-    const warns = []
-    const originalWarn = logCore.warn
-    logCore.warn = (message) => warns.push(String(message))
-    try {
-      taskCore.get('task_selftest_broken')
-    } finally {
-      logCore.warn = originalWarn
-    }
-    check(
-      '★ 读坏文件要留痕（不许静默吞掉）',
-      warns.some((m) => m.includes('读任务失败')),
-    )
+    /* list 又扫了一遍坏文件：去重生效，仍只有一份留档、原件还在 */
+    check('★ 重复读同一个坏文件不重复留档', corruptCopies().length === 1 && nodeFs.existsSync(broken))
+    /* 原件与留档副本都清掉，别在隔离目录里攒 */
     rmSync(broken, { force: true })
+    for (const name of corruptCopies()) rmSync(join(io.root(), name), { force: true })
 
     /* ── ③ 未完成的任务不能被「最近 20 条」挤掉 ─────────── */
     group('AG-035 / 未完成清单先筛后截')

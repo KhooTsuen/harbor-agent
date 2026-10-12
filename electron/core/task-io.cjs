@@ -13,6 +13,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const { migrate } = require('./task-plan.cjs')
+/* 任务台账是**用户数据**（他自己攒出来的活），写盘与损坏处理都走「别丢用户数据」的共用件 */
+const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 const log = require('./log.cjs')
 
 function root() {
@@ -42,9 +44,23 @@ function monotonicNow() {
   return lastStamp
 }
 
+/*
+ * 写一条任务。
+ *
+ * ★ 用**原子写**（`safe-write.writeAtomic`），不是 `fs.writeFileSync` —— 后者是
+ *   「先截断、再写」：写到一半崩溃 / 断电 / 磁盘满，用户那条任务就只剩前半截
+ *   （2026-10-13 故障注入实测：237 字节的台账在 ENOSPC 后变成 30 字节、读回 null、
+ *   从任务列表里消失）。台账不用「多写一份」，用「写不完就一点都不动」。
+ *
+ * ★ 写失败**向调用方抛**（writeAtomic 本来就会抛）—— 不吞、不假报成功；抛了就不更新
+ *   索引（索引里不能出现一条磁盘上其实没写好的任务）。
+ */
 function write(task) {
   fs.mkdirSync(root(), { recursive: true })
-  fs.writeFileSync(fileFor(task.id), JSON.stringify(task, null, 2), 'utf8')
+  const file = fileFor(task.id)
+  writeAtomic(file, JSON.stringify(task, null, 2))
+  /* 这次写成功了 → 之前的「已留档」标记作废（文件已恢复，再坏一次还应留档） */
+  corruptKept.delete(file)
   syncIndex('update', task)
 }
 
@@ -65,19 +81,45 @@ function syncIndex(action, payload) {
   }
 }
 
+/** 本进程内已经留过档的损坏文件 —— 同一个坏文件重复读只留一份，别刷一地副本 */
+const corruptKept = new Set()
+
 /**
- * 读一条；文件不在 / 内容坏了 → 返回 null（任务中心不能因为一个坏文件白屏）。
+ * 读一条。
  *
- * ★ 但**不许静默**：不是「文件没了」的错（比如代码里写错了变量名）一律记日志。
- *   这一条是被一次事故逼出来的 —— 拆文件时 `list()` 里残留的 `fs` 引用了
- *   模块里已经不存在的 fs，ReferenceError 被空 catch 吞掉，列表永远是空的，
- *   界面上什么都看不出来（只有自检里 20 条断言在报警）。
+ * ★ **两种情况必须分开**（以前都返回 null，看不出区别）：
+ *   · **文件不在**（ENOENT）—— 正常：这条任务还没建过 / 已被删掉。返回 null，**不报错、不留档**。
+ *   · **文件在、但解不开** —— 损坏。★ 绝不静默当空：那会让接下来任意一次写盘把证据盖掉
+ *     （用户那条任务就无声无息没了）。这里先 `keepCorruptCopy` 留一份档，再记一条 error。
+ *     原始坏文件**不删、不覆盖**（留档是**附加**的一份，不是搬走）。
+ *
+ * ★ 留档**只做一次**：同一份坏文件在同一进程里反复读（比如任务列表每轮都扫），
+ *   只生成一份 `.corrupt-<时间戳>`；写成功后标记作废，再坏一次仍会留档。
+ *
+ * ★ 另：**「已留档」不等于「已恢复」** —— 留档只是保住证据让人能人工抢救，
+ *   这条任务这次仍然读不出来（返回 null）。两者是两件事，别混。
  */
 function get(id) {
+  const file = fileFor(id)
+  let raw
   try {
-    return migrate(JSON.parse(fs.readFileSync(fileFor(id), 'utf8')))
+    raw = fs.readFileSync(file, 'utf8')
   } catch (error) {
+    /* 文件不在是正常的（还没建过这条任务），不算错；别的读失败得让人看见 */
     if (error?.code !== 'ENOENT') log.warn(`读任务失败（${id}）：${error?.message ?? error}`)
+    return null
+  }
+  try {
+    return migrate(JSON.parse(raw))
+  } catch (error) {
+    if (!corruptKept.has(file)) {
+      corruptKept.add(file)
+      const kept = keepCorruptCopy(file)
+      log.error(
+        `任务文件解不开（${id}）：${error?.message ?? error}` +
+          (kept ? ` —— 已留档 ${path.basename(kept)}` : ' —— 留档失败'),
+      )
+    }
     return null
   }
 }
