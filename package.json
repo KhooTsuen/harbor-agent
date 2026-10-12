@@ -38,6 +38,8 @@
     "doctor": "node scripts/data-doctor.mjs",
     "stats": "node scripts/run-stats.mjs",
     "map": "node scripts/project-map.mjs",
+    "contracts": "node scripts/contracts.mjs",
+    "dup": "node scripts/dup-scan.mjs",
     "security": "node scripts/security/run.mjs",
     "security:audit": "node scripts/security/run.mjs --audit",
     "security:gate": "node scripts/security/run.mjs --gate",
