@@ -6,6 +6,7 @@
 
 import { sec } from '../harness.mjs'
 import { fs, path, require, ROOT, WORKSPACE, tmpDir, startMockServer, SENTINEL_KEY } from '../sandbox.mjs'
+import { credentialWriteProtection, credentialReset } from './privacy-credentials.mjs'
 
 const join = path.join
 
@@ -152,6 +153,9 @@ function atomicWrite() {
    * 注入手法：把 fs.writeFileSync 换成「先按 'w' 截断、只写前 N 字节、再抛 ENOSPC」——
    * 忠实还原「写到一半磁盘满」，看旧台账还在不在。 */
   taskLedgerInjection()
+
+  /* ── 凭证库（credentials）：同样是用户数据，必须受同一套保护 ────────── */
+  credentialWriteProtection()
 }
 
 function taskLedgerInjection() {
@@ -228,6 +232,7 @@ function deleteScope() {
   session.remove(idA)
   const rest = session.list().map((s) => s.id ?? s)
   sec('SEC-074', !rest.includes(idA) && rest.includes(idB), '删一条只清它自己（别的会话不受影响）')
+  credentialReset()
 }
 
 /** SEC-075：更新/迁移回滚 —— 备份可验证 */

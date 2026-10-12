@@ -5,6 +5,29 @@
 
 ## [未发布]
 
+- **修：凭证库写入保护 —— 状态不明时拒绝写 + 先落盘后换内存**（2026-10-13）。
+  `electron/core/credentials.cjs` 原来 `load()` 用一个 catch 把「没建过 / JSON 坏了 / 读不了」
+  压成同一件事（空表）→ 下一次任意 `set()` 就把空表写回去，用户 API Key 无声消失、无提示、
+  无证据。故障注入实测：把文件改成非法 JSON 后 `load()` 读到空、一次无关 `set()` 后原有
+  alpha/beta 两个 ref 从磁盘消失；另实测 `set()` **先改内存后落盘** → 落盘失败时内存显示
+  成功、磁盘其实没写；另实测 `backend='safeStorage'` 的库在无解密能力环境下做一次无关 set
+  会把 backend **重贴成 `plain`**，之后读旧条目就把 base64 密文当明文 Key 返回（2026-10-07
+  事故形状）。修法：
+  · **5 个健康态**（`ok`/`missing`/`corrupt`/`unreadable`/`undecryptable`，进程内，不改文件
+    格式、零迁移）：只有 `ok`/`missing` 可写，其余一律拒写；`missing`（首次 ENOENT）与
+    「加载后文件消失」用 `loadedOnce` 区分，后者拒写、不静默重建。
+  · **提交一致性**：`persist()` → `commit(nextData)` —— 先 `writeAtomic`、成功才换内存
+    （`cache`/`backend`），失败抛错不假报成功；`set`/`remove` 复制后提交，不原地改 cache。
+  · **加密后端保护**：不再按当前环境重贴 backend；`undecryptable` 拒写，堵住「密文被当明文」。
+  · **外部变化检测**：`load()` 记 `{size,mtimeMs}` 指纹，`commit()` 写前重新 `stat`，文件被外部
+    改动/消失就拒写（不引锁框架）。
+  · **显式 `reset({confirm:true})`**（坏库唯一出口；`confirm` 只是代码层门槛、本轮不接 UI/IPC；
+    留档失败即中止、原文件与健康态都不动）。
+  验证（隔离目录 `data/security-data` + 虚构凭证 `sk-FAKE-*`）：安全套件 SEC-073/074 新增 29 条
+  断言全 PASS；**负向实验**（临时移除「健康守卫 + 提交顺序」两道保护）→ 6 条保护断言当场变红
+  （含「拒写后原文件字节一字未变」「写入失败后内存没有被错误提交」），证明断言非恒真。
+  不触 IPC / 权限模型 / 文件格式 / 迁移。设计见 `docs/credentials写入保护-设计修订.md`。
+
 - **修：任务台账写入保护 —— 原子写 + 损坏留档**（2026-10-13）。
   `electron/core/task-io.cjs` 原来直接 `fs.writeFileSync(整个文件)`（「先截断、再写」）：写到
   一半磁盘满 / 断电 / 被杀，用户那条任务就只剩前半截。故障注入实测（写到 30 字节抛 ENOSPC）：
