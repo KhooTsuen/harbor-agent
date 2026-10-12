@@ -29,6 +29,7 @@
 | 想知道 Runtime 有哪些**对象**、哪些还没有、**要收敛成什么样** | [`Runtime领域模型.md`](Runtime领域模型.md)（设计稿 · 目标态，不是现状） |
 | 想改**记忆**功能 / 看记忆的目标态、边界与治理 | [`Memory设计.md`](Memory设计.md)（设计稿 · 目标态，不是现状） |
 | 想知道**当前架构的真实状态**（重复表达 / 多真相源 / 跨层耦合） | [`Architecture Reality Audit.md`](Architecture%20Reality%20Audit.md)（现状审计 · 2026-10-08 · **不是**设计稿） |
+| 想知道**重复/多真相源要怎么收敛**（真相源地图怎么做、分几步） | [`research/truth-map-design.md`](research/truth-map-design.md)（设计稿 · 2026-10-13 · 目标态） |
 | 改架构前后要量「行为有没有变坏」 | [`Golden Tasks.md`](Golden%20Tasks.md)（跑什么）· [`Model Interaction Baseline.md`](Model%20Interaction%20Baseline.md)（量什么 + 基线） |
 | 体检自己的数据（悬空引用 / 坏文件） | `npm run doctor`（说明在 [`数据模型.md`](数据模型.md) 末尾） |
 | 看成功率 / 恢复率 / 工具失败率 | `npm run stats`（口径写在 `electron/core/run-stats.cjs` 文件头） |
