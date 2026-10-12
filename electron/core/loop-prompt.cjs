@@ -22,11 +22,13 @@ const memory = require('./memory.cjs')
 const project = require('./project.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const promptStack = require('./prompt-stack.cjs')
+/* CE-005：persona 由「第一条真实用户消息」锁定 —— 取词与分类各只有一处 */
+const { personaOf } = require('./loop-route.cjs')
 const { environmentSection, currentTimeSection } = require('./prompt-env.cjs')
 const clarifyTurn = require('./clarify-turn.cjs')
 const machineEnv = require('./machine-env.cjs')
 const mcpHint = require('./mcp-hint.cjs')
-const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, workRules, BROWSER_GUIDE } = promptStack
+const { MODE_GUIDE, PERMISSION_GUIDE, SAFETY_GUIDE, workRules, BROWSER_GUIDE, personaGuide } = promptStack
 const contextBuilder = require('./context-builder.cjs')
 const contextWindow = require('./context-window.cjs')
 const conversationState = require('./conversation-state.cjs')
@@ -43,15 +45,10 @@ const taskHint = require('./task-hint.cjs')
 /**
  * AG-017：失败后的「进度对照」。
  *
- * 为什么在模型**明明能看到历史**的情况下还要写这个：
- * **历史会被压缩**（AG-016 的 ContextOverflow → Compact）—— 压完之后
- * 早期步骤只剩摘要里的一句话，细节就模糊了，那时候模型有可能会「保险起见
- * 从头再来」。而任务台账在磁盘上、不受压缩影响，所以在这里把
- * 「哪些成了、哪个败了」再明确说一遍，并且直说「成功的别重做」。
- *
- * 文档对这一条的描述：
- *   Step 1 ✓ / Step 2 ✓ / Step 3 ✗ → 分析失败 → 调整 Step 3 → 继续
- *   **禁止从 Step 1 重新开始**
+ * 为什么模型明明能看到历史还要写这段：**历史会被压缩**（AG-016），压完之后早期
+ * 步骤只剩摘要一句话，模型可能「保险起见从头再来」。而台账在磁盘上、不受压缩影响，
+ * 所以这里把「哪些成了、哪个败了」再说一遍，并直说「成功的别重做」
+ * （文档要求：Step 3 ✗ → 只调整 Step 3 继续，**禁止从 Step 1 重来**）。
  */
 function buildFailureNote({ done = [], failed = [] } = {}) {
   const lines = []
@@ -237,6 +234,10 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
     /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */
     browserGuide: BROWSER_GUIDE,
+    /* CE-005：persona 层 —— 由**第一条真实用户消息**锁定（纯正则、无状态，
+       所以「锁定」根本不需要落盘，也就不碰任务台账结构）。取词 / 分类各只有
+       一处：loop-route.personaOf。整场不变 ⇒ 放稳定区吃前缀缓存（见 ORDER）。 */
+    personaGuide: personaGuide(personaOf(options?.history ?? history ?? []).persona),
     taskState: [options.taskState ?? '', templateHint].filter(Boolean).join('\n\n'),
     conversationState: assembled.systemContext.conversationState,
     userPreferences: '',

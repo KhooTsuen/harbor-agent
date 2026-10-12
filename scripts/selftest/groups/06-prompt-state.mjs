@@ -198,6 +198,7 @@ export async function run() {
     'skills',
     'tools',
     'toolPolicy',
+    'personaGuide',
     'browserGuide',
     'workRules',
     'safety',

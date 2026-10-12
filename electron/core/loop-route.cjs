@@ -51,6 +51,35 @@ function lastUserText(history) {
   return typeof lastUser?.content === 'string' ? lastUser.content : ''
 }
 
+/**
+ * CE-005：这条会话里**第一条真实用户消息**（persona 首轮锁定的依据）。
+ *
+ * 「真实」= role 是 user 且 content 是**字符串**（带图的消息 content 是数组，
+ * 那不是一句需求文本，跳过）。内核在循环里 push 的那些「合成 user 消息」
+ * （完成门禁顶回去的话、转圈提醒、预算提醒）只活在**单轮内存**里、不进 history，
+ * 所以这里取到的就是用户亲手打的第一句。
+ *
+ * ★ 用第一条而不是最后一条：persona 要「首轮锁定、整个会话不变」——
+ *   最后一条每轮都变，拿它等于每轮重判，稳定前缀缓存也就废了（CE-001 的教训）。
+ */
+function firstUserText(history) {
+  for (const m of history ?? []) {
+    if (m?.role === 'user' && typeof m.content === 'string' && m.content.trim()) return m.content
+  }
+  return ''
+}
+
+/**
+ * CE-005：这条会话的 persona 决策（`{ persona, mode, confidence, reason }`）。
+ *
+ * 唯一入口 —— 分类规则在 mode-router.personaFor，取词在 firstUserText，
+ * 这里只是把两者接起来（单一真相源，别处不要再各写一份）。
+ * ★ 返回的是**决策对象**，注入时取 `.persona`（'strong' / 'fast'）。
+ */
+function personaOf(history) {
+  return modeRouter.personaFor(firstUserText(history))
+}
+
 /** @returns {{ userText: string, provider: object, model: string }} */function resolveRoute({ config, provider, options, emit }) {
   /*
    * 路由：不同活儿派不同模型。关掉时（默认）就是始终用 assistant.model。
@@ -100,4 +129,4 @@ function lastUserText(history) {
   return { userText, provider: useProvider, model: useModel }
 }
 
-module.exports = { resolveRoute, providerForRun, lastUserText }
+module.exports = { resolveRoute, providerForRun, lastUserText, firstUserText, personaOf }

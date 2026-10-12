@@ -24,6 +24,8 @@ const STABLE = [
   'environment',
   'machineEnv',
   'conversationPolicy',
+  /* CE-005：persona 层 —— 首轮锁定，整场不变，算稳定层 */
+  'personaGuide',
   'userPreferences',
   'projectInstructions',
   'skills',

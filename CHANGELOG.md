@@ -5,6 +5,32 @@
 
 ## [未发布]
 
+- **功能：任务感知 persona 注入（Phase 6 批次 1 · 强档 / 快档）**（2026-10-13）。
+  · **背景**：参考 dsh-routing-suite（「同一模型在不同任务上表现差异巨大」）——
+    按任务分类注入不同的「做派」（见 `docs/research/phase6-governance-routing-design.md`）。
+  · **分类器**（`electron/core/mode-router.cjs`）：新增 `personaFor()` —— **纯正则、零 LLM 调用**。
+    它不另写规则，而是复用已有的 `resolve()` 结果做 `mode → persona` 映射
+    （think/research/agent/code → strong，creative/chat → fast）——一份 RULES、一处真相源。
+  · **首轮锁定**（`electron/core/loop-route.cjs`）：新增 `firstUserText()` / `personaOf()` ——
+    persona 由**第一条真实用户消息**决定（跳过 system 与带图数组内容）。分类是纯函数 ⇒
+    同一条消息永远同一结果，**「锁定」不需要任何状态、不落盘、不改任务台账结构**；
+    中途想换只能靠 `spawn_subagent` 另起一条会话。
+  · **注入**（`electron/core/prompt-stack.cjs`）：新增 `personaGuide` 层，位置在
+    `conversationPolicy` **之后**（稳定区，易变区之前）—— 首轮之后逐轮不变 ⇒ 吃前缀缓存命中。
+    两档文案各一段：strong=「先想清楚再动手」，fast=「少铺垫、直接做到位」（但该说的仍要说清）。
+    提示词版本 **`prompt-stack/5` → `/6`**（`scripts/selftest/groups/93-machine-prompt.mjs` 同步）。
+  · **接口预留**（`electron/core/prompt-rules.cjs`）：`workRules()` 新增 `strictMode` 参数（**默认关**，
+    本批次**刻意不读它、不改输出**）—— 为批次 3 的打卡制 / 红队门留开关。**未实施严格模式**：
+    没有内核门禁兜底的「必须验证」只是句空话，不提前塞。
+  · **验证**：新增自检组 `142-persona-routing.mjs`（分类 / 层进提示 / 首轮锁定 / 端到端 21 条 + 1 条
+    strictMode 预留），其中**端到端**真调 `buildPromptContext` 从最终系统提示里找 `强档` / `快档`
+    文案（吸取 CE-001「局部全绿、就是没传下去」的教训）；负向实验：把接线退回 bug 版（传决策对象
+    而非 `.persona`）→ 3 条端到端断言**当场变红**，文件字节还原。`npm run verify` 退出码 0
+    （内核自检 **4127 → 4156** 项 / 0 失败）。**未碰** Runtime / IPC / 任务台账结构 / 权限模型，
+    **未碰**防闪烁三件套（useSmoothText / useAutoScroll / scrollGuard）。
+  · **已知遗留**：本轮**只做 persona，不做模型自动切换**（flash vs pro）—— 沿用既有 `router.cjs`
+    （默认关）。两级的边界是启发式（如「帮我优化一下启动速度」判快档），没有真机标定，待后续批次。
+
 - **修：UI Phase 5 遗留隐患清理（备份恢复安全 / SEC-070 空跑断言 / ResumeCard 口径）**（2026-10-13）。
   · **P0 备份恢复的「先删后建」**（`electron/core/backup.cjs` 的 `restore()`）：恢复是逐项
     `rmSync + cpSync` 的破坏性操作，而 E2 起备份已含 `tasks` / `changesets`（不可重建的硬数据）。

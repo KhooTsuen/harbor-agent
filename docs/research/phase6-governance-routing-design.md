@@ -3,6 +3,11 @@
 > 状态：**只读调研，未写任何实施代码**（2026-10-13）。
 > 参考项目：[`yjh051108/dsh-routing-suite`](https://github.com/yjh051108/dsh-routing-suite)（MIT，7.0k★）。
 > 本轮只做「摸清现状 + 出方案 + 标风险」，等确认后再进实施。
+>
+> ⚠️ **后续进度**：方向 ① 的**批次 1（persona 首轮锁定 + 注入）已实施**
+> （2026-10-13，见 `CHANGELOG.md` 的 `[未发布]`）—— `mode-router.personaFor` /
+> `loop-route.firstUserText·personaOf` / `prompt-stack.personaGuide`（`prompt-stack/6`）；
+> 方向 ②③ 仍**未实施**。本文件其余内容保持调研当时的原样，勿当现状读。
 
 ---
 

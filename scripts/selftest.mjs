@@ -9,8 +9,7 @@
  * 各组干什么读各组的文件头（都写了）。
  * **组与组之间不共享状态** —— 加新组只要在下面 GROUPS 里加一行。
  *
- * 注意：**测试全绿 ≠ 能用**。UI、会话、发送、权限这些必须真的走一遍
- * （见 AGENT.md 的验证纪律）。
+ * 注意：**测试全绿 ≠ 能用**。UI / 会话 / 发送 / 权限这些必须真的走一遍（见 AGENT.md 的验证纪律）。
  */
 
 import { report } from './selftest/harness.mjs'
@@ -22,6 +21,7 @@ import { run as fsSafety } from './selftest/groups/03-fs-safety.mjs'
 import { run as reliability } from './selftest/groups/04-reliability.mjs'
 import { run as agentLoop } from './selftest/groups/05-agent-loop.mjs'
 import { run as promptState } from './selftest/groups/06-prompt-state.mjs'
+import { run as personaRoutingGroup } from './selftest/groups/142-persona-routing.mjs'
 import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
 import { run as limits } from './selftest/groups/08-limits.mjs'
 import { run as browser } from './selftest/groups/09-browser.mjs'
@@ -279,7 +279,7 @@ const GROUPS = [
   projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
-  cdpHelpersGroup, testPromptGroup, planGateGroup,
+  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup,
   ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
 ]
 
