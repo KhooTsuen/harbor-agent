@@ -120,13 +120,10 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     return ''
   })()
   /*
-   * 他这轮明确说「你问我几个问题」→ 当场解除静音（AG-053 批④）。
-   *
-   * 界面那个「先问我想清楚」按钮做的就是**把这句话填进输入框**（他还能再补两句），
-   * 所以这里认出来就够了 —— 不必为它开一条新 IPC 通道，也不用让渲染层去猜内核状态。
-   * 静音只是一次性的「别老问了」，不是偏好，所以解除也不写盘。
-   * 为什么单独一个 clarify-turn.cjs：这段逻辑要跟工具侧（ask_user 的 muted）读同一份状态，
-   * 判断只能有一处；另外这个文件本来就贴着 300 行。
+   * 他这轮明确说「你问我几个问题」→ 当场解除静音（AG-053 批④）：界面那个「先问我想清楚」
+   * 按钮做的就是**把这句话填进输入框**（他还能再补两句），所以这里认出来就够了 —— 不必为它
+   * 开一条新 IPC 通道。静音只是一次性的「别老问了」，不是偏好，所以解除也不写盘。
+   * 判断只能有一处（要和工具侧 ask_user 的 muted 读同一份状态）—— 所以单独一个 clarify-turn.cjs。
    */
   /* 技能清单：只给名字 + 用途 + 路径，正文让模型自己按需读 */
   let skillSection = ''
@@ -234,10 +231,11 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
     /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */
     browserGuide: BROWSER_GUIDE,
-    /* CE-005：persona 层 —— 由**第一条真实用户消息**锁定（纯正则、无状态，
-       所以「锁定」根本不需要落盘，也就不碰任务台账结构）。取词 / 分类各只有
-       一处：loop-route.personaOf。整场不变 ⇒ 放稳定区吃前缀缓存（见 ORDER）。 */
-    personaGuide: personaGuide(personaOf(options?.history ?? history ?? []).persona),
+    /* CE-005：persona 层 —— 由**第一条真实用户消息**锁定。输入优先用 options.fullHistory
+       （chat.cjs 传的**完整** payload；history 是 historyLimit 截过的窗口，长会话里第一条
+       会被滑走）；子代理不传 fullHistory ⇒ 退回它自己那条（persona 天然隔离、不继承父档）。
+       整场不变 ⇒ 放稳定区吃前缀缓存。取词 / 分类各只有一处：loop-route。 */
+    personaGuide: personaGuide(personaOf(options?.fullHistory ?? options?.history ?? history ?? []).persona),
     taskState: [options.taskState ?? '', templateHint].filter(Boolean).join('\n\n'),
     conversationState: assembled.systemContext.conversationState,
     userPreferences: '',

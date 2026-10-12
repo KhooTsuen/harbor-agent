@@ -177,6 +177,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
         const result = await loop.run({
           history,
+          /* CE-005：persona 按**完整** payload 的第一条用户消息锁定（history 是按 historyLimit 截过的窗口；长会话里第一条会被滑走 → persona 会中途翻档）。只给 persona 用，模型上下文仍只用 history；子代理不传它 ⇒ 用自己那条（天然隔离）。 */
+          fullHistory: rawHistory,
           config: effective,
           workdir,
           mode,

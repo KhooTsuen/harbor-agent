@@ -79,7 +79,7 @@ export async function run() {
      CE-001 的教训就是「每一块单独测都绿、就是没人把它传下去」，所以这一步必须有。
      不传 sessionId / taskId ⇒ 不写任何快照与台账（自检不碰用户数据）。 */
   const { buildPromptContext } = require(join(ROOT, 'electron/core/loop-prompt.cjs'))
-  const systemFor = (messages) =>
+  const systemFor = (messages, extra = {}) =>
     String(
       buildPromptContext({
         config: { assistant: { name: 'Agent', maxTokens: 1000 }, tools: { permission: 'ask' } },
@@ -87,7 +87,7 @@ export async function run() {
         mode: 'pair',
         history: messages,
         threadSettings: {},
-        options: { history: messages, traceId: 'selftest-persona' },
+        options: { history: messages, traceId: 'selftest-persona', ...extra },
       })?.messages?.[0]?.content ?? '',
     )
   const strongText = systemFor([{ role: 'user', content: '帮我重构整个鉴权模块' }])
@@ -101,6 +101,39 @@ export async function run() {
       { role: 'assistant', content: '好' },
       { role: 'user', content: '你好' },
     ]).includes('强档'),
+  )
+
+  /* ══ CE-005 · 长会话：传给循环的 history 是 historyLimit 截过的窗口 ══
+     真实 bug（写这组时发现并修的）：chat.cjs 给循环的 history = `rawHistory.slice(-limit)`
+     （默认 20 条）。长会话里第一条用户消息会被**滑走** → `firstUserText(窗口)` 每轮都变
+     → persona 中途翻档（既违背「首轮锁定」，也把稳定前缀缓存打掉）。
+     修法：chat.cjs 另外把**完整** payload 传下来（`fullHistory`），只给 persona 用。
+     下面这条是它变红才会被发现的回归测试。 */
+  group('CE-005 / 长会话：完整 payload（不被截窗滑走）')
+  const chatSrc = readFileSync(join(ROOT, 'electron/handlers/chat.cjs'), 'utf8')
+  check('★ chat.cjs 把完整 payload 传下去（fullHistory: rawHistory）', /fullHistory:\s*rawHistory/.test(chatSrc))
+  check('★ loop-prompt 优先用 fullHistory', /personaOf\(options\?\.fullHistory/.test(promptSrc))
+
+  const longHistory = [
+    { role: 'user', content: '帮我重构整个鉴权模块' },
+    ...Array.from({ length: 23 }, (_, i) => ({ role: 'user', content: `闲聊第 ${i} 句` })),
+    { role: 'user', content: '你好' },
+  ]
+  check(
+    '★ 前提：截窗后第一条确实被滑走（不然这条测试没意义）',
+    loopRoute.firstUserText(longHistory) !== loopRoute.firstUserText(longHistory.slice(-20)),
+  )
+  check(
+    '★ 带完整 payload → persona 跟**第一条**（强档）',
+    systemFor(longHistory.slice(-20), { fullHistory: longHistory }).includes('强档'),
+  )
+  check(
+    '★ 只给窗口 → 跟窗口第一条走（证明这份 payload 是必要的）',
+    !systemFor(longHistory.slice(-20)).includes('强档'),
+  )
+  check(
+    '★ 子代理：只给 history 时按它自己那条判（不读会话文件、不继承父档）',
+    systemFor([{ role: 'user', content: '帮我重构这个模块' }]).includes('强档'),
   )
 
   group('CE-006 / strictMode 接口预留（批次 3 才实施）')

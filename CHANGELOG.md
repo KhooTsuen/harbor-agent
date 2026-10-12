@@ -15,6 +15,16 @@
     persona 由**第一条真实用户消息**决定（跳过 system 与带图数组内容）。分类是纯函数 ⇒
     同一条消息永远同一结果，**「锁定」不需要任何状态、不落盘、不改任务台账结构**；
     中途想换只能靠 `spawn_subagent` 另起一条会话。
+  · **★ 实施中发现并修掉一个真 bug（长会话 persona 会翻档）**：`chat.cjs` 传给循环的
+    `history` 是 `rawHistory.slice(-historyLimit)`（默认只留最近 20 条）—— 长会话里**第一条
+    用户消息会被滑走**，`firstUserText(窗口)` 每轮都在变：persona 会中途翻档，既违背
+    「首轮锁定」，又把稳定前缀缓存打掉（正好废掉这一层放稳定区的全部意义）。
+    修法：`chat.cjs` 另外把**完整** payload 当 `fullHistory` 传给循环，**只给 persona 用**
+    （模型上下文仍只用窗口 history）；`loop-prompt` 优先取 `fullHistory`、没有才退回窗口。
+    子代理只传自己那一条 history、不带 fullHistory ⇒ persona **天然隔离、不继承父会话**。
+    回归测试：造一条 25 条的会话（第一条是强档信号 + 末尾是问候），断言「带完整 payload →
+    强档」「只给窗口 → 不是强档」；两条负向实验（拆掉 chat.cjs 的传递 / 拆掉 loop-prompt 的
+    优先取用）分别令 1 条 / 2 条断言变红并字节还原。
   · **注入**（`electron/core/prompt-stack.cjs`）：新增 `personaGuide` 层，位置在
     `conversationPolicy` **之后**（稳定区，易变区之前）—— 首轮之后逐轮不变 ⇒ 吃前缀缓存命中。
     两档文案各一段：strong=「先想清楚再动手」，fast=「少铺垫、直接做到位」（但该说的仍要说清）。
