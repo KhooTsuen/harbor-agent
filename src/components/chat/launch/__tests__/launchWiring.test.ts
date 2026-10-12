@@ -88,6 +88,15 @@ describe('开屏 / 接线钉子', () => {
     expect(src).toContain("colorOf('warning')")
   })
 
+  it('★ 恢复卡与任务行吃同一份执行进展口径（Phase 5：断点续传卡别和任务行读数不一样）', () => {
+    const card = read('src/components/chat/launch/ResumeCard.tsx')
+    const row = read('src/components/chat/TaskRow.tsx')
+    for (const fn of ['execSummary', 'execProgressLabel']) {
+      expect(card).toContain(fn)
+      expect(row).toContain(fn)
+    }
+  })
+
   it('航道畅通：只认 kind=success + outcome.tests=passed（真实退出码）', () => {
     const src = read('src/components/layout/HarborEggs.tsx')
     expect(src).toContain("outcome.tests !== 'passed'")

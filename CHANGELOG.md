@@ -5,6 +5,24 @@
 
 ## [未发布]
 
+- **修：UI Phase 5 遗留隐患清理（备份恢复安全 / SEC-070 空跑断言 / ResumeCard 口径）**（2026-10-13）。
+  · **P0 备份恢复的「先删后建」**（`electron/core/backup.cjs` 的 `restore()`）：恢复是逐项
+    `rmSync + cpSync` 的破坏性操作，而 E2 起备份已含 `tasks` / `changesets`（不可重建的硬数据）。
+    旧实现两点要命 —— ① `create('before-restore')` **失败也照样往下覆盖**（等于没有退路地删掉
+    用户正在跑的任务）；② 中途失败**不回滚**，把用户停在「一半新、一半旧」的中间态。
+    修法两条底线：**留不下快照就中止**（`aborted:true`，数据一字未动）+ **失败即回滚**
+    （从刚留的快照把动过的项拷回，返回 `rolledBack` / `rolledBackAll`）。故障注入实测见 SEC-075。
+  · **P1 SEC-070 空跑断言**（`scripts/security/suites/privacy.mjs`）：原来写
+    `(backup.ITEMS ?? []).map(String)` —— ITEMS 是 `[{name,dir}]`，`String({})` 得
+    `[object Object]`，正则永不匹配 → 断言**恒真**。改为取真名，并补一条负向；负向实验证明：
+    往清单塞 `credentials.json` 时该断言**当场变红**。
+  · **P2 ResumeCard 口径对齐**（`src/components/chat/launch/ResumeCard.tsx`）：断点续传卡
+    接入与任务行同一份 `execSummary` / `execProgressLabel`，两处显示同一条任务的执行步数不再打架。
+  · **验证**：安全套件 SEC-070/075 新增断言全 PASS（`node scripts/security/run.mjs privacy`）；
+    两条负向实验（塞凭证 / 退回旧 restore）分别令断言变红并自动还原；`npm run verify` 退出码 0。
+    未碰 Runtime / IPC / 任务台账结构。测试专项拆到 `scripts/security/suites/privacy-backup.mjs`
+    （`privacy.mjs` 贴 300 行红线，沿用 credentials/changeset/session 的拆分先例）。
+
 - **改：任务行显示真实执行进展（UI Phase 5 第一批）+ 备份范围扩容**（2026-10-13）。
   · **现象**：任务行只有一个「计划 N/M 步」，且**永远卡在 0/M**。
     **断点（实测定位，见 `docs/research/ui-phase5-progress-design.md`）**：

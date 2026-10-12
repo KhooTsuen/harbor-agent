@@ -9,6 +9,7 @@ import { fs, path, require, ROOT, WORKSPACE, tmpDir, startMockServer, SENTINEL_K
 import { credentialWriteProtection, credentialReset } from './privacy-credentials.mjs'
 import { sessionWriteProtection } from './privacy-session.mjs'
 import { changesetMetaProtection } from './privacy-changeset.mjs'
+import { backupItemNameCheck, backupRestoreSafety } from './privacy-backup.mjs'
 
 const join = path.join
 
@@ -109,8 +110,8 @@ function backupNoSecrets(backup, credentials) {
   } catch {
     /* 空数据目录下可能没有可备份项 —— 不影响「产物不含密钥」的扫描 */
   }
-  const items = (backup.ITEMS ?? []).map(String)
-  sec('SEC-070', !items.some((n) => /credential/i.test(n)), `备份项里不含凭证库（${items.join(',') || '（空）'}）`)
+  /* 清单里不含凭证库（真断言 + 负向证据，见 privacy-backup.mjs） */
+  backupItemNameCheck(backup)
   for (const dir of [join(ROOT, 'data', 'security-data', 'backups'), join(ROOT, 'data', 'security-data', 'data', 'backups')]) {
     sec('SEC-070', filesContaining(dir, SENTINEL_KEY).length === 0, '备份产物里没有密钥（不当高信任导出）')
   }
@@ -243,12 +244,14 @@ function deleteScope() {
   credentialReset()
 }
 
-/** SEC-075：更新/迁移回滚 —— 备份可验证 */
+/** SEC-075：更新/迁移回滚 —— 备份可验证、恢复留快照、失败回滚 */
 function backupRoundtrip(backup) {
   const made = backup.create({})
   const listed = backup.list()
   sec('SEC-075', made?.ok !== false && Array.isArray(listed) && listed.length >= 1, `备份可列出（${Array.isArray(listed) ? listed.length : '-'} 份）`)
   sec('SEC-075', typeof backup.restore === 'function', '提供恢复入口（回滚路径存在）')
+  /* 恢复的两条底线：留不下快照就中止、中途失败要回滚（见 privacy-backup.mjs） */
+  backupRestoreSafety(backup)
 }
 
 /** SEC-076：日志保留与容量限制 */

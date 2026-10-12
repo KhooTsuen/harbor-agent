@@ -3,7 +3,9 @@
  *
  * 备份「用户自己的数据」到 data/backups/<时间戳>/。恢复就是把文件拷回去。
  *
- * 为什么只备这几样：config（配置）、memory（记忆）、sessions（对话）、skills（技能）。
+ * 为什么只备这几样：config（配置）、memory（记忆）、sessions（对话）、skills（技能）、
+ * tasks（任务台账）、changesets（改动事务）—— 这几样都**删了不可重建**。凭证库有意不备
+ * （DPAPI 密文再复制一份没意义，纯 Node 下甚至是明文；见 backup-scan.cjs 的 ITEMS 注释）。
  * 日志是排错用的、缓存能重建，备了只是浪费空间。
  * `data/errors`（内核记的错误，见 error-observer.cjs）**故意不备**：同一类东西 ——
  * 它是诊断材料，随时能用 `npm run errors --export` 再生成一份，而且留 30 天后会被自动清理。
@@ -133,8 +135,38 @@ function maybeAuto() {
 }
 
 /**
- * 恢复：先把当前数据备份一次（before-restore），再拷回去。
- * 恢复本身很危险，先留后路。
+ * 从一份快照把这几项拷回数据目录（**恢复失败时的回滚**）。
+ *
+ * 逐项：有就盖回（先删后拷，和 restore 同一套），快照里没有的就把数据目录里
+ * 那一项删掉 —— 因为恢复中途可能已经删过它、拷了一半。返回成功回滚的项。
+ */
+function rollbackFrom(snapshot, names) {
+  const from0 = path.join(backupRoot(), snapshot)
+  const done = []
+  for (const name of names) {
+    const item = ITEMS.find((it) => it.name === name)
+    if (!item) continue
+    const from = path.join(from0, name)
+    const to = path.join(DIRS.data, name)
+    try {
+      fs.rmSync(to, { recursive: item.dir, force: true })
+      if (hasContent(from)) fs.cpSync(from, to, { recursive: item.dir, force: true })
+      done.push(name)
+    } catch (error) {
+      log.error(`回滚 ${name} 失败：${error instanceof Error ? error.message : error}`)
+    }
+  }
+  return done
+}
+
+/**
+ * 恢复：先把当前数据整份留成快照（before-restore），再逐项拷回去。
+ *
+ * ★ 恢复是**破坏性**的（逐项「先删后建」），所以两条底线（2026-10-13 加固）：
+ *   ① **留不下快照就不恢复** —— 以前 `create` 失败也只是「把名字带上」继续覆盖，
+ *      等于在没有退路的情况下删掉用户正在跑的任务与会话。现在留档失败直接中止。
+ *   ② **中途失败就回滚** —— 已动过的项从刚留的快照拷回，绝不让用户停在
+ *      「一半新、一半旧（或某一项被删空）」的中间态。
  */
 function restore(name) {
   /* ★ 名字先过白名单（审计问题 14）：`restore('..\\..\\Windows')` 以前能拿任意
@@ -155,9 +187,20 @@ function restore(name) {
     }
   }
 
+  /* ★ 底线①：先留后路，留不下来就绝不往下走（不删、不拷、原数据一字未动） */
   const safety = create('before-restore')
+  if (!safety.ok) {
+    return {
+      ok: false,
+      aborted: true,
+      error: `恢复前给当前数据留快照失败（${safety.error ?? '未知原因'}）—— 已中止，未改动任何数据`,
+    }
+  }
+
   const restored = []
   const skipped = []
+  /** 已经动过的项（删/拷过）—— 回滚时就按这份名单拷回 */
+  const touched = []
 
   try {
     for (const item of ITEMS) {
@@ -168,6 +211,7 @@ function restore(name) {
         continue
       }
       const to = path.join(DIRS.data, item.name)
+      touched.push(item.name)
       /* 先删再拷：不然旧文件会混进来（比如已删的会话又活了） */
       fs.rmSync(to, { recursive: item.dir, force: true })
       fs.cpSync(from, to, { recursive: item.dir, force: true })
@@ -175,11 +219,16 @@ function restore(name) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    log.error(`恢复失败：${message}`)
+    log.error(`恢复失败：${message} —— 正在从快照 ${safety.name} 回滚`)
+    /* ★ 底线②：把动过的项拷回去，别把用户停在中间态 */
+    const rolledBack = rollbackFrom(safety.name, touched)
     return {
       ok: false,
       error: message,
-      safetyBackup: safety.ok ? safety.name : '',
+      safetyBackup: safety.name,
+      rolledBack,
+      /** 回滚是否覆盖了所有动过的项 —— 界面据此提示「数据可能停在旧/中间态」 */
+      rolledBackAll: rolledBack.length === touched.length,
     }
   }
 
@@ -191,7 +240,7 @@ function restore(name) {
     ok: true,
     restored,
     skipped,
-    safetyBackup: safety.ok ? safety.name : '',
+    safetyBackup: safety.name,
     needsRestart: true,
   }
 }

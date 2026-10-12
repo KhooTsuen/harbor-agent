@@ -3,7 +3,13 @@ import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { taskUpdate } from '@/lib/safetyApi'
 import { colorOf } from '@/lib/statusLanguage'
-import { formatUpdated, planProgressLabel, taskProgress } from '@/components/chat/taskCenterModel'
+import {
+  execProgressLabel,
+  execSummary,
+  formatUpdated,
+  planProgressLabel,
+  taskProgress,
+} from '@/components/chat/taskCenterModel'
 import type { TaskRecoveryItem } from '@/types/safety'
 
 /* ══════════════════════════════════════════════════════════════
@@ -40,6 +46,9 @@ export function ResumeCard({
       <div className="flex flex-col gap-1.5">
         {tasks.map((task) => {
           const progress = taskProgress(task)
+          /* Phase 5：真实执行进展 —— 和任务行（TaskRow）同一份口径、同一个函数，
+             断点续传卡别和任务行显示得不一样（同一条任务两处读到不同数字最误导） */
+          const exec = execProgressLabel(execSummary(task))
           const stopped = formatUpdated(task.pausedAt ?? task.updatedAt ?? 0)
           const envChanged = task.envChanged ?? []
           /* 结果不明的操作：动过，但不知道成没成 —— 比「文件被动过」更要紧的一档 */
@@ -56,6 +65,7 @@ export function ResumeCard({
                   </span>
                   <span className="mt-0.5 block text-2xs text-fg-secondary">
                     上次任务{stopped}停止 · {planProgressLabel(progress.done, progress.total)}
+                    {exec ? ` · ${exec}` : ''}
                   </span>
                   {envChanged.length > 0 ? (
                     <span className="mt-0.5 block text-2xs" style={{ color: colorOf('warning') }}>
