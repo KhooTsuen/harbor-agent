@@ -22,7 +22,7 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const { redact, scrubStorage } = require('./redact.cjs')
-const { writeAtomic } = require('./safe-write.cjs')
+const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 const { sealLine, openLineDetailed } = require('./session-crypto.cjs')
 
 const MAX_TITLE = 60
@@ -67,21 +67,48 @@ function safeTitle(input) {
   return text.length > MAX_TITLE ? `${text.slice(0, MAX_TITLE - 1)}…` : text
 }
 
+/** 已经留过档的会话文件（进程内去重）—— `list()` 每列一次会话就读一遍，不去重会刷一地 `.corrupt-*` */
+const corruptKept = new Set()
+
+/** 整篇损坏时留一份证据；同一份文件只留一次，**绝不删 / 覆盖原件** */
+function keepCorruptOnce(id, file, broken) {
+  if (corruptKept.has(file)) return
+  corruptKept.add(file)
+  const kept = keepCorruptCopy(file)
+  log.error(
+    `会话 ${id} 整篇读不出来（${broken} 行全解不开）${kept ? `，已留档 ${kept}` : '，留档也失败了'}`,
+  )
+}
+
 /**
  * 逐行读。
  *
  * 每行先解封（明文行原样返回，所以**老数据和迁移中途照样能读**）。
  * 解不开的行**跳过并计数** —— 一行坏了不能让整个会话读不出来，这是加密
  * 之后唯一新增的失败模式，也是它必须被容错的原因。
+ *
+ * ★ 「文件不在」与「读不出来 / 整篇坏了」必须分开（与 task-io / changeset 同一口径）：
+ *   · 文件不在（ENOENT）= 正常（还没建过 / 刚删）→ 静默空数组；
+ *   · 别的读错（权限 / 设备）= 出声，不能当成「空会话」把用户吓一跳；
+ *   · 整篇一行都解不开 = 文件级损坏 → 留一份 `.corrupt` 证据 + error 日志，
+ *     否则它在 `list()` 里被 `lines.length === 0` 悄悄跳过，用户只看到会话「没了」。
  */
 function readLines(id) {
   const file = fileFor(id)
-  if (!fs.existsSync(file)) return []
+  let raw = ''
+  try {
+    raw = fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') log.error(`读会话失败（${id}）：${error?.message ?? error}`)
+    return []
+  }
   const out = []
   let broken = 0
-  for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
-    const line = raw.trim()
+  let seen = 0
+  for (const rawLine of raw.split('\n')) {
+    const line = rawLine.trim()
     if (!line) continue
+    seen += 1
     const opened = openLineDetailed(line)
     if (!opened.ok) {
       broken += 1
@@ -90,11 +117,12 @@ function readLines(id) {
     try {
       out.push(JSON.parse(opened.text))
     } catch {
-      /* 半行 / 损坏行：跳过 */
+      broken += 1 /* 半行 / 损坏行：跳过并计数（以前这里不计数，等于漏报坏行） */
     }
   }
   if (broken > 0) {
     log.warn(`会话 ${id} 有 ${broken} 行解不开（换了 Windows 账户或 data/ 换机器就会出现），已跳过`)
+    if (out.length === 0 && seen > 0) keepCorruptOnce(id, file, broken)
   }
   return out
 }
@@ -122,10 +150,20 @@ function serializeLine(line) {
   return sealLine(JSON.stringify(scrubStorage(line)))
 }
 
+/*
+ * 整篇写（新建会话时写那行 meta 走这里）。
+ *
+ * ★ 走**原子写**：`fs.writeFileSync` 是「先截断、再写」——写到一半崩溃 / 磁盘满，
+ *   用户刚建的会话就只剩半行 meta。用内核唯一那份文本原子写（`safe-write.writeAtomic`），
+ *   与 task-io / credentials / changeset 同一套共用件。写失败**向调用方抛**，不吞。
+ * ★ 写成功后清掉「这份文件已留过档」的标记 —— 内容整个换了，旧标记不再代表它。
+ */
 function writeLines(id, lines) {
   fs.mkdirSync(DIRS.sessions, { recursive: true })
   const text = `${lines.map(serializeLine).join('\n')}\n`
-  fs.writeFileSync(fileFor(id), text, 'utf8')
+  const file = fileFor(id)
+  writeAtomic(file, text)
+  corruptKept.delete(file)
 }
 
 /**

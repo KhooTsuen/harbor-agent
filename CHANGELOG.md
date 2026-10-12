@@ -5,6 +5,26 @@
 
 ## [未发布]
 
+- **修：会话行写入保护 —— writeLines 原子写 + 整篇损坏不再静默**（2026-10-13）。
+  `electron/core/session-io.cjs` 的 `writeLines()` 原来直接 `fs.writeFileSync(整个文件)`
+  （「先截断、再写」）：新建会话写那行 meta 时写到一半崩溃 / 磁盘满，用户刚建的会话就只剩半行。
+  这是 E2 用户数据保护四项的最后一项（前三项：任务台账 / 凭证 / 改动事务，见下）。修法：
+  · **`writeLines` 走 `safe-write.writeAtomic`**（内核唯一那份文本原子写，**reuse 现成实现**，
+    与 task-io / credentials / changeset 同一套共用件）；写失败**向调用方抛**，不吞、不假报成功；
+    写成功后清掉「这份文件已留过档」的标记。
+  · **整篇损坏不再静默**：`readLines()` 原来把「文件不在」和「读不出来」混在一个
+    `existsSync + readFileSync` 里。现在按同一口径分开 —— ENOENT（还没建过 / 刚删）静默空数组；
+    别的读错（权限 / 设备）走 `log.error`；**整篇一行都解不开**时留一份 `.corrupt-<时间戳>`
+    （`keepCorruptCopy`）+ error 日志，否则它在 `list()` 里被 `lines.length === 0` 悄悄跳过、
+    用户只看到会话「没了」。
+  · **克制**（本轮特别要求）：留档**只在整篇损坏时**做（部分坏行仍照旧只丢那一行，保住
+    加密相关既有口径），且**进程内去重** —— `list()` 每列一次会话就读一遍，不去重会刷一地
+    `.corrupt-*`；原件**不删、不覆盖**。
+  验证（隔离目录 `data/security-data` + 虚构会话）：安全套件 SEC-073 新增 15 条断言全 PASS；
+  **负向实验**（临时把 `writeLines` 退回裸写 + `keepCorruptOnce` 置空）→ 4 条保护断言当场变红
+  （中断后内容一字未改 / 仍能读回 / 有 error 报警 / 留档一份），证明断言非恒真。
+  不触会话重写（session-compact / session-crypto）、备份范围、UI / IPC、文件格式、迁移。
+
 - **修：改动事务 meta 写入保护 —— 原子写 + 损坏留档 + 不再静默 null**（2026-10-13）。
   `electron/core/changeset.cjs` 的 `writeMeta()` 原来直接 `fs.writeFileSync(整个文件)`
   （「先截断、再写」）：写到一半磁盘满 / 断电 / 被杀，**回滚凭据 `meta.json` 就只剩前半截**。

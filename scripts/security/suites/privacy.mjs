@@ -7,6 +7,7 @@
 import { sec } from '../harness.mjs'
 import { fs, path, require, ROOT, WORKSPACE, tmpDir, startMockServer, SENTINEL_KEY } from '../sandbox.mjs'
 import { credentialWriteProtection, credentialReset } from './privacy-credentials.mjs'
+import { sessionWriteProtection } from './privacy-session.mjs'
 import { changesetMetaProtection } from './privacy-changeset.mjs'
 
 const join = path.join
@@ -160,6 +161,9 @@ function atomicWrite() {
 
   /* ── 改动事务（changeset）：meta 是回滚凭据，必须受同一套保护 ────────── */
   changesetMetaProtection()
+
+  /* ── 会话行（session-io.writeLines）：同一套保护 ─────────────────────── */
+  sessionWriteProtection()
 }
 
 function taskLedgerInjection() {
