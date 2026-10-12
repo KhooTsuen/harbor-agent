@@ -37,6 +37,7 @@
     "errors": "node scripts/errors.mjs",
     "doctor": "node scripts/data-doctor.mjs",
     "stats": "node scripts/run-stats.mjs",
+    "map": "node scripts/project-map.mjs",
     "security": "node scripts/security/run.mjs",
     "security:audit": "node scripts/security/run.mjs --audit",
     "security:gate": "node scripts/security/run.mjs --gate",

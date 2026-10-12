@@ -26,8 +26,13 @@ import {
   runAll,
 } from './check-rules.mjs'
 
-/* 行数检查复用 tools/line-limit.mjs —— 临时根里也要放一份它的副本 */
-const withTool = (files) => tempRoot({ 'tools/line-limit.mjs': readRepoFile('tools/line-limit.mjs'), ...files })
+/* 行数检查复用 tools/line-limit.mjs —— 临时根里放它的副本（它自己又 import 了 line-count.mjs，也要一起放） */
+const withTool = (files) =>
+  tempRoot({
+    'tools/line-limit.mjs': readRepoFile('tools/line-limit.mjs'),
+    'tools/line-count.mjs': readRepoFile('tools/line-count.mjs'),
+    ...files,
+  })
 
 test('行数：全在 300 行以内就通过', () => {
   const { root, done } = withTool({ 'src/small.ts': lines(10) })

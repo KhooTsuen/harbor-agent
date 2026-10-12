@@ -13,6 +13,10 @@
  *   node tools/line-limit.mjs --warn=270      # 「接近红线」的告警带（默认 270，只提示、不判红）
  *   node tools/line-limit.mjs --all           # 连合规的也列出来（看余量）
  *
+ * 行数口径（末尾换行算不算一行、code-only 怎么去注释）**不在这个文件里** ——
+ * 它是 [`line-count.mjs`](line-count.mjs) 的一份定义，这里 import 来用
+ * （和 `scripts/project-map.mjs` 共用同一份）。本文件只管「怎么扫、怎么判、怎么报」。
+ *
  * 两条踩过的坑，写在这里免得再踩：
  *   · **末尾换行不算一行** —— 不然一个正好 300 行的文件会被数成 301（真踩过，
  *     那一轮扫描报了 51 个"超标"，其中一大批其实是刚好合规）。
@@ -21,6 +25,8 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+/* 行数口径的唯一实现 —— 和 scripts/project-map.mjs（npm run map）共用这一份 */
+import { CODE_EXTS, countCodeLines, countLines } from './line-count.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const argv = process.argv.slice(2)
@@ -57,45 +63,6 @@ const SKIP = new Set([
   '.git',
   '.vscode',
 ])
-const EXTS = new Set(['.ts', '.tsx', '.cjs', '.mjs'])
-
-/**
- * 只留代码行：去掉行注释、块注释、以及纯注释行。
- *
- * 这是个**近似**（不解析字符串里的 `//`），但对"数行数"这个用途足够了，
- * 而且它服务的是一条更重要的原则：**解释"为什么"的注释不该被行数惩罚**
- * （AGENT.md 自己说"踩过的坑写进去 —— 那是最值钱的部分"）。
- */
-function codeLineCount(text) {
-  const out = []
-  let inBlock = false
-  for (const raw of text.split('\n')) {
-    let line = raw
-    if (inBlock) {
-      const end = line.indexOf('*/')
-      if (end < 0) continue
-      line = line.slice(end + 2)
-      inBlock = false
-    }
-    /* 去掉块注释（可能跨行） */
-    for (;;) {
-      const start = line.indexOf('/*')
-      if (start < 0) break
-      const end = line.indexOf('*/', start + 2)
-      if (end < 0) {
-        line = line.slice(0, start)
-        inBlock = true
-        break
-      }
-      line = line.slice(0, start) + line.slice(end + 2)
-    }
-    /* 去掉行注释（粗略：不区分是否在字符串里） */
-    const slash = line.indexOf('//')
-    if (slash >= 0) line = line.slice(0, slash)
-    if (line.trim()) out.push(line)
-  }
-  return out.length
-}
 
 const rows = []
 const walk = (dir) => {
@@ -119,11 +86,11 @@ const walk = (dir) => {
       continue
     }
     const dot = name.lastIndexOf('.')
-    if (!EXTS.has(name.slice(dot))) continue
+    if (!CODE_EXTS.has(name.slice(dot))) continue
     const text = readFileSync(full, 'utf8')
-    /* 末尾换行不算一行 —— 见文件头注释 */
-    const total = text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
-    const n = CODE_ONLY ? codeLineCount(text) : total
+    /* 末尾换行不算一行 —— 口径在 tools/line-count.mjs */
+    const total = countLines(text)
+    const n = CODE_ONLY ? countCodeLines(text) : total
     rows.push({ file: relative(ROOT, full), n, total })
   }
 }
