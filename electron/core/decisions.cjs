@@ -21,6 +21,9 @@
  * ⚠️ 这里**不写「会涨的数字」**（硬约束 8）：类型几个看 `ALL_DECISION_TYPES.length`。
  */
 
+/* 决策卡事件名从**一处真值**取（event-types.cjs）—— 不再各写一份字面量（硬约束 9） */
+const { DECISION_EVENTS } = require('./event-types.cjs')
+
 /** 决策类型（新增一种在这里加，别在调用处再写一套字符串） */
 const DECISION_TYPES = {
   /** 写操作审批：只有明确同意才放行，超时**算拒绝** */
@@ -32,7 +35,7 @@ const DECISION_TYPES = {
 const ALL_DECISION_TYPES = Object.values(DECISION_TYPES)
 
 /** 「问用户」那条事件的类型名（两条往返共用一条通道、一个事件名） */
-const CONFIRM_REQUEST = 'confirm_request'
+const CONFIRM_REQUEST = DECISION_EVENTS.request
 
 /**
  * 每种决策的「脾气」。新增类型在这里加一条 —— 调用处别再各写一套。
@@ -45,13 +48,13 @@ const DECISION_META = {
   [DECISION_TYPES.APPROVAL]: {
     idPrefix: 'cfm',
     timeoutPolicy: 'reject',
-    /** 超时 / 作废时要发给渲染层的「收卡」事件名 */
-    timeoutEvent: 'confirm.timeout',
+    /** 超时 / 作废时要发给渲染层的「收卡」事件名（真值在 event-types.cjs） */
+    timeoutEvent: DECISION_EVENTS.approvalTimeout,
   },
   [DECISION_TYPES.CLARIFY]: {
     idPrefix: 'clr',
     timeoutPolicy: 'accept-default',
-    timeoutEvent: 'clarify.timeout',
+    timeoutEvent: DECISION_EVENTS.clarifyTimeout,
   },
 }
 

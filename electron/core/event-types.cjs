@@ -41,6 +41,20 @@ const AGENT_EVENTS = [
 ]
 
 /**
+ * 决策卡事件名（P0-5 / 硬约束 9）：**真值在这里**，decisions.cjs 从这里 require。
+ *
+ * 以前 decisions.cjs 各写一份字面量（'confirm_request' / 'confirm.timeout' /
+ * 'clarify.timeout'）—— 改一处漏一处没人报红，自检 126 也扫不到它：126 只抠 emit
+ * 参数里**以字符串字面量写的** type，而 chat-confirm 发的是 `decisions.CONFIRM_REQUEST`
+ * 这种**变量**。2026-10-13 收敛成一处。
+ */
+const DECISION_EVENTS = {
+  request: 'confirm_request',
+  approvalTimeout: 'confirm.timeout',
+  clarifyTimeout: 'clarify.timeout',
+}
+
+/**
  * 主进程推给渲染层的 type 全集。
  *
  * 分档（改这里时每档都要顾及）：
@@ -66,10 +80,8 @@ const CHAT_EVENT_TYPES = [
   'turn_start',
   'turn_end',
 
-  /* 决策卡：发出 / 两类卡超时作废 */
-  'confirm_request',
-  'confirm.timeout',
-  'clarify.timeout',
+  /* 决策卡：发出 / 两类卡超时作废（真值见上面 DECISION_EVENTS，别在这再写一套字面量） */
+  ...Object.values(DECISION_EVENTS),
 
   /* 一轮结束 */
   'done',
@@ -94,4 +106,4 @@ const CHAT_EVENT_TYPES = [
   'route',
 ]
 
-module.exports = { AGENT_EVENTS, CHAT_EVENT_TYPES }
+module.exports = { AGENT_EVENTS, CHAT_EVENT_TYPES, DECISION_EVENTS }

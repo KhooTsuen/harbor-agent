@@ -5,6 +5,20 @@
 
 ## [未发布]
 
+- **检查：C2 第一条 —— 决策卡事件名收敛成一处真值**（2026-10-13）。
+  审计 §3.5 早写了、一直没钉的缝：`electron/core/decisions.cjs` 的 3 个事件名
+  （`confirm_request` / `confirm.timeout` / `clarify.timeout`）与
+  `electron/core/event-types.cjs` 的 `CHAT_EVENT_TYPES` **各写一份字面量**，改一处漏一处。
+  自检 126 也扫不到它 —— 126 只抠 `emit({ type: '…' })` 的**字面量**，而
+  `handlers/chat-confirm.cjs` 发的是 `emit({ type: decisions.CONFIRM_REQUEST })` 这种**变量**。
+  · `event-types.cjs`：新增真值 `DECISION_EVENTS`，`CHAT_EVENT_TYPES` 里那 3 项改为
+    `...Object.values(DECISION_EVENTS)` 展开；`decisions.cjs` 改为 `require` 取用。
+  · 自检：新增 `141-decision-event-names`（钉「真值 ∈ 清单 + 使用处对齐 + 源码不再有字面量」）；
+    `126-event-types` 的 `collect` 补上「`...Object.values(DECISION_EVENTS)` 展开」的抠取
+    （不补它会因抠不到那 3 个名字而报红）。
+  · 登记：`scripts/contracts.mjs` 的 `decision-event-names` 由 `pin: null` → `141-decision-event-names`。
+  不触 IPC 通道清单 / 权限模型 / 任务台账 / 数据结构 / 迁移。
+
 - **修：CI 连红 15 次 —— 下载文件名的清洗「看平台办事」**（2026-10-12）。
   `electron/core/download-intake.cjs` 的 `safeName()` 用 `path.basename()` 去路径，而它
   **Windows 认 `\` 当分隔符、Linux 不认**：同一个 `a/b\c:d?.zip` 在开发机（Windows）清成

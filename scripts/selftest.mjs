@@ -2,7 +2,6 @@
  * 内核单元测试
  *
  * 直接 require core/ 下的模块，不需要 Electron、不联网。
- *
  *   node scripts/selftest.mjs
  *
  * 结构（原本是一个 1193 行的文件，拆开之后好读也好定位）：**分组清单见下面 GROUPS**
@@ -157,6 +156,7 @@ import { run as browseOpsGroup } from './selftest/groups/137-browse-ops.mjs'
 import { run as browseHistoryGroup } from './selftest/groups/138-browse-history.mjs'
 import { run as browseSettleGroup } from './selftest/groups/139-browse-settle.mjs'
 import { run as shellHeartbeatGroup } from './selftest/groups/140-shell-heartbeat.mjs'
+import { run as decisionEventNamesGroup } from './selftest/groups/141-decision-event-names.mjs'
 
 const GROUPS = [
   basics,
@@ -280,7 +280,7 @@ const GROUPS = [
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
   cdpHelpersGroup, testPromptGroup, planGateGroup,
-  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup,
+  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
 ]
 
 async function main() {

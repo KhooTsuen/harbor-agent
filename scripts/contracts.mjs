@@ -68,8 +68,8 @@ export const CONTRACTS = [
     name: '决策卡事件名（confirm_request / *.timeout）',
     sot: 'electron/core/event-types.cjs',
     mirrors: ['electron/core/decisions.cjs'],
-    pin: null,
-    driftConsequence: '静默出错',
+    pin: '141-decision-event-names',
+    driftConsequence: '不一致但报错',
   },
 ]
 

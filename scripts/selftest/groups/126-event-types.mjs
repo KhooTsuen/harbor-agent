@@ -1,4 +1,4 @@
-import { join, readFileSync, ROOT, fsCore } from '../env.mjs'
+import { join, readFileSync, require, ROOT, fsCore } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
@@ -21,6 +21,10 @@ import { check, group } from '../harness.mjs'
      写死的清单会漂（新增一个发事件的模块没人记得补）—— 判据跟着源码走就不会。
    ══════════════════════════════════════════════════════════════ */
 
+/* 决策卡事件名（P0-5 收敛后）：`CHAT_EVENT_TYPES` 里由 `...Object.values(DECISION_EVENTS)`
+   展开 —— 正则抠不到展开号，所以在这里 require 真值、由 collect 补上。 */
+const { DECISION_EVENTS } = require(join(ROOT, 'electron/core/event-types.cjs'))
+
 const pickStrings = (body) => [...body.matchAll(/'([^']+)'/g)].map((m) => m[1])
 const sorted = (a) => [...a].sort()
 const same = (a, b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b))
@@ -40,10 +44,17 @@ function grabArray(src, decl) {
   return m ? m[1] : ''
 }
 
-/** 数组体 → 名字集合。带上 `...AGENT_EVENTS` 展开的生命周期名（正则抠不到展开号） */
+/**
+ * 数组体 → 名字集合。补上**展开号**带来的名字（正则抠不到 `...` 展开）：
+ *   · `...AGENT_EVENTS`                    → 生命周期名（调用方传入）
+ *   · `...Object.values(DECISION_EVENTS)`  → 决策卡事件名（P0-5 收敛后由它展开）
+ */
 function collect(body, agentNames) {
   const set = new Set(pickStrings(body))
   if (/\.\.\.AGENT_EVENTS/.test(body)) for (const n of agentNames) set.add(n)
+  if (/\.\.\.Object\.values\(DECISION_EVENTS\)/.test(body)) {
+    for (const n of Object.values(DECISION_EVENTS)) set.add(n)
+  }
   return [...set]
 }
 
