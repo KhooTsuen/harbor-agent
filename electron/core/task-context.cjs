@@ -153,6 +153,10 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = 
     const head = `${isCurrent ? '▶' : '·'} [${task.status}] ${task.title || '(无标题)'}`
     const lines = [head]
     if (task.goal) lines.push(`  目标：${String(task.goal).slice(0, 160)}`)
+    /* CE-007：北极星回显 —— **每轮都注入**（taskState 是**易变区**，动它不碰稳定前缀缓存）。
+       治的是长任务跑偏：模型每轮都看得见「这活到底为了什么、做成什么样算完成」。
+       老任务没有 star（migrate 补成 ''）→ 这行不出现，行为与升级前一致。 */
+    if (task.star) lines.push(`  北极星：${String(task.star).slice(0, 200)}`)
 
     if (isCurrent) {
       const note = steering.steeringNote({ task, userText })
@@ -244,13 +248,19 @@ function capturePlan({ taskId = '', content = '' } = {}) {
   const lastSteering = Number((task?.steering ?? []).at(-1)?.at ?? 0)
   const lastPlanAt = Number((task?.planVersions ?? []).at(-1)?.at ?? 0)
   const reason = lastSteering > lastPlanAt ? '按你的改动重新规划' : ''
-  const result = taskCore.setPlan(taskId, block.steps, { title: block.title, reason })
+  const result = taskCore.setPlan(taskId, block.steps, {
+    title: block.title,
+    reason,
+    /* CE-007：北极星（计划块里「北极星：」那一行）随计划一起交下去，首次定格 */
+    star: block.star,
+  })
   if (!result || !result.changed) return null
   return {
     plan: result.task.plan,
     version: result.version,
     reason: result.reason,
     title: result.title ?? '',
+    star: result.task.star ?? '',
   }
 }
 

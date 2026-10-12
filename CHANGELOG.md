@@ -5,6 +5,33 @@
 
 ## [未发布]
 
+- **功能：脑暴对齐与北极星锚定（Phase 6 批次 2）**（2026-10-13）。
+  · **背景**：参考 dsh-routing-suite 的「北极星」—— 复杂任务先与用户对齐，再定稿一句
+    「做成什么样算完成」的目的宣言，之后每轮回显，防长任务跑偏（见
+    `docs/research/phase6-governance-routing-design.md` 的批次 2 标注）。
+  · **对齐复用 `ask_user`（不新增任何工具）**：`prompt-rules.cjs` 的 `CLARIFY_RULE` 补一条
+    触发条件「多步的大活 → 先对齐做成什么样算完成」；既有的「≤3 题 / 2–4 选项 / 必带
+    defaultValue」约束原样保留（142 组 + 143 组都钉着）。
+  · **新增 `task.star` 字段（本批次唯一数据结构变更）**：与 `goal` **分开存**，保护
+    「用户原话」的纯净语义。初值 `''`（`task-create.cjs`）；`update()` 白名单加 `'star'`
+    （否则补丁会被静默丢掉）；`task-plan.cjs` 新增 `STAR_LINE` 解析（只认**显式**写的
+    `北极星：…` / `star: …` 一行，**不解析自然语言猜测**）、`normalizeStar` 归一化。
+  · **北极星首次定格**：`recordVersion` 里 `!task.star && star` 才写入 —— 模型每轮重发
+    计划块、措辞会飘，漂了就失去锚点意义（与任务名「只采纳一次」同一个道理）。
+    `setPlan` 在 `starChanged` 时也写盘（star 与 plan 是两个独立字段）。
+  · **★ 老数据迁移安全（本批次重中之重）**：`task-plan.migrate` 在**内存里**把老任务
+    缺的 `star` 补成 `''`（沿用既有 `parentTaskId` 的迁就规矩，**不落盘、不改老文件**）。
+    实测：升级前建的台账（无 `star`、无 `planVersions`）读得出来、`star === ''`、
+    `goal` 原样保留、磁盘文件一个字节没动（143 组的「老数据迁移」分节）。
+  · **回显在易变区**：`task-context.cjs` 的 `buildTaskState` 每轮注入
+    `北极星：<star>`（`taskState` 层在**易变区**，动它不碰稳定前缀缓存）。老任务
+    `star` 为空 → 该行不出现，行为与升级前一致。**批次 1 的 persona 路由逻辑未动。**
+  · **落盘走 `safe-write.writeAtomic`**：`star` 只经 `task-io.write`（E2 原子写底座），
+    台账写盘没有第二处（143 组钉了这条）。
+  · **验证**：`npm run verify` 退出码 0；内核自检 **4162 → 4200**（+38，新组 143）；
+    三条**负向实验**（migrate 不补空 / update 白名单去掉 star / 去掉回显）分别令断言变红
+    并自动还原（字节一致）；未碰 Runtime / IPC / 权限模型 / 防闪烁三件套；不实施 strictMode。
+
 - **功能：任务感知 persona 注入（Phase 6 批次 1 · 强档 / 快档）**（2026-10-13）。
   · **背景**：参考 dsh-routing-suite（「同一模型在不同任务上表现差异巨大」）——
     按任务分类注入不同的「做派」（见 `docs/research/phase6-governance-routing-design.md`）。

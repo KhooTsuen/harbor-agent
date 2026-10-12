@@ -143,8 +143,11 @@ const BROWSER_GUIDE = [
  *   /5 → /6 —— 加 `personaGuide` 层（CE-005：任务感知 persona，强档 / 快档，
  *              由首轮消息锁定）——稳住强档任务的规划质量、砍掉快档任务的多余铺垫。
  *              位置在 conversationPolicy 之后（稳定区），见 ORDER 里的注释。
+ *   /6 → /7 —— 计划块格式加一行可选 `北极星：一句话`（CE-007：脑暴对齐后定稿的
+ *              目的宣言）；`CLARIFY_RULE` 补一条「多步的大活先对齐」触发条件。
+ *              （北极星**本身**注入在易变区 taskState，不占这里，稳定前缀照样命中。）
  */
-const VERSION = 'prompt-stack/6'
+const VERSION = 'prompt-stack/7'
 
 /*
  * 层的顺序 = 模型看到的顺序。

@@ -16,6 +16,15 @@ const crypto = require('node:crypto')
 const TITLE_LINE = /^(?:#{1,3}\s*(.+)|(?:任务名|任务|名称|name|title)\s*[:：]\s*(.+))$/i
 
 /**
+ * CE-007：计划块里的**北极星**那一行（`北极星：一句话` / `star: ...`）。
+ *
+ * 独立于任务名与步骤：它既不是名字、也不该混进步骤列表（否则注入台账时会
+ * 显示成「一步」）。**只认显式写了前缀的行** —— 不去猜自然语言（本项目反复警惕
+ * 「用正则解析模型自然语言」）。和标题行一样，是模型**主动声明**的结构化内容。
+ */
+const STAR_LINE = /^(?:北极星|目的宣言|北极星宣言|north\s*star|star)\s*[:：]\s*(.+)$/i
+
+/**
  * 解析模型给的 ```plan 块。
  *
  * 约定：回复里出现一个 ```plan 围栏块。**第一行可以是任务名**
@@ -30,18 +39,27 @@ const TITLE_LINE = /^(?:#{1,3}\s*(.+)|(?:任务名|任务|名称|name|title)\s*[
  * 不用 function calling 让模型「填计划」，是因为计划本身要给人看，
  * 而工具调用是给机器看的 —— 混在一起两边都不好用。
  *
- * @returns {{ title: string, steps: string[] }}
+ * @returns {{ title: string, steps: string[], star: string }}
  */
 function parsePlanBlock(text) {
   const match = /```(?:plan|计划|task|任务)\s*\n([\s\S]*?)```/i.exec(String(text ?? ''))
-  if (!match) return { title: '', steps: [] }
+  if (!match) return { title: '', steps: [], star: '' }
 
   let title = ''
+  let star = ''
   const steps = []
   let first = true
   for (const raw of match[1].split('\n')) {
     const line = raw.trim()
     if (!line) continue
+
+    /* CE-007：北极星那一行 —— 既不是任务名、也不算一步（**先于两者**判断）。
+       放在这里（而不是只认第一行）：它可能写在任务名上面、也可能写在下面。 */
+    const starred = STAR_LINE.exec(line)
+    if (starred) {
+      if (!star) star = normalizeStar(starred[1])
+      continue
+    }
 
     /* 只有**第一行**才可能是任务名 —— 否则「步骤里带个 #」也会被当成名字 */
     if (first) {
@@ -57,7 +75,7 @@ function parsePlanBlock(text) {
     if (step.length > 0 && step.length < 200) steps.push(step)
   }
 
-  return { title, steps: steps.slice(0, 20) }
+  return { title, steps: steps.slice(0, 20), star }
 }
 
 /** 只取计划条目（老接口，行为不变） */
@@ -77,6 +95,20 @@ function normalizeTitle(raw) {
     .replace(/[：:。，,；;]+$/, '')
     .trim()
   return one.length > 60 ? `${one.slice(0, 59)}…` : one
+}
+
+/**
+ * CE-007：北极星归一化 —— 压空白、去 markdown/引号、掐 200 字。
+ *
+ * 和任务名一样要短：它每轮都会进 taskState（易变区），长了就是常驻的 token 开销。
+ */
+function normalizeStar(raw) {
+  const one = String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^#+\s*/, '')
+    .replace(/^["'`「『]+|["'`」』]+$/g, '')
+    .trim()
+  return one.length > 200 ? `${one.slice(0, 199)}…` : one
 }
 
 /** 口语前缀：「继续优化 Agent」是聊天，任务该叫「优化 Agent」 */
@@ -150,16 +182,23 @@ function fingerprint(plan) {
  *
  * @param {object} task 任务记录（原地改）
  * @param {string[]} plan 新计划
- * @param {{ reason?: string, at?: number, title?: string }} [options] title = 模型给的任务名
- * @returns {{ changed: boolean, version: number, reason: string, title: string }|null} 计划为空时 null
+ * @param {{ reason?: string, at?: number, title?: string, star?: string }} [options] title = 模型给的任务名，star = 北极星（首次定格）
+ * @returns {{ changed: boolean, version: number, reason: string, title: string, star: string, starChanged: boolean }|null} 计划为空时 null
  */
-function recordVersion(task, plan, { reason = '', at = Date.now(), title = '' } = {}) {
+function recordVersion(task, plan, { reason = '', at = Date.now(), title = '', star = '' } = {}) {
   if (!task || !Array.isArray(plan) || plan.length === 0) return null
+
+  /* CE-007：北极星**首次给出的那一句定格**（后续计划块再带也不覆盖）——
+     和任务名同一个道理：模型每轮重发计划块、措辞会飘，漂了就失去「锚点」的意义。
+     只认显式声明的那一行（parsePlanBlock 抠出来的），不是猜自然语言。 */
+  const nextStar = !task.star && star ? normalizeStar(star) : ''
+  if (nextStar) task.star = nextStar
+  const starChanged = nextStar !== ''
 
   const versions = Array.isArray(task.planVersions) ? task.planVersions : []
   const current = versions.length > 0 ? versions[versions.length - 1].plan : task.plan
   if (Array.isArray(current) && current.length > 0 && fingerprint(current) === fingerprint(plan)) {
-    return { changed: false, version: versions.length, reason: '', title: task.title || '' }
+    return { changed: false, version: versions.length, reason: '', title: task.title || '', star: task.star || '', starChanged }
   }
 
   const label = reason || (versions.length === 0 ? '初始计划' : '重新规划')
@@ -169,7 +208,7 @@ function recordVersion(task, plan, { reason = '', at = Date.now(), title = '' } 
   task.planHash = fingerprint(plan)
   /* AG-027：模型顺手给的任务名（只在任务还没有自己的名字时才采纳） */
   adoptTitle(task, title)
-  return { changed: true, version: versions.length, reason: label, title: task.title || '' }
+  return { changed: true, version: versions.length, reason: label, title: task.title || '', star: task.star || '', starChanged }
 }
 
 /**
@@ -181,6 +220,9 @@ function migrate(task) {
   /* 子代理：老任务没有 parentTaskId（读出来是 undefined），补成 ''。
      在**内存里补**、不落盘 —— 老数据一个字节都不动（沿用本文件的迁就规矩）。 */
   if (task.parentTaskId === undefined) task.parentTaskId = ''
+  /* CE-007：老任务没有 star（读出来是 undefined），补成 '' —— 同上，只在内存里补。
+     不补的话注入 taskState 时 `String(undefined)` 会写成「北极星：undefined」。 */
+  if (task.star === undefined) task.star = ''
   if (Array.isArray(task.planVersions)) return task
   const plan = Array.isArray(task.plan) ? task.plan : []
   task.planVersions = []
@@ -233,6 +275,7 @@ module.exports = {
   parsePlan,
   parsePlanBlock,
   normalizeTitle,
+  normalizeStar,
   deriveTitle,
   fallbackTitle,
   adoptTitle,

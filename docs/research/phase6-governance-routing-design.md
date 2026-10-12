@@ -7,7 +7,10 @@
 > ⚠️ **后续进度**：方向 ① 的**批次 1（persona 首轮锁定 + 注入）已实施**
 > （2026-10-13，见 `CHANGELOG.md` 的 `[未发布]`）—— `mode-router.personaFor` /
 > `loop-route.firstUserText·personaOf` / `prompt-stack.personaGuide`（`prompt-stack/6`）；
-> 方向 ②③ 仍**未实施**。本文件其余内容保持调研当时的原样，勿当现状读。
+> 方向 ② 的**批次 2（脑暴对齐 + 北极星锚定）已实施**（2026-10-13）——
+> `task.star` 字段（与 `goal` 分开存）/ `task-plan.STAR_LINE` 解析 / `buildTaskState` 每轮
+> 回显（易变区）/ `prompt-stack/7`（`CLARIFY_RULE` 补「多步的大活先对齐」）；**方向 ③
+> （打卡制 / 红队门）与 `strictMode` 仍未实施**。本文件其余内容保持调研当时的原样，勿当现状读。
 
 ---
 

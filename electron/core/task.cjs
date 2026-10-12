@@ -45,6 +45,8 @@ function update(id, patch) {
   for (const key of [
     'title',
     'goal',
+    /* CE-007：北极星（Phase 6 批次 2）—— 由计划块的「北极星：」那一行捕获并落定 */
+    'star',
     'status',
     'result',
     'projectId',
@@ -155,9 +157,10 @@ function setPlan(id, plan, options = {}) {
   if (!task) return null
   const version = recordVersion(task, plan, options)
   if (!version) return null
-  if (version.changed) {
+  /* CE-007：计划没变但**北极星**刚落定，也要写盘（star 与 plan 是两个独立字段） */
+  if (version.changed || version.starChanged) {
     /* AG-012：顺手记下「下一步」—— 重启后不必把整份计划再喂一遍 */
-    task.nextAction = nextActionOf(plan)
+    if (version.changed) task.nextAction = nextActionOf(plan)
     task.updatedAt = io.monotonicNow()
     io.write(task)
   }

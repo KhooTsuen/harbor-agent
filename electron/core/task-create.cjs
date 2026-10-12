@@ -37,6 +37,12 @@ function create({
     /* AG-027：任务名**不取聊天原句**，从里面提炼动作名；模型在计划块里给了 `# 名字` 会覆盖它 */
     title: fallbackTitle(goal),
     goal: String(goal ?? ''),
+    /* CE-007（Phase 6 批次 2）：北极星 —— 用户对齐后**定稿**的一句「目的宣言」。
+       ★ 与 goal **分开存**：goal 是用户原话（纯净语义，别拿它当别的东西用），
+       star 是提炼出来的「做成什么样算完成」，每轮回显在 taskState（易变区）防跑题。
+       老任务没有这个字段 —— 读出来是 undefined，`task-plan.migrate` 在内存里补成 ''
+       （不落盘、不迁移重写，沿用本项目的迁就规矩）。 */
+    star: '',
     status: 'running',
     mode,
     sessionId,

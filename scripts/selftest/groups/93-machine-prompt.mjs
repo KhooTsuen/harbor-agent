@@ -103,8 +103,8 @@ export async function run() {
    * 钉死是故意的 —— 一处文案改了版本没动，台账上就分不出「改前改后」。
    */
   check(
-    '提示词版本已升到 /6（CE-005：personaGuide 层）',
-    promptStackCore.VERSION === 'prompt-stack/6',
+    '提示词版本已升到 /7（CE-007：北极星那一行）',
+    promptStackCore.VERSION === 'prompt-stack/7',
   )
 
   const { buildPromptContext } = require(join(ROOT, 'electron/core/loop-prompt.cjs'))
