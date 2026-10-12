@@ -127,6 +127,11 @@ export interface AppConfig {
     planFirst: boolean
     verifyAfterEdit: boolean
     /**
+     * CE-008 严格模式（默认关）：每步强制验证 —— 有未验证的写操作时
+     * 内核按 `task.steps` 的结构化事实硬顶回来（`core/task-strict.cjs`）。
+     */
+    strictMode: boolean
+    /**
      * 开工前要不要先问清楚（AG-053，批④ 接上界面）。
      * ⚠️ 和内核那侧**同名同义**：`core/clarify-config.cjs` 是这四个值的唯一真相源
      * （默认值 + 夹取规则），这里只声明形状。

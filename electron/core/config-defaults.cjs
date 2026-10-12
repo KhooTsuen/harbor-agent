@@ -91,6 +91,8 @@ const DEFAULTS = {
     ...require('./scale-config.cjs').DEFAULTS,
     /** 验证阶段：改完代码主动跑一次验证命令 */
     verifyAfterEdit: true,
+    /** CE-008 严格模式（默认关）：未验证的写操作会被内核硬顶回来（见 core/task-strict.cjs） */
+    strictMode: false,
   },
 
   tools: {

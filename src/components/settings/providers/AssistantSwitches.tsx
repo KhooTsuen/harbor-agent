@@ -117,6 +117,14 @@ export function AssistantSwitches() {
       >
         改完自动验证
       </Toggle>
+      {/* CE-008：严格模式（默认关）—— 内核按 task.steps 硬拦，不是提示词软约束 */}
+      <Toggle
+        checked={a.strictMode === true}
+        onChange={(v) => void patchAssistant({ strictMode: v })}
+        title="更严的一档：每累计 3 次写操作、或勾掉计划后没跑命令，就会被顶回去先验证；收尾时有未验证的写操作不许收工（内核硬门禁，默认关）"
+      >
+        严格模式：每步强制验证
+      </Toggle>
       <Toggle
         checked={a.streamOutput !== false}
         onChange={(v) => void patchAssistant({ streamOutput: v })}

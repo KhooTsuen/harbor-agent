@@ -13,6 +13,8 @@
 
 const taskCore = require('./task.cjs')
 const { progressOf, isDone } = require('./task-plan.cjs')
+/* CE-008：严格模式的判据/状态/话术全在 task-strict.cjs（这边只接线） */
+const strict = require('./task-strict.cjs')
 
 /**
  * 组装注入文本。没有未完成任务就返回空串（调用方据此不注入这一层）。
@@ -50,12 +52,34 @@ function isContinueIntent(text) {
   return CONTINUE_RE.some((re) => re.test(t))
 }
 /**
+ * CE-008：严格模式的收尾检查① —— 有未验证的写操作就不许收工。
+ * 判据/话术在 `task-strict.cjs`；这里只负责「什么时候问它、账怎么记」。
+ * 非严格模式（默认）→ 原样放行，行为与升级前一字不差。
+ */
+function strictStop({ task, seen, blocks, strictMode }) {
+  if (!strict.strictEnabled(strictMode)) return { continue: false, seen }
+  const backlog = strict.strictBacklog(task)
+  const snap = `w${backlog}`
+  if (backlog < 1 || seen.strictWrites === snap) return { continue: false, seen }
+  return {
+    continue: true,
+    message: strict.strictStopMessage(backlog),
+    seen: { ...seen, blocks: blocks + 1, strictWrites: snap },
+  }
+}
+
+/**
  * 完成门禁：模型想收工时，判断要不要把它顶回去。
  *
+ * `strictMode`（CE-008）：严格模式下多一道「有未验证的写操作 → 不许收工」
+ * （模型想结束是唯一能拦住收尾的时机）。未传 = 问 config（见 task-strict.cjs）。
+ *
+ * @param {{ taskId?: string, content?: string, seen?: object, strictMode?: boolean }} input
  * @returns {{ continue: boolean, message?: string, seen: object }}
  *   `seen` 要原样存下来，下一轮再传进来 —— 次数和进度快照都靠它。
  */
-function shouldContinue({ taskId = '', content = '', seen = {} } = {}) {
+function shouldContinue(input = {}) {
+  const { taskId = '', content = '', seen = {}, strictMode } = input
   const blocks = Number(seen.blocks) || 0
 
   /* 刹车一：顶够次数就放行 */
@@ -73,12 +97,12 @@ function shouldContinue({ taskId = '', content = '', seen = {} } = {}) {
 
   const plan = task.plan ?? []
   const { done, total } = progressOf(plan)
-  /* 没有计划、或计划已经全勾完 → 不拦 */
-  if (total === 0 || done >= total) return { continue: false, seen }
+  /* 没有计划、或计划已经全勾完 → 计划这关不拦；落到严格模式的写欠账检查（CE-008） */
+  if (total === 0 || done >= total) return strictStop({ task, seen, blocks, strictMode })
 
   /* 刹车二：停滞检测。上一轮也是这个进度、而且已经顶过一次 → 说明顶没用，放行 */
   const snapshot = `${task.id}:${done}/${total}`
-  if (seen.snapshot === snapshot && blocks > 0) return { continue: false, seen }
+  if (seen.snapshot === snapshot && blocks > 0) return strictStop({ task, seen, blocks, strictMode })
 
   const next = plan.find((line) => !isDone(line)) ?? ''
   const message = [
@@ -108,9 +132,11 @@ const WRITE_TOOLS = new Set(['write_file', 'edit_file'])
  * 不是 running 的任务不拦（paused / waiting_user 是在等用户，骚扰没意义）。
  *
  * `seen` 由调用方自己存着（和计划门禁**分开**两个对象 —— 共用一个会被互相覆盖）。
+ *
+ * @param {{ taskId?: string, verifyAfterEdit?: boolean, seen?: object, strictMode?: boolean }} input
  */
-function shouldVerify({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
-  if (verifyAfterEdit === false) return { continue: false, seen }
+function shouldVerify(input = {}) {
+  const { taskId = '', verifyAfterEdit = true, seen = {}, strictMode } = input
   const blocks = Number(seen.verifyBlocks) || 0
   if (blocks >= MAX_BLOCKS) return { continue: false, seen }
 
@@ -121,6 +147,21 @@ function shouldVerify({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
     task = null
   }
   if (!task || task.status !== 'running') return { continue: false, seen }
+
+  /* CE-008：严格模式 —— 「计划勾了、但勾后还没验证」也顶回去（独立于 verifyAfterEdit，先查它） */
+  if (strict.strictEnabled(strictMode)) {
+    const pending = strict.strictPlanPending(task)
+    const snap = `p${pending.done}`
+    if (pending.pending && seen.strictPlan !== snap) {
+      return {
+        continue: true,
+        message: strict.STRICT_PLAN_MESSAGE,
+        seen: { ...seen, verifyBlocks: blocks + 1, strictPlan: snap },
+      }
+    }
+  }
+
+  if (verifyAfterEdit === false) return { continue: false, seen }
 
   const steps = Array.isArray(task.steps) ? task.steps : []
   const isWrite = (s) => WRITE_TOOLS.has(String(s.tool ?? '')) && s.ok !== false
@@ -171,16 +212,18 @@ function shouldVerify({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
  * `seen` 用一个容器装两份账（`plan` / `verify`）—— 两个门禁各自返回的
  * `seen` 形状不同，混在一个对象里会互相覆盖。
  *
+ * @param {{ taskId?: string, verifyAfterEdit?: boolean, seen?: object, strictMode?: boolean }} input
  * @returns {{ message: string, seen: object }} `message` 为空 = 放行
  */
-function completionGate({ taskId = '', verifyAfterEdit = true, seen = {} } = {}) {
+function completionGate(input = {}) {
+  const { taskId = '', verifyAfterEdit = true, seen = {}, strictMode } = input
   const planSeen = seen.plan ?? {}
   const verifySeen = seen.verify ?? {}
 
-  const plan = shouldContinue({ taskId, seen: planSeen })
+  const plan = shouldContinue({ taskId, seen: planSeen, strictMode })
   if (plan.continue) return { message: plan.message, seen: { ...seen, plan: plan.seen } }
 
-  const verify = shouldVerify({ taskId, verifyAfterEdit, seen: verifySeen })
+  const verify = shouldVerify({ taskId, verifyAfterEdit, seen: verifySeen, strictMode })
   if (verify.continue) return { message: verify.message, seen: { ...seen, verify: verify.seen } }
 
   return { message: '', seen: { ...seen, plan: plan.seen, verify: verifySeen } }

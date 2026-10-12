@@ -9,15 +9,14 @@
  *   · **结构化失败摘要**：error_kind / 目标 / retry_count 进「失败后继续」提示（不再只给名字）；
  *   · **调用统计**：calls / invalid / duplicates / cacheHits 进任务台账（无效调用率的分子）。
  *
- * 事件与消息顺序纪律：
- *   · 事件带 toolCallId（并行时靠它稳定映射）；
- *   · tool 消息按**原始调用顺序**入队（协议稳妥，历史可读）。
+ * 事件与消息顺序纪律：事件带 toolCallId（并行时稳定映射）；tool 消息按**原始调用顺序**入队。
  */
 
 const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
 const taskCore = require('./task.cjs')
 const taskNotes = require('./task-notes.cjs')
+const taskStrict = require('./task-strict.cjs')
 const errors = require('./errors.cjs')
 const observer = require('./error-observer.cjs')
 const scheduler = require('./tool-scheduler.cjs')
@@ -106,8 +105,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       }
     }
 
-    /* 重复调用检测（无效调用率分子）：
-       同任务里「同名同参且成功过」再看一次 —— 只读且没换目标的才算无效 */
+    /* 重复调用检测：同任务里「同名同参且成功过」再看一次 —— 只读且没换目标的才算无效 */
     let duplicate = false
     if (options.taskId) {
       try {
@@ -280,6 +278,9 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     messages.push({ role: 'user', content: note })
     log.info(`失败后继续：已完成 ${doneNames.length} 步，失败 ${failures.length} 步`)
   }
+
+  /* CE-008 严格模式中途门禁：累计写操作 / 勾计划后未验证 → 顶回（判据与话术见 task-strict.cjs） */
+  if (options.taskId) taskStrict.pushStrictNote(messages, options.taskId)
 
   /* 这一轮真动过文件 → 打一个检查点（崩了从这里恢复） */
   if (options.taskId && touchedFiles) {

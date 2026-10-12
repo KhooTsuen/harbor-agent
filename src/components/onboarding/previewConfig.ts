@@ -49,6 +49,8 @@ export const PREVIEW_CONFIG: AppConfig = {
     streamOutput: true,
     planFirst: true,
     verifyAfterEdit: true,
+    /* CE-008：严格模式（默认关，与 core/config-defaults.cjs 一致） */
+    strictMode: false,
     /* AG-053：开工前先对齐（四个值与 core/clarify-config.cjs 的默认一致） */
     clarifyFirst: true,
     clarifyIdleSeconds: 30,

@@ -136,9 +136,10 @@ export async function run() {
     systemFor([{ role: 'user', content: '帮我重构这个模块' }]).includes('强档'),
   )
 
-  group('CE-006 / strictMode 接口预留（批次 3 才实施）')
+  group('CE-008 / strictMode 已实施（批次 3）')
+  check('★ 默认关：不注入严格模式规则', promptStackCore.workRules({}) === promptStackCore.WORK_RULES)
   check(
-    '★ 默认关：开了也等于没开（本批次不实施严格模式）',
-    promptStackCore.workRules({ strictMode: true }) === promptStackCore.WORK_RULES,
+    '★ 打开：注入「严格模式」规则（不再是空开关）',
+    promptStackCore.workRules({ strictMode: true }).includes('严格模式'),
   )
 }

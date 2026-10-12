@@ -110,6 +110,8 @@ function normalize(raw) {
       ...require('./clarify-config.cjs').normalize(assistant),
       ...require('./scale-config.cjs').normalize(assistant),
       verifyAfterEdit: assistant.verifyAfterEdit !== false,
+      /* CE-008：严格模式只认显式 true（默认关） */
+      strictMode: assistant.strictMode === true,
     },
 
     tools: {

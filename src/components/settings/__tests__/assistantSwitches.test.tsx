@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
     planFirst: true,
     clarifyFirst: true,
     verifyAfterEdit: true,
+    strictMode: false,
     streamOutput: true,
     selfReview: false,
   },
@@ -75,6 +76,7 @@ describe('助手开关', () => {
       planFirst: true,
       clarifyFirst: true,
       verifyAfterEdit: true,
+      strictMode: false,
       streamOutput: true,
       selfReview: false,
     }
@@ -123,6 +125,15 @@ describe('助手开关', () => {
     expect(
       (h.pushed.at(-1) as { assistant: Record<string, unknown> }).assistant,
     ).not.toHaveProperty('clarifyFirst')
+  })
+
+  it('★ 严格模式（CE-008）：默认关；点一下真的写进配置', async () => {
+    expect(toggleBy('严格模式').checked).toBe(false)
+    click(toggleBy('严格模式'))
+    await act(async () => {})
+    expect((h.pushed.at(-1) as { assistant: Record<string, unknown> }).assistant).toEqual({
+      strictMode: true,
+    })
   })
 
   it('没有配置（浏览器预览）时整块不渲染，不显示一堆假开关', async () => {

@@ -9,8 +9,12 @@
 > `loop-route.firstUserText·personaOf` / `prompt-stack.personaGuide`（`prompt-stack/6`）；
 > 方向 ② 的**批次 2（脑暴对齐 + 北极星锚定）已实施**（2026-10-13）——
 > `task.star` 字段（与 `goal` 分开存）/ `task-plan.STAR_LINE` 解析 / `buildTaskState` 每轮
-> 回显（易变区）/ `prompt-stack/7`（`CLARIFY_RULE` 补「多步的大活先对齐」）；**方向 ③
-> （打卡制 / 红队门）与 `strictMode` 仍未实施**。本文件其余内容保持调研当时的原样，勿当现状读。
+> 回显（易变区）/ `prompt-stack/7`（`CLARIFY_RULE` 补「多步的大活先对齐」）；
+> 方向 ③ 的**批次 3（strictMode 硬门禁）已实施**（2026-10-13）——
+> `task-strict.cjs`（判据只读 `task.steps` 结构化事件）/ `tool-runner` 中途门禁 /
+> `task-steering` 两道收尾门禁 / 设置页开关（默认关）；**红队门不做**（要新增工具，撞工具
+> 注册表与风险分类，调研结论为「建议后置或不做」，本次未做）。本文件其余内容保持调研
+> 当时的原样，勿当现状读。
 
 ---
 
