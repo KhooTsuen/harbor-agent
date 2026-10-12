@@ -5,6 +5,35 @@
 
 ## [未发布]
 
+- **修：改动事务 meta 写入保护 —— 原子写 + 损坏留档 + 不再静默 null**（2026-10-13）。
+  `electron/core/changeset.cjs` 的 `writeMeta()` 原来直接 `fs.writeFileSync(整个文件)`
+  （「先截断、再写」）：写到一半磁盘满 / 断电 / 被杀，**回滚凭据 `meta.json` 就只剩前半截**。
+  故障注入实测（写到 25 字节抛 ENOSPC）：403 字节的 meta 变 25 字节、`readMeta()` 读回 null、
+  事务**从列表消失**、`rollback()` 报「事务不存在」——快照成了孤儿、审查看不见、也撤不回去。
+  另 `readMeta()` 原来一个 catch 压成 null：坏文件被当「没这条」，无报警、无证据。修法
+  （与 `task-io` / `credentials` 同一模板）：
+  · **写**：改走 `safe-write.writeAtomic`（复用内核唯一那份文本原子写，**不新增实现**）；
+    失败向调用方抛（`writeAtomic` 本就抛），不吞、不假报成功。
+  · **读**：`ENOENT`（正常：还没建过 / 已被 prune）与「解不开」（损坏）**分开** —— 损坏时
+    先 `keepCorruptCopy` 留档（原件不删、不覆盖）再记一条 `log.error`，**绝不静默 null**。
+  · **留档去重**：同一份坏文件本进程只留一份 `.corrupt-<时间戳>`；写成功后标记作废。
+  · 单文件仍 ≤300 行（本次靠压注释腾出空间，不动逻辑）。
+  验证（隔离目录 + 虚构事务）：安全套件 SEC-073 新增 13 条断言全 PASS（写中断不坏原文件 /
+  readMeta 仍可返回 / 损坏留档一份 / 不误判 ENOENT / 正常 begin·record·commit·list·get 不回归）；
+  **负向实验**（临时把 `writeMeta` 退回裸写 + `readMeta` 退回静默）→ 4 条保护断言当场变红。
+  不触 IPC / 权限模型 / session-io / 备份范围 / 文件格式 / 迁移。
+
+- **技术债登记（本轮**不修**，待 E2 核心模块全部完成后统一处理）**：
+  1. **`config:patch` 在坏凭证库下会变成未捕获的 IPC rejection**：`credentials.set()` 现在会
+     在「状态不明」时抛错，而 `electron/main.cjs` 的 `config:patch` handler 不 catch，于是
+     渲染层拿到的是一个 rejected promise。**这是刻意的「不静默」**，但「怎么把这句人话显示给
+     用户」属渲染层的活 —— 需单独立项（可能触 IPC）。
+  2. **凭证恢复 UI 入口缺失**：`credentials.reset({confirm:true})` 只是代码层 API，**没有接
+     UI / IPC**。所以凭证库一旦进入 `corrupt`/`unreadable`/`undecryptable`，用户暂时无法从界面
+     恢复，只能自己备份 / 删除 `credentials.json`。取舍是刻意的（先保证「不丢」再谈「好恢复」）；
+     后续建议在设置页加「重置凭证库」二次确认 → 调 `reset()`（会新增 IPC 通道，需同步
+     `ipc-channels.cjs` 的 `EXPECTED_CHANNELS`，撞硬禁区 9/10，**单独批准**）。
+
 - **修：凭证库写入保护 —— 状态不明时拒绝写 + 先落盘后换内存**（2026-10-13）。
   `electron/core/credentials.cjs` 原来 `load()` 用一个 catch 把「没建过 / JSON 坏了 / 读不了」
   压成同一件事（空表）→ 下一次任意 `set()` 就把空表写回去，用户 API Key 无声消失、无提示、

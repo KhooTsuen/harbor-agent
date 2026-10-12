@@ -1,24 +1,18 @@
 /**
- * 文件改动事务（ChangeSet）
- *
- * 一次 Agent 运行里改过的文件打包成一个事务：
- *
- *   开始 → 记录每个文件改动**之前**的内容 → 运行结束提交
- *                                        ↘ 验证失败 → 一键回滚
- *
+ * 文件改动事务（ChangeSet）：一次 Agent 运行里改过的文件打包成一个事务 ——
+ *   开始 → 记录每个文件改动**之前**的内容 → 运行结束提交 / 验证失败一键回滚。
  * 为什么整批：模型改三个文件做一件事，第二个改错了 —— 只撤第二个会把代码留在更糟的中间态。
  *
- * 存储：`data/changesets/<id>/`
- *   meta.json          谁、什么时候、改了哪些文件
- *   files/0001.snap    改动前的内容（原文）
- *
- * 三个限制：文件太大不快照（maxFileBytes）/ 文件数上限（maxFiles）/ 新建的回滚=删掉、被删的回滚=重建
+ * 存储 `data/changesets/<id>/`：`meta.json`（谁、何时、改了哪些文件）+ `files/0001.snap`（改动前原文）。
+ * 限制：文件太大不快照 / 文件数上限 / 新建回滚=删掉、被删回滚=重建。
+ * ★ `meta.json` 是**回滚凭据**（用户数据）：写它走原子写、坏了要留档报警 —— 见 readMeta / writeMeta。
  */
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 /* 「撤到某个检查点为止」在单独一个文件里（它惰性 require 本模块，顶层不引用） */
 const { rollbackTo } = require('./changeset-rollback.cjs')
 
@@ -28,6 +22,10 @@ function root() {
 
 function dirFor(id) {
   return path.join(root(), String(id))
+}
+
+function metaFile(id) {
+  return path.join(dirFor(id), 'meta.json')
 }
 
 function settings() {
@@ -42,12 +40,49 @@ function newId() {
   return `cs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
 }
 
-/**
- * 开一个事务。
- *
- * @param {{ taskId?: string, sessionId?: string, title?: string }} options
- * @returns {{ ok: boolean, id?: string, skipped?: boolean }}
+/** 本进程内已留过档的损坏 meta —— 同一份重复读只留一份，别刷一地副本 */
+const corruptKept = new Set()
+
+/*
+ * 读 meta。**「文件不在」与「文件坏了」必须分开**（以前一个 catch 压成 null，看不出区别）：
+ *   · ENOENT —— 正常（还没建过 / 已被 prune）：返回 null，不报警、不留档；
+ *   · 解不开 → 损坏：先 keepCorruptCopy 留档（原件不删、不覆盖）再记一条 error，**绝不静默 null**
+ *     —— 否则接下来任意一次写盘会把证据盖掉；同一份本进程只留档一次。
  */
+function readMeta(id) {
+  const file = metaFile(id)
+  let raw
+  try {
+    raw = fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') log.warn(`读改动事务失败（${id}）：${error?.message ?? error}`)
+    return null
+  }
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    if (!corruptKept.has(file)) {
+      corruptKept.add(file)
+      const kept = keepCorruptCopy(file)
+      const where = kept ? ` —— 已留档 ${path.basename(kept)}` : ' —— 留档失败'
+      log.error(`改动事务 meta 解不开（${id}）${where}：${error?.message ?? error}`)
+    }
+    return null
+  }
+}
+
+/*
+ * 写 meta —— 走原子写。以前 `fs.writeFileSync(整个文件)` 是「先截断、再写」：写到一半磁盘满 /
+ * 断电 / 被杀，回滚凭据就只剩前半截（注入实测：403 字节 meta 在 ENOSPC 后变 25 字节、readMeta
+ * 返回 null、事务从列表消失、rollback 报「事务不存在」）。写失败向调用方抛，不吞、不假报成功。
+ */
+function writeMeta(id, meta) {
+  const file = metaFile(id)
+  writeAtomic(file, JSON.stringify(meta, null, 2))
+  corruptKept.delete(file) // 写成功 → 之前的「已留档」标记作废（再坏一次还会留档）
+}
+
+/** 开一个事务：建目录 + 写初始 meta（files 空）。返回 { ok, id } / { ok:false, skipped } */
 function begin({ taskId = '', sessionId = '', title = '' } = {}) {
   if (!settings().enabled) return { ok: false, skipped: true }
 
@@ -71,32 +106,8 @@ function begin({ taskId = '', sessionId = '', title = '' } = {}) {
   }
 }
 
-function metaFile(id) {
-  return path.join(dirFor(id), 'meta.json')
-}
-
-function readMeta(id) {
-  try {
-    return JSON.parse(fs.readFileSync(metaFile(id), 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function writeMeta(id, meta) {
-  fs.writeFileSync(metaFile(id), JSON.stringify(meta, null, 2), 'utf8')
-}
-
-/**
- * 记录一个文件的「改动前」状态。
- *
- * **必须在写入之前调用** —— 事务的价值全在这一步。
- *
- * @param {string} id
- * @param {string} file 绝对路径
- * @param {{ before?: string|null }} [options] 已读过的话直接传进来，省一次读盘
- */
-function record(id, file, { before } = {}) {
+/** 记录文件的「改动前」状态。**必须在写入之前调用** —— 事务的价值全在这一步（before 已读过就传进来，省一次读盘）。 */
+function record(id, file, { before } = /** @type {{before?: string|null}} */ ({})) {
   const meta = readMeta(id)
   if (!meta || meta.status !== 'open') return { ok: false, error: '事务不存在或已关闭' }
 
@@ -171,10 +182,7 @@ function commit(id, { verified = null } = {}) {
   return { ok: true, files: meta.files.length }
 }
 
-/**
- * 回滚。三类都要处理：
- * ① 改过的 → 写回快照 ② 新建的 → 删掉 ③ 没快照的（太大）→ 明确告诉用户
- */
+/** 回滚。三类都要处理：① 改过的 → 写回快照 ② 新建的 → 删掉 ③ 没快照的（太大）→ 明确告诉用户 */
 function rollback(id) {
   const meta = readMeta(id)
   if (!meta) return { ok: false, error: '事务不存在' }
@@ -201,10 +209,7 @@ function rollback(id) {
       fs.writeFileSync(entry.path, content, 'utf8')
       restored.push(entry.path)
     } catch (error) {
-      failed.push({
-        path: entry.path,
-        reason: error instanceof Error ? error.message : String(error),
-      })
+      failed.push({ path: entry.path, reason: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -212,9 +217,7 @@ function rollback(id) {
   meta.rolledBackAt = Date.now()
   writeMeta(id, meta)
 
-  log.info(
-    `改动事务回滚：恢复 ${restored.length} 个，删除 ${removed.length} 个，失败 ${failed.length} 个`,
-  )
+  log.info(`改动事务回滚：恢复 ${restored.length} 个，删除 ${removed.length} 个，失败 ${failed.length} 个`)
   return { ok: true, restored, removed, failed }
 }
 
@@ -264,20 +267,14 @@ function list({ limit = 20, taskId = '', sessionId = '' } = {}) {
 function get(id) {
   const meta = readMeta(id)
   if (!meta) return null
-  return {
-    ...meta,
-    files: meta.files.map((f) => ({ path: f.path, existed: f.existed, size: f.size })),
-  }
+  return { ...meta, files: meta.files.map((f) => ({ path: f.path, existed: f.existed, size: f.size })) }
 }
 
 /** 清理旧的（保留最近 N 个） */
 function prune(keep = 50) {
   let names = []
   try {
-    names = fs
-      .readdirSync(root())
-      .filter((name) => name.startsWith('cs_'))
-      .sort()
+    names = fs.readdirSync(root()).filter((name) => name.startsWith('cs_')).sort()
   } catch {
     return { ok: true, removed: 0 }
   }
