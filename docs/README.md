@@ -35,6 +35,7 @@
 | 想知道**改进清单里哪些真的还没做**（逐条复核 + 用户数据写入审计 + 环复核） | [`可靠性改进现状复核报告.md`](可靠性改进现状复核报告.md)（只读复核 · 2026-10-13 · HEAD `9ade3de`） |
 | 想知道**用户数据（任务/凭证/改动事务/会话）写盘会不会丢**（故障注入 + 修复方案） | [`E2用户数据保护-故障注入与修复设计.md`](E2用户数据保护-故障注入与修复设计.md)（故障注入 · 2026-10-13 · 只设计未改码） |
 | 想知道 **UI 进度为什么卡死在「0/5」**（计划勾选 vs 真实执行两条链） | [`research/ui-phase5-progress-design.md`](research/ui-phase5-progress-design.md)（只读调研 + 方案 · 2026-10-13 · 待确认） |
+| 要动**任务治理 / 模型路由 / 脑暴对齐 / 打卡制**（Phase 6 前置） | [`research/phase6-governance-routing-design.md`](research/phase6-governance-routing-design.md)（只读调研 · 参考 dsh-routing-suite · 2026-10-13 · 待确认） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 想知道**凭证库损坏时怎么不丢 Key**（下一阶段设计） | [`credentials写入保护-设计.md`](credentials写入保护-设计.md)（设计稿 · 2026-10-13 · **未实施**，等批准） |
