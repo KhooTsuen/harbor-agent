@@ -13,6 +13,8 @@ import { check, group } from '../harness.mjs'
      · **幂等** —— 已打卡的步骤不重复写盘；
      · **越界不抛异常** —— 返回错误文本让模型纠正（抛了会炸掉模型循环）；
      · **不算写操作** —— 不进 WRITE_TOOLS；
+     · **「只分析」轮拦下** —— 它不是 WRITE_TOOLS 成员，内核写门罩不到它，
+       所以自己在 run 开头判 allowWrite === false（拦下时纯不动，不读不写）。
      · **不许骗门禁** —— 只打卡不跑命令，严格模式照样拦（判据是 plan 里的 [x]）；
      · **指纹忽略勾选** —— 打卡不再误报「计划正文与批准时不一致」；
        同时**版本变更仍看全文** —— 仅勾选变化也要落盘（否则门禁/进度倒退检测失效）。
@@ -58,6 +60,27 @@ export async function run() {
   check('负下标也拦', String(neg).includes('超出范围'), String(neg).slice(0, 40))
   const nonInt = await tools.execute('mark_step_done', { step_index: 1.5 }, markCtx(t.id))
   check('非整数被参数校验拦下', String(nonInt).includes('整数'), String(nonInt).slice(0, 40))
+
+  group('打卡 / 「只分析」轮拦下（守卫：它不是 WRITE_TOOLS 成员，得自己补一道门）')
+  const a = taskCore.create({ goal: '只分析守卫', sessionId: 'selftest-mark' })
+  created.push(a.id)
+  taskCore.setPlan(a.id, ['[ ] 一', '[ ] 二'])
+  const before = JSON.stringify(taskCore.get(a.id).plan)
+  const blocked = await tools.execute(
+    'mark_step_done',
+    { step_index: 0 },
+    { ...markCtx(a.id), allowWrite: false },
+  )
+  check(
+    '★ allowWrite=false → 返回「只分析模式」错误文本（不打卡、不抛）',
+    String(blocked).includes('只分析模式'),
+    String(blocked).slice(0, 50),
+  )
+  check('★ 拦下时计划一点没动（不读不写：进度仍是 0/2）', taskPlan.progressOf(taskCore.get(a.id).plan).done === 0)
+  check('★ 拦下时内存里的 plan 逐字未变', JSON.stringify(taskCore.get(a.id).plan) === before)
+  /* 反向：allowWrite 不是 false（缺省 / true）时照常放行 —— 别把守卫做成「永远拦」 */
+  const allowed = await tools.execute('mark_step_done', { step_index: 0 }, markCtx(a.id))
+  check('★ 对照：正常轮照常打卡（守卫只认 false，不误伤）', String(allowed).includes('已打卡'))
 
   group('打卡 / 与 strictMode 协同：只打卡不验证照样被拦')
   const s = taskCore.create({ goal: '打卡不能骗门禁', sessionId: 'selftest-mark' })
