@@ -5,6 +5,24 @@
 
 ## [未发布]
 
+- **防语言漂移：上一批工具返回主要是英文时，下一轮补一句极短的「保持中文思考」**（CE-015 · 2026-10-14，DeepSeek 中文 CoT 优化第二步）。
+  · **为什么**：CE-014 已在稳定区要求内部思考用中文，但模型读到**英文工具结果**（报错 / 网页 / 英文文档）时，
+    思考语言容易跟着漂回英文。这一步在工具结果回来的**轮次边界**补一句提醒，把语言拉回来。
+  · **新增 `electron/core/language-drift.cjs`（纯函数，64 行）**：`isMostlyEnglish(text)` —— **只做字符统计**
+    （英文字母占比 > 60% **且** 中文字符占比 < 10%），**绝不解析语义**；`decide(runs, seen)` 只看
+    `toolRuns` 的**尾部非空输出**，同一条「英文流」里只推一次（`seen` 控制），英文结束后自动复位。
+  · **接线**：`electron/core/loop.cjs` 的工具执行之后（轮次边界）读 `languageDrift.decide(toolRuns, driftSeen)`，
+    命中就 `messages.push({ role: 'user', content: 提醒 })` —— 与 `budget.softNote` / `buildFailureNote` /
+    `loopGuard.nudgeMessage` 同一模式。
+  · **★ 不升 prompt-stack 版本号**：提醒是运行时 `user` 消息，**不进任何 prompt 层**，稳定前缀一字不变
+    （既有三条同类注入都没为它们升号）。
+  · **断言**：`93-machine-prompt.mjs` 加一组（判据边界 纯英/纯中/混合/数字符号/非字符串 + 触发频率 只提醒一次 +
+    接线在 loop.cjs + **稳定区没被污染**）。`npm run verify` 全绿；内核自检 **4342 项 / 0 失败**（改前 4328，+14）。
+  · **验证**：集成探针（真 `runLoop`）英文工具返回 → 第 2 次调模型含提醒、中文返回不含；**系统提示稳定前缀哈希注入前后一致**；
+    真机端到端（CDP + 源码树实例 + 真 `run_shell` 英文报错）**5/5** —— 第 2 轮请求体含「保持中文思考」，第 1 轮不含。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 数据结构；不破坏 Phase 6（Persona / 严格模式 / 打卡）与 Phase 7 防闪烁。
+    （本轮越界改了 `electron/core/loop.cjs` 1 处 —— 已事先发问并获批准。）
+
 - **内部思考用中文：`workRules` 稳定区加一条「推理 / 规划 / 调工具前的判断一律用简体中文」**（CE-014 · 2026-10-14，DeepSeek 中文 CoT 优化第一步）。
   · **为什么**：DeepSeek 在 Agent 模式下的 `reasoning_content` 常吐英文 / 中英混杂。中文信息密度更高，
     同一条推理用中文写 token 更少，排查时也更好读。

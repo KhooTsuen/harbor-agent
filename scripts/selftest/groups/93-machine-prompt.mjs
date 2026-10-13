@@ -117,6 +117,42 @@ export async function run() {
       require(join(ROOT, 'electron/core/prompt-rules.cjs')).CHINESE_THINK_RULE.includes('内部推理'),
   )
 
+  /*
+   * ── CE-015：防语言漂移（上一轮工具返回英文 → 下一轮补一句「保持中文思考」）──
+   *
+   * 判据是**纯字符统计**（不解析语义），注入点是 loop.cjs 的一条 user 消息
+   * （易变区、不碰稳定前缀）。这一组钉三件事：判据边界、触发频率、接线在不在。
+   */
+  group('CE-015 / 防语言漂移（工具返回英文 → 提醒保持中文思考）')
+  const readSrc = (rel) => require('node:fs').readFileSync(join(ROOT, rel), 'utf8')
+  const drift = require(join(ROOT, 'electron/core/language-drift.cjs'))
+  check('★ 纯英文 → 判为英文', drift.isMostlyEnglish('Error: Cannot find module express here') === true)
+  check('纯中文 → 不判英文', drift.isMostlyEnglish('命令跑完了，文件已经写入。') === false)
+  check(
+    '★ 中英混合（中文过半）→ 不判英文',
+    drift.isMostlyEnglish('这个文件报错了 ENOENT：找不到路径，先 read_file 看现场再决定。') === false,
+  )
+  check('★ 数字 / 符号 → 不判英文（没有英文字母）', drift.isMostlyEnglish('12345 --- === >>> 67890') === false)
+  check('空串 → 不判英文', drift.isMostlyEnglish('') === false)
+  check('非字符串（数字 / null / undefined）不炸且不判英文', [123, null, undefined].every((v) => drift.isMostlyEnglish(v) === false))
+
+  const enRun = { output: 'Error: Cannot find module express in node_modules here' }
+  const cnRun = { output: '命令跑完了，结果是：文件已写入。' }
+  check('★ 首次英文工具返回 → 推提醒', drift.decide([enRun], false).text.includes('保持中文思考'))
+  check('★ 同一条英文流里只提醒一次（已提醒过 → 不再推）', drift.decide([enRun], true).text === '')
+  check('中文工具返回 → 不提醒（并复位）', drift.decide([cnRun], true).text === '' && drift.decide([cnRun], true).seen === false)
+  check('★ 只看尾部：末尾回到中文 → 不提醒', drift.decide([enRun, cnRun], false).text === '')
+  check('空台账不炸', drift.decide([], false).text === '')
+
+  const loopSrc = readSrc('electron/core/loop.cjs')
+  check('★ 接线在 loop.cjs 的工具执行之后（轮次边界）', loopSrc.includes('languageDrift.decide(toolRuns, driftSeen)'))
+  check('★ 提醒作为一条 user 消息注入（不是塞进稳定区）', /\{ role: 'user', content: drift\.text \}/.test(loopSrc))
+  check(
+    '★ 稳定区没被污染（提醒文案不在 prompt-rules / prompt-stack 里）',
+    !readSrc('electron/core/prompt-rules.cjs').includes('保持中文思考') &&
+      !readSrc('electron/core/prompt-stack.cjs').includes('保持中文思考'),
+  )
+
   const { buildPromptContext } = require(join(ROOT, 'electron/core/loop-prompt.cjs'))
   const built = buildPromptContext({
     config: { assistant: { name: 'Agent', maxTokens: 1000 }, tools: { permission: 'ask' } },

@@ -6,6 +6,7 @@ const stats = require('./stats.cjs')
 const budget = require('./budget.cjs')
 const loopGuard = require('./loop-guard.cjs')
 const failureStreak = require('./failure-streak.cjs')
+const languageDrift = require('./language-drift.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
@@ -15,7 +16,6 @@ const skillPin = require('./skill-pin.cjs')
 const taskPresets = require('./task-presets.cjs')
 const changeset = require('./changeset.cjs')
 /* run() 的形参也叫 config，模块得换名引 —— 否则 config.hasKey() 会在普通对象上调用。 */
-
 const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const {
@@ -31,8 +31,7 @@ const { resolveRoute, providerForRun } = require('./loop-route.cjs')
 const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）。这个 200 只防
-   「预算设成不限而模型抽风」——第一版设成 50 → 总被 for 先拦下、预算检查没机会带 budgetHit。★ 两个机制不能做同一件事。 */
+/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps；这个 200 只防「预算设成不限而模型抽风」。★ 两个机制不能做同一件事。 */
 const MAX_TURNS = 200
 
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
@@ -40,10 +39,8 @@ const LOOP_NUDGE_LIMIT = 2
 
 /* ── 主循环 ───────────────────────────────────────────────── */
 
-/*
- * 状态事件的 key。**不能用 options.taskId**（那是台账 id，run() 里还会换成 task.id；
- * 调用方按自己的 requestId 过滤，两边对不上事件就全丢 →「UI 显示空闲、后台在跑」）。
- */
+/* 状态事件的 key。**不能用 options.taskId**（那是台账 id）—— 调用方按自己的 requestId
+ * 过滤，两边对不上事件就全丢 →「UI 显示空闲、后台在跑」。 */
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
 }
@@ -112,6 +109,8 @@ async function runLoop(options) {
   let softNoted = false
   /* AG-041：重复执行顶回去几次（超过阈值就停下来问用户） */
   let loopNudges = 0
+  /* CE-015：这条「英文工具结果流」里已经提醒过保持中文思考了没 */
+  let driftSeen = false
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
   life.mark('preparing', traceKey(options))
 
@@ -282,6 +281,10 @@ async function runLoop(options) {
       emit,
       turn,
     })
+    /* CE-015：上一批工具返回主要是英文 → 下一轮补一句「保持中文思考」（英文工具结果流里只提醒一次） */
+    const drift = languageDrift.decide(toolRuns, driftSeen)
+    driftSeen = drift.seen
+    if (drift.text) messages.push({ role: 'user', content: drift.text })
   }
 
   /* 保险丝烧了（预算设成「不限」而模型一直不罢休）—— 这不是预算停下来那一步 */
