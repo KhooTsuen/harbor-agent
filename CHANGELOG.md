@@ -31,6 +31,12 @@
     三条**负向实验**（拆 strictStop 接线 / 拆 workRules 读取 / 拆中途门禁）分别令对应断言
     变红并自动还原（字节一致）。未碰 Runtime / IPC / 权限模型 / 防闪烁三件套。
 
+- **文档：Phase 6 真机验收清单 + 三项归档待办**（2026-10-13）。仅动文档，**未改任何
+  `src/**` / `electron/**`**。新增 [`docs/research/phase6-acceptance-checklist.md`](docs/research/phase6-acceptance-checklist.md)：
+  打包步骤（复用既有的 `E:\Harbor-Dev\update-all.cmd`，双击即全流程）、真机验收清单（设置开关 →
+  关掉行为一致 → 开起来连续写 3 次被顶回）、以及**三项已归档待办**（① 红队门暂不做；
+  ② UI「等待验证」提示需先在内核定义状态、独立立项；③ `STRICT_MIN_WRITES` 等阈值待真机数据标定）。
+
 - **功能：脑暴对齐与北极星锚定（Phase 6 批次 2）**（2026-10-13）。
   · **背景**：参考 dsh-routing-suite 的「北极星」—— 复杂任务先与用户对齐，再定稿一句
     「做成什么样算完成」的目的宣言，之后每轮回显，防长任务跑偏（见

@@ -37,6 +37,7 @@
 | 想知道 **UI 进度为什么卡死在「0/5」**（计划勾选 vs 真实执行两条链） | [`research/ui-phase5-progress-design.md`](research/ui-phase5-progress-design.md)（只读调研 + 方案 · 2026-10-13 · 待确认） |
 | 要动**任务治理 / 模型路由 / 脑暴对齐 / 打卡制**（Phase 6 前置） | [`research/phase6-governance-routing-design.md`](research/phase6-governance-routing-design.md)（只读调研 · 参考 dsh-routing-suite · 2026-10-13 · 待确认） |
 | 想知道 **Phase 6 批次 1-2 做到哪了**（persona 路由 / 北极星锚定 · 改了什么 / 验证 / 遗留） | [`research/phase6-batch1-2-summary.md`](research/phase6-batch1-2-summary.md)（阶段总结 · 2026-10-13 · 已实施并提交） |
+| 要**给 Phase 6 做真机验收 / 重新打包**（怎么点、看什么、没通过怎么反馈） | [`research/phase6-acceptance-checklist.md`](research/phase6-acceptance-checklist.md)（操作清单 + 归档待办 · 2026-10-13） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 想知道**凭证库损坏时怎么不丢 Key**（下一阶段设计） | [`credentials写入保护-设计.md`](credentials写入保护-设计.md)（设计稿 · 2026-10-13 · **未实施**，等批准） |
