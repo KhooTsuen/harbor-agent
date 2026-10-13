@@ -85,8 +85,12 @@ export function TailBlock({ text }: { text: string }) {
        */}
       {plain ? (
         <div style={{ contain: 'layout' }}>
-          {/* 未闭合块 / 残缺半行都不解析，直接纯文本 —— 避免「先像段落、写完变块」的横跳 */}
-          <p className="my-1.5 whitespace-pre-wrap break-words">{plain}</p>
+          {/*
+           * 未闭合块 / 残缺半行都不解析，直接纯文本 —— 避免「先像段落、写完变块」的横跳。
+           * ★ class 必须与 `Blocks.tsx` 段落（default 分支那个 `<p>`）**逐字一致**，
+           *   否则半行写完后会跳一下（`streamingMarkdown.test.tsx` 钉着）。
+           */}
+          <p className="my-2.5 whitespace-pre-wrap break-words">{plain}</p>
         </div>
       ) : null}
     </>

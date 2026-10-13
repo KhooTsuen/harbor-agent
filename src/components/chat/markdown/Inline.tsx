@@ -23,7 +23,8 @@ function render(node: InlineNode, key: number) {
       return (
         <code
           key={key}
-          className="rounded-sm bg-bg-raised px-1.5 py-0.5 font-mono text-[0.9em] text-fg-primary"
+          /* Phase 7：加一道淡边框，让行内代码在段落里更「跳」得出来（复用既有 Token） */
+          className="rounded-sm border border-line-hairline bg-bg-raised px-1.5 py-0.5 font-mono text-[0.9em] text-fg-primary"
         >
           {node.text}
         </code>

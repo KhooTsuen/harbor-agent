@@ -5,6 +5,37 @@
 
 ## [未发布]
 
+- **功能：Phase 7 一期 —— 正文对话流排版质感（纯 CSS · 零结构变更）**（2026-10-13）。
+  · **背景**：自研 Markdown 渲染器（`src/components/chat/markdown/`）结构已经干净，
+    问题在**数值**——标题太小、表格无外框无底色、段落/列表竖向节奏偏紧、引用块偏挤。
+    设计见 `docs/research/phase7-typography-design.md`。
+  · **标题**：h1 `text-xl`(20px) → **`text-title`(24px，Token 上限，禁止更大)**，逐级递减
+    （h2 `text-xl` / h3 `text-lg` / h4 `text-md`）；间距 `mt-4 mb-1.5` → **`mt-6 mb-2`**，
+    加 **`first:mt-0`** 防首行顶部空一块。★ **保留 `<p>`**，不改真 `<h1>…<h4>` 标签
+    （那是 DOM 结构变更，二期单独评估）。
+  · **表格**：圆角 + 外框（`rounded border border-line-subtle`）加在**已有的**
+    `overflow-x-auto` 外层 div 上 —— **不新增任何包裹节点**；表头加 `bg-bg-raised` 底色；
+    单元格 `px-2.5 py-1.5` → `px-3 py-2`；行加 `hover:bg-bg-hover/50`。
+  · **段落 / 列表**：段落 `my-1.5` → **`my-2.5`**；列表项 `gap-1` → `gap-1.5`、缩进 `pl-5` → `pl-6`。
+  · **引用块**：`pl-3`→`pl-4`、`my-2`→`my-3`、竖线 `border-l-2`→`border-l-[3px]`，
+    文字保持 `text-fg-secondary`。
+  · **行内代码**：加 `border border-line-hairline`（复用既有 Token）。
+  · **★ 成对修改（易漏）**：`Blocks.tsx` 段落 `<p>` 与 `StreamingMarkdown.tsx` 尾巴纯文本 `<p>`
+    的 class **逐字一致**（同为 `my-2.5 whitespace-pre-wrap break-words`）——否则残缺半行写完后
+    会「跳」一下，`streamingMarkdown.test.tsx` 的「流式 DOM === 整篇 DOM」当场变红。
+  · **防闪烁核对**：只改 className（不增删节点 / 不改标签名 / 不改 `Block` 的 key 与位置）。
+    `useSmoothText` / `StableBlocks` / `useAutoScroll` / `scrollGuard` **一行未碰**——
+    `StableBlocks` 的 memo 依据是 `blocks` 数组引用 + `version`，样式改动不产生新数组、不改 `node` 引用。
+  · **新增样式守卫**：`src/components/chat/__tests__/markdownTypography.test.tsx`（源码级 + 1 条运行时兜底），
+    钉住上述关键 class：h1=text-title 且无更大字号 / 标题无 `<h*>` / 段落与尾巴 class 逐字一致 /
+    表格外层圆角边框且**只有一个 `<div>`** / 表头底色 / 单元格内距 / 行悬停 / 行内代码边框。
+  · **验证**：`npm run verify` 全绿；`streamingMarkdown.test.tsx` **5/5**（DOM 对等仍成立）、
+    `Markdown.test.tsx` 16/16、新增守卫 14/14；负向实验（还原段落 `my-1.5` / h1 降回 `text-xl` →
+    对应断言分别 2 / 3 条当场变红、文件字节还原）。
+  · **已知遗留**：① 正文 `text-base`(15px) → `text-body`(16px) 按拍板**暂不实施**；
+    ② 标题改真 `<h*>` 标签**暂不实施**；③ Prompt 层软约束（引导用表格/引用/列表组织结论）**暂不实施**。
+    以上三项记为未来技术债。
+
 - **检查：打卡工具在「只分析」轮拦下（mark_step_done 自补一道写门）**（2026-10-13）。
   · **为什么**：`mark_step_done` **不在** `WRITE_TOOLS`（否则 ask 档每步弹确认框），
     于是内核那道 `ctx.allowWrite === false && isWrite` 的门**罩不到它**（`tools/index.cjs:183`）——

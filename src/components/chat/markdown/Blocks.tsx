@@ -23,11 +23,16 @@ import { Table } from './Table'
        所以流式时前面那几十个块在这里被 React 直接跳过。
    ══════════════════════════════════════════════════════════════ */
 
+/*
+ * 标题字号（Phase 7 一期）：逐级递减，h1 封顶在 `text-title`（= --text-title 24px）。
+ * ★ **上限，禁止更大**（design.ts:119）—— 别再往 `text-2xl`（24px 以上没有对应 Token）上走。
+ * 级别 ≥5 走兜底 `text-base`（与旧行为一致）。
+ */
 const HEADING_SIZE: Record<number, string> = {
-  1: 'text-xl',
-  2: 'text-lg',
-  3: 'text-md',
-  4: 'text-base',
+  1: 'text-title',
+  2: 'text-xl',
+  3: 'text-lg',
+  4: 'text-md',
 }
 
 function ListItemView({
@@ -111,10 +116,15 @@ export const Block = memo(function Block({ node }: { node: BlockNode }) {
       )
 
     case 'heading':
+      /*
+       * Phase 7 一期：**保留 `<p>`**（不改真 `<h*>` 标签 —— 那是 DOM 结构变更，
+       * 属二期单独评估）。只调字号（HEADING_SIZE）与间距。
+       * `first:mt-0`：标题是容器第一个孩子时不留顶部空档（免得每条消息顶上一块白）。
+       */
       return (
         <p
           className={cn(
-            'mt-4 mb-1.5 font-semibold text-fg-primary',
+            'mt-6 mb-2 first:mt-0 font-semibold text-fg-primary',
             HEADING_SIZE[node.level] ?? 'text-base',
           )}
         >
@@ -124,7 +134,7 @@ export const Block = memo(function Block({ node }: { node: BlockNode }) {
 
     case 'list':
       return (
-        <ul className="my-1.5 flex flex-col gap-1 pl-5">
+        <ul className="my-1.5 flex flex-col gap-1.5 pl-6">
           {node.items.map((item, itemIndex) => (
             <ListItemView
               key={itemIndex}
@@ -140,7 +150,7 @@ export const Block = memo(function Block({ node }: { node: BlockNode }) {
     case 'quote':
       return (
         <blockquote
-          className="my-2 border-l-2 pl-3 text-fg-secondary"
+          className="my-3 border-l-[3px] pl-4 text-fg-secondary"
           style={{ borderColor: 'var(--border-strong)' }}
         >
           <BlockList blocks={node.blocks} />
@@ -160,8 +170,13 @@ export const Block = memo(function Block({ node }: { node: BlockNode }) {
       return <RawHtmlBlock html={node.html} />
 
     default:
+      /*
+       * ★ 这一行的 class 必须与 `StreamingMarkdown.tsx` 尾巴纯文本那行**逐字一致**
+       *   （`streamingMarkdown.test.tsx` 的「流式 DOM === 整篇 DOM」钉着）——
+       *   否则残缺半行写完之后会「跳」一下。Phase 7：两处同为 `my-2.5`。
+       */
       return (
-        <p className="my-1.5 whitespace-pre-wrap break-words">
+        <p className="my-2.5 whitespace-pre-wrap break-words">
           <Inline nodes={node.children} />
         </p>
       )
