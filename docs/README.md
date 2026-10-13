@@ -38,7 +38,7 @@
 | 想知道 **计划卡怎么动态显示真实执行进度**（PlanCard 加「已执行 X 步 · 已修改 Y 文件」· 改前/改后对比） | [`research/plan-card-dynamic-design.md`](research/plan-card-dynamic-design.md)（只读调研 + 设计 · 2026-10-13 · **未实施，待确认**） |
 | 想知道**计划里的 `[ ]` 怎么靠工具亮起来**（打卡工具 `mark_step_done` · 状态存哪 / 不骗 strictMode / 硬禁区判定） | [`research/mark-step-done-design.md`](research/mark-step-done-design.md)（设计 · 2026-10-13 · **已实施**） |
 | 想知道**正文排版怎么接近 ChatGPT**（自研 Markdown 渲染器 · 现状盘点 / 差异点 / 纯 CSS vs 结构变更） | [`research/phase7-typography-design.md`](research/phase7-typography-design.md)（只读调研 + 方案 · 2026-10-13 · **一期已实施（Commit 3473866）**；三项技术债见文末归档） |
-| 想知道 **Phase 7 二期还能提升什么**（流式光标 / 回底按钮 / 工具图标 / Mermaid 放大 / 上下文可视化 · 哪些已存在、哪些是红线） | [`research/phase7-2-experience-design.md`](research/phase7-2-experience-design.md)（只读调研 + 方案 · 2026-10-13 · **未实施，待确认**；光标与上下文圈**已存在**） |
+| 想知道 **Phase 7 二期还能提升什么**（流式光标 / 回底按钮 / 工具图标 / Mermaid 放大 / 上下文可视化 · 哪些已存在、哪些是红线） | [`research/phase7-2-experience-design.md`](research/phase7-2-experience-design.md)（只读调研 + 方案 · 2026-10-13 · **批次 A 已实施（Commit 9fb23af）、批次 B/C 已决定不做**；光标与上下文圈**已存在**） |
 | 要动**任务治理 / 模型路由 / 脑暴对齐 / 打卡制**（Phase 6 前置） | [`research/phase6-governance-routing-design.md`](research/phase6-governance-routing-design.md)（调研 · 参考 dsh-routing-suite · 2026-10-13 · ①②③ 已按批次 1-3 实施） |
 | 想知道 **Phase 6 批次 1-2 做到哪了**（persona 路由 / 北极星锚定 · 改了什么 / 验证 / 遗留） | [`research/phase6-batch1-2-summary.md`](research/phase6-batch1-2-summary.md)（阶段总结 · 2026-10-13 · 已实施并提交） |
 | 要**给 Phase 6 做真机验收 / 重新打包**（怎么点、看什么、没通过怎么反馈） | [`research/phase6-acceptance-checklist.md`](research/phase6-acceptance-checklist.md)（操作清单 + 归档待办 · 2026-10-13 · **真机验收通过，已进入日常观察期**） |
