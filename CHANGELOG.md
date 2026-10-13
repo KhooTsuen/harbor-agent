@@ -30,9 +30,27 @@
   · **★ 未碰**：`electron/**`（Runtime / IPC / 任务台账结构）、防闪烁三件套
     （`useSmoothText` / `useAutoScroll` / `scrollGuard` —— `ScrollGuardContext.Provider`
     只在 `MessageList`，与计划卡/计划栏本就无耦合）、`ProgressTimeline`。
-  · **验证**：`npm run verify` 全绿；单测 **1649 → 1673**（+24：`taskCenter` / `planCard` /
-    `planBar` 三处，含**真渲染 DOM 断言**）；三条**负向实验**（拆 TaskRowDetails 的 exec 接线 /
-    拆 PlanCard 动态行 / 拆 PlanBar 动态段）分别令对应断言**当场变红**且文件**字节还原**。
+  · **验证**：`npm run verify` **实测退出码 0**（typecheck / lint / lint:kernel /
+     typecheck:kernel 基线 181 / check:format / check:lines / check:rules / test:rules /
+     test:unit / selftest / security / build 逐项绿）；单测 **1649 → 1673**（+24，185 文件全过）；
+     内核自检 **4229 / 0**；安全 **83 PASS · 0 FAIL · 1 N/A**；行数红线 **1130** 文件全 ≤ 300
+     （途中被 `check:format` 与 `check:lines` 各拦一次，均已修正 —— 见下条「已知遗留」）。
+  · **负向实验（真做，文件均字节还原）**：① 拆 `TaskRowDetails` 的 `exec=` 接线 → 1 条断言变红；
+     ② 拆 `PlanCard` 动态行 → 4 条变红；③ 拆 `PlanBar` 动态段 → 3 条变红。三条都**精确打中**
+     对应断言、**未跑崩**、**字节还原**。脚本自带**崩溃检测**（非零退出且无红行 → 报「跑崩」
+     而非「没命中」），避免「拆出语法错」被误报成「没命中」的假阴性。
+  · **真实台账探针**（临时文件，跑完即删）：拿真机 75 条任务过一遍 —— 67 条有执行事实，样例
+     「计划 9 条 · 执行摘要：已执行 135 步 · 已修改 26 个文件」「计划 8 条 · 已执行 93 步
+     （1 次失败）· 已修改 10 个文件」。真机数据里就是「计划 5–9 条、实际跑 46–135 步」，
+     正是「卡死 0/M」的现场。
+  · **已知遗留（未做，如实登记）**：
+     ① **真机肉眼确认待做** —— 打包第 0 步 `taskkill /F /IM Harbor.exe` 会杀掉本会话宿主，
+     故「计划卡下方动态显示 / 窄窗口不折行」需人类自行双击 `E:\Harbor-Dev\update-all.cmd`
+     后在真机看（替代证据 = jsdom 真渲染 + 产物里降级断点规则实存 + 真实台账探针）。
+     ② **420px 断点仅为结构性保证** —— jsdom 不排版、量不出折行；降级靠「窄屏隐藏 +
+     自截断 + 外层 `overflow-hidden`」三重兜底，**像素级实测留待真机**。数字**暂不调**。
+     ③ **只做「并列展示」，不做「计划自动打勾」** —— 内核没有「计划第 N 条 ↔ 哪个工具」的
+     归属事实，此路**结构性不做**（Phase 5 已定论）。
 
 - **功能：严格模式 strictMode 核心落地（Phase 6 批次 3 · 验证硬门禁）**（2026-10-13）。
   · **背景**：批次 1/2 把「软约束」铺完了；本批次只做一件事 —— 把验证从**提示词层面**
