@@ -53,10 +53,13 @@ export function ThinkBlock({ text, streaming = false }: { text: string; streamin
       </button>
 
       {open ? (
-        <div
-          className="mt-1.5 whitespace-pre-wrap break-words border-l-2 pl-3 text-xs leading-relaxed text-fg-tertiary"
-          style={{ borderColor: 'var(--border-strong)' }}
-        >
+        /*
+         * Phase 7 二期：思考块展开区从「左竖线缩进块」换成**淡底卡** ——
+         * 复用工具明细行那套观感（`rounded-sm border border-line-subtle bg-bg-raised/40`），
+         * 不新增 Token。★ 只改 className：这个块流式时每帧重渲（`smooth` 在变），
+         * 增删节点会让 React 重建子树 → 严格禁止。
+         */
+        <div className="mt-1.5 whitespace-pre-wrap break-words rounded-sm border border-line-subtle bg-bg-raised/40 px-3 py-2 text-xs leading-relaxed text-fg-secondary">
           {smooth}
         </div>
       ) : null}

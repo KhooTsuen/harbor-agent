@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Loader2, XCircle } from 'lucide-react'
 import type { ToolRunRecord } from '@/types'
-import { AGENT_ACTIONS, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'
+import { AGENT_ACTIONS, homogeneousIconOf, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
 import { useScrollGuard } from '../scrollGuard'
 import { formatMs, ToolRunRow } from '../ToolRuns'
@@ -68,6 +68,11 @@ export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
   const running = runningOf(runs)
   const failedCount = runs.filter((run) => !run.ok && run.ms !== undefined).length
   const totalMs = runs.reduce((sum, run) => sum + (run.ms ?? 0), 0)
+  /*
+   * Phase 7 二期：这组工具映射到同一枚图标时才显示（「读取 4 个文件」配文件图标）；
+   * 混合类型不给图标 —— 显示一个不准确的类型比没有更糟。颜色仍只表状态。
+   */
+  const GroupIcon = homogeneousIconOf(runs)
   /* 明细也要有上限（AG-038，理由见文件头） */
   const shown = runs.length > MAX_VISIBLE_RUNS ? runs.slice(-MAX_VISIBLE_RUNS) : runs
   const hidden = runs.length - shown.length
@@ -92,6 +97,7 @@ export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
         ) : (
           <ChevronRight size={11} className="shrink-0 text-fg-tertiary" />
         )}
+        {GroupIcon ? <GroupIcon size={11} className="shrink-0 text-fg-tertiary" /> : null}
         <span className="min-w-0 truncate">{describeRuns(runs)}</span>
         {/*
           几步、多久 —— VS Code 那行「Completed 58 steps in 8m 23s」就是这个意思。

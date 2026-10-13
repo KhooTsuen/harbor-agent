@@ -5,6 +5,28 @@
 
 ## [未发布]
 
+- **功能：Phase 7 二期 · 批次 A —— 工具图标区分 / 思考块淡底卡 / 上下文 tooltip 增强**（2026-10-13）。
+  · **工具图标区分（`lib/agentActivity.ts`）**：新增 `TOOL_ICONS` 映射 + `toolIconOf()`
+    （认不出的工具退回 `Terminal`，不空着、不抛）与 `homogeneousIconOf()`（一组工具同族才给图标）。
+    明细行（`ToolRuns.tsx`）从**恒定的 `Terminal`** 换成按工具名取图标；概览行（`ToolLine.tsx`）
+    在同类工具时加一枚小图标（混合类型不给——显示不准确的类型比没有更糟）。
+    ★ **只表类型，不表颜色**：成功/失败/进行中仍由 `colorOf(status)` 表达，
+    图标映射块里**没有**任何语义色（有守卫断言钉着，防和 `statusLanguage` 的两份真相源打架）。
+  · **思考块淡底卡（`ProcessBlocks.tsx`）**：展开区从「左竖线缩进块」换成**淡底卡**
+    （`rounded-sm border border-line-subtle bg-bg-raised/40 px-3 py-2`），复用工具明细行那套观感，
+    不新增 Token。★ **只改 className**：这个块流式时每帧重渲（`smooth` 在变），增删节点会让 React
+    重建子树 —— 已去掉内联 `style`，全走 class。
+  · **上下文 tooltip 增强（`composer/ContextRow.tsx`）**：`ContextGauge` 的 tooltip 补两条**现成的**
+    信息 —— 缓存命中 token（`usage.cached`）、「距自动压缩线还差约 N token」（`autoCompactAt × 上限 − 已用`）。
+    口径与压缩同一份（`adviseCompact`），**零内核改动**（不碰 `context-builder` / `session-*` / IPC）。
+  · **边界**：零新依赖（图标全用现有 `lucide-react`）；不碰 Runtime / IPC / 事件契约 / 数据结构；
+    `useSmoothText` / `StableBlocks` / `useAutoScroll` / `scrollGuard` 一行未动。
+  · **文件**：改 `lib/agentActivity.ts`、`chat/ToolRuns.tsx`、`chat/message/ToolLine.tsx`、
+    `chat/ProcessBlocks.tsx`、`chat/composer/ContextRow.tsx`；新增
+    `__tests__/toolIcons.test.ts`（9 条）、`chat/__tests__/processStyling.test.tsx`（8 条）。
+  · **验证**：`npm run verify` 全绿；负向实验三处命中（明细行改回 `Terminal` → 3 红、思考块改回竖线 → 3 红、
+    tooltip 去掉缓存行 → 4 红），文件字节还原。另修一条既有守卫（`agentActivity.test.ts` 钉着 ToolLine 的 import 原文）。
+
 - **功能：Phase 7 一期 —— 正文对话流排版质感（纯 CSS · 零结构变更）**（2026-10-13）。
   · **背景**：自研 Markdown 渲染器（`src/components/chat/markdown/`）结构已经干净，
     问题在**数值**——标题太小、表格无外框无底色、段落/列表竖向节奏偏紧、引用块偏挤。

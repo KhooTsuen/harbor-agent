@@ -1,3 +1,18 @@
+import {
+  Bot,
+  Brain,
+  Check,
+  Download,
+  FilePen,
+  FileText,
+  FolderTree,
+  Globe,
+  HelpCircle,
+  Image,
+  Search,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
 import type { AgentPhase, ToolRunRecord } from '@/types'
 import { phaseLabel } from './agentPhase'
 
@@ -99,6 +114,58 @@ export const TOOL_LABELS: Record<string, string> = {
 /** 工具名的人话；没收录的返回原名（不编） */
 export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name
+}
+
+/** 认不出工具时的兜底图标（Phase 7 二期：类型靠图标区分，没收录也不空着） */
+const FALLBACK_ICON: LucideIcon = Terminal
+
+/**
+ * 工具名 → 图标（Phase 7 二期）。
+ *
+ * ★ **只管类型，不管状态**：图标表达「这是哪种工具」，成功 / 失败 / 进行中
+ *   仍由 `colorOf(status)` 的颜色表达（颜色只有 `statusLanguage.ts` 能定）。
+ *   别在这里给不同工具上不同颜色 —— 那会和状态语义色打架。
+ *
+ * 用**现有** lucide 图标，不引新依赖。同族工具共用一枚（`browse*` 一律 Globe）。
+ * 键集合与 `TOOL_LABELS` / `AGENT_ACTIONS` 保持一致（有测试盯着）。
+ */
+export const TOOL_ICONS: Record<string, LucideIcon> = {
+  read_file: FileText,
+  write_file: FilePen,
+  edit_file: FilePen,
+  list_dir: FolderTree,
+  run_shell: Terminal,
+  search_web: Search,
+  remember: Brain,
+  browse: Globe,
+  browse_elements: Globe,
+  browse_click: Globe,
+  browse_type: Globe,
+  browse_nav: Globe,
+  browse_ax: Globe,
+  generate_image: Image,
+  download: Download,
+  ask_user: HelpCircle,
+  spawn_subagent: Bot,
+  mark_step_done: Check,
+}
+
+/** 工具名的图标；没收录的退回 `Terminal`（不空着、不抛） */
+export function toolIconOf(name: string): LucideIcon {
+  return TOOL_ICONS[name] ?? FALLBACK_ICON
+}
+
+/**
+ * 一组工具的**共同图标** —— 只有当这组工具映射到同一枚图标时才返回它，
+ * 否则返回 null（混合类型不给图标，免得显示一个不准确的类型）。
+ *
+ * 概览行（「读取 4 个文件」）拿它当一个小图标：单类工具时锦上添花，
+ * 混合时保持原来的干净样子。
+ */
+export function homogeneousIconOf(runs: readonly ToolRunRecord[]): LucideIcon | null {
+  if (runs.length === 0) return null
+  const first = toolIconOf(runs[0].name)
+  return runs.every((run) => toolIconOf(run.name) === first) ? first : null
 }
 
 /**

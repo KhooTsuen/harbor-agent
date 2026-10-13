@@ -136,7 +136,7 @@ describe('AG-008 / 接线守卫', () => {
       expect(src, file).not.toContain("read_file: ['读取'") /* 别把表抄第二份 */
     }
     expect(read('src/components/chat/message/ToolLine.tsx')).toContain(
-      "import { AGENT_ACTIONS, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'",
+      "import { AGENT_ACTIONS, homogeneousIconOf, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'",
     )
   })
 

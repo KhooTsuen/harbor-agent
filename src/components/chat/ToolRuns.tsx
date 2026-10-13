@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { extractImageUrls } from '@/lib/markdown'
 import { openImageFromDom } from '@/stores/useImageLightbox'
-import { CheckCircle2, ChevronDown, ChevronRight, Loader2, Terminal, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, Loader2, XCircle } from 'lucide-react'
 import type { ToolRunRecord } from '@/types'
 import { cn } from '@/lib/utils'
+import { toolIconOf } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
 import { useScrollGuard } from './scrollGuard'
 
@@ -40,6 +41,8 @@ export function ToolRunRow({ run }: { run: ToolRunRecord }) {
   const hasOutput = run.output.trim().length > 0
   /* 工具输出里可能带图片（生图、下载图之类）—— 单独抠出来渲染 */
   const images = extractImageUrls(run.output)
+  /* Phase 7 二期：图标表达**工具类型**（状态仍由上面的状态图标 + 颜色表达） */
+  const ToolIcon = toolIconOf(run.name)
 
   return (
     <div className="rounded-sm border border-line-subtle bg-bg-base/40">
@@ -74,7 +77,7 @@ export function ToolRunRow({ run }: { run: ToolRunRecord }) {
           <XCircle size={12} className="shrink-0" style={{ color: colorOf('failed') }} />
         )}
 
-        <Terminal size={11} className="shrink-0 text-fg-tertiary" />
+        <ToolIcon size={11} className="shrink-0 text-fg-tertiary" />
         <span className="shrink-0 font-mono text-fg-secondary">{run.name}</span>
         {run.summary ? (
           <span className="min-w-0 flex-1 truncate font-mono text-fg-tertiary" title={run.summary}>

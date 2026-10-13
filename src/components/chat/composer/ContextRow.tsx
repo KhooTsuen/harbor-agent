@@ -13,7 +13,7 @@ import { colorOf } from '@/lib/statusLanguage'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
-import { adviseCompact, modelWindowOf } from '@/stores/thread/compact'
+import { adviseCompact, DEFAULT_AUTO_RATIO, modelWindowOf } from '@/stores/thread/compact'
 
 /** 圈圈直径 / 描边（px）—— 2xs 的字号旁边，再大就抢眼了 */
 const RING = 6
@@ -46,12 +46,26 @@ function ContextGauge() {
   /* 颜色只从状态语言表取：过提醒线黄、过自动线红（那条线过了会真压） */
   const status: UiStatus = advice.auto ? 'failed' : advice.warn ? 'warning' : 'neutral'
   const color = colorOf(status)
+  /*
+   * Phase 7 二期：tooltip 再给两条**现成的**信息（都不碰内核）——
+   *   · 缓存命中 token（`message.usage.cached`，命中部分便宜很多）；
+   *   · 距自动压缩线还差多少（`autoCompactAt × 上限 − 已用`）。
+   * 口径与压缩同一份（`advice`），不自己另算一套。
+   */
+  const cached = thread.messages.reduce((sum, message) => sum + (message.usage?.cached ?? 0), 0)
+  const autoAt = Number.isFinite(cfg?.context?.autoCompactAt)
+    ? Number(cfg?.context?.autoCompactAt)
+    : DEFAULT_AUTO_RATIO
+  const remain = Math.max(0, Math.round(autoAt * advice.limit - advice.used))
   const detail = [
     `上下文 ${pct}%（估算 ${advice.used.toLocaleString()} / ${advice.limit.toLocaleString()} token）`,
     window
       ? `分母 = min(模型窗口 ${window.toLocaleString()} × 80%, 你的上限)`
       : '没有这个模型的窗口数据，分母只用你的上限',
-    advice.auto ? '已经超过自动压缩线 —— 下一轮会自动压缩' : advice.warn ? '快到自动压缩线了' : '',
+    cached > 0 ? `缓存命中 ${cached.toLocaleString()} token（命中部分便宜很多）` : '',
+    advice.auto
+      ? '已经超过自动压缩线 —— 下一轮会自动压缩'
+      : `距自动压缩线还差约 ${remain.toLocaleString()} token`,
   ]
     .filter(Boolean)
     .join('\n')
