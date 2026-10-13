@@ -25,6 +25,8 @@
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const { progressOf } = require('./task-plan.cjs')
+/* CE-016：推理语言的中文占比 —— 与 isMostlyEnglish 共用同一套字符统计（不另写一份数法） */
+const { chineseRatio } = require('./language-drift.cjs')
 
 /** 会改文件的工具（与 task-steering 的 WRITE_TOOLS 同口径 —— 判据只有这两类） */
 const WRITE_TOOLS = new Set(['write_file', 'edit_file'])
@@ -34,6 +36,9 @@ const STRICT_MIN_WRITES = 3
 
 /** 同一条欠账期里最多顶回几次（与收尾门禁的 MAX_BLOCKS 同数，顶够就放行） */
 const MAX_PUSHES = 3
+
+/** CE-016：推理中文占比低于它 → 收尾记一条 warning（观察项，不拦） */
+const LOW_CHINESE_RATIO = 0.5
 
 /** 进程内观察锚（taskId → 计数）；只影响「顶不顶」，不影响任何落盘数据 */
 const strictSeen = new Map()
@@ -163,6 +168,30 @@ function strictPlanPending(task) {
   return { pending: anchor.done > cur.doneAtRun, done: anchor.done }
 }
 
+/**
+ * 收尾观察项（CE-016）：整段推理的**中文占比**是不是太低（语言整体跑偏了）。
+ *
+ * ★ **只是观察，不是硬门禁** —— 只往日志里记一条 warning：
+ *   不推回模型、不改任务状态、不影响这一轮能不能收工。
+ *   理由：推理语言好不好没有「对错」判据（路径 / 工具名 / 代码本就该是英文），
+ *   拿它拦人会误伤；先攒观察数据，将来要收紧也才有依据。
+ *
+ * 统计不出来（没推理 / 空串 / 非字符串）→ **跳过**，不报错、不告警。
+ *
+ * @param {unknown} reasoning 这次 run 攒下来的全部推理文本
+ * @returns {{ ratio: number|null, warned: boolean }}
+ */
+function noteChineseReasoning(reasoning) {
+  const ratio = chineseRatio(reasoning)
+  if (ratio === null) return { ratio: null, warned: false }
+  if (ratio >= LOW_CHINESE_RATIO) return { ratio, warned: false }
+  log.warn(
+    `收尾观察（CE-016）：本次推理中文占比 ${(ratio * 100).toFixed(0)}%（低于 ${LOW_CHINESE_RATIO * 100}%）` +
+      ' —— 可能语言漂移，只记录、不拦任务。',
+  )
+  return { ratio, warned: true }
+}
+
 /** 收尾拦截话术（写欠账）—— shouldContinue 顶回去用 */
 function strictStopMessage(backlog) {
   return [
@@ -196,7 +225,9 @@ module.exports = {
   strictPlanPending,
   strictStopMessage,
   pushStrictNote,
+  noteChineseReasoning,
   STRICT_PLAN_MESSAGE,
   STRICT_MIN_WRITES,
   MAX_PUSHES,
+  LOW_CHINESE_RATIO,
 }

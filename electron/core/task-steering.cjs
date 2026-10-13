@@ -212,11 +212,11 @@ function shouldVerify(input = {}) {
  * `seen` 用一个容器装两份账（`plan` / `verify`）—— 两个门禁各自返回的
  * `seen` 形状不同，混在一个对象里会互相覆盖。
  *
- * @param {{ taskId?: string, verifyAfterEdit?: boolean, seen?: object, strictMode?: boolean }} input
+ * @param {{ taskId?: string, verifyAfterEdit?: boolean, seen?: object, strictMode?: boolean, reasoning?: string }} input
  * @returns {{ message: string, seen: object }} `message` 为空 = 放行
  */
 function completionGate(input = {}) {
-  const { taskId = '', verifyAfterEdit = true, seen = {}, strictMode } = input
+  const { taskId = '', verifyAfterEdit = true, seen = {}, strictMode, reasoning = '' } = input
   const planSeen = seen.plan ?? {}
   const verifySeen = seen.verify ?? {}
 
@@ -226,26 +226,12 @@ function completionGate(input = {}) {
   const verify = shouldVerify({ taskId, verifyAfterEdit, seen: verifySeen, strictMode })
   if (verify.continue) return { message: verify.message, seen: { ...seen, verify: verify.seen } }
 
+  /* CE-016：真的要放行收尾了 → 顺手看一眼推理语言（观察项，只记 warning，不拦）。
+     放在「放行」这一刻：顶回去的那几次不是收尾，不该记。 */
+  if (strict.strictEnabled(strictMode)) strict.noteChineseReasoning(reasoning)
+
   return { message: '', seen: { ...seen, plan: plan.seen, verify: verifySeen } }
 }
-/**
- * 模型回复里如果给了 ```plan 块，存进任务。
- *
- * 只看第一次：后面再给的多半是对计划的修正，界面上会跳来跳去。
- * 而「更新计划」走的是模型重发完整计划（带 `[x]` 标记），也走这里。
- *
- * @returns {string[]|null} 存下来的计划；没有就返回 null
- */
-/**
- * 从回复里抓计划（AG-004）。**变了才返回**，两个原因：
- *
- * ① 模型每一轮都会把计划原样复述一遍（上下文里就有），不判断就得每轮发事件，
- *    一次对话刷出几十条一模一样的计划，界面一直在闪；
- * ② 以前只抓「第一次」，模型后来重新规划（用户改了要求、或发现路走不通）
- *    会被**静默丢弃** —— 现在每轮都给它看，变没变由这里说了算。
- *
- * @returns {{ plan: string[], version: number, reason: string }|null}
- */
 /**
  * 「用户在执行中改了方向」该怎么跟模型说（AG-043）。
  *

@@ -36,11 +36,9 @@ const MAX_TURNS = 200
 
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
 const LOOP_NUDGE_LIMIT = 2
-
 /* ── 主循环 ───────────────────────────────────────────────── */
 
-/* 状态事件的 key。**不能用 options.taskId**（那是台账 id）—— 调用方按自己的 requestId
- * 过滤，两边对不上事件就全丢 →「UI 显示空闲、后台在跑」。 */
+/* 状态事件的 key。不能用 options.taskId（那是台账 id）—— 调用方按自己的 requestId 过滤，两边对不上事件就全丢 →「UI 显示空闲、后台在跑」。 */
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
 }
@@ -216,6 +214,8 @@ async function runLoop(options) {
         taskId: options.taskId ?? '',
         verifyAfterEdit: config.assistant?.verifyAfterEdit,
         seen: gateSeen,
+        /* CE-016：把本次推理交给收尾门禁 —— 它放行收尾时顺手看一眼推理语言（观察项，不拦） */
+        reasoning: transcript.soFar().reasoning,
       })
       if (gate.message) {
         gateSeen = gate.seen

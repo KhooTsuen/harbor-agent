@@ -200,6 +200,47 @@ export async function run() {
   )
   streakCore.reset()
 
+  /* ══════════════════════════════════════════════════════
+     CE-016 / P2-3：收尾观察 —— 推理中文占比过低记一条 warning（**不拦任务**）
+     判据是纯字符统计（与 isMostlyEnglish 共用 language-drift 的 charStats）。
+     ══════════════════════════════════════════════════════ */
+
+  group('CE-016 / 收尾观察：推理中文占比')
+  const driftCore = require(join(ROOT, 'electron/core/language-drift.cjs'))
+
+  check('①-1 纯中文 → 占比 ≈ 1', driftCore.chineseRatio('这是一段完全中文的推理内容没有英文词') > 0.9)
+  check('①-2 纯英文 → 占比 0', driftCore.chineseRatio('Error: Cannot find module express') === 0)
+  check(
+    '①-3 中英混合 → 介于 0 与 1 之间',
+    (() => {
+      const r = driftCore.chineseRatio('用户要求列出文件 then read_file')
+      return r > 0 && r < 1
+    })(),
+  )
+  check('①-4 空串 → null（统计不出来）', driftCore.chineseRatio('') === null)
+  check('①-5 非字符串 → null', driftCore.chineseRatio(null) === null && driftCore.chineseRatio(7) === null)
+  check(
+    '①-6 ★ 与 isMostlyEnglish 共用同一套统计（charStats 只在语言模块里）',
+    typeof driftCore.charStats === 'function' &&
+      /* 不写完整 require 字面量 —— 有守卫会把它当真 require 去查文件（见 29-contextcache 的注释） */
+      read('electron/core/task-strict.cjs').includes('language-drift.cjs') &&
+      !read('electron/core/task-strict.cjs').includes('[A-Za-z]/g'),
+  )
+
+  check('②-1 纯英文推理 → 记 warning（warned=true）', taskStrict.noteChineseReasoning('Error: module not found in node_modules').warned === true)
+  check('②-2 纯中文推理 → 不告警', taskStrict.noteChineseReasoning('这段推理全是中文，不需要告警').warned === false)
+  check('②-3 没推理 / 空串 → 跳过、不报错', taskStrict.noteChineseReasoning('').warned === false)
+  check('②-4 非字符串 → 跳过、不报错', taskStrict.noteChineseReasoning(undefined).ratio === null)
+  check(
+    '③-1 ★ 观察项接在收尾门禁「放行」那一刻（completionGate → noteChineseReasoning）',
+    /strict\.noteChineseReasoning\(reasoning\)/.test(read('electron/core/task-steering.cjs')),
+  )
+  check(
+    '③-2 loop.cjs 把本次推理交给收尾门禁（reasoning: transcript.soFar().reasoning）',
+    read('electron/core/loop.cjs').includes('reasoning: transcript.soFar().reasoning'),
+  )
+  check('③-3 ★ 只是观察：不推回模型（函数返回不带 message）', !('message' in taskStrict.noteChineseReasoning('Error: nope')))
+
   disposeTasks(created)
   check(
     '测试任务已清理',
