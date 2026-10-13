@@ -1,6 +1,6 @@
 # Phase 7 二期 调研与方案说明：对话渲染的体验提升
 
-> 只读调研 + 方案设计 · 2026-10-13 · **未实施，待确认**
+> 只读调研 + 方案设计 · 2026-10-13 · **批次 A 已实施（Commit 9fb23af）· 批次 B/C 待定**
 > 范围：除「静态 Markdown 样式」（一期已做）之外的对话渲染体验
 > 边界：严禁新依赖 · 严禁碰 Runtime / IPC / 数据结构 · 防闪烁三件套的改动必须单列风险评估
 
@@ -11,10 +11,10 @@
 | # | 方向 | 现状（源码事实） | 可行性判断 | 建议 |
 |---|---|---|---|---|
 | 1a | 流式闪烁光标 | **已经存在**：`MessageRounds.tsx:142` + `.caret`（`index.css:900`） | 已满足；**改它反而有风险** | **不改** |
-| 1b | 悬浮「回到底部」 | **已经存在**：`MessageList.tsx:194`（`mode==='free'` 即出） | 补「距离阈值」可行 | 批次 B |
-| 2a | 思考块折叠卡样式 | 现在是「按钮 + 左竖线缩进块」（`ProcessBlocks.tsx:38-63`） | 纯 CSS 可行 | 批次 A |
-| 2b | 工具图标差异化 | 现在恒用 `Terminal` 图标（`ToolRuns.tsx:77`）；`ToolLine` 只用状态图标 | 可行（图标为主、颜色仍走状态语义） | 批次 A |
-| 3 | Mermaid 点击放大 | SVG 走 `innerHTML`，**不是** `<img data-chat-image>` | 不能直接复用；有一处需先验证 | 批次 C（需评估） |
+| 1b | 悬浮「回到底部」 | **已经存在**：`MessageList.tsx:194`（`mode==='free'` 即出） | 补「距离阈值」可行 | 批次 B（**待定**：先真机观察灵敏度） |
+| 2a | 思考块折叠卡样式 | 现在是「按钮 + 左竖线缩进块」（`ProcessBlocks.tsx:38-63`） | 纯 CSS 可行 | 批次 A（**已实施** 9fb23af） |
+| 2b | 工具图标差异化 | 现在恒用 `Terminal` 图标（`ToolRuns.tsx:77`）；`ToolLine` 只用状态图标 | 可行（图标为主、颜色仍走状态语义） | 批次 A（**已实施** 9fb23af） |
+| 3 | Mermaid 点击放大 | SVG 走 `innerHTML`，**不是** `<img data-chat-image>` | 不能直接复用；有一处需先验证 | 批次 C（**待定**：等明确需求） |
 | 4 | 上下文可视化 | **已经存在**：`ContextRow.tsx` 的 `ContextGauge`（百分比圈 + 明细） | 已满足；增强需碰内核 | **不改 / 只做 tooltip 增强** |
 
 **两条最重要的结论（与预期不同）**：**流式光标**和**上下文圈**都已经实现了 —— 你问的两个「想新增」的能力，代码里已经有了。下面逐个说清现状、能怎么改、以及为什么有些建议是「不改」。
@@ -210,21 +210,26 @@ const showBack = mode === 'free' && awayFromBottom   // 阈值如 240px
 
 > 全部在 `src/`，无 `electron/`、无新 IPC、无数据结构变更。
 
-**批次 A —— 零风险（纯样式 / 换图标）**
-- `src/lib/agentActivity.ts`（加 `TOOL_ICONS` 映射 + `toolIconOf()`）
+**批次 A —— 零风险（纯样式 / 换图标）· ✅ 已实施（Commit 9fb23af）**
+- `src/lib/agentActivity.ts`（加 `TOOL_ICONS` 映射 + `toolIconOf()` + `homogeneousIconOf()`）
 - `src/components/chat/message/ToolLine.tsx`（概览行用工具图标）
 - `src/components/chat/ToolRuns.tsx`（明细行换掉恒定 `Terminal`）
 - `src/components/chat/ProcessBlocks.tsx`（思考块展开区换淡底卡 class）
-- 新增守卫断言（源码级：钉住「工具图标映射存在且覆盖主要工具」「思考块不再是裸竖线」）
+- 新增守卫断言 `lib/__tests__/toolIcons.test.ts`(9 条) + `chat/__tests__/processStyling.test.tsx`(8 条)
+- 实际改动还含：`chat/composer/ContextRow.tsx`（tooltip 补 `cached` + 距自动线，**纯展示层**）；
+  另修一条既有守卫 `lib/__tests__/agentActivity.test.ts`（它钉着 ToolLine 的 import 原文）
 
-**批次 B —— 低风险（触及 `useAutoScroll`，需风险评估）**
-- `src/hooks/useAutoScroll.ts`（加只读派生值 `awayFromBottom`，跨阈值才 setState）
-- `src/components/chat/MessageList.tsx`（按钮显示条件：`mode==='free' && awayFromBottom`）
-- 新增断言（滚 5px 不出 / 滚 300px 出 / 回到底消失）
+**批次 B —— 低风险（触及 `useAutoScroll`，需风险评估）· ⏸ 待定**
+- 触发条件：**用户真机观察「回到底部」按钮灵敏度** —— 若觉得太敏感（滚 5px 就弹）再做，否则维持现状。
+- 届时改：`src/hooks/useAutoScroll.ts`（加只读派生值 `awayFromBottom`，跨阈值 240px 才 setState）
+  + `src/components/chat/MessageList.tsx`（按钮条件改 `mode==='free' && awayFromBottom`）
+- 届时补断言（滚 5px 不出 / 滚 300px 出 / 回到底消失）
+- ⚠️ 若实施后发现对 i5-6400 老机器有卡顿感 → **立刻退回方案 B**（维持 `free` 即显示）
 
-**批次 C —— 中风险（需先验证）**
+**批次 C —— 中风险（需先验证）· ⏸ 待定（等明确需求）**
 - `src/components/chat/markdown/MermaidBlock.tsx`（点击放大入口）
-- 视验证结果决定是否扩展 `ImageStage.tsx`；若 `imageSaveAs` 不接受 data URL，则退保守方案
+- 实施前**必须先只读验证** `handlers/image-file.cjs` 对 data URL 的行为：
+  通过 → 路径 A；不通过 → **放弃该功能**（不动 Runtime、不引新 Lightbox）
 
 **明确不做**
 - 1.1 光标：**已存在，不改**（改成行内光标会重新引入跳动）
@@ -232,11 +237,12 @@ const showBack = mode === 'free' && awayFromBottom   // 阈值如 240px
 
 ---
 
-## 7. 待你拍板
+## 7. 拍板结果与实施状态（2026-10-13）
 
-1. **1.2 回底按钮**：走**方案 A**（`useAutoScroll` 加只读派生值、真按距离阈值）还是**方案 B**（不碰 hook、维持 FREE 即显示）？
-2. **2.2 工具差异化**：只做「图标区分」（推荐，颜色仍走状态语义），还是也启用「类型颜色」（用 `--accent-*`，观感更花但可能吵）？
-3. **3 Mermaid 放大**：先让我**只读验证** `handlers/image-file.cjs` 对 data URL 的行为，再定 A/B/不做？
-4. **批次顺序**：先做 A（零风险）拿观感，再做 B/C？还是只挑其中几项？
+1. **1.2 回底按钮** → 用户拍板**方案 A**；但**批次 B 暂缓**，先真机观察灵敏度再定是否实施。
+2. **2.2 工具差异化** → **只做图标区分**，禁止类型颜色（颜色仍只表状态语义）· **批次 A 已实施**。
+3. **3 Mermaid 放大** → **批次 C 暂缓**，等未来有明确需求再提（未做只读验证，未动代码）。
+4. **批次顺序** → 先做 A（零风险）· **A 已实施并验收通过**；B/C 待定。
+5. **4 上下文** → 保持现状、**零内核改动**；仅做 tooltip 增强（`ContextRow.tsx`）· **已随批次 A 实施**。
 
-**调研与方案完成，停下等你确认。**
+**当前状态：批次 A 已实施（Commit 9fb23af）· 批次 B/C 待定 · 进入真机观察期。**

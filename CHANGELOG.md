@@ -24,8 +24,11 @@
   · **文件**：改 `lib/agentActivity.ts`、`chat/ToolRuns.tsx`、`chat/message/ToolLine.tsx`、
     `chat/ProcessBlocks.tsx`、`chat/composer/ContextRow.tsx`；新增
     `__tests__/toolIcons.test.ts`（9 条）、`chat/__tests__/processStyling.test.tsx`（8 条）。
-  · **验证**：`npm run verify` 全绿；负向实验三处命中（明细行改回 `Terminal` → 3 红、思考块改回竖线 → 3 红、
-    tooltip 去掉缓存行 → 4 红），文件字节还原。另修一条既有守卫（`agentActivity.test.ts` 钉着 ToolLine 的 import 原文）。
+  · **验证**：`npm run verify` 全绿（189 文件 / 1709 用例；内核自检 4255·0；安全 83 PASS）；
+    负向实验三处命中（明细行改回 `Terminal` → 1 红、思考块改回竖线 → 2 红、tooltip 去掉缓存行 → 1 红），
+    文件字节还原。另修一条既有守卫（`agentActivity.test.ts` 钉着 ToolLine 的 import 原文）。
+  · **状态**：批次 A **已实施并验收通过**（Commit `9fb23af`）；**批次 B/C 待定** —— 设计文档见
+    `docs/research/phase7-2-experience-design.md`（B 待真机观察「回到底部」按钮灵敏度，C 待未来明确需求）。
 
 - **功能：Phase 7 一期 —— 正文对话流排版质感（纯 CSS · 零结构变更）**（2026-10-13）。
   · **背景**：自研 Markdown 渲染器（`src/components/chat/markdown/`）结构已经干净，
