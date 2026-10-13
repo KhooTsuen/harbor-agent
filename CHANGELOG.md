@@ -3,7 +3,18 @@
 > 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
 > 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
 
-## [未发布]
+## [1.30.0] — 2026-10-13 · Phase 5 收尾 + Phase 6 全量（persona / 严格模式 / 计划动态）+ Phase 7 对话渲染（一期排版 · 二期批次 A）+ 写入保护
+
+> **为什么是次版本号**：本版新增功能（任务感知 persona 路由、严格模式验证门禁、
+> 计划打卡工具 `mark_step_done`、对话渲染排版与工具图标），按通道规矩走次版本号；
+> 也是 1.30.0 的正式版 —— 内含安全回归 84 项与三条写入保护（原子写 + 损坏留档）。
+>
+> **本版验证数字**：单测 **189 文件 / 1709 用例**、内核自检 **通过 4255 项 / 失败 0**、
+> 安全 **83 PASS · 0 FAIL · 1 N/A**、行数 **1137 文件全 ≤300**、`npm run build` ✓。
+>
+> **诚实遗留**：Phase 7 二期 **批次 B**（回底按钮距离阈值）与 **批次 C**（Mermaid 点击放大）
+> 待定（前者等真机观察灵敏度、后者等明确需求）；三项排版技术债（正文 16px、标题改真 `<h*>`、
+> Prompt 软约束）见 [`docs/research/phase7-typography-design.md`](docs/research/phase7-typography-design.md) 文末归档。
 
 - **功能：Phase 7 二期 · 批次 A —— 工具图标区分 / 思考块淡底卡 / 上下文 tooltip 增强**（2026-10-13）。
   · **工具图标区分（`lib/agentActivity.ts`）**：新增 `TOOL_ICONS` 映射 + `toolIconOf()`
