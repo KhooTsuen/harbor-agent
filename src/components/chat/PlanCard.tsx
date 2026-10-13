@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ListChecks } from 'lucide-react'
 import { colorOf } from '@/lib/statusLanguage'
-import { planProgressLabel, PROGRESS_TITLE } from './taskCenterModel'
+import {
+  execMetaLabel,
+  planProgressLabel,
+  PROGRESS_TITLE,
+  type ExecSummary,
+} from './taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    执行计划（AG-004）
@@ -104,13 +109,24 @@ function PlanSteps({ plan, markCurrent = false }: { plan: string[]; markCurrent?
   )
 }
 
-export function PlanCard({ versions }: { versions: PlanVersion[] }) {
+/**
+ * 计划卡。
+ *
+ * `versions` 来自任务台账（`task.planVersions`）——**模型勾的那份**。
+ * `exec`（可选）是**内核记的真实执行事实**（`execSummary(task)`）——
+ * 见 `execMetaLabel` 与 `docs/research/plan-card-dynamic-design.md`：
+ * 计划卡以前只有前者，于是模型不重发计划块时那个数字就**卡死**（Phase 5 定位）。
+ * 不传 `exec` = 行为与改前一字不差（老调用点 / 单测不受影响）。
+ */
+export function PlanCard({ versions, exec }: { versions: PlanVersion[]; exec?: ExecSummary }) {
   const [showHistory, setShowHistory] = useState(false)
 
   if (versions.length === 0) return null
   const current = versions[versions.length - 1]
   const older = versions.slice(0, -1)
   const doneCount = current.plan.filter(isDone).length
+  /* 动态执行摘要：steps === 0 → 空串 → 整行不渲染（见 execMetaLabel 的三条纪律） */
+  const execText = exec ? execMetaLabel(exec) : ''
 
   return (
     <div className="mt-1 rounded-sm border border-line-hairline bg-bg-raised/40 px-2.5 py-1.5">
@@ -123,6 +139,21 @@ export function PlanCard({ versions }: { versions: PlanVersion[] }) {
           {versions.length > 1 ? ` · 第 ${versions.length} 版` : ''}
         </span>
       </div>
+
+      {execText ? (
+        /*
+         * ★ 位置 A：标题行之下、步骤列表之上（用户 2026-10-13 拍板）。
+         *
+         * 防抖动靠 **DOM 稳定**，不靠动画（设计说明 §3）：
+         *   · 恒定**单个节点** + 单个文本子串，每次刷新**只改文本**（节点数不变 → 不重排）；
+         *   · `tabular-nums` 等宽数字 —— 位数 9→10 不会把后面的字推来推去；
+         *   · **不加** `aria-live`（每步播报太吵）、**不加**过渡动画（那才是抖动源）。
+         * 整行在 `steps === 0` 时**不渲染**（高度 0→1 只发生一次，不是每次刷新都变）。
+         */
+        <p className="mt-0.5 text-2xs text-fg-tertiary tabular-nums" title={PROGRESS_TITLE}>
+          {execText}
+        </p>
+      ) : null}
 
       <div className="mt-1">
         <PlanSteps plan={current.plan} markCurrent />

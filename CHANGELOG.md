@@ -5,6 +5,35 @@
 
 ## [未发布]
 
+- **功能：PlanCard / PlanBar 动态执行摘要（UI 显示层 · 加法）**（2026-10-13）。
+  · **背景**：真机使用中发现 —— 计划卡上的「计划 N/M 步」数的是**模型勾的计划条数**，
+    而模型只在每轮的第 1 个 LLM 轮次输出正文（计划块在里面），后续工具轮没有正文，
+    于是那个数字**永远停在 0/M**，看着像「它没动」（Phase 5 已定位，见
+    `docs/research/ui-phase5-progress-design.md` §2；设计说明见
+    `docs/research/plan-card-dynamic-design.md`）。
+  · **修法是加法**：新增一行「执行摘要：已执行 X 步 · 已修改 Y 个文件」，数据只来自
+    **已有的** `execSummary(task)`（`task.steps` / `checkpoints` / `changedFiles`）——
+    **零新字段、零 IPC、零 Runtime 改动、零自然语言解析**，
+    更**不建立「计划第 N 条 ↔ 哪个工具」的映射**（内核没这个归属事实，硬配就是编）。
+  · **新增纯函数 `execMetaLabel`**（`src/components/chat/taskCenterModel.ts`）：步数部分
+    **直接复用** `execProgressLabel`（措辞只有一处）；`steps === 0` 返回空串 →
+    调用方**整行不渲染**（不显示「已执行 0 步」，同既有约定）。
+  · **PlanCard**：加**可选** prop `exec?: ExecSummary`（不传 = 行为与改前一字不差）；
+    动态行放在**标题行之下、步骤列表之上**（位置 A）。防抖动靠 **DOM 稳定**而非动画：
+    恒定**单节点** + 只改文本 + `tabular-nums`（位数变化不左右跳），**不加** `aria-live`。
+  · **PlanBar**（输入框旁常显，用户实际盯「0/5」的位点）：复用**同一份** `execMetaLabel`。
+    **窄窗口降级**：`hidden … min-[420px]:inline`（< 420px 整段隐藏）+ `min-w-0 truncate`
+    （显示时自己缩到自己截断）+ 外层 `overflow-hidden` 兜底 —— 多这段文案**不会撑破**
+    输入框旁的布局；内容仍可通过该行的 `title` 悬停看到。
+  · **口径说明**（`PROGRESS_TITLE`）：明写「计划卡中的 [ ] 是模型最初规划时的静态勾选，
+    不代表实际执行进度」（用户点名的措辞）。
+  · **★ 未碰**：`electron/**`（Runtime / IPC / 任务台账结构）、防闪烁三件套
+    （`useSmoothText` / `useAutoScroll` / `scrollGuard` —— `ScrollGuardContext.Provider`
+    只在 `MessageList`，与计划卡/计划栏本就无耦合）、`ProgressTimeline`。
+  · **验证**：`npm run verify` 全绿；单测 **1649 → 1673**（+24：`taskCenter` / `planCard` /
+    `planBar` 三处，含**真渲染 DOM 断言**）；三条**负向实验**（拆 TaskRowDetails 的 exec 接线 /
+    拆 PlanCard 动态行 / 拆 PlanBar 动态段）分别令对应断言**当场变红**且文件**字节还原**。
+
 - **功能：严格模式 strictMode 核心落地（Phase 6 批次 3 · 验证硬门禁）**（2026-10-13）。
   · **背景**：批次 1/2 把「软约束」铺完了；本批次只做一件事 —— 把验证从**提示词层面**
     升级为**基于内核结构化事实的硬门禁**（参考 dsh-routing-suite 的打卡制，但**不做红队门**、

@@ -86,12 +86,39 @@ export function execProgressLabel(exec: ExecSummary): string {
 }
 
 /**
+ * 计划卡 / 计划栏里的**动态执行摘要**一行（2026-10-13 新增）。
+ *
+ * 症结：计划卡上的「计划 N/M 步」数的是**模型勾的计划条数**，而模型只在每轮的第 1 个
+ * LLM 轮次输出正文（计划块在里面），后续工具轮没有正文 → 那个数字**永远停在 0/M**，
+ * 看着像「没动」。这一行改用**内核记的真实执行事实**来补：`已执行 X 步 · 已修改 Y 个文件`。
+ *
+ * 三条纪律（与 `docs/research/plan-card-dynamic-design.md` 对齐）：
+ *   · **措辞只有一处** —— 步数部分直接复用 `execProgressLabel`（不另写一套「已执行」）；
+ *   · **`steps === 0` 返回空串** —— 调用方据此**整行不渲染**（同 `execProgressLabel` 的约定，
+ *     不显示「已执行 0 步」那种和卡死 `0/M` 一样误导的东西）；
+ *   · **不解析自然语言、不建立「计划第 N 条 ↔ 哪个工具」的映射** —— 只读 `execSummary`
+ *     （= `task.steps` / `checkpoints` / `changedFiles`）。
+ *
+ * 「执行摘要：」这个前缀是**故意的**：给动态行一个明确身份，免得被读成计划的一部分。
+ */
+export function execMetaLabel(exec: ExecSummary): string {
+  const steps = execProgressLabel(exec)
+  if (!steps) return ''
+  const files = exec.files > 0 ? ` · 已修改 ${exec.files} 个文件` : ''
+  return `执行摘要：${steps}${files}`
+}
+
+/**
  * 两种进度的**口径说明**（挂在 `title` 上，悬停可见）。
  *
  * 一句话说清它们不是一回事，免得「计划 0/5 步」被读成「任务没进展」。
+ * ★ 第一句是**用户明确要求**写进去的（2026-10-13）：
+ *   「计划卡中的 [ ] 是模型最初规划时的静态勾选，不代表实际执行进度」。
  */
 export const PROGRESS_TITLE =
-  '计划 = 模型在计划块里勾选的条数（模型不重发计划块就不会变）· 已执行 = 内核记录的真实工具调用步数'
+  '计划卡中的 [ ] 是模型最初规划时的静态勾选，不代表实际执行进度。' +
+  '计划 = 模型在计划块里勾选的条数（模型不重发计划块就不会变）· ' +
+  '已执行 = 内核记录的真实工具调用步数（读 task.steps，与计划条数不是一回事）'
 
 /*
  * Phase 1 · B1：**计划进度**的措辞（唯一一份）。

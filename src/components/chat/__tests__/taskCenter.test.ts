@@ -158,6 +158,8 @@ describe('Phase 5 / 执行进展', () => {
   })
 })
 
+/* 动态行的措辞层（`execMetaLabel` / `PROGRESS_TITLE`）与真渲染断言住在
+   `__tests__/planCard.test.ts`（同一特性放一处）；上面那条是语义边界：**不做 plan↔工具映射**。 */
 describe('AG-028 / 接线守卫', () => {
   it('右栏有独立「任务」标签并挂 TaskCenter', () => {
     /* 标签表在 2026-10-04 拆去了 RightTabs.tsx（RightPanel 破 300 行红线）——

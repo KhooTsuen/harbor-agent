@@ -6,7 +6,7 @@ import { TaskConsole } from './TaskConsole'
 import { PlanCard } from './PlanCard'
 import { ProgressTimeline } from './ProgressTimeline'
 import { TaskDiagnosisPanel } from './TaskRowParts'
-import { elapsedMs, formatDuration, formatUpdated } from './taskCenterModel'
+import { elapsedMs, execSummary, formatDuration, formatUpdated } from './taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    任务中心：一行的「详情」面板（从 TaskRow.tsx 拆出来的）
@@ -86,7 +86,9 @@ export function TaskRowDetails({
           </ul>
         </div>
       ) : null}
-      <PlanCard versions={task.planVersions ?? []} />
+      {/* exec：内核记的真实执行事实（steps / checkpoints / changedFiles）——
+          计划卡以前只吃「模型勾的计划」，模型不重发计划块时那个数字就卡死 */}
+      <PlanCard versions={task.planVersions ?? []} exec={execSummary(task)} />
       <ProgressTimeline phases={phases} steps={task.steps} plan={task.plan} />
       {task.result ? (
         <p className="mt-2 whitespace-pre-wrap text-2xs text-fg-tertiary">{task.result}</p>

@@ -4,7 +4,13 @@ import type { TaskRecord } from '@/types/safety'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { cn } from '@/lib/utils'
 import { STATUS_CLASS } from '@/lib/statusLanguage'
-import { cleanPlanLine, isPlanDone } from '../taskCenterModel'
+import {
+  cleanPlanLine,
+  execMetaLabel,
+  execSummary,
+  isPlanDone,
+  PROGRESS_TITLE,
+} from '../taskCenterModel'
 
 /* ══════════════════════════════════════════════════════════════
    计划栏 —— 与输入框嵌合（2026-09-30 用户要求）
@@ -57,6 +63,12 @@ export function PlanBar({ threadId }: { threadId: string }) {
   const done = plan.filter(isPlanDone).length
   const currentIndex = plan.findIndex((line) => !isPlanDone(line))
   const current = currentIndex >= 0 ? plan[currentIndex] : ''
+  /*
+   * 动态执行摘要（2026-10-13）：与计划卡同一份事实、同一处措辞（`execMetaLabel`）。
+   * 这是用户**实际常盯着**「0/5」的位点 —— 计划卡藏在任务详情里默认收起。
+   * `steps === 0` → 空串 → 那一小段不渲染（不显示「已执行 0 步」）。
+   */
+  const execText = latest ? execMetaLabel(execSummary(latest)) : ''
 
   return (
     <div className="mb-1.5 rounded-sm border border-line-subtle bg-bg-raised/40">
@@ -64,7 +76,13 @@ export function PlanBar({ threadId }: { threadId: string }) {
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-2xs transition-colors duration-fast hover:bg-bg-hover"
+        /* 悬停给口径说明（窄屏动态段被收起时的兜底提示） */
+        title={PROGRESS_TITLE}
+        /*
+         * `overflow-hidden`：这一行**永远不许撑破**输入框旁的布局 ——
+         * 子项再怎么长，也只能在这个盒子里被裁掉，不许溢出到卡片外。
+         */
+        className="flex w-full items-center gap-1.5 overflow-hidden px-2 py-1 text-left text-2xs transition-colors duration-fast hover:bg-bg-hover"
       >
         {open ? (
           <ChevronDown size={11} className="shrink-0 text-fg-tertiary" />
@@ -74,6 +92,24 @@ export function PlanBar({ threadId }: { threadId: string }) {
         <span className="shrink-0 text-fg-secondary">
           计划 · {done}/{plan.length}
         </span>
+        {execText ? (
+          /*
+           * ★ 窄窗口降级（用户 2026-10-13 要求）：动态执行段在**窄屏自动隐藏**，
+           *   内容仍可通过这一行的 `title` 悬停看到 —— 绝不能因为多这段文案而撑破布局。
+           *
+           * 三重保险，缺一不可：
+           *   · `hidden … min-[420px]:inline` —— 视口 < 420px（含 320px）时**整段隐藏**；
+           *   · `min-w-0 truncate` —— 显示时也能**自己缩到自己截断**（省略号），不挤别人；
+           *   · 外层按钮的 `overflow-hidden` —— 兜底，任何情况下都不溢出卡片。
+           * `tabular-nums` 与计划卡同口径：位数变化不左右跳。
+           */
+          <span
+            className="hidden min-w-0 truncate text-fg-tertiary tabular-nums min-[420px]:inline"
+            title={PROGRESS_TITLE}
+          >
+            · {execText}
+          </span>
+        ) : null}
         {open ? (
           <span className="flex-1" />
         ) : (

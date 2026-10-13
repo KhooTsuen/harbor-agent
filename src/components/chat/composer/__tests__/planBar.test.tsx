@@ -1,5 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useTaskStore } from '@/stores/useTaskStore'
 import type { TaskRecord } from '@/types/safety'
@@ -16,8 +18,16 @@ import { PlanBar } from '../PlanBar'
        （2026-10-03 改：原来是硬截 4 条 + 「还有 N 条」，长计划看不全）
    ══════════════════════════════════════════════════════════════ */
 
-function task(plan: string[], sessionId = 's1', id = 't1', updatedAt = 1): TaskRecord {
-  return { id, sessionId, plan, updatedAt, status: 'running' } as unknown as TaskRecord
+function task(
+  plan: string[],
+  sessionId = 's1',
+  id = 't1',
+  updatedAt = 1,
+  /* 2026-10-13：动态执行摘要要读 steps / changedFiles —— 用第 5 个参数带上，
+     老调用点（4 个参数）一字不改 */
+  extra: Partial<TaskRecord> = {},
+): TaskRecord {
+  return { id, sessionId, plan, updatedAt, status: 'running', ...extra } as unknown as TaskRecord
 }
 
 let host: HTMLDivElement
@@ -135,5 +145,65 @@ describe('PlanBar', () => {
     expect(text).toContain('列出文件')
     expect(text).not.toContain('[x]')
     expect(text).not.toContain('- [')
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════
+   PlanBar / 动态执行摘要（2026-10-13）
+
+   计划栏（输入框旁、**常显**）才是用户实际盯着「0/5」的位点 —— 计划卡藏在任务详情里
+   默认收起。这里用与计划卡**同一份** `execMetaLabel`（措辞只有一处）。
+   窄窗口降级是硬要求：多出来的这段**绝不许可撑破输入框旁的布局**。
+   ══════════════════════════════════════════════════════════════ */
+
+describe('PlanBar / 动态执行摘要', () => {
+  const STEPS = [
+    { at: 1, tool: 'read_file', ok: true, ms: 1, summary: 'a' },
+    { at: 2, tool: 'edit_file', ok: true, ms: 1, summary: 'b' },
+    { at: 3, tool: 'run_shell', ok: true, ms: 1, summary: 'c' },
+  ]
+
+  it('★ 有执行事实 → 行里出现「执行摘要：已执行 3 步 · 已修改 1 个文件」', () => {
+    useTaskStore.setState({
+      tasks: [task(SIX, 's1', 't1', 1, { steps: STEPS, changedFiles: [{ path: 'a.ts', at: 4 }] })],
+    })
+    const text = draw().textContent ?? ''
+    expect(text).toContain('计划 · 2/6')
+    expect(text).toContain('执行摘要：已执行 3 步 · 已修改 1 个文件')
+  })
+
+  it('★ steps === 0 → 不出现「执行摘要」（不显示「已执行 0 步」）', () => {
+    useTaskStore.setState({ tasks: [task(SIX)] })
+    expect(draw().textContent).not.toContain('执行摘要')
+  })
+
+  it('★ 折叠 / 展开都在（改的是文本，不是结构）', () => {
+    useTaskStore.setState({
+      tasks: [task(SIX, 's1', 't1', 1, { steps: [STEPS[0]] })],
+    })
+    draw()
+    expect(host.textContent).toContain('执行摘要：已执行 1 步')
+    toggle()
+    expect(host.textContent).toContain('执行摘要：已执行 1 步')
+  })
+
+  it('★ 窄窗口降级：动态段 hidden + 断点 + min-w-0 truncate（撑不破布局）', () => {
+    const src = readFileSync(join(__dirname, '..', 'PlanBar.tsx'), 'utf8')
+    /* 视口窄于断点 → 整段隐藏；显示时也能自己缩到自己截断 */
+    expect(src).toMatch(/hidden[^"']*min-w-0[^"']*truncate[^"']*min-\[\d+px\]:inline/)
+    /* 兜底：这一行不许溢出卡片 */
+    expect(src).toContain('overflow-hidden')
+    /* 收起来之后，内容仍能悬停看到（按钮上的 title） */
+    expect(src).toContain('title={PROGRESS_TITLE}')
+  })
+
+  it('★ 动态段带 tabular-nums（位数 9→10 不左右跳）', () => {
+    const src = readFileSync(join(__dirname, '..', 'PlanBar.tsx'), 'utf8')
+    expect(src).toContain('tabular-nums')
+  })
+
+  it('★ 复用计划卡的同一份措辞（execMetaLabel），不另写一套「已执行」', () => {
+    const src = readFileSync(join(__dirname, '..', 'PlanBar.tsx'), 'utf8')
+    expect(src).toContain('execMetaLabel(execSummary(latest))')
   })
 })
