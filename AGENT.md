@@ -138,6 +138,7 @@ npm run test:app # 应用自检：看 channelsExpected / channelsMissing
   npm run shot:electron -- --type="python"     # 往终端敲真键盘事件再截图
   npm run shot:electron -- --js="..."          # 先执行一段 JS（点按钮/填输入框）再截图
   node tools/e2e-fail-streak.mjs               # 真机端到端：假上游 + 真界面跑一轮，拿真实请求体下判据
+  node tools/e2e-clarify-card.mjs              # 真机：弹澄清卡时**脚本自己点**（提问卡/确认卡不再卡死脚本）
   ```
 
   它用 CDP 连**打包后的真应用**，能点标签、填输入框、读回 DOM 文本。
@@ -146,6 +147,10 @@ npm run test:app # 应用自检：看 channelsExpected / channelsMissing
   也没用，会被那行覆盖。`--dev` 改成起 `node_modules/electron` 的源码树实例，
   数据根是**另一个** `<repo>/data`（可用 `HARBOR_UNIT_TEST=1` 再隔离一层），
   与你在跑的那份天然不冲突；顺带直接跑最新内核，改了 `electron/` 不用重新打包。
+  ★ **界面上弹交互卡时脚本要能自己点**：`tools/shot/cards.mjs` 是「检测 + 按可访问
+  文案点」的**唯一真相源**（确认卡 / 澄清卡 / 复核卡；`tools/smoke/kit.mjs` 从它转出，
+  不再各抄一份）。渲染层改了卡的 `aria-label` 或按钮文案，这里要同步 —— 否则脚本会
+  **静默失效**（照跑不误、却点不动卡）。
   浏览器预览用 `npm run shot`（vite preview + headless Chrome）。
 - **看不到的就说看不到。** 渲染效果、别人的机器、真实网络行为 ——
   没观察到就不要断言。声明的每一件事，要么指得住一个可跑的验证，

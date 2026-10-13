@@ -1,33 +1,20 @@
 /**
- * 假上游：专门用来喂各种坏响应
- *
- * 破坏性测试用。比「拔网线」可控 —— 每种坏法都能精确指定，还能反复复现。
+ * 假上游：喂各种坏响应（破坏性测试用）。比「拔网线」可控 —— 每种坏法能精确指定、可复现。
  *
  *   node tools/fake-upstream.mjs          # 监听 127.0.0.1:9977
  *
- * 坏法写在 **baseUrl 的路径前缀**里（不能用 query —— 客户端会把
- * `/chat/completions` 直接拼在 baseUrl 后面，query 会被拼坏）：
- *
- *   http://127.0.0.1:9977/v1-html      → 返回 HTML 错误页
- *   http://127.0.0.1:9977/v1-truncate  → 半截 SSE 后断连
- *   http://127.0.0.1:9977/v1-slow      → 每 5 秒一个 token
- *   http://127.0.0.1:9977/v1-empty     → 200 但空 body
- *   http://127.0.0.1:9977/v1-garbage   → 200 但二进制垃圾
- *   http://127.0.0.1:9977/v1-replan    → 同一个任务里先后给两版计划（AG-004 用）
- *   http://127.0.0.1:9977/v1-loop      → 永远 A B A B 地调两个工具（AG-041 用）
- *   http://127.0.0.1:9977/v1-confirm   → 第 1 轮调一次 run_shell（冒烟验证确认卡用）
- *   http://127.0.0.1:9977/v1           → 正常（对照组）
- *
- * 坏法：
- *   html      返回一个 HTML 错误页（不是 JSON）—— 中转站挂掉时的典型样子
- *   truncate  发半截 SSE 然后**直接断连接**（最怕客户端卡在「生成中」）
- *   slow      每 5 秒吐一个 token（测「停止」按钮能不能立刻停住）
- *   empty     200 但空 body
- *   garbage   200 但返回一段随机二进制
- *   replan    第 1 轮给计划 A，第 2 轮给计划 B（多一条），第 3 轮起不给
- *   loop      永远交替调 `read_file`（同一个文件）与 `list_dir` —— 检测重复执行用
- *   confirm   第 1 轮调一次 `run_shell`（medium → 弹确认卡），第 2 轮收尾 —— 冒烟用
- *   ok        正常返回（对照组）
+ * 坏法写在 **baseUrl 的路径前缀**里（不能用 query —— 客户端会把 `/chat/completions`
+ * 直接拼在 baseUrl 后面，query 会被拼坏）：
+ *   html     返回 HTML 错误页（不是 JSON）—— 中转站挂掉时的典型样子
+ *   truncate 发半截 SSE 后断连（最怕客户端卡在「生成中」）
+ *   slow     每 5 秒一个 token（测「停止」按钮能不能立刻停住）
+ *   empty    200 但空 body          · garbage  200 但一段二进制垃圾
+ *   replan   同一任务里先后给两版计划（AG-004）
+ *   loop     永远 A B A B 地调两个工具（AG-041）
+ *   confirm  第 1 轮调一次 run_shell（medium → 弹**确认卡**）—— 冒烟用
+ *   ask      第 1 轮调一次 ask_user（→ 弹**澄清卡**）—— 自动化测试「脚本会自己点卡」用
+ *   fail     连着读**不同的**不存在文件 → 连续失败（CE-011）
+ *   （无后缀）正常返回（对照组）
  */
 
 import { createServer } from 'node:http'
@@ -38,8 +25,8 @@ const PORT = Number(process.env.FAKE_PORT ?? 9977)
 let planRounds = 0
 /* loop 模式的轮次计数（AG-041）：偶数轮 A、奇数轮 B */
 let loopRounds = 0
-/* confirm 模式的轮次计数（冒烟用）：第 1 轮给一次工具调用，之后收尾 */
-let confirmRounds = 0
+/* 「第 1 轮发一次工具调用、之后收尾」的模式计数：confirm（确认卡）/ ask（澄清卡） */
+const onceRounds = { confirm: 0, ask: 0 }
 /*
  * fail 模式的轮次计数（CE-011 真机验证用）：每轮读一个**不同**的不存在文件。
  * 为什么每次换文件名：loop-guard 只认「一模一样的调用（工具+参数）」，
@@ -200,43 +187,46 @@ const server = createServer((req, res) => {
     return
   }
 
-  if (mode === 'confirm') {
-    /*
-     * 冒烟用（`tools/smoke-ui.mjs`）：专门验证**权限确认卡**那条链路 ——
-     * 项目踩过的第三次「测试全绿 ≠ 能用」就跟确认卡有关。
-     *
-     * 第 1 轮发一次 `run_shell` 工具调用：`echo … > 文件` 在 `risk.cjs` 里判 **medium**，
-     * 而默认 `shellPolicy.medium = 'ask'` → 界面该弹「等待确认」卡。
-     * 用户点「允许本次」后工具才执行、文件才出现 —— 这就是判据。
-     * 第 2 轮起发普通文本收尾，别再无限调工具。
-     */
-    confirmRounds += 1
-    if (confirmRounds === 1) {
-      const call = {
-        index: 0,
-        id: 'call_confirm_1',
-        type: 'function',
-        function: {
-          name: 'run_shell',
-          arguments: JSON.stringify({ command: 'echo smoke-ok > smoke-shell-ok.txt' }),
-        },
-      }
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      })
-      res.write(sseChunk({ tool_calls: [call] }))
-      res.write('data: [DONE]' + String.fromCharCode(10, 10))
-      res.end()
-      return
-    }
+  /*
+   * 「第 1 轮发一次工具调用、之后收尾」的两种模式：
+   *   · confirm → `run_shell` 写文件（medium → 弹**确认卡**）· 冒烟用（事故 ③）
+   *   · ask     → `ask_user`（→ 弹**澄清卡**）· 自动化测试「脚本自己点卡」用
+   * 第 2 轮起发普通文本收尾，别再无限调工具。
+   */
+  if (mode === 'confirm' || mode === 'ask') {
+    onceRounds[mode] += 1
+    const once =
+      mode === 'confirm'
+        ? {
+            name: 'run_shell',
+            arguments: JSON.stringify({ command: 'echo smoke-ok > smoke-shell-ok.txt' }),
+          }
+        : {
+            name: 'ask_user',
+            arguments: JSON.stringify({
+              questions: [
+                {
+                  question: '这个改动按哪种范围来做？',
+                  options: [
+                    { label: '只改这一处', effect: '动 1 个文件，多花 2 分钟' },
+                    { label: '连相关的地方一起改', effect: '要动 5 个文件' },
+                  ],
+                  defaultValue: '只改这一处',
+                },
+              ],
+            }),
+          }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
     })
-    res.write(sseChunk({ content: '确认卡冒烟：这一步已经处理完了。' }))
+    if (onceRounds[mode] === 1) {
+      const call = { index: 0, id: `call_${mode}_1`, type: 'function', function: once }
+      res.write(sseChunk({ tool_calls: [call] }))
+    } else {
+      res.write(sseChunk({ content: `${mode === 'confirm' ? '确认' : '澄清'}卡冒烟：这一步已经处理完了。` }))
+    }
     res.write('data: [DONE]' + String.fromCharCode(10, 10))
     res.end()
     return
@@ -293,6 +283,6 @@ const server = createServer((req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(
     `假上游就绪：http://127.0.0.1:${PORT}/v1-<模式>/
-  模式：html | truncate | slow | empty | garbage | replan | loop | confirm | fail | （无后缀=正常）`,
+  模式：html | truncate | slow | empty | garbage | replan | loop | confirm | ask | fail | （无后缀=正常）`,
   )
 })

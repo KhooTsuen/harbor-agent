@@ -118,9 +118,12 @@ const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.ge
 const fillExpr = (text) =>
   `(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(text)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`
 const SEND = `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
-/* 权限卡是 `PermissionBar.tsx` 的 `section[aria-label="等待确认"]`，按钮「取消 / 允许本次」 */
-export const CONFIRM_CARD = `!!document.querySelector('section[aria-label="等待确认"]')`
-export const APPROVE = `(function(){const c=document.querySelector('section[aria-label="等待确认"]');if(!c)return false;const b=[...c.querySelectorAll('button')].find(x=>/允许/.test(x.textContent||''));if(!b)return false;b.click();return true})()`
+/*
+ * 权限卡（`PermissionBar.tsx` 的 `section[aria-label="等待确认"]`，按钮「取消 / 允许本次」）
+ * 的检测与点击：选择器**只有一份真相源** —— `shot/cards.mjs`。
+ * 在这儿抄第二份就会漂（改了渲染层的 aria-label，那边改了这个没改，脚本会静默失效）。
+ */
+export { APPROVE, CONFIRM_CARD, autoAnswerCards, clickInteractiveCard } from '../shot/cards.mjs'
 
 function makeDriver({ scenario, ev, sessionsDir, dataDir, before, onStep }) {
   return {
