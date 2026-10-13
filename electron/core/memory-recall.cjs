@@ -155,7 +155,7 @@ function buildPromptSection({ query = '', projectId = '', sessionId = '' } = {})
 
   const more =
     total > items.length
-      ? `\n（本轮最多注入 ${budget} 条，另外还有 ${total - items.length} 条没进来 —— 需要哪个就去设置 → 记忆里看看。）`
+      ? `\n（本轮最多注入 ${budget} 条，另外还有 ${total - items.length} 条没进上下文。需要更多细节时，调 memory_search 搜关键词取全文。）`
       : ''
 
   return `## 关于用户和这个项目（长期记忆）

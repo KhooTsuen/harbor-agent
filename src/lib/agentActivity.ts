@@ -73,6 +73,8 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   spawn_subagent: ['派子代理', '次'],
   /* 打卡（2026-10-13）：模型显式声明计划某一步做完 —— 动作词「打卡」 */
   mark_step_done: ['打卡', '步'],
+  /* 记忆分层改造阶段 1（2026-10-13）：模型按关键词读长期记忆（只读工具） */
+  memory_search: ['搜索记忆', '次'],
 }
 
 /** 工具名的动作词；没收录的老实用原名（不编） */
@@ -109,6 +111,8 @@ export const TOOL_LABELS: Record<string, string> = {
   spawn_subagent: '派只读子代理',
   /* 打卡（2026-10-13）：把计划某一步标记为完成 */
   mark_step_done: '完成一步',
+  /* 记忆分层改造阶段 1（2026-10-13）：模型搜长期记忆取回完整内容 */
+  memory_search: '搜索长期记忆',
 }
 
 /** 工具名的人话；没收录的返回原名（不编） */
@@ -148,6 +152,7 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   ask_user: HelpCircle,
   spawn_subagent: Bot,
   mark_step_done: Check,
+  memory_search: Search,
 }
 
 /** 工具名的图标；没收录的退回 `Terminal`（不空着、不抛） */

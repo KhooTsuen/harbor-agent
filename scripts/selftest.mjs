@@ -24,6 +24,7 @@ import { run as personaRoutingGroup } from './selftest/groups/142-persona-routin
 import { run as northStarGroup } from './selftest/groups/143-north-star.mjs'
 import { run as strictModeGroup } from './selftest/groups/144-strict-mode.mjs'
 import { run as markStepDoneGroup } from './selftest/groups/145-mark-step-done.mjs'
+import { run as memorySearchGroup } from './selftest/groups/146-memory-search.mjs'
 import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
 import { run as limits } from './selftest/groups/08-limits.mjs'
 import { run as browser } from './selftest/groups/09-browser.mjs'
@@ -278,7 +279,7 @@ const GROUPS = [
   memoryConflictGroup, projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
-  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup, markStepDoneGroup,
+  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup, markStepDoneGroup, memorySearchGroup,
   ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
 ]
 

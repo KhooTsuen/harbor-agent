@@ -17,6 +17,7 @@ const editFile = require('./edit_file.cjs')
 const listDir = require('./list_dir.cjs')
 const runShell = require('./run_shell.cjs')
 const remember = require('./remember.cjs')
+const memorySearch = require('./memory_search.cjs')
 const searchWeb = require('./search_web.cjs')
 const browse = require('./browse.cjs')
 const browseElements = require('./browse-elements.cjs')
@@ -50,6 +51,7 @@ const ALL = [
   browseAx,
   generateImage,
   remember,
+  memorySearch,
   askUser,
   download,
   subagentTool,

@@ -242,7 +242,7 @@ export async function run() {
     check('预算写进了给模型的提示里', overSection.includes(`本轮最多注入 ${budget} 条`), overSection.slice(-160))
     check(
       '没进来的条数也数得清（提示里写了剩下几条）',
-      overSection.includes(`${overRecord.total - overRecord.injected.length} 条没进来`),
+      overSection.includes(`${overRecord.total - overRecord.injected.length} 条没进上下文`),
       overSection.slice(-160),
     )
   } finally {

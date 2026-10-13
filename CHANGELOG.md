@@ -3,6 +3,41 @@
 > 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
 > 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
 
+## [未发布]
+
+- **记忆分层改造 · 阶段 1 —— 给模型一只「读记忆」的手（只读工具 `memory_search`）**（2026-10-13）。
+  · **背景**：记忆每轮只把最相关的最多 12 条注入系统提示，模型**看不到**其余条目、也没有「取更多」
+    的入口；设置页那个 `memory:search` 是 **IPC 通道**（渲染层用），模型侧**够不着** —— `tools/` 里
+    此前只有「写」的 `remember`，没有「读」的。设计见
+    [`docs/research/memory-layered-recall-design.md`](docs/research/memory-layered-recall-design.md)。
+  · **新增只读工具 `electron/core/tools/memory_search.cjs`**：入参 `{ query: string(必填), limit?: integer }`，
+    调 `memory.search(query, { projectId: ctx.projectId })`（复用既有子串检索，非向量、非模糊），
+    返回 `- [类型] content（id: xxx）` 列表。**不进 `WRITE_TOOLS`**（只读：ask 档不该每搜一次弹框，
+    readonly 档也要能用 —— 同 `mark_step_done` 的教训）。
+  · **注册**：`tools/registry.cjs` 的 `ALL` 加一行（require + 数组项各 1 行）。
+  · **指路文案**：`memory-recall.cjs` 注入段底部那句从「需要哪个就去设置 → 记忆里看看」（**说给人听的**，
+    模型没有设置页）改成「需要更多细节时，调 memory_search 搜关键词取全文」—— 位置**留在记忆层内部
+    （易变区）**，不挪进 `workRules`（稳定区，会打掉提示前缀缓存）。
+  · **注入内容逐字不变**：本阶段只**新增能力**，不改注入形状（摘要化是阶段 2，**默认关**、暂缓）。
+  · **文件**：新增 `electron/core/tools/memory_search.cjs`、`scripts/selftest/groups/146-memory-search.mjs`；
+    改 `electron/core/tools/registry.cjs`、`electron/core/memory-recall.cjs`、`scripts/selftest.mjs`
+    （注册自检组）、`src/lib/agentActivity.ts`（三张表补 `memory_search` 的人话/图标 ——
+    有单测钉着「内核注册的工具人话表里都得有」，漏了会红）、
+    `scripts/selftest/groups/71-memory-explain.mjs`（对齐指路文案）。
+  · **验证**：`npm run verify` 全绿 —— 单测 **189 文件 / 1709 用例**、内核自检 **通过 4274 项 / 失败 0**
+    （比改前 +19 条即新组）、行数 **1139 文件全 ≤300**、`npm run build` ✓；
+    自检组 `146-memory-search` 覆盖：已注册进 ALL / 不在 WRITE_TOOLS / 出现在 toApiSchema / 能搜到含 id /
+    空查询不炸 / 按 projectId 过滤（fail-closed）/ readonly 档可用 / 指路文案在。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 权限模型 / 事件契约 / 数据结构；不碰 Phase 6 的 Persona 路由与打卡机制。
+
+### 技术债（本轮**记录不修**，与本次改造无关，未来单开一轮）
+
+- **`memory-recall.cjs` 的 `buildPromptSection` 每轮 `load()` 3–4 次**：`pruneExpired` / `list` / `stats`
+  各一次 `readFileSync + JSON.parse` 整个 `memory.json`。
+- **`store.touch()` 每轮把整个 `memory.json` 全量重写**（只为更新 `lastUsedAt`）。
+- 这两条**今天就存在**（与「记忆分层」无关）；修它涉及 `memory-store` 写路径缓存，**属内核改动**，
+  需**单独开一轮**优化（别把「分层改造」和「写路径优化」混在一轮）。
+
 ## [1.30.0] — 2026-10-13 · Phase 5 收尾 + Phase 6 全量（persona / 严格模式 / 计划动态）+ Phase 7 对话渲染（一期排版 · 二期批次 A）+ 写入保护
 
 > **为什么是次版本号**：本版新增功能（任务感知 persona 路由、严格模式验证门禁、
