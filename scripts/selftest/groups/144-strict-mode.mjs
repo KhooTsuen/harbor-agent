@@ -122,6 +122,84 @@ export async function run() {
   )
   check('★ 渲染层类型有声明', read('src/types/models.ts').includes('strictMode'))
 
+  /* ══════════════════════════════════════════════════════
+     CE-011 / P2：连续失败 → 生成替代方案（failure-streak）
+     判据只读 `task.steps[].ok`（结构化布尔），**不解析自然语言**。
+     ══════════════════════════════════════════════════════ */
+
+  group('CE-011 / 连续失败替代方案')
+  const streakCore = require(join(ROOT, 'electron/core/failure-streak.cjs'))
+  const mkSteps = (oks) => oks.map((ok, i) => ({ tool: `t${i}`, ok, summary: `第 ${i + 1} 步` }))
+
+  const t2 = taskCore.create({ goal: '连续失败替代方案测试', sessionId: 'selftest-streak' })
+  created.push(t2.id)
+  taskCore.addStep(t2.id, { tool: 'edit_file', ok: true, summary: '先成功一次' })
+  check('①-1 全成功 → count 0', streakCore.consecutiveFailures({ steps: mkSteps([true, true]) }).count === 0)
+  check(
+    '①-2 尾部连续 3 次失败 → count 3',
+    streakCore.consecutiveFailures({ steps: mkSteps([true, false, false, false]) }).count === 3,
+  )
+  check(
+    '①-3 跨工具也算（换了工具还是失败）',
+    streakCore.consecutiveFailures({ steps: mkSteps([false, false]) }).count === 2,
+  )
+  check(
+    '①-4 中间成功过 → 截断（只数尾部）',
+    streakCore.consecutiveFailures({ steps: mkSteps([false, false, true, false]) }).count === 1,
+  )
+  check('①-5 null / 无 steps 不炸', streakCore.consecutiveFailures(null).count === 0)
+  check(
+    '①-6 带回 lastTool / lastHint（给模型的线索）',
+    streakCore.consecutiveFailures({ steps: mkSteps([false, false]) }).lastTool === 't1',
+  )
+
+  /* 门闩：阈值 / 快照去重 / 与 loop-guard 共用「本轮已推」 / 非 running 不推 */
+  streakCore.reset()
+  const running2 = { id: t2.id, status: 'running', steps: mkSteps([false, false]) }
+  const first = streakCore.check({ task: running2 })
+  check('②-1 达阈值(2) → 推', typeof first === 'string' && first.includes('连续失败 2 次'))
+  check(
+    '②-2 措辞就是用户要的那句（给出 2–3 个替代方案 / ```plan 块）',
+    String(first).includes('2–3 个替代方案') && String(first).includes('```plan'),
+  )
+  check('②-3 同一个快照只推一次', streakCore.check({ task: running2 }) === null)
+  check(
+    '②-4 快照变了（3 次失败）→ 还能推',
+    streakCore.check({ task: { id: t2.id, status: 'running', steps: mkSteps([false, false, false]) } }) !== null,
+  )
+  check(
+    '②-5 非 running 的任务不推',
+    streakCore.check({ task: { id: 'other', status: 'paused', steps: mkSteps([false, false]) } }) === null,
+  )
+  check(
+    '②-6 没到阈值(1 次)不推',
+    streakCore.check({ task: { id: 'few', status: 'running', steps: mkSteps([true, false]) } }) === null,
+  )
+  streakCore.reset()
+  check(
+    '③-1 与 loop-guard 共用「本轮已推」：blocked 时让一让',
+    streakCore.check({ task: running2, blocked: true }) === null,
+  )
+  check('③-2 但不记账 → 下一轮照样能推', streakCore.check({ task: running2 }) !== null)
+  streakCore.reset()
+  let pushes = 0
+  for (let n = 2; n <= 6; n += 1) {
+    if (streakCore.check({ task: { id: 'cap', status: 'running', steps: mkSteps(Array(n).fill(false)) } }))
+      pushes += 1
+  }
+  check('④ 每条失败期最多推 3 次（对照 MAX_PUSHES）', pushes === 3, `实际 ${pushes}`)
+  check(
+    '⑤ 判据只读 steps[].ok，不解析自然语言',
+    !read('electron/core/failure-streak.cjs').includes('.test('),
+  )
+  check(
+    '⑥ 接线在 loop.cjs 轮次边界（紧挨 loopGuard.detect 之后，走 else 不重复推）',
+    /loopGuard\.detect\(loopGuard\.signaturesOf\(toolRuns\)\)[\s\S]{0,1500}?failureStreak\.pushNote\(options\.taskId/.test(
+      read('electron/core/loop.cjs'),
+    ),
+  )
+  streakCore.reset()
+
   disposeTasks(created)
   check(
     '测试任务已清理',

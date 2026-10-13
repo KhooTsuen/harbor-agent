@@ -1,14 +1,11 @@
-/*
- * Agent 循环。
- *
- * 一轮对话 = 若干「回合」：调模型 → 要工具 → 执行 → 结果喂回去 → … → 不再要工具。
+/* Agent 循环：一轮对话 = 若干「回合」—— 调模型 → 要工具 → 执行 → 结果喂回去 → … → 不再要工具。
  * 两个硬边界：maxTurns 防烧 token；AbortSignal 让「停止」立刻停住（含 shell）。
- * 状态由 AG-001 的 lifecycle 驱动（每次转移都发事件，UI 只读不猜）。
- */
+ * 状态由 AG-001 的 lifecycle 驱动（每次转移都发事件，UI 只读不猜）。 */
 const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
 const budget = require('./budget.cjs')
 const loopGuard = require('./loop-guard.cjs')
+const failureStreak = require('./failure-streak.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
@@ -34,17 +31,14 @@ const { resolveRoute, providerForRun } = require('./loop-route.cjs')
 const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）。
-   这个 200 只防「预算设成不限而模型抽风」；第一版设成 50 → 总被 for 先拦下，
-   预算检查没机会带 budgetHit。★ 两个机制不能做同一件事。 */
+/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps（默认 50）。这个 200 只防
+   「预算设成不限而模型抽风」——第一版设成 50 → 总被 for 先拦下、预算检查没机会带 budgetHit。★ 两个机制不能做同一件事。 */
 const MAX_TURNS = 200
 
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
 const LOOP_NUDGE_LIMIT = 2
 
-/* ══════════════════════════════════════════════════════════
-   主循环
-   ══════════════════════════════════════════════════════════ */
+/* ── 主循环 ───────────────────────────────────────────────── */
 
 /*
  * 状态事件的 key。**不能用 options.taskId**（那是台账 id，run() 里还会换成 task.id；
@@ -147,6 +141,10 @@ async function runLoop(options) {
       loopNudges += 1
       emit({ type: 'loop', ...loopHit, handedOver: false, nudge: loopNudges })
       messages.push({ role: 'user', content: loopGuard.nudgeMessage(loopHit) })
+    } else if (options.taskId) {
+      /* CE-011：**不同的尝试**也在失败（≠ loop-guard 的「同一个调用转圈」）→ 让它换方案。
+         走 else：loop-guard 这轮推过了就让给它（共用一个「本轮已推」，同一轮不重复推）。 */
+      failureStreak.pushNote(options.taskId, messages)
     }
 
     /* AG-040：轮次边界查一次预算（每轮开头 = 上一轮工具已跑完，不会停在改了一半的状态） */

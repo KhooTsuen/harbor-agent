@@ -156,6 +156,11 @@ const NO_FILLER_RULE = [
   '  这些是用户要的信息，一个都不能省；他问你什么就直接答，别用客套话代替答案。',
 ].join('\n')
 
+const FAILURE_RULE = [
+  '- **连续失败要换方案**：同一件事连着失败 2 次以上，别再照原路子重试 ——',
+  '  给出 2–3 个替代方案（换工具 / 换顺序 / 缩小范围 / 直接问用户），挑一个再试。',
+].join('\n')
+
 const REST_RULES = [
   '- 改少量内容用 `edit_file`，别用 `write_file` 整篇覆盖。',
   '- `edit_file` 的 oldText 必须逐字一致（包括缩进）并且在文件里唯一。',
@@ -205,6 +210,8 @@ function workRules(input = {}) {
     wantScale ? SCALE_RULE : '',
     PLAN_GATE_RULE,
     TEST_RULE,
+    /* CE-011：连续失败要换方案（硬判据在 failure-streak.cjs）—— 不跟开关 */
+    FAILURE_RULE,
     input.strictMode === true ? STRICT_RULE : '',
     REST_RULES,
   ]
@@ -221,6 +228,7 @@ module.exports = {
   CLARIFY_RULE,
   SCALE_RULE,
   TEST_RULE,
+  FAILURE_RULE,
   STRICT_RULE,
   PLAN_GATE_RULE,
   NO_FILLER_RULE,

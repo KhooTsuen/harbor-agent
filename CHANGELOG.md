@@ -5,6 +5,30 @@
 
 ## [未发布]
 
+- **连续失败替代方案：同一件事连着失败 ≥2 次时，轮次边界推一句「别再照原路子试，给出替代方案」**（CE-011 · 2026-10-14，P2「长程任务自我纠错」，参考 Meta Muse Wonder 的 Active Focus）。
+  · **现状缺口**：内核有四套「顶回」机制（`loop-guard` / 完成门禁 / 严格模式），但**没有一套盯「连续失败」** ——
+    `loop-guard` 只认「**一模一样的调用**」（模型用 5 种**不同**办法各失败一次，它完全不动）；自动重试只针对只读工具。
+    于是模型挨个换法子试、挨个失败，没有任何东西提醒它「这条路走不通，该换方案了」。
+  · **新增 `electron/core/failure-streak.cjs`（141 行，纯函数）**：`consecutiveFailures(task)` 只读
+    `task.steps[].ok`（**结构化布尔**，由 `loop-tools.cjs` 的 `isToolOk` 写台账前算好）——
+    数尾部连续的 `ok:false`（**跨工具也算**：换工具还失败正是「走不通」的信号），返回
+    `{ count, lastTool, lastHint }`。**不解析任何自然语言**，与 `task-strict.cjs` 同口径。
+  · **接线**：`electron/core/loop.cjs` 轮次边界，紧挨 `loopGuard.detect` —— 放在它的 `else` 分支：
+    **loop-guard 这轮推过了就让给它**（共用一个「本轮已推」标志，同一轮不重复推）。
+  · **刹车三条**（照 `task-strict.cjs` 先例，都写在 `check()` 里）：① 同一条失败期只推一次（按连续失败次数**快照去重**）；
+    ② 每条失败期最多推 `MAX_PUSHES = 3` 次；③ **非 `running` 任务不推**。顶够就放行，不把模型卡死。
+    状态是**进程内观察锚**（按 taskId 存，不落盘、不改数据结构）；阈值 `THRESHOLD = 2`。
+  · **和 loop-guard 的分工**（判据不同、可共存）：loop-guard 管「同一个调用转圈」，failure-streak 管「不同的尝试都失败」。
+  · **Prompt 软约束**：`electron/core/prompt-rules.cjs` 加 `FAILURE_RULE`（一行「连续失败要换方案」），
+    排在 `TEST_RULE` 之后、`STRICT_RULE` 之前；提示词版本 **`/9 → /10`**。
+  · **文件**：新增 `electron/core/failure-streak.cjs`；改 `electron/core/loop.cjs`（+1 require、轮次边界 5 行接线，
+    压掉 2 行分节注释回 297 行）、`electron/core/prompt-rules.cjs`（+FAILURE_RULE）、
+    `electron/core/prompt-stack.cjs`（VERSION + 变动史）、`scripts/selftest/groups/144-strict-mode.mjs`（+18 条断言）、
+    `93-machine-prompt.mjs` / `142-persona-routing.mjs` / `146-memory-search.mjs`（同步版本断言）。
+  · **验证**：`npm run verify` 全绿 —— 内核自检 **4319 项 / 0 失败**（改前 4302，+17）；用**真实台账**实测 9/9
+    （建任务 status=running → 2 次失败才推 → 同快照不重复 → 中间成功即清账 → paused 不推）。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 权限模型 / 事件契约 / 数据结构；判据只读结构化 `steps[].ok`。
+
 - **主动记忆检索：用户那句话像在「回忆」时，提示里补一句「先调 memory_search 确认」**（CE-010 · 2026-10-14，用户报「模型本应检索记忆却选择凭印象回答」）。
   · **现状缺口**：`memory_search` 的触发权原先**完全在模型手里** —— 只在用户明确问
     「我之前说过什么」时才调用；其他时候它常常凭印象答，而记忆里其实记着。
