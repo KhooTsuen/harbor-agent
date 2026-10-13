@@ -19,6 +19,7 @@ import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { connect, sleep, findPageTarget, evaluate } from './shot/cdp.mjs'
+import { autoAnswerCards } from './shot/cards.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const BIN = resolve(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
@@ -38,12 +39,19 @@ const SCENARIOS = [
   { prompt: 'Vite 6 相比 5 有什么变化？我记不清了', expect: 'search_web' },
 ]
 
+/*
+ * 澄清卡上「默认选项」的**可访问标记** —— ClarifyCard 只给默认那个选项加这句
+ * （`src/components/chat/ClarifyCard.tsx:244`）。用它当 `choose`：点的一定是默认项，
+ * 不是随机项（A/B 要的是「卡不卡住」的对照，随机选会往结果里灌噪声）。
+ */
+const DEFAULT_MARKER = '没收到回答就按它来'
+
 const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 const fill = (t) =>
   `(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(t)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`
 const SEND = `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 
-/** 读一个会话文件里**第一条** assistant 的 toolRuns[0].name（没有就返回空串） */
+/** 读一个会话文件里**第一条带工具调用**的 assistant 的工具名（没有就按纯文字/无 assistant 判） */
 function firstToolOf(file) {
   let lines = []
   try {
@@ -51,6 +59,7 @@ function firstToolOf(file) {
   } catch {
     return { tool: '', note: '读不到' }
   }
+  let sawText = false
   for (const line of lines) {
     let m
     try {
@@ -61,9 +70,36 @@ function firstToolOf(file) {
     if (m.role !== 'assistant') continue
     const t = Array.isArray(m.toolRuns) ? m.toolRuns : []
     if (t.length) return { tool: String(t[0].name ?? ''), note: JSON.stringify(t[0].summary ?? '').slice(0, 60) }
-    if (typeof m.content === 'string' && m.content.trim()) return { tool: '（未调工具）', note: m.content.trim().slice(0, 50) }
+    /*
+     * ★ 别在第一条纯文字 assistant 上就收工：模型常常**先回一句话再调工具**
+     *   （实测：「打开 iana.org」那条，第一条是文字、browse 在第二条）。
+     *   旧写法在这里 return「未调工具」，把「选了 browse」误判成「没选」。
+     */
+    if (typeof m.content === 'string' && m.content.trim()) sawText = true
   }
-  return { tool: '（无 assistant）', note: '' }
+  return { tool: sawText ? '（未调工具）' : '（无 assistant）', note: '' }
+}
+
+/** 读一个会话文件里**所有** assistant 的工具调用名（诊断：看清整条链路到底调了什么） */
+function allToolsOf(file) {
+  const names = []
+  let lines = []
+  try {
+    lines = readFileSync(resolve(SESS, file), 'utf8').trim().split(/\r?\n/)
+  } catch {
+    return names
+  }
+  for (const line of lines) {
+    let m
+    try {
+      m = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (m.role !== 'assistant') continue
+    for (const x of Array.isArray(m.toolRuns) ? m.toolRuns : []) names.push(String(x.name ?? ''))
+  }
+  return names
 }
 
 const before = new Set(readdirSync(SESS).filter((f) => f.endsWith('.jsonl')))
@@ -93,23 +129,49 @@ try {
     await ev(fill(sc.prompt), '填输入框')
     await sleep(300)
     await ev(SEND, '发送')
-    /* 等新会话文件出现，且它里面已经有 assistant 的结论 */
+    /*
+     * 等新会话文件出现，且它里面已经有 assistant 的结论。
+     * ★ 途中若弹出交互卡（ask_user 澄清卡 / 权限确认卡 / 复核卡），脚本自己点掉 ——
+     *   不点的话对话卡在半路，后面的场景也会被带歪（2026-10-14 实测的盲区）。
+     *   每轮都调一次：没卡时 autoAnswerCards 立刻返回，有卡才动手。
+     */
     let got = null
-    const deadline = Date.now() + 60000
+    const cards = []
+    /* 90 秒：search_web 后端若不通会卡 ~20 秒再失败，60 秒会把「慢」误判成「没选对」 */
+    const deadline = Date.now() + 90000
     while (Date.now() < deadline) {
-      const fresh = readdirSync(SESS).filter((f) => f.endsWith('.jsonl') && !before.has(f))
+      const ans = await autoAnswerCards(ev, { choose: DEFAULT_MARKER, timeoutMs: 3000 })
+      if (ans.handled > 0) cards.push(...ans.clicks.map((c) => c.text))
+      const fresh = readdirSync(SESS)
+        .filter((f) => f.endsWith('.jsonl') && !before.has(f))
+        .sort()
       if (fresh.length) {
-        const r = firstToolOf(fresh.sort().pop())
+        /* ★ 只算一次：`pop()` 会改数组，两次 pop 会拿到**两个不同文件**（踩过） */
+        const f = fresh[fresh.length - 1]
+        const r = firstToolOf(f)
         if (r.tool && r.tool !== '（无 assistant）') {
-          got = { file: fresh.sort().pop(), ...r }
+          got = { file: f, ...r, all: allToolsOf(f) }
           break
         }
       }
       await sleep(800)
     }
     const hit = got ? got.tool === sc.expect : false
-    results.push({ i: i + 1, prompt: sc.prompt, expect: sc.expect, got: got?.tool ?? '（超时）', hit })
-    console.log(`  ${hit ? '✓' : '✗'} [${i + 1}] 期望 ${sc.expect} / 实际 ${got?.tool ?? '（超时）'} —— ${sc.prompt}`)
+    results.push({
+      i: i + 1,
+      prompt: sc.prompt,
+      expect: sc.expect,
+      got: got?.tool ?? '（超时）',
+      hit,
+      cards,
+      all: got?.all ?? [],
+    })
+    console.log(
+      `  ${hit ? '✓' : '✗'} [${i + 1}] 期望 ${sc.expect} / 实际 ${got?.tool ?? '（超时）'}` +
+        (got?.all?.length ? ` [全部: ${got.all.join(',')}]` : '') +
+        ` —— ${sc.prompt}` +
+        (cards.length ? `（自动点卡：${cards.join(' → ')}）` : ''),
+    )
     /* 连续两次拿不到结果就停：多半是凭证 / 网络不通，再跑下去只是白等 */
     if (results.filter((r) => r.got === '（超时）').length >= 2) {
       console.log('  ⚠ 连续超时 → 提前停（先查凭证 / 网络）')
