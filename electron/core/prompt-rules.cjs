@@ -161,6 +161,21 @@ const FAILURE_RULE = [
   '  给出 2–3 个替代方案（换工具 / 换顺序 / 缩小范围 / 直接问用户），挑一个再试。',
 ].join('\n')
 
+/**
+ * CE-014：「内部思考也用中文」（2026-10-14）。
+ *
+ * 为什么：DeepSeek 一类模型的 `reasoning_content` 常吐英文 / 中英混杂。
+ * 中文信息密度更高 —— 同一条推理用中文写 token 更少，排查时也更好读。
+ *
+ * ★ 只约束**内部思考**（推理 / 规划 / 调工具前的判断）：不碰给用户看的正文，
+ *   也不把代码 / 命令 / 路径 / 专有名词翻成中文。
+ * ★ 恒定文本、放稳定区（workRules）：每轮一字不变 → 吃前缀缓存命中，不额外花钱。
+ */
+const CHINESE_THINK_RULE = [
+  '- **内部推理、规划、调用工具前的判断，一律用简体中文**（别用英文、别中英混杂）：',
+  '  同一条推理用中文写更省 token。代码 / 命令 / 路径 / 专有名词保持原样。',
+].join('\n')
+
 const REST_RULES = [
   '- 改少量内容用 `edit_file`，别用 `write_file` 整篇覆盖。',
   '- `edit_file` 的 oldText 必须逐字一致（包括缩进）并且在文件里唯一。',
@@ -212,6 +227,8 @@ function workRules(input = {}) {
     TEST_RULE,
     /* CE-011：连续失败要换方案（硬判据在 failure-streak.cjs）—— 不跟开关 */
     FAILURE_RULE,
+    /* CE-014：内部思考用中文（恒定文本 → 吃缓存命中）—— 不跟开关 */
+    CHINESE_THINK_RULE,
     input.strictMode === true ? STRICT_RULE : '',
     REST_RULES,
   ]
@@ -229,6 +246,7 @@ module.exports = {
   SCALE_RULE,
   TEST_RULE,
   FAILURE_RULE,
+  CHINESE_THINK_RULE,
   STRICT_RULE,
   PLAN_GATE_RULE,
   NO_FILLER_RULE,

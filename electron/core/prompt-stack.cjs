@@ -144,8 +144,10 @@ const BROWSER_GUIDE = [
  *              **尾部**补一句「先调 memory_search 确认」。★ 注入在**易变区**，稳定区一个字没动 —— 不破坏前缀缓存。
  *   /9 → /10 —— 连续失败替代方案（CE-011）：`workRules` 加 `FAILURE_RULE`（连续失败要换方案）。
  *              硬判据在 `core/failure-streak.cjs`（只读 `task.steps[].ok`），提示排在 loop-guard 之后。
+ *   /10 → /11 —— 内部思考用中文（CE-014）：`workRules` 加 `CHINESE_THINK_RULE`（推理 / 规划 /
+ *              调工具前的判断用简体中文）—— DeepSeek 的 reasoning_content 常吐英文，中文密度更高、更省 token。
  */
-const VERSION = 'prompt-stack/10'
+const VERSION = 'prompt-stack/11'
 
 /*
  * 层的顺序 = 模型看到的顺序。

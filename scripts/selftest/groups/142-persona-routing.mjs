@@ -42,7 +42,7 @@ export async function run() {
   check('★ persona 算稳定层（首轮锁定 → 吃缓存命中）', contextDiagCore.tierOf('personaGuide') === 'stable')
   check('强/快两档都有文案', promptStackCore.PERSONA_GUIDE.strong.length > 0 && promptStackCore.PERSONA_GUIDE.fast.length > 0)
   check('认不出的 persona → 空串（别注入空层）', promptStackCore.personaGuide('nope') === '')
-  check('★ 提示词版本已升到 /10（CE-011 连续失败替代方案）', promptStackCore.VERSION === 'prompt-stack/10')
+  check('★ 提示词版本已升到 /11（CE-014 内部思考用中文）', promptStackCore.VERSION === 'prompt-stack/11')
 
   const text = promptStackCore.build({
     personaGuide: promptStackCore.personaGuide('strong'),

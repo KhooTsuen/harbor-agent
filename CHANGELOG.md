@@ -5,6 +5,18 @@
 
 ## [未发布]
 
+- **内部思考用中文：`workRules` 稳定区加一条「推理 / 规划 / 调工具前的判断一律用简体中文」**（CE-014 · 2026-10-14，DeepSeek 中文 CoT 优化第一步）。
+  · **为什么**：DeepSeek 在 Agent 模式下的 `reasoning_content` 常吐英文 / 中英混杂。中文信息密度更高，
+    同一条推理用中文写 token 更少，排查时也更好读。
+  · **改动**：`electron/core/prompt-rules.cjs` 新增 `CHINESE_THINK_RULE` 并拼进 `workRules()`
+    （稳定区）+ 导出；`electron/core/prompt-stack.cjs` 的 `VERSION` **`/10 → /11`** + 变动史。
+  · **★ 为什么放稳定区**：它是**恒定文本**，每轮一字不变 → 吃前缀缓存命中，不额外花钱。
+    只约束**内部思考**，不碰给用户看的正文（代码 / 命令 / 路径 / 专有名词保持原样）。
+  · **断言**：`93-machine-prompt.mjs` 加一条「稳定区真的注入了这条规则」（只钉版本号不够 ——
+    规则被删而版本号忘改时，测试照样绿）；同步 `142-persona-routing.mjs` / `146-memory-search.mjs` 的版本断言。
+  · **验证**：`npm run verify` 全绿；内核自检 **4328 项 / 0 失败**（改前 4327，+1）。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 数据结构；不破坏 Phase 6（Persona / 严格模式 / 打卡）与 Phase 7 防闪烁。
+
 - **修 `search_web` 自定义后端的 URL 拼接：没有 `{query}` 时拼成 `…/search查询词`（缺 `?q=`），请求必然失败**（CE-013 · 2026-10-14，用户报「search_web 拼成 `www.bing.com<query>`，每次必失败」）。
   · **症状与定位**：自定义搜索（`provider: 'custom'`）的 URL 拼接**只有一处** ——
     `electron/core/search.cjs` 的 `custom()`。原来的写法是「模板里有 `{query}` 就替换，

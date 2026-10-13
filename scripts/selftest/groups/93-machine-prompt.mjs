@@ -103,8 +103,18 @@ export async function run() {
    * 钉死是故意的 —— 一处文案改了版本没动，台账上就分不出「改前改后」。
    */
   check(
-    '提示词版本已升到 /10（CE-011：连续失败替代方案）',
-    promptStackCore.VERSION === 'prompt-stack/10',
+    '提示词版本已升到 /11（CE-014：内部思考用中文）',
+    promptStackCore.VERSION === 'prompt-stack/11',
+  )
+  /*
+   * CE-013：钉住「内部思考用中文」这条规则**真的在 workRules 里**。
+   * 只钉版本号不够 —— 规则被静默删掉、而版本号忘了动，测试照样绿（这正是
+   * 「一处真相源要配一条形状断言」的用法）。
+   */
+  check(
+    '★ 稳定区注入了「内部思考用中文」（CE-014）',
+    promptStackCore.WORK_RULES.includes('内部推理、规划、调用工具前的判断，一律用简体中文') &&
+      require(join(ROOT, 'electron/core/prompt-rules.cjs')).CHINESE_THINK_RULE.includes('内部推理'),
   )
 
   const { buildPromptContext } = require(join(ROOT, 'electron/core/loop-prompt.cjs'))

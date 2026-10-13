@@ -138,8 +138,8 @@ export async function run() {
       !read('electron/core/prompt-stack.cjs').includes('像是在回忆之前的事'),
   )
   check(
-    '★ 提示词版本已升到 /10（CE-011 连续失败替代方案之后）',
-    promptStackCore.VERSION === 'prompt-stack/10',
+    '★ 提示词版本已升到 /11（CE-014 内部思考用中文之后）',
+    promptStackCore.VERSION === 'prompt-stack/11',
     promptStackCore.VERSION,
   )
 
