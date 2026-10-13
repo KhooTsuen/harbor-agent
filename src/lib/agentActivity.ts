@@ -56,6 +56,8 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   ask_user: ['询问', '个问题'],
   /* 子代理 v0（1.30.0-beta.4）：派一个只读侦察兵去读文件、带回结论 */
   spawn_subagent: ['派子代理', '次'],
+  /* 打卡（2026-10-13）：模型显式声明计划某一步做完 —— 动作词「打卡」 */
+  mark_step_done: ['打卡', '步'],
 }
 
 /** 工具名的动作词；没收录的老实用原名（不编） */
@@ -90,6 +92,8 @@ export const TOOL_LABELS: Record<string, string> = {
   ask_user: '问你几个问题',
   /* 子代理 v0：界面上说「派只读子代理」，不说 spawn_subagent */
   spawn_subagent: '派只读子代理',
+  /* 打卡（2026-10-13）：把计划某一步标记为完成 */
+  mark_step_done: '完成一步',
 }
 
 /** 工具名的人话；没收录的返回原名（不编） */

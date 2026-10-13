@@ -5,6 +5,34 @@
 
 ## [未发布]
 
+- **功能：打卡工具 mark_step_done（计划进度可显式推进 · 内核）**（2026-10-13）。
+  · **背景**：计划卡的 `[ ]` 由模型维护，而模型只在每轮第 1 个 LLM 轮次输出正文
+    （计划块在里面），后续工具轮没正文 → `[x]` 永远不亮。给模型一个**工具轮也能打卡**的入口。
+    设计见 `docs/research/mark-step-done-design.md`。
+  · **状态存哪 = 方案 C**：打卡时由内核把 `plan[i]` 的 `[ ]` 改成 `[x]` —— **不新增字段、
+    不改存储格式、零迁移**。于是：① 严格模式的门禁（`task-strict` 数 `plan` 里的 `[x]`）
+    **自动覆盖**它；② UI 三个位点本就在解析 `[x]`，**渲染零改动**。
+  · **打卡 ≠ 验证（原则底线）**：它不跑命令、不读 `run_shell` 结果、不碰用户文件；
+    `strictBacklog` 只认 `write_file`/`edit_file`，打卡**清不掉写欠账** ——
+    **只打卡不验证照样被拦**（判据保证，不靠自觉）。自检组 `145` 钉着这条。
+  · **两处同步**：`task.plan` 与 `task.planVersions[last].plan` 是两份独立拷贝
+    （PlanCard 读后者、PlanBar/TaskRow 读前者）→ `markStepDone` 一次改两处，否则卡不亮。
+  · **指纹口径修正**：`fingerprint` 改用 `stripMarks`（忽略勾选）—— 打卡不再误报
+    「计划正文与批准时不一致」。★ 但**版本变更仍看全文**（`recordVersion` 比 `join('\n')`）：
+    仅勾选变化也要落盘，否则严格模式「勾了没验证」门禁与并行写保护的「进度倒退」检测会失效
+    （selftest 14 / 144 钉着）。**口径区分：指纹忽略勾选，版本不忽略。**
+  · **不碰硬禁区**：逻辑在 `task-plan.cjs` / `task-plan-mark.cjs`（**没碰 `task.cjs`**，#8）；
+    工具**不进 `WRITE_TOOLS`**（#10，否则 ask 档每步弹确认框）；**零新 IPC 通道**（#9）；
+    不加字段（#11）/ 不改结构（#3）。落盘走 `task-io.write` = `safe-write.writeAtomic`（E2 底座）。
+  · **文件**：新增 `electron/core/tools/mark_step_done.cjs`、`electron/core/task-plan-mark.cjs`；
+    改 `task-plan.cjs`（指纹 + recordVersion + re-export）、`tools/registry.cjs`（注册，不进写名单）。
+  · **验证**：`npm run verify` 全绿；内核自检 **4229 → 4251**（新增组 `145-mark-step-done`，
+    含 plan/planVersions 同步、幂等、越界、strictMode 协同、指纹、接线守卫）；
+    负向实验（拆 `planVersions` 同步行 → 「planVersions 也勾上了」断言当场变红、文件字节还原）。
+  · **已知遗留**：① 一期**默认重置**勾选（模型重发计划块时，旧勾选不跨版本继承 —— 二期再议）；
+    ② 打卡工具在「只分析」轮次里也会执行（没进 `WRITE_TOOLS` 的直接后果）——
+    如需拦，要另加一条 `ctx.allowWrite === false` 的自检，等用户确认。
+
 - **测试：PlanCard / PlanBar 动态刷新断言（逐帧节点稳定）**（2026-10-13）。
   · **为什么补这组**：既有断言（`planCard.test.ts` / `planBar.test.tsx`）都是「渲染一次、
     看一次」—— 能证明「给定数据画得对」，但**证明不了「刷新时只改文本、不重排」**，

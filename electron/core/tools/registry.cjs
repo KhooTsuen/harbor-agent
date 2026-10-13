@@ -28,6 +28,7 @@ const download = require('./download.cjs')
 const generateImage = require('./generate-image.cjs')
 const askUser = require('./ask_user.cjs')
 const subagentTool = require('./subagent-tool.cjs')
+const markStepDone = require('./mark_step_done.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -52,6 +53,7 @@ const ALL = [
   askUser,
   download,
   subagentTool,
+  markStepDone,
 ]
 
 /** 哪些工具算「写操作」（只读模式下要拦，ask 模式下要确认） */
@@ -67,6 +69,10 @@ const ALL = [
  * 而且它不改文件、不跑命令、不联网。
  *
  * `download` 算：它既联网又往磁盘写东西（真机反馈 9b 新增的工具）。
+ *
+ * `mark_step_done` **不算**（2026-10-13）：它只更新计划进度（改 `plan` 里的 `[x]`），
+ * 不改用户文件、不联网、不跑命令。放进来的话 ask 档**每打一次卡就弹一次确认框**，功能没法用。
+ * 它的内核落点是 `task-plan.cjs` 的 `markStepDone`（越界不抛、幂等）。
  */
 const WRITE_TOOLS = new Set([
   'write_file',

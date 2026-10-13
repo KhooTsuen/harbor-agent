@@ -23,6 +23,7 @@ import { run as promptState } from './selftest/groups/06-prompt-state.mjs'
 import { run as personaRoutingGroup } from './selftest/groups/142-persona-routing.mjs'
 import { run as northStarGroup } from './selftest/groups/143-north-star.mjs'
 import { run as strictModeGroup } from './selftest/groups/144-strict-mode.mjs'
+import { run as markStepDoneGroup } from './selftest/groups/145-mark-step-done.mjs'
 import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
 import { run as limits } from './selftest/groups/08-limits.mjs'
 import { run as browser } from './selftest/groups/09-browser.mjs'
@@ -158,7 +159,6 @@ import { run as browseHistoryGroup } from './selftest/groups/138-browse-history.
 import { run as browseSettleGroup } from './selftest/groups/139-browse-settle.mjs'
 import { run as shellHeartbeatGroup } from './selftest/groups/140-shell-heartbeat.mjs'
 import { run as decisionEventNamesGroup } from './selftest/groups/141-decision-event-names.mjs'
-
 const GROUPS = [
   basics,
   skillsMemory,
@@ -278,7 +278,7 @@ const GROUPS = [
   memoryConflictGroup, projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
-  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup,
+  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup, markStepDoneGroup,
   ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
 ]
 

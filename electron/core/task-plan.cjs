@@ -11,6 +11,8 @@
  */
 
 const crypto = require('node:crypto')
+/* 打卡逻辑拆在 task-plan-mark.cjs（本文件加它就破 300 行）；这里 re-export 便利调用方 */
+const { markStepDone } = require('./task-plan-mark.cjs')
 
 /** 计划块第一行的任务名写法：`# 名字` / `任务名：名字` / `name: 名字` */
 const TITLE_LINE = /^(?:#{1,3}\s*(.+)|(?:任务名|任务|名称|name|title)\s*[:：]\s*(.+))$/i
@@ -160,13 +162,15 @@ function adoptTitle(task, raw) {
 }
 
 /**
- * 计划整体指纹。
+ * 计划**正文**指纹（忽略勾选标记 `[x]` / `[ ]`）。
  *
- * 放在这里而不是 task.cjs，是为了避开循环依赖（task.cjs 要算指纹、
- * task-context.cjs 要读任务）—— 这里只依赖 node:crypto，两边都能安全引用。
+ * 放在这里而不是 task.cjs 是为了避开循环依赖（只依赖 node:crypto，两边都能安全引用）。
+ * ★ 用 `stripMarks` 抹掉勾选：本指纹用于「落盘成 planHash」与「注入时比对正文有没有被悄悄
+ *   改掉」，而**勾选是进度不是正文** —— 打卡每勾一步都改 plan，不抹掉就会误报「正文与批准时
+ *   不一致」。**记不记新版本**是另一件事，见 recordVersion。
  */
 function fingerprint(plan) {
-  const text = (Array.isArray(plan) ? plan : []).join('\n')
+  const text = stripMarks(plan).join('\n')
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)
 }
 
@@ -197,7 +201,11 @@ function recordVersion(task, plan, { reason = '', at = Date.now(), title = '', s
 
   const versions = Array.isArray(task.planVersions) ? task.planVersions : []
   const current = versions.length > 0 ? versions[versions.length - 1].plan : task.plan
-  if (Array.isArray(current) && current.length > 0 && fingerprint(current) === fingerprint(plan)) {
+  /* ★ 版本变没变看**全文**（含勾选）—— 与 fingerprint（忽略勾选）**刻意不同**：
+     只勾掉一条（正文不改）时进度也得落盘，否则严格模式「勾了没验证」门禁（task-strict 数
+     plan 里的 [x]）与并行写保护的「进度倒退」检测都会失效（selftest 14 / 144 钉着）。
+     比 join('\n') 与旧版 `fingerprint(current)===fingerprint(plan)` 判等是等价的。 */
+  if (Array.isArray(current) && current.length > 0 && current.join('\n') === plan.join('\n')) {
     return { changed: false, version: versions.length, reason: '', title: task.title || '', star: task.star || '', starChanged }
   }
 
@@ -283,4 +291,5 @@ module.exports = {
   recordVersion,
   migrate,
   nextActionOf,
+  markStepDone,
 }
