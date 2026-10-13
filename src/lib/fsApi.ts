@@ -27,10 +27,17 @@ export async function fsTree(dir?: string): Promise<FsTreeResult | null> {
   }
 }
 
-export async function fsRead(path: string): Promise<FsReadResult | null> {
+/**
+ * 读一个文件。
+ *
+ * `root` = 该对话的目录（右栏文件树那个根）。**必须传**，否则相对路径会按
+ * 全局工作目录解析 —— 「对话目录 ≠ 全局目录」时就会读错文件 / 报「只能访问工作目录里的内容」。
+ * 不传只在一种情况下对：文件本身就是**绝对路径**（成果面板的 artifacts 是这么存的）。
+ */
+export async function fsRead(path: string, root?: string): Promise<FsReadResult | null> {
   if (!bridge) return null
   try {
-    return await bridge.fsRead(path)
+    return await bridge.fsRead(path, root)
   } catch {
     return null
   }

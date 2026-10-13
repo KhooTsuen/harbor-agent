@@ -13,9 +13,10 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
 const { TEXT_EXT, isTextFile } = require('./fs-text-ext.cjs')
+/* 「哪个目录算根 / 给来的根认不认 / 路径怎么解析」全在 fs-root.cjs（那边写了为什么拆） */
+const { workdir, rootOf, resolveInside } = require('./fs-root.cjs')
 
 /** 列目录时最多爬这么深，太深了界面也没法看 */
 const MAX_DEPTH = 6
@@ -45,29 +46,8 @@ const SKIP_DIRS = new Set([
   '.turbo',
 ])
 
-function workdir() {
-  const configured = config.get().general.workdir
-  if (configured && fs.existsSync(configured)) return configured
-  const { DIRS } = require('../core/paths.cjs')
-  fs.mkdirSync(DIRS.workspace, { recursive: true })
-  return DIRS.workspace
-}
-
-/** 把用户给的相对路径解析到工作目录下，并挡掉往上级跑 */
-function resolveInside(input) {
-  const root = workdir()
-  const raw = String(input ?? '').trim()
-  if (!raw) return root
-
-  const absolute = path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(root, raw)
-  const rel = path.relative(root, absolute)
-
-  /* rel 以 .. 开头说明跑到工作目录外面了 */
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`只能访问工作目录里的内容。工作目录是：${root}`)
-  }
-  return absolute
-}
+/* workdir / resolveInside 搬去了 fs-root.cjs —— 本文件贴着 300 行红线，
+   而「根与访问范围」自成一体（那边文件头写了这次真机 bug 的来龙去脉） */
 
 function readdirSafe(dir) {
   try {
@@ -82,10 +62,14 @@ function readdirSafe(dir) {
 /**
  * 递归建树。
  *
+ * `root` 是这棵树的根（= 界面要看的那个目录），**相对路径一律相对它算** ——
+ * 以前这里写的是 `path.relative(workdir(), full)`（全局根），于是「对话目录 ≠ 全局目录」
+ * 时给界面的相对路径带着一串 `..`，点开就被 `resolveInside` 挡下（真机 bug）。
+ *
  * 返回给界面的节点形状：
- *   { name, path（相对工作目录）, type: 'file' | 'dir', size, children?: [] }
+ *   { name, path（相对 root）, type: 'file' | 'dir', size, children?: [] }
  */
-function buildTree(dir, depth, counter) {
+function buildTree(root, dir, depth, counter) {
   if (depth > MAX_DEPTH) return []
 
   const entries = readdirSafe(dir)
@@ -97,7 +81,7 @@ function buildTree(dir, depth, counter) {
     if (entry.name.startsWith('.') && entry.name !== '.env' && entry.name !== '.gitignore') continue
 
     const full = path.join(dir, entry.name)
-    const rel = path.relative(workdir(), full)
+    const rel = path.relative(root, full)
 
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue
@@ -106,7 +90,7 @@ function buildTree(dir, depth, counter) {
         name: entry.name,
         path: rel,
         type: 'dir',
-        children: buildTree(full, depth + 1, counter),
+        children: buildTree(root, full, depth + 1, counter),
       })
     } else if (entry.isFile()) {
       counter.count += 1
@@ -125,17 +109,17 @@ function buildTree(dir, depth, counter) {
   return [...dirs.sort(byName), ...files.sort(byName)]
 }
 
-/** 目录直接子的名字，用于文件名的 @ 补全 */
-function listNames(dirInput) {
-  const dir = resolveInside(dirInput)
+/** 目录直接子的名字，用于文件名的 @ 补全（root = 该对话的目录） */
+function listNames(root, dirInput) {
+  const dir = resolveInside(dirInput, root)
   return readdirSafe(dir)
     .filter((e) => !e.name.startsWith('.'))
     .map((e) => ({ name: e.name, type: e.isDirectory() ? 'dir' : 'file' }))
     .slice(0, MAX_ENTRIES)
 }
 
-function readTextFile(fileInput) {
-  const file = resolveInside(fileInput)
+function readTextFile(root, fileInput) {
+  const file = resolveInside(fileInput, root)
 
   const stat = fs.statSync(file)
   if (stat.isDirectory()) throw new Error('这是个目录，不是文件')
@@ -146,19 +130,20 @@ function readTextFile(fileInput) {
   const buffer = fs.readFileSync(file)
   /* 含大量 0 字节的当二进制处理 */
   if (buffer.includes(0)) {
-    return { binary: true, size: stat.size, path: path.relative(workdir(), file) }
+    return { binary: true, size: stat.size, path: path.relative(root, file) }
   }
 
   return {
     binary: false,
     text: buffer.toString('utf8'),
     size: stat.size,
-    path: path.relative(workdir(), file),
+    path: path.relative(root, file),
     ext: path.extname(file).toLowerCase().replace('.', ''),
   }
 }
 
 function register({ ipcMain }) {
+  /* 全局工作目录（设置里那个）；调用方要的是「默认目录」，与 fs-root 的 workdir 同义 */
   ipcMain.handle('fs:workdir', () => {
     const dir = workdir()
     return { workdir: dir, exists: fs.existsSync(dir) }
@@ -167,16 +152,15 @@ function register({ ipcMain }) {
   /**
    * 整棵树（界面打开「文件」标签时调一次）。
    *
-   * 可以指定目录 —— 侧栏里每条对话有自己的工作目录，右栏文件树得跟着它走，
-   * 不能永远显示全局那个。目录不存在/没给就回落到默认工作目录。
+   * `requested` 是**这条对话自己的目录**（渲染层传的），根认不认由 `fs-root` 说了算；
+   * 认不出的 / 没给的 → 回落全局工作目录（= 改之前的行为）。
    */
   ipcMain.handle('fs:tree', (_event, requested) => {
-    const asked = typeof requested === 'string' ? requested : ''
-    const root = asked && fs.existsSync(asked) ? asked : workdir()
+    const root = rootOf(requested)
     try {
       fs.mkdirSync(root, { recursive: true })
       const counter = { count: 0 }
-      const children = buildTree(root, 0, counter)
+      const children = buildTree(root, root, 0, counter)
       return {
         ok: true,
         root,
@@ -189,27 +173,32 @@ function register({ ipcMain }) {
     }
   })
 
-  ipcMain.handle('fs:list', (_event, dir) => {
+  ipcMain.handle('fs:list', (_event, dir, root) => {
     try {
-      return { ok: true, items: listNames(dir) }
+      return { ok: true, items: listNames(rootOf(root), dir) }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 
-  ipcMain.handle('fs:read', (_event, file) => {
+  ipcMain.handle('fs:read', (_event, file, root) => {
     try {
-      return { ok: true, ...readTextFile(file) }
+      return { ok: true, ...readTextFile(rootOf(root), file) }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 
-  /** 在系统资源管理器里定位文件 */
-  ipcMain.handle('fs:reveal', async (_event, target) => {
+  /**
+   * 在系统资源管理器里定位文件。
+   *
+   * `root` 是**可选**的：文件树/预览传来的相对路径要配会话目录；
+   * 成果面板（artifacts）存的是**绝对路径**，不传 root 时按全局根解析，绝对路径照旧放行。
+   */
+  ipcMain.handle('fs:reveal', async (_event, target, root) => {
     try {
       const { shell } = require('electron')
-      const full = resolveInside(target)
+      const full = resolveInside(target, rootOf(root))
       if (!fs.existsSync(full)) return { ok: false, error: '找不到这个文件' }
       shell.showItemInFolder(full)
       return { ok: true, path: full }
@@ -284,4 +273,4 @@ function register({ ipcMain }) {
   })
 }
 
-module.exports = { register, workdir, resolveInside, isTextFile, MAX_PREVIEW_BYTES }
+module.exports = { register, workdir, resolveInside, buildTree, isTextFile, MAX_PREVIEW_BYTES }

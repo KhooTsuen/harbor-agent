@@ -112,6 +112,11 @@ export function RightPanel() {
 
   const [openFile, setOpenFile] = useState<FileNode | null>(null)
   const [realTree, setRealTree] = useState<FileNode | null>(null)
+  /*
+   * 这棵树属于哪个目录 —— 预览时把它传回去（`fs:read` 得按**同一个根**解析相对路径）。
+   * 以前预览按全局工作目录解析，于是「对话目录 ≠ 全局目录」时点开就报错（2026-10-13 真机 bug）。
+   */
+  const [treeRoot, setTreeRoot] = useState('')
   const [treeError, setTreeError] = useState('')
 
   /*
@@ -130,6 +135,7 @@ export function RightPanel() {
       const tree = await fsTree(effectiveProject?.path)
       if (tree && tree.ok) {
         setTreeError('')
+        setTreeRoot(tree.root)
         setRealTree({
           id: tree.root,
           name: tree.name,
@@ -139,6 +145,7 @@ export function RightPanel() {
         })
       } else {
         setRealTree(null)
+        setTreeRoot('')
         if (isElectron) setTreeError(tree?.error ?? '真实工作目录读取失败')
       }
     })()
@@ -235,7 +242,7 @@ export function RightPanel() {
 
         {activeRightTab === 'files' ? (
           openFile ? (
-            <FilePreview node={openFile} onClose={() => setOpenFile(null)} />
+            <FilePreview node={openFile} root={treeRoot} onClose={() => setOpenFile(null)} />
           ) : fileTree ? (
             <FileTree root={fileTree} activeFileId={null} onOpenFile={setOpenFile} />
           ) : (

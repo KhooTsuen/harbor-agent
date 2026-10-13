@@ -132,7 +132,28 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
 
 export const LAYOUT = {
   sidebar: { default: 240, min: 220, max: 320, collapsed: 48 },
-  rightPanel: { default: 360, min: 320, max: 480 },
+  /*
+   * 右侧面板宽度。
+   *
+   * ⚠️ `max` 是**硬上限**（窗口足够宽时的封顶），不是实际能拖到的最大宽度 ——
+   * 真正生效的上限是**动态**的：`窗口宽 − 侧栏 − centerReserve`
+   * （唯一算法在 `lib/layoutWidth.ts` 的 `rightPanelMaxShown`，由 RightPanelHost 施加）。
+   *
+   * 为什么必须动态：中栏（对话区）是弹性区（`flex-1`），右栏写死一个上限时，
+   * 窄窗口下会把它连同正文一起压没；而正文/输入框本来就有 `contentMaxWidth`(760)
+   * 上限并居中。所以「右栏能多宽」应当由窗口的实际余量决定，而不是一个写死的数。
+   *
+   * 这里留一个**大的**硬上限，只干两件事：防配置里被写进荒谬值、给设置滑杆一个范围。
+   */
+  rightPanel: { default: 360, min: 320, max: 1200 },
+
+  /*
+   * 中栏（对话区）的**保底宽度**（px）：右栏最多宽到「窗口 − 侧栏 − 这个数」。
+   *
+   * 680 < `contentMaxWidth`(760) —— 即**允许**中栏正文在窗口不够宽时轻微变窄
+   * （最窄 680），换取右栏更宽（2026-10-13 用户拍板）。
+   */
+  centerReserve: 680,
   /*
    * 输入框高度（px）：面板上沿那条线可以拖，松手后**固定在拖到的位置**
    * （写进设置持久化 —— `Settings.composerHeight`，纯界面状态，只进 localStorage）。

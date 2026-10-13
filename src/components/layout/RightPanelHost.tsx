@@ -2,6 +2,10 @@ import { RightPanel } from './RightPanel'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ResizeHandle } from '@/components/ui/ResizeHandle'
 import { useRootFontScale } from '@/hooks/useRootFontScale'
+import { useWindowWidth } from '@/hooks/useWindowWidth'
+import { rightPanelMaxShown } from '@/lib/layoutWidth'
+import { LAYOUT } from '@/constants'
+import { useSettingsStore } from '@/stores/useSettingsStore'
 import { cn } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -41,7 +45,40 @@ export function RightPanelHost({ visible, width, min, max, onToggle, onResize }:
    * 反过来把拖拽结果除以倍率再回存 —— 所以持久化数据形状不变、无需迁移。
    */
   const scale = useRootFontScale()
-  const shownWidth = Math.round(width * scale)
+
+  /*
+   * 上限是**动态**的：窗口实际余量（窗口 − 侧栏 − 中栏保底），不是写死的 `max`。
+   * 算法唯一源在 `lib/layoutWidth.ts`；窗口宽从 `useWindowWidth()` 订阅。
+   * 折叠侧栏时它按 collapsed 值算 —— 与 App 里侧栏实际占位一致。
+   */
+  const windowWidth = useWindowWidth()
+  const sidebarWidth = useSettingsStore((s) =>
+    s.settings.sidebarCollapsed ? LAYOUT.sidebar.collapsed : s.settings.sidebarWidth,
+  )
+  const minShown = Math.round(min * scale)
+  /*
+   * 上限取两者较小：
+   *   · 动态值 —— 窗口实际余量（见 `lib/layoutWidth.ts`）
+   *   · `max * scale` —— 硬封顶（`LAYOUT.rightPanel.max`，防荒谬值）
+   * 这样超宽屏上也不会大到没边，而窄窗口由动态值说了算。
+   */
+  const maxShown = Math.min(
+    Math.round(max * scale),
+    rightPanelMaxShown({
+      windowWidth,
+      sidebarWidth,
+      reserve: LAYOUT.centerReserve,
+      minShown,
+    }),
+  )
+
+  /*
+   * ★ 窗口变窄时，已存的宽度要跟着收 —— 否则中栏被压到保底以下。
+   *
+   * 只做**视觉**收缩，不回写设置：写的话会把用户原本设的宽度永久改小
+   * （窗口小一次就回不去了）。窗口变宽时，`width`（用户原值）自然复原。
+   */
+  const shownWidth = Math.max(minShown, Math.min(Math.round(width * scale), maxShown))
 
   return (
     <>
@@ -50,8 +87,8 @@ export function RightPanelHost({ visible, width, min, max, onToggle, onResize }:
           side="left"
           label="调整右侧面板宽度"
           value={shownWidth}
-          min={Math.round(min * scale)}
-          max={Math.round(max * scale)}
+          min={minShown}
+          max={maxShown}
           onChange={(next) => onResize(Math.round(next / scale))}
         />
       ) : null}

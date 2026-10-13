@@ -3,6 +3,8 @@ import { FONT_OPTIONS, LAYOUT } from '@/constants'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { Field, Select, Switch } from '@/components/ui/Field'
 import { clamp } from '@/lib/utils'
+import { useWindowWidth } from '@/hooks/useWindowWidth'
+import { rightPanelMaxShown } from '@/lib/layoutWidth'
 import { Row, SectionTitle } from '../parts'
 
 /* ══════════════════════════════════════════════════════════════
@@ -15,6 +17,22 @@ import { Row, SectionTitle } from '../parts'
 export function AppearanceTab() {
   const settings = useSettingsStore((s) => s.settings)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
+
+  /*
+   * 右栏的实际上限是**动态**的（窗口 − 侧栏 − 中栏保底），所以滑杆的 max
+   * 与提示都按它算 —— 否则会显示成一个拖不到的 1200，误导人。
+   * 算法唯一源：`lib/layoutWidth.ts`。
+   */
+  const windowWidth = useWindowWidth()
+  const rightMax = Math.min(
+    LAYOUT.rightPanel.max,
+    rightPanelMaxShown({
+      windowWidth,
+      sidebarWidth: settings.sidebarCollapsed ? LAYOUT.sidebar.collapsed : settings.sidebarWidth,
+      reserve: LAYOUT.centerReserve,
+      minShown: LAYOUT.rightPanel.min,
+    }),
+  )
 
   return (
     <>
@@ -191,12 +209,12 @@ export function AppearanceTab() {
 
       <Row
         label="右侧面板宽度"
-        hint={`${settings.rightPanelWidth}px（${LAYOUT.rightPanel.min} - ${LAYOUT.rightPanel.max}）`}
+        hint={`${settings.rightPanelWidth}px（${LAYOUT.rightPanel.min} - ${rightMax}，随窗口自适应，也可以直接拖）`}
       >
         <input
           type="range"
           min={LAYOUT.rightPanel.min}
-          max={LAYOUT.rightPanel.max}
+          max={rightMax}
           step={4}
           value={settings.rightPanelWidth}
           onChange={(e) => updateSettings({ rightPanelWidth: Number(e.target.value) })}

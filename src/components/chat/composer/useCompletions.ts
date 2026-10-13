@@ -44,7 +44,8 @@ export function useCompletions(
 
   useEffect(() => {
     let alive = true
-    void fsTree().then((tree) => {
+    /* 传 projectPath：文件清单要来自**这条对话**的目录（以前漏传，列的是全局目录） */
+    void fsTree(projectPath).then((tree) => {
       if (!alive || !tree?.ok) return
       const files: Array<{ name: string; path: string; desc: string }> = []
       const walk = (nodes: typeof tree.children) => {

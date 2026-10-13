@@ -115,9 +115,10 @@ const api = {
 
   fsWorkdir: () => call('fs:workdir'),
   fsTree: (dir) => call('fs:tree', dir),
-  fsList: (dir) => call('fs:list', dir),
-  fsRead: (file) => call('fs:read', file),
-  fsReveal: (target) => call('fs:reveal', target),
+  /* root = 该对话的目录（右栏文件树那个根）。不传 → 内核回落全局工作目录 */
+  fsList: (dir, root) => call('fs:list', dir, root),
+  fsRead: (file, root) => call('fs:read', file, root),
+  fsReveal: (target, root) => call('fs:reveal', target, root),
   fsPickAndRead: () => call('fs:pickAndRead'),
   pickImageAsDataUrl: () => call('fs:pickImageAsDataUrl'),
   /* 「附加文件」：任何格式，主进程按扩展名分流解析（见 handlers/file-attach.cjs） */

@@ -5,6 +5,90 @@
 
 ## [未发布]
 
+- **工具箱地图：`## Tools` 层从「一行一个工具」改成「按场景分组 + 每工具一句『何时该用』」**（2026-10-13，用户报「模型有时候不知道自己有哪些工具可用，行为被动」）。
+  · **实测到的根因**：原来那层是 `t.description.split('。')[0]` —— 19 个工具里 **14 个**的
+    「什么时候该用它」正好写在第二句，被切掉了（`list_dir` 丢了「不确定项目结构时先看这里」、
+    `write_file` 丢了「小改动请优先用 edit_file」、`memory_search` 丢了「想确认某约定是否被记录过」）。
+    加上平铺无分组、`browse_*` 独占 6/19（32%），模型只看到「这是什么」、看不到「何时用哪把」。
+  · **改法**：新增 `electron/core/tool-map.cjs`（一张**手写分组表** + 一张**手写导向表** +
+    渲染 + 退化分支），`loop-prompt.cjs` 的 `toolsSection()` 改为调它并把插件 / MCP 清单传进去。
+    6 组：摸清现状 / 改文件 / 跑命令 / 上网查 / 长期记忆 / 协作与治理。**19 个工具一个不删减**。
+  · **token 净增 ≈ 0**：新地图 **856 字** vs 旧的 893 字（分组后不必每个工具都写完整第一句）。
+    这一层在**稳定区**（ORDER 第 9 位），改一次 = 一次性前缀缓存失效（每会话首轮一次）。
+  · **退化规则**：工具数 > `MAX_DETAILED(24)` 时只出「分组名 + 计数」，把用途交给 schema ——
+    因为系统提示**不参与** `context-builder` 裁剪，这一层的字是每轮固定成本、没有兜底。
+  · **防漂自检**（新增 7 条，挂在已有的「工具清单」组 `93-machine-prompt.mjs`）：
+    地图工具名集合 === `registry.ALL`（**新增工具忘了分组就报红**）· 每个工具名恰好一次 ·
+    分组数 ≥ 4 · 每个工具都有手写导向 · 与 `toApiSchema()` 名字一致（提示层 ↔ schema 层）·
+    超上限走退化分支 + 对照组。分组是手写的，没有这条守卫漏掉工具**没人会知道**。
+  · **提示词版本 `/7 → /8`**（改稳定区文案的既有规矩）；同步两处版本断言
+    （`93-machine-prompt.mjs` · `142-persona-routing.mjs`）。
+  · **边界**：不改任何工具的 schema / 行为；不碰 Runtime / IPC / 数据结构 / 权限模型；
+    不碰 persona 路由与打卡机制（新内容留在稳定区，与 `personaGuide` 同区）。
+  · **验证**：`npm run verify` 全绿；内核自检 **4290 项 / 0 失败**（+8）；真机验收（改前 / 改后
+    问同一个「该用哪个工具」的问题）留待重启后观察。
+  · 设计见 [`docs/research/toolbox-map-design.md`](docs/research/toolbox-map-design.md)（§1 现状核对 · §2 方案 · §3 边界 · §4 验收 · §5 附录 19 工具完整描述）。
+
+- **修复：贴图发出去之后，输入框上方的「待发图片区」不消失**（2026-10-13，用户真机报的）。
+  · **症状**：粘贴/选一张图 → 输入框上方出现预览条（「N 张 · 会一起发给模型」）→ 发出去后
+    那条**还挂在那儿**，得手动点 × 才掉。
+  · **根因（两条出路清得不一致）**：`useThreadStore.sendMessage` 里，
+    「正在跑 → 排队」那条清了三样（`input` / `inputImages` / `inputFiles`），
+    而**正常发送那条只清了 `input` / `inputFiles`，漏了 `inputImages`**。
+    图其实发出去了（消息里带着 `images`），只是预览条赖着不走 —— 从初始提交起就在。
+  · **改法**：主发送路径补上 `clearInputImages()`（`src/stores/useThreadStore.ts`），
+    与排队路径、`thread/attachments.ts` 的「发送时一起清空」口径对齐。
+  · **回归钉**：新增 `src/stores/thread/__tests__/sendClearsAttachments.test.ts`
+    —— 走真 `sendMessage`（假后端），断言发完 `inputImages` 为空（另有一条顺带钉
+    `inputFiles` / `input` 一起清）。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 权限模型 / 事件契约 / 数据结构。
+
+- **右栏宽度上限改为「窗口动态余量」—— 右栏能拖得更宽，而中栏（对话区）永远保得住**（2026-10-13，用户报「右栏能不能放大一点，但别压中栏」）。
+  · **背景**：三栏是 flex —— 侧栏与右栏 `shrink-0`（写死 px）、中栏 `flex-1 min-w-0`。
+    也就是说**右栏宽多少，中栏就被挤掉多少**；而右栏上限原是一个写死的常量（480），
+    它不管窗口多宽 —— 窗口窄 + 右栏拖到底时，中栏会被压到几乎为零（正文被挤没）。
+  · **改法**：上限 = `窗口宽 − 侧栏宽 − 中栏保底(LAYOUT.centerReserve = 680)`。
+    窗口越宽右栏能拖得越宽（1920 全屏 + 240 侧栏 → 上限 1000），窗口变窄上限自动收。
+    `LAYOUT.rightPanel.max` 从 480 改成 **1200**，语义变为「硬封顶」（防荒谬值 + 给滑杆范围）。
+  · **算法唯一源** `src/lib/layoutWidth.ts` 的 `rightPanelMaxShown()`（纯函数，单测 6 条钉着）。
+  · **窗口变窄时只做视觉收缩，不回写设置** —— 写的话会把用户原本设的宽度永久改小
+    （窗口小一次就回不去）；窗口变宽后 `settings.rightPanelWidth` 原值自然复原。
+  · **中栏保底 680 < 正文上限 760**：即**允许**中栏正文在窗口不够宽时轻微变窄，换右栏更宽
+    （2026-10-13 用户拍板）。
+  · 新增 `src/hooks/useWindowWidth.ts`（rAF 节流 + 值没变不 setState）；设置 → 外观的
+    滑杆上限与提示同步显示**实际可用**的最大值（不再是拖不到的 1200）。
+  · **文件**：新增 `src/lib/layoutWidth.ts`、`src/hooks/useWindowWidth.ts`、
+    `src/lib/__tests__/layoutWidth.test.ts`；改 `src/constants/index.ts`、`src/constants/design.ts`、
+    `src/components/layout/RightPanelHost.tsx`、`src/components/settings/tabs/AppearanceTab.tsx`。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 权限模型 / 事件契约 / 数据结构（宽度仍是存 localStorage 的那个数）。
+
+- **修复：右栏文件预览按错根目录 —— 「这条对话自己的目录」里的文档列得出来、点开读不了**（2026-10-13，用户真机报的）。
+  · **症状**：右栏「文件」里能看到 `E:\独立游戏\胡斯战争题材游戏调研.md`，点开却报
+    「只能访问工作目录里的内容。工作目录是：E:\Harbor\data\workspace」—— 而这条对话自己的
+    目录分明是 `E:\独立游戏`（底部输入框就写着）。
+  · **根因（同一个 handler 里两个根）**：`fs:tree` 认渲染层传来的**会话目录**，
+    而 `fs:read` / `fs:list` / `fs:reveal` 一律按**全局** `workdir()` 解析相对路径；
+    `buildTree` 算相对路径用的也是全局那个 —— 于是给界面的相对路径带着一串 `..`，
+    点开就被越界守卫挡下。**只在这两个目录不一致时暴露**，所以一直没被单测照到。
+  · **改法（根显式贯穿）**：新增 `electron/handlers/fs-root.cjs`（从 `fs.cjs` 拆出，那边 288 行贴着红线），
+    收拢 `workdir` / `rootOf` / `resolveInside` / `allowedRoots`；`fs:tree` 返回的 `root`
+    被前端一路带下来，`fs:read` / `fs:list` / `fs:reveal` 都按**同一个根**解析。
+    前端：`RightPanel` 存 `tree.root` 传给 `FilePreview`；`useCompletions` 补上漏传的
+    `projectPath`（以前 `@` 列的是全局目录）；`ProjectContextTab` 读 `AGENT.md` 也带上项目目录。
+  · **守卫没有放宽**：能当根的还是应用自己认得的那几个 —— 全局工作目录、默认 workspace/chat、
+    以及**已有对话挂过的目录**（`session.workdirs()`）；别的绝对路径回落全局并记一条 warn，
+    往上级跑（`..`）照旧挡着。**不是**「防被攻破的渲染层」（那本来就能通过 `shell:run` 跑命令），
+    与 `fs.cjs` 文件头说的是同一件事。
+  · **文件**：新增 `electron/handlers/fs-root.cjs`、`scripts/selftest/groups/147-fs-root-scope.mjs`；
+    改 `electron/handlers/fs.cjs`、`electron/preload.cjs`、`src/types/backend-io.ts`、
+    `src/lib/fsApi.ts`、`src/components/layout/{RightPanel,FilePreview}.tsx`、
+    `src/components/chat/composer/useCompletions.ts`、`src/components/settings/tabs/ProjectContextTab.tsx`、
+    `scripts/selftest.mjs`（注册新组）。
+  · **验证**：内核自检 **通过 4282 项 / 失败 0**（新增组 `147-fs-root-scope` 8 条：rootOf 认会话目录 /
+    不认外部路径回落 / `buildTree` 相对路径不带 `..` / **照界面那两步走能读到文件内容** /
+    对的 root 解析得到真实文件 / 错的 root 解析不到）。
+    真机待验：装机版 `E:\独立游戏` 这条对话的文档应能直接预览。
+
 - **记忆分层改造 · 阶段 1 —— 给模型一只「读记忆」的手（只读工具 `memory_search`）**（2026-10-13）。
   · **背景**：记忆每轮只把最相关的最多 12 条注入系统提示，模型**看不到**其余条目、也没有「取更多」
     的入口；设置页那个 `memory:search` 是 **IPC 通道**（渲染层用），模型侧**够不着** —— `tools/` 里

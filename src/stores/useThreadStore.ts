@@ -202,6 +202,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     /* 落盘形态（含图片）见 thread/userRecord.ts —— 那里面记着「为什么必须带 images」 */
     useAppStore.getState().persistMessage(threadId, userRecord(userMessage, parent))
     get().clearInput()
+    /* 待发附件三样一起清。以前这里漏了 `clearInputImages` —— 图发是发出去了（消息带着 images），
+       输入框上方那条「N 张 · 会一起发给模型」却赖着不走，得手动点掉（2026-10-13 真机报的）。 */
+    get().clearInputImages()
     get().clearInputFiles()
 
     if (wasUntitled) {

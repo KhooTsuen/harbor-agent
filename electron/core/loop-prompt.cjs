@@ -14,7 +14,7 @@
  */
 
 const log = require('./log.cjs')
-const tools = require('./tools/index.cjs')
+const toolMap = require('./tool-map.cjs')
 const plugins = require('./plugins.cjs')
 const skills = require('./skills.cjs')
 const skillPin = require('./skill-pin.cjs')
@@ -72,32 +72,13 @@ function buildFailureNote({ done = [], failed = [] } = {}) {
   return `[上一轮执行情况]\n${lines.join('\n')}`
 }
 
-/**
- * 工具清单。
+/*
+ * 工具清单（`## Tools` 那层）的正文搬到了 `tool-map.cjs`：
+ * 按场景分组的**工具箱地图** + 每工具一句「什么时候该掏它」+ 插件 / MCP 两段。
  *
- * function calling 的 schema 里已经带了每个工具的描述，但**一句导航能省很多试错**：
- * 模型知道「有没有能读目录的工具」，就不会拿 shell 去凑。
- *
- * 分三块：内置工具 → 本地插件 → MCP 服务器（`mcp-hint.cjs`）。
- * 后两块都是「这里有个入口，细节在 schema 里」，不重复写参数。
+ * 搬出去的原因见该文件头（那边写了「模型行为被动」这个真实盲区怎么来的）；
+ * 这里只取好插件与 MCP 的清单**传进去** —— tool-map 保持纯渲染，自检能直接 require。
  */
-function toolsSection() {
-  const builtin = tools.ALL.map((t) => `- \`${t.name}\`：${t.description.split('。')[0]}。`)
-  /*
-   * 本地插件清单：单独一段，让模型在**文字层面**知道有哪些插件、何时用。
-   * 这是「两段式」的第一段（清单）；完整参数 schema 在 function calling 里。
-   * 插件多了以后，这里会变成「清单 → 按需注入 schema」的入口。
-   */
-  const pluginList = plugins.pluginList()
-  if (pluginList) {
-    builtin.push('\n【本地插件（装在 data/plugins/ 下，各自描述为准）】')
-    builtin.push(pluginList)
-  }
-  /* MCP 服务器：连上了才写，免得新对话一开始就列一堆连不上的名字 */
-  const remote = mcpHint.live()
-  if (remote) builtin.push(remote)
-  return builtin.join('\n')
-}
 
 /**
  * 装配这一轮要发出去的消息。
@@ -227,7 +208,7 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     /* 技能与工具清单：模型得看得到「手边有什么」；
        钉住的那个技能把**正文**也放进来（见 skill-pin.cjs），否则「钉」等于没钉 */
     skills: [skillSection, skillPin.promptSection(threadSettings)].filter(Boolean).join('\n\n'),
-    tools: toolsSection(),
+    tools: toolMap.toolsSection({ pluginList: plugins.pluginList(), remote: mcpHint.live() }),
     toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
     /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */
     browserGuide: BROWSER_GUIDE,

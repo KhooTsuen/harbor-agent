@@ -51,11 +51,16 @@ export interface IoBridge {
 
   fsWorkdir: () => Promise<{ workdir: string; exists: boolean }>
   fsTree: (dir?: string) => Promise<FsTreeResult>
+  /** root = 该对话的目录（右栏文件树的根）；不传 → 内核回落全局工作目录 */
   fsList: (
     dir: string,
+    root?: string,
   ) => Promise<{ ok: boolean; items?: Array<{ name: string; type: string }>; error?: string }>
-  fsRead: (file: string) => Promise<FsReadResult>
-  fsReveal: (target: string) => Promise<{ ok: boolean; path?: string; error?: string }>
+  fsRead: (file: string, root?: string) => Promise<FsReadResult>
+  fsReveal: (
+    target: string,
+    root?: string,
+  ) => Promise<{ ok: boolean; path?: string; error?: string }>
 
   /* 图片查看器：跟系统打交道那三条（另存为 / 在文件夹里显示 / 复制到剪贴板） */
   imageSaveAs: (src: string) => Promise<{

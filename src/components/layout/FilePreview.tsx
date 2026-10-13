@@ -11,11 +11,23 @@ import { colorOf } from '@/lib/statusLanguage'
 /* ══════════════════════════════════════════════════════════════
    文件预览
 
-   桌面版按 node.path 读取真实工作目录；浏览器预览节点可携带静态 content。
+   桌面版按 node.path 读取真实文件；浏览器预览节点可携带静态 content。
    二进制文件不预览（读进来也是乱码）。
+
+   ★ `root` 是**这棵树属于哪个目录**（RightPanel 从 fs:tree 的返回值带下来的）。
+     不传的话内核按全局工作目录解析相对路径 —— 「对话目录 ≠ 全局目录」时
+     就会读错文件、或报「只能访问工作目录里的内容」（2026-10-13 真机 bug）。
    ══════════════════════════════════════════════════════════════ */
 
-export function FilePreview({ node, onClose }: { node: FileNode; onClose: () => void }) {
+export function FilePreview({
+  node,
+  root,
+  onClose,
+}: {
+  node: FileNode
+  root?: string
+  onClose: () => void
+}) {
   const [copied, setCopied] = useState(false)
   const [content, setContent] = useState<string | null>(null)
   const [language, setLanguage] = useState('text')
@@ -41,7 +53,7 @@ export function FilePreview({ node, onClose }: { node: FileNode; onClose: () => 
         setLoading(false)
         return
       }
-      const result = await fsRead(node.path)
+      const result = await fsRead(node.path, root)
       if (result && result.ok) {
         if (result.binary) {
           setError(`二进制文件（${(result.size ?? 0).toLocaleString('zh-CN')} 字节），不预览`)
@@ -56,7 +68,7 @@ export function FilePreview({ node, onClose }: { node: FileNode; onClose: () => 
       }
       setLoading(false)
     })()
-  }, [node])
+  }, [node, root])
 
   async function copy(): Promise<void> {
     try {

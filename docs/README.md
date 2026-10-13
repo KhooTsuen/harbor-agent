@@ -29,6 +29,8 @@
 | 想知道 Runtime 有哪些**对象**、哪些还没有、**要收敛成什么样** | [`Runtime领域模型.md`](Runtime领域模型.md)（设计稿 · 目标态，不是现状） |
 | 想改**记忆**功能 / 看记忆的目标态、边界与治理 | [`Memory设计.md`](Memory设计.md)（设计稿 · 目标态，不是现状） |
 | 想把记忆从「每轮注入全文」升级成「摘要 + 按需取全文」（现状核对 / 改动面 / 老机器性能 / 负面案例 / 红线） | [`research/memory-layered-recall-design.md`](research/memory-layered-recall-design.md)（方案 · 2026-10-13 · **阶段 1 已实施**：只读工具 `memory_search` + 指路文案；阶段 2 摘要注入未做、默认关） |
+| 想让模型**一眼看出「有什么工具、何时该掏哪个」**（工具清单现状核对 / 分组地图 / 重复性分析 / token 实测） | [`research/toolbox-map-design.md`](research/toolbox-map-design.md)（方案 · 2026-10-13 · **已实施（B 方案）**：`core/tool-map.cjs` 分组地图，提示词 `/7→/8`） |
+| | 想让智能体**更主动**（主动查记忆 / 连续失败给替代方案 / 工具按需加载省 token） | [`research/agent-capability-upgrade-design.md`](research/agent-capability-upgrade-design.md)（只读调研 + 方案 · 2026-10-14 · **未实施，待拍板**；外部趋势已核实：Meta 官方博客 / OpenAI 两份官方文档 / Agent Arena 榜 / DeepSeek 官方） |
 | 想知道**当前架构的真实状态**（重复表达 / 多真相源 / 跨层耦合） | [`Architecture Reality Audit.md`](Architecture%20Reality%20Audit.md)（现状审计 · 2026-10-08 · **不是**设计稿） |
 | 查**同一个事实在几处被定义**（真相源 / 重复候选） | [`真相源地图.md`](真相源地图.md)（`npm run contracts` + `npm run dup`） |
 | 想知道**重复/多真相源要怎么收敛**（真相源地图怎么做、分几步） | [`research/truth-map-design.md`](research/truth-map-design.md)（设计稿 · 2026-10-13 · 目标态） |

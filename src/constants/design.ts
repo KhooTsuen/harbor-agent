@@ -199,7 +199,10 @@ export const LAYOUT_TOKENS = {
   topbarHeight: 40,
   statusbarHeight: 28,
   sidebar: { min: 220, max: 320, default: 240, collapsed: 48 },
-  rightPanel: { min: 320, max: 480, default: 360 },
+  /* 与 constants/index.ts 的 LAYOUT.rightPanel 同值 —— 那边是生效的那一份，改要两处一起 */
+  rightPanel: { min: 320, max: 1200, default: 360 },
+  /* 中栏保底宽（右栏动态上限用）；同 LAYOUT.centerReserve */
+  centerReserve: 680,
   contentMaxWidth: 760,
   dialogMaxWidth: 760,
   composerMinHeight: 52,

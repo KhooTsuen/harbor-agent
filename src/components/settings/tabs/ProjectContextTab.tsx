@@ -14,7 +14,7 @@ export function ProjectContextTab() {
   useEffect(() => {
     let alive = true
     if (!project?.path) return
-    void fsRead('AGENT.md').then((result) => {
+    void fsRead('AGENT.md', project.path).then((result) => {
       if (!alive) return
       if (result?.ok && result.text !== undefined) {
         setInstructions(result.text)

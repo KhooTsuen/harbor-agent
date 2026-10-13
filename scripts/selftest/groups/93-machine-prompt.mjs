@@ -103,8 +103,8 @@ export async function run() {
    * 钉死是故意的 —— 一处文案改了版本没动，台账上就分不出「改前改后」。
    */
   check(
-    '提示词版本已升到 /7（CE-007：北极星那一行）',
-    promptStackCore.VERSION === 'prompt-stack/7',
+    '提示词版本已升到 /8（CE-009：工具箱地图按场景分组）',
+    promptStackCore.VERSION === 'prompt-stack/8',
   )
 
   const { buildPromptContext } = require(join(ROOT, 'electron/core/loop-prompt.cjs'))
@@ -121,4 +121,60 @@ export async function run() {
   check('★ 里面写明了 shell 是 cmd.exe（Windows）或 /bin/sh', /cmd\.exe|\/bin\/sh/.test(system))
   check('工具清单还在（没被新层挤掉）', /`read_file`/.test(system) && /`run_shell`/.test(system))
   check('版本号随装配返回（台账要记）', /^prompt-stack\/\d+$/.test(built.promptVersion))
+  check(
+    '★ 系统提示里是「工具箱地图」（分组 + 每工具一句「何时该用」），不是旧的一行一个',
+    system.includes('先看这张图再动手') && system.includes('他以前说过吗'),
+  )
+
+  /* ── CE-009：工具箱地图 ──────────────────────────────────── */
+  /*
+   * 分组表与导向表是**手写**的（「怎么分组、什么时候用哪把」是人的判断，
+   * registry 里没有这个信息）—— 所以这里钉住「地图的工具名集合 === registry.ALL」：
+   * 以后新增工具忘了分组，地图会**静默漏掉它**、而没有任何东西会报。这一组就是防这个。
+   */
+  group('工具箱地图 / 工具名集合不许漂')
+  const toolMapCore = require(join(ROOT, 'electron/core/tool-map.cjs'))
+  const toolsCore = require(join(ROOT, 'electron/core/tools/index.cjs'))
+  const allNames = toolsCore.ALL.map((t) => t.name)
+  const mapText = toolMapCore.buildToolMap()
+  const mapNames = [...mapText.matchAll(/`([a-z_]+)`/g)].map((m) => m[1])
+
+  check(
+    '★ 地图里的工具名集合 === registry.ALL（新增工具忘了分组就报红）',
+    JSON.stringify([...new Set(mapNames)].sort()) === JSON.stringify([...allNames].sort()),
+    `地图 ${new Set(mapNames).size} / registry ${allNames.length}`,
+  )
+  check(
+    '每个工具名恰好出现一次（不重复、不遗漏）',
+    mapNames.length === new Set(mapNames).size && mapNames.length === allNames.length,
+    String(mapNames.length),
+  )
+  check('分组数 ≥ 4', toolMapCore.TOOL_GROUPS.length >= 4, String(toolMapCore.TOOL_GROUPS.length))
+  check(
+    '每个工具都手写了「什么时候该用它」',
+    allNames.every((n) => (toolMapCore.TOOL_HINTS[n] ?? '').length > 0),
+    allNames.filter((n) => !(toolMapCore.TOOL_HINTS[n] ?? '').length).join(','),
+  )
+  /* 跨通道形状对齐：提示层那份名单，要和 function calling 发出去的那份一致 */
+  const apiNames = toolsCore.toApiSchema().map((t) => t.function.name)
+  check(
+    '★ 与 toApiSchema() 的工具名一致（提示层 ↔ schema 层，同一件事不许两样）',
+    JSON.stringify([...apiNames].sort()) === JSON.stringify([...allNames].sort()),
+  )
+  /* 退化分支：工具一多（装几个 MCP 连上就够）只出分组名 + 计数，把用途交给 schema */
+  const tooMany = toolMapCore.buildToolMap(
+    Array.from({ length: toolMapCore.MAX_DETAILED + 1 }, (_, i) => ({
+      name: `t${i}`,
+      description: 'x。y。',
+    })),
+  )
+  check(
+    '★ 超过上限就退化成「分组名 + 计数」（不再逐条写用途）',
+    tooMany.includes('看 schema') && !/`[a-z_]+`/.test(tooMany),
+    tooMany.slice(0, 80),
+  )
+  check(
+    '（对照）没超上限时**会**逐条列工具名',
+    /`[a-z_]+`/.test(toolMapCore.buildToolMap()),
+  )
 }
