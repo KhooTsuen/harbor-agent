@@ -19,7 +19,7 @@ const { wrapWebText } = require('./_web-note.cjs')
 module.exports = {
   name: 'browse_nav',
   description:
-    '在当前浏览器标签里后退或前进一页（用浏览器的历史记录，不会新开标签）。用它回到刚才那个页面 —— 比如点进详情看完了要回列表、翻到下一页后想回上一页。只能 back / forward，不能去任意地址（那用 browse）。',
+    '在当前标签里后退 / 前进一页（用浏览器历史，不新开标签）。回到刚才那页用它，别重开同一地址。只能 back / forward。',
   parameters: {
     type: 'object',
     properties: {

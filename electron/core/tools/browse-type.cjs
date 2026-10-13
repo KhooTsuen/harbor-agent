@@ -20,7 +20,7 @@ const redact = require('../redact.cjs')
 module.exports = {
   name: 'browse_type',
   description:
-    '往当前浏览器页面的输入框里打字。index 来自 browse_elements 返回的索引（那个元素必须是输入框/文本域）。可选 pressEnter 在输入后回车（搜索、登录常用）。密码框会弹确认框让用户授权（用户明确说了可以填密码时才该调用；内容不会显示、也不进对话记录）。输入后页面可能变化，应该再 browse_elements 看新状态。',
+    '往当前页面的输入框打字。index 来自 browse_elements（必须是输入框/文本域）；可选 pressEnter 回车。密码框会弹确认框让用户授权（用户明确允许才该调用；内容不外泄、不进对话记录）。输入后页面可能变，再 browse_elements 看新状态。',
   parameters: {
     type: 'object',
     properties: {

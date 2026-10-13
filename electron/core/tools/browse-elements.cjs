@@ -65,7 +65,7 @@ function formatSnapshot(snapshot, settle) {
 module.exports = {
   name: 'browse_elements',
   description:
-    '读**实时**当前页面上现在可交互的元素（按钮、输入框、链接、下拉框等），每个带索引、文本、角色和中心坐标。读之前会先等页面加载稳定（网络慢时可能要等几秒）。这是当前这一刻的真实页面，不是存档快照。先 browse 打开网页，再用这个看「页面上现在有什么、能点什么」，之后用 browse_click 按索引点。只读，不会改变页面。',
+    '读当前页面此刻可交互的元素（按钮 / 输入框 / 链接 / 下拉框），每个带索引 —— 点击和输入都按这个索引来。只读。先用 browse 打开页面，再调它。',
   parameters: {
     type: 'object',
     properties: {},

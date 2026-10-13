@@ -161,6 +161,18 @@ export async function run() {
     '★ 与 toApiSchema() 的工具名一致（提示层 ↔ schema 层，同一件事不许两样）',
     JSON.stringify([...apiNames].sort()) === JSON.stringify([...allNames].sort()),
   )
+  /*
+   * CE-012（P3 工具 Schema 瘦身）加的：压缩 description 时，**名字与顺序一个字都不许动**。
+   * 上面那条只比**集合**（sort 过）—— 工具被调换顺序、或有工具被删掉又被同名补回，
+   * 它照样绿。顺序的唯一真相源是 `registry.ALL` 的声明顺序，这里逐字比。
+   */
+  const registryCore = require(join(ROOT, 'electron/core/tools/registry.cjs'))
+  const localNames = registryCore.ALL.map((t) => t.name)
+  check(
+    '★ 工具名与**顺序**都没变（本地工具逐字 === registry.ALL 声明顺序）',
+    JSON.stringify(apiNames.slice(0, localNames.length)) === JSON.stringify(localNames),
+    `schema ${apiNames.length} 个 / ALL ${localNames.length} 个`,
+  )
   /* 退化分支：工具一多（装几个 MCP 连上就够）只出分组名 + 计数，把用途交给 schema */
   const tooMany = toolMapCore.buildToolMap(
     Array.from({ length: toolMapCore.MAX_DETAILED + 1 }, (_, i) => ({

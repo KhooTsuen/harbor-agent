@@ -32,7 +32,7 @@ async function readAxTree(webContentsId) {
 module.exports = {
   name: 'browse_ax',
   description:
-    '读当前浏览器页面的**无障碍树**（页面自己声明的角色/名称/状态，比如 textbox "邮箱" [required]、button "提交"）。比 browse_elements 更懂语义，适合读菜单、表单、表格这类结构。只读，不改页面。仅供理解页面用；要点击/输入仍然先 browse_elements 拿索引。',
+    '读当前页面的**无障碍树**（角色 / 名称 / 状态），比 browse_elements 更懂语义，适合读菜单 / 表单 / 表格这类结构。只读；要点击/输入仍用 browse_elements 拿索引。',
   parameters: {
     type: 'object',
     properties: {},

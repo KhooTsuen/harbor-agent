@@ -5,6 +5,30 @@
 
 ## [未发布]
 
+- **工具 Schema 瘦身：9 个冗长工具的 description 压成「一句话用途 + 一句关键约束」**（CE-012 · 2026-10-14，P3「工具搜索与 Token 优化」）。
+  · **为什么**：每轮请求都携带全部 19 个工具的完整 schema（`loop.cjs:177` 发 `toApiSchema()`），
+    这笔开销**每轮固定付**。工具一多，光"说明文字"就吃几百 token。
+  · **只动 description，name / parameters 一个字未碰**：改后 `toApiSchema()` 的**骨架哈希**
+    （`name` + `parameters`，不含 description）与改前**逐字节相同**
+    （`090c27770e0fe2a7749c7ccb84d9d0367e27f7e5cf54473d954e1bf5a47d630c`），工具名与顺序也未变。
+  · **压缩的工具**（desc 字符数，改前→改后）：`ask_user` 365→146、`browse_type` 175→137、
+    `browse_elements` 166→79、`browse_ax` 159→104、`search_web` 157→109、`browse` 156→89、
+    `generate_image` 215→108、`browse_click` 133→89、`browse_nav` 112→65（合计 1638→926）。
+    保留的是**「什么时候该用它 / 什么时候不该用」**（这正是选工具的依据），砍的是重复解释与举例。
+  · **数字（实测）**：`toApiSchema()` JSON **9188 → 8468 字符**；description 合计 **2552 → 1840**；
+    parameters 合计 **5024（未动）**。
+  · **★ 目标差额（必须说明）**：目标「降到 5000~6000」**未达成，且只压 description 到达不了**。
+    9188 = 5024（parameters）+ 2552（description）+ 约 1600（name / type / required / JSON 标点）。
+    description 即使**全部压成 0**，下限也还有 **≈6636 > 6000** ——
+    这是算术，不是努力问题。要进 5000~6000 只能动 parameters（本轮**明确禁止**，
+    且那条也真会动到模型调用形状）。**要不要动参数文字，见交付报告的待拍板项。**
+  · **新增断言**（`scripts/selftest/groups/93-machine-prompt.mjs`）：工具名与**顺序**逐字 === `registry.ALL`
+    的声明顺序 —— 原来那条是 `sort` 后比**集合**，工具被调换顺序也照样绿，钉不住。
+  · **文件**：改 9 个工具文件（`electron/core/tools/` 下 ask_user / generate-image / search_web /
+    browse / browse-elements / browse-click / browse-type / browse-nav / browse-ax）、
+    `scripts/selftest/groups/93-machine-prompt.mjs`（+1 条断言）。
+  · **验证**：内核自检 **4320 项 / 0 失败**（改前 4319，+1）；零新依赖；不碰 Runtime / IPC / 权限 / 数据结构。
+
 - **连续失败替代方案：同一件事连着失败 ≥2 次时，轮次边界推一句「别再照原路子试，给出替代方案」**（CE-011 · 2026-10-14，P2「长程任务自我纠错」，参考 Meta Muse Wonder 的 Active Focus）。
   · **现状缺口**：内核有四套「顶回」机制（`loop-guard` / 完成门禁 / 严格模式），但**没有一套盯「连续失败」** ——
     `loop-guard` 只认「**一模一样的调用**」（模型用 5 种**不同**办法各失败一次，它完全不动）；自动重试只针对只读工具。

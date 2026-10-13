@@ -100,7 +100,7 @@ function networkGuard(url, ctx) {
 module.exports = {
   name: 'browse',
   description:
-    '用内置浏览器打开一个网页，把正文读回来（能执行 JavaScript，所以那些纯抓取打不开的页面也能读）。适合：看某个搜索结果的具体内容、查商品页面、读文档站点。只读，不会点击或提交任何东西。默认新地址开一个新标签页；只是中转、读一眼就走的页面，传 sameTab:true 在当前标签里打开（别一个劲堆标签）。',
+    '用内置浏览器打开网页、把正文读回来（能执行 JS，纯抓取打不开的页面也能读）。只读，不点击不提交。默认开新标签；只是中转读一眼的页面传 sameTab:true 在当前标签打开。',
   parameters: {
     type: 'object',
     properties: {

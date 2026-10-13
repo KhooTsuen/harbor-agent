@@ -12,7 +12,7 @@
 module.exports = {
   name: 'browse_click',
   description:
-    '点击当前浏览器页面上的某个元素。index 来自 browse_elements 返回的索引（比如 [3] 就用 index=3）。先 browse_elements 看页面上有什么，再按索引点。点击后页面可能变化，应该再 browse_elements 看新状态。',
+    '点击当前页面上的某个元素。index 来自 browse_elements 的索引（[3] 就用 index=3）；点完页面可能变，再 browse_elements 看新状态。',
   parameters: {
     type: 'object',
     properties: {
