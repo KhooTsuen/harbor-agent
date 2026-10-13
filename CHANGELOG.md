@@ -5,6 +5,28 @@
 
 ## [未发布]
 
+- **主动记忆检索：用户那句话像在「回忆」时，提示里补一句「先调 memory_search 确认」**（CE-010 · 2026-10-14，用户报「模型本应检索记忆却选择凭印象回答」）。
+  · **现状缺口**：`memory_search` 的触发权原先**完全在模型手里** —— 只在用户明确问
+    「我之前说过什么」时才调用；其他时候它常常凭印象答，而记忆里其实记着。
+  · **新增 `electron/core/memory-trigger.cjs`（纯函数，56 行）**：`shouldPromptRecall(text)`
+    只做**词表 + 正则**判断（回溯词：之前 / 上次 / 记得 / 说过 / 约定 / 以前 / 早先 /
+    你还记得），且带**保守过滤** —— 必须同时满足：句子 ≤200 字（防把粘贴的长正文当回忆）、
+    且（是疑问/求证语气**或** ≤20 字的短句）。**绝不调 LLM**：不联网、不花钱、可单测、零延迟。
+  · **接线**：`electron/core/memory-recall.cjs` 的 `buildPromptSection` —— 命中时在
+    `relevantMemory` 层**尾部**追加一句「（这条像是在回忆之前的事 —— 如果不确定，
+    先调 memory_search 搜关键词确认，别凭印象答。）」。**不命中则一个字都不加**。
+  · **★ 落点在易变区**（`relevantMemory` 层内部，`prompt-stack.cjs:204`）：稳定区
+    **一个字没改**，所以这次升级**不破坏**提示前缀缓存。版本号升（`/8 → /9`）只为台账能
+    区分「改前改后」，代价仅是**新开会话**的首轮没有历史缓存命中（一次性）。
+  · **文件**：新增 `electron/core/memory-trigger.cjs`；改 `electron/core/memory-recall.cjs`、
+    `electron/core/prompt-stack.cjs`（VERSION `/8 → /9` + 变动史）、
+    `scripts/selftest/groups/146-memory-search.mjs`（+12 条断言：命中/不命中/长正文不命中/
+    非字符串不炸/命中才注入/引导句不在稳定层/版本号）、
+    `scripts/selftest/groups/93-machine-prompt.mjs` 与 `142-persona-routing.mjs`（同步版本断言）。
+  · **验证**：`npm run verify` 全绿 —— 内核自检 **4302 项 / 0 失败**（改前 4290，+12）。
+  · **边界**：零新依赖；不碰 Runtime / IPC / 权限模型 / 事件契约 / 数据结构；
+    不破坏 Phase 6（Persona 路由 / 严格模式 / 打卡）与 Phase 7 排版；判据是纯词表，无自然语言解析。
+
 - **工具箱地图：`## Tools` 层从「一行一个工具」改成「按场景分组 + 每工具一句『何时该用』」**（2026-10-13，用户报「模型有时候不知道自己有哪些工具可用，行为被动」）。
   · **实测到的根因**：原来那层是 `t.description.split('。')[0]` —— 19 个工具里 **14 个**的
     「什么时候该用它」正好写在第二句，被切掉了（`list_dir` 丢了「不确定项目结构时先看这里」、

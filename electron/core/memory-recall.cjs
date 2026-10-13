@@ -15,6 +15,8 @@
 
 const store = require('./memory-store.cjs')
 const { explain, scoreOf, summarize, WEIGHTS, TYPE_LABEL } = require('./memory-explain.cjs')
+/* 「这句话像在回忆吗」——纯函数（词表/正则，不调 LLM）；只影响**易变区**尾部多不多一句话 */
+const { shouldPromptRecall } = require('./memory-trigger.cjs')
 
 /**
  * 老名字继续导出（万一别处引用了 SCOPE_WEIGHT / TYPE_WEIGHT）——
@@ -158,10 +160,25 @@ function buildPromptSection({ query = '', projectId = '', sessionId = '' } = {})
       ? `\n（本轮最多注入 ${budget} 条，另外还有 ${total - items.length} 条没进上下文。需要更多细节时，调 memory_search 搜关键词取全文。）`
       : ''
 
+  /*
+   * 「这句话像是在回忆」→ 补一句引导（CE-010 / 主动记忆检索）。
+   *
+   * ★ 位置讲究：这一句只加在 **relevantMemory 层内部**（易变区），**不进稳定区** ——
+   *   稳定区变了会打掉提示前缀缓存，而这个判断本来就随用户每轮那句话变。
+   *   `query` 就是最后一条用户消息（同 retrieve 用的那个查询词）。
+   *
+   * 为什么由内核抛这句话、而不是让模型自己想起：`memory_search` 的触发权原先
+   * 全在模型手里，它常常凭印象答而**不去查**。这一句只是把「要不要查」摆到它眼前，
+   * 判据仍是纯词表（见 memory-trigger.cjs）—— 命不中就一个字都不加。
+   */
+  const recallHint = shouldPromptRecall(query)
+    ? '\n\n（这条像是在回忆之前的事 —— 如果不确定，先调 memory_search 搜关键词确认，别凭印象答。）'
+    : ''
+
   return `## 关于用户和这个项目（长期记忆）
 ${lines.join('\n')}${more}
 
-这些是**你记得的事**，不是本轮的要求。与当前任务无关的就别硬套。`
+这些是**你记得的事**，不是本轮的要求。与当前任务无关的就别硬套。${recallHint}`
 }
 
 /**

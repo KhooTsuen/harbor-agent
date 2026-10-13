@@ -14,7 +14,7 @@
  */
 
 import { check, group } from '../harness.mjs'
-import { join, memory, readFileSync, require, ROOT, tools } from '../env.mjs'
+import { join, memory, promptStackCore, readFileSync, require, ROOT, tools } from '../env.mjs'
 
 const registry = require(join(ROOT, 'electron/core/tools/registry.cjs'))
 
@@ -106,6 +106,41 @@ export async function run() {
   check(
     '★ 旧的「去设置 → 记忆里看看」已经不再对模型说（那是指给「人」的，模型没有设置页）',
     !recallSrc.includes('设置 → 记忆里看看'),
+  )
+
+  group('memory-trigger / 纯函数命中判定（不调 LLM，只词表/正则）')
+  const trigger = require(join(ROOT, 'electron/core/memory-trigger.cjs'))
+  check(
+    '★ 回溯词 + 疑问语气 → 命中',
+    trigger.shouldPromptRecall('我们之前是不是约定过用 pnpm？') === true,
+  )
+  check('「你还记得上次那个 bug 吗」命中', trigger.shouldPromptRecall('你还记得上次那个 bug 吗') === true)
+  check('★ 短句指涉旧事也命中（不必带问号）', trigger.shouldPromptRecall('之前说的那个') === true)
+  check('「上次部署到哪了」命中', trigger.shouldPromptRecall('上次部署到哪了') === true)
+  check('★ 普通新问题**不**命中（不误注入）', trigger.shouldPromptRecall('写个快排') === false)
+  check('无关的短句不命中', trigger.shouldPromptRecall('帮我看看这个文件') === false)
+  check(
+    '★ 长正文（粘贴进来的那种）不命中 —— 别把文档当回忆',
+    trigger.shouldPromptRecall('记得改一下这个函数名和那些调用它的地方，顺便把测试也补上，还有文档也要同步更新一下') ===
+      false,
+  )
+  check('非字符串不炸', trigger.shouldPromptRecall(null) === false && trigger.shouldPromptRecall(undefined) === false)
+
+  group('memory-trigger / 注入落点（易变区尾部，命中才加）')
+  const recall = require(join(ROOT, 'electron/core/memory-recall.cjs'))
+  const hitSection = recall.buildPromptSection({ query: '我们之前是不是约定过 zyzzyx-alpha？' })
+  check('★ 命中时注入引导句', hitSection.includes('先调 memory_search 搜关键词确认'), hitSection.slice(-80))
+  const missSection = recall.buildPromptSection({ query: '写个快排' })
+  check('★ 不命中时一个字都不多加', !missSection.includes('像是在回忆之前的事'))
+  check(
+    '★ 引导句留在 memory-recall（relevantMemory 层 = 易变区），没混进 prompt-stack 的稳定层',
+    read('electron/core/memory-recall.cjs').includes('像是在回忆之前的事') &&
+      !read('electron/core/prompt-stack.cjs').includes('像是在回忆之前的事'),
+  )
+  check(
+    '★ 提示词版本已升到 /9（CE-010 主动记忆检索之后）',
+    promptStackCore.VERSION === 'prompt-stack/9',
+    promptStackCore.VERSION,
   )
 
   for (const id of spill) memory.remove(id)

@@ -150,8 +150,12 @@ const BROWSER_GUIDE = [
  *              工具箱地图**（CE-009：模型不知道自己有哪些工具、行为被动）。
  *              实测 19 个工具里 14 个的「什么时候该用它」被 `split('。')[0]` 切掉了 ——
  *              分组 + 每工具一句导向由 `core/tool-map.cjs` 提供，工具名集合有自检钉着。
+ *   /8 → /9 —— 加「主动记忆检索」（CE-010）：用户那句话像是在回忆（`core/memory-trigger.cjs`
+ *              纯词表命中）时，在 relevantMemory 层**尾部**补一句「先调 memory_search 确认」。
+ *              ★ 注入在**易变区**（relevantMemory 内部），稳定区一个字没动 —— 所以
+ *              这次升级**不**破坏前缀缓存；版本号升只是为了台账能区分「改前改后」。
  */
-const VERSION = 'prompt-stack/8'
+const VERSION = 'prompt-stack/9'
 
 /*
  * 层的顺序 = 模型看到的顺序。
