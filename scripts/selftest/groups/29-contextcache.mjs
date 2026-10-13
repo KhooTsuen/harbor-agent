@@ -171,6 +171,31 @@ export async function run() {
     searchSrc.indexOf('filter((r) => r.url)') < searchSrc.indexOf('searchCache.put('),
   )
 
+  /*
+   * ── CE-013：custom 后端的 URL 拼接 ──
+   * 2026-10-14 用户报「拼成 www.bing.com<query>」：没有 {query} 时**直接接查询词**，
+   * 既没分隔符也没参数名，请求必然失败。这里用**真实调用**钉住拼法（不是读源码字符串）。
+   */
+  const searchCore = require(join(ROOT, 'electron/core/search.cjs'))
+  check('★ customUrl 是导出的纯函数（自检能直接验）', typeof searchCore.customUrl === 'function')
+  const u1 = searchCore.customUrl('https://www.bing.com/search', 'hello world')
+  check(
+    '★ 没有 {query} → 补 ?q=（不再直接接在路径后面）',
+    u1 === 'https://www.bing.com/search?q=hello%20world',
+    u1,
+  )
+  check('★ 生成的 URL 一定带查询参数（?q= 或 &q=）', /[?&]q=/.test(u1), u1)
+  const u2 = searchCore.customUrl('https://www.bing.com/search?lang=zh', 'a b')
+  check('模板已有 query string → 用 &q=', u2 === 'https://www.bing.com/search?lang=zh&q=a%20b', u2)
+  const u3 = searchCore.customUrl('https://example.com/s?q={query}', 'a b')
+  check('{query} 占位照旧替换', u3 === 'https://example.com/s?q=a%20b', u3)
+  const u4 = searchCore.customUrl('https://x.com/s?', 'a')
+  check('模板以 ? 结尾 → 直接接 q=', u4 === 'https://x.com/s?q=a', u4)
+  check(
+    '★ 旧的坏写法不再存在（没有分隔符就接查询词）',
+    !searchSrc.includes('${template}${encodeURIComponent(query)}'),
+  )
+
   /* ── 通用件确实被复用（不是复制了一份） ── */
   const fileCacheSrc = readCore('electron/core/file-cache.cjs')
   /* 注意：这里不能写出完整的 require 字面量 ——

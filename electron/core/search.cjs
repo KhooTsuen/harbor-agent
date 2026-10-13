@@ -1,14 +1,7 @@
 /**
- * 联网搜索
- *
- * 四个后端，统一成 [{ title, url, snippet }]：
- *   · tavily     —— 质量好，需要 key
- *   · bocha      —— 国内可用，需要 key
- *   · duckduckgo —— 免费无需 key（但所在网络要能通）
- *   · custom     —— 用户自己填 URL 模板
- *
- * 为什么要多后端：国内网络下 DuckDuckGo 经常不通，而 Tavily 要付费。
- * 让用户按自己的网络情况选，比写死一个好。
+ * 联网搜索 —— 四个后端统一成 [{ title, url, snippet }]：tavily（质量好，需 key）、
+ * bocha（国内可用，需 key）、duckduckgo（免费无需 key，但所在网络要能通）、custom（用户填 URL 模板）。
+ * 为什么要多后端：国内网络下 DuckDuckGo 经常不通，而 Tavily 要付费 —— 让用户按网络情况选。
  */
 
 const http = require('./http.cjs')
@@ -157,15 +150,20 @@ async function duckduckgo(query, opts) {
   return out
 }
 
+/** 查询词进 URL：有 `{query}` 就替换，没有就补 `?q=`（模板已带 query string 用 `&q=`）。
+ *  ★ 以前「没 {query} 就直接接查询词」→ `…/search查询词`：没分隔符也没参数名，必失败（2026-10-14）。 */
+function customUrl(template, query) {
+  const encoded = encodeURIComponent(query)
+  if (template.includes('{query}')) return template.replace(/\{query\}/g, encoded)
+  if (/[?&]$/.test(template)) return `${template}q=${encoded}`
+  return `${template}${template.includes('?') ? '&' : '?'}q=${encoded}`
+}
+
 async function custom(query, opts) {
   const template = String(opts.endpoint ?? '').trim()
   if (!template) throw new Error('自定义搜索需要填 URL 模板，用 {query} 占位')
 
-  const url = template.includes('{query}')
-    ? template.replace(/\{query\}/g, encodeURIComponent(query))
-    : `${template}${encodeURIComponent(query)}`
-
-  const text = await fetchText(url, {}, opts.signal)
+  const text = await fetchText(customUrl(template, query), {}, opts.signal)
 
   /* 先按 JSON 试，不行再当 HTML 抓 */
   try {
@@ -297,4 +295,4 @@ function formatResults(query, results, meta = {}) {
   return lines.join('\n')
 }
 
-module.exports = { search, formatResults, providerList, PROVIDERS, searchCache }
+module.exports = { search, formatResults, providerList, PROVIDERS, searchCache, customUrl }

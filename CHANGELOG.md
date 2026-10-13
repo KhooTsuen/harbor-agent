@@ -5,6 +5,22 @@
 
 ## [未发布]
 
+- **修 `search_web` 自定义后端的 URL 拼接：没有 `{query}` 时拼成 `…/search查询词`（缺 `?q=`），请求必然失败**（CE-013 · 2026-10-14，用户报「search_web 拼成 `www.bing.com<query>`，每次必失败」）。
+  · **症状与定位**：自定义搜索（`provider: 'custom'`）的 URL 拼接**只有一处** ——
+    `electron/core/search.cjs` 的 `custom()`。原来的写法是「模板里有 `{query}` 就替换，
+    没有就**直接接查询词**」，于是填 `https://www.bing.com/search` 会拼出
+    `https://www.bing.com/searchhello%20world` —— 既没有分隔符、也没有参数名。
+  · **修法**：抽成纯函数 `customUrl(template, query)`（并导出，供自检直接验）——
+    有 `{query}` 照旧替换；没有就补 `?q=`（模板已带 query string 时用 `&q=`，
+    模板以 `?` / `&` 结尾时直接接 `q=`）。
+  · **影响面**：一处实现、**两处共用** —— 模型用的 `electron/core/tools/search_web.cjs`，
+    以及设置页「测试搜索」走的 `electron/handlers/extras.cjs:129`，两者一起修好。
+  · **验证**：`scripts/selftest/groups/29-contextcache.mjs` **+7 条断言**（用**真实调用** `customUrl`
+    钉住拼法：无 `{query}` → `?q=`、已有 query string → `&q=`、`{query}` 占位照旧、
+    以 `?` 结尾 → `q=`、结果必含 `[?&]q=`、旧坏写法不再存在）。内核自检 **4327 项 / 0 失败**。
+  · **边界**：拼接点所在的 `electron/core/search.cjs` **不在**原定「只动 `tools/` 与
+    `electron/core/tools/`」的范围内 —— 已向用户说明并获准修改（只改这 1 个文件）。
+
 - **工具 Schema 瘦身：9 个冗长工具的 description 压成「一句话用途 + 一句关键约束」**（CE-012 · 2026-10-14，P3「工具搜索与 Token 优化」）。
   · **为什么**：每轮请求都携带全部 19 个工具的完整 schema（`loop.cjs:177` 发 `toApiSchema()`），
     这笔开销**每轮固定付**。工具一多，光"说明文字"就吃几百 token。
