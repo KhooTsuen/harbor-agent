@@ -15,6 +15,7 @@
  *   node tools/shot-electron.mjs --js-file=tmp/probe.js   # 长脚本（避开命令行长度上限）
  *   node tools/shot-electron.mjs --keep                # 截完不退出（手动接着看）
  *   node tools/shot-electron.mjs --type="echo hi"      # 往终端里真的敲一串字再截图
+ *   node tools/shot-electron.mjs --dev                 # 起**源码树** Electron（隔离，不碰你在跑的副本）
  *
  * --type 是验证「键盘 → PTY → 回显」这条回路用的：走 CDP 的
  * Input.dispatchKeyEvent（真键盘事件），不是直接改 DOM。
@@ -38,6 +39,26 @@ const EXE = resolve(
   process.env.PA_EXE ??
     process.argv.find((a) => a.startsWith('--exe='))?.slice(6) ??
     resolve(ROOT, 'dist-portable', 'Harbor', 'Harbor.exe'),
+)
+/*
+ * --dev：起**源码树**的 Electron（node_modules/electron）而不是打包版。
+ *
+ * 为什么需要它（2026-10-14 修「开窗口自动测试」）：
+ *   · 打包版有单实例锁（`electron/main.cjs:214`）；更要命的是 app **无条件**把
+ *     userData 硬设成 `<data>/chromium`（`main.cjs:53`）—— 只要你正开着一个，
+ *     第二个实例永远拿不到那个 profile，调试端口根本起不来。
+ *     ★ 传 `--user-data-dir=…` **没用**：它会被上面那行 setPath 覆盖掉
+ *     （2026-10-14 实测：目录被建出来了但是空的，真正用的仍是 data/chromium）。
+ *   · 源码树 Electron 的数据根是**另一个** `<repo>/data`，与你在跑的那份天然隔离；
+ *     而且它直接跑最新内核（改了 `electron/` 不用重新打包），最适合验收。
+ */
+const DEV = process.argv.includes('--dev')
+const ELECTRON_BIN = resolve(
+  ROOT,
+  'node_modules',
+  'electron',
+  'dist',
+  process.platform === 'win32' ? 'electron.exe' : 'electron',
 )
 const OUT_DIR = resolve(
   process.argv.find((a) => a.startsWith('--out='))?.slice(6) ?? 'shots/electron',
@@ -76,8 +97,13 @@ const TABS = (process.argv.find((a) => a.startsWith('--tabs='))?.slice(7) ?? '')
   .map((t) => t.trim())
   .filter(Boolean)
 
-if (!existsSync(EXE)) {
-  console.error(`找不到便携版：${EXE}\n先跑 npm run package`)
+const TARGET = DEV ? ELECTRON_BIN : EXE
+if (!existsSync(TARGET)) {
+  console.error(
+    DEV
+      ? `找不到 Electron 二进制：${ELECTRON_BIN}\n先跑一次 npm install`
+      : `找不到便携版：${EXE}\n先跑 npm run package`,
+  )
   process.exit(1)
 }
 
@@ -85,11 +111,28 @@ mkdirSync(OUT_DIR, { recursive: true })
 
 /* ── 主流程 ─────────────────────────────────────────────── */
 
-const app = spawn(EXE, [`--remote-debugging-port=${PORT}`], {
-  cwd: dirname(EXE),
-  stdio: 'ignore',
-  detached: false,
-})
+const app = DEV
+  ? /* 源码树：直接跑最新内核（改了 electron/ 不用重新打包） */
+    spawn(ELECTRON_BIN, ['.', `--remote-debugging-port=${PORT}`], {
+      cwd: ROOT,
+      stdio: 'ignore',
+      detached: false,
+    })
+  : spawn(EXE, [`--remote-debugging-port=${PORT}`], {
+      cwd: dirname(EXE),
+      stdio: 'ignore',
+      detached: false,
+    })
+
+/*
+ * 收尾必须**连子进程一起杀**（taskkill /T）：Windows 上只 kill 主进程的话，
+ * 渲染 / GPU 子进程可能赖着不放单实例锁，下次再起就被顶回去（dev.mjs 踩过同一个坑）。
+ * 用 /pid <pid> 精确到「这一个」，**绝不** taskkill /IM（那会把用户正开着的窗口一起杀掉）。
+ */
+function killApp() {
+  if (!app.pid || app.exitCode !== null || app.killed) return
+  spawn('taskkill', ['/pid', String(app.pid), '/T', '/F'], { stdio: 'ignore' })
+}
 
 let cdp
 try {
@@ -185,7 +228,7 @@ try {
       writeFileSync(out, Buffer.from(one.data, 'base64'))
       console.log(`截图 → tab-${tabName}.png（${clicked ?? '?'}）`)
     }
-    app.kill()
+    killApp()
     process.exit(0)
   }
 
@@ -221,6 +264,6 @@ try {
     } catch {
       /* 忽略 */
     }
-    app.kill()
+    killApp()
   }
 }

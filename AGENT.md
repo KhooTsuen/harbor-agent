@@ -134,11 +134,18 @@ npm run test:app # 应用自检：看 channelsExpected / channelsMissing
 
   ```bash
   npm run shot:electron                        # 给打包版截图
+  npm run shot:electron -- --dev               # 起**源码树**实例（你在用的那份开着时用它）
   npm run shot:electron -- --type="python"     # 往终端敲真键盘事件再截图
   npm run shot:electron -- --js="..."          # 先执行一段 JS（点按钮/填输入框）再截图
+  node tools/e2e-fail-streak.mjs               # 真机端到端：假上游 + 真界面跑一轮，拿真实请求体下判据
   ```
 
   它用 CDP 连**打包后的真应用**，能点标签、填输入框、读回 DOM 文本。
+  ★ **你已经开着一个 Harbor 时必须加 `--dev`**：打包版有单实例锁，而且 app 把
+  profile 硬设成 `<data>/chromium`（`electron/main.cjs:53`）—— 传 `--user-data-dir`
+  也没用，会被那行覆盖。`--dev` 改成起 `node_modules/electron` 的源码树实例，
+  数据根是**另一个** `<repo>/data`（可用 `HARBOR_UNIT_TEST=1` 再隔离一层），
+  与你在跑的那份天然不冲突；顺带直接跑最新内核，改了 `electron/` 不用重新打包。
   浏览器预览用 `npm run shot`（vite preview + headless Chrome）。
 - **看不到的就说看不到。** 渲染效果、别人的机器、真实网络行为 ——
   没观察到就不要断言。声明的每一件事，要么指得住一个可跑的验证，

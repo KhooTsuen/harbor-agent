@@ -40,6 +40,21 @@ let planRounds = 0
 let loopRounds = 0
 /* confirm 模式的轮次计数（冒烟用）：第 1 轮给一次工具调用，之后收尾 */
 let confirmRounds = 0
+/*
+ * fail 模式的轮次计数（CE-011 真机验证用）：每轮读一个**不同**的不存在文件。
+ * 为什么每次换文件名：loop-guard 只认「一模一样的调用（工具+参数）」，
+ * 换参数就绕开它 —— 这样才能单独验证 failure-streak（「不同尝试也在失败」）。
+ */
+let failRounds = 0
+/*
+ * fail 模式的关键证据：**收到的请求体里有没有那句话**。
+ * 这条链（界面 → chat handler → loop → HTTP）全是真的，只有模型是假的，
+ * 所以「请求里有 / 没有」就是 failure-streak 生效与否的硬证据。
+ */
+function streakInBody(body) {
+  const hits = String(body).match(/已经连续失败/g)
+  return hits ? hits.length : 0
+}
 
 function sseChunk(delta) {
   return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
@@ -50,7 +65,9 @@ const server = createServer((req, res) => {
   /* 路径第一段就是坏法：/v1-truncate/chat/completions → truncate */
   const seg = url.pathname.split('/').filter(Boolean)[0] ?? 'v1'
   const mode = seg.replace(/^v1-?/, '') || 'ok'
-  /* 把请求体读掉，否则有些客户端会卡住 */
+  /* 把请求体读掉，否则有些客户端会卡住（fail 模式还要拿它当证据） */
+  const bodyChunks = []
+  req.on('data', (chunk) => bodyChunks.push(chunk))
   req.resume()
 
   console.log(`[fake-upstream] ${req.method} ${url.pathname} → mode=${mode}`)
@@ -105,6 +122,52 @@ const server = createServer((req, res) => {
       }
     }, 5000)
     req.on('close', () => clearInterval(timer))
+    return
+  }
+
+  if (mode === 'fail') {
+    /*
+     * CE-011 真机验证：**连续失败**，但每次调用签名都不同。
+     *
+     * 为什么不用现成的 loop 模式：那个是「同一个调用转圈」，会先被 loop-guard 抓走。
+     * 这里要单独验证 failure-streak（判据是「不同的尝试在失败」），所以每轮换文件名。
+     * 每轮先把请求体里那句话数一遍打印出来 —— 这就是「界面链路真的注入了它」的证据。
+     */
+    failRounds += 1
+    req.on('end', () => {
+      const body = Buffer.concat(bodyChunks).toString('utf8')
+      const hits = streakInBody(body)
+      console.log(
+        `[fake-upstream] fail 第 ${failRounds} 轮 | 请求体含「已经连续失败」=${hits > 0}（${hits} 处）`,
+      )
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      /*
+       * 那句话已经在请求里了 = 提示生效了。这一轮**收尾**（回一段文字、不再要工具），
+       * 让任务能干净结束 —— 否则假上游永远要工具，循环会一直转到预算耗尽。
+       */
+      if (hits > 0) {
+        res.write(sseChunk({ content: '好，换个办法：先用 list_dir 看看这个目录里到底有什么。' }))
+        res.write('data: [DONE]\n\n')
+        res.end()
+        return
+      }
+      const call = {
+        index: 0,
+        id: `call_fail_${failRounds}`,
+        type: 'function',
+        function: {
+          name: 'read_file',
+          arguments: JSON.stringify({ path: `no-such-file-${failRounds}.txt` }),
+        },
+      }
+      res.write(sseChunk({ tool_calls: [call] }))
+      res.write('data: [DONE]\n\n')
+      res.end()
+    })
     return
   }
 
@@ -230,6 +293,6 @@ const server = createServer((req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(
     `假上游就绪：http://127.0.0.1:${PORT}/v1-<模式>/
-  模式：html | truncate | slow | empty | garbage | replan | confirm | （无后缀=正常）`,
+  模式：html | truncate | slow | empty | garbage | replan | loop | confirm | fail | （无后缀=正常）`,
   )
 })
