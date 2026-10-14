@@ -151,12 +151,14 @@ async function duckduckgo(query, opts) {
 }
 
 /** 查询词进 URL：有 `{query}` 就替换，没有就补 `?q=`（模板已带 query string 用 `&q=`）。
- *  ★ 以前「没 {query} 就直接接查询词」→ `…/search查询词`：没分隔符也没参数名，必失败（2026-10-14）。 */
+ *  ★ 两处真机坑：① 没 {query} 就直接接查询词 → `…/search查询词`，没分隔符也没参数名，必失败；
+ *  ② 模板缺协议头 → 拼出来的不是合法 URL（`fetch` 报 Failed to parse URL），补法见 `http.withScheme`。 */
 function customUrl(template, query) {
   const encoded = encodeURIComponent(query)
-  if (template.includes('{query}')) return template.replace(/\{query\}/g, encoded)
-  if (/[?&]$/.test(template)) return `${template}q=${encoded}`
-  return `${template}${template.includes('?') ? '&' : '?'}q=${encoded}`
+  const t = http.withScheme(template)
+  if (t.includes('{query}')) return t.replace(/\{query\}/g, encoded)
+  if (/[?&]$/.test(t)) return `${t}q=${encoded}`
+  return `${t}${t.includes('?') ? '&' : '?'}q=${encoded}`
 }
 
 async function custom(query, opts) {

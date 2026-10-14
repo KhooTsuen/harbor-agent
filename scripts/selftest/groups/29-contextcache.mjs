@@ -195,6 +195,27 @@ export async function run() {
     '★ 旧的坏写法不再存在（没有分隔符就接查询词）',
     !searchSrc.includes('${template}${encodeURIComponent(query)}'),
   )
+  /*
+   * 2026-10-15：模板**缺协议头**（设置里填 `www.bing.com`，浏览器地址栏把 `https://` 藏了）
+   * → 拼出来的字符串不是合法 URL，`fetch` 直接 Failed to parse URL，界面上猜不到原因。
+   * 真机代价：用户 7 次以上搜索全失败。补协议头住在网络层（http.cjs）。
+   */
+  const httpCore = require(join(ROOT, 'electron/core/http.cjs'))
+  check(
+    '★ 模板缺协议头 → 补 https://（真机：用户填 www.bing.com 必失败）',
+    searchCore.customUrl('www.bing.com', 'a b') === 'https://www.bing.com?q=a%20b',
+    searchCore.customUrl('www.bing.com', 'a b'),
+  )
+  check(
+    '★ 本机地址补 http://（localhost 配 https 连不上）',
+    httpCore.withScheme('localhost:8080/s') === 'http://localhost:8080/s' &&
+      httpCore.withScheme('127.0.0.1:9/f') === 'http://127.0.0.1:9/f',
+  )
+  check('已带协议头 → 一个字符都不动', httpCore.withScheme('http://x.com/s') === 'http://x.com/s')
+  check(
+    '空 / 纯空白 → 原样返回（由调用方报错，补协议头不该替它决定）',
+    httpCore.withScheme('  ') === '',
+  )
 
   /* ── 通用件确实被复用（不是复制了一份） ── */
   const fileCacheSrc = readCore('electron/core/file-cache.cjs')

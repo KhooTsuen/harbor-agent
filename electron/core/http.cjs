@@ -63,4 +63,19 @@ function fetchStream(input, init) {
   return globalThis.fetch(input, init)
 }
 
-module.exports = { fetch, fetchStream }
+/**
+ * 给用户填的地址补协议头（只补这个，别的一律不动）。
+ *
+ * 真机踩过（2026-10-15，用户报 search_web 一直失败）：设置里填 `www.bing.com` —— 从地址栏
+ * 粘下来时浏览器把 `https://` 藏了，拼出来的字符串不是合法 URL，`fetch` 直接
+ * `Failed to parse URL`；界面上只看到这句，根本猜不到是少了协议头。本机服务
+ * （localhost / 127.0.0.1 / [::1]）补 `http`，其余补 `https`。
+ */
+function withScheme(template) {
+  const t = String(template ?? '').trim()
+  if (!t || /^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(t)
+  return `${local ? 'http' : 'https'}://${t}`
+}
+
+module.exports = { fetch, fetchStream, withScheme }
