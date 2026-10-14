@@ -14,6 +14,12 @@ export interface UsageBucket {
   calls: number
   /** 命中 prompt 缓存的 token 数（命中部分便宜很多） */
   cached: number
+  /**
+   * 思考（reasoning）token（CE-019）—— 属于 `completion`（推理按输出计费），
+   * 所以「输出 = 思考 + 非思考输出」，**不是并列两桶**。
+   * 内核保证它一定是数字（老记录按 0 补，见 `core/stats.cjs` 的 `load`）—— 界面不用再防 NaN。
+   */
+  reasoning: number
 }
 
 /**

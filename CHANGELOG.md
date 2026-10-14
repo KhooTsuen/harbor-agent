@@ -5,6 +5,31 @@
 
 ## [未发布]
 
+- **用量统计增强 · 功能 A-采集：把「思考（reasoning）token」采下来**（CE-019 · 2026-10-15，只采数据，UI 展示留到下一轮）。
+  · **为什么**：用量里只有「入 / 出」，而推理模型把输出的一大块花在**思考**上 —— 单看「出」看不出贵在哪。
+    上游其实一直在返回 `completion_tokens_details.reasoning_tokens`，但内核**一处都没读**
+    （2026-10-15 实测：`llm.cjs` / `budget.cjs` / `stats.cjs` / `token-metrics.cjs` 四个文件里
+    `reasoning_tokens` **零出现**）。这一轮只补「采集」，不动 UI。
+  · **形状唯一真相源**：`budget.usageParts()` 由 `{total,input,output}` 扩成
+    `{total,input,output,reasoning}`；取法收在一个新函数 `budget.reasoningOf()`（别处不许再写一遍字段路径）。
+    ★ **`reasoning` 属于 `completion`**（推理按输出计费）→「输出 = 思考 + 非思考输出」，**不是并列两桶**，
+    `total` / `input` / `output` 的算法**一字未动**（自检钉着）。
+  · **null 与 0 分得开**：上游没给 → `null`（`logLlm` 落盘记 null），给了 0 → `0`。混起来事后分不清
+    「这家不给这字段」和「这次确实没思考」。
+  · **老数据不炸**（本轮重点）：`stats.cjs` 的 `load()` 以前只给 `total` 补键，`byDay` / `byModel` 直接透传 ——
+    新加的 `reasoning` 在老桶上会是 **undefined 一路带给界面**。现在三种桶都过 `emptyBucket()` 补键；
+    `addInto` 累加时用 `(Number(bucket.reasoning) || 0)` 兜底，**防 undefined 累成 NaN**（NaN 会让整个桶的数字全废）。
+  · **验证**：`npm run verify` 全绿；内核自检 **4408 项 / 0 失败**（+17，新增 `150-usage-reasoning.mjs`）。
+    隔离探针实测三态：有值 → `30`、无 `details` → `null`、给了 0 → `0`；老桶（手写无 reasoning 的 stats.json）
+    补键后为 `0` 且旧数字未破坏（`133 + 14 = 147`）。
+  · **文件**：改 `core/budget.cjs`（压两处注释腾行数，298 行）、`core/token-metrics.cjs`、
+    `core/stats.cjs`、`src/types/stats.ts`、`src/lib/extrasApi.ts`（`EMPTY_SUMMARY` 补字段 ——
+    typecheck 抓出来的真缺口）、`src/stores/app/__tests__/storedToUi.test.ts`；
+    新增 `selftest/groups/150-usage-reasoning.mjs`。
+  · **遗留（诚实写）**：① UI 不显示 reasoning（下一轮，等 `pricing` 配置结构落定）；
+    ② `token-metrics.jsonl` **只滚动保留 6MB**，历史明细有限，长期统计要看 `stats.json`；
+    ③ 「按任务」维度仍未做（缺 `taskId` 关联键，另一轮）。
+
 - **用量统计增强 · 功能 B：账户余额查询（`provider:balance`）**（2026-10-15，只做余额这一半；功能 A 待做）。
   · **做什么**：设置 →「数据与用量」里多一张「账户余额」卡片 —— 点一次「查询」看 DeepSeek 账户余额
     （总可用 / 赠金 / 充值），并显示「上次查询：HH:MM:SS」。

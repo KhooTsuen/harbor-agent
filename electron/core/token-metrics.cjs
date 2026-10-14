@@ -14,6 +14,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const retention = require('./data-retention.cjs')
+/* 思考 token 的取法只有一处（budget.reasoningOf）—— 这里不重写字段路径 */
+const budget = require('./budget.cjs')
 
 const file = () => path.join(DIRS.logs, 'token-metrics.jsonl')
 
@@ -75,6 +77,11 @@ function logLlm(input = {}) {
     prompt: Number(usage?.prompt_tokens) || 0,
     completion: Number(usage?.completion_tokens) || 0,
     total: Number(usage?.total_tokens) || 0,
+    /*
+     * 思考 token（CE-019）。**没给就记 null，不填 0** —— 和缓存字段同一个纪律：
+     * 0 = 这家给了确实是 0，null = 这家不给这个字段。混起来事后分不清。
+     */
+    reasoning: budget.reasoningOf(usage),
     cacheHit: cache.hit,
     cacheMiss: cache.miss,
     cacheSource: cache.source,
@@ -115,6 +122,9 @@ function summarize({ sinceMs = 0, kind = '' } = {}) {
     prompt: 0,
     completion: 0,
     total: 0,
+    /* 思考 token（CE-019）：老记录没有这个字段 → 只累计给了数的那些，另记给了几条 */
+    reasoning: 0,
+    reasoningUnavailable: 0,
     cacheHit: 0,
     cacheMiss: 0,
     cacheUnavailable: 0,
@@ -126,6 +136,8 @@ function summarize({ sinceMs = 0, kind = '' } = {}) {
     out.prompt += Number(r.prompt) || 0
     out.completion += Number(r.completion) || 0
     out.total += Number(r.total) || 0
+    if (Number.isFinite(r.reasoning)) out.reasoning += r.reasoning
+    else out.reasoningUnavailable += 1
     if (Number.isFinite(r.cacheHit)) out.cacheHit += r.cacheHit
     else out.cacheUnavailable += 1
     if (Number.isFinite(r.cacheMiss)) out.cacheMiss += r.cacheMiss

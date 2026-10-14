@@ -37,7 +37,7 @@ describe('磁盘 → 界面', () => {
         ...base,
         toolRuns: [{ id: 'x', name: 'read_file', ok: true, output: 'ok' }],
         citations: [{ id: 'c', kind: 'web', title: '来源', url: 'https://x' }],
-        usage: { prompt: 1, completion: 2, total: 3, calls: 1, cached: 0 },
+        usage: { prompt: 1, completion: 2, total: 3, calls: 1, cached: 0, reasoning: 0 },
       },
       't1',
     )

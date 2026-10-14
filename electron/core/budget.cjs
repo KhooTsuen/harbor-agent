@@ -23,46 +23,51 @@ function usageTotal(usage) {
 }
 
 /**
- * 同一条 usage 拆成三个数：`{ total, input, output }`（AG-044）。
+ * 思考（reasoning）token 数 —— 属于 `completion_tokens`（推理按输出计费），所以
+ * 「输出 = 思考 + 非思考输出」，**不是并列两桶**。★ 上游没给返回 **null**（不是 0）：
+ * 0 = 给了确实是 0，null = 这家不给这个字段，混起来两者看起来一样。要数字用 `?? 0`。
+ */
+function reasoningOf(usage) {
+  if (!usage || typeof usage !== 'object') return null
+  const raw = usage.completion_tokens_details?.reasoning_tokens
+  if (raw === undefined || raw === null) return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * 同一条 usage 拆成四个数：`{ total, input, output, reasoning }`（AG-044 / CE-019）。
  *
- * 为什么要「入 / 出」：只记合计看不出贵在哪 —— 同样 1 万 token，
- * 「每轮重发整个上下文」（入多）和「模型话多」（出多）是两种毛病，
- * 修法完全不同（前者要压上下文 / 开缓存，后者要改提示词）。
+ * 为什么要「入 / 出」：只记合计看不出贵在哪 —— 同样 1 万 token，「每轮重发整个上下文」
+ * （入多）和「模型话多」（出多）是两种毛病、修法完全不同（前者压上下文 / 开缓存）。
+ * 「思考」再切一刀（CE-019）：推理模型把输出的一大块花在思考上，单看「出」看不出来。
  *
  * ★ 形状知识只留一份：字段名（`prompt_tokens` 也可能叫 `prompt`）在这里
  *   和 `usageTotal` 说**同一个**规则。分头写就会漂 —— AG-042 那次把
  *   `total_tokens` 读成 `total`，单测全绿、真机上用量永远是 0。
  *
  * @param {object} usage 可能是 `{prompt_tokens, completion_tokens, total_tokens}`
- * @returns {{ total: number, input: number, output: number }}
+ * @returns {{ total: number, input: number, output: number, reasoning: number }}
  */
 function usageParts(usage) {
-  if (!usage || typeof usage !== 'object') return { total: 0, input: 0, output: 0 }
+  if (!usage || typeof usage !== 'object') return { total: 0, input: 0, output: 0, reasoning: 0 }
   const input = Number(usage.prompt_tokens ?? usage.prompt) || 0
   const output = Number(usage.completion_tokens ?? usage.completion) || 0
-  return { total: usageTotal(usage), input, output }
+  return { total: usageTotal(usage), input, output, reasoning: reasoningOf(usage) ?? 0 }
 }
 
 /**
  * 每次任务的执行预算（AG-040）
  *
- * ★ **五项默认全部不限（0）**（2026-09-29 用户要求：「关于这一类的全部都要默认不设限」）。
- *   这个模块是**刹车**，不是油门 —— 用户没要求时不该拦住他。原来默认「50 轮 / 100 次工具 /
- *   30 分钟 / 10 万 token」，结果是任务干到一半被标成「已暂停」，用户读到的却是
- *   「用量已经到上限」这类话，第一反应是「谁在拦我」。用户原话：
- *   「用量上限也是在没有勾选的时候有时候也是会被拦截用量上限」。
- *   要限的人自己在任务卡片「调整预算」里填 —— 那不是删功能，是换默认。
- *   兜底没丢：`loop.cjs` 还有一层 200 轮硬上限，`loop-guard` 还有转圈检测。
- *
- * 达到预算后要给用户三件事：**继续 / 停止 / 调整预算**（不是失败，是停下来等人）。
- *
- * ── 和「用量闸」（limits.cjs）什么关系 ──
- * 那个是**全局**的（今天 / 本月一共烧了多少 token，防的是「忘了关跑一晚上」）；
- * 这里是**单个任务**的。两者互补：全局闸在调模型前查账，任务预算在**轮次边界**查账。
- *
- * ── 为什么也要有 maxRuntime ──
- * 轮数与工具次数管不住「一条命令卡在那儿半小时」。运行时长是唯一与「干了多少」
- * 无关的兜底。
+ * ★ **五项默认全部不限（0）**（2026-09-29 用户要求）：这个模块是**刹车**不是油门 ——
+ *   原来默认「50 轮 / 100 次工具 / 30 分钟 / 10 万 token」，用户读到的却是「用量已到上限」，
+ *   第一反应是「谁在拦我」（原话：「用量上限也是在没有勾选的时候有时候也是会被拦截」）。
+ *   要限的人自己在任务卡片「调整预算」里填 —— 是换默认，不是删功能。
+ *   兜底没丢：`loop.cjs` 有 200 轮硬上限，`loop-guard` 有转圈检测。
+ * 撞预算后给用户三件事：**继续 / 停止 / 调整预算**（不是失败，是停下来等人）。
+ * 和「用量闸」（limits.cjs）的区别：那个是**全局**的（今天 / 本月烧了多少，防跑一晚上），
+ * 这里是**单个任务**的；全局闸在调模型前查账，任务预算在**轮次边界**查账。
+ * maxRuntime 是唯一与「干了多少」无关的兜底（轮数管不住「一条命令卡半小时」）。
  */
 
 const DEFAULTS = {
@@ -73,12 +78,9 @@ const DEFAULTS = {
   /** 秒。0 = 不限 */
   maxRuntime: 0,
   /**
-   * 单个工具失败后的自动重试次数上限（AG-016 的「必须有最大 Retry 次数」）。
-   *
-   * ★ 这一项**故意不是 0**：它不是「上限」而是「自动救一把的次数」。
-   *   设成 0 等于关掉自动恢复；设成「不限」则一个坏掉的工具会被无限重试
-   *   （`loop-tools.cjs` 是 `retry < maxRetries`，0 = 一次都不重试）。
-   *   用户 2026-09-29 明确选了「保持 3 次」。
+   * 单个工具失败后的自动重试次数上限（AG-016）。★ **故意不是 0** —— 它不是「上限」
+   * 而是「自动救一把的次数」：0 = 关掉自动恢复，不限 = 坏工具被无限重试
+   * （`loop-tools.cjs` 是 `retry < maxRetries`）。用户 2026-09-29 选了「保持 3 次」。
    */
   maxRetries: 3,
   /** 0 = 不限。这个任务累计的 token */
@@ -291,7 +293,6 @@ module.exports = {
   pausePatch,
   format,
   softNote,
-  usageTotal,
-  usageParts,
+  usageTotal, usageParts, reasoningOf,
   legacyUnlimited,
 }

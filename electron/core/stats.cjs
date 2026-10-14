@@ -14,6 +14,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
+/* 思考 token 的取法只有一处（budget.reasoningOf）—— 这里不重写字段路径 */
+const budget = require('./budget.cjs')
 
 /** 按天数据只留这么久，不然文件会一直长 */
 const KEEP_DAYS = 90
@@ -25,8 +27,10 @@ function statsFile() {
 function emptyBucket() {
   /* cached：命中 prompt 缓存的 token 数（命中部分便宜很多）
      cacheMiss：服务端**显式给的**未命中数（DeepSeek 的 prompt_cache_miss_tokens）——
-                没给就保持 0，但报告侧一律按「不可计算」处理（见 token-metrics.cjs） */
-  return { prompt: 0, completion: 0, total: 0, calls: 0, cached: 0, cacheMiss: 0 }
+                没给就保持 0，但报告侧一律按「不可计算」处理（见 token-metrics.cjs）
+     reasoning：思考 token（CE-019），属于 completion（推理按输出计费）。
+                老桶没有这个键 —— `addInto` 里按 0 兜底，别让 undefined 累成 NaN。 */
+  return { prompt: 0, completion: 0, total: 0, calls: 0, cached: 0, cacheMiss: 0, reasoning: 0 }
 }
 
 function emptyData() {
@@ -36,13 +40,24 @@ function emptyData() {
 function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(statsFile(), 'utf8'))
-    /* 手改坏了也要能用：缺什么补什么 */
+    /*
+     * 手改坏了也要能用：缺什么补什么。
+     * ★ 每个桶都要过 `emptyBucket()` 补键 —— 不能只补 `total`：
+     *   以前只有 total 补过，byDay / byModel 直接透传，于是 CE-019 新加的
+     *   `reasoning` 在老桶上是 **undefined**，一路带给界面（不是 NaN，但同样崩）。
+     *   补键对所有旧字段是**只读不写**（raw 里有值就用 raw 的），不影响已有数字。
+     */
+    const patch = (bucket) => ({ ...emptyBucket(), ...(bucket ?? {}) })
+    const patchMap = (map) =>
+      Object.fromEntries(
+        Object.entries(map && typeof map === 'object' ? map : {}).map(([k, v]) => [k, patch(v)]),
+      )
     return {
       version: 1,
       since: Number(raw?.since) || Date.now(),
-      total: { ...emptyBucket(), ...(raw?.total ?? {}) },
-      byDay: raw?.byDay && typeof raw.byDay === 'object' ? raw.byDay : {},
-      byModel: raw?.byModel && typeof raw.byModel === 'object' ? raw.byModel : {},
+      total: patch(raw?.total),
+      byDay: patchMap(raw?.byDay),
+      byModel: patchMap(raw?.byModel),
     }
   } catch {
     return emptyData()
@@ -90,6 +105,12 @@ function addInto(bucket, usage) {
   bucket.cached +=
     Number(usage.prompt_cache_hit_tokens) || Number(usage.prompt_tokens_details?.cached_tokens) || 0
   bucket.cacheMiss += Number(usage.prompt_cache_miss_tokens) || 0
+  /*
+   * 思考 token（CE-019）。取法复用 `budget.reasoningOf`（形状唯一真相源，别在这儿
+   * 再写一遍字段路径）。★ `?? 0` 不是多余的：老桶（CE-019 之前建的）没有这个键，
+   * 直接 `undefined += 数` 会**累成 NaN**，从此整个桶的数字全废。
+   */
+  bucket.reasoning = (Number(bucket.reasoning) || 0) + (budget.reasoningOf(usage) ?? 0)
   bucket.calls += 1
 }
 
