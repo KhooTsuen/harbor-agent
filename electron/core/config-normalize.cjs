@@ -21,6 +21,7 @@ const {
   obj,
   normalizeProvider,
   normalizeMcpServer,
+  normalizePricing,
 } = require('./config-normalize-parts.cjs')
 const securityCfg = require('./config-security.cjs')
 
@@ -244,6 +245,10 @@ function normalize(raw) {
       monthlyTokens: Math.round(clampNumber(limits.monthlyTokens, 0, 1_000_000_000, 0)),
       onExceed: pick(str(limits.onExceed, 'block'), ['block', 'warn'], 'block'),
     },
+
+    /* 单价（A-展示）：深合并内置默认 —— 老配置没有这一段会**自动补全**，
+       用户只填一部分时缺的键回落默认（不是整段替换）。见 normalizePricing */
+    pricing: normalizePricing(g.pricing),
 
     shortcuts: obj(g.shortcuts),
     updatedAt: typeof g.updatedAt === 'number' ? g.updatedAt : 0,

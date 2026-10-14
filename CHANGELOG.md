@@ -5,6 +5,27 @@
 
 ## [未发布]
 
+- **用量统计增强 · 功能 A-展示（第一批：配置层）—— `config.json` 新增 `pricing` 单价段**（2026-10-15，只做配置层，不动 UI/折算）。
+  · **为什么**：用量页要显示「折算多少钱」，就必须有单价。而单价**不能硬编码** —— 官方分**高峰 / 空闲**两档
+    （空闲 = 高峰 ÷ 2，高峰 = 北京时间周一至周五 9:00–12:00、14:00–18:00），且随时会调价；换供应商更是完全不同。
+    所以做成配置段，内置 DeepSeek 官方价作默认。
+  · **结构**：顶层 `pricing: { currency, unit, peakMode, providers }`，价目在
+    `providers.<providerId>.<model> = { inMiss, inHit, out }`，每项是 `{ peak, offPeak }`（也可写单个数 = 不分档）。
+    `peakMode` 取 `auto`（按当前时刻判档）/ `peak` / `offPeak`。来源：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/（2026-10-15 读取）。
+  · **老配置兼容（三层，核心是归一化）**：`config-defaults.cjs` 给默认值（价目表拆到 `pricing-defaults.cjs`）→
+    **`config-normalize.cjs` 的 `normalizePricing`（命门：不在白名单 = 改了被静默丢掉，`image.dir` 踩过）** →
+    `config.cjs` 的 `patch()` 加 `providers` 单独深合并。归一化是**深合并**：老配置无 `pricing` 段自动补全；
+    用户只填一部分（如只写 `out`）时缺的键**回落默认**，不是整段替换。
+  · **不猜价**：三项缺一 → 该模型整份不可用（返回 null，界面该显示「未配置单价」而不是 ¥0.00）；
+    官方价页**已不再列**的老模型名（`deepseek-chat` / `deepseek-reasoner`）**故意不编价** —— 留空比给个「看似精确的错数字」诚实。
+  · **验证**：三份真机旧 `config.json`（`E:\Harbor` / `E:\CodexWorkbench` / `Harbor-Dev`）实测 ——
+    原文件都没有 `pricing` 段，归一后**自动补全**、老字段（`general.workdir` / `providers` 数组）**一个没丢**；
+    深合并 / 单档归一 / 坏值兜底 8 个用例全过；`npm run verify` 全绿、内核自检 **4418 项 / 0 失败**（+10）。
+  · **边界**：零新依赖、零新 IPC（`pricing` 不含密钥 → 现有 `config:get` 直接送到渲染层）；
+    不碰 `limits.cjs`（它只读 `bucket.total`）/ `compact` / 安全层 / 严格模式 / 防闪烁三件套。
+  · **顺带**：`selftest.mjs` 已 300 行满，把分组清单抽到 `scripts/selftest/groups.mjs`（主文件 300 → 34 行）；
+    `12-requires.mjs` 的「每组都挂在清单上」守卫改成**两份都扫**（清单搬到哪都在网里，不静默失效）。
+
 - **用量统计增强 · 功能 A-采集：把「思考（reasoning）token」采下来**（CE-019 · 2026-10-15，只采数据，UI 展示留到下一轮）。
   · **为什么**：用量里只有「入 / 出」，而推理模型把输出的一大块花在**思考**上 —— 单看「出」看不出贵在哪。
     上游其实一直在返回 `completion_tokens_details.reasoning_tokens`，但内核**一处都没读**

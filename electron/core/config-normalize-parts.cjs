@@ -101,6 +101,89 @@ function normalizeMcpServer(raw, index) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════
+   单价（A-展示）：归一化
+   ══════════════════════════════════════════════════════════════ */
+
+/** 三个计费项，少一个就说明这份价不可用（宁可不显示金额，也不显示错的） */
+const PRICE_KEYS = ['inMiss', 'inHit', 'out']
+
+/**
+ * 一项单价：`{peak, offPeak}` 或**单个数**，统一成 `{peak, offPeak}`。
+ *
+ * `def` = 内置默认值（`undefined` 表示这个模型没有默认价，比如用户自己新加的）。
+ * 规则：坏值 / 缺失 → 回落 `def`；`def` 也没有 → 返回 `null`（**绝不猜一个价**，
+ * 调用方拿到 `null` 就该整份丢掉 → 界面显示「未配置单价」而不是「¥0.00」）。
+ */
+function priceItem(raw, def) {
+  const src = obj(raw)
+  const num = (value, fallback) => {
+    const n = Number(value)
+    return Number.isFinite(n) && n >= 0 ? n : fallback
+  }
+  /* 写成了对象 → 认 peak / offPeak（只给 peak 时 offPeak 取同值？不 —— 回落默认，
+     因为「只写了高峰价」十有八九是漏了，给它编个空闲价反而是造数） */
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const peak = num(src.peak, def ? def.peak : null)
+    const offPeak = num(src.offPeak, def ? def.offPeak : null)
+    if (peak === null || offPeak === null) return def || null
+    return { peak, offPeak }
+  }
+  /* 写成了单个数 → 两档同值（= 这家的价不分时段） */
+  const n = Number(raw)
+  if (Number.isFinite(n) && n >= 0) return { peak: n, offPeak: n }
+  return def || null
+}
+
+/** 一个模型的三项价；三项不全 → 整份丢掉（回落默认，或 null） */
+function priceModel(raw, def) {
+  const src = obj(raw)
+  const out = {}
+  for (const key of PRICE_KEYS) {
+    const item = priceItem(src[key], def ? def[key] : null)
+    if (item) out[key] = item
+  }
+  if (!out.inMiss || !out.inHit || !out.out) return def || null
+  return out
+}
+
+/**
+ * 整段 `pricing` 归一化。**顺序很重要**：先铺内置默认，再把用户值**深合并**上去 ——
+ * 老配置没有 `pricing` 段 → 全走默认；用户只填了一部分 → 缺的键回落到默认，
+ * **不是整段替换**（整段替换会让「只改了个 out 的人」把另两个价一起清空）。
+ */
+function normalizePricing(raw) {
+  const src = obj(raw)
+  const base = C.DEFAULTS.pricing
+  const providers = {}
+  const seed = (pid, model, price) => {
+    if (!providers[pid]) providers[pid] = {}
+    providers[pid][model] = {
+      inMiss: { ...price.inMiss },
+      inHit: { ...price.inHit },
+      out: { ...price.out },
+    }
+  }
+
+  for (const [pid, models] of Object.entries(base.providers ?? {})) {
+    for (const [model, price] of Object.entries(models)) seed(pid, model, price)
+  }
+  for (const [pid, models] of Object.entries(obj(src.providers))) {
+    for (const [model, price] of Object.entries(obj(models))) {
+      const merged = priceModel(price, providers[pid] ? providers[pid][model] : null)
+      if (merged) seed(pid, model, merged)
+    }
+  }
+
+  return {
+    currency: str(src.currency, base.currency).slice(0, 10) || base.currency,
+    /* 单位固定：官方口径就是「元 / 百万 tokens」，不开放改（改了金额会差几个数量级） */
+    unit: base.unit,
+    peakMode: pick(str(src.peakMode, base.peakMode), ['auto', 'peak', 'offPeak'], base.peakMode),
+    providers,
+  }
+}
+
 module.exports = {
   clampNumber,
   pick,
@@ -110,4 +193,5 @@ module.exports = {
   strMap,
   normalizeProvider,
   normalizeMcpServer,
+  normalizePricing,
 }

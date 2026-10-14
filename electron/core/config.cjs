@@ -2,9 +2,8 @@
  * 配置：读写
  *
  * 只负责「存取 + 迁移 + 给界面安全版本」。字段校验在 config-normalize.cjs，默认值在 config-defaults.cjs。
- *
- * **这里最重要的一条：apiKey 不落这个文件。** 老配置里的明文 key 会在首次加载时被搬进
- * 凭证库（credentials.cjs）并从文件里抹掉。界面看到的永远是掩码 + `hasKey`。
+ * **最重要的一条：apiKey 不落这个文件** —— 老配置的明文 key 首次加载时搬进凭证库
+ * （credentials.cjs）并从文件抹掉；界面看到的永远是掩码 + `hasKey`。
  */
 
 const fs = require('node:fs')
@@ -19,10 +18,7 @@ const providerCaps = require('./provider-capabilities.cjs')
 
 let cache = null
 
-/**
- * 把老版本遗留下来的明文密钥搬进凭证库（只搬运，不判断：搬完就清空原字段）。
- * @returns {{ moved: number, refs: string[] }}
- */
+/** 把老版本遗留的明文密钥搬进凭证库（只搬运：搬完清空原字段）。@returns {{moved:number,refs:string[]}} */
 function migrateLegacySecrets(cfg) {
   const refs = []
 
@@ -174,6 +170,13 @@ function patch(partial) {
     mcp: partial.mcp ?? current.mcp,
     scenes: { ...current.scenes, ...(partial.scenes ?? {}) },
     providers: partial.providers ?? current.providers,
+    /* 单价（A-展示）：providers 比顶层多一层，要单独深合并 —— 不这么做，
+       只改了一个模型的价会把整张价目表替换掉（其余回落默认，等于抹了用户的设置） */
+    pricing: {
+      ...current.pricing,
+      ...(partial.pricing ?? {}),
+      providers: { ...current.pricing.providers, ...(partial.pricing?.providers ?? {}) },
+    },
   }
   return save(next)
 }
@@ -195,10 +198,7 @@ function searchKey(cfg = load()) {
   return credentials.get(cfg.search.credentialRef)
 }
 
-/**
- * 给界面用的版本。**必须把密钥藏掉**：这里返回的 apiKey 永远是掩码，
- * 真实值只在主进程发请求时取。
- */
+/** 给界面用的版本。**必须把密钥藏掉**：返回的 apiKey 永远是掩码，真实值只在主进程发请求时取。 */
 function forRenderer() {
   const c = load()
   return {
@@ -220,9 +220,8 @@ function forRenderer() {
     },
     /** 凭证库自身状态：加密了吗、用哪个后端、几个凭证 */
     credentials: credentials.status(),
-    /* 模型能力矩阵（**声明与预设，不是探测** —— 见 provider-capabilities.cjs 的 NOTE）。
-       这里只算给界面看：界面要能看出「这个模型支不支持 tool_call / 读图」，
-       以及缺哪些能力。真要探测得上网，内核自检不联网，所以没做。 */
+    /* 模型能力矩阵（**声明与预设，不是探测** —— 见 provider-capabilities.cjs 的 NOTE）：
+       界面要能看出「这个模型支不支持 tool_call / 读图」；真要探测得上网，自检不联网，所以没做。 */
     capabilities: providerCaps.forProviders(c.providers),
     /** 品牌与旧命名，界面做迁移提示用 */
     brand: C.BRAND,

@@ -11,6 +11,8 @@
 
 const { NETWORK_MODES, SECURITY_DEFAULTS } = require('./config-security.cjs')
 const { MCP_ENV_ALLOWLIST } = require('./config-mcp-env.cjs')
+/* 单价价目表单独一个文件（这边 292 行，塞下两个模型的价就过线了）—— 见 pricing-defaults.cjs */
+const { PRICING_DEFAULTS } = require('./pricing-defaults.cjs')
 const {
   BRAND,
   LEGACY,
@@ -269,6 +271,10 @@ const DEFAULTS = {
     /** block = 拦住；warn = 只提示 */
     onExceed: 'block',
   },
+
+  /* 单价（A-展示）：只用于**估算花费**，不参与任何拦截（用量闸按 token 数算）。
+     内置 DeepSeek 官方价，用户可在 config.json 里覆盖 —— 见 pricing-defaults.cjs */
+  pricing: PRICING_DEFAULTS,
 
   shortcuts: {},
   updatedAt: 0,

@@ -84,17 +84,23 @@ export async function run() {
   check('相对 require 都指向真实文件', missing.length === 0, missing.join(' | '))
 
   /*
-   * groups/ 下的文件**只有**被 `selftest.mjs` 的 GROUPS 显式收进来才会跑。
+   * groups/ 下的文件**只有**被 GROUPS 显式收进来才会跑。
    * 2026-10-03 差点被它坑到：新加了一组（`111-confirm-notify.mjs`），
    * 本地跑完发现总数没变 —— 因为忘了注册，它**静静地什么都没做**。
    * 所以在这儿钉住：目录里每个组文件都必须在清单里出现。
    * （`*-parts.mjs` 是给组文件拆行数用的帮手，不是组，跳过。）
+   *
+   * ⚠️ 2026-10-15：清单从 `selftest.mjs` 搬到了 `selftest/groups.mjs`（那边顶红线了）。
+   * 这里**两份都扫** —— 清单住哪个文件都在网里，也防有人搬回去时把闸门落下。
    */
   const groupsDir = path.join(ROOT, 'scripts/selftest/groups')
-  const selftestSrc = readFileSync(path.join(ROOT, 'scripts/selftest.mjs'), 'utf8')
+  const manifestSrc = [
+    readFileSync(path.join(ROOT, 'scripts/selftest.mjs'), 'utf8'),
+    readFileSync(path.join(ROOT, 'scripts/selftest/groups.mjs'), 'utf8'),
+  ].join('\n')
   const unregistered = readdirSync(groupsDir)
     .filter((f) => f.endsWith('.mjs') && !f.includes('-parts'))
-    .filter((f) => !selftestSrc.includes(`groups/${f}'`))
+    .filter((f) => !manifestSrc.includes(`groups/${f}'`))
   check(
     '★ groups/ 里每个自检组都挂在清单上（没注册 = 静默不跑）',
     unregistered.length === 0,

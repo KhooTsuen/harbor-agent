@@ -89,6 +89,27 @@ export const PREVIEW_CONFIG: AppConfig = {
   fallback: { enabled: true, attempts: 2, retryOn: ['timeout', 'rate_limit', 'server', 'network'] },
   audit: { enabled: true, retentionDays: 30 },
   limits: { enabled: false, dailyTokens: 0, monthlyTokens: 0, onExceed: 'block' },
+  /* 单价：**照抄** core/pricing-defaults.cjs 的默认（渲染层 require 不到内核 .cjs，
+     预览占位只能手抄一份；真实值一律由 config:get 送下来）。改内核默认价时这里要跟着改。 */
+  pricing: {
+    currency: 'CNY',
+    unit: 'perMillionTokens',
+    peakMode: 'auto',
+    providers: {
+      deepseek: {
+        'deepseek-flash': {
+          inMiss: { peak: 2, offPeak: 1 },
+          inHit: { peak: 0.04, offPeak: 0.02 },
+          out: { peak: 8, offPeak: 4 },
+        },
+        'deepseek-v4-pro': {
+          inMiss: { peak: 9, offPeak: 4.5 },
+          inHit: { peak: 0.3, offPeak: 0.15 },
+          out: { peak: 27, offPeak: 13.5 },
+        },
+      },
+    },
+  },
   scenes: {
     chat: { providerId: '', model: '' },
     title: { providerId: '', model: '' },

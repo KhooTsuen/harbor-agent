@@ -8,6 +8,8 @@ import type {
 } from './safety'
 import type { SearchConfig } from './models-extra'
 import type { McpServerConfig } from './mcp'
+/* 单价（A-展示）的类型单独一个文件 —— 那边 300 行打不住；这里转出去，老引用路径不变 */
+import type { PricingConfig } from './pricing'
 /* 模型能力（**声明，非探测**）：下面两个字段用它；再导出一次，调用方不用改 */
 import type { ModelCapabilities, ProviderCapabilityMatrix } from './model-caps'
 /* 搜索 / MCP 的类型在 models-extra.ts（这里再导出一次，调用方不用改） */
@@ -187,6 +189,12 @@ export interface AppConfig {
     monthlyTokens: number
     onExceed: 'block' | 'warn'
   }
+  /**
+   * 单价（A-展示）：**只用于估算花费**，不参与任何拦截（用量闸按 token 数算）。
+   * 内置 DeepSeek 官方价，用户可在 config.json 里覆盖；归一化会深合并（省略的键回落默认）。
+   * 真相源：`electron/core/pricing-defaults.cjs`（默认值）+ `config-normalize-parts.cjs`（归一化）。
+   */
+  pricing: PricingConfig
   updatedAt: number
   /** 凭证库状态（主进程附带的，只读） */
   credentials?: CredentialsStatus
