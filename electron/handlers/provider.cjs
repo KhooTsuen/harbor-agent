@@ -56,6 +56,32 @@ function register({ ipcMain }) {
     }
   })
 
+  /* ── 查账户余额（DeepSeek 专有）────────────────────────────
+   *
+   * 和上面两个的区别：它读的是**账户**信息，不是模型信息 —— 端点也不在
+   * `/v1` 下（见 core/llm-probe.cjs 的 getBalance）。**只由用户点击触发**，
+   * 这里不做任何缓存与轮询（每次点击就是一次真实请求）。
+   */
+  ipcMain.handle('provider:balance', async (_event, providerId) => {
+    const llm = require('../core/llm.cjs')
+    const all = config.get().providers
+    const target = providerId ? all.find((p) => p.id === providerId) : config.activeProvider()
+    if (!target) return { ok: false, error: '没有可用的供应商' }
+    if (!config.hasKey(target)) return { ok: false, error: `${target.name} 还没填 API Key` }
+
+    try {
+      const result = await llm.getBalance({
+        baseUrl: target.baseUrl,
+        apiKey: config.providerKey(target),
+      })
+      /* 余额是账户隐私，日志里只说成败，不写数字 */
+      log.info(`查余额：${target.id} → ${result.ok ? '成功' : '失败'}`)
+      return { ...result, at: Date.now() }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   /*
    * ── 实测一个模型会什么（能力探测，2026-10-06）──
    *

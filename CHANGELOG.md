@@ -5,6 +5,37 @@
 
 ## [未发布]
 
+- **用量统计增强 · 功能 B：账户余额查询（`provider:balance`）**（2026-10-15，只做余额这一半；功能 A 待做）。
+  · **做什么**：设置 →「数据与用量」里多一张「账户余额」卡片 —— 点一次「查询」看 DeepSeek 账户余额
+    （总可用 / 赠金 / 充值），并显示「上次查询：HH:MM:SS」。
+  · **官方端点**（**查的是官方文档，不是凭记忆**）：`GET https://api.deepseek.com/user/balance`，
+    `Authorization: Bearer <key>`，返回 `{ is_available, balance_infos: [{ currency, total_balance,
+    granted_balance, topped_up_balance }] }`。来源：https://api-docs.deepseek.com/zh-cn/api/get-user-balance/
+    ★ **端点不在 `/v1` 下**（供应商 baseUrl 是 `https://api.deepseek.com/v1`）—— 用 `buildUrl` 会拼成
+      `.../v1/user/balance` → 404。所以取 baseUrl 的 **origin** 再拼 `/user/balance`。
+  · **只由用户点击触发**（硬规矩）：渲染层没有 `useEffect` / `setInterval` / `setTimeout`（自检钉着），
+    每次点击 = 一次真实请求。主进程不做任何缓存与轮询。
+  · **「上次查询时间」只存内存**（用户拍板）：它是瞬时提示，不值得为它动数据结构；设置页一关就重置。
+  · **余额是字符串，绝不 `Number()`**（官方 schema 就是 string）：接口少给字段时 `undefined + 数字 = NaN`，
+    界面上会显示「余额 NaN」。原样带出，界面只判断「有没有值」（有值显示，空串显示「—」）。
+  · **失败不崩**（三条路都回 `{ok:false,error}`，不抛到渲染层）：网络不通 / Key 无效（401、403）/
+    接口变更（404、非 JSON、schema 认不出）。非 DeepSeek 供应商**当场说不支持**，不发那个必然 404 的请求。
+    错误详情过 `redact`；日志只说成败、不写余额数字。
+  · **凭证复用现有路径**：handler 走 `config.hasKey()` / `config.providerKey()`（与 `provider:ping` 完全同一条），
+    **不新增凭证存储位置**。
+  · **IPC 评估**：必须新增 `provider:balance`，**不能复用**任何一个现有通道 —— `provider:ping` 是 POST 到
+    `chatPath` 测对话、`provider:listModels` 是 GET `/models` 读模型清单、`provider:probe` 做能力探测，
+    而 `stats:summary` 是**纯本地**读 `stats.json`（不出网、不碰凭证），混进去会破坏它的职责边界。
+    **三处同步**（少一处就静默失效）：`EXPECTED_CHANNELS` + `preload.cjs` + core `llm-probe.getBalance()`。
+  · **验证**：`npm run verify` 全绿；内核自检 **4391 项 / 0 失败**（+20，新增
+    `selftest/groups/149-provider-balance.mjs`：三处同步 / origin 拼法 / 字符串不转数字 / 四条失败分支 / 不轮询）；
+    `parseBalance` 六种输入（正常 / 缺字段 / 认不出 / null / 空数组 / 非对象）实测符合预期。
+  · 文件：改 `core/llm-probe.cjs`、`core/llm.cjs`（转发）、`handlers/provider.cjs`（新 handler）、
+    `ipc-channels.cjs`、`preload.cjs`、`types/backend.ts`、`types/stats.ts`、`types/models.ts`、`types/models-extra.ts`、
+    `lib/providerApi.ts`、`settings/tabs/UsageTab.tsx`；新增 `settings/parts/BalanceCard.tsx`、
+    `selftest/groups/149-provider-balance.mjs`。
+  · **未做（记在账上）**：功能 A（花费分类 / 推理字段采集 / 单价配置）；「按任务」维度。
+
 - **易变层独立成第二条 system message —— 让「历史」吃上前缀缓存**（CE-018 · 2026-10-15，首轮缓存 A/B 实验的落地）。
   · **问题（真实 usage 实测）**：所有层以前拼在**同一条** system message 里。服务端 prompt 缓存是**前缀匹配** —
     易变区（记忆 / 任务 / 会话状态 / 当前时间）动一个字，它**后面**的一切（含整段历史消息，可达 4~12 万 token）全部失效。

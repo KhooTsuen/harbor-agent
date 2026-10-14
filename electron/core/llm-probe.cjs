@@ -11,6 +11,7 @@
 const { buildUrl } = require('./llm-body.cjs')
 const task = require('./image-task.cjs')
 const http = require('./http.cjs')
+const redact = require('./redact.cjs')
 
 /**
  * 测连接 / 拉模型清单 / 提交生图都不是流式请求，给个上限。
@@ -94,6 +95,96 @@ function parseModelList(data) {
   return [...new Set(ids)].sort((a, b) => a.localeCompare(b))
 }
 
+/* ══════════════════════════════════════════════════════════════
+   账户余额（DeepSeek 专有）
+   ══════════════════════════════════════════════════════════════
+   文档：https://api-docs.deepseek.com/zh-cn/api/get-user-balance/
+   端点：GET /user/balance，鉴权照旧 `Authorization: Bearer <key>`
+
+   ⚠️ 这个端点**不在 `/v1` 下**。供应商的 baseUrl 是
+      `https://api.deepseek.com/v1`，用 `buildUrl(baseUrl, '/user/balance')`
+      会拼成 `.../v1/user/balance` → 404。所以这里取 baseUrl 的 **origin** 再拼路径。
+
+   ⚠️ 余额在官方 schema 里是 **string**（`"total_balance": "110.00"`）——
+      这里**不要** Number()：`undefined + 数字 = NaN` 是同类事故，
+      显示层会变成「余额 NaN」。原样字符串带出去，格式化在界面做。
+*/
+
+/** 余额端点路径（官方文档：不在 /v1 之下） */
+const BALANCE_PATH = '/user/balance'
+
+/** 只有 DeepSeek 系有这个端点；别家发了也是 404，不如当场说清楚 */
+const BALANCE_HOST = /(^|\.)deepseek\.com$/i
+
+/**
+ * 把余额响应收成界面要的形状。**认不出来就返回 null**（调用方据此报「格式无法识别」），
+ * 不硬凑一个全是 null 的对象 —— 那会让界面显示一排「-」却看不出是接口变了。
+ */
+function parseBalance(data) {
+  if (!data || typeof data !== 'object') return null
+  const list = Array.isArray(data.balance_infos) ? data.balance_infos : null
+  if (!list) return null
+  const infos = list
+    .map((item) => ({
+      currency: String(item?.currency ?? ''),
+      total: String(item?.total_balance ?? ''),
+      granted: String(item?.granted_balance ?? ''),
+      toppedUp: String(item?.topped_up_balance ?? ''),
+    }))
+    .filter((item) => item.currency)
+  return { available: data.is_available === true, infos }
+}
+
+/**
+ * 查账户余额。**只由用户点击触发**（调用方在界面层；这里不做任何定时/轮询）。
+ *
+ * 失败一律返回 `{ ok: false, error }`，**不抛** —— 查询失败是预期结果之一
+ * （网络不通 / key 无效 / 接口变更），不该把异常捅到渲染层去崩界面。
+ *
+ * (JSDoc 里把 signal 标成可选是必须的：`checkJs` 下不写的话，调用方
+ *  少传一个 signal 就是 TS2345 —— ping / listModels 当年就是这么欠下的。)
+ *
+ * @param {{ baseUrl: string, apiKey: string, signal?: AbortSignal }} options
+ */
+async function getBalance({ baseUrl, apiKey, signal }) {
+  if (!baseUrl) return { ok: false, error: '这个供应商还没填接口地址' }
+  if (!apiKey) return { ok: false, error: '这个供应商还没填 API Key' }
+
+  let origin = ''
+  try {
+    const parsed = new URL(baseUrl)
+    if (!BALANCE_HOST.test(parsed.hostname)) {
+      return { ok: false, error: '这个供应商没有余额查询接口（目前只支持 DeepSeek）' }
+    }
+    origin = parsed.origin
+  } catch {
+    return { ok: false, error: `接口地址不是合法 URL：${baseUrl}` }
+  }
+
+  const response = await http.fetch(`${origin}${BALANCE_PATH}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: withTimeout(signal, 10_000),
+  })
+
+  if (!response.ok) {
+    /* 三类失败分开说 —— 用户据此知道该改 Key、换供应商、还是等我们适配 */
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, error: `API Key 无效或无权限（HTTP ${response.status}）` }
+    }
+    if (response.status === 404) {
+      return { ok: false, error: '余额接口不存在（HTTP 404）—— 该供应商可能不支持，或接口已变更' }
+    }
+    const detail = await response.text().catch(() => '')
+    return { ok: false, error: `HTTP ${response.status}：${redact.redact(detail.slice(0, 200))}` }
+  }
+
+  const data = await response.json().catch(() => null)
+  const balance = parseBalance(data)
+  if (!balance) return { ok: false, error: '余额接口返回的格式无法识别（接口可能已变更）' }
+
+  return { ok: true, ...balance }
+}
+
 /**
  * 图像生成（`/images/generations`）。
  *
@@ -174,4 +265,4 @@ async function generateImage({
   return await task.waitForTask({ baseUrl, apiKey, taskId: id, model, signal, interval, timeout })
 }
 
-module.exports = { ping, listModels, parseModelList, generateImage }
+module.exports = { ping, listModels, parseModelList, getBalance, parseBalance, generateImage }

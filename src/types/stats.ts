@@ -53,3 +53,36 @@ export interface StatsSummary {
   /** 闸门状态。老版本内核不返回这个字段 —— 缺了就当「不知道」，界面不乱说话 */
   gate?: LimitsGateState
 }
+
+/* ══════════════════════════════════════════════════════════════
+   账户余额（DeepSeek 专有）
+
+   ★ **数字全是字符串** —— 官方 schema 就是 string（`"total_balance": "110.00"`）。
+     这里不做 `Number()`：接口少给一个字段时就变成 `undefined + 数字 = NaN`，
+     界面上会显示「余额 NaN」。原样带过来，格式化和「有没有值」的判断都在界面做。
+
+   ★ 失败是**预期结果之一**（网络不通 / Key 无效 / 接口变更），所以整条是
+     `ok: false + error` 而不是抛异常 —— 界面据此显示「查询失败」。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 一种货币的余额（余额接口按货币分行，通常只有一条） */
+export interface BalanceInfo {
+  /** CNY / USD */
+  currency: string
+  /** 总可用余额（赠金 + 充值），字符串 */
+  total: string
+  /** 未过期的赠金余额 */
+  granted: string
+  /** 充值余额 */
+  toppedUp: string
+}
+
+export interface BalanceResult {
+  ok: boolean
+  /** 当前账户是否还有余额可供调用（`is_available`） */
+  available?: boolean
+  infos?: BalanceInfo[]
+  /** 内核**查询完成**的时刻（ms）。注意不是「上次点击」的时间 */
+  at?: number
+  error?: string
+}

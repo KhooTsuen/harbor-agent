@@ -7,6 +7,7 @@ import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { BudgetLimit } from './BudgetLimit'
 import { GateStatus } from './GateStatus'
+import { BalanceCard } from '../parts/BalanceCard'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Row, SectionTitle } from '../parts'
@@ -97,6 +98,11 @@ export function UsageTab() {
       <GateStatus gate={data.gate} />
 
       <SectionTitle>用量</SectionTitle>
+
+      {/* 账户余额：**必须用户点**才请求（不轮询）。放在用量数字旁边 —— 两者是同一件事的两面 */}
+      <div className="py-2">
+        <BalanceCard />
+      </div>
 
       {isEmpty ? (
         <EmptyState

@@ -7,7 +7,13 @@
    用量统计那一组（桶 + 闸门状态）在 `./stats`，同样转出去。
    ══════════════════════════════════════════════════════════════ */
 
-export type { LimitsGateState, StatsSummary, UsageBucket } from './stats'
+export type {
+  LimitsGateState,
+  StatsSummary,
+  UsageBucket,
+  BalanceInfo,
+  BalanceResult,
+} from './stats'
 export * from './models-session'
 
 export interface BackupInfo {

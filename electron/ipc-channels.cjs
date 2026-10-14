@@ -102,6 +102,8 @@ const EXPECTED_CHANNELS = [
   'memory:search',
   'memory:set',
   'memory:update',
+  /* 账户余额（DeepSeek 专有）—— 和 provider:ping / listModels / probe 一组 */
+  'provider:balance',
   'provider:listModels',
   'provider:ping',
   'pty:list',

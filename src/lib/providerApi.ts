@@ -1,4 +1,4 @@
-import type { WorkbenchBridge } from '@/types/backend'
+import type { BalanceResult, WorkbenchBridge } from '@/types/backend'
 
 /* ══════════════════════════════════════════════════════════════
    供应商相关的桥包装
@@ -33,6 +33,24 @@ export async function listProviderModels(
   if (!bridge) return { ok: false, error: '浏览器预览不支持拉取模型，请使用桌面版' }
   try {
     return await bridge.listModels(providerId)
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   账户余额（DeepSeek 专有）
+
+   ★ **只由用户点击触发** —— 内核不缓存、不轮询，这里也绝不放进 useEffect。
+     每次调用 = 一次真实请求（会花一点点流量，也可能被限速）。
+
+   注意**不在这里记「上次查询时间」**：那是界面的瞬时提示（只存内存、不落盘），
+   由卡片自己持有 —— 放这里会变成模块级状态，跨会话残留、还不好清。
+   ══════════════════════════════════════════════════════════════ */
+export async function providerBalance(providerId?: string): Promise<BalanceResult> {
+  if (!bridge) return { ok: false, error: '浏览器预览不支持查询余额，请使用桌面版' }
+  try {
+    return await bridge.providerBalance(providerId)
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }

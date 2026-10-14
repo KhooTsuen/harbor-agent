@@ -254,11 +254,8 @@ async function chatStream(options) {
     .map(([, call]) => call)
     .filter((call) => call.name)
 
-  /*
-   * 收完流还是空的 —— 也得给出个说得通的错。
-   * 不然界面上就是一条空气泡，用户不知道发生了什么。
-   * 常见原因：模型名不存在、供应商没额度、被中转站拦了。
-   */
+  /* 收完流还是空的 —— 也得给出个说得通的错，不然界面上就是一条空气泡。
+     常见原因：模型名不存在、供应商没额度、被中转站拦了。 */
   if (!content && !reasoning && toolCalls.length === 0 && !finishReason) {
     throw new Error(
       `上游没有返回任何内容（模型 ${model}）。常见原因：模型名不对、供应商额度不足、或被中转站拒绝。`,
@@ -295,6 +292,8 @@ module.exports = {
   ping: probe.ping,
   listModels: probe.listModels,
   parseModelList: probe.parseModelList,
+  /* DeepSeek 账户余额（provider:balance 用）—— 同样只在这里转发一次 */
+  getBalance: probe.getBalance,
   generateImage: probe.generateImage,
   buildUrl,
 }

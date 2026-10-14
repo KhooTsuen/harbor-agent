@@ -23,6 +23,7 @@ import { run as markStepDoneGroup } from './selftest/groups/145-mark-step-done.m
 import { run as memorySearchGroup } from './selftest/groups/146-memory-search.mjs'
 import { run as fsRootScopeGroup } from './selftest/groups/147-fs-root-scope.mjs'
 import { run as promptSplitGroup } from './selftest/groups/148-prompt-split.mjs'
+import { run as providerBalanceGroup } from './selftest/groups/149-provider-balance.mjs'
 import { run as llmBody } from './selftest/groups/07-llm-body.mjs'
 import { run as limits } from './selftest/groups/08-limits.mjs'
 import { run as browser } from './selftest/groups/09-browser.mjs'
@@ -277,7 +278,7 @@ const GROUPS = [
   memoryConflictGroup, projectCompleteGroup,
   urlPolicyGroup, safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup,
   decisionShapeGroup, eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
-  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup, markStepDoneGroup, memorySearchGroup, fsRootScopeGroup, promptSplitGroup,
+  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup, markStepDoneGroup, memorySearchGroup, fsRootScopeGroup, promptSplitGroup, providerBalanceGroup,
   ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup, browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
 ]
 

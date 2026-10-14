@@ -65,6 +65,8 @@ const api = {
   resetConfig: () => call('config:reset'),
   pingProvider: (providerId) => call('provider:ping', providerId),
   listModels: (providerId) => call('provider:listModels', providerId),
+  /* 账户余额（DeepSeek 专有）—— 只由用户点击触发，主进程不做缓存/轮询 */
+  providerBalance: (providerId) => call('provider:balance', providerId),
   getWorkdir: () => call('workdir:get'),
   pickWorkdir: () => call('workdir:pick'),
   /** 只挑目录，不改全局默认（给单条对话挂目录用） */
@@ -237,10 +239,7 @@ const api = {
   confirmChat: (confirmId, approved, answer) => call('chat:confirm', confirmId, approved, answer),
   compactChat: (payload) => call('chat:compact', payload),
 
-  /**
-   * 订阅流式事件。返回取消订阅的函数。
-   * 只转发白名单里的通道，别的通道一律丢掉。
-   */
+  /** 订阅流式事件。返回取消订阅的函数。只转发白名单里的通道，别的通道一律丢掉。 */
   onEvent: (callback) => subscribeAll(EVENTS, callback),
 
   /** 只订阅终端输出。和 onEvent 分开，免得终端数据混进对话流里 */

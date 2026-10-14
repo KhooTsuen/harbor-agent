@@ -16,6 +16,7 @@ import type {
   StoredMessage,
   SkillInfo,
   StatsSummary,
+  BalanceResult,
 } from './models'
 
 import type { MemoryStats, SafetyBridge } from './safety'
@@ -60,6 +61,11 @@ export interface WorkbenchBridge
   resetConfig: () => Promise<{ ok: boolean; config: AppConfig }>
   pingProvider: (providerId?: string) => Promise<{ ok: boolean; model?: string; error?: string }>
   listModels: (providerId?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>
+  /*
+   * 账户余额（DeepSeek 专有）。**只由用户点击触发** —— 主进程不缓存、不轮询。
+   * 余额一律是**字符串**（官方 schema 如此），界面自己格式化，别在这里转数字。
+   */
+  providerBalance: (providerId?: string) => Promise<BalanceResult>
   /* 能力探测：**实测**一个模型会什么（只回实测；声明在 config.capabilities，界面两边并排看） */
   probeProvider?: (providerId: string, model: string) => Promise<ModelProbeResult>
   getWorkdir: () => Promise<string>
