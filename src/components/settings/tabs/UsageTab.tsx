@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { BarChart3, RotateCcw } from 'lucide-react'
 import type { StatsSummary, UsageBucket } from '@/types/backend'
 import { statsReset, statsSummary } from '@/lib/extrasApi'
-import { formatCount, formatTokens } from '@/lib/format'
+import { formatMoney, formatTokens } from '@/lib/format'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { BudgetLimit } from './BudgetLimit'
 import { GateStatus } from './GateStatus'
 import { BalanceCard } from '../parts/BalanceCard'
+import { CostBreakdown, costLinesOf, moneyOfBucket } from '../parts/CostBreakdown'
+import { StatCard } from '../parts/StatCard'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Row, SectionTitle } from '../parts'
@@ -22,18 +24,7 @@ import { Row, SectionTitle } from '../parts'
    用户对「这软件有多费钱」完全没有感觉。
    ══════════════════════════════════════════════════════════════ */
 
-const n = formatCount
 const short = formatTokens
-
-function StatCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
-  return (
-    <div className="rounded-base border border-line-hairline bg-bg-raised/30 px-3 py-2.5">
-      <div className="text-2xs text-fg-tertiary">{label}</div>
-      <div className="mt-0.5 font-mono text-lg leading-tight text-fg-primary">{n(value)}</div>
-      {hint ? <div className="mt-0.5 text-dense text-fg-tertiary">{hint}</div> : null}
-    </div>
-  )
-}
 
 /** 一行条形：宽度按占最大值的比例 */
 function Bar({ bucket, max }: { bucket: UsageBucket; max: number }) {
@@ -71,6 +62,8 @@ export function UsageTab() {
   const dailyTokens = useConfigStore((s) => s.config?.limits.dailyTokens)
   const monthlyTokens = useConfigStore((s) => s.config?.limits.monthlyTokens)
   const onExceed = useConfigStore((s) => s.config?.limits.onExceed)
+  /* 单价（A-展示）：配置缺失时给 null —— `priceOf` 会直接返回 null，走「只显示 token」 */
+  const pricing = useConfigStore((s) => s.config?.pricing) ?? null
 
   async function refresh(quiet = false): Promise<void> {
     if (!quiet) setLoading(true)
@@ -89,6 +82,18 @@ export function UsageTab() {
   const maxDay = Math.max(...data.days.map((d) => d.total), 0)
   const maxModel = Math.max(...data.models.map((m) => m.total), 0)
   const isEmpty = data.total.calls === 0
+
+  /*
+   * 按模型逐条折算（准确），按天按 token 比例**分摊**总额（天桶没有模型名，
+   * 查不到价 —— 分摊是唯一说得通的做法，且各天之和 = 总额）。
+   * 两处都走 `costLinesOf`，口径不漂。
+   */
+  const costLines = costLinesOf(data.models, pricing).lines
+  const currency = pricing?.currency ?? 'CNY'
+  const dayMoneyOf = (total: number): string | null =>
+    costLines && data.total.total > 0
+      ? formatMoney(costLines.total * (total / data.total.total), currency)
+      : null
 
   return (
     <div className="py-1">
@@ -132,6 +137,8 @@ export function UsageTab() {
             />
           </div>
 
+          <CostBreakdown data={data} pricing={pricing} />
+
           {data.models.length > 0 ? (
             <>
               <SectionTitle>按模型</SectionTitle>
@@ -142,6 +149,9 @@ export function UsageTab() {
                       <span className="truncate font-mono text-2xs text-fg-primary">{m.model}</span>
                       <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
                         {short(m.total)} · {m.calls} 次
+                        {moneyOfBucket(m, pricing, m.model)
+                          ? ` · ${moneyOfBucket(m, pricing, m.model)}`
+                          : ''}
                       </span>
                     </div>
                     <Bar bucket={m} max={maxModel} />
@@ -161,6 +171,7 @@ export function UsageTab() {
                       <span className="font-mono text-2xs text-fg-secondary">{d.day}</span>
                       <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
                         {short(d.total)} · {d.calls} 次
+                        {dayMoneyOf(d.total) ? ` · ${dayMoneyOf(d.total)}` : ''}
                       </span>
                     </div>
                     <Bar bucket={d} max={maxDay} />
