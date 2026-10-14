@@ -333,6 +333,8 @@ npx -y @modelcontextprotocol/server-filesystem D:\data
 
 ## 许可与协作方式
 
-[MIT](LICENSE)。随便用，出事别找我。第三方素材与依赖的授权见 [`THIRD-PARTY.md`](THIRD-PARTY.md)。
+[MIT](LICENSE) —— 复制 / 修改 / 分发 / 商用都随你，但**别拿它干违法的事**，出事自己担着。
+完整的可接受使用条款与免责声明在 [`LICENSE`](LICENSE) 第二部分（**它不缩减 MIT 给你的权利**）。
+第三方素材与依赖的授权见 [`THIRD-PARTY.md`](THIRD-PARTY.md)。
 
 这个项目是人和 AI 结对做的：人定方向、做验收、决定什么不做；AI 写代码、写文档、跑测试。每个功能都在 [`CHANGELOG.md`](CHANGELOG.md) 里记着「为什么这么改、哪里踩了坑」——包括改错又改回来的那几次。
