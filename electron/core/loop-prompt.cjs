@@ -242,9 +242,6 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     /* 当前时间单独一层，放在最末（它每轮都变，不能污染前面的缓存前缀） */
     currentTime: currentTimeSection(),
   })
-  const systemPrompt = config.assistant.systemPrompt?.trim()
-    ? `${config.assistant.systemPrompt}\n\n${stack.message.content}`
-    : stack.message.content
 
   /* 三层诊断（token 优化）：hash + 「稳定前缀变了没、变在哪层」—— 只进台账与日志 */
   const diag = contextDiag.diagnose(stack.layers, {
@@ -262,7 +259,22 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     }
   }
 
-  const messages = [{ role: 'system', content: systemPrompt }, ...assembled.messages]
+  /*
+   * CE-018：系统提示拆成**两条 system message** —— 稳定区在前（历史紧跟在它后面，
+   * 吃前缀缓存）、易变区追加到**消息末尾**（它一变只影响它自己）。
+   * ★ 层内容与角色一字未改，只挪位置（**绝不降级成 user**）；拆出的两条拼回来
+   * 与 `stack.message.content` 逐字节相同（自检 `06-prompt-state.mjs` 钉着）。
+   */
+  const parts = promptStack.splitMessages(stack.layers)
+  const custom = config.assistant.systemPrompt?.trim()
+  const stable = parts[0] ?? null
+  const variable = parts[1] ?? null
+  const head = stable
+    ? [{ role: 'system', content: custom ? `${custom}\n\n${stable.content}` : stable.content }]
+    : custom
+      ? [{ role: 'system', content: custom }]
+      : []
+  const messages = [...head, ...assembled.messages, ...(variable ? [variable] : [])]
   if (options.sessionId) {
     try {
       sessionCore.appendState(options.sessionId, state)

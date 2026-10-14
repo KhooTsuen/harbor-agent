@@ -74,49 +74,12 @@ const SAFETY_GUIDE = [
  * **跟着用户做派变**的规矩，搬去了 `prompt-rules.cjs`。这边只管跟着运行时状态变的
  * 那几层（模式 / 权限 / 边界 / 浏览器）。下面转出去，老引用照旧。
  */
-const { workRules, WORK_RULES } = require('./prompt-rules.cjs')
+const { workRules, WORK_RULES, BROWSER_GUIDE } = require('./prompt-rules.cjs')
 
 /* REST_RULES 搬去了 `prompt-rules.cjs` —— 见本文件上方那段说明。 */
 
 /* `CLARIFY_RULE` / `workRules` / `WORK_RULES` 也搬去了 `prompt-rules.cjs`（上面已转出）。 */
-
-/*
- * 浏览器的用法。
- *
- * 这套顺序是照着**人用网页**来的：看一眼 → 动一下 → 再看一眼。
- * 不写这段，模型会「凭记忆连点」—— 页面一跳转，手里那套索引就全废了，
- * 于是点空、填错，或者以为没生效就重复点。
- */
-const BROWSER_GUIDE = [
-  '- **标签页什么时候开**（这一条真机调过，别自己想当然）：',
-  '  · **用户要看的那一个新页面 → 开新标签**（`browse` 的默认行为）：他说「查一下 X」',
-  '    「看看这个链接」，连着查几个不同站点 —— 一个页面一个标签，地址完全一样才复用。',
-  '    这样他才看得见你开过哪些页面。',
-  '  · **只是拿数据的中转页 → 在当前标签里打开**：`browse(url, sameTab: true)`。',
-  '    从搜索结果点进详情读一眼、顺着同一站点的链接连读几页 —— 这种「读完就不回头」的',
-  '    页面别再占一个标签位（他会看到一排自己不想看的标签）。',
-  '  · **同一页内的连续动作不要开新标签**：点进详情、翻页、回到列表 —— 那是同一页内的',
-  '    导航，用 `browse_click` 在当前标签里走完就行。',
-  '  · **回到刚才那一页要用 `browse_nav`（direction="back"），不要拿 browse 再开一次同一个地址**：',
-  '    点进详情看完了要回列表、翻到第 2 页想回第 1 页 —— 这些是「后退一页」的事。',
-  '    重开同一个地址会多一个标签，还会丢掉筛选条件和滚动位置，用户看到的也不是「它退回去了」。',
-  '  · 标签页互相独立：各自的滚动位置和状态都留着，切标签**不会**重新加载页面。',
-  '  · 网页里 `window.open` / `target=_blank` 弹出的新窗口会被接成**同一个面板里的新标签**。',
-  '    想看它弹到了哪儿，用 `browse` 打开那个地址即可（工具驱动的是当前标签）。',
-  '- 顺序：`browse` 打开页面 → `browse_elements` 看有什么能点/能填 →',
-  '  `browse_click` / `browse_type` 操作 → **再** `browse_elements` 看结果。',
-  '- **先看再动**。click / type 的 index 只对**最近一次** `browse_elements` 读到的',
-  '  页面状态有效；页面一跳转、弹窗、异步刷新，就重新读一遍再操作。',
-  '- **动完就重新看**。别一口气连点好几下 —— 上一步的结果（跳转、报错、验证码）',
-  '  往往决定下一步该干什么。',
-  '- 只想读文字用 `browse`；要**操作**才用 `browse_elements`。',
-  '- 操作后清单没变化，可能只是还没加载完：稍等再读一次，不要重复点。',
-  '- **密码框**：用户没明确说可以填时不要自己填。用户明确授权了（说了「可以填密码」、',
-  '  或者直接把密码给了你），就正常调 `browse_type` —— 会有个确认弹窗让用户点一下，',
-  '  那是他亲自授权。在弹窗里被拒绝就停下，不要再试。',
-  '  填完之后**不要把密码重复写出来**，就说「已填入」。',
-  '- 碰到登录墙、验证码、要用户本人确认的步骤，直接告诉用户，不要硬试。',
-].join('\n')
+/* CE-018：`BROWSER_GUIDE` 也搬了过去（同样是纯文案；这边腾出行数放 `splitMessages`）。 */
 
 /*
  * 提示词版本（②-1）。每轮会连同任务一起记进台账，诊断报告里看得到。
@@ -146,8 +109,11 @@ const BROWSER_GUIDE = [
  *              硬判据在 `core/failure-streak.cjs`（只读 `task.steps[].ok`），提示排在 loop-guard 之后。
  *   /10 → /11 —— 内部思考用中文（CE-014）：`workRules` 加 `CHINESE_THINK_RULE`（推理 / 规划 /
  *              调工具前的判断用简体中文）—— DeepSeek 的 reasoning_content 常吐英文，中文密度更高、更省 token。
+ *   /11 → /12 —— 易变区独立成第二条 system message（CE-018）：层内容与角色一字未改，
+ *              只把易变区从「同一条 system message 的尾部」挪到**消息末尾** ——
+ *              历史因此能吃到前缀缓存（实测未命中 45,887 → 192 token）。
  */
-const VERSION = 'prompt-stack/11'
+const VERSION = 'prompt-stack/12'
 
 /*
  * 层的顺序 = 模型看到的顺序。
@@ -270,6 +236,37 @@ function toSystemMessage(layers) {
   }
 }
 
+/*
+ * 稳定区 = ORDER 里易变区**之前**的那些层。从 ORDER 派生（唯一真相源），
+ * 不另立一份层名单 —— 以后加层只改 ORDER 一处。
+ */
+const VARIABLE_START = ORDER.indexOf('relevantMemory')
+const STABLE_IDS = new Set(VARIABLE_START > 0 ? ORDER.slice(0, VARIABLE_START) : ORDER)
+
+/**
+ * 把层拆成**两条** system message：稳定区一条、易变区一条。
+ *
+ * 为什么（2026-10-15 · CE-018）：服务端的 prompt 缓存是**前缀匹配**。以前所有层
+ * 拼在**同一条** system message 里，易变区（记忆 / 任务 / 会话状态 / 当前时间）
+ * 动一个字，它**后面**的一切 —— 包括整段历史消息 —— 就全部失效。
+ * 拆开之后历史紧跟在稳定区后面（稳定 ⇒ 命中），易变区挪到**消息末尾**
+ * （它变了只影响它自己）。
+ *
+ * ★ 内容一字未改、角色仍是 system（**绝不降级成 user**）—— 只挪位置。
+ *   真实 DeepSeek usage 实测（同历史 / 同任务，易变层变化）：未命中
+ *   45,887 → 192 token。拆出来的两条**顺序拼回**与 `toSystemMessage` 逐字节相同
+ *   （自检 `06-prompt-state.mjs` 钉着）。
+ */
+function splitMessages(layers) {
+  const valid = layers.filter((item) => item.content)
+  const stable = valid.filter((item) => STABLE_IDS.has(item.id))
+  const variable = valid.filter((item) => !STABLE_IDS.has(item.id))
+  const out = []
+  if (stable.length > 0) out.push(toSystemMessage(stable))
+  if (variable.length > 0) out.push(toSystemMessage(variable))
+  return out
+}
+
 function build(input = {}) {
   const layers = buildLayers(input)
   return { version: VERSION, order: ORDER, layers, message: toSystemMessage(layers) }
@@ -278,6 +275,7 @@ function build(input = {}) {
 module.exports = {
   VERSION,
   ORDER,
+  STABLE_IDS,
   MODE_GUIDE,
   PERMISSION_GUIDE,
   PERSONA_GUIDE,
@@ -288,5 +286,6 @@ module.exports = {
   BROWSER_GUIDE,
   buildLayers,
   toSystemMessage,
+  splitMessages,
   build,
 }

@@ -5,6 +5,23 @@
 
 ## [未发布]
 
+- **易变层独立成第二条 system message —— 让「历史」吃上前缀缓存**（CE-018 · 2026-10-15，首轮缓存 A/B 实验的落地）。
+  · **问题（真实 usage 实测）**：所有层以前拼在**同一条** system message 里。服务端 prompt 缓存是**前缀匹配** —
+    易变区（记忆 / 任务 / 会话状态 / 当前时间）动一个字，它**后面**的一切（含整段历史消息，可达 4~12 万 token）全部失效。
+    这解释了「每个任务第 1 次调用命中率仅 11%」：命中约 3,700 token ≈ 稳定区大小，断点正好在易变区开头。
+  · **实测 A/B（同一段 4 万 token 真实历史 / 同一任务 / 只改易变层，真实 DeepSeek usage）**：
+    现状 miss **45,887**（命中率 16.3%）→ 候选 miss **192**（命中率 99.6%）；同一次调用**少 45,695 未命中 token**。
+    三轮重复、V 每轮唯一，结果完全一致。
+  · **改法**：`prompt-stack.splitMessages` 按 ORDER 派生的稳定名单把层拆成两条（唯一真相源，不另立名单）；
+    `loop-prompt.cjs` 拼成 `[稳定区, ...历史, 易变区]`。**层内容一字未改、角色仍是 system** —— 只挪位置。
+    拆出的两条拼回来与旧的 `build().message` **逐字节相同**（自检 `148-prompt-split.mjs` 钉着）。
+  · **不做的事**：不降级成 user 消息（会削弱指令权威性 —— 已实测 system 中间/末尾 DeepSeek 均接受且模型正确遵循）；
+    不碰 compact；不删工具历史；不动严格模式 / 记忆检索 / 安全层。
+  · **回归**（本机实测）：工具调用正常（B 结构下 `list_dir` 照常调到）；带「必须遵守」指令时照做；
+    `npm run verify` 全绿、内核自检 **4371 项 / 0 失败**（+4）。
+  · 提示词版本 `prompt-stack/11 → /12`。文件：改 `core/prompt-stack.cjs`、`core/prompt-rules.cjs`（BROWSER_GUIDE 搬家腾行数）、
+    `core/loop-prompt.cjs`；新增 `selftest/groups/148-prompt-split.mjs`；同步三处版本号断言。
+
 - **修 `search_web` 自定义后端：模板**缺协议头**时静默失败（`www.bing.com` → `Failed to parse URL`）**（CE-017 · 2026-10-15，从装机版真实会话里查出来的）。
   · **真机代价**：用户在设置里填 `www.bing.com`（从浏览器地址栏粘的，`https://` 被浏览器藏了），
     拼出来的字符串不是合法 URL，`fetch` 直接报 `Failed to parse URL` —— **4 个会话里 7 次以上搜索全失败**，
