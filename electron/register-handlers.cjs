@@ -155,6 +155,21 @@ function registerHandlers(deps) {
   })
   require('./handlers/session.cjs').register({ ipcMain })
   require('./handlers/provider.cjs').register({ ipcMain })
+  /*
+   * 浏览器扩展桥（Phase 2）。Edge 拉起的 native host 是**独立进程**，它把
+   * 「读当前页」的结果经命名管道送回主进程，由这里包装并落进会话。
+   * 装配放这儿而不是 main.cjs —— main.cjs 已 298 行贴 300 红线（一行动不动最好）。
+   */
+  const extBridge = require('./core/ext-bridge.cjs').createBridge()
+  extBridge.start({
+    dataDir: require('./core/paths.cjs').DIRS.data,
+    send,
+    session: require('./core/session.cjs'),
+    audit: require('./core/audit.cjs'),
+    wrap: require('./core/tools/_web-note.cjs').wrapWebText,
+    log,
+  })
+  require('./handlers/ext.cjs').register({ ipcMain, bridge: extBridge })
   /* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
   require('./handlers/browser.cjs').register()
   require('./handlers/export.cjs').register({ ipcMain, getMainWindow })

@@ -81,7 +81,12 @@ export async function run() {
 
   group('native host · 模块白名单（哪些能加载、哪些不能）')
 
-  check('★ 白名单 15 个（Phase 0 §4 实测过的那些）', H.SAFE_MODULES.length === 15, String(H.SAFE_MODULES.length))
+  /*
+   * ⚠️ **不钉个数**（硬约束 #8：会涨的数字不写死）。Phase 2 加了两个模块
+   * （ext-bridge / ext-forward），原来钉的「15 个」当场过期 ——
+   * 而真正要守的不是个数，是下面那条「每一个都真的能在纯 Node 里 require」。
+   */
+  check('★ 白名单非空且至少覆盖 Phase 0 §4 验证过的那批', H.SAFE_MODULES.length >= 15, String(H.SAFE_MODULES.length))
   check('★ 白名单里没有 handlers/ 开头的（它们顶层解构 electron）', !H.SAFE_MODULES.some((m) => m.startsWith('handlers/')))
   check('★ 白名单里没有 native-host 自己（避免自引用）', !H.SAFE_MODULES.includes('native-host.cjs'))
   check('★ 每个模块路径都真实存在', H.SAFE_MODULES.every((m) => {
@@ -101,7 +106,7 @@ export async function run() {
       failed.push(`${m}: ${error instanceof Error ? error.message : error}`)
     }
   }
-  check('★ 白名单 15 个在纯 Node 里**真的能 require**', failed.length === 0, failed.join(' | '))
+  check('★ 白名单里每个模块在纯 Node 里**真的能 require**', failed.length === 0, failed.join(' | '))
   check('★ 不在白名单的反例：handlers/browser.cjs 顶层确实要 electron', /require\(['"]electron['"]\)/.test(readFileSync(join(ROOT, 'electron/handlers/browser.cjs'), 'utf8')))
 
   group('native host · 接线（真的被 main.cjs 用上了）')

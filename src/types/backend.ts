@@ -25,10 +25,13 @@ import type { ErrorsBridge } from './errors'
 import type { NotifyBridge } from './notify'
 import type { WorkspaceBridge } from './workspace'
 import type { BrowserBridge } from './browser'
+import type { ExtBridge } from './ext'
 import type { IoBridge } from './backend-io'
 export * from './models'
 /* 浏览器工具的桥在 browser.ts，这里转出去：老引用路径还是 '@/types/backend' */
 export * from './browser'
+/* 浏览器扩展桥（Phase 2）在 ext.ts，同样转出去 */
+export * from './ext'
 /* SafetyBridge 已带上 ProfileBridge，这里不重复列；ErrorsBridge = 右栏「错误」标签 */
 
 /**
@@ -51,7 +54,14 @@ export interface ModelProbeResult {
 }
 
 export interface WorkbenchBridge
-  extends SafetyBridge, NotifyBridge, WorkspaceBridge, ErrorsBridge, BrowserBridge, IoBridge {
+  extends
+    SafetyBridge,
+    NotifyBridge,
+    WorkspaceBridge,
+    ErrorsBridge,
+    BrowserBridge,
+    ExtBridge,
+    IoBridge {
   selfTest: () => Promise<SelfTestReport>
   quitApp: () => Promise<void>
   showWindow: () => Promise<{ ok: boolean }>

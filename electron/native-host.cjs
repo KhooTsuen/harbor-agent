@@ -46,13 +46,13 @@
  * 它在 Node 里「能加载但拿到的是 undefined」，用起来才炸（Phase 0 实测）。
  * 所以白名单是一份**限定**，不是「随便 require 都行」。
  *
- * ★ Phase 1a 只做协议本身（ping / pong），**不加载**这些模块（零副作用）。
- *   白名单在这里定义 + 由自检组 154 钉住，Phase 1b 接业务时从这里取。
- * ★ 但路径 2 下 `main.cjs` **不执行**（.cmd 直接跑本文件），所以白名单在
- *   路径 2 暂时用不上 —— 它仍是「Phase 1b 接业务时」的入口约束。
+ * ★ Phase 1a 只做协议本身（ping / pong）。Phase 2 起多了 `ext:page`（扩展读到的
+ *   页面内容 → 转主进程）。**路径 2 下 main.cjs 不执行**，所以白名单暂时只是入口约束。
  */
 
 const fs = require('node:fs')
+/* Phase 2：把扩展送来的页面内容转给主进程（同步写命名管道，判据见那边的文件头） */
+const { forwardPage } = require('./core/ext-forward.cjs')
 
 /** 兼容形态的判据：Edge 直接拉 Harbor.exe 时一定会带它 */
 const HOST_FLAG = '--parent-window='
@@ -85,6 +85,9 @@ const SAFE_MODULES = [
   'core/session.cjs',
   'core/chat-emit.cjs',
   'core/browse-read.cjs',
+  /* Phase 2 新增：扩展桥 + 转发（都不 require electron，自检会真加载一遍） */
+  'core/ext-bridge.cjs',
+  'core/ext-forward.cjs',
 ]
 
 /* ══════════════════════════════════════════════════════════════
@@ -184,7 +187,12 @@ function handleMessage(message) {
   if (message && typeof message === 'object' && 'ping' in message) {
     return { pong: 1, echo: message }
   }
-  return { error: 'Phase 1a 只认 {"ping":…}', echo: message ?? null }
+  /* Phase 2：扩展读了页面送来的内容 —— 转给主进程（包装 / 落会话 / 审计都在那边做） */
+  if (message && typeof message === 'object' && 'type' in message && message.type === 'ext:page') {
+    const id = 'id' in message ? (message.id ?? null) : null
+    return { ...forwardPage(message), id }
+  }
+  return { error: '只认 {"ping":…} 与 {type:"ext:page"}', echo: message ?? null }
 }
 
 /* ══════════════════════════════════════════════════════════════

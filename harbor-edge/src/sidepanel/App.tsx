@@ -1,10 +1,10 @@
 /**
- * Harbor 侧边栏（Phase 1c 第二步：骨架 + 连接状态）
+ * Harbor 侧边栏（Phase 2：读当前页）
  *
- * 本步**故意不做对话**（那是 Phase 3）。这里只有三块：
+ * 三块：
  *   ① 顶部：与 Harbor 的连接状态（已连接 / 未连接 + 一键重试）
- *   ② 中间：占位说明
- *   ③ 底部：输入框占位（**不能真发**）
+ *   ② 中间：「读当前页」按钮 + 读到的结果（字数 / 错误）
+ *   ③ 底部：输入框占位（**仍不能真发** —— 对话是 Phase 3）
  *
  * ── 视觉为什么能跟主应用一致 ────────────────────────────────
  *
@@ -12,14 +12,14 @@
  *   · Tailwind theme 从主 config **继承**（harbor-edge/postcss.config.js）；
  *   · CSS 变量来自主 `src/index.css` + `src/styles/theme-primer-dark.css`
  *     （见 sidepanel.css 的 @import）；
- *   · 连 `Button` 组件都是直接 import 主应用那份 —— 零新依赖，
- *     它用的 `bg-cta` / `rounded` / `duration-fast` 全在 theme 里。
+ *   · 连 `Button` 组件都是直接 import 主应用那份 —— 零新依赖。
  *
- * ── 连接状态怎么来 ──────────────────────────────────────────
+ * ── 读页面这条链谁负责哪一段 ────────────────────────────────
  *
- * Service Worker 才是持 native port 的那个（见 extension/service-worker.js）。
- * 这里只做两件事：先读 chrome.storage 的快照（打开即有内容，不用等 SW 醒），
- * 再 `sendMessage` 要一次最新状态，并订阅后续变化。
+ *   侧边栏（这里）：只负责「用户点了」→ 发消息 → 显示结果。
+ *   Service Worker：拿活动标签、`chrome.scripting` 读正文、经 native port 送 Harbor。
+ *   Harbor：包装（wrapWebText）→ 落进会话 → 审计。**这里不做任何包装**——
+ *           防注入的包装是内核的职责，扩展侧自己拼一份就会漂（硬约束 #9）。
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -34,13 +34,22 @@ interface HarborState {
   host: string
 }
 
+interface PageResult {
+  ok: boolean
+  error?: string | null
+  url?: string
+  title?: string
+  chars?: number
+  truncated?: boolean
+  at?: number
+}
+
 const INITIAL: HarborState = { connected: false, lastError: null, lastPongAt: 0, host: 'com.harbor.agent' }
 
 /**
  * 连接状态点 —— 为什么不在扩展侧复用主应用的 `StatusDot`：
  * 那个组件依赖 `@/types` + `@/lib/agentPhase` + `@/lib/statusLanguage` 三处，
- * 而且语义是「**线程**执行状态」（执行中 / 已完成 / 失败…），
- * 跟这里要的「**与 Harbor 的连接**通没通」不是同一件事。
+ * 而且语义是「**线程**执行状态」，跟这里要的「**与 Harbor 的连接**」不是同一件事。
  * 所以按「不能跨目录复用就在扩展侧写一份等价的」办 —— 颜色仍走主应用的 token。
  */
 function ConnectionDot({ connected }: { connected: boolean }) {
@@ -55,12 +64,15 @@ function ConnectionDot({ connected }: { connected: boolean }) {
 
 export function App() {
   const [state, setState] = useState<HarborState>(INITIAL)
+  const [page, setPage] = useState<PageResult | null>(null)
+  const [reading, setReading] = useState(false)
 
   useEffect(() => {
     /* ① 先拿快照：SW 可能要几百毫秒才醒，不能让界面空着 */
     try {
-      chrome.storage.local.get('harborState').then((out) => {
+      chrome.storage.local.get(['harborState', 'harborLastPage']).then((out) => {
         if (out && out.harborState) setState(out.harborState as HarborState)
+        if (out && out.harborLastPage) setPage(out.harborLastPage as PageResult)
       })
     } catch {
       /* 拿不到就用默认值 */
@@ -111,6 +123,30 @@ export function App() {
     requestStatus()
   }, [requestStatus])
 
+  /** ★ 用户主动点击才读页面 —— 没有任何定时器会自己调这个 */
+  const readPage = useCallback(() => {
+    setReading(true)
+    setPage(null)
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'read-page' })
+      if (!p || typeof p.then !== 'function') {
+        setPage({ ok: false, error: '扩展上下文不可用' })
+        setReading(false)
+        return
+      }
+      p.then((res: PageResult | undefined) => {
+        setPage(res && typeof res === 'object' ? res : { ok: false, error: '没有拿到结果' })
+        setReading(false)
+      }).catch((error: unknown) => {
+        setPage({ ok: false, error: String((error as Error)?.message ?? error) })
+        setReading(false)
+      })
+    } catch (error) {
+      setPage({ ok: false, error: String((error as Error)?.message ?? error) })
+      setReading(false)
+    }
+  }, [])
+
   return (
     <div className="flex h-screen flex-col bg-canvas text-fg-primary">
       {/* ── ① 顶部：连接状态 ─────────────────────────────── */}
@@ -129,20 +165,40 @@ export function App() {
         </Button>
       </header>
 
-      {/* ── ② 中间：占位 ─────────────────────────────────── */}
-      <main className="flex flex-1 items-center justify-center px-6">
-        <div className="text-center">
-          <h1 className="text-title font-semibold">Harbor</h1>
-          <p className="mt-2 text-meta text-fg-secondary">浏览器伴侣</p>
-          <p className="mt-3 text-2xs text-fg-tertiary">
-            侧边栏骨架（Phase 1c 第二步）
-            <br />
-            读页面与对话将在后续阶段接入
-          </p>
+      {/* ── ② 中间：读当前页 ─────────────────────────────── */}
+      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-5">
+        <h1 className="text-title font-semibold">Harbor</h1>
+        <p className="text-meta text-fg-secondary">浏览器伴侣</p>
+
+        <Button variant="primary" size="md" loading={reading} onClick={readPage} className="mt-1">
+          {reading ? '读取中…' : '读当前页'}
+        </Button>
+
+        {/* 结果反馈：成功报字数，失败报人话原因（都在这个元素里，便于脚本读回） */}
+        <div
+          role="status"
+          aria-live="polite"
+          className="min-h-[40px] text-center text-2xs text-fg-tertiary"
+        >
+          {page?.ok ? (
+            <>
+              <div className="text-dense text-fg-primary">已读取 {page.chars ?? 0} 字</div>
+              <div className="mt-1 truncate">
+                {page.title || page.url}
+                {page.truncated ? '（正文过长，已截断）' : ''}
+              </div>
+              {/* 如实：host 是单向写，这里只能说「发出去了」（见 service-worker.js 的说明） */}
+              <div className="mt-1">已发送给 Harbor，会存进当前会话</div>
+            </>
+          ) : page && page.error ? (
+            <div className="text-dense text-danger">{page.error}</div>
+          ) : (
+            <div>读取当前标签页的正文，送进 Harbor</div>
+          )}
         </div>
       </main>
 
-      {/* ── ③ 底部：输入框占位（本步**不能真发**）─────────── */}
+      {/* ── ③ 底部：输入框占位（本阶段**仍不能真发**）───────── */}
       <footer className="shrink-0 border-t border-line-hairline p-3">
         <div className="flex items-end gap-2 rounded-base border border-line-hairline bg-bg-raised p-2">
           <textarea
@@ -156,6 +212,9 @@ export function App() {
             发送
           </Button>
         </div>
+        <p className="mt-2 text-2xs text-fg-tertiary">
+          只读你当前打开的标签页，且只在你点按钮时读取。
+        </p>
       </footer>
     </div>
   )

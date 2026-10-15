@@ -5,6 +5,33 @@
 
 ## [未发布]
 
+- **Edge 扩展 Phase 2：读当前页 → 包装 → 送进 Harbor 会话**（2026-10-15，用户拍板走方案 B）。
+  · **三段链路**：**扩展侧** `manifest` 加 `activeTab` + `scripting`（**不加** `host_permissions`），
+    SW 加 `read-page`（只查前台那一个活动标签、只由用户点击触发、内部页按协议拒绝、正文截 512 KB），
+    侧边栏加「读当前页」按钮与结果文案。**host 侧** `native-host.cjs` 认 `ext:page`
+    → 转发主进程（新模块 `core/ext-forward.cjs`，**同步写命名管道**）；
+    `harbor-host.cmd` 传 `HARBOR_DATA_ROOT=%~dp0data`。**Harbor 侧** 新 `core/ext-bridge.cjs`
+    （管道服务器 + token + ingest）、`handlers/ext.cjs`、新 IPC 通道 `ext:activeSession`
+    （渲染层上报「当前会话」）、装配放 `register-handlers.cjs`（**`main.cjs` 零改动**）；
+    包装走内核那份 `wrapWebText`、审计带 `source: 'extension'`。
+  · **★ 实测逼出来的事实（影响文案与认知）**：host 是**单向写** —— 它用
+    `fs.writeFileSync(pipe,…)`（打开→写→关），主进程按「连接结束」切分消息，那时连接已关，
+    **host 读不到主进程的回复**。所以 `delivered: true` 只表示「字节写进了管道」，
+    **不等于**「Harbor 已落进会话」；界面文案按这个口径写（「已发送给 Harbor」），没夸大成「已存入」。
+  · **★ 又一个实测事实**：**删注册表不会断开已建立的连接**（port 独立于注册表）——
+    卸载后要等那条 host 进程退出 / 重开 Edge 才断。已写进验收脚本当断言。
+  · **activeTab 的真实行为（如实记录）**：它只在「用户真手势 invoke 扩展」时授予（点图标），
+    **CDP 驱动伪造不了** —— 所以验收脚本**无法**真机验证「点按钮读正文」那一步；
+    能验的是「拿不到时不静默失败」（真机测到人话文案）。要持续读页面得走 `host_permissions`
+    按域授权（用户已定为**未来可选项**，本阶段不做）。
+  · **验收**：真机 **18/18**（`harbor-edge/tools/accept-phase2.cjs`），含「塞给真 host → 真管道 →
+    会话里真出现被包装的内容（含页面标记）」这条**端到端**；本地探针 **15/15**（真 host 进程 +
+    真管道 + 真会话 + 真审计）。自检 **4619 / 0**（新增第 156 组 42 条）。
+  · **自检真逮到一个 bug（已修）**：`ingest` 用 `session.load()` 判「当前会话还在不在」，
+    而它对**非法 id 会抛** → 桥整个崩、内容静默丢、用户还看到误导的错。改成容错判定
+    （非法 / 被删 / 读坏 一律当「没有当前会话」→ 走兜底新建）。
+  · **报告**：[`docs/research/edge-extension-phase2-report.md`](docs/research/edge-extension-phase2-report.md)
+
 - **Edge 扩展（Phase 1c 第二步）：真侧边栏 UI —— 骨架 + 连接状态**（2026-10-15）。
   · **一句话**：侧边栏真的出现了，并且显示「已连接」—— 那不是写死的文案，是
     **真 Edge → 真扩展 → 真 native host → 真 `Harbor.exe` 回 `{"pong":1}`** 这条链跑通才推出来的。

@@ -33,6 +33,7 @@ import { run as browserIdentityGroup } from './groups/152-browser-identity.mjs'
 import { run as userConstraintsGroup } from './groups/153-user-constraints.mjs'
 import { run as nativeHostGroup } from './groups/154-native-host.mjs'
 import { run as nativeHostInstallGroup } from './groups/155-native-host-install.mjs'
+import { run as extBridgeGroup } from './groups/156-ext-bridge.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
 import { run as browser } from './groups/09-browser.mjs'
@@ -204,4 +205,5 @@ export const GROUPS = [
   nativeHostInstallGroup,
   ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup,
   browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
+  extBridgeGroup,
 ]

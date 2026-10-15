@@ -34,4 +34,8 @@ rem ============================================================================
 
 setlocal
 set ELECTRON_RUN_AS_NODE=1
+rem  Data root (Phase 2). native-host.cjs cannot use core/paths.cjs here: that module
+rem  relies on markPackaged() which main.cjs calls, and under this wrapper main.cjs
+rem  never runs. So the wrapper tells it explicitly ("%~dp0" ends with a backslash).
+set HARBOR_DATA_ROOT=%~dp0data
 "%~dp0Harbor.exe" "%~dp0resources\app\electron\native-host.cjs"
