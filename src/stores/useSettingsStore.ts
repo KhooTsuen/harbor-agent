@@ -76,6 +76,7 @@ function normalize(input: Partial<Settings> | undefined): Settings {
   const fontFamily: FontFamilyId =
     s.fontFamily === 'yahei' ||
     s.fontFamily === 'pingfang' ||
+    s.fontFamily === 'sfpro' ||
     s.fontFamily === 'noto' ||
     s.fontFamily === 'harmony' ||
     s.fontFamily === 'custom'

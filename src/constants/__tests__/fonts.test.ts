@@ -33,6 +33,22 @@ describe('fontStackFor', () => {
     expect(stack).toContain('Microsoft YaHei')
   })
 
+  it('SF Pro：Text / Display 两个名字都在，雅黑兜底', () => {
+    const stack = fontStackFor('sfpro')
+    expect(stack.startsWith('"SF Pro Text"')).toBe(true)
+    /* 实测：单写「SF Pro」在 Windows 上认不出来 —— Text / Display 才管用 */
+    expect(stack).toContain('"SF Pro Display"')
+    expect(stack).toContain('Microsoft YaHei')
+  })
+
+  it('苹果字体档只写名字，不带 url()（授权禁止分发字体文件）', () => {
+    for (const id of ['pingfang', 'sfpro'] as const) {
+      const stack = fontStackFor(id)
+      expect(stack).not.toContain('url(')
+      expect(stack).not.toMatch(/\.(otf|ttf|woff2?)/i)
+    }
+  })
+
   it('自定义：填了名字就用它，并补上兜底', () => {
     const stack = fontStackFor('custom', 'LXGW WenKai')
     expect(stack).toContain('LXGW WenKai')

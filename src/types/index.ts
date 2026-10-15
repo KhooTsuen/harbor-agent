@@ -141,7 +141,7 @@ export interface Project {
 
 /* ── 设置 ──────────────────────────────────────────────────── */
 
-export type FontFamilyId = 'system' | 'yahei' | 'pingfang' | 'noto' | 'harmony' | 'custom'
+export type FontFamilyId = 'system' | 'yahei' | 'pingfang' | 'sfpro' | 'noto' | 'harmony' | 'custom'
 export type ASCIIQuality = 'high' | 'medium' | 'low' | 'static'
 
 export interface Settings {

@@ -5,6 +5,25 @@
 
 ## [未发布]
 
+- **界面字体：新增「SF Pro（苹果）」档位 —— 只写字体名，一个字体文件都不分发**（2026-10-15）。
+  · **为什么**：想在 Windows 上把界面换成苹果的 San Francisco。但 SF Pro / 苹方的官方许可
+    （<https://developer.apple.com/fonts/> 的 LICENSE AGREEMENT）明确写着：只许用于「给 Apple 平台做界面稿」，
+    禁止用于非 Apple 系统的软件，也**禁止嵌入任何软件产品 / 再分发**。所以做法只能是
+    「**档位负责让它能被选中，字体由用户自己装**」—— 本应用不打包、不分发任何字体文件。
+  · **改法**：`FontFamilyId` 加 `'sfpro'`；`constants/fonts.ts` 加一档；`useSettingsStore` 白名单加它
+    （不加就会被静默归一成 system）；设置页 hint 补上「苹果字体仅限你个人在本机自用」。
+  · **★ 名字怎么写的（实测，不是照印象）**：Windows headless Chromium 用 canvas `measureText`
+    对照「不存在的字体」逐条量过 ——
+    · `-apple-system` **认不出来**（与「不存在」完全同宽）→ 它在 Windows 上是**空转**，
+      现有 `system` 档的栈里那个 `-apple-system` 从来没起作用过（真正生效的一直是后面的 `Segoe UI` + `Microsoft YaHei UI`）；
+    · 单写 `SF Pro` 也**认不出来**；`SF Pro Text` / `SF Pro Display` **认得出** → 栈里两个都写
+      （跟「苹方」那档同一个坑：家族名与全套名在 GDI / DirectWrite 上表现不同）。
+  · **验证**：三份装机副本的分发产物逐目录扫过 —— **版权字体（SF/PingFang/Inter/Plex）命中 0 个**；
+    每份 185 个字体文件**全部是 KaTeX / pdfjs 的 Liberation**（MIT / OFL，公式与 PDF 必需，非本轮引入）。
+    `dist/assets` 里有 4 个 js/css 提到 `SF Pro` —— 那是**字体名字符串**，不是字体文件。
+    单测 10/10（含一条「苹果字体档只写名字、不许出现 `url()` 或 `.otf/.ttf/.woff`」）。
+  · **边界**：零新依赖；未碰 `electron/**`；不分发字体文件（授权要求）；苹方档与新档逻辑同构，行为一致。
+
 - **用量统计增强 · 功能 A-展示（第三批：展示层）—— 「花费构成」节**（2026-10-15，A-展示收尾；只改渲染层）。
   · **做什么**：设置 →「数据与用量」→「用量」节下方新增「花费构成」：
     输入未命中（全价）/ 输入命中（缓存）/ 输出（含推理）/ 其中·推理 四格，各显示 token + 估算金额，

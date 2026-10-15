@@ -11,6 +11,12 @@ import type { FontFamilyId } from '@/types'
 
    这几套里只有「微软雅黑」是 Windows 自带的，其它要自己装。
    装了没装检测不出来（浏览器不告诉你），所以选错就回退到雅黑。
+
+   ★ 这里**只写字体名，不带任何字体文件**。苹果那两套（SF Pro / 苹方）的授权
+     明确禁止把它们嵌入、随软件分发，也禁止用在非 Apple 系统的产品里
+     （见 https://developer.apple.com/fonts/ 的 LICENSE AGREEMENT）。
+     所以本应用**不分发**它们：档位只负责「你自己装了就能选上」，
+     装没装、用不用得上，由你自己负责。分发产物里一个字体文件都没有。
    ══════════════════════════════════════════════════════════════ */
 
 export interface FontOption {
@@ -47,6 +53,24 @@ export const FONT_OPTIONS: readonly FontOption[] = [
      */
     stack: `"PingFang SC", "苹方-简", ${FALLBACK}`,
     hint: 'macOS 自带；Windows 要自己装（装了才生效，否则回退雅黑）',
+  },
+  {
+    id: 'sfpro',
+    label: 'SF Pro（苹果）',
+    /*
+     * ⚠️ 实测（Windows headless Chromium，canvas measureText 对照不存在的字体）：
+     *   · 「SF Pro」**认不出来**（跟不存在完全同宽）—— 别写这个名字；
+     *   · 「SF Pro Text」「SF Pro Display」**都认得出来**（两个都要写：
+     *     系统按字号自动选的家族不同，小字走 Text、大字走 Display —— 见 SF 的命名）。
+     *   本机实测装的是 SF-Pro-Text-* 与 SF-Pro-Display-* 两套（各 9 字重）。
+     *
+     * ⚠️ 授权：SF Pro 是 Apple 字体，官方许可**只允许**用于「为 Apple 平台做 UI 稿」，
+     *   明禁用于非 Apple 系统的软件、禁止嵌入分发。所以这里**只写名字、不打包字体**：
+     *   用的人自己装（在自己机器上个人使用），本应用分发产物里不含任何字体文件。
+     *   没装就静默回退到雅黑，不会更差。
+     */
+    stack: `"SF Pro Text", "SF Pro Display", "SF Pro", ${FALLBACK}`,
+    hint: '苹果字体，授权只允许个人自用；要自己装（装了才生效，否则回退雅黑）',
   },
   {
     id: 'noto',
