@@ -58,23 +58,25 @@ const ALL = [
   markStepDone,
 ]
 
-/** 哪些工具算「写操作」（只读模式下要拦，ask 模式下要确认） */
-/* remember 也算写操作：记忆会影响之后所有对话，记错比改错文件影响更久 */
 /*
- * browse 也算：它会联网，而且会占用用户正在看的浏览器标签（有副作用）。
- * 归到「写操作」里 —— readonly 档要拦、ask 档要确认。
+ * ── 两个集合，别混（2026-10-15 拆开）──────────────────────────
  *
- * generate_image 更要算：它**要花钱**（按张计费），还会往工作目录写文件，
- * 而且慢。放进来用户才有机会先看一眼 prompt。
+ * ① `WRITE_TOOLS`：**有副作用**的工具 —— 只读档拦、ask 档确认。
+ * ② `MUTATING_TOOLS`：**会改动东西**的工具 —— 「只分析，不修改」那一轮拦。
  *
- * `ask_user` **不算**：它本来就是「问用户」，再叠一层权限确认就是同一个问题问两遍。
- * 而且它不改文件、不跑命令、不联网。
+ * 为什么拆：原来只有一个，于是「只分析」连 `browse`（纯读网页）也拦掉了 ——
+ * 而用户说这句话的本意是「别改我的文件」。浏览网页不该被它禁掉
+ * （真机事故见 `core/user-constraints.cjs` 的文件头）。
+ * ⚠ `browse_click` / `browse_type` **仍算改动**：它们会改变外部状态（提交表单 / 下单）。
  *
- * `download` 算：它既联网又往磁盘写东西（真机反馈 9b 新增的工具）。
- *
- * `mark_step_done` **不算**（2026-10-13）：它只更新计划进度（改 `plan` 里的 `[x]`），
- * 不改用户文件、不联网、不跑命令。放进来的话 ask 档**每打一次卡就弹一次确认框**，功能没法用。
- * 它的内核落点是 `task-plan.cjs` 的 `markStepDone`（越界不抛、幂等）。
+ * remember 也算（记忆影响之后所有对话，记错比改错文件影响更久）。
+ * browse 五个也算「有副作用」：联网 + 占用用户正在看的标签。
+ * generate_image 更要算：**要花钱**（按张计费）、往工作目录写文件、慢 —— 放进来用户才有机会先看 prompt。
+ * `ask_user` **不算**：它本来就是「问用户」，再叠一层确认是同一个问题问两遍；它也不改文件不联网。
+ * `download` 算：既联网又写磁盘。
+ * `mark_step_done` **不算**（2026-10-13）：只更新计划进度，不改用户文件不联网不跑命令。
+ *   放进来会让 ask 档**每打一次卡弹一次确认框**。它「只分析轮拦下」是自己补的门
+ *   （见 `tools/mark_step_done.cjs`），不靠这个集合。
  */
 const WRITE_TOOLS = new Set([
   'write_file',
@@ -89,6 +91,18 @@ const WRITE_TOOLS = new Set([
   'generate_image',
   'remember',
   'download',
+])
+
+/** 会改动东西的 —— 比 `WRITE_TOOLS` 少了纯读的那四个（browse / elements / nav / ax） */
+const MUTATING_TOOLS = new Set([
+  'write_file',
+  'edit_file',
+  'run_shell',
+  'generate_image',
+  'remember',
+  'download',
+  'browse_click',
+  'browse_type',
 ])
 
 /** 哪些工具会改文件（审计里记下来） */
@@ -183,6 +197,7 @@ function catalog() {
 module.exports = {
   ALL,
   WRITE_TOOLS,
+  MUTATING_TOOLS,
   FILE_WRITERS,
   byName,
   isMcpTool,

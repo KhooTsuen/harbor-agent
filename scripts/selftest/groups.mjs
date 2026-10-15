@@ -30,6 +30,7 @@ import { run as providerBalanceGroup } from './groups/149-provider-balance.mjs'
 import { run as usageReasoningGroup } from './groups/150-usage-reasoning.mjs'
 import { run as pricingGroup } from './groups/151-pricing.mjs'
 import { run as browserIdentityGroup } from './groups/152-browser-identity.mjs'
+import { run as userConstraintsGroup } from './groups/153-user-constraints.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
 import { run as browser } from './groups/09-browser.mjs'
@@ -196,6 +197,7 @@ export const GROUPS = [
   strictModeGroup, markStepDoneGroup, memorySearchGroup, fsRootScopeGroup,
   promptSplitGroup, providerBalanceGroup, usageReasoningGroup, pricingGroup,
   browserIdentityGroup,
+  userConstraintsGroup,
   ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup,
   browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
 ]

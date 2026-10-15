@@ -31,6 +31,7 @@ const { resolveRoute, providerForRun } = require('./loop-route.cjs')
 const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
+const userConstraints = require('./user-constraints.cjs')
 /* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps；这个 200 只防「预算设成不限而模型抽风」。★ 两个机制不能做同一件事。 */
 const MAX_TURNS = 200
 
@@ -76,14 +77,10 @@ async function runLoop(options) {
     taskId: options.taskId ?? '',
     changeSetId: options.changeSetId ?? '',
     permission: config.tools.permission,
-    /* 用户约束是运行时约束，不依赖模型遵守 Prompt。 */
+    /* 用户约束是运行时约束，不依赖模型遵守 Prompt（判据见 core/user-constraints.cjs） */
     allowTools: threadSettings.allowTools !== false,
-    allowWrite:
-      threadSettings.allowWrite !== false &&
-      mode !== 'plan' &&
-      !/(只分析|不要修改|禁止修改|不许写|不要写文件|不执行修改)/.test(userText),
-    allowNetwork:
-      threadSettings.allowNetwork !== false && !/(不联网|不要联网|禁止联网|离线)/.test(userText),
+    allowWrite: userConstraints.allowsWrite({ userText, mode, threadAllowWrite: threadSettings.allowWrite }),
+    allowNetwork: userConstraints.allowsNetwork({ userText, threadAllowNetwork: threadSettings.allowNetwork }),
     temporary: options.temporary === true,
     shellTimeout: config.tools.shellTimeout,
     shellPolicy: config.tools.shellPolicy,

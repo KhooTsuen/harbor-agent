@@ -21,7 +21,7 @@ const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
 const registry = require('./registry.cjs')
 const taskIntent = require('../task-intent.cjs') /* 意图/结果两段落盘，见它的文件头 */
-const { byName, isMcpTool, validateArgs, WRITE_TOOLS } = registry
+const { byName, isMcpTool, validateArgs, WRITE_TOOLS, MUTATING_TOOLS } = registry
 const { runWithPathPermission, auditCall, affectedFiles } = require('./permission.cjs')
 const gateDenied = require('../gate-denied.cjs')
 
@@ -180,7 +180,7 @@ async function execute(name, args, ctx = {}) {
     return `错误：本次对话已关闭工具调用，${name} 被拒绝。`
   }
 
-  if (ctx.allowWrite === false && isWrite) {
+  if (ctx.allowWrite === false && MUTATING_TOOLS.has(name)) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
     return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
   }
