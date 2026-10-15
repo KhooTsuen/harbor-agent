@@ -26,6 +26,7 @@ const P = require('./ext-protocol.cjs')
  *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
  *   send: (name: string, payload: object) => void,
  *   getActiveSession?: () => string,
+ *   chat?: { handleSend: Function, handleResume: Function },
  * }} deps
  */
 function createOps(deps) {
@@ -34,6 +35,8 @@ function createOps(deps) {
   const wrap = deps.wrap
   const send = deps.send
   const getActiveSession = deps.getActiveSession ?? (() => '')
+  /* 侧边栏发消息那条路（Phase 3b）—— 它自己会回 `{ok:false,error}`（见下面 handle） */
+  const chat = deps.chat ?? null
 
   /**
    * `ext:page`：扩展读到的页面内容 → 包装 → 落会话 → 审计 → 推给渲染层。
@@ -119,6 +122,10 @@ function createOps(deps) {
   const table = {
     [P.KIND.EXT_PAGE]: (payload) => ingestPage(payload),
     [P.KIND.SESSION_LIST]: () => listSessions(),
+    /* Phase 3b：侧边栏发消息 → 交给渲染层跑；重连要流快照；问「当前打开哪条」 */
+    [P.KIND.CHAT_SEND]: (payload) => chat.handleSend(payload),
+    [P.KIND.CHAT_RESUME]: (payload) => chat.handleResume(payload),
+    [P.KIND.SESSION_ACTIVE]: () => ({ sessionId: String(getActiveSession() ?? '') }),
   }
 
   /**
@@ -138,7 +145,14 @@ function createOps(deps) {
       }
     }
     try {
-      return { ok: true, data: fn(payload) }
+      const data = fn(payload)
+      /*
+       * ★ `chat:send` / `chat:resume` 这类**自己**给 `{ok:false,error:{code,message}}`
+       *   （忙 / 没窗口 / 没会话都是正常业务分支，不是异常）—— 原样透传，
+       *   别再用 `{ok:true,data:…}` 套一层（那会让 bridge 拿不到 code）。
+       */
+      if (data && typeof data === 'object' && data.ok === false && data.error) return data
+      return { ok: true, data }
     } catch (error) {
       return {
         ok: false,

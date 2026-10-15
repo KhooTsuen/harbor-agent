@@ -57,12 +57,22 @@ function publish(patch) {
   } catch {
     /* storage 写不进去不该影响连接本身 */
   }
+  broadcast({ type: 'status', state })
+}
+
+/**
+ * 广播一条消息给开着的侧边栏（没人听时 Promise 会 reject，忽略即可）。
+ *
+ * Phase 3b 起多了一个用途：**流式分片**（`{type:'harbor-push'}`）。
+ * 用 broadcast 而不是 storage：分片是**瞬时**的，塞 storage 既慢又没意义
+ * （侧边栏没开时丢几片没关系 —— 重开走 `chat:resume` 拿快照）。
+ */
+function broadcast(message) {
   try {
-    /* 侧边栏可能没开着 —— 没有接收者时 Promise 会 reject，忽略即可 */
-    const p = chrome.runtime.sendMessage({ type: 'status', state })
+    const p = chrome.runtime.sendMessage(message)
     if (p && typeof p.catch === 'function') p.catch(() => {})
   } catch {
-    /* 同上 */
+    /* 同上：没有接收者 */
   }
 }
 
@@ -105,6 +115,15 @@ export function connect() {
   port.onMessage.addListener((msg) => {
     /* ★ 判据在这里：host **真的回了消息**才算连上 */
     publish({ connected: true, lastError: null, lastPongAt: Date.now(), lastReply: msg })
+    /*
+     * Phase 3b：主进程的**主动推送**（流式分片）—— 特征是**没有 id**（见
+     * electron/core/ext-protocol.cjs 的 push）。它不属于任何一次请求，
+     * 所以不走 pending，而是**广播**给开着的侧边栏（谁在看谁处理）。
+     */
+    if (msg && msg.push === true) {
+      broadcast({ type: 'harbor-push', push: msg })
+      return
+    }
     /* 按 id 兑现（只看 id —— 见文件头：回帧的 type 与请求不同名） */
     if (msg && typeof msg.id === 'string' && pending.has(msg.id)) {
       const entry = pending.get(msg.id)

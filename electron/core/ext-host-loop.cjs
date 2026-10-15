@@ -90,7 +90,32 @@ function createDispatcher(client) {
       return { type: 'ext:sessionList.result', ok: false, id, error: res.error.message, code: res.error.code }
     }
 
-    return { error: '只认 {"ping":…} / {type:"ext:page"} / {type:"ext:sessionList"}', echo: message ?? null }
+    if (type === 'ext:sessionActive') {
+      const res = await client.request(P.KIND.SESSION_ACTIVE, {})
+      if (res.ok) {
+        return { type: 'ext:sessionActive.result', ok: true, id, sessionId: String(res.payload?.sessionId ?? '') }
+      }
+      return { type: 'ext:sessionActive.result', ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
+    /*
+     * Phase 3b：侧边栏发消息 / 重连要流快照 —— 都是「转给主进程拿结果」，
+     * 与上面两条同一种形状（host 只做转发，业务判断全在主进程）。
+     */
+    if (type === 'chat:send' || type === 'chat:resume') {
+      const isSend = type === 'chat:send'
+      const kind = isSend ? P.KIND.CHAT_SEND : P.KIND.CHAT_RESUME
+      /* 续流按 **sessionId** 问（真实那轮的 requestId 是渲染层生成的，扩展侧没听过它） */
+      const ask = isSend ? { text: String(obj.text ?? '') } : { sessionId: String(obj.sessionId ?? '') }
+      const res = await client.request(kind, ask)
+      if (res.ok) return { ...res.payload, type: `${type}.result`, ok: true, id }
+      return { type: `${type}.result`, ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
+    return {
+      error: '只认 {"ping":…} / {type:"ext:page"} / {type:"ext:sessionList"} / {type:"ext:sessionActive"} / {type:"chat:send"} / {type:"chat:resume"}',
+      echo: message ?? null,
+    }
   }
 }
 

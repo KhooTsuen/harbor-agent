@@ -1,22 +1,13 @@
 /**
- * 自检 / 扩展通道协议 + 分派表 + host 循环（Phase 3a）
+ * 自检 / 扩展通道那一层（Phase 3a 起）：协议 + 分派表 + host 循环
  *
- * 156 守的是「页面内容落会话」那条链（Phase 2 起的语义），本组守 Phase 3a 新增的
- * **双向**那一层，四块：
+ * 156 守「页面内容落会话」那条链（Phase 2 语义）；本组守**双向**那一层：
+ * ① 协议层（`ext-protocol.cjs`）的报文构造与判据（`request`/`reply`/`failure`/`push`、
+ *    「应答 vs 推送」靠**有没有 id**、错误码）；② 分派表（`ext-ops.cjs`，真 session +
+ *    假 audit/send；★ 抛异常必须变 `INTERNAL`）；③ host 循环（`ext-host-loop.cjs`，
+ *    **假 client** 驱动）；④ 接线（白名单、`runInteractive`、`main.cjs` 仍 0 改动）。
  *
- *   ① **协议层**（`core/ext-protocol.cjs`）：帧编解码与 154 共用同一份实现；
- *      这里盯**报文构造与判据** —— `request` / `reply` / `failure` / `push` 的形状、
- *      「应答 vs 推送」靠**有没有 id** 区分、错误码清单齐全。
- *   ② **分派表**（`core/ext-ops.cjs`）：kind → 处理函数的语义。用**真 session**
- *      （跑在自检隔离数据根里）+ 假 audit / 假 send，测真逻辑不起管道。
- *      ★ 有一条极重要：处理函数**抛异常**时必须变成 `INTERNAL`，**不能让管道服务器倒**。
- *   ③ **host 循环**（`core/ext-host-loop.cjs`）：`createDispatcher` 用一个**假 client**
- *      驱动 —— 验「扩展请求 → 什么回帧」的映射，不用起真进程。
- *   ④ **接线**：`native-host.cjs` 的白名单换掉了 `ext-forward`、`require.main === module`
- *      进的是 `runInteractive()`；`main.cjs` **仍然 0 改动**。
- *
- * ⚠️ 真管道往返（起真 host 子进程）不在自检里 —— 那要起进程 + 真管道，属于
- *    `harbor-edge/tools/accept-phase3a.cjs` 的活（真机验收）。
+ * ⚠️ 真管道往返不在自检里 —— 属于 `harbor-edge/tools/accept-phase3a.cjs`（真机验收）。
  */
 
 import { join, readFileSync, require, ROOT } from '../env.mjs'
@@ -54,15 +45,17 @@ export async function run() {
   check('★ 裸 JSON（无 id）不算协议帧 → 走兼容路径', P.isProtocolFrame({ kind: 'ext:page', url: 'u' }) === false)
 
   const codes = Object.values(P.ERR)
-  check('★ 错误码清单齐全（7 条，两侧共用）', codes.length === 7 && codes.includes('NO_HARBOR') && codes.includes('TIMEOUT') && codes.includes('BAD_TOKEN'), codes.join(','))
+  /* ★ 不判**总数**（会随阶段涨 —— 硬约束 8）；只判「这些码必须在」 */
+check(
+  '★ 错误码含 3a+3b 全部（两侧共用）',
+  ['NO_HARBOR', 'TIMEOUT', 'BAD_TOKEN', 'BAD_FRAME', 'UNKNOWN_KIND', 'INTERNAL', 'TOO_LARGE', 'SESSION_BUSY', 'NO_SESSION', 'NO_WINDOW'].every((c) => codes.includes(c)),
+  codes.join(','),
+)
   check('★ 帧上限：Edge 侧 1MB、管道侧 2MB（管道更宽，因 JSON 转义会膨胀）', P.MAX_FRAME === 1024 * 1024 && P.MAX_PIPE_FRAME === 2 * 1024 * 1024)
   check('★ host 超时是 8s（比扩展侧 15s 短 —— 让 host 先超时、回带 code 的人话）', P.HOST_TIMEOUT_MS === 8000)
 
   /* 编解码实现与 154 是**同一份**（不是各写一套） */
-  check(
-    '★ 帧编解码只有一处实现（native-host 转出的与协议层是同一个函数）',
-    H.encodeFrame === P.encodeFrame && H.decodeFrames === P.decodeFrames,
-  )
+  check('★ 帧编解码只有一处实现（native-host 转出的与协议层是同一个函数）', H.encodeFrame === P.encodeFrame && H.decodeFrames === P.decodeFrames)
 
   /* ── ② 分派表（真 session，隔离数据根）── */
   group('扩展通道 · 分派表 ext-ops（落会话 / 列表 / 错误）')
@@ -84,7 +77,12 @@ export async function run() {
 
   const made = []
   try {
-    check('★ 分派表认这两个 kind（3a 的全部）', ops.kinds().sort().join(',') === 'ext:page,session:list', ops.kinds().join(','))
+    /* ★ 只判「这几个必须在」（不判全等 —— kind 会随阶段涨） */
+check(
+  '★ 分派表认 3a 的 kind（ext:page / session:list）',
+  ['ext:page', 'session:list'].every((k) => ops.kinds().includes(k)),
+  ops.kinds().join(','),
+)
 
     const meta = session.create({ title: '自检：3a 当前会话', mode: 'pair' })
     made.push(meta.id)
@@ -207,8 +205,7 @@ export async function run() {
   const hostSrc = readFileSync(join(ROOT, 'electron/native-host.cjs'), 'utf8')
   const loopSrc = readFileSync(join(ROOT, 'electron/core/ext-host-loop.cjs'), 'utf8')
   const mainSrc = readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8')
-  /* ★ 这几条断言只扫**代码**（去掉块注释）：注释里提到旧模块名 / 说明「保命线在别处」
-     都是对的，代码里真用才是问题（与 154 里「不 require electron」那条同一个道理）。 */
+  /* ★ 只扫**代码**（去块注释）：注释里提到旧模块名是对的，代码里真用才是问题 */
   const codeOnly = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '')
 
   check('★ native-host 代码里不再 require 已删的 ext-forward', !/ext-forward\.cjs/.test(codeOnly(hostSrc)))
@@ -232,8 +229,8 @@ export async function run() {
   group('扩展通道 · 裸 JSON 兜底（真管道，旧 host → 新主进程）')
 
   /*
-   * 为什么必须真跑：这条兜底的判据是「fatal + 首字节 `{`」——纯函数测不出来。
-   * 场景来源：用户在 Edge 开着时升级 Harbor，旧 host 进程还活着，发的就是裸 JSON。
+   * 必须真跑：判据是「fatal + 首字节 `{`」——纯函数测不出来。
+   * 场景：用户 Edge 开着时升级 Harbor，旧 host 还活着，发的就是裸 JSON。
    */
   const net = require('node:net')
   const tmpDir2 = join(ROOT, 'data', 'selftest-data', 'ext-bridge-legacy')

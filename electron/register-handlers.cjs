@@ -143,11 +143,31 @@ function registerHandlers(deps) {
 
   require('./handlers/log.cjs').register({ ipcMain })
   require('./handlers/compact.cjs').register({ ipcMain })
+  /*
+   * 侧边栏发消息（Phase 3b）：主进程**不自己跑**那一轮 —— 落盘只在渲染层，
+   * 自己跑就没有 replyPersistence（见 core/ext-chat.cjs 的文件头）。
+   * 所以这里建一个 relay，把「渲染层跑起来」这件事转出去，并旁听事件喂侧边栏。
+   */
+  const chatRelay = require('./core/ext-chat.cjs').createChatRelay({
+    streams,
+    getMainWindow,
+    send,
+    log,
+  })
   require('./handlers/chat.cjs').register({
     ipcMain,
     config,
     log,
-    send,
+    /*
+     * ★ 给 chat.cjs 的 `send` 包一层（Phase 3b）—— **不新增参数、不改 chat.cjs 逻辑**：
+     *   一轮里每条 `chat:event`（含 content/reasoning，**已经过 50ms 合批**）
+     *   复制一份给扩展通道（只读旁听，见 core/ext-chat.cjs）。
+     *   包在这里而不是 chat.cjs 里，是因为那边**正好 300 行贴线**。
+     */
+    send: (channel, payload) => {
+      if (channel === 'chat:event') chatRelay.onChatEvent(payload)
+      send(channel, payload)
+    },
     streams,
     getWorkdir: currentWorkdir,
     resolveWorkdir,
@@ -168,7 +188,11 @@ function registerHandlers(deps) {
     audit: require('./core/audit.cjs'),
     wrap: require('./core/tools/_web-note.cjs').wrapWebText,
     log,
+    /* Phase 3b：侧边栏发消息那条路进分派表 */
+    chat: chatRelay,
   })
+  /* 互相依赖所以晚绑：relay 要用 bridge 的 push 与 activeSession（见 ext-chat.cjs） */
+  chatRelay.setBridge(extBridge)
   require('./handlers/ext.cjs').register({ ipcMain, bridge: extBridge })
   /* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
   require('./handlers/browser.cjs').register()

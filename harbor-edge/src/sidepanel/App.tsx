@@ -3,9 +3,9 @@
  *
  * 四块：
  *   ① 顶部：与 Harbor 的连接状态（已连接 / 未连接 + 一键重试）
- *   ② 中间：「读当前页」按钮 + 读到的结果（字数 / 错误）
- *   ③ 会话列表（Phase 3a 新增，**只读** —— 不点进、不发消息）
- *   ④ 底部：输入框占位（**仍不能真发** —— 对话是 3b）
+ *   ② 「读当前页」按钮 + 读到的结果（字数 / 错误）
+ *   ③ 会话列表（Phase 3a，**只读** —— 不点进、不发消息）
+ *   ④ 对话（Phase 3b：输入框 + 流式回复，见 ChatPanel.tsx）
  *
  * ── 视觉为什么能跟主应用一致 ────────────────────────────────
  *
@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { SessionList } from './SessionList'
+import { ChatPanel } from './ChatPanel'
 
 /* global chrome */
 
@@ -199,24 +200,8 @@ export function App() {
       {/* ── ③ 会话列表（只读，Phase 3a）───────────────────── */}
       <SessionList />
 
-      {/* ── ③ 底部：输入框占位（本阶段**仍不能真发**）───────── */}
-      <footer className="shrink-0 border-t border-line-hairline p-3">
-        <div className="flex items-end gap-2 rounded-base border border-line-hairline bg-bg-raised p-2">
-          <textarea
-            rows={1}
-            disabled
-            placeholder="对话功能开发中（Phase 3）"
-            aria-label="输入框（占位）"
-            className="max-h-24 min-h-[28px] flex-1 resize-none bg-transparent text-dense text-fg-primary placeholder:text-fg-tertiary focus:outline-none disabled:cursor-not-allowed"
-          />
-          <Button size="sm" variant="primary" disabled>
-            发送
-          </Button>
-        </div>
-        <p className="mt-2 text-2xs text-fg-tertiary">
-          只读你当前打开的标签页，且只在你点按钮时读取。
-        </p>
-      </footer>
+      {/* ── ④ 对话（Phase 3b：发消息 + 流式回复）──────────── */}
+      <ChatPanel connected={state.connected} />
     </div>
   )
 }

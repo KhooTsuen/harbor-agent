@@ -34,39 +34,40 @@ const V = 1
 const MAX_FRAME = 1024 * 1024
 
 /**
- * **管道**帧上限（2 MB）—— 比 Edge 那侧宽，是故意的：`ext:page` 的正文在扩展侧
- * 已截到 512 KB，但 JSON 转义（引号 / 换行 / 反斜杠）会膨胀，极端内容接近 1 MB。
- * 管道是我们自己的（不经 Chromium），给 2 MB 余量；超了判 fatal 断开。
+ * **管道**帧上限（2 MB）—— `ext:page` 正文截到 512 KB，JSON 转义后会膨胀；
+ * 管道不经 Chromium，给 2 MB 余量，超了判 fatal 断开（对面不是我们的 host）。
  */
 const MAX_PIPE_FRAME = 2 * 1024 * 1024
 
 /**
- * host 等主进程应答的期限（8 秒）—— `session:list` 是本地读盘，正常 < 50ms；
- * 给到 8s 是容忍「主进程正在跑重活」这类偶发卡顿。扩展侧另有 15s 上限（故意更长），
- * 让 host **先**超时、回一条带 code 的人话，比扩展自己超时（看不到原因）有用。
+ * host 等主进程应答的期限（8 秒）—— 本地读盘正常 < 50ms，8s 是容忍主进程跑重活。
+ * 扩展侧另有 15s（故意更长）：让 host **先**超时、回一条带 code 的人话。
  */
 const HOST_TIMEOUT_MS = 8000
-
-/** 消息类型（kind）—— 两侧共用。3a 只有前两个走管道 */
+/** 消息类型（kind）—— 两侧共用。前两对走请求/应答，CHAT_EVENT 走推送 */
 const KIND = {
-  /** 扩展读到的页面内容 → 落会话（Phase 2 起） */
-  EXT_PAGE: 'ext:page',
-  /** 会话列表（Phase 3a 新增） */
-  SESSION_LIST: 'session:list',
+  EXT_PAGE: 'ext:page', // 扩展读到的页面内容 → 落会话（Phase 2）
+  SESSION_LIST: 'session:list', // 会话列表（Phase 3a）
+  CHAT_SEND: 'chat:send', // 侧边栏发消息（3b）→ 主进程转给渲染层跑这一轮
+  CHAT_RESUME: 'chat:resume', // 重连 / 重开后要一份流快照（3b）
+  SESSION_ACTIVE: 'session:active', // Harbor 界面当前打开的是哪条会话（3b）
+  CHAT_EVENT: 'chat:event', // push：一轮里的流事件（3b，**无 id**）
 }
 
 /**
  * 错误码 —— **唯一清单**。侧边栏文案由扩展侧渲染（它跑在浏览器里，require 不到
  * 这个模块），但**码**是契约：只有这里有定义，两侧的行为分支都按它。
  */
-const ERR = {
-  NO_HARBOR: 'NO_HARBOR', /* Harbor 没在运行（管道不存在） */
+const ERR = {  NO_HARBOR: 'NO_HARBOR', /* Harbor 没在运行（管道不存在） */
   TIMEOUT: 'TIMEOUT', /* 主进程没在期限内回 */
   BAD_TOKEN: 'BAD_TOKEN', /* token 不对 */
   BAD_FRAME: 'BAD_FRAME', /* 帧解不开 */
   UNKNOWN_KIND: 'UNKNOWN_KIND', /* 不认识的 kind */
   INTERNAL: 'INTERNAL', /* 处理时抛异常 */
   TOO_LARGE: 'TOO_LARGE', /* 超出单帧上限 */
+  SESSION_BUSY: 'SESSION_BUSY', /* 那条会话正在别处跑（拒绝并发） */
+  NO_SESSION: 'NO_SESSION', /* 目标会话不存在 */
+  NO_WINDOW: 'NO_WINDOW', /* 主窗口不在（C-α：渲染层是执行者，缺它跑不了） */
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -171,10 +172,13 @@ function failure({ id = '', kind = '', code = '', message = '' } = {}) {
 }
 
 /**
- * 主进程 → host：**主动推送**（3b 的流式分片用；3a 不调，但形状现在定死）。
+ * 主进程 → host：**主动推送**（3b 的流式分片用）。
  *
  * ★ 推送与应答靠「有没有 `id`」区分：有 `id` = 应答；没有 = 推送。
- *   这条现在不写进代码注释就会被后人再改一次协议。
+ *
+ * `kind = chat:event` 时 payload 的字段（3b 钉死）：
+ *   `requestId` 哪一轮 · `sessionId` 哪条会话 · `seq` 单调序号（缺口语义）
+ *   `type` content/reasoning/… · `text` 增量正文 · `done` 这一轮结束
  *
  * @param {{ kind?: string, payload?: object }} [input]
  */

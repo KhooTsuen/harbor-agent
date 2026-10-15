@@ -21,6 +21,9 @@ import { createServer } from 'node:http'
 
 const PORT = Number(process.env.FAKE_PORT ?? 9977)
 
+/** `slow` 出片间隔（默认 5 秒）。可调是为了验收脚本能跑快些（3b 要在「还在跑」时再发一条）。 */
+const SLOW_MS = Number(process.env.FAKE_SLOW_MS ?? 5000)
+
 /* replan 模式的轮次计数（一次对话会依次调用，所以按进程累计） */
 let planRounds = 0
 /* loop 模式的轮次计数（AG-041）：偶数轮 A、奇数轮 B */
@@ -107,8 +110,13 @@ const server = createServer((req, res) => {
         clearInterval(timer)
         res.end()
       }
-    }, 5000)
-    req.on('close', () => clearInterval(timer))
+    }, SLOW_MS)
+    /*
+     * ⚠️ 绑 **`res`** 的 close，不能绑 `req` 的：HTTP keep-alive 下 `req` 的 close
+     * 在「请求体读完」就触发（不是连接断了）→ 定时器当场被清、**一片都发不出去**
+     * （3b 真机排查逮到：假上游明明收到 POST，客户端却没内容）。
+     */
+    res.on('close', () => clearInterval(timer))
     return
   }
 

@@ -4,32 +4,38 @@
 主应用是 Electron 窗口，这里是浏览器侧的扩展 + 让两者说话的 native host。
 
 > 阶段与实测记录见 `docs/research/edge-extension-*.md`。
-> 当前状态：**Phase 3a 完成** —— 侧边栏能**只读列出** Harbor 的会话（双向通道已通）。
-> 发消息 / 流式回复是 **3b**，会话选择器与点击切换是 **3c**，Agent 操作网页是 Phase 4 —— 都**未开工**。
+> 当前状态：**Phase 3b 完成** —— 侧边栏能**发消息**、看**流式回复**，且与主窗口**同一条会话**。
+> 会话选择器与点击切换是 **3c**，Agent 操作网页是 Phase 4 —— **未开工**。
 
 ## ★ 已知缺口（别忘）
 
-### 只能注入「Harbor 界面当前打开的那条会话」
+### 侧边栏发给「当前打开的那条会话」（选目标仍是 3c）
 
-侧边栏点「读当前页」→ 内容落进 **Harbor 主窗口里当前打开的那条会话** ——
+侧边栏发消息 / 点「读当前页」→ 都落进 **Harbor 主窗口里当前打开的那条会话** ——
 渲染层用 `src/hooks/useExtBridge.ts` 把 `activeThreadId` 报给主进程
 （通道 `ext:activeSession`，见 `electron/handlers/ext.cjs`）。
 
-**因此多了一条硬约束**：想注入到某条指定会话，就得**先打开 Harbor、切到那条会话、
-再回浏览器点按钮**。**不打开 Harbor 就没法选目标**。
+**因此多了一条硬约束**：想发到某条指定会话，就得**先打开 Harbor、切到那条会话、
+再回浏览器发**。**不打开 Harbor 就没法选目标**。
 
-> Phase 3a 已经能**列出**会话了（`session:list` + `SessionList.tsx`），
+> Phase 3a 已能**列出**会话（`session:list` + `SessionList.tsx`），Phase 3b 能**发消息**了，
 > 但**点选注入**仍是 3c 的活 —— 列表现在只是只读展示。
 
 | | |
 |---|---|
-| **缺的是什么** | 在侧边栏**点选**一条会话作为注入目标（现在还只能读列表） |
+| **缺的是什么** | 在侧边栏**点选**一条会话作为注入 / 发送目标（现在只能读列表 + 发给当前那条） |
 | **谁拍板延后** | 用户，2026-10-15 |
 | **为什么延后** | 与 3b 的「流式回复回侧边栏」一起设计（那时侧边栏与 Harbor 的交互会深得多），免得改两遍 |
 | **落到哪** | **3c**（是明确延后项，**不是**遗忘项） |
 
 **兜底行为（内容不会丢）**：渲染层没报过、或报的那条会话已被删时，
 `electron/core/ext-ops.cjs` 的 `ingestPage()` 会**新建一条专用会话**把内容装进去。
+
+### ★ 3b 的一条硬约束：主窗口不在就没法发（C-α 的代价）
+
+侧边栏发消息的执行者是**渲染层**（落盘只在那边，见 `core/ext-chat.cjs` 文件头）。
+所以 `minimizeToTray=false` **且窗口真被销毁**时，侧边栏会被拒（人话「Harbor 主窗口不在」）。
+默认配置下关窗口 = 藏到托盘（`main.cjs:135`），渲染层还在，**不会命中**。
 
 ### ⏭ 待办：旧 host 的回包，扩展侧认不出（会显示成「超时」）
 
@@ -72,8 +78,9 @@
 | 路径 | 是什么 |
 |---|---|
 | `extension/` | **真扩展的源**（`manifest.json` + `service-worker.js` + `lib/native.js`）—— 构建时原样拷进产物 |
-| `extension/lib/native.js` | 扩展侧**通道层**（Phase 3a）：连 host / 重连 / **按 id 匹配的 pending Map** / 状态广播 |
-| `src/sidepanel/` | 侧边栏的 React 源（入口 `index.html` / `main.tsx` / `App.tsx` / `SessionList.tsx`） |
+| `extension/lib/native.js` | 扩展侧**通道层**（Phase 3a）：连 host / 重连 / **按 id 匹配的 pending Map** / 状态广播 / **推送帧广播**（3b） |
+| `src/sidepanel/` | 侧边栏的 React 源（入口 `index.html` / `main.tsx` / `App.tsx` / `SessionList.tsx` / `ChatPanel.tsx`） |
+| `src/sidepanel/ChatPanel.tsx` | 侧边栏**对话区**（3b）：发消息 + 流式回复显示（按 `seq` 丢弃重排的旧片） |
 | `vite.config.ext.ts` | 扩展的独立 Vite 配置（root / postcss / outDir / alias 都跟主应用不同） |
 | `postcss.config.js` | 扩展的 Tailwind 配置（theme 继承主 config、content 只扫扩展 + 用到的 UI 组件） |
 | `harbor-host.cmd` | **native host 包装器**（纯 ASCII）——`ELECTRON_RUN_AS_NODE=1` + `Harbor.exe` + `native-host.cjs` |
@@ -107,13 +114,16 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-extension.cjs` | 真扩展 + native host **端到端**：能读到哪些状态（Phase 1c 第二步） | `node harbor-edge/tools/accept-extension.cjs` |
 | `tools/accept-phase2.cjs` | 「读当前页 → 包装 → 落会话」（Phase 2） | `node harbor-edge/tools/accept-phase2.cjs` |
 | `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**15 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
+| `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b，**15 条判据**） | `node harbor-edge/tools/accept-phase3b.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 
 全部脚本都**自己起隔离 Edge**（独立 `--user-data-dir` + 隔离数据根），**不碰**你正在用的那个。
 
-> ⚠️ `accept-phase3a.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到隔离清单），跑完
-> `finally` 里删掉 —— 如果你之前手动装过 host，跑完要**重新装一次**（或跑 `install-host.cmd`）。
+> ⚠️ `accept-phase3a.cjs` / `accept-phase3b.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
+> 隔离清单），跑完 `finally` 里**恢复原值** —— 如果你之前手动装过 host，跑完那条还在。
+> 另：3b 那一跑需要**源码树实例**（3b 改的是渲染层，打包版里是旧的）—— 脚本自己拉
+> `vite + electron .`，并把数据根指到 `data/unit-test-data`。
 
 ---
 

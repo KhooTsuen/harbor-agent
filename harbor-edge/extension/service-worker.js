@@ -167,6 +167,53 @@ async function getSessionList() {
   return { ok: false, error: (reply && reply.error) || '拿不到会话列表', code: (reply && reply.code) || '' }
 }
 
+/* ══════════════════════════════════════════════════════════════
+   发消息 / 续流（Phase 3b）
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 侧边栏发一条消息。
+ *
+ * ★ SW 只做**转发**：谁允许发 / 忙不忙 / 落到哪条会话，全由主进程判
+ *   （见 electron/core/ext-chat.cjs）—— 判据只有一处，扩展侧不自己猜。
+ */
+async function sendChatMessage(text) {
+  const reply = await requestHost('chat:send', { text: String(text ?? '') })
+  if (reply && reply.ok === true) {
+    const info = { sessionId: String(reply.sessionId ?? ''), at: Date.now() }
+    try {
+      chrome.storage.local.set({ harborChat: info })
+    } catch {
+      /* 存不下不影响这次发送 */
+    }
+    return { ok: true, ...info }
+  }
+  return { ok: false, error: (reply && reply.error) || '发不出去', code: (reply && reply.code) || '' }
+}
+
+/**
+ * 重连 / 重开后要「上次流到哪」。
+ *
+ * ★ 按 **sessionId** 问（不是 requestId）：真实那一轮的 id 是渲染层生成的，
+ *   扩展侧从没听过它 —— 它只知道「我在看哪条会话」（见 ext-chat.cjs 的 handleResume）。
+ */
+async function resumeChat(sessionId) {
+  const reply = await requestHost('chat:resume', { sessionId: String(sessionId ?? '') })
+  return reply && typeof reply === 'object' ? reply : { ok: false, error: '拿不到流快照' }
+}
+
+/**
+ * 问「Harbor 界面当前打开的是哪条会话」。
+ *
+ * 为什么要问：侧边栏要发的那条消息，落点由**主进程认定的当前会话**决定
+ * （`handler ext:activeSession` 报的）—— 扩展侧不该自己猜一条。
+ */
+async function getActiveSession() {
+  const reply = await requestHost('ext:sessionActive', {})
+  if (reply && reply.ok === true) return { ok: true, sessionId: String(reply.sessionId ?? '') }
+  return { ok: false, sessionId: '', error: (reply && reply.error) || '拿不到当前对话' }
+}
+
 /* ── 侧边栏来的消息 ────────────────────────────────────────── */
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'get-status') {
@@ -187,6 +234,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'session-list') {
     getSessionList()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  if (msg && msg.type === 'chat-send') {
+    sendChatMessage(msg.text)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  if (msg && msg.type === 'chat-resume') {
+    resumeChat(msg.sessionId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  if (msg && msg.type === 'session-active') {
+    getActiveSession()
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
     return true

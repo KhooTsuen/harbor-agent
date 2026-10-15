@@ -181,6 +181,7 @@ function createBridge() {
      *   audit: object,
      *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
      *   log: object,
+     *   chat?: { handleSend: Function, handleResume: Function },
      * }} options
      */
     start(options) {
@@ -197,6 +198,8 @@ function createBridge() {
         wrap: options.wrap,
         send: options.send,
         getActiveSession: () => activeSessionId,
+        /* Phase 3b：侧边栏发消息那条路（装配处注入，见 register-handlers.cjs） */
+        chat: options.chat ?? null,
       })
 
       token = P.writeToken(dataDir)

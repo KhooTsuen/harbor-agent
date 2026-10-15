@@ -5,6 +5,37 @@
 
 ## [未发布]
 
+- **功能：Edge 扩展 Phase 3b —— 侧边栏能发消息、看流式回复**（2026-10-16）。
+  · **怎么做的（C-α，用户拍板）**：主进程**不自己跑**那一轮 —— assistant 的落盘
+    只在渲染层（`replyPersistence.ts`），自己跑就没有它（且落盘形状要再造一份，违 #9）。
+    所以链路是「**校验 + 转发 + 旁听**」：`chat:send` → 主进程校验（没窗口 / 没会话 / 忙）→
+    推 `chat:event` + `type:'ext:send'` 给**渲染层** → 渲染层照常走它自己的 turn
+    （与用户手打**同一条路**）→ 既有落盘链路原样生效。
+  · **顺便推进**：一轮里每条 `chat:event`（含已 50ms 合批的 content/reasoning）**旁听**
+    复制一份推给侧边栏 —— 不新增状态、不改流向，所以主窗口与侧边栏的**打字节奏天生一致**。
+  · **SESSION_BUSY**：给 `handlers/chat.cjs` 的 `streams.set` **补一个 `sessionId` 字段**，
+    扫它判「这条会话在跑吗」。为什么不能用 `lifecycle` 的 `UNFINISHED`：`phaseKey` 是
+    `taskId || requestId`、**不是会话 id**，那边注册表也没有「按会话查」的入口。
+    **拒绝 + 人话**（不静默排队 —— 渲染层遇到忙是排队，侧边栏看不到那个队列，会以为消息丢了）。
+  · **流快照**：主进程内存一份 `Map<requestId,{sessionId,seq,text,reasoning,done}>`；
+    侧边栏重连 / 重开后按 **sessionId** 问一次（不是 requestId —— 真实那轮的 id 由渲染层生成）。
+    `done` 那片**带全文**，最后一片一次补齐（丢片也能两边最终一致）。`done` 后 60 秒清。
+  · **main.cjs 仍是 0 改动**（旁听包在 `register-handlers.cjs` 的 `send` 上；`chat.cjs` 只加了
+    那一个字段）。
+  · **验证**：`node harbor-edge/tools/accept-phase3b.cjs` → **15/15**（真 Edge + 真扩展 +
+    真 host + 真源码树内核 + 假上游 `slow` 模式）：侧边栏逐片收到 12 片（不是一次刷完）·
+    忙时被拒给人话 · **assistant 真落了盘**（读会话文件）· **主窗口同一条会话里也看得到**。
+    自检 **4717/0**（新增 158 组 46 条）· `npm run verify` 全绿。
+  · **过程中修掉的三个真问题**（都不在计划里）：
+    ① 侧边栏在「主进程给的还是临时 id（`pending_…`）」时把每一片都过滤掉 → 改为
+       「本地是临时 id / 空时以推送为准学过来」。
+    ② 「忙时又发一条」会把自己正在显示的那条流清空 → 有流在跑时不再换显示。
+    ③ 验收用的假上游 `tools/fake-upstream.mjs` 的 `slow` 模式**一片都发不出去**：
+       `req.on('close')` 在 HTTP keep-alive 下「请求体读完」就触发（不是连接断了）→
+       定时器当场被清。改绑 `res.on('close')`。
+  · **已知遗留**：`run()` 与 `main.cjs` 那条兼容分支仍在（A4 待办，见 README）；
+    扩展侧仍无类型检查（`@types/chrome` 是红线）；`pipeName()` 未做路径归一化。
+
 - **清理：`electron/core/ext-forward.cjs` 的删除单独提交**（2026-10-15，Phase 3a 的收尾）。
   · 它的两条前提（**单向**、**不等回复**）在 Phase 3a 后都不成立，逻辑已并进 `core/ext-client.cjs`
     （双向客户端 + 兼容形态的同步写）。

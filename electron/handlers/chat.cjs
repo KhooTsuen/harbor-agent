@@ -137,7 +137,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
      * 「中断」（abort）和「暂停」（安全点停下）是两件事，这里各留一个口子。
      */
     const pause = { requested: false }
-    streams.set(requestId, { controller, pause })
+    streams.set(requestId, { controller, pause, sessionId })
 
     /* sessionId 一并带上：「需要你确认」的系统通知点开后要跳回这条对话（P1-3） */
     const confirm = (request) => chatConfirm.askUser(requestId, request, emit, sessionId)

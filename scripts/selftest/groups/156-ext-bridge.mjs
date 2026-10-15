@@ -225,8 +225,12 @@ export async function run() {
     manifest.background?.type === 'module',
     String(manifest.background?.type),
   )
-  check(
-    '★ 本阶段只读：SW 里没有「切会话 / 发消息」的入口（那是 3b/3c）',
-    !/switch-session|send-message|chat:send/.test(sw),
-  )
+  /*
+   * 3a 时这里钉的是「SW 里没有任何发送入口」。3b 起**发送合法了** ——
+   * 于是改成钉「发送有了，但**切会话仍然没有**」（那是 3c）。
+   * ★ 别把这条再写成「SW 不该有 X」的笼统形态：3a 那次就是这么写的，
+   *   到 3b 变成假红（红的是断言，不是产品）。
+   */
+  check('★ 3b：SW 有发送入口（chat-send）', /'chat-send'/.test(sw) && /sendChatMessage/.test(sw))
+  check('★ 3c 未做：SW 里仍没有「切会话」入口', !/switch-session|select-session/.test(sw))
 }
