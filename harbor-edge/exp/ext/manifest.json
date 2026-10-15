@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor Exp Probe",
+  "version": "0.0.1",
+  "description": "Harbor experiments: native-host stdout connectivity (isolated probe)",
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}

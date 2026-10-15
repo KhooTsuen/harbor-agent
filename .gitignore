@@ -102,6 +102,14 @@ tools/import-rikkahub.py
 harbor-edge/phase0/edge-profile*/
 harbor-edge/phase0/edge-trial-*/
 
+# 三组实验（harbor-edge/exp/**）的隔离 profile / 临时清单 / SEA 产物 —— 全部跑完即弃。
+# SEA 的**源码**（host-sea-entry.cjs / sea-config.json）要进版本库，所以只忽略产物。
+harbor-edge/exp/profiles/
+harbor-edge/exp/manifests/
+harbor-edge/exp/sea/*.exe
+harbor-edge/exp/sea/*.blob
+harbor-edge/exp/sea/*.log
+
 # 破坏性测试：隔离环境与备份（都是几百 MB 的整目录副本）
 test-env/
 backups/

@@ -1,0 +1,5 @@
+{
+  "main": "E:\\CodexWorkbench\\harbor-edge\\exp\\sea\\host-sea-entry.cjs",
+  "output": "E:\\CodexWorkbench\\harbor-edge\\exp\\sea\\sea-prep.blob",
+  "disableExperimentalSEAWarning": true
+}

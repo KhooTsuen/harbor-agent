@@ -5,6 +5,44 @@
 
 ## [未发布]
 
+- **Edge native host stdout：三组实验找到真因 + 落定方案（`.cmd` + `ELECTRON_RUN_AS_NODE`）**（2026-10-15，承接上一条 Phase 1a 的卡点）。
+  · **真因（★ 更正上一条的结论）**：stdout **一直是通的**，帧**确实写出来了** —— 真因是
+    **Chromium 初始化往 stdout 写了一个 `\r\n`（2 字节）**。Edge 读到 `0d 0a 1c 00`
+    = 小端 **1,837,581**（荒谬帧长）→ 协议失步 → `Error when communicating…`。
+    本地 spawn 直接对比（不依赖 Edge）是决定性证据：
+    `node.exe` 当 host → `1c000000{…}`（纯帧）；`Harbor.exe` 当 host → `0d0a` **+** `1c000000{…}`。
+    另有「不写 stdin 时 stdout 只有 `0d0a`」→ 证明是**启动期**写的，与读 stdin 无关。
+  · **实验 1（Electron/Chromium 开关）→ ❌ 不通过**：四个候选**实测全无效**
+    （`ELECTRON_NO_ATTACH_CONSOLE` / `--no-stdio-init` / `ELECTRON_ENABLE_LOGGING=0` /
+    `--enable-logging=file --log-file=`）—— `\r\n` 照旧在。**Harbor.exe 走 Chromium 初始化就没救。**
+  · **实验 2（Node 24 SEA）→ ✅ 通过**：产物 = `node.exe` 副本 + 注入资源段，
+    注入**后** PE 子系统仍是 **CONSOLE(3)**；经真实 Edge 协议跑通（扩展收到 pong）。
+    代价：v24 **无** `--build-sea`（那是 v26），须用 **`postject`**（构建期 npm 依赖，未写进
+    `package.json`）+ 注入破坏签名（`The signature seems corrupted!`）+ 体积 ~100 MB。
+  · **实验 3（`.cmd` 包装器）→ ✅ 通过（3a/3b/3c 全通）**：
+    `.cmd` → `ELECTRON_RUN_AS_NODE=1` + `Harbor.exe`（**纯 Node 模式，不初始化 Chromium**）
+    → `native-host.cjs`。真机：扩展收到 `{"pong":1,…}`。
+    **不引入任何新依赖、不需要用户装 Node**（复用随包的 Electron 二进制）。
+    ⚠️ **`.cmd` 必须纯 ASCII**：首轮失败的真因是**中文注释**被 `cmd.exe` 按 OEM 码页（GBK）
+    读成乱码、**被当命令执行**（stderr 是 `'──────' 不是内部或外部命令`）。
+    ⚠️ **不能用 `chcp 65001` 修** —— 它会往 stdout 写字，直接污染协议帧。
+  · **★ 推荐方案**：**路径 2 —— `.cmd` + `ELECTRON_RUN_AS_NODE` + 自带 Electron**（零依赖、
+    已按真实部署形态实测）。备选 SEA（等 Node v26 原生 `--build-sea` 后代价归零再评估）。
+    **明确排除**：方案 A 的 C 桥接（不需要了）、让 `Harbor.exe` 零参数直接当 host（无开关可救）。
+  · **对 Phase 1a 的两处更正已就地标注**（不删原文）：① 「stdout 接不到管道」→ 应是
+    「多写了 2 字节」；② 「`ELECTRON_RUN_AS_NODE` 救不了」→ 它绕开 Chromium 初始化，
+    stdout 就此干净。另：`--parent-window=` 判据在路径 2 下**不再需要**（`.cmd` 直接指定脚本），
+    留着无害、Phase 1b 可简化。
+  · **报告**：[`docs/research/edge-extension-host-stdout-experiments.md`](docs/research/edge-extension-host-stdout-experiments.md)
+    （逐组结论 + 原始 hex 证据 + 遗留清单）。
+  · **隔离与清理**：注册表键 `com.harbor.exp1/2/3`（**独立于生产的 `com.harbor.agent`**）、
+    独立 profile；复核 `HKCU\…\Edge\NativeMessagingHosts` **已无任何键**，探针进程 0 个，
+    **未碰**用户正在用的 Edge 与 `E:\Harbor` / `E:\Harbor-Dev`。
+
+- **授权变更登记（Phase 1a 的一处越权改动，用户已批准保留）**：`electron/main.cjs` 里
+  **3 处装饰性分隔块注释**被压成单行 `/* ── x ── */`（为给 host 分支腾行；**代码行只 +1、行为影响为零**）。
+  当时的要求是「一行不改」，这属于「重构其他部分」= 越权。用户裁决：**保留**（回退代价更大）。
+
 - **Edge 扩展 native host（Phase 1a）：帧协议 + 身份判据就位；但真机端到端卡在「GUI 子系统的 stdout」**（2026-10-15，等拍板替代方案）。
   · **做了什么**：新建 `electron/native-host.cjs`（4 字节长度前缀 + JSON 的帧编解码纯函数、
     `isHostArgv()` 身份判据、15 个模块白名单、同步阻塞的 `run()`）；
@@ -17,9 +55,15 @@
     （`node.exe` 是 **CONSOLE(3)**），它的 **stdout 接不到 Edge 的 native messaging 管道**。
     实测：host 侧 `fs.writeSync(1, frame)` **返回 51（写"成功"）**、帧头正确、无异常，
     但扩展**一个字节收不到**，Edge 报 `Error when communicating with the native messaging host.`。
+    ⚠️ **（2026-10-15 后续三组实验更正，见本段后的新条目）**这段结论**有一半是错的** ——
+    stdout **是通的**，帧**确实写出去了**；真因是 **Chromium 初始化往 stdout 写了一个 `\r\n`**，
+    把帧头污染成荒谬长度。**不是「接不到管道」，是「多写了 2 字节」。**
     读那侧是通的（fd 0 由 Windows 代为连接）：host 确实读到了 33 字节的 ping。
     ⚠️ `ELECTRON_RUN_AS_NODE=1` **救不了** —— 它不改 PE 子系统（编译期写死）。
     ⚠️ 「spawn 一个子进程、`stdio:'inherit'` 转发」**也救不了** —— 子进程仍是 GUI 子系统（已实测）。
+    ⚠️ **（2026-10-15 后续实验更正）**「它不改 PE 子系统」**对**（子系统确实不变），
+    但「救不了」**错** —— 它**绕开了 Chromium 初始化**，stdout 就此干净（实测 0 字节前缀）。
+    救 stdout 靠的不是改 PE 子系统，是**不初始化 Chromium**。
   · **★ 顺带逮到并修掉一个我自己引入的回归**：`main.cjs` 的分支是 `if (isHostArgv()) run()`
     （**没有 return** —— 顶层 return 会撞 tsc 的 TS1108），而我最初把 `run()` 的 EOF/失败收尾
     写成 `return`。于是 `run()` 一返回，main.cjs 后面的建窗口代码**继续执行** ——
@@ -33,6 +77,9 @@
   · **Phase 0 报告的一处更正**：那里写「`.cmd` 包装器 ✅ 通过」并当作生产形态 ——
     要更正为「那次通过是因为底下跑的是 `node.exe`（console）；换 `Harbor.exe` 后写不通」。
     「协议 + 判据成立」仍然有效，「生产形态可行」被证伪。
+    ⚠️ **（2026-10-15 后续实验更正）**「换 `Harbor.exe` 后写不通」**错了** ——
+    `.cmd` + `ELECTRON_RUN_AS_NODE=1` + `Harbor.exe` **实测通过**（实验 3b/3c）。
+    `.cmd` 这条路**成立**，它就是下面新条目里的首推方案。
   · **替代方案（未实施，等拍板）**：A) 随包发一个 console 子系统的桥接二进制（要新增构建产物，
     命中硬禁区精神，需单独批准）；B) 降级到本地 HTTP/SSE（要开监听端口，与「不开端口」的取向相反）。
   · **报告**：[`docs/research/edge-extension-phase1a-report.md`](docs/research/edge-extension-phase1a-report.md)
