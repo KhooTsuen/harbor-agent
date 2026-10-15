@@ -110,6 +110,11 @@ harbor-edge/exp/sea/*.exe
 harbor-edge/exp/sea/*.blob
 harbor-edge/exp/sea/*.log
 
+# Phase 1b 起，安装/验收脚本每次读扩展 ID 都要起一个隔离 Edge profile（实测 15 MB）。
+# 脚本自己会删（见 lib/driver.cjs 的 removeProfile），这里忽略是**兜底** ——
+# 删除失败时（文件被占）不该把几百 MB 垃圾提交进仓库。
+harbor-edge/profiles/
+
 # 破坏性测试：隔离环境与备份（都是几百 MB 的整目录副本）
 test-env/
 backups/

@@ -5,6 +5,46 @@
 
 ## [未发布]
 
+- **Edge 扩展 native host 安装链路（Phase 1b 第一步）：fuse 保命线 + 安装/卸载脚本**（2026-10-15）。
+  · **fuse 检查 → ✅ 通过（三重取证，不靠记忆）**：
+    ① 静态 —— `package.json` 无 `@electron/fuses` / 无 `electron-builder`，
+    `scripts/build-portable.mjs` 是纯 `cpSync`，**打包链里根本没有翻 fuse 的工具**；
+    ② 手工解析 —— 读 exe 里的 fuse wire（官方格式 `sentinel + version + length + wire`）：
+    `electron.exe` 与便携版 `Harbor.exe` **完全一致** = `01 09 "101100011"`，
+    第 0 位（runAsNode）是 **`'1'` = enabled**，且九位**全部等于 Electron 默认值**
+    → 这个 exe 从没被翻过 fuse；
+    ③ 权威 CLI —— `npx @electron/fuses read` 输出 **`RunAsNode is Enabled`**。
+    ⚠️ 我一度按记忆读 `'1'` 为 disabled，**与实测直接矛盾** —— 是记忆错了，不是结论错了。
+  · **判据改成三形态**（`electron/native-host.cjs`，改动最小、帧编解码一行未动）：
+    ① **路径 2**：`ELECTRON_RUN_AS_NODE=1` 且 argv 指 `main.cjs`
+    （防「用 Node 模式跑 main.cjs」的误配 —— 那时 `require('electron')` 解构出 undefined）；
+    ② argv 显式指 `native-host.cjs`；③ **兼容保留** `--parent-window=`（留给将来 Edge 换拉起方式）。
+  · **★ `main.cjs` 不需要改（这是路径 2 的一个重要结论）**：`.cmd` 直接执行
+    `native-host.cjs`，`require.main === module` 就进了 `run()` —— **`main.cjs` 根本不执行**。
+    L61 原有的兼容分支保留不动。
+  · **新增 `harbor-edge/` 安装链路**：`harbor-host.cmd`（包装器：设
+    `ELECTRON_RUN_AS_NODE=1` + 调 `Harbor.exe` + `native-host.cjs`，`%~dp0` 相对定位）、
+    `install-host.cmd`、`uninstall-host.cmd`、`tools/read-extid.cjs`、`tools/accept-host.cjs`、
+    `lib/driver.cjs`、`ext/`（Phase 1b 探针扩展）。
+    三条硬规矩：**纯 ASCII**（中文注释会被 cmd 按 GBK 读成乱码**当命令执行** —— 真踩过）、
+    **不 `chcp`**、**不转发 `%*`**。
+  · **安装脚本必须真加载一次读扩展 ID**（算不出来）：实测加载路径
+    `harbor-edge/ext` → ID `okiedieobcmdikkiflelpaipheodjafa`；写进 `allowed_origins`。
+  · **★ 过程中发现并修掉一个缺陷**：读 ID 与验收各会起一个隔离 Edge profile，
+    **实测每个 15 MB**，原来跑完不删（装一次留一个）→ 加 `removeProfile`（带重试，
+    删不掉只记 stderr、不让安装失败）。修后实测跑完 `harbor-edge/profiles/` 为空。
+  · **新增自检组 155**（装配层），154 按协议层/装配层**拆成两组**（各 185 / 177 行，
+    均 ≤300）：路径 2 判据、脚本纯 ASCII、三条规矩、注册表两视图、清单落 `data/`、
+    **fuse 保命线**（读字节判 runAsNode='1'；便携版与 electron.exe fuse 一致）。
+    ⚠️ fuse 断言**故意不跑 electron.exe** —— 启动失败会弹**原生对话框**（要人点），
+    装进自检（CI 也跑）就是一个会卡住的坑。
+  · **改前 / 改后**：自检 **4545 → 4577 项**（+32）；`npm run verify` 全绿。
+  · **真机验收**：`install-host.cmd` 跑通（自动读 ID → 写注册表 → 生成清单）→
+    幂等性实测三处逐一比对一致 → `accept-host.cjs` **PASS**（真实 Edge 扩展收到
+    `{"pong":1,…}`）→ `uninstall-host.cmd` 后独立复核：注册表 rc=1（键不存在）、
+    包装器无、清单目录无、profile 无、进程无。
+  · **报告**：[`docs/research/edge-extension-phase1b-report.md`](docs/research/edge-extension-phase1b-report.md)。
+
 - **Edge native host stdout：三组实验找到真因 + 落定方案（`.cmd` + `ELECTRON_RUN_AS_NODE`）**（2026-10-15，承接上一条 Phase 1a 的卡点）。
   · **真因（★ 更正上一条的结论）**：stdout **一直是通的**，帧**确实写出来了** —— 真因是
     **Chromium 初始化往 stdout 写了一个 `\r\n`（2 字节）**。Edge 读到 `0d 0a 1c 00`

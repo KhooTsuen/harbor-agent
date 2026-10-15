@@ -4,20 +4,22 @@
  * ── 它是什么 ─────────────────────────────────────────────────
  *
  * Edge 扩展调 `chrome.runtime.connectNative('com.harbor.agent')` 时，浏览器会
- * **另起一个进程**（清单里 `path` 指向的那个），用 stdin / stdout 传 JSON。
- * 那个进程就是这里 —— Harbor.exe 被 Edge 用 `--parent-window=…` 拉起时，
- * `main.cjs` 在最早期把控制权交给本模块（见那边的分支）。
+ * **另起一个进程**（宿主清单 `path` 指向的那个），用 stdin / stdout 传 JSON。
+ * 那个进程就是这里。
  *
- * ── 为什么判据是 `--parent-window=`（而不是自造一个开关）──
+ * ── 两种被拉起的形态（★ 路径 2 是当前首选）──────────────────
  *
- * Phase 0 实测（docs/research/edge-extension-phase0-report.md）：
- *   · 宿主清单的 `path` **只能是一个不带参数的可执行文件** ——
- *     写成 `Harbor.exe --native-host` 这种形态，Edge 会把整串当成**文件路径**，
- *     直接报 "Specified native messaging host not found."。
- *   · 所以只能用 Harbor.exe 本体，靠 **Edge 自己传进来的参数**认身份。
- *   · 实测 argv：`[exe] ["chrome-extension://<id>/"] ["--parent-window=0"]`
- *     `—parent-window=`` 在 node.exe 与 Electron 下都**原样传递**（origin 会被
- *     node 的路径解析弄坏，所以不用它当判据）。
+ *   ★ **路径 2**：宿主清单 `path` 指向一个 **`.cmd` 包装器**，它设
+ *     `ELECTRON_RUN_AS_NODE=1` 再调 `Harbor.exe <本文件>` —— Electron 二进制
+ *     **以纯 Node 模式**跑本文件，`require.main === module` 直接进 `run()`。
+ *     **这条路不经过 `main.cjs`。** 为什么必须绕开 Chromium：走 Chromium 初始化时
+ *     启动期会往 stdout 写一个 `\r\n`，把帧头污染成荒谬长度 → Edge 报「通信错误」
+ *     （本地 dump 原始字节锁定，见 docs/research/edge-extension-host-stdout-experiments.md）。
+ *     纯 Node 模式下 stdout **一个杂音字节都没有**。
+ *
+ *   · **兼容形态**（保留）：Edge 直接拉 `Harbor.exe`（不经 .cmd），此时 argv 是
+ *     `[exe] ["chrome-extension://<id>/"] ["--parent-window=0"]`，由 `main.cjs`
+ *     在最早期调 `isHostArgv()` 认出来 —— 留给「将来 Edge 换拉起方式」当退路。
  *
  * ── 为什么 run() 是**同步阻塞**的循环（而不是事件流）──────
  *
@@ -46,12 +48,17 @@
  *
  * ★ Phase 1a 只做协议本身（ping / pong），**不加载**这些模块（零副作用）。
  *   白名单在这里定义 + 由自检组 154 钉住，Phase 1b 接业务时从这里取。
+ * ★ 但路径 2 下 `main.cjs` **不执行**（.cmd 直接跑本文件），所以白名单在
+ *   路径 2 暂时用不上 —— 它仍是「Phase 1b 接业务时」的入口约束。
  */
 
 const fs = require('node:fs')
 
-/** Edge 拉起 host 时一定会带的参数 —— 身份判据 */
+/** 兼容形态的判据：Edge 直接拉 Harbor.exe 时一定会带它 */
 const HOST_FLAG = '--parent-window='
+
+/** 路径 2 的判据：包装器设的「以纯 Node 模式跑」开关（Electron 官方环境变量） */
+const RUN_AS_NODE_ENV = 'ELECTRON_RUN_AS_NODE'
 
 /**
  * 单条消息上限。
@@ -145,13 +152,26 @@ function decodeFrames(buf, opts = {}) {
 /**
  * 这一轮启动是不是「被浏览器拉起的 native host」。
  *
+ * 三种形态都认（按优先级）：
+ *   ① 路径 2：`ELECTRON_RUN_AS_NODE=1` 且 argv 指着 `main.cjs`。
+ *      ⚠️ 正常走路径 2 时本函数**不会被调用** —— `.cmd` 直接执行本文件，
+ *      `require.main === module` 已经进了 `run()`。留着是防「用 Node 模式跑
+ *      main.cjs」的误配（那时 main.cjs 的 `require('electron')` 解构出 undefined）。
+ *   ② argv 里显式指着 `native-host.cjs`（手动指脚本 / 包装器的其他写法）。
+ *   ③ 兼容：`--parent-window=`（Edge 直接拉 Harbor.exe 的形态）。空值也算 ——
+ *      service worker 上下文里传的就是 `--parent-window=0`，官方说过值不保证有内容。
+ *
  * @param {string[]} [argv]
- * @returns {boolean} 含 `--parent-window=` 就算 —— **空值也算**
- *   （Edge 在 service worker 上下文里传的就是 `--parent-window=0`；
- *    官方也提醒过这个值不保证有内容，所以只判「参数在不在」）。
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
  */
-function isHostArgv(argv = process.argv) {
-  return Array.isArray(argv) && argv.some((a) => typeof a === 'string' && a.startsWith(HOST_FLAG))
+function isHostArgv(argv = process.argv, env = process.env) {
+  if (!Array.isArray(argv)) return false
+  const some = (test) => argv.some((a) => typeof a === 'string' && test(a))
+  if (env?.[RUN_AS_NODE_ENV] === '1' && some((a) => /main\.cjs$/.test(a))) return true
+  if (some((a) => a.includes('native-host.cjs'))) return true
+  if (some((a) => a.startsWith(HOST_FLAG))) return true
+  return false
 }
 
 /**
@@ -261,6 +281,7 @@ if (require.main === module) run()
 
 module.exports = {
   HOST_FLAG,
+  RUN_AS_NODE_ENV,
   MAX_FRAME,
   SAFE_MODULES,
   encodeFrame,

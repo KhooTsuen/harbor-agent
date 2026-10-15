@@ -16,7 +16,7 @@
  * 判据字面量只有一处真相源（别在 main.cjs 里再手写一遍 `--parent-window=`）。
  */
 
-import { join, readFileSync, require, ROOT } from '../env.mjs'
+import { existsSync, join, readFileSync, require, ROOT } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 export async function run() {
@@ -128,7 +128,14 @@ export async function run() {
   group('native host · stdout 是协议通道（保命线）')
 
   check('★ run() 里把 console.log 改道到 stderr（否则日志会污染帧）', /console\.log = \(\.\.\.args\) => console\.error\(\.\.\.args\)/.test(src))
-  check('★ 模块自己不 require electron（纯 Node 能 require = 已证）', !/require\(['"]electron['"]\)/.test(src))
+  /*
+   * ★ 判据只扫**代码**（去掉块注释）：本模块的文件头白名单说明里就写着
+   *   「顶层不 require electron」这件事，连字面量 `require('electron')` 都出现过
+   *   （在解释 handlers/browser.cjs 为什么不行）。注释里提到它是对的，
+   *   代码里真调用它才是问题 —— 所以先把块注释剥掉再测。
+   */
+  const codeOnly = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '')
+  check('★ 模块**代码**里不 require electron（纯 Node 能 require = 已证）', !/require\(['"]electron['"]\)/.test(codeOnly(src)), '（注释里提到不算 —— 只测代码）')
   check('★ 自己记状态走 stderr，不碰 stdout', src.includes('process.stderr.write') && !/process\.stdout\.write\([^)]*note/.test(src))
   /*
    * ★ 同步阻塞是**设计要求**，不是实现细节：
@@ -173,4 +180,5 @@ export async function run() {
   check('★ stdout 一个杂音字节都没有（纯协议帧）', back.rest.length === 0 && back.errors.length === 0, back.errors.join('|'))
   check('★ stdin 结束（浏览器关端口）→ 进程干净退出', code === 0, `退出码 ${code}`)
   check('★ 状态行走 stderr，不混进 stdout', Buffer.concat(errChunks).toString('utf8').includes('[native-host]'))
+
 }

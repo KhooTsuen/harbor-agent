@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor Browser Companion",
+  "version": "0.1.0",
+  "description": "Harbor browser companion (Phase 1b: native host wiring probe)",
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}
