@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor Browser Companion",
+  "version": "0.2.0",
+  "description": "Harbor side panel (Phase 1c step 2: skeleton + native host connection status)",
+  "permissions": ["nativeMessaging", "sidePanel", "storage"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Harbor"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  }
+}

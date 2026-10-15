@@ -33,7 +33,15 @@ setlocal enabledelayedexpansion
 set "HOST_NAME=com.harbor.agent"
 set "SRC_CMD=%~dp0harbor-host.cmd"
 set "READID_JS=%~dp0tools\read-extid.cjs"
-set "EXT_DIR=%~dp0ext"
+
+rem ---- which extension? ------------------------------------------------
+rem The REAL extension is the build output (harbor-edge\dist\sidepanel):
+rem its manifest.json + service-worker.js come from harbor-edge\extension\
+rem via the vite publicDir, and index.html is the side panel page.
+rem Build it first:  npx vite build --config harbor-edge/vite.config.ext.ts
+rem The Phase 1b probe (harbor-edge\ext) is kept as a historical asset and
+rem is NOT what the host should be wired to.
+set "EXT_DIR=%~dp0dist\sidepanel"
 
 rem ---- resolve harbor dir ----
 set "HARBOR_DIR=%~2"
@@ -58,6 +66,11 @@ if not exist "%SRC_CMD%" (
   echo [X] missing "%~dp0harbor-host.cmd"
   exit /b 1
 )
+if not exist "%EXT_DIR%\manifest.json" (
+  echo [X] extension build output not found: "%EXT_DIR%"
+  echo     build it first:  npx vite build --config harbor-edge/vite.config.ext.ts
+  exit /b 1
+)
 
 set "HOST_CMD=%HARBOR_DIR%\harbor-host.cmd"
 set "MANIFEST_DIR=%HARBOR_DIR%\data\edge-host"
@@ -78,7 +91,7 @@ if not exist "%READID_JS%" goto :no_id
 echo [2/4] reading the real extension id (launches an isolated Edge) ...
 set "ID_OUT=%TEMP%\harbor-extid-%RANDOM%.txt"
 set ELECTRON_RUN_AS_NODE=1
-"%HARBOR_DIR%\Harbor.exe" "%READID_JS%" > "%ID_OUT%" 2>nul
+"%HARBOR_DIR%\Harbor.exe" "%READID_JS%" --ext="%EXT_DIR%" > "%ID_OUT%" 2>nul
 set ELECTRON_RUN_AS_NODE=
 if exist "%ID_OUT%" set /p EXT_ID=<"%ID_OUT%"
 if exist "%ID_OUT%" del /F /Q "%ID_OUT%" >nul 2>nul
@@ -118,7 +131,7 @@ echo Done.
 echo   Manifest : %MANIFEST%
 echo   Wrapper  : %HOST_CMD%
 echo.
-echo Next: make sure the Harbor browser extension is loaded in Edge
+echo Next: load the Harbor extension in Edge
 echo   edge://extensions  -^> Developer mode -^> Load unpacked -^> %EXT_DIR%
-echo Verify the wiring with:  tools\accept-host.cjs  (see docs)
+echo Verify the wiring with:  node harbor-edge\tools\accept-extension.cjs
 exit /b 0

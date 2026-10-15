@@ -5,6 +5,45 @@
 
 ## [未发布]
 
+- **Edge 扩展（Phase 1c 第二步）：真侧边栏 UI —— 骨架 + 连接状态**（2026-10-15）。
+  · **一句话**：侧边栏真的出现了，并且显示「已连接」—— 那不是写死的文案，是
+    **真 Edge → 真扩展 → 真 native host → 真 `Harbor.exe` 回 `{"pong":1}`** 这条链跑通才推出来的。
+  · **做了什么**：新建真扩展（`harbor-edge/extension/`：MV3 清单 + Service Worker）、
+    侧边栏 UI（`src/sidepanel/App.tsx`：连接状态 / 占位 / 输入框占位）、
+    端到端验收脚本（`tools/accept-extension.cjs`）。
+    权限**最小化**：只有 `nativeMessaging` + `sidePanel` + `storage`
+    （`storage` 是因为 **MV3 的 SW 会被杀**，状态得有快照；`scripting` / `activeTab` /
+    `host_permissions` 一个都没加 —— 那是 Phase 2 的事）。
+  · **★ 视觉一致不是照抄，是走同一套东西**：Tailwind theme 从主 config 继承、
+    CSS 变量来自主 `src/index.css` + `src/styles/theme-primer-dark.css`（与主应用 `main.tsx` **同序**）、
+    `Button` 直接 import 主应用那份 —— 零新依赖。为了让 Tailwind 扫到跨目录组件的类名，
+    扩展的 `postcss.config.js` 在 `content` 里加了 `./src/components/ui/Button.tsx`
+    （Tailwind 是**文本扫描**，不扫到就「组件在、样式全丢」）。
+  · **★ 逮到并纠正一个我自己写错的判据**：验收第一版断言背景应是 `rgb(16,16,16)`（`src/index.css`
+    的 default 主题 `#101010`），实测是 `rgb(13,17,23)`。**没直接改判据**，回去查源码 ——
+    `theme-primer-dark.css:83` `--bg-default:#0d1117` → `:125 --bg-canvas: var(--bg-default)`，
+    而主应用 `main.tsx` 在 index.css **之后**引了它。**所以主应用自己渲染的就是 `#0d1117`** ——
+    是判据错了，不是实现错了。改后更严格：它证明的是「扩展配色层次与主应用**完全一致**」。
+    另修一处太弱的断言（原来看 Button「有没有背景色」，可 ghost 变体本就 `bg-transparent`，
+    透明也放行 → 改成看**文字色**）。
+  · **改动的既有文件**：`vite.config.ext.ts`（加 `publicDir` → `extension/`，让 manifest 与 SW
+    原样进产物；加 `@` 别名）、`postcss.config.js`（content 加 Button）、
+    `sidepanel.css`（加引 `theme-primer-dark.css`）、`main.tsx`（渲染真 App）、
+    `lib/driver.cjs`（加共用的 `openTab` / `pollEval`）、`tools/read-extid.cjs`（加 `--ext=` 参数）、
+    `install-host.cmd`（`EXT_DIR` 改指**真扩展产物** —— 原来指向探针，装出来的是错 ID）。
+  · **新增 `harbor-edge/README.md`**：把「**禁止固定毫秒等待当就绪判据**」固化成硬规则
+    （两次真实栽跟头的记录 + 正确写法 + 适用范围），这是用户拍板要求单独立规矩的一条。
+  · **怎么验证的**：真机端到端 **10/10**（`node harbor-edge/tools/accept-extension.cjs`）；
+    23 个关键类在产物 CSS 里**缺失 0**（含跨目录复用 `Button` 的 9 个）；
+    四条色值**逐个对着源码行核过**；`npm run verify` 全绿（自检 4577 / 0 · 单测 194/1765 ·
+    安全 83 PASS · 行数 1175 全 ≤300）。安装痕迹已卸干净（注册表 `rc=1`、profile 已删）。
+  · **已知遗留**：① **扩展侧代码不在任何 tsc/eslint 范围内**（`tsconfig.json` 的 `include` 是
+    `["src","vite.config.ts"]`，`npm run lint` 只扫 `src`）—— 要加检查得引 `@types/chrome`，
+    属**新依赖**，本步没引，缺口如实记着；② `sidepanel.css` 仍整份 `@import` 主应用两份 CSS
+    （CSS 20.23 kB），用户已拍板「等真 UI 出来再看要不要拆」；③ 输入框是 `disabled` 占位，
+    不能真发（对话是 Phase 3）。
+  · **报告**：[`docs/research/edge-extension-phase1c2-report.md`](docs/research/edge-extension-phase1c2-report.md)。
+
 - **Edge 扩展 native host 安装链路（Phase 1b 第一步）：fuse 保命线 + 安装/卸载脚本**（2026-10-15）。
   · **fuse 检查 → ✅ 通过（三重取证，不靠记忆）**：
     ① 静态 —— `package.json` 无 `@electron/fuses` / 无 `electron-builder`，

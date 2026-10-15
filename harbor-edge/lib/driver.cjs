@@ -161,6 +161,69 @@ function readExtIdFromProfile(profile, extDir = EXT_DIR) {
   return null
 }
 
+/**
+ * 开一个新标签页，返回一个**求值句柄**（`evalIn` / `close`）。
+ *
+ * 放在 driver 里而不是各验收脚本自抄一份：Phase 1c 第一步的
+ * `accept-sidepanel.cjs` 与第二步的 `accept-extension.cjs` 都要它 ——
+ * 同一段 CDP 代码写两份迟早漂（本项目的硬约束 #9 就是为这种事立的）。
+ */
+async function openTab(port, url) {
+  const res = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })
+  if (!res.ok) throw new Error(`/json/new 失败：${res.status}`)
+  const target = await res.json()
+  const ws = new WebSocket(target.webSocketDebuggerUrl)
+  await new Promise((ok, no) => {
+    ws.addEventListener('open', () => ok())
+    ws.addEventListener('error', () => no(new Error('CDP ws 连不上')))
+  })
+  let id = 0
+  const evalIn = (expression) =>
+    new Promise((ok, no) => {
+      const myId = ++id
+      const onMsg = (ev) => {
+        const msg = JSON.parse(ev.data)
+        if (msg.id !== myId) return
+        ws.removeEventListener('message', onMsg)
+        if (msg.error) no(new Error(JSON.stringify(msg.error)))
+        else ok(msg.result?.result?.value)
+      }
+      ws.addEventListener('message', onMsg)
+      ws.send(
+        JSON.stringify({
+          id: myId,
+          method: 'Runtime.evaluate',
+          params: { expression, returnByValue: true, awaitPromise: true },
+        }),
+      )
+    })
+  return { target, evalIn, close: () => ws.close() }
+}
+
+/**
+ * 轮询求值，直到 `test(value)` 为真或**用满上限**。
+ *
+ * ★ 这是 `harbor-edge/README.md` 那条硬规则的实现：**不许拿固定毫秒等待当判据**。
+ *   判据永远是「目标状态真的出现了」（这里 = `test` 通过），超时上限必须有
+ *   （没有上限的轮询在真坏掉时会挂死）。
+ *
+ * @param {{ evalIn: (e: string) => Promise<any> }} handle openTab 的返回值
+ * @param {(v: any) => boolean} test 判据
+ */
+async function pollEval(handle, expression, test, { tries = 40, gapMs = 500 } = {}) {
+  let last
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      last = await handle.evalIn(expression)
+    } catch {
+      last = undefined
+    }
+    if (test(last)) return { ok: true, value: last, tries: i + 1 }
+    await sleep(gapMs)
+  }
+  return { ok: false, value: last, tries }
+}
+
 module.exports = {
   BASE,
   EXT_DIR,
@@ -176,4 +239,6 @@ module.exports = {
   killEdge,
   removeProfile,
   readExtIdFromProfile,
+  openTab,
+  pollEval,
 }

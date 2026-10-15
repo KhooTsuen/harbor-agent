@@ -1,21 +1,23 @@
 /*
- * 侧边栏样式入口（Phase 1c 第一步：只验构建链路）
+ * 侧边栏样式入口（Phase 1c 第二步）
  *
- * ★ 直接 @import 主应用的 index.css —— 这是**故意**的，不是偷懒：
+ * ★ 直接 @import 主应用那两份 CSS —— **故意**的，不是偷懒：
  *
- *   主 `src/index.css` 是三样东西的**唯一来源**：
+ *   `src/index.css` 是三样东西的唯一来源：
  *     ① `@tailwind base/components/utilities` 三条指令
  *     ② 主题 CSS 变量（`--bg-canvas` / `--text-primary` …）
  *     ③ 三个 `@layer`（base / components / utilities）
+ *   Tailwind 的 theme 只把类名映射到 `var(--x)`，**变量本身在这里** ——
+ *   只引 theme 不引变量 = 类生成了、颜色是空的（Phase 1c 第一步验过这个坑）。
  *
- *   Tailwind 的 theme 把类名映射到 `var(--x)`，**变量本身在 ① ② 里**。
- *   只引 theme 不引变量 → 类生成了、颜色是空的（本批要验的正是这个坑）。
+ *   `src/styles/theme-primer-dark.css` 是**主应用实际的默认主题**：
+ *   主 `src/main.tsx` 在 index.css **之后**引它（要覆盖旧变量）。
+ *   所以扩展侧顺序必须一致，否则配色的那一档跟主应用对不上。
  *
- *   Vite 内建处理 CSS `@import`（不需要 postcss-import）—— 这里顺带验证它。
- *
- * ⚠️ Phase 1c 第二步（真 UI）要重新评估：全量引入会把主应用
- *    `@layer components` 里那堆组件样式一起打包进扩展。到时候可能要
- *    拆出一份「只有 token + 少量基础层」的共享 CSS。**本步只验能不能通。**
+ * ⚠️ 现在整份引入（含主应用 `@layer components` 里那堆组件样式）。
+ *    用户已拍板「先整份 import，等真 UI 出来看实际体积再决定要不要拆」
+ *    —— 所以这里不拆，拆的时候记得回来改这行与报告。
  */
 
 @import '../../../src/index.css';
+@import '../../../src/styles/theme-primer-dark.css';
