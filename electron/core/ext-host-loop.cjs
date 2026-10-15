@@ -139,9 +139,26 @@ function createDispatcher(client) {
       return { type: 'get-elements.result', ok: false, id, error: res.error.message, code: res.error.code }
     }
 
+    /*
+     * M04-2：把执行结果**回执**给主进程（`page:result`）。
+     *
+     * ★ 与上面几条方向相反：那几条是「扩展问、主进程答」，这一条是「扩展干完活、
+     *   报告结果」。走的是同一条 request/应答机制（主进程的 `handleResult` 按 id
+     *   配对，见 core/ext-command.cjs）—— 所以 host 也只是转发，不解析 `result`
+     *   的形状（那是 act.js ↔ ext-command.cjs 之间的约定）。
+     */
+    if (type === 'page-result') {
+      const res = await client.request(P.KIND.PAGE_RESULT, {
+        id: String(obj.id ?? ''),
+        result: obj.result ?? null,
+      })
+      if (res.ok) return { ...res.payload, type: 'page-result.result', ok: true, id }
+      return { type: 'page-result.result', ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
     return {
       error:
-        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new / observe-page / get-elements',
+        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new / observe-page / get-elements / page-result',
       echo: message ?? null,
     }
   }
@@ -162,7 +179,17 @@ function runInteractive(deps) {
   deps.redirectOutput()
   note(`已就绪（pid=${process.pid}，事件驱动）`)
 
-  /* 主进程的主动推送（3b 用）→ 原样转给扩展 */
+  /*
+   * ★ M04：**一上来就连管道**（不再等「扩展第一次请求」才连）。
+   *
+   * 为什么：主进程要能**主动推指令**（click / verify）—— 推的前提是管道上有活连接。
+   * 懒连时「扩展刚连上 host、还没发过任何请求」这段窗口里，主进程推啥都掉地上
+   * （真机逮到：`sent: 0` → 报「浏览器扩展没连上」，而浏览器好端端的）。
+   * 连不上不算错（Harbor 没开）：`ext-client` 内部吞掉，等下次请求再试。
+   */
+  void client.ensureConnected()
+
+  /* 主进程的主动推送（3b 流式分片 / M04 下发指令）→ 原样转给扩展 */
   client.setPushHandler((msg) => {
     try {
       fs.writeSync(1, P.encodeFrame(msg))

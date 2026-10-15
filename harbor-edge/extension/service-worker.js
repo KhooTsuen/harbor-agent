@@ -1,8 +1,8 @@
 /**
  * Harbor 浏览器伴侣 · Service Worker（Phase 3a）
  *
- * SW 只管三件事：① 装上 action / 面板 / 消息的接线；② 读当前活动标签的正文；
- * ③ 取会话列表。**通道那层（连 host、重连、按 id 收发）在 `lib/native.js`。**
+ * SW 管四件事：① action / 面板 / 消息接线；② 读当前标签正文；③ 取会话列表；
+ * ④ **主进程下发的指令**（M04：点 / 验）。**通道层在 `lib/native.js`。**
  *
  * ── ★ 两条硬规矩（用户定的边界）────────────────────────────
  *   · `chrome.tabs.query({active:true, currentWindow:true})` —— 只可能拿到**前台当前
@@ -20,10 +20,11 @@
 
 /* global chrome */
 
-import { connect, getState, ping, requestHost } from './lib/native.js'
+import { connect, getState, ping, requestHost, setCommandHandler } from './lib/native.js'
 import { resolveActiveTab } from './lib/active-tab.js'
-/* M03：观察页面那一步（拆到单独文件，SW 贴 300 红线） */
+/* M03：观察页面（拆到单独文件，SW 贴 300 红线）· M04：指令执行 */
 import { observePage, getElements } from './lib/observe-run.js'
+import { runCommand } from './lib/command-run.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
    可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
@@ -277,9 +278,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(() => {
   bindAction()
+  bindCommandHandler()
   connect()
 })
 chrome.runtime.onStartup.addListener(connect)
 
+/**
+ * M04：把「主进程下发指令」这条线接上（见 `lib/command-run.js`）。
+ *
+ * ★ 少了这一句的表现：主进程 `call('click')` 推出去的指令**没人接** ——
+ *   扩展既不点、也不回执 → 主进程 15 秒后超时 → 用户看到「浏览器没在 15 秒内回话」，
+ *   而**浏览器好端端的**。所以自检组有一条钉着这个注册。
+ */
+function bindCommandHandler() {
+  setCommandHandler(runCommand)
+}
+
 bindAction()
+bindCommandHandler()
 connect()

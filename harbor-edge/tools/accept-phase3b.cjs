@@ -99,9 +99,11 @@ const killTree = (pid) => spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'
 
 let edge = null
 let cdp = null
-/** 注册表原值（跑完恢复 —— 用户可能保留着 dist-portable 那条） */
-const regKey = `HKCU\\SOFTWARE\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`
-const regOld = spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
+/*
+ * 注册表**真原值**（跑完恢复）：走共享快照 —— 「现读一次」当原值会被上一轮的
+ * 隔离值污染（2026-10-16 实测踩到，见 lib/ext-stage.cjs 的文件头）。
+ */
+const regSnap = S.snapshotRegistry(HOST_NAME)
 
 const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 const fill = (t) =>
@@ -165,7 +167,7 @@ async function main() {
    * （`native.js` 的 `RECONNECT_MS = 3000`，判据 ⑥b 最多等 15s）。
    *
    * ⚠️ 副作用：若用户此刻正开着 Edge 用扩展，他会短暂看到「未连接」。
-   *    脚本跑完在 `finally` 里恢复注册表原值（`regOld` 在启动时就存好了）。
+   *    脚本跑完在 `finally` 里恢复**真原值**（`S.snapshotRegistry` 的外部备份）。
    */
   S.regDel(HOST_NAME)
 
@@ -349,17 +351,19 @@ async function run() {
     if (edge) D.killEdge(edge.child.pid)
     for (const p of procs) killTree(p.pid)
     await sleep(600)
-    /* 恢复注册表（原值有就写回，没有就删干净） */
-    if (/REG_SZ/.test(regOld)) {
-      const m = regOld.match(/REG_SZ\s+(.+)/)
-      if (m) spawnSync('reg', ['ADD', regKey, '/ve', '/t', 'REG_SZ', '/d', m[1].trim(), '/f'], { stdio: 'ignore' })
-    } else {
-      S.regDel(HOST_NAME)
-    }
+    /* ★ 恢复**真原值** + 回读比对（不一致就记一条失败 —— 别再无条件的「已恢复」）*/
+    const rr = S.restoreRegistry(HOST_NAME, regSnap.value)
+    console.log(`清理：注册表实际值 = ${rr.actual || '(键不存在)'}`)
+    rec(
+      '清理：注册表恢复到真原值',
+      rr.ok === true && regSnap.polluted !== true,
+      `${rr.actual || '(键不存在)'} vs ${rr.want || '(无)'}${regSnap.polluted ? ' ⚠ 备份里也是隔离值，原值可能早已被覆盖' : ''}`,
+    )
     S.unstageHost({ dataDir: ISO, tag: 'p3b' })
     if (edge) D.removeProfile(edge.profile)
     restoreData()
-    console.log('清理：注册表已恢复 / 隔离 host 已卸 / profile 已删 / 隔离数据已还原')
+    /* ★ 这里**不再**说「注册表已恢复」—— 那句改由上面的回读打印（真值 + 比对） */
+    console.log('清理：隔离 host 已卸 / profile 已删 / 隔离数据已还原')
   }
   process.exit(exitCode)
 }

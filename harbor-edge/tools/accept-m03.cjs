@@ -79,10 +79,27 @@ const PAGE_A = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><t
 const PAGE_B = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>另一个源</title></head><body><p>inner</p></body></html>`
 
 const servers = []
+/**
+ * ★ 服务端错误**必须记下来**（2026-10-16 补）。
+ *
+ * 原来这里的 `listen` **没有 error 处理** —— 端口被占时它静默失败，
+ * 但脚本照跑：A 段拿到的是**别人**的页面（或根本连不上），于是十几条判据
+ * 一起来红，看着像「产品坏了」。实测踩到过：几条脚本串着跑时 m03 红 14 条，
+ * **单独跑 31/31 全通**。
+ *
+ * 所以两件事都要做：① 错误记下来；② 开跑前**探一次端口**（见 waitPort），
+ * 不在听就早退 —— 不在一堆假数据上得出假结论。
+ */
+const serverErrors = []
 function serve(port, html) {
   const s = http.createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end(html)
+  })
+  s.on('error', (error) => {
+    const msg = `端口 ${port} 起不来：${(error && error.message) || error}`
+    serverErrors.push(msg)
+    console.error(`  ✗ 测试页服务失败 —— ${msg}`)
   })
   s.listen(port, '127.0.0.1')
   servers.push(s)
@@ -90,6 +107,26 @@ function serve(port, html) {
 }
 serve(PORT_A, PAGE_A)
 serve(PORT_B, PAGE_B)
+
+/**
+ * 等端口**真的在听**。
+ *
+ * ★ 判据是「连得上」，不是「等了几毫秒」—— 这是 `harbor-edge/README.md`
+ *   那条硬规则（不许拿固定毫秒当判据）。上限 4 秒，超了算失败。
+ */
+async function waitPort(port, tries = 20) {
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      /* 带超时：万一端口上蹲着一个「连得上但不响应」的东西，别在这儿挂死 */
+      const r = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1500) })
+      if (r.ok) return true
+    } catch {
+      /* 还没起来 / 超时 */
+    }
+    await sleep(200)
+  }
+  return false
+}
 
 /* ── 源码树 Harbor（隔离数据根）+ vite ── */
 const procs = []
@@ -152,6 +189,21 @@ async function main() {
   const P2 = path.join(ISO, 'sessions')
   const before = fs.existsSync(P2) ? fs.readdirSync(P2).filter((f) => f.endsWith('.jsonl')).length : 0
 
+  /*
+   * ── ★ 开跑前先确认两个测试页端口**真的在听** ──
+   * 不在听就别往下跑：A 段所有判据都会在一片假数据上得出「产品坏了」的假结论
+   * （实测：端口冲突时它红 14 条，而单独跑 31/31 全通）。所以这里**早退**。
+   */
+  const portA = await waitPort(PORT_A)
+  const portB = await waitPort(PORT_B)
+  const portsOk = portA === true && portB === true && serverErrors.length === 0
+  rec(
+    '⓪b ★ 两个测试页端口都在听（不在听 = 后面判据全无意义）',
+    portsOk,
+    serverErrors.length ? serverErrors.join(' | ') : `A=${portA} · B=${portB}`,
+  )
+  if (!portsOk) return false
+
   /* ── 先等主进程（C 段要用它；没起来时喂帧只会得到空回复）── */
   const appReady = await waitApp()
   rec('⓪ 源码树主进程就绪（C 段喂帧的前提）', appReady === true, appReady ? 'CDP 端口通' : '90 次没等到')
@@ -168,7 +220,14 @@ async function main() {
 
   /* ══ A 段：采集器在真 DOM 上跑（M03 的核心）══ */
   const page = await D.openTab(PORT_EDGE, `http://127.0.0.1:${PORT_A}/`)
-  await sleep(1200)
+  /*
+   * ★ 等**标题真的对**，不是等固定毫秒（2026-10-16 串行跑时踩到）。
+   *   原来是 `sleep(1200)` —— 机器忙（几条脚本连着跑、Edge 冷启动）时页面还没加载完，
+   *   `document.title` 是空的 → ③ 红，接着 A 段 8 条判据**全红**（一片「产品坏了」的假象，
+   *   而单独跑 32/32 全通）。判据必须是「目标状态出现了」—— 与 README 那条硬规则同源。
+   */
+  const titlePoll = await D.pollEval(page, `document.title`, (v) => String(v) === 'M03 验收页', { tries: 40 })
+  await sleep(300)
   const title = String(await page.evalIn(`document.title`))
   rec('③ 测试页打开了（真页面，不是桩）', title === 'M03 验收页', title)
 

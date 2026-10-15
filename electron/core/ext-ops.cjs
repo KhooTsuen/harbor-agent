@@ -1,25 +1,18 @@
 /**
- * 主进程侧：扩展通道的**分派表**（kind → 处理函数）—— Phase 3a
+ * 主进程侧：扩展通道的**分派表**（kind → 处理函数）
  *
- * ── 为什么从 ext-bridge.cjs 拆出来 ───────────────────────────
+ * 从 `ext-bridge.cjs` 拆出来的（那边要超 300 红线）。这块逻辑自洽（「拿 payload →
+ * 干活 → 给结果」）且**依赖注入** —— 自检能喂假 session / 假 audit 直接跑。
  *
- * bridge 已经 288 行，再加「分派 + 应答 + 推送 + 裸 JSON 兜底」会超 300 红线。
- * 而这块逻辑本身自洽（「拿 payload → 干活 → 给结果」），且**依赖注入** ——
- * 自检能喂假 session / 假 audit 直接跑，不必起管道服务器。
- *
- * ── ★ 处理函数一律**同步** ──────────────────────────────────
- *
- * 落会话、读会话列表都是本地同步 I/O。保持同步有两个好处：
- *   ① bridge 的管道回调里能**同步处理、同步回写**，不引入时序问题；
- *   ② 自检可以直接调，不用 await。
- * （真正的异步只在 `ext-client.cjs` 那一侧 —— 那是网络 I/O。）
+ * ★ 处理函数一律**同步**：bridge 的管道回调里能同步处理、同步回写（不引时序问题），
+ *   自检也能直接调。真正的异步只在 `ext-client.cjs` 那一侧（网络 I/O）。
  *
  * ⚠️ 本模块**不 require electron**（bridge 与 host 侧都要能加载它）。
  */
 
 const P = require('./ext-protocol.cjs')
 /* M03：观察结果 → markdown。纯函数，单独一个文件（ext-ops 贴 300 红线） */
-const { renderObservation, renderElements } = require('./ext-observe.cjs')
+const { renderObservation, renderElements, renderAction } = require('./ext-observe.cjs')
 /* M04：ref 失效判据（`inspectRef`）只有那一处 —— 这里只调，不另写一套 */
 const { inspectRef } = require('./ext-command.cjs')
 
@@ -175,25 +168,17 @@ function createOps(deps) {
     const list = session.list() ?? []
     return {
       sessions: list.map((s) => ({
-        id: String(s.id ?? ''),
-        title: String(s.title ?? ''),
-        mode: String(s.mode ?? ''),
-        model: String(s.model ?? ''),
-        workdir: String(s.workdir ?? ''),
-        projectId: String(s.projectId ?? ''),
-        messageCount: Number(s.messageCount ?? 0),
-        createdAt: Number(s.createdAt ?? 0),
-        updatedAt: Number(s.updatedAt ?? 0),
+        id: String(s.id ?? ''), title: String(s.title ?? ''), mode: String(s.mode ?? ''), model: String(s.model ?? ''),
+        workdir: String(s.workdir ?? ''), projectId: String(s.projectId ?? ''), messageCount: Number(s.messageCount ?? 0),
+        createdAt: Number(s.createdAt ?? 0), updatedAt: Number(s.updatedAt ?? 0),
       })),
     }
   }
 
   /**
-   * `page:elements`：**元素列表视图**（M04 第 1 步 `browser.getElements`）。
-   *
-   * 与 `page:observe` 的关系：**同一份采集**（扩展侧复用 M03 的采集器、同一套版本号
-   * 算法），只是渲染成「只要元素」的视图，并且**解析调用方给的 ref** ——
-   * 失效判据见 `ext-command.cjs` 的 `inspectRef`（只有那一处，硬约束 #9）。
+   * `page:elements`：**元素列表视图**（M04-1 `browser.getElements`）。
+   * 与 `page:observe` **同一份采集**（扩展侧复用 M03 采集器与版本号算法），只是渲染成
+   * 「只要元素」的视图并**解析调用方给的 ref**（判据见 `ext-command.cjs` 的 `inspectRef`）。
    */
   function ingestElements(payload) {
     const obs = payload?.observation && typeof payload.observation === 'object' ? payload.observation : null
@@ -230,6 +215,30 @@ function createOps(deps) {
     }
   }
 
+  /** **操作结果落盘**（M04-2）—— click / verify 走这条。**不在分派表里**（不是扩展发来的
+   *  消息，是主进程内部「干完活记一笔」），由 `ext-bridge.landAction()` 直接调 —— 所以
+   *  协议层不加 kind。没执行（引用失效 / 页面报错）的结果**也落**：得让用户和模型看到
+   *  「为什么这次没点下去」，一片安静比一条明确的失败更糟。 */
+  function ingestAction(kind, result, meta) {
+    const k = String(kind ?? 'click')
+    const rendered = renderAction(k, result, meta)
+    const url = String(meta?.url ?? '')
+    const title = String(meta?.title ?? '')
+    const wrapped = wrap({ url, title, text: rendered.markdown, truncated: rendered.truncated === true })
+    const res = ingest(title || url || '未命名页面', wrapped, `page:${k}`, {
+      url,
+      title,
+      chars: rendered.chars,
+      truncated: rendered.truncated === true,
+      action: k,
+      ref: String(result?.ref ?? ''),
+      ok: result?.ok === true,
+      reason: String(result?.reason ?? ''),
+      durationMs: Number(meta?.durationMs ?? 0),
+    })
+    return { sessionId: res.sessionId, chars: rendered.chars, truncated: rendered.truncated === true }
+  }
+
   const table = {
     [P.KIND.EXT_PAGE]: (payload) => ingestPage(payload),
     [P.KIND.SESSION_LIST]: () => listSessions(),
@@ -251,9 +260,9 @@ function createOps(deps) {
   /**
    * 处理一条请求。**不抛** —— 一切都变成 `{ok:false,error}`。
    *
-   * @param {string} kind
-   * @param {object} [payload]
-   * @returns {{ ok: true, data: object } | { ok: false, error: { code: string, message: string } }}
+   * ★ `chat:send` 这类**自己**给 `{ok:false,error:{code,message}}`（忙 / 没窗口 / 没会话
+   *   都是正常业务分支，不是异常）—— 原样透传，别再用 `{ok:true,data:…}` 套一层
+   *   （那会让 bridge 拿不到 code）。
    */
   function handle(kind, payload) {
     const key = String(kind ?? '')
@@ -266,11 +275,7 @@ function createOps(deps) {
     }
     try {
       const data = fn(payload)
-      /*
-       * ★ `chat:send` / `chat:resume` 这类**自己**给 `{ok:false,error:{code,message}}`
-       *   （忙 / 没窗口 / 没会话都是正常业务分支，不是异常）—— 原样透传，
-       *   别再用 `{ok:true,data:…}` 套一层（那会让 bridge 拿不到 code）。
-       */
+      /* 自己给了 {ok:false,error} 的原样透传（别套 {ok:true,data} —— bridge 会拿不到 code） */
       if (data && typeof data === 'object' && data.ok === false && data.error) return data
       return { ok: true, data }
     } catch (error) {
@@ -284,7 +289,7 @@ function createOps(deps) {
     }
   }
 
-  return { handle, kinds: () => Object.keys(table) }
+  return { handle, kinds: () => Object.keys(table), ingestAction }
 }
 
 module.exports = { createOps }

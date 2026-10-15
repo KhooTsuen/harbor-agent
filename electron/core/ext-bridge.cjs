@@ -1,34 +1,18 @@
 /**
- * 浏览器扩展 ↔ Harbor 主进程的桥（Phase 3a：**双向**）
+ * 浏览器扩展 ↔ Harbor 主进程的桥（**双向**）
  *
- * ── 它解决什么 ───────────────────────────────────────────────
+ * Edge 拉起的 native host 是**另一个进程**（见 native-host.cjs），拿不到主进程的内存态
+ * （会话、审计、当前打开的对话）。所以需要一条路把请求送进主进程、再把结果拿回去 ——
+ * 那就是这里（`net.createServer` 收命名管道）。帧格式与报文形状的唯一真相源是
+ * `core/ext-protocol.cjs`。
  *
- * Edge 拉起的 native host 是**另一个进程**（见 native-host.cjs），拿不到主进程的
- * 内存态（会话、审计、当前打开的对话）。所以 host 需要一条路把请求送进主进程、
- * 再把结果拿回去 —— 那就是这里（`net.createServer` 收命名管道）。
+ * ★ 裸 JSON 兜底（新旧混跑必须保住）：用户在 Edge 开着时升级 Harbor，**旧 host 进程还
+ *   活着** —— 它发的是 Phase 2 的裸 JSON（没有 id）。所以有 `id` → 新协议、回**帧**；
+ *   否则 → 旧单向路径、回裸 JSON。判据只有一处（`P.isProtocolFrame`）。
  *
- * ── Phase 3a 起是**双向**的（关键变化）──────────────────────
- *
- *   原来：host `fs.writeFileSync`（打开→写→关）→ 主进程按「连接结束」切分，
- *        回写**没人读**（host 早关了连接）。
- *   现在：host 保持连接、按帧读写 → 主进程**增量解码**、处理完**回写应答帧**。
- *   帧格式与报文形状的**唯一真相源**是 `core/ext-protocol.cjs`。
- *
- * ── ★ 裸 JSON 兜底（新旧混跑必须保住）───────────────────────
- *
- * 用户在 Edge 开着时升级 Harbor，**旧 host 进程还活着** —— 它发的是 Phase 2 的
- * 裸 JSON（`{token, kind, url, …}`，**没有 id**）。所以：
- *   · 有 `id` + `kind` → 新协议 → 回**帧**应答（host 会读）
- *   · 否则            → 旧单向路径 → 回裸 JSON（发了也白发，host 已关连接）
- * 判据只有一处（`P.isProtocolFrame`），别在别处再写一遍。
- *
- * ── 安全边界（如实写，别当成比实际更强）──────────────────────
- *
- * Windows 命名管道的 ACL 默认给创建者，但**同机同用户的其他进程仍可连上**，
- * 且能读到 data/ 下的 token 文件。所以这层不是「隔离」，是**防误连 + 防冒充**：
- *   · 管道名带 data 根路径的 hash（不同安装互不干扰、不易猜）
- *   · 消息必须带正确 token（主进程每次启动重新生成）
- * 要更强的隔离得设 Win32 管道 ACL —— Node 没有内置 API，本阶段不做（已记入报告）。
+ * ★ 安全边界（如实写，别当成比实际更强）：Windows 命名管道 ACL 默认给创建者，但**同机
+ *   同用户的其他进程仍可连上**，且能读到 data/ 下的 token。所以这层不是「隔离」，是
+ *   **防误连 + 防冒充**（管道名带 data 根 hash + 消息必须带正确 token）。
  *
  * ⚠️ 本模块**不 require electron**；系统能力全部注入（自检才能不起 Electron 就测）。
  */
@@ -245,6 +229,11 @@ function createBridge() {
       return activeSessionId
     },
 
+    /** 管道上活着的连接数（自检 / 诊断 / 验收用）—— 「推不动」时第一个该看的就是它 */
+    connectionCount() {
+      return socks.size
+    },
+
     /** 收一条消息（自检直接调，不必起管道） */
     ingest,
 
@@ -261,6 +250,17 @@ function createBridge() {
         }
       }
       return { ok: true, sent, connections: socks.size }
+    },
+
+    /** 操作结果落盘（M04-2）：调到 `ops` 那唯一一份实现（`ext-command` 只拿注入的 `land`，
+     *  两个内核模块不互相 require —— 自检才能单独跑） */
+    landAction(kind, result, meta) {
+      try {
+        return (ops && ops.ingestAction(kind, result, meta)) || {}
+      } catch (error) {
+        deps.log?.warn?.(`操作结果落盘失败：${error instanceof Error ? error.message : error}`)
+        return {}
+      }
     },
 
     stop() {

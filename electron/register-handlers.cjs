@@ -181,6 +181,16 @@ function registerHandlers(deps) {
    * 装配放这儿而不是 main.cjs —— main.cjs 已 298 行贴 300 红线（一行动不动最好）。
    */
   const extBridge = require('./core/ext-bridge.cjs').createBridge()
+  /*
+   * M04：**下行指令**（主进程 → 扩展，并等回执）—— click / verify 走它。
+   * `getBridge` 用闭包延迟取（extBridge 在这行之后才装配，调用时早已就绪）。
+   * `land` 把「操作结果」交给桥 → ops 那唯一一份落盘实现（见 ext-bridge.landAction）。
+   */
+  const extCommand = require('./core/ext-command.cjs').createCommand({
+    getBridge: () => extBridge,
+    log,
+    land: (kind, result, meta) => extBridge.landAction(kind, result, meta),
+  })
   extBridge.start({
     dataDir: require('./core/paths.cjs').DIRS.data,
     send,
@@ -190,6 +200,8 @@ function registerHandlers(deps) {
     log,
     /* Phase 3b：侧边栏发消息那条路进分派表 */
     chat: chatRelay,
+    /* M04：下行指令的回执配对入口（page:result 分派到它） */
+    command: extCommand,
   })
   /* 互相依赖所以晚绑：relay 要用 bridge 的 push 与 activeSession（见 ext-chat.cjs） */
   chatRelay.setBridge(extBridge)

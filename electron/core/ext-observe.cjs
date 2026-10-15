@@ -1,21 +1,13 @@
 /**
- * M03：把「页面观察」渲染成**给人看 / 给模型读**的 markdown（Phase 3d）
+ * M03 / M04：把「页面观察」「元素列表」「点击与验证」渲染成**给人看 / 给模型读**的
+ * markdown（纯函数，自检能直接喂假数据跑）。硬约束 #9：「结果 → 文本」只有这一份实现。
  *
- * ── 为什么单独一个文件 ───────────────────────────────────────
- *
- * `ext-ops.cjs` 已 179 行，再加一段渲染 + 预算就贴着 300 红线；而这块是**纯函数**
- * （输入观察对象、输出 markdown），自检能直接喂假数据跑，不必起管道。硬约束 #9：
- * 「观察结果 → 文本」这件事只有这一份实现。
- *
- * ── 两条不能忘的规矩 ─────────────────────────────────────────
- *
- *   ① **不捏造**：跨域 iframe 只说「读不到 + 为什么」，不填任何内容字段；
- *      closed shadow root 只说「无法枚举」，不猜数量。
- *   ② **敏感字段永不出现在文本里**：采集器已把 `value` 置 null，这里再兜一次
- *      （`masked` 的元素只写「（敏感字段，不读取）」）—— 防的是将来有人改采集器。
+ * ★ 两条不能忘的规矩：
+ *   ① **不捏造**：跨域 iframe 只说「读不到 + 为什么」，不填内容字段；closed shadow
+ *      只说「无法枚举」，不猜数量。
+ *   ② **敏感字段永不出现在文本里**：只写「（敏感字段，不读取）」（防将来有人改采集器）。
  *
  * 形状与预算见 `docs/research/edge-extension-m03-design.md`（唯一真相源）。
- *
  * ⚠️ 本模块**不 require electron**（自检要能在纯 Node 里直接跑它）。
  */
 
@@ -117,13 +109,7 @@ function renderObservation(obs) {
   if (shadow.note) lines.push(kv('说明', String(shadow.note)))
   lines.push('')
 
-  let markdown = lines.join('\n')
-  let truncated = false
-  if (markdown.length > MAX_CHARS) {
-    markdown = `${markdown.slice(0, MAX_CHARS)}\n\n（观察结果过长，已截断）`
-    truncated = true
-  }
-  return { markdown, truncated, chars: markdown.length }
+  return finish(lines)
 }
 
 /**
@@ -180,13 +166,129 @@ function renderElements(obs, opts = {}) {
     lines.push('', '> 引用格式 `<页面版本>.<序号>` —— 页面一变，旧引用即失效。', '')
   }
 
+  return finish(lines)
+}
+
+/**
+ * 收尾：拼 markdown + 超预算截断（**三个渲染器共用这一份**，硬约束 #9）。
+ */
+function finish(lines) {
   let markdown = lines.join('\n')
   let truncated = false
   if (markdown.length > MAX_CHARS) {
-    markdown = `${markdown.slice(0, MAX_CHARS)}\n\n（元素结果过长，已截断）`
+    markdown = `${markdown.slice(0, MAX_CHARS)}\n\n（结果过长，已截断）`
     truncated = true
   }
   return { markdown, truncated, chars: markdown.length }
 }
 
-module.exports = { renderObservation, renderElements, elementsTable, MAX_CHARS }
+/**
+ * 「点击 / 验证」的结果 → markdown（M04 第 2 步）。
+ *
+ * ── ★ 为什么点击的结果要渲染成一张**前后对比表** ──────────────
+ *
+ * 用户定的硬要求：**「点了」≠「生效」**。所以这里不写「点击成功」，而是把
+ * 四条状态信号（URL / 标题 / DOM / 目标元素）的前后值**并排摆出来**，
+ * 让模型自己判断这一下有没有产生它要的效果。
+ *
+ * 失效（page-changed / not-found）与执行失败（`ok:false`）都在最前面说清 ——
+ * 尤其是**失效**：那不是「操作失败」，是「你拿着过期的引用，我没敢点」，
+ * 必须让模型知道要去重新观察。
+ *
+ * @param {string} kind `click` / `verify`
+ * @param {object} result 扩展侧 `lib/act.js` 的返回值
+ * @param {{ durationMs?: number }} [meta]
+ */
+function renderAction(kind, result, meta = {}) {
+  const r = result && typeof result === 'object' ? result : {}
+  const isClick = kind === 'click'
+  const lines = [isClick ? '## 页面操作：点击' : '## 页面验证', '']
+  const ms = Number(meta.durationMs ?? 0)
+  if (ms > 0) lines.push(kv('耗时', `${ms} ms`))
+  if (r.ref) lines.push(kv('引用', cell(r.ref)))
+
+  /* ── 先处理「没执行」的两种情形：引用失效 / 页面那边报错 ── */
+  if (r.reason === 'page-changed' || r.reason === 'not-found') {
+    lines.push(kv('结果', '**没有执行** —— 元素引用已失效'), '')
+    lines.push(`- 原因：${cell(r.message) || (r.reason === 'page-changed' ? '页面已变化' : '元素已不在页面上')}`)
+    if (r.refVersion || r.version) {
+      lines.push(kv('引用属于的版本', cell(r.refVersion)), kv('当前页面版本', cell(r.version)))
+    }
+    lines.push('', '→ **重新观察页面**，用新拿到的引用再操作（否则会点错东西）。', '')
+    return finish(lines)
+  }
+  if (r.reason === 'no-observation') {
+    lines.push(kv('结果', '**没有执行** —— 还没观察过这个页面'), '')
+    lines.push('→ 先观察页面（拿到元素引用），再操作。', '')
+    return finish(lines)
+  }
+  /*
+   * ★★ 「点了但证据没回来」—— 真机逮到的**真实情形**（M04-2）：点完页面就跳转了，
+   *   注入的上下文被销毁，结果回不来。必须说清「**不代表没点上**」+ 下一步做什么，
+   *   否则模型会以为失败而重试 —— 那一下可能已经点出去了，重试就点两次。
+   */
+  if (r.reason === 'no-result') {
+    lines.push(kv('结果', '**点击发出去了，但状态证据没采到**'), '')
+    if (r.navigated === true) {
+      lines.push(kv('页面跳转到了', cell(r.urlAfter)), '')
+      lines.push('（跳转发生在采证据之前 —— 页面换了，注入的那段代码跟着被销毁）', '')
+    }
+    lines.push('**这不代表没点上** —— 页面在把结果送回来之前就变了，所以这一下**可能已经生效**。')
+    if (r.message) lines.push('', `- 扩展侧原话：${cell(r.message)}`)
+    lines.push('', '→ 用 `browser.verify` 确认页面状态（或重新观察一次）。**不要直接重试点击** —— 可能点两次。', '')
+    return finish(lines)
+  }
+  if (r.ok !== true) {
+    lines.push(kv('结果', '**执行失败**'), '')
+    if (r.error) lines.push(`- 原因：${cell(r.error)}`)
+    if (r.threw) lines.push(`- 页面报错：${cell(r.threw)}`)
+    lines.push('')
+    return finish(lines)
+  }
+
+  /* ── 点击：摆出前后对比（这张表就是「状态证据」）── */
+  if (isClick) {
+    const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {}
+    lines.push(kv('结果', '已经点了（**这只是「点了」，不等于你要的效果发生了**）'), '')
+    lines.push('### 点击前后的对比（自己判断有没有生效）', '')
+    lines.push('| 信号 | 之前 | 之后 | 变化 |', '|---|---|---|---|')
+    lines.push(
+      `| URL | ${cell(ev.urlBefore)} | ${cell(ev.urlAfter)} | ${ev.urlChanged ? '**变了**' : '没变'} |`,
+    )
+    lines.push(
+      `| 标题 | ${cell(ev.titleBefore)} | ${cell(ev.titleAfter)} | ${ev.titleChanged ? '**变了**' : '没变'} |`,
+    )
+    lines.push(
+      `| DOM | ${Number(ev.nodesBefore ?? -1)} 节点 / ${Number(ev.textLenBefore ?? -1)} 字 | ${Number(ev.nodesAfter ?? -1)} 节点 / ${Number(ev.textLenAfter ?? -1)} 字 | ${ev.domChanged ? '**变了**' : '没变'} |`,
+    )
+    lines.push(`| 目标元素 | 在 | ${ev.targetStillThere ? '还在' : '**没了**'} | ${ev.targetStillThere ? '没变' : '**变了**'} |`)
+    lines.push('', `（点完等了 ${Number(r.settledMs ?? 0)} ms 再采的对比）`, '')
+    const anyChange = Boolean(ev.urlChanged || ev.titleChanged || ev.domChanged || !ev.targetStillThere)
+    lines.push(
+      anyChange
+        ? '→ 页面**有变化** —— 但要不要接着做，得看变化是不是你要的那个（例如提交后出现的提示）。'
+        : '→ 页面**一点没变**。可能是这个元素本来就没什么可做的，也可能需要等一会儿 / 先观察页面。',
+      '',
+    )
+    return finish(lines)
+  }
+
+  /* ── 验证：逐条期望 vs 实际 ── */
+  const checks = Array.isArray(r.checks) ? r.checks : []
+  lines.push(kv('结果', r.matched === true ? '**全部符合**' : '**有不符的期望**'), '')
+  if (!checks.length) {
+    lines.push('（没有给任何期望 —— 没验到东西）', '')
+    return finish(lines)
+  }
+  lines.push('| 期望 | 实际 | 命中 |', '|---|---|---|')
+  checks.forEach((c) => {
+    const ch = c && typeof c === 'object' ? c : {}
+    lines.push(
+      `| ${cell(ch.name)}：${cell(ch.expected)} | ${cell(ch.actual)} | ${ch.pass === true ? '是' : '**否**'} |`,
+    )
+  })
+  lines.push('')
+  return finish(lines)
+}
+
+module.exports = { renderObservation, renderElements, renderAction, elementsTable, MAX_CHARS }

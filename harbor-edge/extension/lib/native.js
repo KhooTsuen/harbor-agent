@@ -40,6 +40,20 @@ let state = { connected: false, lastError: null, lastPongAt: 0, host: HOST }
 /** 在途请求：`id → { resolve, timer }`（并发安全 —— 多条可同时在途） */
 const pending = new Map()
 
+/**
+ * 主进程下发**指令**时的处理函数（M04）。
+ *
+ * 为什么用「注册」而不是在这里 import：`native.js` 是**通道层**，它不该知道
+ * 「点了哪个元素」这种事。SW 在启动时把 `lib/command-run.js` 的 `runCommand`
+ * 塞进来 —— 通道层只管「收到什么、交给谁」，与 `publish` / `broadcast` 同一个路子。
+ */
+let commandHandler = null
+
+/** 注册指令处理器（SW 启动时调一次） */
+export function setCommandHandler(fn) {
+  commandHandler = typeof fn === 'function' ? fn : null
+}
+
 /** 当前连接状态（侧边栏 `get-status` 用） */
 export function getState() {
   return state
@@ -119,8 +133,16 @@ export function connect() {
      * Phase 3b：主进程的**主动推送**（流式分片）—— 特征是**没有 id**（见
      * electron/core/ext-protocol.cjs 的 push）。它不属于任何一次请求，
      * 所以不走 pending，而是**广播**给开着的侧边栏（谁在看谁处理）。
+     *
+     * M04：同一条通道还用来下发**指令**（`page:command`）—— 那是**主进程要扩展
+     * 干活**，不是给侧边栏看的东西，所以交给命令处理器、**不广播**（侧边栏对
+     * 「点了哪个元素」没有用处，广播过去只会多一层噪声）。
      */
     if (msg && msg.push === true) {
+      if (msg.kind === 'page:command' && commandHandler) {
+        void commandHandler(msg.payload)
+        return
+      }
       broadcast({ type: 'harbor-push', push: msg })
       return
     }

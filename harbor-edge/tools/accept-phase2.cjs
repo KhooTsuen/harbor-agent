@@ -5,12 +5,18 @@
  *      → 真主进程桥（真 session + 真审计）→ 真会话文件。
  * A 段（host→管道→包装→落会话→审计）真机端到端；B 段（点按钮→scripting
  * 读正文）受 activeTab 的 invoke 时机限制，**实测并如实记录**，不粉饰。
+ *
+ * ⚠️ 这个脚本会**临时写 `com.harbor.agent` 注册表**（指到隔离 host），而且判据 ⑰
+ *    还会**故意删一次**去验「删注册表不断开已建立的连接」—— 所以跑完必须恢复
+ *    用户的真值。2026-10-16 起走 `S.snapshotRegistry` 的外部备份（原来只删不恢复，
+ *    跑一次就把用户手工装的那条抹掉）。
  */
 const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const D = require('../lib/driver.cjs')
 const P = require('../lib/ext-probe.cjs')
+const S = require('../lib/ext-stage.cjs')
 const B = require('../../electron/core/ext-bridge.cjs')
 
 const ROOT = P.ROOT
@@ -20,6 +26,7 @@ const DATA = path.join(ROOT, 'data', 'unit-test-data')
 const PROFILE = 'profile-p2-e2e'
 const PORT = 9480
 const WEB_PORT = 8855
+const HOST_NAME = 'com.harbor.agent'
 const MARK = 'P2_E2E_PAGE_MARKER_77'
 
 const session = require('../../electron/core/session.cjs')
@@ -61,6 +68,17 @@ async function main() {
   console.log('  产物里的 manifest =', staged.hasManifest)
   let edge = null
   const created = []
+  /*
+   * ★ 注册表**真原值**快照 —— 必须在写注册表之前，而且必须在 `try` **外面**。
+   *
+   * ⚠️ 第一版我把它写在了 `try {` 里面 → `finally` 里引用不到（`const` 是块级作用域）
+   *   → 恢复那步抛 `ReferenceError`，**用户手工装的那条就再也回不来**（2026-10-16 实测）。
+   *
+   * 这个脚本会**故意**删一次注册表去验判据 ⑰（「删注册表不断开已建立的连接」），
+   * 还临时写隔离 host 指到验收数据根 —— 跑完都得恢复用户的真值。
+   * 走共享快照而不是「现读一次」：现读到的可能就是上一轮留下的隔离值。
+   */
+  const regSnap = S.snapshotRegistry(HOST_NAME)
   try {
     /* ── 起真 Edge + 真扩展 ── */
     edge = await D.launchEdge({ profileName: PROFILE, port: PORT, extDir: STAGE, waitMs: 2500 })
@@ -270,7 +288,18 @@ async function main() {
       /* 已退 */
     }
     await P.sleep(800)
-    D.regDel('com.harbor.agent')
+    /*
+     * ★ 恢复**真原值** + 回读比对：不一致就记一条失败。
+     *   （原来这里是 `D.regDel(...)` —— **只删不恢复**，用户手工装的那条会被永久抹掉。
+     *     而且它删完之后什么都不打印，看起来「一切正常」。2026-10-16 统一到共享快照。）
+     */
+    const rr = S.restoreRegistry(HOST_NAME, regSnap.value)
+    console.log(`清理：注册表实际值 = ${rr.actual || '(键不存在)'}`)
+    rec(
+      '清理：注册表恢复到真原值',
+      rr.ok === true && regSnap.polluted !== true,
+      `${rr.actual || '(键不存在)'} vs ${rr.want || '(无)'}${regSnap.polluted ? ' ⚠ 备份里也是隔离值，原值可能早已被覆盖' : ''}`,
+    )
     const removed = D.removeProfile(path.join(D.PROFILE_ROOT, PROFILE))
     bridge.stop()
     for (const f of ['p2-manifest.json', 'p2-host.cmd']) {

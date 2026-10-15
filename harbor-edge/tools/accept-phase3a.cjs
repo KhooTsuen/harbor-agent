@@ -12,8 +12,10 @@
  *
  * ★ 2026-10-16 补上「恢复原值」：这个脚本原来是**只删不恢复**（`S.regDel` 之后没有
  *   任何恢复代码）—— 于是每跑一次，用户手工装的那条 `com.harbor.agent` 就被永久抹掉。
- *   3c 那轮我跑了它一次做回归，注册表就空了（`accept-phase3b/c` 都有 regOld 快照，
- *   唯独这里漏了）。跑验证脚本**不该有副作用**，这是硬要求。
+ *   3c 那轮我跑了它一次做回归，注册表就空了。跑验证脚本**不该有副作用**，这是硬要求。
+ *
+ * ★ 同日再补：原值**不能现读**（现读到的可能就是上一轮的隔离值）—— 六个脚本现在
+ *   统一走 `S.snapshotRegistry` 的外部备份（见 `lib/ext-stage.cjs` 的文件头）。
  */
 
 /* 隔离数据根：早于任何 require 设置（session/audit 都走 paths.cjs） */
@@ -46,12 +48,14 @@ const PORT = 9473
 const HOST_NAME = 'com.harbor.agent'
 
 /*
- * ★ 进来先把注册表原值**快照**下来（必须在 stageHost 之前）——
- *   跑完要**原样恢复**。原来这个脚本只删不恢复，把用户手工装的那条抹掉了
- *   （见文件头 2026-10-16 那段）。
+ * ★ 进来先把注册表**真原值**快照下来（必须在 stageHost 之前），跑完原样恢复。
+ *
+ * ★ 为什么不用「现读一次」当原值：现读到的**可能就是上一轮留下的隔离值**
+ *   （上一轮被杀 / 恢复失败时）→ 这轮「恢复成隔离值」还会回读一致，
+ *   用户的真值就被永久覆盖、而看起来一切正常（2026-10-16 实测踩到）。
+ *   共享机制把**第一次**读到的真值记进 tmp/ 备份，之后每轮以它为准。
  */
-const regKey = `HKCU\\SOFTWARE\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`
-const regOld = require('node:child_process').spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
+const regSnap = S.snapshotRegistry(HOST_NAME)
 
 const results = []
 const rec = (name, pass, detail) => {
@@ -278,14 +282,14 @@ async function main() {
       /* 已退 */
     }
     await P.sleep(800)
-    /* ★ 恢复注册表原值（不是删掉就走）—— 理由见文件头 2026-10-16 那一段 */
-    if (/REG_SZ/.test(regOld)) {
-      const val = (regOld.match(/REG_SZ\s+(.+)/) ?? [])[1]
-      if (val) S.regAdd(HOST_NAME, val.trim())
-      else S.regDel(HOST_NAME)
-    } else {
-      S.regDel(HOST_NAME)
-    }
+    /* ★ 恢复**真原值** + 回读比对：不一致就记一条失败（**不再**无条件说「已恢复」）*/
+    const rr = S.restoreRegistry(HOST_NAME, regSnap.value)
+    console.log(`清理：注册表实际值 = ${rr.actual || '(键不存在)'}`)
+    rec(
+      '清理：注册表恢复到真原值',
+      rr.ok === true && regSnap.polluted !== true,
+      `${rr.actual || '(键不存在)'} vs ${rr.want || '(无)'}${regSnap.polluted ? ' ⚠ 备份里也是隔离值，原值可能早已被覆盖' : ''}`,
+    )
     const removed = D.removeProfile(path.join(D.PROFILE_ROOT, PROFILE))
     try {
       bridge.stop()

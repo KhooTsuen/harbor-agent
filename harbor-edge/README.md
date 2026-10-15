@@ -10,7 +10,11 @@
 > 没选会话时发消息会**自动新建一条**；顶栏 ＋ 也是真的。
 > **M03 网页感知补完**（按《Harbor Agent Browser Extension》模块体系）—— 选区 / 可交互元素列表
 > （带引用与状态）/ iframe 能力检测（读不到如实报，不捏造）/ **页面版本号**；敏感字段一律不读。
-> **M04 受控操作（点击 / 填写 / 验证）是下一步 —— 未开工**。
+> **M04 第 1 步完成** —— `browser.getElements`（元素列表 + **引用失效判定**）。
+> **M04 第 2 步完成** —— `browser.click` + `browser.verify`：**「点了」≠「生效」**（返回
+> URL / 标题 / 节点数 / 正文字数的**前后对比**做状态证据）；点击**前**先校验版本号，
+> 失效即 `STALE_REF` + 人话（**根本不发指令**）；verify 四类期望（文本 / 选择器 / URL）。
+> `type` / `select` / `scroll` / `wait` / `navigate` 与**敏感操作确认**是下一步 —— **未开工**。
 >
 > ⚠️ **验收脚本的锚点**（改了渲染层必须同步，否则脚本**静默失效**、照跑不误）：
 > `[aria-label="…"]` 的**归属表**在 `lib/ext-probe-panel.cjs` 的文件头（唯一真相源）。
@@ -93,6 +97,8 @@
 | `src/sidepanel/ObserveButton.tsx` | 「观察页面」按钮（**M03**）：读结构（选区 / 元素 / 版本号）—— 与「读当前页」是两个动作 |
 | `extension/lib/observe.js` | **M03 采集器**（注入页面跑）：★ 必须**自包含**（见该文件头），产出选区 / 元素 / iframe / **页面版本号** |
 | `extension/lib/observe-run.js` | **M03**：执行「观察页面」那一步（注入 → 送主进程 → 落快照） |
+| `extension/lib/act.js` | **M04-2 注入函数**（`clickElement` / `verifyPage`）：★ **必须自包含**（`executeScript` 会 `toString()` 注入） |
+| `extension/lib/command-run.js` | **M04**：SW 侧收下行指令 → 注入执行 → 回执 `page-result`（含**导航型点击**的判定） |
 | `extension/lib/active-tab.js` | 「拿前台标签 + 判受限页」**唯一实现**（读正文与观察页面共用；那两句人话别改） |
 | `vite.config.ext.ts` | 扩展的独立 Vite 配置（root / postcss / outDir / alias 都跟主应用不同） |
 | `postcss.config.js` | 扩展的 Tailwind 配置（theme 继承主 config、content 只扫扩展 + 用到的 UI 组件） |
@@ -100,7 +106,7 @@
 | `install-host.cmd` / `uninstall-host.cmd` | 装 / 卸 native host（注册表 + 清单，幂等） |
 | `lib/driver.cjs` | 验收共用的 Edge 驱动（隔离 profile / 注册表 / 读扩展 ID） |
 | `lib/ext-probe.cjs` | 验收共用：CDP 求值 / 找 SW / 喂帧（**再导出**下一条） |
-| `lib/ext-probe-panel.cjs` | 面板 **DOM 锚点**（**可访问文案的唯一真相源**，文件头带**归属表**）：状态行 / 读页面 / ☰ / 当前会话名 / 抽屉 / 会话列表 |
+| `lib/ext-probe-panel.cjs` | 面板 **DOM 锚点**（**可访问文案的唯一真相源**，文件头带**归属表**）：状态行 / 读页面 / 观察页面 / ☰ / 当前会话名 / 抽屉 / 会话列表 |
 | `lib/ext-stage.cjs` | 验收共用的**装/卸隔离 host**（真 exe + 真机制 + 隔离数据根） |
 | `tools/` | 验收脚本（见下） |
 | `ext/` | Phase 1b 的**探针扩展**（历史验收资产，**不要动**） |
@@ -127,36 +133,38 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-sidepanel.cjs` | 构建产物**能当扩展页加载**（Phase 1c 第一步） | `node harbor-edge/tools/accept-sidepanel.cjs` |
 | `tools/accept-extension.cjs` | 真扩展 + native host **端到端**：能读到哪些状态（Phase 1c 第二步） | `node harbor-edge/tools/accept-extension.cjs` |
 | `tools/accept-phase2.cjs` | 「读当前页 → 包装 → 落会话」（Phase 2） | `node harbor-edge/tools/accept-phase2.cjs` |
-| `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**16 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
-| `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b，**15 条判据**） | `node harbor-edge/tools/accept-phase3b.cjs` |
-| `tools/accept-phase3c.cjs` | **选会话（只切侧边栏）/ 未选中自动新建 / ＋**（Phase 3c，**20 条判据**） | `node harbor-edge/tools/accept-phase3c.cjs` |
-| `tools/accept-m03.cjs` | **网页感知**（选区 / 元素 / iframe / 版本号；含密码遮蔽）（M03，**31 条判据**） | `node harbor-edge/tools/accept-m03.cjs` |
-| `tools/accept-m04a.cjs` | **元素列表 + 引用失效判定**（M04 第 1 步，**16 条判据**） | `node harbor-edge/tools/accept-m04a.cjs` |
-| `tools/accept-m03.cjs` | **M03 网页感知**（选区 / 元素 / **密码遮蔽** / 跨域 iframe / **版本号稳定与变化** / 落盘，**31 条判据**） | `node harbor-edge/tools/accept-m03.cjs` |
+| `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a） | `node harbor-edge/tools/accept-phase3a.cjs` |
+| `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b） | `node harbor-edge/tools/accept-phase3b.cjs` |
+| `tools/accept-phase3c.cjs` | **选会话（只切侧边栏）/ 未选中自动新建 / ＋**（Phase 3c） | `node harbor-edge/tools/accept-phase3c.cjs` |
+| `tools/accept-m03.cjs` | **M03 网页感知**（选区 / 元素 / **密码遮蔽** / 跨域 iframe / **版本号稳定与变化** / 落盘） | `node harbor-edge/tools/accept-m03.cjs` |
+| `tools/accept-m04a.cjs` | **M04-1 元素列表 + 引用失效判定** | `node harbor-edge/tools/accept-m04a.cjs` |
+| `tools/accept-m04b.cjs` | **M04-2 点击 + 验证**（真点击 / 状态证据 / 旧引用被拒 / 导航型点击如实说清） | `node harbor-edge/tools/accept-m04b.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 
 全部脚本都**自己起隔离 Edge**（独立 `--user-data-dir` + 隔离数据根），**不碰**你正在用的那个。
 
-> ⚠️ **`accept-phase3a/b/c.cjs` 必须串行跑，绝不能并行。**
-> （2026-10-16 补：`3a` 原来是**只删不恢复注册表**的，跑一次就把用户手工装的那条抹掉 ——
-> 现在三个脚本都会先快照、跑完**原样恢复**。）
-> 两者都写同一个全局注册表键 `HKCU\...\NativeMessagingHosts\com.harbor.agent`
-> （`finally` 里「摘 → 装隔离 → 恢复原值」）—— 并行会让它们互相踩，**键可能被删掉**
-> （2026-10-16 真踩到，恢复要手工 `reg ADD` 回原值）。
+> ⚠️ **写注册表的脚本必须串行跑，绝不能并行**（phase2 / 3a / 3b / 3c / m04a / m04b）。
+> 它们都写同一个全局键 `HKCU\...\NativeMessagingHosts\com.harbor.agent`
+> （`finally` 里「摘 → 装隔离 → 恢复真原值」）—— 并行会互相踩，**键可能被删掉**。
+> 而且**最好的做法是一条一条单独跑**：它们各自起真 Edge，前一个的残留会抢前台，
+> 后一个就报「读不到当前页地址」（2026-10-16 实测：串行跑时 m03 红 14 条、
+> m04a 红 9 条，**单独跑都是全绿**）。
 >
-> ⚠️ **别把多个脚本串在一条命令里跑**（同一个理由 + 端口）：每个脚本各自起 http server
-> （m03 用 8801/8802），前一个刚退出时端口可能还没释放 —— 后一个 `listen` 会 EADDRINUSE
-> 而**不报错**，于是拿一个「不是测试页」的页面跑完全部判据（一片假红）。
-> 2026-10-16 实测：串行跑 5 条时 m03 红 14 条，**单独跑 31/31 全通**。
+> ⚠️ **原值必须来自外部备份**（2026-10-16 修，六脚本统一）：它们原来都用「开跑时现读
+> 一次」当原值 —— 上一轮没恢复成功的话，读到的就是**隔离值**，于是「恢复成隔离值 +
+> 回读一致」→ 打印「✓ 一致」，而用户手工装的那条**早被覆盖了**。现在走
+> `lib/ext-stage.cjs` 的 `snapshotRegistry` / `restoreRegistry`：**第一次**读到的真值
+> 记进 `tmp/.native-messaging-registry.json`，之后以它为准；恢复后**回读比对**、
+> 不一致判失败。`accept-phase2.cjs` 原来是**只删不恢复**（它还会故意删一次验判据 ⑰），
+> 现在也纳入。
 >
-> ⚠️ **3c 的注册表恢复现在会回读比对**（2026-10-16 修）：原来那句「注册表已恢复」是
-> **无条件打印**的，恢复失败也照说 —— 我被误导过。现在打印**实际值**并比对，
-> 不一致就判失败。其余脚本的恢复段也建议照这个口径写。
-
-> ⚠️ `accept-phase3a/b/c.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
-> 隔离清单），跑完 `finally` 里**恢复原值** —— 如果你之前手动装过 host，跑完那条还在。
-> 另：3b 那一跑需要**源码树实例**（3b 改的是渲染层，打包版里是旧的）—— 脚本自己拉
+> ⚠️ 改验收脚本时注意：**别把 `regSnap` 声明写在 `try` 里面** —— `finally` 里 `const`
+> 取不到，会 `ReferenceError`，恢复那步直接抛异常（实测：注册表被删）。
+>
+> ⚠️ `accept-phase2/3a/3b/3c/m04a/m04b.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
+> 隔离清单），跑完 `finally` 里**恢复真原值** —— 如果你之前手动装过 host，跑完那条还在。
+> 另：3b / 3c 那一跑需要**源码树实例**（改的是渲染层，打包版里是旧的）—— 脚本自己拉
 > `vite + electron .`，并把数据根指到 `data/unit-test-data`。
 
 ---

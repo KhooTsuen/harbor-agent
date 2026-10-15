@@ -56,9 +56,9 @@ if (baseCfg.general) baseCfg.general.defaultWorkdir = path.join(ISO, 'chat')
 fs.writeFileSync(CONF, JSON.stringify(baseCfg, null, 2))
 fs.writeFileSync(CRED, JSON.stringify({ version: 1, backend: 'plain', entries: { 'provider:deepseek': { key: 'sk-fake' } } }))
 
-/* ── 注册表原值（跑完恢复）── */
+/* ── 注册表真原值（外部备份过的，见 lib/ext-stage.cjs 的文件头）── */
 const regKey = `HKCU\\SOFTWARE\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`
-const regOld = spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
+const regSnap = S.snapshotRegistry(HOST_NAME)
 
 /* ★ 起 Edge **之前**先摘注册表：否则 SW 一启动就连上旧 host，换注册表不会让它重连 */
 S.regDel(HOST_NAME)
@@ -301,39 +301,23 @@ void (async () => {
     console.log('验收脚本异常：', error && error.stack ? error.stack : String(error))
   } finally {
     /* ★ 清理：注册表恢复 / 卸隔离 host / 关我起的进程 / 删 profile */
-    try {
-      if (regOld.trim()) {
-        const val = (regOld.match(/REG_SZ\s+(.+)/) ?? [])[1]
-        if (val) {
-          for (const view of ['/reg:64', '/reg:32']) {
-            spawnSync('reg', ['ADD', regKey, '/ve', '/t', 'REG_SZ', '/d', val.trim(), '/f', view], { encoding: 'utf8' })
-          }
-        } else {
-          for (const view of ['/reg:64', '/reg:32']) spawnSync('reg', ['DELETE', regKey, '/f', view], { encoding: 'utf8' })
-        }
-      }
-    } catch {
-      /* 忽略 */
-    }
     /*
-     * ★ 恢复之后**必须回读比对**（2026-10-16 修，用户 2026-10-16 指出的缺陷）。
-     *
-     * 原来这里（下面那行 console.log）是**无条件**打印「注册表已恢复」的，而恢复段
-     * 整个包在 `catch { 忽略 }` 里 —— 就算恢复失败也照打印「已恢复」。真机就是这么
-     * 误导过一次：跑完 3c 去看，注册表还停在隔离值 `p3c-manifest.json`。
-     * 现在回读实际值，与期望不一致就**打印实际值 + 判失败**（退出码非 0）。
+     * ★ 恢复用**外部备份过的真原值**（`S.snapshotRegistry`，见 ext-stage 的文件头）。
+     *   原来这里用「开跑时现读的值」当原值 —— 上一轮若没恢复成功，读到的就是**隔离值**，
+     *   于是「恢复成隔离值 + 回读一致」→ 打印「✓ 一致」而用户那条其实早被覆盖了
+     *   （2026-10-16 实测踩到：注册表停在 p3c-manifest.json）。
+     * ★ 并且**回读比对**、不一致就判失败（不再无条件打印「已恢复」）。
      */
     let regSame = true
     try {
-      const out = spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
-      const got = ((out.match(/REG_SZ\s+(.+)/) ?? [])[1] ?? '').trim()
-      const want = ((regOld.match(/REG_SZ\s+(.+)/) ?? [])[1] ?? '').trim()
-      regSame = got === want
-      console.log(`清理：注册表实际值 = ${got || '(键不存在)'}`)
-      console.log(`      恢复前原值   = ${want || '(键不存在)'} → ${regSame ? '✓ 一致' : '✗ 不一致（要手工 reg ADD 回原值）'}`)
+      const rr = S.restoreRegistry(HOST_NAME, regSnap.value)
+      regSame = rr.ok
+      console.log(`清理：注册表实际值 = ${rr.actual || '(键不存在)'}`)
+      console.log(`      真原值       = ${rr.want || '(无)'} → ${rr.ok ? '✓ 一致' : '✗ 不一致（要手工 reg ADD 回原值）'}`)
+      if (regSnap.polluted) console.log('      ⚠ 备份里也是个隔离值 —— 原值可能早已被覆盖，请人工确认')
     } catch {
       regSame = false
-      console.log('清理：注册表回读失败 —— 请手工确认 com.harbor.agent')
+      console.log('清理：注册表恢复失败 —— 请手工确认 com.harbor.agent')
     }
     if (!regSame) ok = false
     for (const f of [stagedBox.cmd, stagedBox.manifest, stagedBox.cmd ? stagedBox.cmd.replace(/\.cmd$/, '.err') : null]) {

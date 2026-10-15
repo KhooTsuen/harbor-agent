@@ -65,9 +65,8 @@ if (baseCfg.general) baseCfg.general.defaultWorkdir = path.join(ISO, 'chat')
 fs.writeFileSync(CONF, JSON.stringify(baseCfg, null, 2))
 fs.writeFileSync(CRED, JSON.stringify({ version: 1, backend: 'plain', entries: { 'provider:deepseek': { key: 'sk-fake' } } }))
 
-/* ── 注册表：快照 → 摘 → 装隔离 → 最后恢复 + **回读比对**（3c 那次的教训）── */
-const regKey = `HKCU\\SOFTWARE\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`
-const regOld = spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
+/* ── 注册表：共享快照（**真原值**）→ 摘 → 装隔离 → 最后恢复 + 回读比对 ── */
+const regSnap = S.snapshotRegistry(HOST_NAME)
 S.regDel(HOST_NAME)
 
 /* ── 测试页（可交互元素 + 一个用来改 DOM 的锚点）── */
@@ -219,7 +218,16 @@ async function main() {
    */
   const pageTab = await D.openTab(PORT_EDGE, `http://127.0.0.1:${PORT_PAGE}/`)
   await sleep(1500)
-  rec('④ 侧边栏与测试页都开了（测试页在前台 = active）', true, 'ok')
+  /*
+   * ★ 判据**真的去查** target 列表。
+   *   原来这里是 `rec('④ …（测试页在前台 = active）', true, 'ok')` —— **硬编码 true**，
+   *   是个「永远绿」的假判据：测试页其实没在前台它也照过。2026-10-16 修。
+   *   （「谁在前台」由 `grab()` 里的 `bringToFront` 负责，见它上面的注释。）
+   */
+  const targets = await (await fetch(`http://127.0.0.1:${PORT_EDGE}/json/list`)).json()
+  const hasPanel = targets.some((t) => String(t.url ?? '').startsWith('chrome-extension://'))
+  const hasPage = targets.some((t) => String(t.url ?? '').includes(`127.0.0.1:${PORT_PAGE}`))
+  rec('④ 侧边栏页与测试页都开着（两个 target 都在）', hasPanel && hasPage, `面板=${hasPanel} 测试页=${hasPage}`)
 
   /* ── ④b 诊断：SW 到底连上了哪台 host？主进程日志说了什么？ ── */
   await sleep(2000)
@@ -311,31 +319,17 @@ void (async () => {
   } catch (error) {
     console.log('验收脚本异常：', error && error.stack ? error.stack : String(error))
   } finally {
-    try {
-      if (regOld.trim()) {
-        const val = (regOld.match(/REG_SZ\s+(.+)/) ?? [])[1]
-        if (val) {
-          for (const view of ['/reg:64', '/reg:32']) {
-            spawnSync('reg', ['ADD', regKey, '/ve', '/t', 'REG_SZ', '/d', val.trim(), '/f', view], { encoding: 'utf8' })
-          }
-        } else {
-          for (const view of ['/reg:64', '/reg:32']) spawnSync('reg', ['DELETE', regKey, '/f', view], { encoding: 'utf8' })
-        }
-      }
-    } catch {
-      /* 忽略 */
-    }
-    /* ★ 回读比对（不再无条件说「已恢复」）—— 3c 那次的教训，见 roadmap 验收资产一节 */
+    /* ★ 恢复**真原值** + 回读比对（不再无条件说「已恢复」—— 3c 那次的教训）*/
     let regSame = true
     try {
-      const out = spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
-      const got = ((out.match(/REG_SZ\s+(.+)/) ?? [])[1] ?? '').trim()
-      const want = ((regOld.match(/REG_SZ\s+(.+)/) ?? [])[1] ?? '').trim()
-      regSame = got === want
-      console.log(`清理：注册表实际值 = ${got || '(键不存在)'} → ${regSame ? '✓ 与原值一致' : '✗ 不一致（手工 reg ADD 回原值）'}`)
+      const rr = S.restoreRegistry(HOST_NAME, regSnap.value)
+      regSame = rr.ok === true && regSnap.polluted !== true
+      console.log(`清理：注册表实际值 = ${rr.actual || '(键不存在)'}`)
+      console.log(`      真原值       = ${rr.want || '(无)'} → ${rr.ok ? '✓ 一致' : '✗ 不一致（手工 reg ADD 回原值）'}`)
+      if (regSnap.polluted) console.log('      ⚠ 备份里也是隔离值 —— 原值可能早已被覆盖，请人工确认')
     } catch {
       regSame = false
-      console.log('清理：注册表回读失败 —— 请手工确认')
+      console.log('清理：注册表恢复失败 —— 请手工确认')
     }
     if (!regSame) ok = false
     for (const f of [stagedBox.cmd, stagedBox.manifest, stagedBox.cmd ? stagedBox.cmd.replace(/\.cmd$/, '.err') : null]) {

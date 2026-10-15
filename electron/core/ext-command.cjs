@@ -1,24 +1,17 @@
 /**
- * 下行指令：主进程 → 浏览器扩展，并等回执（M04 第 1 步）
+ * 下行指令：主进程 → 浏览器扩展，并等回执（M04）
  *
- * ── 为什么要有这个模块（M03 与 M04 的根本差别）────────────────
+ * ── 为什么要有这个模块 ────────────────────────────────────────
+ * M03 的方向是「扩展 → 主进程」；M04 要做「主进程 → 扩展」：**模型**决定要点哪个
+ * 元素，主进程得让浏览器去执行。下行的物理通道**早就存在**（`ext-bridge.cjs` 的
+ * `push` → host 转帧 → 扩展），过去只用来推流式分片 —— 这里把同一条通道当**指令**用：
  *
- * M03 的方向是「扩展 → 主进程」：用户点侧边栏按钮，扩展采集，送给主进程。
- * M04 要做「主进程 → 扩展」：**模型**决定要点哪个元素，主进程得让浏览器去执行。
- *
- * 下行的物理通道**早就存在**（`ext-bridge.cjs` 的 `push` → host 转帧 → 扩展），
- * 只是过去只用来推流式分片。这里把同一条通道当**指令**用：
- *
- *   这里 call() → bridge.push(PAGE_COMMAND, {id, command, payload})
- *     → host 转给扩展 → SW 执行 → 用既有 request 通道回 {type:'page:result', id, result}
- *     → ext-ops 分派到这里 handleResult() → 按 id 配对 → resolve
+ *   call() → bridge.push(PAGE_COMMAND, {id, command, payload})
+ *     → host 转给扩展 → SW 执行 → 回 {type:'page:result', id, result}
+ *     → ext-ops 分派到 handleResult() → 按 id 配对 → resolve
  *
  * 所以**零新增 IPC 通道、零新增帧类型**（「推送 vs 应答」仍是「有没有 id」）。
- *
- * ── 为什么 ref 解析（三条判定）放在**主进程**而不是页面里 ────────
- *
- * 它是**纯数据比较**（ref 字符串 vs 当前 pageVersion），不需要碰 DOM —— 放主进程
- * 就能被自检直接覆盖。页面里只做「采集 + 登记 ref」这一件事（M03 已有）。
+ * ref 解析（三条判定）放**主进程**：它是纯数据比较、不碰 DOM，自检能直接覆盖。
  *
  * ⚠️ 本模块**不 require electron**（自检要能在纯 Node 里直接跑它）。
  */
@@ -64,17 +57,49 @@ function inspectRef(ref, currentVersion, elements) {
  * @param {{
  *   getBridge: () => ({ push?: (kind: string, payload: object) => { sent?: number } } | null),
  *   log?: { warn?: (m: string) => void, info?: (m: string) => void },
+ *   land?: (kind: string, result: object, meta: object) => object,
  * }} deps
+ *   `land` 由装配处注入（`register-handlers.cjs`）：把「操作结果」渲染成 markdown、
+ *   过 `wrapWebText`、落进会话 —— **不在这里 require ext-ops / ext-observe**，
+ *   免得两个内核模块互相 require（自检也要能单独跑这一个）。
  */
 function createCommand(deps) {
   const bridgeOf = deps.getBridge ?? (() => null)
   const log = deps.log
+  const land = typeof deps.land === 'function' ? deps.land : null
 
   /** 发出去、还没等到回执的指令：id → { resolve, timer }（并发安全） */
   const pending = new Map()
   let seq = 0
 
   const fail = (code, message) => ({ ok: false, error: { code, message } })
+
+  /**
+   * 把一次操作的结果交给落盘，并**统一返回形状**。
+   *
+   * ★ 一条规矩：**浏览器回来的东西一律放 `result`**；`error` 只留给「根本没执行」
+   *   （引用失效被拒 / 浏览器没开）。第一版成功路径返回 `{ok:true, result}`、
+   *   「点了但证据没采到」却返回**裸结果**，调用方按 `res.result.reason` 取到空
+   *   （自检 + 真机各抓到一次假红）。成败以**结果自己的 ok** 为准（不是「落盘成功」）。
+   */
+  function landAction(kind, result, meta) {
+    const payload = result && typeof result === 'object' ? result : null
+    /* 落盘要 url / title（会话标题与审计用）—— 从结果里的证据取，取不到就空着 */
+    const ev = payload && payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {}
+    const full = {
+      ...meta,
+      url: String((payload && (payload.urlAfter || payload.url)) || ev.urlAfter || ''),
+      title: String((payload && (payload.titleAfter || payload.title)) || ev.titleAfter || ''),
+    }
+    const saved = land && payload ? land(kind, payload, full) || {} : {}
+    return {
+      ok: Boolean(payload && payload.ok === true),
+      result: payload,
+      sessionId: saved.sessionId,
+      chars: saved.chars,
+      truncated: saved.truncated === true,
+    }
+  }
 
   /**
    * 发一条指令并等回执。
@@ -177,8 +202,83 @@ function createCommand(deps) {
     }
   }
 
+  /**
+   * `browser.click`（M04）。
+   *
+   * ★ 两道闸，缺一不可：
+   *   ① **点之前**先观察一次当前页面拿**当前**版本号；对不上就**根本不发指令**
+   *      （点了才说「这个引用过期了」没用 —— 错的东西可能已经被点出去了）。
+   *   ② 点完把扩展给的**状态证据**渲染出来（`renderAction`）—— 「点了」≠「生效」。
+   * 落盘复用 `ingest` 那条链；网页内容依然过 `wrapWebText`（点完的页面文字同样不可信）。
+   *
+   * @param {{ ref?: string, settleMs?: number, sessionTitleHint?: string }} [payload]
+   */
+  async function click(payload = {}) {
+    const ref = String(payload.ref ?? '')
+    if (!ref) return fail(P.ERR.STALE_REF, '没给元素引用 —— 先用 browser.getElements 拿一个')
+    const settleMs = Number(payload.settleMs) > 0 ? Math.min(Number(payload.settleMs), 5000) : 400
+
+    /* ① 点之前先要一份「当前这版」—— 只为校验引用，不落盘 */
+    const cur = await getElements({})
+    if (!cur || cur.ok !== true) {
+      return cur && cur.error ? cur : fail(P.ERR.NO_BROWSER, '拿不到当前页面，没法安全地点击')
+    }
+    const parsed = inspectRef(ref, cur.pageVersion, cur.elements ?? [])
+    if (parsed.stale) {
+      const why = parsed.reason === 'page-changed' ? '页面已经变了（你手上的引用是旧版本的）' : '这个元素不在当前页面的可交互列表里'
+      /*
+       * ★ 引用失效：**根本没发指令**。但也要**落一笔** —— 用户和模型都该看到
+       *   「为什么这次没点下去」（一片安静比一条明确的失败更糟）。
+       */
+      const refused = {
+        ok: false,
+        reason: parsed.reason,
+        ref,
+        refVersion: parsed.version,
+        version: cur.pageVersion,
+        message: `${why} —— 请重新观察页面再点`,
+      }
+      return {
+        ...landAction('click', refused, { ref, durationMs: 0, sessionTitleHint: payload.sessionTitleHint }),
+        error: { code: P.ERR.STALE_REF, message: refused.message },
+        refVersion: parsed.version,
+        pageVersion: cur.pageVersion,
+      }
+    }
+
+    /* ② 发指令（第一次真机用下行通道） */
+    const t0 = Date.now()
+    const res = await call('click', { ref, settleMs })
+    const durationMs = Date.now() - t0
+    if (!res) return fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+    /* 「根本没送出去」= 链路问题（浏览器没开 / 超时）：没什么可落的，直接回错 */
+    if (res.ok !== true && res.error && !res.reason) return res
+    /*
+     * 其余**都算「一次操作的结果」**（成功 / 点了但证据没采到）—— 统一落盘 + 统一形状：
+     * 浏览器回来的东西放在 `result` 里（自检与真机各抓到一次「两种形状取空」的坑）。
+     */
+    return landAction('click', res, { ref, durationMs, sessionTitleHint: payload.sessionTitleHint })
+  }
+
+  /**
+   * `browser.verify`（M04 第 2 步）：读页面状态，逐条比对期望。**不改页面**（L1 读）。
+   *
+   * @param {{ expect?: object, sessionTitleHint?: string }} [payload]
+   */
+  async function verify(payload = {}) {
+    const expect = payload.expect && typeof payload.expect === 'object' ? payload.expect : {}
+    const t0 = Date.now()
+    const res = await call('verify', { expect })
+    const durationMs = Date.now() - t0
+    if (!res) return fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+    if (res.ok !== true && res.error) return res
+    return landAction('verify', res, { durationMs, sessionTitleHint: payload.sessionTitleHint })
+  }
+
   return {
     getElements,
+    click,
+    verify,
     handleResult,
     /** 自检用：还有几条在途 */
     get pendingCount() {
