@@ -39,9 +39,7 @@ const navigationPolicy = require('./navigation-policy.cjs')
 const pluginWatcher = require('./core/plugin-watcher.cjs')
 const imageHandler = require('./handlers/image.cjs')
 
-/* ══════════════════════════════════════════════════════════
-   ① 锁路径 —— 必须早于 app.whenReady()
-   ══════════════════════════════════════════════════════════ */
+/* ── ① 锁路径 —— 必须早于 app.whenReady() ─────────────────── */
 
 if (app.isPackaged) {
   markPackaged(path.dirname(process.execPath))
@@ -59,9 +57,10 @@ app.setPath('crashDumps', DIRS.crash)
 app.commandLine.appendSwitch('disk-cache-dir', path.join(DIRS.data, 'chromium', 'cache'))
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
 
-/* ══════════════════════════════════════════════════════════
-   ② 窗口
-   ══════════════════════════════════════════════════════════ */
+/* Edge 扩展拉起的 native host：只跑 stdio 帧循环，不建窗口、不抢单实例锁。run() 同步阻塞永不返回，所以后面的窗口/IPC 代码根本没机会执行（判据 / 协议 / 实测全在 native-host.cjs 的文件头）。放这里是因为路径已经锁好、GUI 还一行没动。 */
+if (require('./native-host.cjs').isHostArgv()) require('./native-host.cjs').run()
+
+/* ── ② 窗口 ───────────────────────────────────────────────── */
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL ?? ''
 /** --self-test：无窗口启动，跑完自检打印结果然后退出（CI / 我验收用） */
@@ -206,9 +205,7 @@ ipcMain.handle('config:reset', () => {
   return { ok: true, config: config.forRenderer() }
 })
 
-/* ══════════════════════════════════════════════════════════
-   ④ 生命周期
-   ══════════════════════════════════════════════════════════ */
+/* ── ④ 生命周期 ───────────────────────────────────────────── */
 
 /* 单实例：再点一次 exe 就聚焦已有窗口，而不是开第二个 */
 const gotLock = HEADLESS || app.requestSingleInstanceLock()

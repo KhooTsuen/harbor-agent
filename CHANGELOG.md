@@ -5,6 +5,39 @@
 
 ## [未发布]
 
+- **Edge 扩展 native host（Phase 1a）：帧协议 + 身份判据就位；但真机端到端卡在「GUI 子系统的 stdout」**（2026-10-15，等拍板替代方案）。
+  · **做了什么**：新建 `electron/native-host.cjs`（4 字节长度前缀 + JSON 的帧编解码纯函数、
+    `isHostArgv()` 身份判据、15 个模块白名单、同步阻塞的 `run()`）；
+    `electron/main.cjs` 加**两行**分支（`isHostArgv()` → `run()`）；
+    新增自检组 `scripts/selftest/groups/154-native-host.mjs`（**41 条**）。
+  · **为什么判据是 `--parent-window=`**：Phase 0 实测，宿主清单的 `path` **只能是不带参数的
+    可执行文件**（带参数会被 Edge 当成整串路径 → `Specified native messaging host not found.`），
+    所以只能靠 Edge 自己传进来的参数认身份（`--parent-window=0` 在两种环境下都原样传递）。
+  · **★ 卡点（新发现，Phase 0 没覆盖到）**：`Harbor.exe` 是 **GUI 子系统(2)** 程序
+    （`node.exe` 是 **CONSOLE(3)**），它的 **stdout 接不到 Edge 的 native messaging 管道**。
+    实测：host 侧 `fs.writeSync(1, frame)` **返回 51（写"成功"）**、帧头正确、无异常，
+    但扩展**一个字节收不到**，Edge 报 `Error when communicating with the native messaging host.`。
+    读那侧是通的（fd 0 由 Windows 代为连接）：host 确实读到了 33 字节的 ping。
+    ⚠️ `ELECTRON_RUN_AS_NODE=1` **救不了** —— 它不改 PE 子系统（编译期写死）。
+    ⚠️ 「spawn 一个子进程、`stdio:'inherit'` 转发」**也救不了** —— 子进程仍是 GUI 子系统（已实测）。
+  · **★ 顺带逮到并修掉一个我自己引入的回归**：`main.cjs` 的分支是 `if (isHostArgv()) run()`
+    （**没有 return** —— 顶层 return 会撞 tsc 的 TS1108），而我最初把 `run()` 的 EOF/失败收尾
+    写成 `return`。于是 `run()` 一返回，main.cjs 后面的建窗口代码**继续执行** ——
+    真机逮到：Edge 拉起的进程带着 `--parent-window=0`，却建了窗口 + 托盘 + 3 个子进程。
+    修法：三处收尾全改 `process.exit(0)`（`fs.writeSync` 是同步的，不会截断已写出的帧），
+    并加自检断言钉住「**不是 return**」。修后实测：秒退、进程数 0、stderr 有「已就绪」。
+  · **达成的部分（真机验证到的）**：host 分支**确实进了**（诊断文件里 argv 正确、`isPackaged=true`），
+    **没建窗口**（Harbor 进程数峰值 4→4 不涨；日志里没有「托盘已就绪」），
+    **没抢单实例锁**（分支在 `requestSingleInstanceLock` 之前）。
+    纯 Node 端到端 `{"ping":1}` → `{"pong":1,"echo":…}` **全绿**；内核自检 4544 / 0（+47）。
+  · **Phase 0 报告的一处更正**：那里写「`.cmd` 包装器 ✅ 通过」并当作生产形态 ——
+    要更正为「那次通过是因为底下跑的是 `node.exe`（console）；换 `Harbor.exe` 后写不通」。
+    「协议 + 判据成立」仍然有效，「生产形态可行」被证伪。
+  · **替代方案（未实施，等拍板）**：A) 随包发一个 console 子系统的桥接二进制（要新增构建产物，
+    命中硬禁区精神，需单独批准）；B) 降级到本地 HTTP/SSE（要开监听端口，与「不开端口」的取向相反）。
+  · **报告**：[`docs/research/edge-extension-phase1a-report.md`](docs/research/edge-extension-phase1a-report.md)
+    （含完整证据链、清理核对、待决项）。
+
 - **修「只分析，不修改」误判：一句输出要求把整轮工具全禁了**（2026-10-15，用户报「内置浏览器调不动」）。
   · **怎么发现的**：用户报装机版调不动内置浏览器。查 `E:\Harbor\data\errors\2026-10-15.jsonl`
     16:46–16:49 六条 —— `browse` / `run_shell` / `write_file` 全被拒，理由都是
