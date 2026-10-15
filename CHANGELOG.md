@@ -5,6 +5,14 @@
 
 ## [未发布]
 
+- **清理：`electron/core/ext-forward.cjs` 的删除单独提交**（2026-10-15，Phase 3a 的收尾）。
+  · 它的两条前提（**单向**、**不等回复**）在 Phase 3a 后都不成立，逻辑已并进 `core/ext-client.cjs`
+    （双向客户端 + 兼容形态的同步写）。
+  · **为什么单列一笔**：Phase 3a 那笔提交在 `git add` 时用了「文件是否存在」的过滤，
+    而它**已经不存在**了（是删除）→ 被过滤掉，删除没进那次提交。钩子随后正确地拦住了
+    `--amend`（它只看本次 staged 的那 1 个文件，看不出 CHANGELOG 已在上一笔里）。
+    与其绕钩子，不如照它说的**补一笔 + 写 CHANGELOG**。
+
 - **Edge 扩展 Phase 3a：双向通信 + 会话列表读取（只读）**（2026-10-15，设计说明与三项裁决见 `docs/research/edge-extension-phase3a-design.md`）。
   · **一句话**：host 从「写完就走」变成「问一句、等回话」——侧边栏现在能列出 Harbor 的会话（标题 / id / 最后活跃），**只读**，不发消息。
   · **协议层（新 `core/ext-protocol.cjs`，294 行）**：帧**编解码**（`native-host.cjs` 那份搬过来，**同一份实现**，自检钉了 `H.encodeFrame === P.encodeFrame`）+ 报文构造
