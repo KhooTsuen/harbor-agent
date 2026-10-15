@@ -11,7 +11,7 @@
  *
  *   ★ **路径 2**：宿主清单 `path` 指向一个 **`.cmd` 包装器**，它设
  *     `ELECTRON_RUN_AS_NODE=1` 再调 `Harbor.exe <本文件>` —— Electron 二进制
- *     **以纯 Node 模式**跑本文件，`require.main === module` 直接进 `run()`。
+ *     **以纯 Node 模式**跑本文件，`require.main === module` 直接进 `runInteractive()`。
  *     **这条路不经过 `main.cjs`。** 为什么必须绕开 Chromium：走 Chromium 初始化时
  *     启动期会往 stdout 写一个 `\r\n`，把帧头污染成荒谬长度 → Edge 报「通信错误」
  *     （本地 dump 原始字节锁定，见 docs/research/edge-extension-host-stdout-experiments.md）。
@@ -20,6 +20,13 @@
  *   · **兼容形态**（保留）：Edge 直接拉 `Harbor.exe`（不经 .cmd），此时 argv 是
  *     `[exe] ["chrome-extension://<id>/"] ["--parent-window=0"]`，由 `main.cjs`
  *     在最早期调 `isHostArgv()` 认出来 —— 留给「将来 Edge 换拉起方式」当退路。
+ *
+ * ── 两个驱动（Phase 3a 起）──────────────────────────────────
+ *
+ *   ★ **路径 2（主线）** → `runInteractive()`（在 `core/ext-host-loop.cjs`）：
+ *     **事件驱动**。双向要求同时等 stdin 与管道的回复，同步循环做不到。
+ *   · **兼容形态（退路）** → `run()`（本文件）：同步阻塞、永不返回，见下。
+ *     ⚠️ **新功能一律进 `runInteractive()`**，别再加到 `run()` 里。
  *
  * ── 为什么 run() 是**同步阻塞**的循环（而不是事件流）──────
  *
@@ -51,8 +58,10 @@
  */
 
 const fs = require('node:fs')
-/* Phase 2：把扩展送来的页面内容转给主进程（同步写命名管道，判据见那边的文件头） */
-const { forwardPage } = require('./core/ext-forward.cjs')
+/* Phase 3a：协议的唯一真相源（帧编解码 / 报文 / 错误码 / 管道名与 token），两侧共用同一份 */
+const P = require('./core/ext-protocol.cjs')
+/* Phase 2 起：把扩展送来的页面内容转给主进程（兼容形态的同步写；3a 又加了双向客户端） */
+const { forwardPage } = require('./core/ext-client.cjs')
 
 /** 兼容形态的判据：Edge 直接拉 Harbor.exe 时一定会带它 */
 const HOST_FLAG = '--parent-window='
@@ -60,15 +69,12 @@ const HOST_FLAG = '--parent-window='
 /** 路径 2 的判据：包装器设的「以纯 Node 模式跑」开关（Electron 官方环境变量） */
 const RUN_AS_NODE_ENV = 'ELECTRON_RUN_AS_NODE'
 
-/**
- * 单条消息上限。
- *
- * 官方：host → Edge **1 MB**；Edge → host 4 GB。这里取 1 MB 当**双向**上限 ——
- * 我们这边不该收到巨型帧，真收到了说明对面不是我们的扩展，断开比硬扛安全。
+/*
+ * 单条消息上限：**1 MB**（官方：host → Edge 1 MB）。值的**真相源**在
+ * `core/ext-protocol.cjs`（两侧共用，不各写一个数）；这里转出来给自检/调用方用。
  */
-const MAX_FRAME = 1024 * 1024
 
-/** 白名单：Phase 0 §4 验证过的 15 个「顶层不 require electron」的模块（相对 electron/） */
+/** 白名单：Phase 0 §4 验证过的「顶层不 require electron」的模块（相对 electron/） */
 const SAFE_MODULES = [
   'core/paths.cjs',
   'core/log.cjs',
@@ -85,72 +91,20 @@ const SAFE_MODULES = [
   'core/session.cjs',
   'core/chat-emit.cjs',
   'core/browse-read.cjs',
-  /* Phase 2 新增：扩展桥 + 转发（都不 require electron，自检会真加载一遍） */
+  /* Phase 2 起新增：扩展桥 + 通道（都不 require electron，自检会真加载一遍）。
+     Phase 3a 把 ext-forward 换成了 ext-protocol / ext-client / ext-host-loop。 */
+  'core/ext-protocol.cjs',
+  'core/ext-client.cjs',
+  'core/ext-host-loop.cjs',
   'core/ext-bridge.cjs',
-  'core/ext-forward.cjs',
 ]
 
 /* ══════════════════════════════════════════════════════════════
-   帧编解码 —— 纯函数，不碰流（所以自检能在纯 Node 里直接跑）
+   帧编解码 —— 实现已搬到 `core/ext-protocol.cjs`（两侧共用的唯一真相源）
    ══════════════════════════════════════════════════════════════ */
 
-/**
- * 把一条消息编成一帧：**4 字节小端长度 + UTF-8 JSON 体**。
- *
- * @param {unknown} message
- * @returns {Buffer}
- */
-function encodeFrame(message) {
-  const body = Buffer.from(JSON.stringify(message) ?? 'null', 'utf8')
-  const head = Buffer.alloc(4)
-  head.writeUInt32LE(body.length, 0)
-  return Buffer.concat([head, body])
-}
-
-/**
- * 从字节流里切出**尽可能多的完整帧**。
- *
- * 为什么是增量式的：stdin 的 `data` 事件**不保证一次给一整帧** ——
- * 可能半帧（等下一块）、也可能一次给三帧（粘包）。所以调用方把没吃完的
- * 尾巴留着，下次接在前面。
- *
- * @param {Buffer} buf 累积的字节
- * @param {{ max?: number }} [opts]
- * @returns {{ messages: unknown[], rest: Buffer, errors: string[], fatal: boolean }}
- *   `fatal` = 帧头声明了一个不可能的长度（协议已经没法对齐了，只能断）
- */
-function decodeFrames(buf, opts = {}) {
-  const max = Number(opts.max) > 0 ? Number(opts.max) : MAX_FRAME
-  const messages = []
-  const errors = []
-  let offset = 0
-  let fatal = false
-
-  const data = Buffer.isBuffer(buf) ? buf : Buffer.from(buf ?? [])
-
-  while (data.length - offset >= 4) {
-    const len = data.readUInt32LE(offset)
-    if (len > max) {
-      /* 长度离谱：再往后读也没法对齐（不知道真实边界在哪），只能断 */
-      errors.push(`帧长 ${len} 超过上限 ${max}`)
-      fatal = true
-      offset = data.length
-      break
-    }
-    /* 半帧：留着等下一块，不要提前消费 */
-    if (data.length - offset - 4 < len) break
-
-    const body = data.subarray(offset + 4, offset + 4 + len)
-    offset += 4 + len
-    try {
-      messages.push(JSON.parse(body.toString('utf8')))
-    } catch (error) {
-      errors.push(`帧体不是 JSON：${error instanceof Error ? error.message : error}`)
-    }
-  }
-
-  return { messages, rest: data.subarray(offset), errors, fatal }
-}
+/* 这里只转出来给自己与调用方用；行为一字未改 */
+const { encodeFrame, decodeFrames } = P
 
 /**
  * 这一轮启动是不是「被浏览器拉起的 native host」。
@@ -187,8 +141,9 @@ function handleMessage(message) {
   if (message && typeof message === 'object' && 'ping' in message) {
     return { pong: 1, echo: message }
   }
-  /* Phase 2：扩展读了页面送来的内容 —— 转给主进程（包装 / 落会话 / 审计都在那边做） */
-  if (message && typeof message === 'object' && 'type' in message && message.type === 'ext:page') {
+  /* Phase 2：扩展读了页面送来的内容 —— 转给主进程（包装 / 落会话 / 审计都在那边做）。
+     ⚠️ 这条是**兼容形态（run()）专用**的同步路径；路径 2 走 ext-host-loop.cjs。 */
+  if (message && typeof message === 'object' && 'type' in message && message.type === P.KIND.EXT_PAGE) {
     const id = 'id' in message ? (message.id ?? null) : null
     return { ...forwardPage(message), id }
   }
@@ -206,6 +161,17 @@ function note(text) {
   } catch {
     /* stderr 都写不进去就算了，不能因为记日志把协议弄挂 */
   }
+}
+
+/**
+ * ★ 保命线：把 console.log 改道到 stderr。
+ *
+ * `core/log.cjs` 的 info 会 console.log —— 那是 stdout，就是协议通道。
+ * 改道之后，**任何**模块（含白名单里那些）顺手打日志都不会污染帧。
+ * 两个驱动（`run` / `runInteractive`）都必须先调它 —— 所以抽成一处，别各写一份。
+ */
+function redirectStdoutToStderr() {
+  console.log = (...args) => console.error(...args)
 }
 
 /** 一次同步读的块大小（读完再解帧，半帧留到下一轮） */
@@ -226,16 +192,10 @@ const READ_CHUNK = 64 * 1024
  * 副作用是「读帧」这件事不依赖事件循环 —— 对 host 是好事（除协议外什么都不干）。
  */
 function run() {
-  /*
-   * ★ 先把 console.log 改道到 stderr。
-   *
-   * `core/log.cjs` 的 info 会 console.log —— 那是 stdout，就是协议通道。
-   * 改道之后，**任何**模块（含白名单里将来要接的那 15 个）顺手打日志都不会
-   * 污染帧。这一行是整个模块的保命线，别删。
-   */
-  console.log = (...args) => console.error(...args)
+  /* ★ 保命线（见 redirectStdoutToStderr 的说明）：先改道，再说话 */
+  redirectStdoutToStderr()
 
-  note(`已就绪（pid=${process.pid}）`)
+  note(`已就绪（pid=${process.pid}，同步驱动）`)
 
   /*
    * ★ 显式标注 `Buffer`（不带泛型）—— 不是啰嗦：
@@ -284,17 +244,27 @@ function run() {
   }
 }
 
-/* 直接跑这个文件时也进 host 循环（方便手测 / 自检用子进程喂帧） */
-if (require.main === module) run()
+/*
+ * 直接跑这个文件（路径 2：`.cmd` → `Harbor.exe 本文件`）→ 进**事件驱动**的循环。
+ * 它取代了老的同步 `run()`（那是兼容形态的遗留驱动，见 ext-host-loop.cjs 文件头）。
+ */
+const hostLoop = require('./core/ext-host-loop.cjs')
+
+if (require.main === module) {
+  hostLoop.runInteractive({ note, redirectOutput: redirectStdoutToStderr })
+}
 
 module.exports = {
   HOST_FLAG,
   RUN_AS_NODE_ENV,
-  MAX_FRAME,
+  MAX_FRAME: P.MAX_FRAME,
   SAFE_MODULES,
   encodeFrame,
   decodeFrames,
   isHostArgv,
   handleMessage,
+  redirectStdoutToStderr,
+  note,
   run,
+  runInteractive: hostLoop.runInteractive,
 }

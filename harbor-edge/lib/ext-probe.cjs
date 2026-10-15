@@ -12,7 +12,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 
@@ -118,12 +118,15 @@ function runHost({ cmd, exe, frames, dataRoot, waitMs = 1200 }) {
     setTimeout(() => {
       child.stdin.end()
       setTimeout(() => {
+        /* ★ 必须 taskkill /T /F —— `child.kill()` 在 Windows 上杀不掉 Electron（实测踩到：
+           host 还活着、连着那条管道，于是 `server.close(cb)` 的回调永不触发 → 验收挂死）。 */
         try {
           child.kill()
         } catch {
           /* 已退 */
         }
-        resolve({ replies: decodeFrames(Buffer.concat(out)), err })
+        spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+        setTimeout(() => resolve({ replies: decodeFrames(Buffer.concat(out)), err }), 300)
       }, waitMs)
     }, waitMs)
   })
@@ -250,6 +253,33 @@ const CLICK_RETRY_EXPR = `(function(){
   return 'ok';
 })()`
 
+/* ══════════════════════════════════════════════════════════════
+   Phase 3a：会话列表（**唯一真相源** —— accept-phase3a 用它找元素）
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 读会话列表区块当前渲染出来的东西（条数 + 每条的标题/时间）。
+ *
+ * ★ 按 `aria-label` 找区块，不按 class —— class 会随样式重构变，可访问名字不会。
+ *   （渲染层改了 aria-label，这里要同步；否则脚本会**静默失效**，
+ *     与 `tools/shot/cards.mjs` 那条规矩一样。）
+ */
+const SESSION_LIST_EXPR = `(function(){
+  const sec = document.querySelector('[aria-label="Harbor 会话列表"]');
+  if (!sec) return JSON.stringify({ found: false });
+  const items = [...sec.querySelectorAll('li')].map(li => li.innerText.split('\\n'));
+  return JSON.stringify({ found: true, text: sec.innerText, count: items.length, items });
+})()`
+
+/** 点「刷新」按钮（按它自己的 aria-label 找） */
+const CLICK_REFRESH_EXPR = `(function(){
+  const b = document.querySelector('[aria-label="刷新会话列表"]')
+    || [...document.querySelectorAll('button')].find(x => /刷新/.test(x.textContent));
+  if (!b) return 'no-button';
+  b.click();
+  return 'clicked';
+})()`
+
 module.exports = {
   ROOT,
   sleep,
@@ -262,6 +292,8 @@ module.exports = {
   isResultText,
   CLICK_READ_EXPR,
   CLICK_RETRY_EXPR,
+  SESSION_LIST_EXPR,
+  CLICK_REFRESH_EXPR,
   runHost,
   decodeFrames,
   stageExtension,

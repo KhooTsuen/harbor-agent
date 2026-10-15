@@ -5,6 +5,30 @@
 
 ## [未发布]
 
+- **Edge 扩展 Phase 3a：双向通信 + 会话列表读取（只读）**（2026-10-15，设计说明与三项裁决见 `docs/research/edge-extension-phase3a-design.md`）。
+  · **一句话**：host 从「写完就走」变成「问一句、等回话」——侧边栏现在能列出 Harbor 的会话（标题 / id / 最后活跃），**只读**，不发消息。
+  · **协议层（新 `core/ext-protocol.cjs`，294 行）**：帧**编解码**（`native-host.cjs` 那份搬过来，**同一份实现**，自检钉了 `H.encodeFrame === P.encodeFrame`）+ 报文构造
+    （`request`/`reply`/`failure`/`push`）+ 错误码清单 + 管道名/token。**唯一真相源**（硬约束 #9：两侧共用，各写一份就会漂，且只在真机现形）。
+    · 「应答 vs 主动推送」靠**有没有 `id`** 区分（3b 的流式分片用，3a 只备形状）。
+    · 判据从设计说明的「有 id 且有 kind」**放宽成「有 id」**：缺 kind 时也得回 `UNKNOWN_KIND`，而那必须走**帧**（回裸 JSON 则保持连接的 host 解不开，请求永远等不到应答）。
+  · **host 侧（新 `ext-client.cjs` 261 行 + `ext-host-loop.cjs` 160 行）**：`ext-forward.cjs` **已删**（它的两条前提「单向」「不等回复」在 3a 后都不成立，逻辑并进 `ext-client`）。
+    · **事件驱动**（路线 A）：`stdin.on('data')` + 管道 socket 事件并行，按 id 匹配、8s 超时、断线重连；**懒连接**（第一次请求才连 —— 「Harbor 没开」因此每次都能立刻知道）。
+    · **`run()`（同步阻塞）保留不动** → **`main.cjs` 0 行改动**（裁决 A3，见下）。`require.main === module` 现在进 `runInteractive()`。
+  · **主进程侧（新 `ext-ops.cjs` 156 行 + `ext-bridge.cjs` 288→239 行）**：分派表（kind → 处理函数，依赖注入、**不抛** —— 抛了转 `INTERNAL`，管道服务器不倒）；
+    增量帧解码 + 连接保持 + 按 id 应答 + `push()` + **裸 JSON 兜底**。
+    · ★ **裸 JSON 兜底**（组合矩阵里必须保住的一格）：用户在 Edge 开着时升级 Harbor，旧 host 进程还活着、发的是**裸 JSON**（无长度前缀）。
+      判据是「`fatal` + 首字节 `{`」—— 实测那个字节被当帧头解出来是 1,869,881,979（荒谬）→ fatal。**判成裸 JSON 后绝不能 drop**（它是条完全有效的旧客户端）。
+  · **扩展侧**：`service-worker.js` 301→204 行（通道层拆到新 `extension/lib/native.js`）；单槽 `pendingRead` → **按 id 的 pending Map**（支持并发）；
+    `manifest` 加 `"type": "module"`（ESM import 必须）；新增 `SessionList.tsx`（只读：标题 / id / 相对时间 / 消息数）。
+  · **实测（`harbor-edge/tools/accept-phase3a.cjs`，**15/15**）**：真 Edge + 真扩展 + 真 `Harbor.exe`（`ELECTRON_RUN_AS_NODE`）+ 真管道 + 真 session/审计。
+    · 侧边栏列出 **17 条**会话（标题对得上、带相对时间）· 与磁盘**一致**（面板=17 磁盘=17）
+    · Harbor 不回应 → host 侧 **TIMEOUT**（19.5s）· Harbor 没开 → **NO_HARBOR** + 人话
+    · **`ext:page` 不回归**（内容仍过 `wrapWebText` + `source=extension`）
+    · 自检 **4674 / 0**（新增 157 组 50 条；裸 JSON 兜底是**真管道真 socket** 跑的，不是纯函数断言）
+  · **过程中修掉一个真缺陷**：`SessionList` 在 SW 还没连上 host 时请求失败后**不自动重试** —— 真机现象是「顶部已连接、下面却报没连上」的**自相矛盾**，且不点「刷新」永远是错的。改为连上后自动补一次。
+  · **`main.cjs` diff = 0 行**（裁决 A3）· 零新依赖 · 零新增 IPC 通道（扩展走管道，不走 IPC）· 不碰 Runtime / 严格模式 / 防闪烁 / `hardenWebview` / 工具系统 / 权限模型。
+  · **本步不做**（按边界）：发消息 / 流式回复（3b）· 会话选择器 UI / 点击切换（3c）· Agent 操作网页（Phase 4）。
+
 - **修 Phase 2「点图标后仍报读不到当前页地址」+ 补上界面刷新**（2026-10-15，用户真机手点时报的）。
   · **根因（★ 实现错，不是 Edge 的 bug）**：上一版用 `sidePanel.setPanelBehavior({
     openPanelOnActionClick:true})` 让「点图标 = 开侧边栏」，但官方文档写明 `activeTab` 只在

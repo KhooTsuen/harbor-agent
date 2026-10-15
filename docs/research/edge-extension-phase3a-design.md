@@ -1,7 +1,7 @@
 # Phase 3a 设计说明：双向通信 + 会话列表读取（只读）
 
-> **状态**：设计已定稿；三项裁决已由用户拍板（§11）；**§9 探针已跑通（9/9，见 §9.1）** →
-> **待用户确认后进入实施**（预计下一轮开工）。
+> **状态**：**已实施完毕（2026-10-15）** —— 三项裁决见 §11，探针 9/9 见 §9.1，
+> 实施结果与实测见 [`edge-extension-phase3a-report.md`](./edge-extension-phase3a-report.md)。
 > **范围**：只含 Phase 3a。不含发消息 / 流式回复（3b）、不含会话选择器 UI（3c）、不含 Agent 操作网页（Phase 4）。
 > **前置阅读**：`docs/research/edge-extension-host-stdout-experiments.md`（host stdout 真因）、
 > `docs/research/edge-extension-phase2-report.md`（单向管道现状）。
@@ -280,6 +280,14 @@ sidepanel
 **判断：不算**（驱动层不同），但会在文件头写清「`run()` 是兼容形态的遗留驱动，
 新功能一律进 `runInteractive()`」。
 
+> **实施后（2026-10-15）**：`run()` 保留在 `native-host.cjs`（约 60 行），新驱动在
+> `core/ext-host-loop.cjs`。**`main.cjs` 实测 0 行改动**（内核类型基线一致 + diff 为空）。
+>
+> **⏭ 待办（独立小提交，别混进 3b）**：**A4** —— 删掉 `main.cjs` 那条兼容分支
+> （`if (isHostArgv()) run()`），同时删掉 `run()` 与 `isHostArgv` 的形态③。
+> 它是**行为变更**（Edge 若直接拉 `Harbor.exe`，将来会「开一个窗口」而非「假装 host 然后失败」），
+> 所以不在 3a 做。
+
 ---
 
 ## 7. 超时 / 错误处理
@@ -304,6 +312,7 @@ sidepanel
 |---|---|---|
 | `electron/core/ext-protocol.cjs` | **新** | 帧编解码 + 类型/错误码常量（**唯一真相源**，从 native-host.cjs 搬出） |
 | `electron/core/ext-client.cjs` | **新** | host 侧管道客户端：连接 / 请求 / 超时 / 重连（取代 `ext-forward.cjs`） |
+| `electron/core/ext-host-loop.cjs` | **新** | host 事件驱动主循环 + 分派（`native-host.cjs` 放不下第二个循环） |
 | `electron/core/ext-ops.cjs` | **新** | 主进程侧 kind → 处理函数的分派表 |
 | `electron/core/ext-forward.cjs` | **删**（用户已批准） | 前提（单向、不等回复）已失效；并入 ext-client（同步改 `SAFE_MODULES` 与自检引用） |
 | `electron/native-host.cjs` | 改 | 搬走 codec 与分派后约 230；再加 `runInteractive()` |
@@ -313,6 +322,13 @@ sidepanel
 | `harbor-edge/src/sidepanel/App.tsx` | 改 | 新增 `SessionList.tsx`（避免贴线） |
 | `scripts/selftest/groups/156-ext-bridge.mjs` | 改 | 加：分派 / 超时 / 错误码 / 裸 JSON 兜底 / push 形状 |
 | `harbor-edge/tools/accept-phase3a.cjs` | **新** | 真机验收（§10） |
+
+> **实施后的实际行数**（设计时是预估，这里以实测为准）：
+> `ext-protocol` 294 · `ext-client` 261 · `ext-host-loop` 160 · `ext-ops` 156 ·
+> `native-host` 270（原 301）· `ext-bridge` 239（原 288）· `service-worker` 204（原 301）·
+> `SessionList.tsx` 165 · `accept-phase3a` 287 · 157 自检组 300。
+> 落地时**多拆了两个**文件（`ext-host-loop.cjs`、`harbor-edge/lib/ext-stage.cjs`）——
+> 详见交付报告第一节。
 
 **零新依赖** ✅ · **零新增 IPC 通道** ✅（扩展走管道，不走 IPC）· 不碰 Runtime / 严格模式 /
 防闪烁 / `hardenWebview` / 工具系统 / 权限模型 ✅

@@ -1,10 +1,11 @@
 /**
- * Harbor 侧边栏（Phase 2：读当前页）
+ * Harbor 侧边栏（Phase 3a：会话列表）
  *
- * 三块：
+ * 四块：
  *   ① 顶部：与 Harbor 的连接状态（已连接 / 未连接 + 一键重试）
  *   ② 中间：「读当前页」按钮 + 读到的结果（字数 / 错误）
- *   ③ 底部：输入框占位（**仍不能真发** —— 对话是 Phase 3）
+ *   ③ 会话列表（Phase 3a 新增，**只读** —— 不点进、不发消息）
+ *   ④ 底部：输入框占位（**仍不能真发** —— 对话是 3b）
  *
  * ── 视觉为什么能跟主应用一致 ────────────────────────────────
  *
@@ -24,6 +25,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { SessionList } from './SessionList'
 
 /* global chrome */
 
@@ -166,11 +168,8 @@ export function App() {
       </header>
 
       {/* ── ② 中间：读当前页 ─────────────────────────────── */}
-      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-5">
-        <h1 className="text-title font-semibold">Harbor</h1>
-        <p className="text-meta text-fg-secondary">浏览器伴侣</p>
-
-        <Button variant="primary" size="md" loading={reading} onClick={readPage} className="mt-1">
+      <main className="flex shrink-0 flex-col items-center justify-center gap-2 px-5 py-4">
+        <Button variant="primary" size="md" loading={reading} onClick={readPage}>
           {reading ? '读取中…' : '读当前页'}
         </Button>
 
@@ -178,17 +177,16 @@ export function App() {
         <div
           role="status"
           aria-live="polite"
-          className="min-h-[40px] text-center text-2xs text-fg-tertiary"
+          className="min-h-[34px] text-center text-2xs text-fg-tertiary"
         >
           {page?.ok ? (
             <>
               <div className="text-dense text-fg-primary">已读取 {page.chars ?? 0} 字</div>
-              <div className="mt-1 truncate">
+              <div className="mt-0.5 truncate">
                 {page.title || page.url}
                 {page.truncated ? '（正文过长，已截断）' : ''}
               </div>
-              {/* 如实：host 是单向写，这里只能说「发出去了」（见 service-worker.js 的说明） */}
-              <div className="mt-1">已发送给 Harbor，会存进当前会话</div>
+              <div className="mt-0.5">已发送给 Harbor，会存进当前会话</div>
             </>
           ) : page && page.error ? (
             <div className="text-dense text-danger">{page.error}</div>
@@ -197,6 +195,9 @@ export function App() {
           )}
         </div>
       </main>
+
+      {/* ── ③ 会话列表（只读，Phase 3a）───────────────────── */}
+      <SessionList />
 
       {/* ── ③ 底部：输入框占位（本阶段**仍不能真发**）───────── */}
       <footer className="shrink-0 border-t border-line-hairline p-3">

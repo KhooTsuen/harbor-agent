@@ -4,10 +4,10 @@
 主应用是 Electron 窗口，这里是浏览器侧的扩展 + 让两者说话的 native host。
 
 > 阶段与实测记录见 `docs/research/edge-extension-*.md`。
-> 当前状态：**Phase 2 完成**（读当前页 → `wrapWebText` 包装 → 送进 Harbor 会话）。
-> 对话（含流式回复回侧边栏）是 Phase 3，**未开工**。
+> 当前状态：**Phase 3a 完成** —— 侧边栏能**只读列出** Harbor 的会话（双向通道已通）。
+> 发消息 / 流式回复是 **3b**，会话选择器与点击切换是 **3c**，Agent 操作网页是 Phase 4 —— 都**未开工**。
 
-## ★ 已知缺口（Phase 2 收尾时记下的，别忘）
+## ★ 已知缺口（别忘）
 
 ### 只能注入「Harbor 界面当前打开的那条会话」
 
@@ -15,30 +15,48 @@
 渲染层用 `src/hooks/useExtBridge.ts` 把 `activeThreadId` 报给主进程
 （通道 `ext:activeSession`，见 `electron/handlers/ext.cjs`）。
 
-**因此现在多了一条硬约束**：想注入到某条指定会话，就得**先打开 Harbor、切到那条会话、
-再回浏览器点按钮**。**不打开 Harbor 就没法选目标** —— 目前**没有**「选会话」这回事。
+**因此多了一条硬约束**：想注入到某条指定会话，就得**先打开 Harbor、切到那条会话、
+再回浏览器点按钮**。**不打开 Harbor 就没法选目标**。
+
+> Phase 3a 已经能**列出**会话了（`session:list` + `SessionList.tsx`），
+> 但**点选注入**仍是 3c 的活 —— 列表现在只是只读展示。
 
 | | |
 |---|---|
-| **缺的是什么** | 侧边栏里列出 Harbor 的会话 + 用户自己挑一个注入目标 |
-| **谁拍板延后** | 用户，2026-10-15（Phase 2 验收后） |
-| **为什么延后** | Phase 3 本来就要做「流式回复回侧边栏」，那时侧边栏与 Harbor 的交互会深得多（读会话 / 发消息 / 收流）—— **会话选择器跟它一起设计一次**；现在单做，到 Phase 3 还得改一遍 |
-| **落到哪** | **Phase 3 一并实现**（是明确延后项，**不是**遗忘项） |
+| **缺的是什么** | 在侧边栏**点选**一条会话作为注入目标（现在还只能读列表） |
+| **谁拍板延后** | 用户，2026-10-15 |
+| **为什么延后** | 与 3b 的「流式回复回侧边栏」一起设计（那时侧边栏与 Harbor 的交互会深得多），免得改两遍 |
+| **落到哪** | **3c**（是明确延后项，**不是**遗忘项） |
 
 **兜底行为（内容不会丢）**：渲染层没报过、或报的那条会话已被删时，
-`electron/core/ext-bridge.cjs` 的 `ingest()` 会**新建一条专用会话**把内容装进去。
+`electron/core/ext-ops.cjs` 的 `ingestPage()` 会**新建一条专用会话**把内容装进去。
+
+### ⏭ 待办：删 `main.cjs` 那条兼容分支（A4，独立小提交）
+
+`electron/main.cjs` 有一行 `if (isHostArgv()) run()` —— 它是 **Phase 1a 的兼容形态**
+（Edge 直接拉 `Harbor.exe`，不经 `.cmd`）。Phase 3a 起主驱动是
+`core/ext-host-loop.cjs` 的 `runInteractive()`，`run()` 只剩这一条分支在用。
+
+**为什么没在 3a 删**：删它是**行为变更**（Edge 若真直接拉 `Harbor.exe`，将来会「开一个窗口」
+而非「假装 host 然后失败」），超出 3a 范围。用户 2026-10-15 裁决：**留作独立小提交**。
+
+要删的四处：`main.cjs` 那行 · `native-host.cjs` 的 `run()` · `isHostArgv` 的形态③（`--parent-window=`）
+· 154 自检里对应的断言。
 
 ## 目录
 
 | 路径 | 是什么 |
 |---|---|
-| `extension/` | **真扩展的源**（`manifest.json` + `service-worker.js`）—— 构建时原样拷进产物 |
-| `src/sidepanel/` | 侧边栏的 React 源（入口 `index.html` / `main.tsx` / `App.tsx`） |
+| `extension/` | **真扩展的源**（`manifest.json` + `service-worker.js` + `lib/native.js`）—— 构建时原样拷进产物 |
+| `extension/lib/native.js` | 扩展侧**通道层**（Phase 3a）：连 host / 重连 / **按 id 匹配的 pending Map** / 状态广播 |
+| `src/sidepanel/` | 侧边栏的 React 源（入口 `index.html` / `main.tsx` / `App.tsx` / `SessionList.tsx`） |
 | `vite.config.ext.ts` | 扩展的独立 Vite 配置（root / postcss / outDir / alias 都跟主应用不同） |
 | `postcss.config.js` | 扩展的 Tailwind 配置（theme 继承主 config、content 只扫扩展 + 用到的 UI 组件） |
 | `harbor-host.cmd` | **native host 包装器**（纯 ASCII）——`ELECTRON_RUN_AS_NODE=1` + `Harbor.exe` + `native-host.cjs` |
 | `install-host.cmd` / `uninstall-host.cmd` | 装 / 卸 native host（注册表 + 清单，幂等） |
 | `lib/driver.cjs` | 验收共用的 Edge 驱动（隔离 profile / 注册表 / 读扩展 ID） |
+| `lib/ext-probe.cjs` | 验收共用的 CDP 求值 / 找 SW / 喂帧 / 会话列表表达式（**可访问文案的唯一真相源**） |
+| `lib/ext-stage.cjs` | 验收共用的**装/卸隔离 host**（真 exe + 真机制 + 隔离数据根） |
 | `tools/` | 验收脚本（见下） |
 | `ext/` | Phase 1b 的**探针扩展**（历史验收资产，**不要动**） |
 | `phase0/` `exp/` | Phase 0 / 三组实验的脚本与产物（历史资产） |
@@ -52,8 +70,10 @@
 npx vite build --config harbor-edge/vite.config.ext.ts
 ```
 
-产物落 `harbor-edge/dist/sidepanel/`：`index.html` + `assets/` + `manifest.json` + `service-worker.js`。
+产物落 `harbor-edge/dist/sidepanel/`：`index.html` + `assets/` + `manifest.json` + `service-worker.js` + `lib/`。
 Edge 里「加载已解压的扩展」直接选这个目录。
+
+> ⚠️ SW 是 **ESM**（`manifest.background.type = "module"`）—— 删了那句，`import` 会直接失败。
 
 ## 验收脚本
 
@@ -61,10 +81,15 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 |---|---|---|
 | `tools/accept-sidepanel.cjs` | 构建产物**能当扩展页加载**（Phase 1c 第一步） | `node harbor-edge/tools/accept-sidepanel.cjs` |
 | `tools/accept-extension.cjs` | 真扩展 + native host **端到端**：能读到哪些状态（Phase 1c 第二步） | `node harbor-edge/tools/accept-extension.cjs` |
+| `tools/accept-phase2.cjs` | 「读当前页 → 包装 → 落会话」（Phase 2） | `node harbor-edge/tools/accept-phase2.cjs` |
+| `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**15 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 
-三个脚本都**自己起隔离 Edge**（独立 `--user-data-dir`），**不碰**你正在用的那个。
+全部脚本都**自己起隔离 Edge**（独立 `--user-data-dir` + 隔离数据根），**不碰**你正在用的那个。
+
+> ⚠️ `accept-phase3a.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到隔离清单），跑完
+> `finally` 里删掉 —— 如果你之前手动装过 host，跑完要**重新装一次**（或跑 `install-host.cmd`）。
 
 ---
 

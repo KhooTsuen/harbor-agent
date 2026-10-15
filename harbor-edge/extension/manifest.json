@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Harbor Browser Companion",
-  "version": "0.3.0",
-  "description": "Harbor side panel (Phase 2: read the active page and send it to Harbor)",
+  "version": "0.4.0",
+  "description": "Harbor side panel (Phase 3a: session list via bidirectional channel)",
   "permissions": ["nativeMessaging", "sidePanel", "storage", "activeTab", "scripting"],
   "background": {
-    "service_worker": "service-worker.js"
+    "service_worker": "service-worker.js",
+    "type": "module"
   },
   "action": {
     "default_title": "Harbor"

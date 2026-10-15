@@ -1,21 +1,26 @@
 /**
- * 浏览器扩展 ↔ Harbor 主进程的桥（Phase 2）
+ * 浏览器扩展 ↔ Harbor 主进程的桥（Phase 3a：**双向**）
  *
  * ── 它解决什么 ───────────────────────────────────────────────
  *
  * Edge 拉起的 native host 是**另一个进程**（见 native-host.cjs），拿不到主进程的
- * 内存态（会话、审计、当前打开的对话）。而「读当前页」的结果必须落进 Harbor 的
- * 会话里 —— 所以 host 需要一条路把消息**送回主进程**。
+ * 内存态（会话、审计、当前打开的对话）。所以 host 需要一条路把请求送进主进程、
+ * 再把结果拿回去 —— 那就是这里（`net.createServer` 收命名管道）。
  *
- * 用户拍板走**命名管道**（`\\.\pipe\...`）：host 侧 `fs.writeFileSync(pipe, …)`
- * 同步写（实测可行，见 tmp 探针），主进程侧 `net.createServer` 收。
+ * ── Phase 3a 起是**双向**的（关键变化）──────────────────────
  *
- * ── 两个必须记住的实测事实 ───────────────────────────────────
+ *   原来：host `fs.writeFileSync`（打开→写→关）→ 主进程按「连接结束」切分，
+ *        回写**没人读**（host 早关了连接）。
+ *   现在：host 保持连接、按帧读写 → 主进程**增量解码**、处理完**回写应答帧**。
+ *   帧格式与报文形状的**唯一真相源**是 `core/ext-protocol.cjs`。
  *
- *   ① **管道不监听时 write 立刻抛 ENOENT**（不阻塞）→ host 侧据此判
- *      「Harbor 没在运行」，回给扩展一条人话错误，而不是干等。
- *   ② `writeFileSync` 到管道是「打开→写→关」→ **一次连接 = 一条消息**，
- *      所以主进程按「连接结束」切分，不必自己搞长度前缀。
+ * ── ★ 裸 JSON 兜底（新旧混跑必须保住）───────────────────────
+ *
+ * 用户在 Edge 开着时升级 Harbor，**旧 host 进程还活着** —— 它发的是 Phase 2 的
+ * 裸 JSON（`{token, kind, url, …}`，**没有 id**）。所以：
+ *   · 有 `id` + `kind` → 新协议 → 回**帧**应答（host 会读）
+ *   · 否则            → 旧单向路径 → 回裸 JSON（发了也白发，host 已关连接）
+ * 判据只有一处（`P.isProtocolFrame`），别在别处再写一遍。
  *
  * ── 安全边界（如实写，别当成比实际更强）──────────────────────
  *
@@ -25,196 +30,139 @@
  *   · 消息必须带正确 token（主进程每次启动重新生成）
  * 要更强的隔离得设 Win32 管道 ACL —— Node 没有内置 API，本阶段不做（已记入报告）。
  *
- * ⚠️ 本模块**不 require electron**（host 进程要 require 它拿 pipeName 这个
- *    唯一真相源 —— 见硬约束 #9：跨模块口径只能有一处定义）。所有系统能力注入。
+ * ⚠️ 本模块**不 require electron**；系统能力全部注入（自检才能不起 Electron 就测）。
  */
 
-const fs = require('node:fs')
-const path = require('node:path')
 const net = require('node:net')
-const crypto = require('node:crypto')
+const P = require('./ext-protocol.cjs')
+const { createOps } = require('./ext-ops.cjs')
 
-/** 管道名前缀。Windows 命名管道的固定前缀，改不了。 */
-const PIPE_PREFIX = '\\\\.\\pipe\\harbor-ext-'
-
-/** token 文件名（落在 data/ 下，与 path 硬约束一致） */
-const TOKEN_FILE = 'ext-bridge.token'
-
-/**
- * 单条消息上限（2 MB）。
- *
- * 页面正文在扩展侧已截断到 512 KB（见扩展的 MAX_TEXT），包装后也不会超过 1 MB。
- * 这里留 2 MB 余量；超了就断开 —— 对面不是我们的扩展。
- */
-const MAX_MESSAGE = 2 * 1024 * 1024
-
-/**
- * 管道名 —— **唯一真相源**（host 与主进程都必须用这个函数算）。
- *
- * 为什么带 hash：同一台机器上可能有多个 Harbor 安装（不同 data 根），
- * 固定名字会互相串台。用 data 根路径的 hash 区分。
- *
- * @param {string} dataDir 数据根目录
- * @returns {string}
- */
-function pipeName(dataDir) {
-  const hash = crypto.createHash('sha1').update(String(dataDir ?? '')).digest('hex').slice(0, 12)
-  return `${PIPE_PREFIX}${hash}`
-}
-
-/** token 文件路径 */
-function tokenPath(dataDir) {
-  return path.join(String(dataDir ?? ''), TOKEN_FILE)
-}
-
-/**
- * 生成并写入本次启动的 token（每次启动都换，旧 token 立即失效）。
- *
- * @param {string} dataDir
- * @returns {string} 生成的 token（写不进去就返回空串 → 桥会拒绝一切消息，fail-closed）
- */
-function writeToken(dataDir) {
-  const token = crypto.randomBytes(16).toString('hex')
-  try {
-    fs.mkdirSync(dataDir, { recursive: true })
-    /* mode 在 Windows 上被忽略，写上是为了在别的平台上也是对的 */
-    fs.writeFileSync(tokenPath(dataDir), token, { encoding: 'utf8', mode: 0o600 })
-    return token
-  } catch {
-    return ''
-  }
-}
-
-/** 读 token（host 侧用；读不到返回空串） */
-function readToken(dataDir) {
-  try {
-    return fs.readFileSync(tokenPath(dataDir), 'utf8').trim()
-  } catch {
-    return ''
-  }
-}
-
-/* ══════════════════════════════════════════════════════════════
-   主进程侧：管道服务器
-   ══════════════════════════════════════════════════════════════ */
-
-/** 桥的状态（单实例） */
+/** 桥（单实例） */
 function createBridge() {
   let server = null
   let token = ''
   let dataDir = ''
   /** 渲染层上报的「当前打开的会话」（见 handlers/ext.cjs 的 ext:activeSession） */
   let activeSessionId = ''
+  /** @type {Record<string, any>} */
   const deps = { send: null, session: null, audit: null, wrap: null, log: null }
+  let ops = null
+  /** 活着的连接（3a 起连接会保持，推送要能找到它们） */
+  const socks = new Set()
 
-  /**
-   * 处理一条来自 host 的消息。
-   *
-   * 目前只有 `ext:page`（Phase 2）。返回给 host 的结果会原样转给扩展。
-   *
-   * @param {object} message
-   * @returns {{ ok: boolean, error?: string, sessionId?: string, chars?: number, created?: boolean }}
-   */
+  /** 兼容入口：处理一条消息，返回 Phase 2 的**拍平**形状（156 自检与裸 JSON 兜底都走它） */
   function ingest(message) {
-    const kind = String(message?.kind ?? '')
-    if (kind !== 'ext:page') return { ok: false, error: `不认识的消息类型：${kind || '(空)'}` }
+    const res = ops.handle(String(message?.kind ?? ''), message)
+    if (!res.ok) return { ok: false, error: res.error.message }
+    return { ok: true, ...res.data }
+  }
 
-    const url = String(message.url ?? '')
-    const title = String(message.title ?? '')
-    const text = String(message.text ?? '')
-    const truncated = message.truncated === true
-
-    /* ★ 包装是**安全职责**，必须做，且只做一次（和 browse 工具同一份实现） */
-    const wrapped = deps.wrap({ url, title, text, truncated })
-
-    /* 决定落进哪条会话：优先「界面当前打开的那条」，否则新建一条专用会话 */
-    let sessionId = activeSessionId
-    let created = false
-    /*
-     * ★ 判「这条会话还在不在」必须**容错** —— `session.load` 对非法 id 会**抛**
-     *   （session-io.cjs 校验 `sess_` 前缀）。自检真逮到过：渲染层报来一个怪 id，
-     *   异常从 ingest 冒到 socket 层，被那个 catch 兜成「消息不是合法 JSON」——
-     *   于是**页面内容静默丢掉，用户还看到一条误导的错**。
-     *   所以：id 不合法、会话被删、读坏了 —— 一律当「没有当前会话」，走兜底新建。
-     */
-    const alive = (id) => {
-      if (!id) return false
-      try {
-        return Boolean(deps.session.load(id).meta)
-      } catch {
-        return false
-      }
+  /** 写一帧（或一段裸 JSON）。写失败只记一行 —— 对面可能已经关了连接 */
+  function write(socket, out, framed) {
+    try {
+      socket.write(framed ? P.encodeFrame(out) : JSON.stringify(out))
+    } catch (error) {
+      deps.log?.warn?.(`扩展通道：回写失败（${error instanceof Error ? error.message : error}）`)
     }
-    if (!alive(sessionId)) {
-      const meta = deps.session.create({ title: `浏览器：${title || url || '未命名页面'}`, mode: 'pair' })
-      sessionId = meta.id
-      created = true
+  }
+
+  /** 处理**一帧**：token 校验 → 分派 → 回写 */
+  function respond(socket, message) {
+    const framed = P.isProtocolFrame(message)
+
+    if (!token || message?.token !== token) {
+      deps.log?.warn?.('扩展通道：一条消息 token 不对，已拒')
+      write(
+        socket,
+        framed
+          ? P.failure({
+              id: message.id,
+              kind: message.kind,
+              code: P.ERR.BAD_TOKEN,
+              message: '通道校验失败 —— 重启 Harbor 再试',
+            })
+          : { ok: false, error: 'token 不对（消息不是本机这次启动的 Harbor 发的？）' },
+        framed,
+      )
+      return
     }
 
-    const ok = deps.session.append(sessionId, {
-      role: 'user',
-      content: wrapped,
-      ts: Date.now(),
-      /* 标出这条不是用户手打的 —— 界面可以据此区别显示 */
-      source: 'extension',
-    })
+    if (framed) {
+      const res = ops.handle(message.kind, message.payload)
+      write(
+        socket,
+        res.ok
+          ? P.reply({ id: message.id, kind: message.kind, payload: res.data })
+          : P.failure({ id: message.id, kind: message.kind, code: res.error.code, message: res.error.message }),
+        true,
+      )
+      return
+    }
 
-    deps.audit.record({
-      sessionId,
-      tool: 'ext:page',
-      ok: ok.ok !== false,
-      extras: { source: 'extension', url, title, chars: text.length, truncated, createdSession: created },
-    })
-
-    deps.send('ext:page', { sessionId, url, title, chars: text.length, created, truncated })
-
-    return { ok: true, sessionId, chars: text.length, created }
+    /* 旧单向路径（Phase 2 的 host 还活着时）—— 回裸 JSON，形状与当年一致 */
+    const res = ops.handle(message?.kind, message)
+    write(socket, res.ok ? { ok: true, ...res.data } : { ok: false, error: res.error.message }, false)
   }
 
   function onConnection(socket) {
-    const chunks = []
-    let size = 0
-    let dead = false
+    socks.add(socket)
+    /* 帧是**流**：半帧要留着、粘包要切开 —— 所以累积到缓冲里增量解 */
+    /** @type {Buffer} */
+    let buf = Buffer.alloc(0)
+    /** 这条连接是不是旧 host 的**裸 JSON**（见下面 data 里那段判据） */
+    let legacy = false
 
-    socket.on('data', (buf) => {
-      size += buf.length
-      if (size > MAX_MESSAGE) {
-        dead = true
+    const drop = () => {
+      socks.delete(socket)
+      try {
         socket.destroy()
+      } catch {
+        /* 已经断了 */
+      }
+    }
+
+    socket.on('data', (chunk) => {
+      buf = Buffer.concat([buf, chunk])
+      /* 已判为旧 host 的裸 JSON → 攒着，等 end 整块收（旧 host 写一次就关连接） */
+      if (legacy) return
+
+      const { messages, rest, errors, fatal } = P.decodeFrames(buf, { max: P.MAX_PIPE_FRAME })
+      /*
+       * ★ 裸 JSON 兜底（旧 host → 新主进程，§6.1 组合矩阵里必须保住的那一格）。
+       *
+       * 旧 host 发的是**裸 JSON**、没有长度前缀。它的第一个字节一定是 `{`（0x7b），
+       * 被当成帧头解出来就是荒谬长度 —— 实测 `{"t` → 小端 1,869,881,979 → `fatal`。
+       * 所以「`fatal` + 首字节 `{`」就是它的判据；**判成裸 JSON 后绝不能 drop** ——
+       * 那是一条完全有效的旧客户端（它在 Edge 开着时活得好好的）。
+       *
+       * 为什么这个判据够精确：我们的真帧长度低字节碰巧是 0x7b 的概率是 1/256，
+       * 而还要同时 > 2 MB 才 fatal —— 两个条件叠起来实际不可能。
+       */
+      if (fatal && buf.length > 0 && buf[0] === 0x7b) {
+        legacy = true
+        deps.log?.warn?.('扩展通道：识别为旧版 host 的裸 JSON 连接（走兜底路径）')
         return
       }
-      chunks.push(buf)
+
+      buf = rest
+      for (const e of errors) deps.log?.warn?.(`扩展通道：丢弃一帧（${e}）`)
+      for (const m of messages) respond(socket, m)
+      if (fatal) {
+        deps.log?.warn?.('扩展通道：协议失去同步，断开这条连接')
+        drop()
+      }
     })
 
-    socket.on('error', () => socket.destroy())
-
-    /* 一次连接 = 一条消息（见文件头 ②），所以 end 才是完整的消息边界 */
+    socket.on('error', drop)
+    socket.on('close', () => socks.delete(socket))
     socket.on('end', () => {
-      if (dead) return
-      /** @type {{ ok: boolean, error?: string, sessionId?: string, chars?: number, created?: boolean }} */
-      let reply = { ok: false, error: '空消息' }
+      socks.delete(socket)
+      if (!legacy) return
       try {
-        const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-        if (!token || message?.token !== token) {
-          reply = { ok: false, error: 'token 不对（消息不是本机这次启动的 Harbor 发的？）' }
-        } else {
-          reply = ingest(message)
-        }
+        /* 旧 host 的整条消息就在这块里 —— 形状与 Phase 2 完全一致 */
+        respond(socket, JSON.parse(buf.toString('utf8')))
       } catch (error) {
-        reply = { ok: false, error: `消息不是合法 JSON：${error instanceof Error ? error.message : error}` }
-      }
-      try {
-        /*
-         * ★ 写回复 —— 但**当前没人读它**，如实写在这里免得后人误解：
-         *   host 用的是 `fs.writeFileSync(pipe, …)`（打开→写→关），写完连接就关了，
-         *   读不到这个回复（探针实测：`sock.end()` 之后服务器再 write，客户端收不到）。
-         *   所以对 host 而言，`delivered=true` 只等于「字节已经写进管道」，
-         *   **不等于**「主进程已经处理成功」—— 这一点在扩展的文案里如实标了。
-         *   留着它是因为：如果将来 host 改成「写完不关、同步读回复」，这里就现成了。
-         */
-        socket.write(JSON.stringify(reply))
-      } catch {
-        /* host 那边已经关了 —— 这正是常态，不是错误 */
+        deps.log?.warn?.(`扩展通道：裸 JSON 解不开（${error instanceof Error ? error.message : error}）`)
       }
     })
   }
@@ -223,7 +171,17 @@ function createBridge() {
     /**
      * 起管道服务器。
      *
-     * @param {{ dataDir: string, send: Function, session: object, audit: object, wrap: Function, log: object }} options
+     * `send` / `wrap` 的签名要**写精确**（不能写 `Function`）：`createOps` 那边
+     * 按具体签名声明依赖，宽类型赋不进去（`tsc` 会报 TS2322，内核类型检查会红）。
+     *
+     * @param {{
+     *   dataDir: string,
+     *   send: (name: string, payload: object) => void,
+     *   session: object,
+     *   audit: object,
+     *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
+     *   log: object,
+     * }} options
      */
     start(options) {
       dataDir = String(options.dataDir ?? '')
@@ -233,13 +191,21 @@ function createBridge() {
       deps.wrap = options.wrap
       deps.log = options.log
 
-      token = writeToken(dataDir)
+      ops = createOps({
+        session: options.session,
+        audit: options.audit,
+        wrap: options.wrap,
+        send: options.send,
+        getActiveSession: () => activeSessionId,
+      })
+
+      token = P.writeToken(dataDir)
       if (!token) {
         deps.log?.warn?.('扩展桥：token 写不进去，桥已禁用（fail-closed）')
         return { ok: false, error: 'token 写入失败' }
       }
 
-      const name = pipeName(dataDir)
+      const name = P.pipeName(dataDir)
       server = net.createServer(onConnection)
       server.on('error', (error) => {
         deps.log?.warn?.(`扩展桥：管道服务器出错：${error instanceof Error ? error.message : error}`)
@@ -264,7 +230,34 @@ function createBridge() {
     /** 收一条消息（自检直接调，不必起管道） */
     ingest,
 
+    /**
+     * 主动推送给所有活着的连接（3b 的流式分片用；3a 不调，但通道先备好）。
+     *
+     * 推送帧**没有 id** —— 与应答的区别就在这儿（见 ext-protocol.cjs 的 push）。
+     */
+    push(kind, payload) {
+      const frame = P.encodeFrame(P.push({ kind, payload }))
+      let sent = 0
+      for (const s of socks) {
+        try {
+          s.write(frame)
+          sent += 1
+        } catch {
+          /* 单条连接写失败不该影响别的 */
+        }
+      }
+      return { ok: true, sent, connections: socks.size }
+    },
+
     stop() {
+      for (const s of socks) {
+        try {
+          s.destroy()
+        } catch {
+          /* 忽略 */
+        }
+      }
+      socks.clear()
       try {
         server?.close()
       } catch {
@@ -276,12 +269,13 @@ function createBridge() {
 }
 
 module.exports = {
-  PIPE_PREFIX,
-  TOKEN_FILE,
-  MAX_MESSAGE,
-  pipeName,
-  tokenPath,
-  writeToken,
-  readToken,
+  /* 管道名与 token 的**真相源**在 ext-protocol.cjs；这里转出来给老引用（自检）用 */
+  PIPE_PREFIX: P.PIPE_PREFIX,
+  TOKEN_FILE: P.TOKEN_FILE,
+  MAX_MESSAGE: P.MAX_PIPE_FRAME,
+  pipeName: P.pipeName,
+  tokenPath: P.tokenPath,
+  writeToken: P.writeToken,
+  readToken: P.readToken,
   createBridge,
 }

@@ -23,7 +23,8 @@ import { check, group } from '../harness.mjs'
 
 export async function run() {
   const B = require(join(ROOT, 'electron/core/ext-bridge.cjs'))
-  const F = require(join(ROOT, 'electron/core/ext-forward.cjs'))
+  /* Phase 3a：ext-forward.cjs 已删，兼容形态的同步写并进了 ext-client.cjs */
+  const F = require(join(ROOT, 'electron/core/ext-client.cjs'))
   const H = require(join(ROOT, 'electron/native-host.cjs'))
   const session = require(join(ROOT, 'electron/core/session.cjs'))
   const { wrapWebText } = require(join(ROOT, 'electron/core/tools/_web-note.cjs'))
@@ -115,16 +116,21 @@ export async function run() {
     }
   }
 
-  /* ── ③ 转发口径 ── */
-  group('扩展桥 · 转发口径（delivered 的语义）')
+  /* ── ③ 兼容形态（同步写 / 裸 JSON 兜底）── */
+  group('扩展桥 · 兼容形态（同步写 / 裸 JSON）')
 
-  const fsrc = readFileSync(join(ROOT, 'electron/core/ext-forward.cjs'), 'utf8')
-  check('★ 数据根优先取环境变量（%~dp0 传进来的）', F.DATA_ENV === 'HARBOR_DATA_ROOT')
+  /*
+   * Phase 2 的 host 是「同步写、写完就走」（`fs.writeFileSync` 打开→写→关）。
+   * Phase 3a 起主线走双向客户端，但那套**兼容形态仍在**（`run()` 那条分支）——
+   * 而且「旧 host → 新主进程」这格必须保住（用户开着 Edge 升级 Harbor 时，
+   * 旧 host 进程还活着，发的是**裸 JSON**）。所以这里两件都钉。
+   */
+  const csrc = readFileSync(join(ROOT, 'electron/core/ext-client.cjs'), 'utf8')
   check(
-    '★ 转发的 ok 只说「写进管道了」（源码里写给后人看，别改成「处理成功」）',
-    /不表示主进程已经落进会话/.test(fsrc),
+    '★ 兼容形态的 ok 只说「写进管道了」（源码里写给后人看，别改成「处理成功」）',
+    /不表示主进程已经落进会话/.test(csrc),
   )
-  check('★ 管道不存在（Harbor 没开）要回人话提示', /ENOENT/.test(fsrc) && /Harbor 没有在运行/.test(fsrc))
+  check('★ 管道不存在（Harbor 没开）要回人话提示', /ENOENT/.test(csrc) && /Harbor 没有在运行/.test(csrc))
 
   const prevEnv = process.env[F.DATA_ENV]
   process.env[F.DATA_ENV] = 'E:\\fake\\data'
@@ -196,4 +202,31 @@ export async function run() {
   check('★ 拒的话术是给用户看的人话', /该页面不支持读取/.test(sw))
   check('★ 正文有上限（不然会撑爆 1MB 的单条消息）', /MAX_TEXT/.test(sw))
   check('★ 扩展侧不做包装（包装是内核的职责，抄一份就会漂）', !/不是指令/.test(sw))
+
+  /* ── ⑥ Phase 3a：通道层拆分 + 会话列表（只读）── */
+  group('扩展桥 · Phase 3a（通道层 / 会话列表）')
+
+  const nativeSrc = readFileSync(join(ROOT, 'harbor-edge/extension/lib/native.js'), 'utf8')
+  /* ★ 断言只扫**代码**（去掉注释）：注释里提到 pendingRead（说明「从单槽升级」）是对的，
+     代码里真用它才是问题 —— 与 154 里「不 require electron」那条同一个道理。 */
+  const nativeCode = nativeSrc.replace(/\/\*[\s\S]*?\*\//g, '')
+  check(
+    '★ 通道层拆出来了，且是「按 id 匹配」的 Map（支持并发，不再是单槽）',
+    /pending\.set\(/.test(nativeCode) && /pending\.has\(msg\.id\)/.test(nativeCode),
+  )
+  check(
+    '★ 回帧只按 id 匹配（host 回的 type 是 xxx.result，按 type 会错位）',
+    /pending\.has\(msg\.id\)/.test(nativeCode) && !/pendingRead/.test(nativeCode),
+  )
+  check('★ SW 用通道层发请求', /requestHost\(/.test(sw))
+  check('★ SW 有 session-list 入口（Phase 3a 只读）', /'session-list'/.test(sw) && /getSessionList/.test(sw))
+  check(
+    '★ SW 是 ESM（manifest 必须声明 type=module，否则 import 直接失败）',
+    manifest.background?.type === 'module',
+    String(manifest.background?.type),
+  )
+  check(
+    '★ 本阶段只读：SW 里没有「切会话 / 发消息」的入口（那是 3b/3c）',
+    !/switch-session|send-message|chat:send/.test(sw),
+  )
 }

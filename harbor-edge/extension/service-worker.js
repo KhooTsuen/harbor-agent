@@ -1,9 +1,8 @@
 /**
- * Harbor 浏览器伴侣 · Service Worker（Phase 2：读当前页）
+ * Harbor 浏览器伴侣 · Service Worker（Phase 3a）
  *
- * 扩展侧**唯一**持有 native port 的地方。职责四件：① 连 native host、断了就重连；
- * ② 维护连接状态并广播给侧边栏；③ 点图标开侧边栏（这一下同时授予 activeTab）；
- * ④ 读当前活动标签的正文，经 native port 转给 Harbor。
+ * SW 只管三件事：① 装上 action / 面板 / 消息的接线；② 读当前活动标签的正文；
+ * ③ 取会话列表。**通道那层（连 host、重连、按 id 收发）在 `lib/native.js`。**
  *
  * ── ★ 两条硬规矩（用户定的边界）────────────────────────────
  *   · `chrome.tabs.query({active:true, currentWindow:true})` —— 只可能拿到**前台当前
@@ -17,100 +16,18 @@
  * ⚠️ `setPanelBehavior({openPanelOnActionClick:true})` **行不通**：它把图标点击接管成
  *   「切换侧边栏条目显示」，不算 action 执行，activeTab 于是从不授予（2026-10-15 真机
  *   踩到）。改法见 bindAction()：用 action.onClicked 自己开面板，这一下才是真 invoke。
- * MV3 的 SW 空闲 30 秒会被终止；有活跃 native port 时保活（Phase 0 实测），端口没建起来
- * 时会被杀 —— 所以状态与最近一次读取结果都落 chrome.storage。
  */
 
 /* global chrome */
 
-const HOST = 'com.harbor.agent'
-
-/** 重连节奏（不是就绪判据；见 harbor-edge/README.md 的硬规则） */
-const RECONNECT_MS = 3000
+import { connect, getState, ping, requestHost } from './lib/native.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
-   可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-forward.cjs）。 */
+   可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
 const MAX_TEXT = 512 * 1024
 
 /* 读不了的页面（浏览器内部页）：显式判为了给人话错误，且让「哪些读不了」看得见。 */
 const BLOCKED_PROTOCOL = /^(chrome|edge|about|devtools|view-source|chrome-extension|edge-extension|moz-extension|chrome-untrusted):/i
-
-let port = null
-let timer = null
-let state = { connected: false, lastError: null, lastPongAt: 0, host: HOST }
-/** 正在等 host 回包的那次读取（同时只允许一次） */
-let pendingRead = null
-
-/** 状态变了：落 storage（给侧边栏冷启动读）+ 广播（给开着的侧边栏） */
-function publish(patch) {
-  state = { ...state, ...patch }
-  try {
-    chrome.storage.local.set({ harborState: state })
-  } catch {
-    /* storage 写不进去不该影响连接本身 */
-  }
-  try {
-    /* 侧边栏可能没开着 —— 没有接收者时 Promise 会 reject，忽略即可 */
-    const p = chrome.runtime.sendMessage({ type: 'status', state })
-    if (p && typeof p.catch === 'function') p.catch(() => {})
-  } catch {
-    /* 同上 */
-  }
-}
-
-function scheduleReconnect() {
-  if (timer) return
-  timer = setTimeout(() => {
-    timer = null
-    connect()
-  }, RECONNECT_MS)
-}
-
-function ping() {
-  if (!port) return
-  try {
-    port.postMessage({ ping: 1, at: Date.now() })
-  } catch (error) {
-    publish({ connected: false, lastError: String((error && error.message) || error) })
-  }
-}
-
-function connect() {
-  if (port) return
-  try {
-    port = chrome.runtime.connectNative(HOST)
-  } catch (error) {
-    publish({ connected: false, lastError: String((error && error.message) || error) })
-    scheduleReconnect()
-    return
-  }
-
-  port.onMessage.addListener((msg) => {
-    /* ★ 判据在这里：host **真的回了消息**才算连上 */
-    publish({ connected: true, lastError: null, lastPongAt: Date.now(), lastReply: msg })
-    /* Phase 2：读页面的回包（host 把主进程的处理结果带回来了） */
-    if (msg && msg.type === 'ext:page.result' && pendingRead) {
-      const done = pendingRead
-      pendingRead = null
-      done(msg)
-    }
-  })
-
-  port.onDisconnect.addListener(() => {
-    const err = chrome.runtime.lastError
-    port = null
-    publish({ connected: false, lastError: err ? err.message : 'host disconnected' })
-    /* 连接断了，正在等的那次读取不能永远挂着 */
-    if (pendingRead) {
-      const done = pendingRead
-      pendingRead = null
-      done({ ok: false, error: '与 Harbor 的连接断开了' })
-    }
-    scheduleReconnect()
-  })
-
-  ping()
-}
 
 /* ★ 点图标 = 真正的「执行操作」（activeTab 由此授予）→ 打开侧边栏。必须走
    action.onClicked：`setPanelBehavior({openPanelOnActionClick})` 把图标点击接管成
@@ -155,40 +72,8 @@ function bindAction() {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   Phase 2：读当前页
+   读当前页
    ══════════════════════════════════════════════════════════════ */
-
-/* 把读到的内容交给 host，并等 host 的回帧。⚠️ 回帧只说明「host 把字节写进管道了」，
-   不是「Harbor 处理成功了」—— host 是单向写，读不到主进程回复（见 ext-forward.cjs）。
-   仍要等回帧是为了区分「发出去了」和「Harbor 没开 / 没装通道」（后者 host 回人话错误）。 */
-function sendPageToHost(payload) {
-  return new Promise((resolve) => {
-    if (!port) {
-      resolve({ ok: false, error: '没连上 Harbor（先在下面点「重试」）' })
-      return
-    }
-    /* 同时只允许一次读取 —— 免得两次点击的回包互相错配 */
-    if (pendingRead) {
-      resolve({ ok: false, error: '上一次读取还没回来' })
-      return
-    }
-    const timerId = setTimeout(() => {
-      pendingRead = null
-      resolve({ ok: false, error: 'Harbor 没有响应（超时）' })
-    }, 15000)
-    pendingRead = (msg) => {
-      clearTimeout(timerId)
-      resolve(msg && typeof msg === 'object' ? msg : { ok: false, error: '回了看不懂的东西' })
-    }
-    try {
-      port.postMessage(payload)
-    } catch (error) {
-      clearTimeout(timerId)
-      pendingRead = null
-      resolve({ ok: false, error: String((error && error.message) || error) })
-    }
-  })
-}
 
 /** 读当前活动标签的标题 + 正文（只读前台那一个） */
 async function readActivePage() {
@@ -243,14 +128,7 @@ async function readActivePage() {
   const truncated = text.length > MAX_TEXT
   if (truncated) text = text.slice(0, MAX_TEXT)
 
-  const reply = await sendPageToHost({
-    type: 'ext:page',
-    url,
-    title,
-    text,
-    truncated,
-    id: `r${Date.now().toString(36)}`,
-  })
+  const reply = await requestHost('ext:page', { url, title, text, truncated })
 
   const result = {
     ok: reply && reply.ok === true,
@@ -270,20 +148,45 @@ async function readActivePage() {
   return result
 }
 
+/* ══════════════════════════════════════════════════════════════
+   会话列表（Phase 3a 新增，**只读**）
+   ══════════════════════════════════════════════════════════════ */
+
+/** 取会话列表（只读）。结果落一份快照 —— 面板打开即有内容，再异步刷新。 */
+async function getSessionList() {
+  const reply = await requestHost('ext:sessionList', {})
+  if (reply && reply.ok === true) {
+    const sessions = Array.isArray(reply.sessions) ? reply.sessions : []
+    try {
+      chrome.storage.local.set({ harborSessions: { sessions, at: Date.now() } })
+    } catch {
+      /* 存不下不影响这次结果 */
+    }
+    return { ok: true, sessions }
+  }
+  return { ok: false, error: (reply && reply.error) || '拿不到会话列表', code: (reply && reply.code) || '' }
+}
+
 /* ── 侧边栏来的消息 ────────────────────────────────────────── */
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'get-status') {
-    sendResponse({ state })
+    sendResponse({ state: getState() })
     return
   }
   if (msg && msg.type === 'ping') {
     ping()
-    sendResponse({ ok: true, state })
+    sendResponse({ ok: true, state: getState() })
     return
   }
   if (msg && msg.type === 'read-page') {
     /* 异步：返回 true 保持通道，处理完再 sendResponse */
     readActivePage()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  if (msg && msg.type === 'session-list') {
+    getSessionList()
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
     return true
