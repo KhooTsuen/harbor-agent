@@ -196,10 +196,16 @@ export async function run() {
   check('★ 没有 optional_host_permissions（同样本阶段不加）', manifest.optional_host_permissions === undefined)
 
   const sw = readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8')
-  check('★ 只查活动标签（active + currentWindow，不遍历后台页）', /active:\s*true,\s*currentWindow:\s*true/.test(sw))
+  /*
+   * ★ M03 起「拿前台标签 + 判受限页」抽到了 `lib/active-tab.js`（读正文与观察页面共用
+   *   一处 —— 各写一份必定漂，硬约束 #9）。所以下面两条判据跟着**真相源**走，不跟着 SW 文件。
+   */
+  const activeTab = readFileSync(join(ROOT, 'harbor-edge/extension/lib/active-tab.js'), 'utf8')
+  check('★ 只查活动标签（active + currentWindow，不遍历后台页）', /active:\s*true,\s*currentWindow:\s*true/.test(activeTab))
   check('★ 读页面只由消息触发（没有任何定时器去读页面）', /msg\.type === 'read-page'/.test(sw))
-  check('★ 内部页要拒（chrome:// edge:// about: …）', /BLOCKED_PROTOCOL/.test(sw) && /edge/.test(sw))
-  check('★ 拒的话术是给用户看的人话', /该页面不支持读取/.test(sw))
+  check('★ 内部页要拒（chrome:// edge:// about: …）', /BLOCKED_PROTOCOL/.test(activeTab) && /edge/.test(activeTab))
+  check('★ 拒的话术是给用户看的人话', /该页面不支持读取/.test(activeTab))
+  check('★ 「拿前台标签」只有一处实现（read 与 observe 共用，不各写一份）', /resolveActiveTab/.test(sw))
   check('★ 正文有上限（不然会撑爆 1MB 的单条消息）', /MAX_TEXT/.test(sw))
   check('★ 扩展侧不做包装（包装是内核的职责，抄一份就会漂）', !/不是指令/.test(sw))
 

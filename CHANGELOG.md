@@ -5,6 +5,40 @@
 
 ## [未发布]
 
+- **功能：M03 网页感知补完 —— 选区 / 可交互元素列表 / iframe 能力检测 / 页面版本号**（2026-10-16）。
+  按《Harbor Agent Browser Extension》模块体系推进；这是 **M04（受控操作）的前置** ——
+  文档原话「M03 必须先把『看』做扎实」。**只做「看」，不做「动」**。
+  · **选区和局部 DOM**：`document.getSelection()` → 返回选中文本 + **所在元素的引用**。
+  · **可交互元素结构**：`button` / `a` / `input` / `select` / `textarea` / `[role=…]` 等
+    扫成结构化数组，每条含 **稳定引用 / 角色 / 可见文本 / 状态**（disabled、checked、value）。
+  · **iframe / Shadow DOM 能力检测**：同源报「可读」、跨域报「读不到 + 为什么」，
+    **内容字段一律空（不捏造）**；closed shadow root 浏览器不暴露 → 只说明「无法枚举」，**不猜数量**。
+  · **★ 页面版本号**：`FNV-1a(URL + 标题 + 元素签名 + 正文长度)`。元素引用形如
+    `<版本号>.<n>` —— **引用自带版本**，M04 拿旧引用比对前缀就能判失效，不必再问页面。
+    为什么用 FNV-1a 而不是 `crypto.subtle`：后者是**异步**的，而指纹要参与同步生成 ref。
+  · **★ 敏感字段（M07 的要求，M03 就得做）**：`type=password` 或 name/id/autocomplete
+    命中敏感词表 → `value` 一律 `null` + `masked: true`。**不脱敏、不截断、连长度都不给**
+    （长度也是信息）。渲染器里再兜一道。
+  · **预算**（文档 §6）：元素 60 条 / 单字段 80 字符 / 选区 4000 字符，超限 `truncated`；
+    渲染结果另有 20000 字符上限。**先给结构与引用，细节按需读**。
+  · **文件**：新增 `harbor-edge/extension/lib/observe.js`（采集器）、`lib/observe-run.js`
+    （执行那一步）、`lib/active-tab.js`（★ 从 SW 抽出的「拿前台标签 + 判受限页」——
+    读正文与观察页面**共用一处**）、`src/sidepanel/ObserveButton.tsx`（侧边栏按钮）、
+    `electron/core/ext-observe.cjs`（观察 → markdown，纯函数）。协议加 `page:observe` 一个 kind。
+    `ext-ops.cjs` 的落会话逻辑抽成共用的 `ingest()`（`ext:page` 与 `page:observe` 同一套：
+    包装 / 审计 / 推送三件事只有一份实现）。
+  · **★ 一条只有真机能现形的约束**：采集器经 `chrome.scripting.executeScript({ func })` 注入，
+    Chrome 会把它 **`toString()` 序列化**后送进页面 —— 所以函数体内**只能引用自己的参数、
+    局部变量和嵌套函数**，引用任何模块级东西注入后就是 `ReferenceError`。
+    而这条**单测抓不到**（Node 里 require 时一切都在），所以：采集器写成一个自包含函数、
+    这条规矩写在文件头、自检组 159 有一条断言专门钉它（扫 top-level 常量名是否泄漏进函数体）。
+  · **验证**：真机 `accept-m03.cjs` **31/31**（真 Edge + 真页面 + 真 CDP：采集器在真 DOM 上跑）。
+    四条回归**零回归**：`accept-phase2` 18/18 · `3a` 16/16 · `3b` 15/15 · `3c` 20/20。
+    自检 **4785/0**（新增 159 组 41 条）· `npm run verify` 全绿。
+  · **遗留（如实列，都不是遗漏）**：① 阅读模式正文提取（标题层级 / 表格 / 图片 alt）**未做** ——
+    现在仍只有 `innerText`；② SPA 的 DOM 更新观察 / 页面稳定判断**未做**（与 M04 的 `wait` 一起做）；
+    ③ iframe 内部**不递归采集**（只报告能不能读）；④ 采集器扫 shadow 有 3000 元素上限（超了计数是下界）。
+
 - **功能：侧边栏 Phase 3c —— 点选会话 / 未选中时自动新建 / 顶栏 ＋**（2026-10-16）。
   用户报的两个 bug：① 抽屉里的会话点不动；② 没选会话时发消息，「侧边栏没加新会话、
   Harbor 也没联动」。查下来：① 是**明知故为**（`SessionDrawer` 当年写的是 `<li>`，

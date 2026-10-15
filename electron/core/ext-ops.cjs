@@ -18,6 +18,8 @@
  */
 
 const P = require('./ext-protocol.cjs')
+/* M03：观察结果 → markdown。纯函数，单独一个文件（ext-ops 贴 300 红线） */
+const { renderObservation } = require('./ext-observe.cjs')
 
 /**
  * @param {{
@@ -44,21 +46,13 @@ function createOps(deps) {
   const chat = deps.chat ?? null
 
   /**
-   * `ext:page`：扩展读到的页面内容 → 包装 → 落会话 → 审计 → 推给渲染层。
+   * 把渲染好的文本落进会话 + 审计 + 推渲染层。
    *
-   * `payload` 的字段在**顶层**（不是嵌套的 `payload.payload`）—— 因为这条路
-   * 同时服务两种调用：新协议（bridge 把 `message.payload` 拆出来）与旧单向路径
-   * （老 host 的字段就在消息顶层，见 ext-bridge.cjs 的裸 JSON 兜底）。
+   * ★ `ext:page`（M03 前的读页面）与 `page:observe`（M03 的结构化观察）**共用这一条**：
+   *   落哪条会话、审计字段、推渲染层这三件事只有一份实现（硬约束 #9）。
+   *   差别只在**传进来的 `content` 长什么样** —— 调用方各自渲染好。
    */
-  function ingestPage(payload) {
-    const url = String(payload?.url ?? '')
-    const title = String(payload?.title ?? '')
-    const text = String(payload?.text ?? '')
-    const truncated = payload?.truncated === true
-
-    /* ★ 包装是**安全职责**，必须做，且只做一次（和 browse 工具同一份实现） */
-    const wrapped = wrap({ url, title, text, truncated })
-
+  function ingest(sessionTitleHint, content, auditTool, extras) {
     /* 决定落进哪条会话：优先「界面当前打开的那条」，否则新建一条专用会话 */
     let sessionId = String(getActiveSession() ?? '')
     let created = false
@@ -76,14 +70,14 @@ function createOps(deps) {
       }
     }
     if (!alive(sessionId)) {
-      const meta = session.create({ title: `浏览器：${title || url || '未命名页面'}`, mode: 'pair' })
+      const meta = session.create({ title: `浏览器：${sessionTitleHint || '未命名页面'}`, mode: 'pair' })
       sessionId = meta.id
       created = true
     }
 
     const appended = session.append(sessionId, {
       role: 'user',
-      content: wrapped,
+      content,
       ts: Date.now(),
       /* 标出这条不是用户手打的 —— 界面可以据此区别显示 */
       source: 'extension',
@@ -91,14 +85,79 @@ function createOps(deps) {
 
     audit.record({
       sessionId,
-      tool: P.KIND.EXT_PAGE,
+      tool: auditTool,
       ok: appended.ok !== false,
-      extras: { source: 'extension', url, title, chars: text.length, truncated, createdSession: created },
+      extras: { source: 'extension', createdSession: created, ...extras },
     })
 
-    send('ext:page', { sessionId, url, title, chars: text.length, created, truncated })
+    send('ext:page', { sessionId, created, ...extras })
 
-    return { sessionId, chars: text.length, created }
+    return { sessionId, created }
+  }
+
+  /**
+   * `ext:page`：扩展读到的页面正文 → 包装 → 落会话。
+   *
+   * `payload` 的字段在**顶层**（不是嵌套的 `payload.payload`）—— 因为这条路
+   * 同时服务两种调用：新协议（bridge 把 `message.payload` 拆出来）与旧单向路径
+   * （老 host 的字段就在消息顶层，见 ext-bridge.cjs 的裸 JSON 兜底）。
+   */
+  function ingestPage(payload) {
+    const url = String(payload?.url ?? '')
+    const title = String(payload?.title ?? '')
+    const text = String(payload?.text ?? '')
+    const truncated = payload?.truncated === true
+
+    /* ★ 包装是**安全职责**，必须做，且只做一次（和 browse 工具同一份实现） */
+    const wrapped = wrap({ url, title, text, truncated })
+
+    const res = ingest(title || url || '未命名页面', wrapped, P.KIND.EXT_PAGE, {
+      url,
+      title,
+      chars: text.length,
+      truncated,
+    })
+    return { sessionId: res.sessionId, chars: text.length, created: res.created }
+  }
+
+  /**
+   * `page:observe`：M03 的结构化观察 → 包装 → 落会话。
+   *
+   * ★ 也过 `wrapWebText` —— 观察结果里**含网页上的文字**（元素标签、选区），
+   *   那些同样是**不可信数据**，必须按「网页内容」对待（文档 §5.2 第 1 条：
+   *   网页文本伪装系统指令）。包装在**渲染之后**做：先给人读的 markdown，
+   *   再整体套上防注入抬头。
+   */
+  function observePage(payload) {
+    const obs = payload?.observation && typeof payload.observation === 'object' ? payload.observation : null
+    if (!obs) return fail(P.ERR.INTERNAL, '没收到观察数据')
+
+    const url = String(obs.url ?? '')
+    const title = String(obs.title ?? '')
+    const rendered = renderObservation(obs)
+    const wrapped = wrap({ url, title, text: rendered.markdown, truncated: rendered.truncated === true })
+
+    const res = ingest(title || url || '未命名页面', wrapped, P.KIND.PAGE_OBSERVE, {
+      url,
+      title,
+      chars: rendered.chars,
+      truncated: rendered.truncated === true,
+      pageVersion: String(obs.pageVersion ?? ''),
+      elements: Number(obs?.stats?.elements ?? 0),
+    })
+    return {
+      sessionId: res.sessionId,
+      created: res.created,
+      chars: rendered.chars,
+      pageVersion: String(obs.pageVersion ?? ''),
+      elements: Number(obs?.stats?.elements ?? 0),
+      truncated: rendered.truncated === true,
+    }
+  }
+
+  /** 统一的自给人话失败（与 chat 那几条同形状 —— bridge 才拿得到 code） */
+  function fail(code, message) {
+    return { ok: false, error: { code, message } }
   }
 
   /**
@@ -134,6 +193,8 @@ function createOps(deps) {
     /* Phase 3c：选一条（只切侧边栏）/ 新建一条（两侧都切） */
     [P.KIND.SESSION_SELECT]: (payload) => chat.handleSelect(payload),
     [P.KIND.SESSION_NEW]: () => chat.handleNew(),
+    /* M03：结构化页面观察（选区 / 元素列表 / iframe / 页面版本号） */
+    [P.KIND.PAGE_OBSERVE]: (payload) => observePage(payload),
   }
 
   /**

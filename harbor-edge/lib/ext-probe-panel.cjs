@@ -25,6 +25,8 @@
  *   | 抽屉本身                       | `会话抽屉`       | DRAWER_OPEN_EXPR / CLICK_OUTSIDE_EXPR |
  *   | 抽屉里的列表容器               | `Harbor 会话列表`| SESSION_LIST_EXPR |
  *   | 输入框上方那行状态             | `发送提示`       | STATUS_TEXT_EXPR / NOTICE_TEXT |
+ *   | 输入框左端「读当前页」（图标）  | `读当前页`       | CLICK_READ_EXPR |
+ *   | 输入框左端「观察页面」（图标，M03） | `观察页面`    | CLICK_OBSERVE_EXPR |
  *
  *   ⚠️ ☰ 与抽屉**不能同名**：同名会让 `CLICK_TITLE_EXPR` 点到抽屉自身
  *   （点自己 = 没反应，判据还照过 —— 最难查的那种假绿）。
@@ -54,6 +56,19 @@ function isResultText(v) {
 const CLICK_READ_EXPR = `(function(){
   const b = document.querySelector('[aria-label="读当前页"]')
     || [...document.querySelectorAll('button')].find(x => /读当前页|读取中/.test(x.textContent));
+  if (!b) return 'no-button';
+  b.click();
+  return 'clicked';
+})()`
+
+/**
+ * 点「观察页面」按钮（M03）—— 同样是**图标按钮**（见文件头那条规矩）。
+ *
+ * ⚠️ 它和「读当前页」是**两个不同的动作**（一个读正文、一个读结构），别写成同一个名字：
+ *   同名会让表达式点到另一个按钮，判据**照过**却验错了东西（与 ☰ / 抽屉那条同族）。
+ */
+const CLICK_OBSERVE_EXPR = `(function(){
+  const b = document.querySelector('[aria-label="观察页面"]');
   if (!b) return 'no-button';
   b.click();
   return 'clicked';
@@ -125,6 +140,7 @@ module.exports = {
   STATUS_TEXT_EXPR,
   isResultText,
   CLICK_READ_EXPR,
+  CLICK_OBSERVE_EXPR,
   CLICK_RETRY_EXPR,
   TITLE_EXPR,
   CLICK_TITLE_EXPR,

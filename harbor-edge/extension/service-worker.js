@@ -21,13 +21,13 @@
 /* global chrome */
 
 import { connect, getState, ping, requestHost } from './lib/native.js'
+import { resolveActiveTab } from './lib/active-tab.js'
+/* M03：观察页面那一步（拆到单独文件，SW 贴 300 红线） */
+import { observePage } from './lib/observe-run.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
    可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
 const MAX_TEXT = 512 * 1024
-
-/* 读不了的页面（浏览器内部页）：显式判为了给人话错误，且让「哪些读不了」看得见。 */
-const BLOCKED_PROTOCOL = /^(chrome|edge|about|devtools|view-source|chrome-extension|edge-extension|moz-extension|chrome-untrusted):/i
 
 /* ★ 点图标 = 真正的「执行操作」（activeTab 由此授予）→ 打开侧边栏。必须走
    action.onClicked：`setPanelBehavior({openPanelOnActionClick})` 把图标点击接管成
@@ -77,37 +77,10 @@ function bindAction() {
 
 /** 读当前活动标签的标题 + 正文（只读前台那一个） */
 async function readActivePage() {
-  let tab
-  try {
-    const list = await chrome.tabs.query({ active: true, currentWindow: true })
-    tab = list && list[0]
-  } catch (error) {
-    return { ok: false, error: `拿不到当前标签页：${(error && error.message) || error}` }
-  }
-  if (!tab || tab.id == null) return { ok: false, error: '找不到当前标签页' }
-
-  const url = String(tab.url || '')
-  if (!url) {
-    /* url 为空有两种原因，不能混成一句话（否则提示会**误导**用户反复点图标）：
-       (a) 这个标签没被 invoke 过（换过标签）→ 提示「先点图标」，点了有用；
-       (b) 这本就是**受限页面**（edge:// / about: / chrome://）—— 浏览器不给 url，
-           点多少图标都没用 → 得直接说「不支持读取」。
-       判据是 bindAction 留下的 harborInvoke：同一 tabId 且**当时也看不到** url → (b)。 */
-    const inv = await new Promise((resolve) => {
-      try {
-        chrome.storage.local.get('harborInvoke', (o) => resolve(o && o.harborInvoke))
-      } catch {
-        resolve(null)
-      }
-    })
-    if (inv && inv.tabId === tab.id && inv.hasUrl === false) {
-      return { ok: false, error: '该页面不支持读取（浏览器内部页读不了）' }
-    }
-    return { ok: false, error: '读不到当前页地址 —— 先点一下工具栏的 Harbor 图标再试' }
-  }
-  if (BLOCKED_PROTOCOL.test(url)) {
-    return { ok: false, error: '该页面不支持读取' }
-  }
+  /* 「拿前台标签 + 判受限页」共用一处（M03 与 observe 一起用；文案不许改，见 lib/active-tab.js） */
+  const target = await resolveActiveTab()
+  if (!target.ok) return { ok: false, error: target.error }
+  const { tab, url } = target
 
   let results
   try {
@@ -246,6 +219,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'read-page') {
     /* 异步：返回 true 保持通道，处理完再 sendResponse */
     readActivePage()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  if (msg && msg.type === 'observe-page') {
+    observePage()
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
     return true

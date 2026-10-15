@@ -38,6 +38,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { ReadPageButton, type StatusMessage } from './ReadPageButton'
+import { ObserveButton } from './ObserveButton'
 import { SessionDrawer } from './SessionDrawer'
 
 /** 正在显示的一轮（一次提问 + 它的回答） */
@@ -264,6 +265,8 @@ export function ChatPanel({
       <div className="shrink-0 p-3 pt-1.5">
         <div className="flex items-end gap-1.5 rounded-base border border-line-hairline bg-bg-raised p-2">
           <ReadPageButton onStatus={onStatus} />
+          {/* M03：观察页面（结构 / 选区 / 版本号）—— 与「读当前页」是两个动作 */}
+          <ObserveButton onStatus={onStatus} />
           <textarea
             rows={1}
             value={input}

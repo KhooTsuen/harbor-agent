@@ -38,13 +38,10 @@ const MAX_FRAME = 1024 * 1024
  * 管道不经 Chromium，给 2 MB 余量，超了判 fatal 断开（对面不是我们的 host）。
  */
 const MAX_PIPE_FRAME = 2 * 1024 * 1024
-
-/**
- * host 等主进程应答的期限（8 秒）—— 本地读盘正常 < 50ms，8s 是容忍主进程跑重活。
- * 扩展侧另有 15s（故意更长）：让 host **先**超时、回一条带 code 的人话。
- */
+/** host 等应答的期限（8 秒）。扩展侧另有 15s（故意更长）：让 host **先**超时、回一条带 code 的人话 */
 const HOST_TIMEOUT_MS = 8000
-/** 消息类型（kind）—— 两侧共用。前几对走请求/应答，带 EVENT 字样的走推送 */
+
+/** 消息类型（kind）—— 两侧共用。请求/应答带 id，`*_EVENT` / `*_SELECTED` 走推送（无 id） */
 const KIND = {
   EXT_PAGE: 'ext:page', // 扩展读到的页面内容 → 落会话（Phase 2）
   SESSION_LIST: 'session:list', // 会话列表（Phase 3a）
@@ -55,6 +52,7 @@ const KIND = {
   SESSION_SELECT: 'session:select', // 侧边栏选了某条（3c）—— 只切它自己，主窗口不动
   SESSION_NEW: 'session:new', // 侧边栏点 ＋（3c）—— 新建一条并两侧切过去
   SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
+  PAGE_OBSERVE: 'page:observe', // 结构化页面观察（M03）：选区 / 元素列表 / iframe / 页面版本号
 }
 
 /**

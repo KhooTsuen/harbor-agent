@@ -102,12 +102,14 @@ function createDispatcher(client) {
      * Phase 3b：侧边栏发消息 / 重连要流快照 —— 都是「转给主进程拿结果」，
      * 与上面两条同一种形状（host 只做转发，业务判断全在主进程）。
      * Phase 3c 又加两条：选一条会话（session:select）/ 新建一条（session:new）。
+     * M03 再加一条：结构化页面观察（observe-page）。
      */
     if (
       type === 'chat:send' ||
       type === 'chat:resume' ||
       type === 'session:select' ||
-      type === 'session:new'
+      type === 'session:new' ||
+      type === 'observe-page'
     ) {
       /** @type {Record<string, [string, object]>} */
       const map = {
@@ -116,6 +118,8 @@ function createDispatcher(client) {
         'chat:resume': [P.KIND.CHAT_RESUME, { sessionId: String(obj.sessionId ?? '') }],
         'session:select': [P.KIND.SESSION_SELECT, { sessionId: String(obj.sessionId ?? '') }],
         'session:new': [P.KIND.SESSION_NEW, {}],
+        /* ★ 观察结果是**结构化对象**，原样转（不 String()）—— 形状的真相源是 observe.js */
+        'observe-page': [P.KIND.PAGE_OBSERVE, { observation: obj.observation ?? null }],
       }
       const [kind, ask] = map[type]
       const res = await client.request(kind, ask)
@@ -125,7 +129,7 @@ function createDispatcher(client) {
 
     return {
       error:
-        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new',
+        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new / observe-page',
       echo: message ?? null,
     }
   }

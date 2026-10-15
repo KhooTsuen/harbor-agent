@@ -7,7 +7,10 @@
 > 当前状态：**Phase 3b 完成** —— 侧边栏能**发消息**、看**流式回复**，且与主窗口**同一条会话**。
 > 布局经用户要求返工为「**顶栏 + 对话区 + 输入框 + 会话抽屉**」（会话列表不再常驻）。
 > **Phase 3c 完成** —— 抽屉里点一条 = 侧边栏切过去（**主窗口不动**，用户拍板）；
-> 没选会话时发消息会**自动新建一条**；顶栏 ＋ 也是真的。Agent 操作网页是 Phase 4 —— **未开工**。
+> 没选会话时发消息会**自动新建一条**；顶栏 ＋ 也是真的。
+> **M03 网页感知补完**（按《Harbor Agent Browser Extension》模块体系）—— 选区 / 可交互元素列表
+> （带引用与状态）/ iframe 能力检测（读不到如实报，不捏造）/ **页面版本号**；敏感字段一律不读。
+> **M04 受控操作（点击 / 填写 / 验证）是下一步 —— 未开工**。
 >
 > ⚠️ **验收脚本的锚点**（改了渲染层必须同步，否则脚本**静默失效**、照跑不误）：
 > `[aria-label="…"]` 的**归属表**在 `lib/ext-probe-panel.cjs` 的文件头（唯一真相源）。
@@ -87,6 +90,10 @@
 | `extension/lib/native.js` | 扩展侧**通道层**（Phase 3a）：连 host / 重连 / **按 id 匹配的 pending Map** / 状态广播 / **推送帧广播**（3b） |
 | `src/sidepanel/` | 侧边栏的 React 源：`index.html` / `main.tsx` / `App.tsx`（**顶栏三区：☰ / 状态区 / 设置+新建**）/ `ChatPanel.tsx`（**对话区**）/ `SessionDrawer.tsx`（**会话抽屉，从左侧滑出**）/ `ReadPageButton.tsx`（读当前页，**图标按钮**） |
 | `src/sidepanel/ChatPanel.tsx` | 侧边栏**对话区**（3b）：发消息 + 流式回复显示（按 `seq` 丢弃重排的旧片） |
+| `src/sidepanel/ObserveButton.tsx` | 「观察页面」按钮（**M03**）：读结构（选区 / 元素 / 版本号）—— 与「读当前页」是两个动作 |
+| `extension/lib/observe.js` | **M03 采集器**（注入页面跑）：★ 必须**自包含**（见该文件头），产出选区 / 元素 / iframe / **页面版本号** |
+| `extension/lib/observe-run.js` | **M03**：执行「观察页面」那一步（注入 → 送主进程 → 落快照） |
+| `extension/lib/active-tab.js` | 「拿前台标签 + 判受限页」**唯一实现**（读正文与观察页面共用；那两句人话别改） |
 | `vite.config.ext.ts` | 扩展的独立 Vite 配置（root / postcss / outDir / alias 都跟主应用不同） |
 | `postcss.config.js` | 扩展的 Tailwind 配置（theme 继承主 config、content 只扫扩展 + 用到的 UI 组件） |
 | `harbor-host.cmd` | **native host 包装器**（纯 ASCII）——`ELECTRON_RUN_AS_NODE=1` + `Harbor.exe` + `native-host.cjs` |
@@ -123,6 +130,7 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**16 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
 | `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b，**15 条判据**） | `node harbor-edge/tools/accept-phase3b.cjs` |
 | `tools/accept-phase3c.cjs` | **选会话（只切侧边栏）/ 未选中自动新建 / ＋**（Phase 3c，**20 条判据**） | `node harbor-edge/tools/accept-phase3c.cjs` |
+| `tools/accept-m03.cjs` | **M03 网页感知**（选区 / 元素 / **密码遮蔽** / 跨域 iframe / **版本号稳定与变化** / 落盘，**31 条判据**） | `node harbor-edge/tools/accept-m03.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 

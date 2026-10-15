@@ -36,6 +36,7 @@ import { run as nativeHostInstallGroup } from './groups/155-native-host-install.
 import { run as extBridgeGroup } from './groups/156-ext-bridge.mjs'
 import { run as extProtocolGroup } from './groups/157-ext-protocol.mjs'
 import { run as extChatGroup } from './groups/158-ext-chat.mjs'
+import { run as observeGroup } from './groups/159-observe.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
 import { run as browser } from './groups/09-browser.mjs'
@@ -210,4 +211,5 @@ export const GROUPS = [
   extBridgeGroup,
   extProtocolGroup,
   extChatGroup,
+  observeGroup,
 ]
