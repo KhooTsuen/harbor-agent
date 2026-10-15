@@ -149,4 +149,39 @@ export async function run() {
   check('★ 侧边栏只认更大 seq（防重排把旧片盖上来）', /seq <= prev\.seq/.test(panelSrc))
   check('★ 侧边栏显示的是主进程给的原话（不自己编错误文案）', /res\?\.error/.test(panelSrc))
   check('★ 侧边栏仍没做切会话（3c）', !/switch-session|onSelectSession/.test(panelSrc))
+
+  /* ── ⑥ Phase 3b 布局返工：三段堆叠 → 顶栏 + 对话区 + 会话抽屉 ── */
+  group('扩展对话 · 布局（顶栏 / 抽屉 / 状态锚点唯一）')
+
+  const appSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/App.tsx'), 'utf8')
+  const drawerSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/SessionDrawer.tsx'), 'utf8')
+  const readBtnSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/ReadPageButton.tsx'), 'utf8')
+  const panelProbe = readFileSync(join(ROOT, 'harbor-edge/lib/ext-probe-panel.cjs'), 'utf8')
+
+  check('★ 会话列表不再常驻（SessionList 已删，App 不再引用）', !/SessionList/.test(appSrc))
+  check('★ 会话列表搬进抽屉（覆盖式 absolute inset-0，不是并排）', /absolute inset-0/.test(drawerSrc))
+  check('★ 抽屉默认收起（初始 false —— 侧边栏窄，不能常驻）', /const \[drawer, setDrawer\] = useState\(false\)/.test(appSrc))
+  /*
+   * ★ 这条守的是「状态锚点唯一」：ext-probe 的 `STATUS_TEXT_EXPR` 取文档里**第一个**
+   *   `[role=status][aria-live=polite]`。顶栏的连接文字若也带上 aria-live，就会把它
+   *   顶掉 —— accept-phase2 / 3a 的「读当前页给人话」当场变假红（看起来像产品坏了）。
+   *
+   * ⚠️ 判据必须匹配**带引号的属性形态**（`aria-live="polite"`），不能只匹配
+   *    `aria-live` —— 文件头注释里正解释这件事，写裸词会被自己的注释判红
+   *    （156 那次「注释里提到 pendingRead」同族）。
+   */
+  check(
+    '★ 状态锚点唯一：对话区一个 role=status + aria-live，顶栏一个都没有',
+    (panelSrc.match(/role="status"/g) ?? []).length === 1 &&
+      /aria-live="polite"/.test(panelSrc) &&
+      !/aria-live="polite"/.test(appSrc),
+  )
+  check(
+    '★ 「读当前页」是图标按钮（只能按 aria-label 找，没有可见文字）',
+    /label="读当前页"/.test(readBtnSrc) && !/>\s*读当前页\s*</.test(readBtnSrc),
+  )
+  check(
+    '★ 验收锚点与渲染层一致（一边改了另一边没跟进 = 脚本静默失效）',
+    panelProbe.includes('读当前页') && panelProbe.includes('选择对话') && appSrc.includes('选择对话'),
+  )
 }

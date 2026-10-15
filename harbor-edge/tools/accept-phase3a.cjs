@@ -132,7 +132,22 @@ async function main() {
     )
     rec('⑥ ★ 侧边栏显示「已连接」（SW 自动重连上真 host）', conn.ok === true, String(conn.value).split('\n')[0])
 
-    /* ── ⑦ 会话列表：真点面板上的「刷新」，读回 DOM ── */
+    /* ── ⑦ 会话列表：先点顶栏标题开抽屉，再读 DOM ── */
+    /*
+     * ★ Phase 3b 布局返工后会话列表**在抽屉里**（默认不挂载）——不点开就拿不到
+     *   `found:true`。顶栏那个标题按钮是可访问名 `aria-label="选择对话"`。
+     */
+    const drawerClosed = await D.pollEval(
+      panel,
+      P.SESSION_LIST_EXPR,
+      (v) => {
+        const o = P.safeJson(v)
+        return Boolean(o && o.found === false)
+      },
+      { tries: 10, gapMs: 300 },
+    )
+    rec('⑥b ★ 会话列表默认**不常驻**（抽屉收起时 DOM 里没有它）', drawerClosed.ok === true, '默认收起 ✓')
+    await panel.evalIn(P.CLICK_TITLE_EXPR)
     const listReady = await D.pollEval(
       panel,
       P.SESSION_LIST_EXPR,

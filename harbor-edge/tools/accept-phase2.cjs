@@ -161,13 +161,18 @@ async function main() {
     /* ── ⑨ 侧边栏 UI：真点「读当前页」按钮，读它显示什么 ── */
     const extUrl = `chrome-extension://${extId}/index.html`
     const panel = await D.openTab(PORT, extUrl)
+    /*
+     * ★ 判据要按 **aria-label** 找，不能按按钮文字 —— Phase 3b 布局返工把
+     *   「读当前页」压成了**图标按钮**（文字只存在于 aria-label 里），
+     *   按 textContent 找会永远不成立（本轮就是这么红的）。同 `P.CLICK_READ_EXPR` 的口径。
+     */
     const mounted = await D.pollEval(
       panel,
-      `[...document.querySelectorAll('button')].map(b => b.textContent.trim()).join('|')`,
-      (v) => typeof v === 'string' && v.includes('读当前页'),
+      `!!document.querySelector('[aria-label="读当前页"]') && [...document.querySelectorAll('button')].some(b => /发送/.test((b.textContent||'').trim()))`,
+      (v) => v === true,
       { tries: 30 },
     )
-    rec('⑨ 侧边栏页面打开、React 挂载出按钮', mounted.ok === true, String(mounted.value))
+    rec('⑨ 侧边栏页面打开、React 挂载出按钮（读页面图标 + 发送）', mounted.ok === true, String(mounted.value))
 
     const clickRead = P.CLICK_READ_EXPR
     await panel.evalIn(clickRead)

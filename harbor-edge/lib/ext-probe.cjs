@@ -222,63 +222,12 @@ async function probeActiveTab(swUrl) {
   )
 }
 
-/** 侧边栏上那句状态文案（`role=status[aria-live=polite]` 那个元素） */
-const STATUS_TEXT_EXPR = `(document.querySelector('[role=status][aria-live=polite]') || {}).innerText || ''`
-
-/** 侧边栏**还没读过**时的默认文案 —— 判「结果出来了没有」必须排除它 */
-const IDLE_TEXT = '读取当前标签页的正文'
-
-/**
- * 状态区是不是「已经出结果」了。
- *
- * ★ 为什么要排除默认文案：默认文案也满足「有文字、不是读取中」——
- *   不排除就会在结果出来之前命中（第一版真这么假过了一次）。
+/*
+ * 侧边栏面板的 DOM 锚点（状态文案 / 各按钮 / 会话列表）搬去了 `ext-probe-panel.cjs`
+ * —— 那边自己带着「按 aria-label 找」与「只允许一个 role=status」两条规矩。
+ * 这里**原样再导出**，所以 `P.STATUS_TEXT_EXPR` 这类调用点不用改。
  */
-function isResultText(v) {
-  return typeof v === 'string' && v.length > 0 && !v.includes('读取中') && !v.includes(IDLE_TEXT)
-}
-
-/** 点侧边栏那个「读当前页」按钮 */
-const CLICK_READ_EXPR = `(function(){
-  const b = [...document.querySelectorAll('button')].find(x => /读当前页|读取中/.test(x.textContent));
-  if (!b) return 'no-button';
-  b.click();
-  return 'clicked';
-})()`
-
-/** 点「重试」 */
-const CLICK_RETRY_EXPR = `(function(){
-  const b = [...document.querySelectorAll('button')].find(x => /重试/.test(x.textContent));
-  if (b) b.click();
-  return 'ok';
-})()`
-
-/* ══════════════════════════════════════════════════════════════
-   Phase 3a：会话列表（**唯一真相源** —— accept-phase3a 用它找元素）
-   ══════════════════════════════════════════════════════════════ */
-
-/**
- * 读会话列表区块当前渲染出来的东西（条数 + 每条的标题/时间）。
- *
- * ★ 按 `aria-label` 找区块，不按 class —— class 会随样式重构变，可访问名字不会。
- *   （渲染层改了 aria-label，这里要同步；否则脚本会**静默失效**，
- *     与 `tools/shot/cards.mjs` 那条规矩一样。）
- */
-const SESSION_LIST_EXPR = `(function(){
-  const sec = document.querySelector('[aria-label="Harbor 会话列表"]');
-  if (!sec) return JSON.stringify({ found: false });
-  const items = [...sec.querySelectorAll('li')].map(li => li.innerText.split('\\n'));
-  return JSON.stringify({ found: true, text: sec.innerText, count: items.length, items });
-})()`
-
-/** 点「刷新」按钮（按它自己的 aria-label 找） */
-const CLICK_REFRESH_EXPR = `(function(){
-  const b = document.querySelector('[aria-label="刷新会话列表"]')
-    || [...document.querySelectorAll('button')].find(x => /刷新/.test(x.textContent));
-  if (!b) return 'no-button';
-  b.click();
-  return 'clicked';
-})()`
+const panel = require('./ext-probe-panel.cjs')
 
 module.exports = {
   ROOT,
@@ -288,12 +237,7 @@ module.exports = {
   evalInTarget,
   triggerAndPoll,
   probeActiveTab,
-  STATUS_TEXT_EXPR,
-  isResultText,
-  CLICK_READ_EXPR,
-  CLICK_RETRY_EXPR,
-  SESSION_LIST_EXPR,
-  CLICK_REFRESH_EXPR,
+  ...panel,
   runHost,
   decodeFrames,
   stageExtension,

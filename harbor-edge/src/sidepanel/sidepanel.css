@@ -21,3 +21,31 @@
 
 @import '../../../src/index.css';
 @import '../../../src/styles/theme-primer-dark.css';
+
+/* ══════════════════════════════════════════════════════════════
+   会话抽屉的进入动画（Phase 3b 布局返工）
+
+   为什么用 CSS animation 而不是 Tailwind 的 transition：抽屉是**条件渲染**的
+   （关闭时根本不在 DOM 里），没有「从 A 过渡到 B」的过程，只有挂载时的一次进入。
+   方向按要的形态 —— **从上滑下来覆盖对话区**（translateY(-100%) → 0），
+   由外层那个 `overflow-hidden` 的对话区裁掉滑入过程中超出部分。
+
+   ★ 它会被全局那两条规则关掉（`src/index.css`）：
+     `[data-animations='off'] *` 与 `@media (prefers-reduced-motion: reduce)` ——
+     那是主应用的「防闪烁 / 尊重系统设置」开关，扩展侧共用同一份 CSS，所以自动遵守。
+   ══════════════════════════════════════════════════════════════ */
+
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.drawer-in {
+  animation: drawer-in 180ms cubic-bezier(0.25, 0, 0.2, 1) both;
+}

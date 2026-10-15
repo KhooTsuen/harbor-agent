@@ -5,7 +5,15 @@
 
 > 阶段与实测记录见 `docs/research/edge-extension-*.md`。
 > 当前状态：**Phase 3b 完成** —— 侧边栏能**发消息**、看**流式回复**，且与主窗口**同一条会话**。
-> 会话选择器与点击切换是 **3c**，Agent 操作网页是 Phase 4 —— **未开工**。
+> 布局经用户要求返工为「**顶栏 + 对话区 + 输入框 + 会话抽屉**」（会话列表不再常驻）。
+> 会话选择器（点抽屉里的条目切换）是 **3c**，Agent 操作网页是 Phase 4 —— **未开工**。
+>
+> ⚠️ **验收脚本的锚点**（改了渲染层必须同步，否则脚本**静默失效**、照跑不误）：
+> 「读当前页」现在是**图标按钮**，只能按 `aria-label` 找；
+> `STATUS_TEXT_EXPR` 取文档里**第一个** `[role=status][aria-live=polite]`
+> （所以顶栏的连接文字是**纯文本**、抽屉里的提示用 `role=alert`）；
+> 会话列表在**抽屉里**（默认不挂载），读之前要先点顶栏 `[aria-label="选择对话"]`。
+> 锚点唯一真相源：`lib/ext-probe-panel.cjs`（`ext-probe.cjs` 再导出它）。
 
 ## ★ 已知缺口（别忘）
 
@@ -18,7 +26,7 @@
 **因此多了一条硬约束**：想发到某条指定会话，就得**先打开 Harbor、切到那条会话、
 再回浏览器发**。**不打开 Harbor 就没法选目标**。
 
-> Phase 3a 已能**列出**会话（`session:list` + `SessionList.tsx`），Phase 3b 能**发消息**了，
+> Phase 3a 已能**列出**会话（`session:list` + 会话抽屉），Phase 3b 能**发消息**了，
 > 但**点选注入**仍是 3c 的活 —— 列表现在只是只读展示。
 
 | | |
@@ -79,14 +87,15 @@
 |---|---|
 | `extension/` | **真扩展的源**（`manifest.json` + `service-worker.js` + `lib/native.js`）—— 构建时原样拷进产物 |
 | `extension/lib/native.js` | 扩展侧**通道层**（Phase 3a）：连 host / 重连 / **按 id 匹配的 pending Map** / 状态广播 / **推送帧广播**（3b） |
-| `src/sidepanel/` | 侧边栏的 React 源（入口 `index.html` / `main.tsx` / `App.tsx` / `SessionList.tsx` / `ChatPanel.tsx`） |
+| `src/sidepanel/` | 侧边栏的 React 源：`index.html` / `main.tsx` / `App.tsx`（**顶栏**）/ `ChatPanel.tsx`（**对话区**）/ `SessionDrawer.tsx`（**会话抽屉**，3b 返工新增）/ `ReadPageButton.tsx`（读当前页，**图标按钮**） |
 | `src/sidepanel/ChatPanel.tsx` | 侧边栏**对话区**（3b）：发消息 + 流式回复显示（按 `seq` 丢弃重排的旧片） |
 | `vite.config.ext.ts` | 扩展的独立 Vite 配置（root / postcss / outDir / alias 都跟主应用不同） |
 | `postcss.config.js` | 扩展的 Tailwind 配置（theme 继承主 config、content 只扫扩展 + 用到的 UI 组件） |
 | `harbor-host.cmd` | **native host 包装器**（纯 ASCII）——`ELECTRON_RUN_AS_NODE=1` + `Harbor.exe` + `native-host.cjs` |
 | `install-host.cmd` / `uninstall-host.cmd` | 装 / 卸 native host（注册表 + 清单，幂等） |
 | `lib/driver.cjs` | 验收共用的 Edge 驱动（隔离 profile / 注册表 / 读扩展 ID） |
-| `lib/ext-probe.cjs` | 验收共用的 CDP 求值 / 找 SW / 喂帧 / 会话列表表达式（**可访问文案的唯一真相源**） |
+| `lib/ext-probe.cjs` | 验收共用：CDP 求值 / 找 SW / 喂帧（**再导出**下一条） |
+| `lib/ext-probe-panel.cjs` | 面板 **DOM 锚点**（**可访问文案的唯一真相源**）：状态行 / 读页面 / 顶栏标题 / 会话列表 |
 | `lib/ext-stage.cjs` | 验收共用的**装/卸隔离 host**（真 exe + 真机制 + 隔离数据根） |
 | `tools/` | 验收脚本（见下） |
 | `ext/` | Phase 1b 的**探针扩展**（历史验收资产，**不要动**） |

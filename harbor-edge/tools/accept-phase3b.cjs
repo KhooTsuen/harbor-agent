@@ -110,39 +110,26 @@ const SEND = `(function(){const b=[...document.querySelectorAll('button')].find(
 /** 侧边栏当前显示的回复正文（3b 新增的那块） */
 const REPLY_TEXT = `(function(){const e=document.querySelector('[aria-label="回复正文"]');return e?e.innerText:''})()`
 const NOTICE_TEXT = `(function(){const e=document.querySelector('[aria-label="发送提示"]');return e?e.innerText:''})()`
-const PANEL_READY = `[...document.querySelectorAll('button')].map(b=>(b.textContent||'').trim()).join('|')`
-
-/**
- * 杀掉「正在当 native host 跑」的进程（按 PID，绝不按映像名）。
+/*
+ * 「面板挂载好了」的判据。
  *
- * ★ 为什么必须杀：注册表是**一个名字一条**。我把 `com.harbor.agent` 改成自己的
- *   隔离 host 之前，Edge 的 SW 早就连上了**旧注册指向的那台 host**（用户的）。
- *   不杀它，SW 的 port 一直连着旧 host → 我装的新 host 永远不会被拉起
- *   （3a 验收侥幸没踩到：那次的时序刚好错开了）。
- *
- * ★ 判据收窄到「命令行里是 **repo 的** `native-host.cjs`」：
- *   验收/安装脚本装出来的 host 都指向 `E:\CodexWorkbench\electron\native-host.cjs`；
- *   而用户桌面那份打包版是 `...\resources\app\electron\native-host.cjs`。
- *   这样**不会误杀用户正在用的 host**（按映像名杀会连它一起杀 —— 那条是红线）。
+ * ⚠️ 两个按钮的**找法不一样**，这是 Phase 3b 布局返工踩出来的：
+ *   · 「发送」是**带文字**的按钮 → 按 textContent 找。
+ *   · 「读当前页」被压成了**图标按钮**（没有文字）→ 只能按 `aria-label` 找。
+ *   以前两者都按 textContent 找，返工后这一条会**永远不成立**（判据静默失效）。
  */
-function killStrayHosts() {
-  const mine = path.join(ROOT, 'electron', 'native-host.cjs')
-  const out = spawnSync('wmic', ['process', 'where', "name='Harbor.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'], {
-    encoding: 'utf8',
-  }).stdout
-  const killed = []
-  for (const line of String(out).split(/\r?\n/)) {
-    /* 必须同时命中「是 host」和「是我这条路径的 host」—— 少一条都可能误杀 */
-    if (!line.includes('native-host.cjs') || !line.includes(mine)) continue
-    const cols = line.split(',')
-    const pid = Number(cols[cols.length - 1])
-    if (Number.isFinite(pid) && pid > 0) {
-      spawnSync('taskkill', ['/pid', String(pid), '/F'], { stdio: 'ignore' })
-      killed.push(pid)
-    }
-  }
-  return killed
-}
+const PANEL_READY = `JSON.stringify({
+  send: [...document.querySelectorAll('button')].some(b => /发送/.test((b.textContent||'').trim())),
+  read: !!document.querySelector('[aria-label="读当前页"]'),
+  title: !!document.querySelector('[aria-label="选择对话"]'),
+})`
+
+/*
+ * 「杀掉旧 host」那一版（`killStrayHosts`）已删 —— 它只杀**指向 repo 路径**的 host，
+ * 漏掉了「旧注册表指向 dist-portable」这种情形（本轮就栽在这里）。
+ * 现在改成**起 Edge 前先摘注册表**（见 main() 里那段注释），确定性更好，
+ * 而且**完全不碰**任何正在跑的 host 进程（更安全）。
+ */
 
 async function main() {
   /* ── ① 等 vite 起来，再等主窗口的界面就绪 ── */
@@ -164,6 +151,24 @@ async function main() {
   await ev(NEW_CHAT, '新建对话')
   await sleep(1500)
 
+  /*
+   * ── ★ 起 Edge **之前**先摘掉注册表 ──
+   *
+   * 为什么（3b 真机 + 本轮复跑各红一次，两次都是它）：
+   *   Edge 一起来，SW 立刻按**当时**的注册表 `connectNative` —— 等我们读到 extId
+   *   再去改注册表，它**已经连上旧的那台 host 了**，而换注册表**不会**让它重连。
+   *   上一版的修法是「杀掉指向 **repo 路径** 的 host」：那漏掉了「旧注册表指向
+   *   dist-portable」这一情形（本轮就是这么红的 —— 我的 host 从头到尾没被拉起，
+   *   ⑥b 的 stderr 文件根本没生成）。
+   *
+   * 改成确定性做法：**先摘** → SW 首次必失败 → 我装好隔离 host 后它自己重连
+   * （`native.js` 的 `RECONNECT_MS = 3000`，判据 ⑥b 最多等 15s）。
+   *
+   * ⚠️ 副作用：若用户此刻正开着 Edge 用扩展，他会短暂看到「未连接」。
+   *    脚本跑完在 `finally` 里恢复注册表原值（`regOld` 在启动时就存好了）。
+   */
+  S.regDel(HOST_NAME)
+
   /* ── ③ 起 Edge + 扩展，装隔离 host ── */
   edge = await D.launchEdge({ profileName: PROFILE, port: PORT_EDGE, extDir: DIST, waitMs: 2500 })
   rec('② Edge 起来了（隔离 profile）', edge.ready === true, `pid=${edge.child.pid}`)
@@ -175,10 +180,7 @@ async function main() {
   }
   rec('③ 真扩展被加载', Boolean(extId), String(extId))
 
-  /* ── ★ 先杀掉旧 host，再装我的：否则 SW 的 port 一直连着旧 host ── */
-  const stray = killStrayHosts()
-  console.log(`  [诊断] 杀掉的旧 host pid = [${stray.join(', ')}]（杀完 SW 会自动重连）`)
-
+  /* 注册表上面已摘掉 → 现在装我的，SW 会在 3s 内重连上来（见前面那段注释） */
   S.stageHost({ dataDir: ISO, extId, name: HOST_NAME, tag: 'p3b' })
   /*
    * ★ 诊断：把 host 的 **stderr 落到文件**。
@@ -199,10 +201,15 @@ async function main() {
   let mounted = false
   for (let i = 0; i < 40 && !mounted; i += 1) {
     await sleep(500)
-    const txt = String(await panel.evalIn(PANEL_READY))
-    mounted = txt.includes('发送') && txt.includes('读当前页')
+    const raw = String(await panel.evalIn(PANEL_READY))
+    try {
+      const o = JSON.parse(raw)
+      mounted = o.send === true && o.read === true && o.title === true
+    } catch {
+      mounted = false
+    }
   }
-  rec('⑤ 侧边栏挂载出「发送」输入区', mounted === true, mounted ? '按钮齐' : '没等到')
+  rec('⑤ 侧边栏挂载出「发送」输入区 + 顶栏（读页面按钮在）', mounted === true, mounted ? '按钮齐' : '没等到')
   const conn = await D.pollEval(panel, `(function(){const h=document.querySelector('header');return h?h.innerText:''})()`, (v) => typeof v === 'string' && v.includes('已连接'), { tries: 40 })
   rec('⑥ 侧边栏显示「已连接」（SW 自动重连上真 host）', conn.ok === true, String(conn.value).slice(0, 40))
   /*

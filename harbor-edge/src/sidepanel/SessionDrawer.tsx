@@ -1,17 +1,34 @@
 /**
- * 侧边栏的「会话列表」区块（Phase 3a：**只读**）
+ * 会话抽屉（Phase 3b 布局返工）
  *
- * 数据来自 SW 的 `session-list` 消息（→ host → 主进程 `session.list()`）。
- * ⚠️ 本阶段**不做**点击切换会话（那是 3c），也不发消息（3b）—— 纯展示 + 刷新。
+ * ── 它取代了什么 ─────────────────────────────────────────────
  *
- * 冷启动：先读 chrome.storage 的快照（打开即有内容，不等 SW 醒），再异步刷新一次
- * （与 App.tsx 里连接状态的套路一致）。
+ * 原来会话列表是**常驻**的一个区块（`SessionList.tsx`，已删）。侧边栏只有 ~400px
+ * 宽，常驻列表把对话区压到只剩几条消息 —— 用户 2026-10-16 指出这是理解偏差。
+ * 现在改成「点顶栏标题旁的 ▾ 才挂载」的抽屉：从上方滑下来**覆盖对话区**
+ * （不是并排），选完 / 点 ✕ / 按 Esc 收起。
+ *
+ * ── 数据从哪来（与原来一模一样）──────────────────────────────
+ *
+ * SW 的 `session-list`（→ host → 主进程 `session.list()`）。
+ * 冷启动先读 `chrome.storage.local.harborSessions` 快照（打开即有内容，不等 SW 醒），
+ * 再异步刷新一次。
+ *
+ * ⚠️ `aria-label="Harbor 会话列表"` 是**验收脚本的锚点**
+ *   （`lib/ext-probe.cjs` 的 `SESSION_LIST_EXPR` 按它找元素）。改名必须同步改那边，
+ *   否则脚本**静默失效**（照跑不误、却读不到东西）—— 与 `tools/shot/cards.mjs`
+ *   那条规矩同源。
+ *
+ * ⚠️ 本阶段**不做**点击切换会话（那是 3c）：列表项现在只展示，点击没有动作。
+ *   （自检 158 也钉着「侧边栏还没做切会话」。）
  */
 
 /* global chrome */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
 
 export interface SessionSummary {
   id: string
@@ -30,7 +47,7 @@ interface ListResult {
   sessions?: SessionSummary[]
 }
 
-/** 相对时间：14 分 / 3 时 / 2 天（只读展示够用，不引日期库） */
+/** 相对时间：刚刚 / 14 分前 / 3 时前 / 2 天前（只读展示够用，不引日期库） */
 function relativeTime(ts?: number): string {
   if (!ts || typeof ts !== 'number') return ''
   const min = Math.floor(Math.max(0, Date.now() - ts) / 60000)
@@ -43,7 +60,7 @@ function relativeTime(ts?: number): string {
   return new Date(ts).toLocaleDateString('zh-CN')
 }
 
-export function SessionList() {
+export function SessionDrawer({ onClose }: { onClose: () => void }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -66,10 +83,11 @@ export function SessionList() {
           retryOnConnect.current = false
         } else {
           setError((res && res.error) || '拿不到会话列表')
-          /* ★ 这条是**真机验收逮到的缺陷**：面板打开时 SW 可能还没连上 host
-             （port 未建立）→ 列表请求当场失败，而顶部随后显示「已连接」——
-             用户看到的是**自相矛盾**的两块（顶上连上了、下面说没连上），
-             且不点「刷新」就永远是错的。所以这里记一笔，等连上后自动补一次。 */
+          /*
+           * ★ 这条是 3a 真机逮到的缺陷（搬过来时保留）：抽屉刚打开时 SW 可能还没
+           *   连上 host（port 未建立）→ 请求当场失败，而顶栏随后显示「已连接」——
+           *   用户看到自相矛盾的两块，且不点「刷新」就永远是错的。
+           */
           retryOnConnect.current = true
         }
         setLoading(false)
@@ -95,7 +113,7 @@ export function SessionList() {
     } catch {
       /* 拿不到就用空列表 */
     }
-    /* ② 再异步刷新一次最新 */
+    /* ② 再异步刷新一次最新（挂载 = 用户刚点开抽屉） */
     refresh()
 
     /* ③ 连接状态一变「已连接」就把之前那条失败补上（见 refresh 里的说明） */
@@ -109,19 +127,40 @@ export function SessionList() {
     } catch {
       /* 不在扩展上下文时忽略 */
     }
+
+    /* ④ Esc 收起 —— 抽屉是浮层，键盘要能退出 */
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    try {
+      document.addEventListener('keydown', onKey)
+    } catch {
+      /* 忽略 */
+    }
+
     return () => {
       try {
         chrome.runtime.onMessage.removeListener(onMsg)
       } catch {
         /* 忽略 */
       }
+      try {
+        document.removeEventListener('keydown', onKey)
+      } catch {
+        /* 忽略 */
+      }
     }
-  }, [refresh])
+  }, [refresh, onClose])
 
   return (
-    <section aria-label="Harbor 会话列表" className="flex min-h-0 flex-1 flex-col border-t border-line-hairline">
-      <div className="flex shrink-0 items-center gap-2 px-3 py-2">
-        <span className="text-dense font-medium">Harbor 会话</span>
+    <div
+      role="dialog"
+      aria-label="选择对话"
+      /* drawer-in：从上方滑下（见 sidepanel.css；防闪烁开关会关掉它） */
+      className="drawer-in absolute inset-0 flex flex-col border-b border-line-hairline bg-canvas"
+    >
+      <div className="flex shrink-0 items-center gap-2 border-b border-line-hairline px-3 py-2">
+        <span className="text-dense font-medium">选择对话</span>
         <span className="text-2xs text-fg-tertiary">
           {sessions.length > 0 ? `${sessions.length} 条` : ''}
         </span>
@@ -129,24 +168,32 @@ export function SessionList() {
         <Button size="sm" variant="ghost" aria-label="刷新会话列表" loading={loading} onClick={refresh}>
           刷新
         </Button>
+        <IconButton label="收起会话列表" onClick={onClose}>
+          <X size={16} aria-hidden="true" />
+        </IconButton>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      {/* ★ aria-label 是验收脚本的锚点（见文件头）—— 它必须包着那些 li */}
+      <div aria-label="Harbor 会话列表" className="min-h-0 flex-1 overflow-y-auto p-2">
         {error ? (
-          <div role="status" aria-live="polite" className="text-2xs text-danger">
+          /* ⚠️ 用 `role=alert` 而不是 `role=status aria-live=polite`：后者是
+             ext-probe 的 `STATUS_TEXT_EXPR` 锚点（它取文档里**第一个**）——
+             抽屉里再来一个就会把状态行那份顶掉（真机判据会读到错的元素）。 */
+          <div role="alert" className="text-2xs text-danger">
             {error}
           </div>
         ) : sessions.length === 0 ? (
-          <div role="status" aria-live="polite" className="text-2xs text-fg-tertiary">
+          <div className="text-2xs text-fg-tertiary">
             还没有会话（在 Harbor 里新建一条，或点上面的「刷新」）
           </div>
         ) : (
+          /*
+           * 点选切换是 3c 的活（本轮只展示）—— 所以这里是 li 而不是 button：
+           * 做成可点的样子却点了没反应，比先不可点更糟。
+           */
           <ul role="list" className="flex flex-col gap-1">
             {sessions.map((s) => (
-              <li
-                key={s.id}
-                className="rounded-base border border-line-hairline bg-bg-raised px-2.5 py-2"
-              >
+              <li key={s.id} className="rounded-base border border-line-hairline bg-bg-raised px-2.5 py-2">
                 <div className="truncate text-dense text-fg-primary">{s.title || '（无标题）'}</div>
                 <div className="mt-0.5 flex items-center gap-2 text-2xs text-fg-tertiary">
                   <span className="truncate">{s.id}</span>
@@ -160,6 +207,6 @@ export function SessionList() {
           </ul>
         )}
       </div>
-    </section>
+    </div>
   )
 }

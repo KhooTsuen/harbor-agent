@@ -1,12 +1,26 @@
 /**
- * 侧边栏的「对话」区块（Phase 3b：发消息 + 看流式回复）
+ * 侧边栏的「对话」区块（Phase 3b：发消息 + 看流式回复；本轮改布局）
  *
  * ── 它做什么 / 不做什么 ──────────────────────────────────────
  *
  * 做：把用户打的字交给 SW（→ host → 主进程 → **渲染层**去跑），并把主进程推来的
- *     流式分片显示出来。
+ *     流式分片显示出来；点顶栏 ▾ 时把会话抽屉滑出来**覆盖**这一块。
  * 不做：**不落盘、不判忙**。落盘在渲染层（`replyPersistence.ts`）；「这条会话忙不忙」
  *     由主进程判（见 `electron/core/ext-chat.cjs`）—— 判据只有一处，扩展侧不自己猜。
+ *
+ * ── 布局（Phase 3b 返工）────────────────────────────────────
+ *
+ *   <section 对话>                      ← 占满顶栏与输入框之间
+ *     <div relative overflow-hidden>    ← 消息区 + 抽屉（抽屉 absolute 盖住消息区）
+ *       <div 消息流 可滚动/>
+ *       {drawerOpen && <SessionDrawer/>}
+ *     </div>
+ *     <状态行/>                          ← 读页面结果 / 发送提示，**唯一**一个（由 App 持有）
+ *     <输入框：📄 [textarea] 发送/>
+ *   </section>
+ *
+ * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往**同一行**写话 ——
+ * 而「只有一行」是硬要求（它是 ext-probe 的 `STATUS_TEXT_EXPR` 锚点）。
  *
  * ── 流事件从哪来 ─────────────────────────────────────────────
  *
@@ -18,12 +32,21 @@
  *
  * 打开面板时问一次 `chat-resume`（按 sessionId）拿**一份快照**（当前全文 + seq），
  * 而不是让主进程补发历史分片 —— 理由见 3b 设计说明 §3.2。
+ *
+ * ── ★ 两个 aria-label 是验收脚本的锚点（改了就静默失效）──────
+ *   · `回复正文` → accept-phase3b 的 `REPLY_TEXT`
+ *   · `发送提示` → accept-phase3b 的 `NOTICE_TEXT`；它同时是
+ *     `[role=status][aria-live=polite]`，也就是 ext-probe 的 `STATUS_TEXT_EXPR`
+ *     （accept-phase2 / 3a 靠它读「读当前页」的结果）—— 所以这个元素**只能有一个**，
+ *     且必须排在顶栏之后（顶栏那行连接文字因此是纯文本，见 App.tsx 文件头）。
  */
 
 /* global chrome */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { ReadPageButton, type StatusMessage } from './ReadPageButton'
+import { SessionDrawer } from './SessionDrawer'
 
 /** 正在显示的一轮（一次提问 + 它的回答） */
 interface TurnView {
@@ -46,11 +69,23 @@ interface PushPayload {
   done?: boolean
 }
 
-export function ChatPanel({ connected }: { connected: boolean }) {
+export function ChatPanel({
+  connected,
+  drawerOpen,
+  onCloseDrawer,
+  status,
+  onStatus,
+}: {
+  connected: boolean
+  drawerOpen: boolean
+  onCloseDrawer: () => void
+  /** 状态行**由 App 持有**：顶栏那两个占位按钮也要往同一行写话（单一元素，见文件头） */
+  status: StatusMessage | null
+  onStatus: (s: StatusMessage | null) => void
+}) {
   const [input, setInput] = useState('')
   const [turn, setTurn] = useState<TurnView | null>(null)
   const [sending, setSending] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
   /** Harbor 界面当前打开的那条会话 —— 落点由**主进程**认定，这里只问不猜 */
   const [sessionId, setSessionId] = useState('')
   /** 当前在看的会话 —— 存 ref，避免闭包里拿到过期的值 */
@@ -155,7 +190,7 @@ export function ChatPanel({ connected }: { connected: boolean }) {
     const text = input.trim()
     if (!text || sending) return
     setSending(true)
-    setNotice(null)
+    onStatus(null)
     /*
      * ★ 有回复正在流的时候**不要**把显示换掉：否则「忙时又发一条」会把自己
      *   正在看的流清空（真机验收逮到：⑩ 判完 SESSION_BUSY，⑨⑪ 就再也收不到字了）。
@@ -166,7 +201,7 @@ export function ChatPanel({ connected }: { connected: boolean }) {
     try {
       const p = chrome.runtime.sendMessage({ type: 'chat-send', text })
       if (!p || typeof p.then !== 'function') {
-        setNotice('扩展上下文不可用')
+        onStatus({ text: '扩展上下文不可用', tone: 'danger' })
         setSending(false)
         return
       }
@@ -179,63 +214,75 @@ export function ChatPanel({ connected }: { connected: boolean }) {
           return
         }
         /* 被拒（忙 / 没窗口 / 没会话）—— 显示**主进程给的原话**，不自己编 */
-        setNotice(String(res?.error ?? '发不出去'))
+        onStatus({ text: String(res?.error ?? '发不出去'), tone: 'danger' })
         if (!streaming) setTurn(null)
       }).catch((error: unknown) => {
         setSending(false)
-        setNotice(String((error as Error)?.message ?? error))
+        onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
         if (!streaming) setTurn(null)
       })
     } catch (error) {
       setSending(false)
-      setNotice(String((error as Error)?.message ?? error))
+      onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
     }
-  }, [input, sending, turn, refreshSession])
+  }, [input, sending, turn, refreshSession, onStatus])
 
   return (
-    <section aria-label="对话" className="flex min-h-0 flex-1 flex-col border-t border-line-hairline">
-      <div className="shrink-0 px-3 pt-2.5 text-2xs text-fg-tertiary">对话</div>
-
-      {/* 消息流（可滚动）*/}
-      <div aria-label="消息流" className="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-dense">
-        {!turn ? (
-          <div className="text-2xs text-fg-tertiary">
-            {sessionId ? '在下面输入，发给 Harbor 当前打开的这条对话' : '先在 Harbor 里打开一条对话'}
-          </div>
-        ) : (
-          <>
-            {turn.ask ? (
-              <div className="mb-2 rounded-base bg-bg-raised px-2 py-1.5 text-fg-secondary">{turn.ask}</div>
-            ) : null}
-            <div className="whitespace-pre-wrap text-fg-primary" aria-label="回复正文">
-              {turn.text}
-              {!turn.done && !turn.error ? <span className="text-fg-tertiary">▍</span> : null}
+    <section aria-label="对话" className="flex min-h-0 flex-1 flex-col">
+      {/* 消息区 + 抽屉：抽屉是 absolute 覆盖，**不是**并排（400px 宽容不下并排）*/}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div aria-label="消息流" className="h-full overflow-y-auto px-3 py-2 text-dense">
+          {!turn ? (
+            <div className="text-2xs text-fg-tertiary">
+              {sessionId ? '在下面输入，发给 Harbor 当前打开的这条对话' : '先在 Harbor 里打开一条对话'}
             </div>
-            {turn.error ? (
-              <div aria-label="回复错误" className="mt-1 text-2xs text-danger">
-                {turn.error}
+          ) : (
+            <>
+              {turn.ask ? (
+                <div className="mb-2 rounded-base bg-bg-raised px-2 py-1.5 text-fg-secondary">{turn.ask}</div>
+              ) : null}
+              <div className="whitespace-pre-wrap text-fg-primary" aria-label="回复正文">
+                {turn.text}
+                {!turn.done && !turn.error ? <span className="text-fg-tertiary">▍</span> : null}
               </div>
-            ) : null}
-            {turn.done && !turn.error ? (
-              <div className="mt-1 text-2xs text-fg-tertiary">已完成（同一条也在 Harbor 主窗口里）</div>
-            ) : null}
-          </>
-        )}
+              {turn.error ? (
+                <div aria-label="回复错误" className="mt-1 text-2xs text-danger">
+                  {turn.error}
+                </div>
+              ) : null}
+              {turn.done && !turn.error ? (
+                <div className="mt-1 text-2xs text-fg-tertiary">已完成（同一条也在 Harbor 主窗口里）</div>
+              ) : null}
+            </>
+          )}
+        </div>
+
+        {drawerOpen ? <SessionDrawer onClose={onCloseDrawer} /> : null}
       </div>
 
-      {notice ? (
-        <div role="status" aria-label="发送提示" className="shrink-0 px-3 pb-1 text-2xs text-danger">
-          {notice}
+      {/* 状态行：读页面结果 / 发送提示共用一个元素（见文件头） */}
+      {status ? (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label="发送提示"
+          className={`shrink-0 px-3 pb-1 text-2xs ${status.tone === 'danger' ? 'text-danger' : 'text-fg-tertiary'}`}
+        >
+          {status.text}
         </div>
       ) : null}
 
-      {/* 输入区 */}
+      {/* 输入区（读当前页压成左端一个图标按钮）*/}
       <div className="shrink-0 p-3 pt-1.5">
-        <div className="flex items-end gap-2 rounded-base border border-line-hairline bg-bg-raised p-2">
+        <div className="flex items-end gap-1.5 rounded-base border border-line-hairline bg-bg-raised p-2">
+          <ReadPageButton onStatus={onStatus} />
           <textarea
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onFocus={() => {
+              if (drawerOpen) onCloseDrawer()
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
