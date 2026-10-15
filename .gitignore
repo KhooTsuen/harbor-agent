@@ -115,6 +115,11 @@ harbor-edge/exp/sea/*.log
 # 删除失败时（文件被占）不该把几百 MB 垃圾提交进仓库。
 harbor-edge/profiles/
 
+# Phase 1c：扩展的构建产物（harbor-edge/dist/**）—— 每次 `vite build --config
+# harbor-edge/vite.config.ext.ts` 都会重新生成，属于产物、不进版本库。
+# 下面那份 load-probe 是验收脚本临时包的扩展（packge 自 dist/sidepanel）。
+harbor-edge/dist/
+
 # 破坏性测试：隔离环境与备份（都是几百 MB 的整目录副本）
 test-env/
 backups/

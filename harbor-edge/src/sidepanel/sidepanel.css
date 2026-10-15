@@ -1,0 +1,21 @@
+/*
+ * 侧边栏样式入口（Phase 1c 第一步：只验构建链路）
+ *
+ * ★ 直接 @import 主应用的 index.css —— 这是**故意**的，不是偷懒：
+ *
+ *   主 `src/index.css` 是三样东西的**唯一来源**：
+ *     ① `@tailwind base/components/utilities` 三条指令
+ *     ② 主题 CSS 变量（`--bg-canvas` / `--text-primary` …）
+ *     ③ 三个 `@layer`（base / components / utilities）
+ *
+ *   Tailwind 的 theme 把类名映射到 `var(--x)`，**变量本身在 ① ② 里**。
+ *   只引 theme 不引变量 → 类生成了、颜色是空的（本批要验的正是这个坑）。
+ *
+ *   Vite 内建处理 CSS `@import`（不需要 postcss-import）—— 这里顺带验证它。
+ *
+ * ⚠️ Phase 1c 第二步（真 UI）要重新评估：全量引入会把主应用
+ *    `@layer components` 里那堆组件样式一起打包进扩展。到时候可能要
+ *    拆出一份「只有 token + 少量基础层」的共享 CSS。**本步只验能不能通。**
+ */
+
+@import '../../../src/index.css';
