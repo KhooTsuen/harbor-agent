@@ -293,22 +293,21 @@ async function main() {
   const v5 = await command.verify({ expect: { url: `:${PORT_PAGE}` } })
   rec('⑩ ★ verify：URL 包含', v5 && v5.result && v5.result.matched === true, JSON.stringify(v5 && v5.result && v5.result.checks))
 
-  /* ══ 判据 5：链接点击 → 页面真的导航了 ══
-      ★★ 这条是 M04-2 真机逮到的**真实情形**：点击触发导航时，注入函数的上下文
-         随页面卸载被销毁 → **结果回不来**。所以判据**不依赖 evidence**，而是
-         ① 结果里如实说清「点了但证据没采到 + 去用 verify」；② 用 verify 确认页面真到了新地址。 */
+  /* ══ 判据 5：链接点击 → 页面真的导航了（M04-3 加秒表：必须 < 3 秒返回）══
+       ★★ 点击触发导航时，注入函数的上下文随页面卸载被销毁 → 结果回不来。上一版
+          「注入超时后再 tabs.get 判定」要白等 5 秒多；现在注入 + onUpdated(loading)
+          双信号 race，导航先到 1~2 秒就返回。这里用秒表钉死它。 */
   const els2 = await command.getElements({})
   const link2 = ((els2.elements ?? []).find((e) => /去下一页/.test(String(e.text))) ?? {}).ref ?? ''
   rec('⑪ 重新观察后拿到链接引用', Boolean(link2), `${linkRef} → ${link2}`)
+  const tNav = Date.now()
   const c2 = await command.click({ ref: link2, settleMs: 900 })
-  console.log('  [诊断] 导航型点击的完整返回 =', JSON.stringify(c2).slice(0, 400))
-  /* ★ 形状统一：浏览器回来的东西一律在 `result` 里（成功与「没采到证据」同一处取） */
-  const noRes = Boolean(c2 && c2.result && c2.result.reason === 'no-result')
-  rec(
-    '⑪ ★★ 导航型点击：结果回不来时**如实说清**（不假装成功、不笼统报错）',
-    noRes || (c2 && c2.result && c2.result.evidence && c2.result.evidence.urlChanged === true),
-    noRes ? String(c2.result.message).slice(0, 60) : JSON.stringify(c2 && c2.result && c2.result.evidence),
-  )
+  const navMs = Date.now() - tNav
+  console.log('  [诊断] 导航型点击的完整返回 =', JSON.stringify(c2).slice(0, 400), `· 耗时 ${navMs}ms`)
+  const navReason = c2 && c2.result && c2.result.reason
+  const navMsg = String((c2 && c2.result && c2.result.message) || '')
+  rec('⑪ ★★ 导航型点击 < 3 秒返回（不再白等 15 秒超时）', navMs < 3000, `${navMs}ms`)
+  rec('⑪ ★★ 返回的证据里带「页面开始跳转」', navReason === 'navigating' && /开始跳转/.test(navMsg), `${navReason}: ${navMsg.slice(0, 50)}`)
   const urlAfter = String(await pageTab.evalIn(`location.href`))
   rec('⑪ ★★ 页面**真的导航了**（点链接生效 —— 用页面本身确认，不信回执）', /\/next/.test(urlAfter), urlAfter)
   const v6 = await command.verify({ expect: { text: '到了下一页', url: '/next' } })

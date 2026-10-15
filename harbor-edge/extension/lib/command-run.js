@@ -59,6 +59,51 @@ async function injectBounded(tabId, fn, args, timeoutMs) {
 }
 
 /**
+ * 点击 + **同时监听「页面开始导航」**（M04-3 修「白等 15 秒」）。
+ *
+ * ── ★ 为什么不能用 `injectBounded` 那种「超时后再判」────────────
+ *
+ * 点击触发导航时，注入的上下文随页面卸载被销毁 —— 注入 promise **永远不 resolve**。
+ * 上一版用「注入超时（settle+5s）→ 再 `tabs.get` 判导航」：要白等 5 秒多，
+ * 用户看到「浏览器没回话」，而页面其实早就跳了。
+ *
+ * 现在**同时**挂一个 `chrome.tabs.onUpdated`（`status === 'loading'`）监听：
+ * 注入返回 OR 页面开始导航，**哪个先到返回哪个**。导航通常 1~2 秒内触发 loading，
+ * 于是「点会跳转的按钮」1~2 秒内就有结果，而不是干等超时。
+ *
+ * @returns {Promise<object|null|{__timeout:true}|{__navigating:true}>}
+ */
+async function clickWithNavWatch(tabId, ref, settleMs) {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (val) => {
+      if (settled) return
+      settled = true
+      try {
+        chrome.tabs.onUpdated.removeListener(onUpdated)
+      } catch {
+        /* 忽略 */
+      }
+      resolve(val)
+    }
+    const onUpdated = (tid, changeInfo) => {
+      if (tid !== tabId) return
+      if (changeInfo && changeInfo.status === 'loading') finish({ __navigating: true })
+    }
+    try {
+      chrome.tabs.onUpdated.addListener(onUpdated)
+    } catch {
+      /* 不支持就不监听，退化成注入超时兜底 */
+    }
+    inject(tabId, clickElement, [String(ref), { settleMs }])
+      .then((r) => finish(r === undefined ? null : r))
+      .catch(() => finish(null))
+    /* 兜底：注入没返回、也没监到导航（点了个不跳转但卡住的元素） */
+    setTimeout(() => finish({ __timeout: true }), settleMs + 5000)
+  })
+}
+
+/**
  * 跑一条指令，回执，返回结果。
  *
  * @param {{ id?: string, command?: string, payload?: object }} [payload]
@@ -89,28 +134,30 @@ export async function runCommand(payload) {
           : { ok: false, error: '页面没有返回元素列表' }
     } else if (command === 'click') {
       const beforeUrl = String(target.tab.url || '')
-      let raw = null
-      let injectErr = ''
-      try {
-        const settle = Math.max(0, Math.min(Number(args.settleMs) || 400, 5000))
-        /* 上限 = settle + 5s，**比主进程的 15s 短** —— 免得白等到超时（见 injectBounded 的注释） */
-        raw = await injectBounded(target.tab.id, clickElement, [String(args.ref ?? ''), { settleMs: settle }], settle + 5000)
-      } catch (error) {
-        injectErr = String((error && error.message) || error)
-      }
-      /*
-       * ★★ 拿不到结果时**判定**是不是导航（不猜）—— M04-2 真机逮到的真实情形：
-       *   点击触发页面导航 → 注入的上下文随页面卸载被销毁 → 结果回不来。
-       *
-       *   判据用**扩展自己能读到的东西**：再问一次这个标签的 url。变了 = 确实导航了。
-       *   这条很重要 —— 含糊地说「没返回结果」会让用户/模型以为「没点上」而重试，
-       *   而那一下**可能已经点出去了**，重试就点两次。
-       *
-       *   `ok:false` 是**故意的**：没拿到证据就不算成功。
-       */
-      if (raw && typeof raw === 'object' && raw.__timeout !== true) {
+      const settle = Math.max(0, Math.min(Number(args.settleMs) || 400, 5000))
+      const raw = await clickWithNavWatch(target.tab.id, String(args.ref ?? ''), settle)
+
+      if (raw && raw.__navigating === true) {
+        /*
+         * ★★ 导航信号先到（1~2 秒内）—— M04-3 修「白等 15 秒」。
+         *   点会跳转的按钮，注入上下文随页面卸载被销毁、结果回不来；但「页面开始跳转」
+         *   这个事实本身就是证据。如实说清：不代表没点上，别让模型去重试（会点两次）。
+         */
+        result = {
+          ok: false,
+          reason: 'navigating',
+          navigated: true,
+          urlBefore: beforeUrl,
+          message: '点击后页面开始跳转，状态证据没来得及采 —— **不代表没点上**。请用 browser.verify 确认结果。',
+          timedOut: false,
+        }
+      } else if (raw && raw.__timeout !== true) {
         result = raw
       } else {
+        /*
+         * 兜底：注入超时、也没监到导航（点了个不跳转但卡住的元素）——
+         * 仍用 `tabs.get` 读 url 前后对比**判定**（不猜）。
+         */
         let afterUrl = ''
         try {
           const t = await chrome.tabs.get(target.tab.id)
@@ -127,7 +174,7 @@ export async function runCommand(payload) {
           urlAfter: afterUrl,
           message: navigated
             ? `点击后页面跳转到了 ${afterUrl}，所以状态证据没来得及采 —— **不代表没点上**。请用 browser.verify 确认结果。`
-            : `点击指令发出去了，但页面没把结果送回来${injectErr ? `（${injectErr}）` : ''} —— 请重新观察一次再看。`,
+            : '点击指令发出去了，但页面没把结果送回来 —— 请重新观察一次再看。',
           timedOut: raw && raw.__timeout === true,
         }
       }

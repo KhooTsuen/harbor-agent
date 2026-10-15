@@ -59,7 +59,7 @@ export async function run() {
   const noBridge = C.createCommand({ getBridge: () => null })
   const r1 = await noBridge.getElements()
   check('★ 扩展没连上 → NO_BROWSER + 人话（不干等）', r1.ok === false && r1.error.code === P.ERR.NO_BROWSER, r1.error?.message)
-  check('★ 人话里告诉用户去哪儿打开扩展', /浏览器/.test(String(r1.error?.message)))
+  check('★ 人话里告诉用户去打开侧边栏', /请打开侧边栏/.test(String(r1.error?.message)))
 
   const deadBridge = C.createCommand({
     getBridge: () => ({ push: () => ({ sent: 0 }) }),

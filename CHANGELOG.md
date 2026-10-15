@@ -5,6 +5,25 @@
 
 ## [未发布]
 
+- **修：两个真产品缺口 —— 导航型点击白等 15 秒 + ext-client 懒连接残留**（2026-10-16）。
+  · **① 导航型点击不再白等**：点击触发页面跳转时，注入的上下文随页面卸载被销毁、
+    注入 promise 永不 resolve，上一版「注入超时后再 `tabs.get` 判定」要白等 5 秒多。
+    现在 `command-run.js` 的 `clickWithNavWatch` 同时监听 `chrome.tabs.onUpdated`
+    （`status === 'loading'`）—— 注入返回 OR 页面开始导航，**哪个先到返回哪个**。
+    导航先到时立即返回，证据里带「页面开始跳转」这个事实（`reason:'navigating'`）。
+    **实测：点会跳转的链接，83ms 返回**（上一版 >5 秒），且证据含「页面开始跳转」。
+  · **② ext-client 懒连接残留**：原来扩展「第一次请求」才连管道，于是「扩展没主动发过
+    请求时，主进程想推指令推不出去」—— 3b 的流式能用只是巧合（用户先发过 chat:send）。
+    host 启动就 `client.ensureConnected()` 主动连（`ext-host-loop.cjs`）；主进程推指令
+    没连上时给明确错误「扩展未连接 —— 请打开侧边栏」（`ext-command.cjs`）。
+    **实测：不打开侧边栏，主进程推 `getElements` 指令，扩展 20ms 内收到并执行、返回 3 个元素**。
+  · **复验两处假判据**（上一轮 `d017b10` 已改，本轮跑真机确认真判据输出）：
+    `accept-m04a` ④ 已从硬编码 `true` 换成真查 target 列表（面板=true 测试页=true）；
+    `accept-phase3b` 注册表已换成回读比对（实际值 vs 真原值 → ✓ 一致）。
+  · **验证**：`accept-m04b` **34/34**（含新秒表判据）· `accept-m04c`（新增）**8/8** ·
+    回归 m04a 16/16 · m04b 34/34 · 3b 15/15 · 自检 **4888/0** · `npm run verify` 全绿。
+  · **遗留**：type / select / scroll / wait / navigate 与敏感操作确认仍留到下一批。
+
 - **功能：M04 第 2 步 —— `browser.click` + `browser.verify`（带状态证据的单步操作）**（2026-10-16）。
   · **三条硬要求都落到了代码里**：
     - **「点了」≠「生效」**：`clickElement`（`harbor-edge/extension/lib/act.js`）不返回

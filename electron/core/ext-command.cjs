@@ -111,7 +111,7 @@ function createCommand(deps) {
     return new Promise((resolve) => {
       const bridge = bridgeOf()
       if (!bridge) {
-        resolve(fail(P.ERR.NO_BROWSER, '浏览器扩展没连上 —— 先在浏览器里打开 Harbor 扩展'))
+        resolve(fail(P.ERR.NO_BROWSER, '扩展未连接 —— 请打开侧边栏'))
         return
       }
       const id = `cmd_${(seq += 1).toString(36)}_${Date.now().toString(36)}`
@@ -137,7 +137,7 @@ function createCommand(deps) {
       if (!sent || !sent.sent) {
         clearTimeout(timer)
         pending.delete(id)
-        resolve(fail(P.ERR.NO_BROWSER, '浏览器扩展没连上（浏览器可能已关闭）'))
+        resolve(fail(P.ERR.NO_BROWSER, '扩展未连接 —— 请打开侧边栏'))
       }
     })
   }

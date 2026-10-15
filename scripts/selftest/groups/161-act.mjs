@@ -282,11 +282,13 @@ export async function run() {
   check('★ native.js 把 page:command 交给处理器（**不**广播给侧边栏）', /msg\.kind === 'page:command'/.test(natSrc) && /commandHandler\(msg\.payload\)/.test(natSrc))
   check('★ 指令处理器回执走 page-result', /requestHost\('page-result'/.test(runSrc))
   check('★ get-elements 复用 M03 的采集器（不新写第二个）', /collectPageContext/.test(runSrc))
-  check('★ click 注入的是 clickElement（自包含那个），且**带超时上限**', /injectBounded\(target\.tab\.id, clickElement/.test(runSrc))
+  check('★ click 用 clickWithNavWatch（注入 + 导航双信号 race）', /clickWithNavWatch\(target\.tab\.id/.test(runSrc))
   check('★ verify 注入的是 verifyPage（同样有上限）', /injectBounded\(target\.tab\.id, verifyPage/.test(runSrc))
-  /* ★★ 导航时注入的 promise **永远不 resolve**（页面卸载带走了那段代码）——
-     不设上限就白等主进程 15 秒才超时（真机逮到）。所以必须**比主进程超时短**。 */
-  check('★★ 注入有超时上限（否则导航时白等到主进程 15 秒超时）', /function injectBounded\(/.test(runSrc) && /Promise\.race/.test(runSrc))
+  /* ★★ 导航型点击：注入上下文随页面卸载被销毁、promise 永不 resolve。上一版「注入超时后再
+      tabs.get 判定」白等 5 秒多；现在注入 + onUpdated(loading) 双信号 race，导航先到 1~2 秒返回。 */
+  check('★★ click 同时监听 onUpdated(loading)（导航先到就不再傻等注入）', /chrome\.tabs\.onUpdated\.addListener/.test(runSrc) && /status === 'loading'/.test(runSrc))
+  check('★★ 导航信号先到时返回「开始跳转」这个事实', /__navigating/.test(runSrc) && /开始跳转/.test(runSrc))
+  check('★★ 注入仍有超时兜底（点了不跳转但卡住的元素）', /function injectBounded\(/.test(runSrc) && /Promise\.race/.test(runSrc))
   check('★ 回执失败也回（不然对面干等 15 秒）', /不认识的指令/.test(runSrc))
 
   /* ★★ 主动连接：主进程要能**主动推指令**，不能等扩展第一次请求才建连接（真机逮到） */
