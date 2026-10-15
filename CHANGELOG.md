@@ -29,11 +29,33 @@
     （真 Chrome 这两处同源）。改成用 `app.getLocale()`、由它派生，两处对齐。
   · **边界**：零新依赖（`process.versions` 内置）；零新 IPC；`webview-permissions.cjs` 一行未动；
     `hardenWebview` 的四项一字未改；不碰 Runtime / 严格模式 / 防闪烁三件套。
-  · **验证**：自检新增 `groups/152-browser-identity.mjs`（30 条：UA 不含应用名/Electron、CH 三件套齐、
-    q 值无畸形、fail-safe 不猜版本号、只装机网页标签那个分区）；内核自检 **4448 / 0**（改前 4418）；真机走查见下条。
-  · **已知遗留**：`navigator.userAgentData.brands` 里的 `Google Chrome` 缺失**没修**（那要 webview preload，
-    会动 `hardenWebview` 的 `delete preload`）—— 按用户拍板**暂缓**，等这批落地后看 sannysoft 表剩几行异常再定。
+  · **验证**：自检新增 `groups/152-browser-identity.mjs`（33 条：UA 不含应用名/Electron、CH 三件套齐、
+    q 值无畸形、fail-safe 不猜版本号、只装网页标签那个分区）；内核自检 **4451 / 0**（改前 4418）。
+    真机走查：本地探针读原始请求头 + CDP 读 `navigator.userAgent` + `bot.sannysoft.com` 改前/改后对照。
+  · **已知遗留**：`navigator.userAgentData.brands` 里的 `Google Chrome` 缺失**没修** —— 见下条（已评估、暂缓）。
   · **透明性**：`SECURITY.md` 的「没有做什么」加了一条如实说明（UA 会伪装成标准 Chrome；不改权限、不绕访问控制）。
+
+- **内置浏览器反拦截（第二批候选）—— 已评估、暂缓（本轮不做）**（2026-10-15 评估后由用户拍板）。
+  · **候选是哪三项**（都在「更深的指纹层」，不解决"自报家门"）：
+    ① `navigator.userAgentData.brands` 里缺 `Google Chrome` —— 实测 `[Not?A_Brand/24, Chromium/152]`，
+       真 Chrome 是 `[Not:A-Brand/8, Chromium/156, Google Chrome/156]`；
+    ② `window.chrome` 是**空对象**（真 Chrome 有 `loadTimes` / `csi` / `app` 三个键）；
+    ③ `bot.sannysoft.com` 的 `HEADCHR_IFRAME` 一行 `FAIL`（判据属上面那一族）。
+  · **★ 为什么暂缓（三条理由，缺一条都不足以拍这个板）**：
+    ① **命中硬禁区 #10（动安全加固层）**：改 ①② 要往网页注入脚本，而注入得有 preload ——
+       现在 `navigation-policy.cjs` 的 `hardenWebview()` **明确 `delete webPreferences.preload`**，
+       那正是拦住「网页里塞 `<webview>` 属性给自己开后门」的那一层。
+       为了补几项指纹去动它，等于**拿真实的安全边界换一个更小的暴露面**。
+    ② **暴露面小得多**：第一批已经拿掉了最大的那个（UA 自报应用名 + `Electron` —— 那是**显式**自动化标记）。
+       剩下这几项，指纹站实测里 `WebDriver` / `Chrome 对象` / `plugins` / `WebGL` / `语言` **全部与真 Chrome 一致**，
+       且它们都不是「我是机器人」这种硬判据。
+    ③ **没有真实拦截现场，证不了价值**：第一批的调研**没有复现出拦截**
+       （`example.com` / `www.cloudflare.com` 正常；`nowsecure.nl` 的 Cloudflare 挑战用**真 Chrome 访问同样未完成**，
+       说明那不是被拦）。没有现场就只能证明「特征面变干净」，证明不了「拦截消失」。
+  · **★ 复议条件**：等用户复现真实拦截（卡在循环验证之类）并给出 **URL + 当时现象**，
+    再对照判定是否由这几项造成；**不复现就不做** —— 这不是省钱，是不给系统引入不必要的风险。
+  · **明确没做的**：本轮**没有**为「验证效果」去刻意访问风控站点（走查只用本地探针 + CDP + sannysoft）；
+    也**没动** `hardenWebview` 的任何一项（`nodeIntegration` / `contextIsolation` / `sandbox` / `webSecurity` 一字未改）。
 
 - **界面字体：新增「SF Pro（苹果）」档位 —— 只写字体名，一个字体文件都不分发**（2026-10-15）。
   · **为什么**：想在 Windows 上把界面换成苹果的 San Francisco。但 SF Pro / 苹方的官方许可
