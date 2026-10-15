@@ -158,7 +158,22 @@ export async function run() {
   check('★ 包装用的是内核那份 wrapWebText', /_web-note\.cjs.*wrapWebText/s.test(reg))
   check('★ 通道登记在 ipc-channels 清单里（漏了 test:app 会红）', /'ext:activeSession'/.test(chan))
   check('★ preload 暴露了 extActiveSession', /extActiveSession:/.test(preload))
-  check('★ 渲染层在报当前会话', /useExtActiveSession/.test(appSrc))
+  /*
+   * Phase 2 手工验收时逮到的缺口：**只上报是不够的**。
+   * 页面内容是「扩展进程 → 命名管道 → 主进程」直接写进会话文件的，渲染层
+   * 完全不知情 —— 没有下面这条订阅，用户点完按钮界面上**什么都不会变**。
+   * 所以这里既要钉「报了」，也要钉「收了会刷新」（三条一起才算那条链通了）。
+   */
+  check('★ preload 暴露了 onExtPage（不然收了不会刷新）', /onExtPage:/.test(preload))
+  const extHook = readFileSync(join(ROOT, 'src/hooks/useExtBridge.ts'), 'utf8')
+  check(
+    '★ 渲染层在报当前会话',
+    /useExtBridge\(/.test(appSrc) && /extActiveSession\?\.\(/.test(extHook),
+  )
+  check(
+    '★ 收到 ext:page 会刷新界面（先刷列表，再重读那条会话）',
+    /onExtPage\?\.\(/.test(extHook) && /loadFromDisk\(\)/.test(extHook) && /openFromDisk\(/.test(extHook),
+  )
   check('★ 桥接口类型并进了 WorkbenchBridge', /ExtBridge/.test(backendSrc))
 
   const mainSrc = readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8')

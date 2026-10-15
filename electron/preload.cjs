@@ -257,8 +257,7 @@ const api = {
     }
   },
 
-  /** 订阅插件热插拔事件（新增/删除插件时主进程通知） */
-  onPluginsChanged: (callback) => subscribe('plugins:changed', callback),
+  onPluginsChanged: (callback) => subscribe('plugins:changed', callback), /* 插件热插拔 */
 
   /** 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
   onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
@@ -279,8 +278,9 @@ const api = {
 
   /** 把「当前标签的 webContents id / 就绪」推给主进程（B5：主进程据此直连，不必每次往返） */
   browserActive: (payload) => call('browser:active', payload),
-  /* 扩展桥（Phase 2）：把「界面当前打开的会话」报给主进程 —— 扩展送来的页面内容落进它 */
+  /* 扩展桥（Phase 2）：把「界面当前打开的会话」报给主进程 + 订阅「扩展刚读了一个页面」 */
   extActiveSession: (id) => call('ext:activeSession', id),
+  onExtPage: (callback) => subscribe('ext:page', callback),
 
   /* 界面动作（点击了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
   logAction: (entry) => report(entry),

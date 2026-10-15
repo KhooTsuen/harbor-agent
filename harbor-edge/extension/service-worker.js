@@ -1,33 +1,24 @@
 /**
  * Harbor 浏览器伴侣 · Service Worker（Phase 2：读当前页）
  *
- * 它是扩展侧**唯一**持有 native port 的地方。职责四件：
- *   ① 连 native host、断了就重连；
- *   ② 维护「连接状态」，广播给侧边栏；
- *   ③ 把 `action` 图标点击接到侧边栏上；
- *   ④ **Phase 2**：读当前活动标签的正文，经 native port 转给 Harbor。
+ * 扩展侧**唯一**持有 native port 的地方。职责四件：① 连 native host、断了就重连；
+ * ② 维护连接状态并广播给侧边栏；③ 点图标开侧边栏（这一下同时授予 activeTab）；
+ * ④ 读当前活动标签的正文，经 native port 转给 Harbor。
  *
- * ── ★ 只读「当前活动标签」，且只在用户点击时触发 ──────────────
- *
- * 两条硬规矩（用户定的边界）：
- *   · `chrome.tabs.query({active:true, currentWindow:true})` —— 只可能拿到**前台
- *     当前标签**，不遍历、不管后台标签；
- *   · 读页面这件事**只能由侧边栏按钮发起**（消息 `read-page`），
+ * ── ★ 两条硬规矩（用户定的边界）────────────────────────────
+ *   · `chrome.tabs.query({active:true, currentWindow:true})` —— 只可能拿到**前台当前
+ *     标签**，不遍历后台；读页面**只能由侧边栏按钮发起**（消息 `read-page`），
  *     没有任何定时器 / 监听器会自己去读页面。
  *
- * ── activeTab 的授予时机（浏览器行为，不是实现选择）──────────
- *
- * `activeTab` 在**用户 invoke 扩展**时授予当前标签（点工具栏图标 / 快捷键 /
- * 右键菜单）。**点侧边栏里的按钮不算 invoke** —— 所以正常流程是：
- * 点图标开侧边栏（= invoke，此刻该标签已授权）→ 再点「读当前页」。
- * 用户换了标签之后，那个新标签**没有** activeTab（除非再点一次图标）——
- * 这时读会失败，我们把它转成一句人话提示（不是静默失败）。
- *
- * ── 为什么状态要落 chrome.storage ───────────────────────────
- *
- * MV3 的 SW 空闲 30 秒会被终止（Chrome 官方文档原文）。有活跃 native port
- * 时会保活（Phase 0 实测通过），但端口没建起来时（没装 host / Harbor 没开）
- * SW 会闲下来被杀、读取结果也会丢。所以状态与**最近一次读取结果**都写 storage。
+ * ── ★ activeTab 的授予时机（浏览器行为：实测 + 官方文档）─────
+ * 官方列的只有四种：**执行操作（点扩展图标）/ 右键菜单 / 快捷键 / 多功能框**。
+ * **点侧边栏里的按钮不算 invoke** —— 正确流程是：点图标（= invoke，同时打开侧边栏）
+ * → 再点「读当前页」。用户换标签后新标签没有 activeTab，读会失败（转人话提示）。
+ * ⚠️ `setPanelBehavior({openPanelOnActionClick:true})` **行不通**：它把图标点击接管成
+ *   「切换侧边栏条目显示」，不算 action 执行，activeTab 于是从不授予（2026-10-15 真机
+ *   踩到）。改法见 bindAction()：用 action.onClicked 自己开面板，这一下才是真 invoke。
+ * MV3 的 SW 空闲 30 秒会被终止；有活跃 native port 时保活（Phase 0 实测），端口没建起来
+ * 时会被杀 —— 所以状态与最近一次读取结果都落 chrome.storage。
  */
 
 /* global chrome */
@@ -37,22 +28,11 @@ const HOST = 'com.harbor.agent'
 /** 重连节奏（不是就绪判据；见 harbor-edge/README.md 的硬规则） */
 const RECONNECT_MS = 3000
 
-/**
- * 正文上限 512 KB。
- *
- * 为什么必须有：native messaging 单条消息 host→Edge 官方上限 1 MB，
- * 而页面正文可能是几十 MB（长文档 / 表格页）。这里先截断，再交给 host ——
- * host 侧还有一道 2 MB 的兜底（见 core/ext-forward.cjs）。
- */
+/* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
+   可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-forward.cjs）。 */
 const MAX_TEXT = 512 * 1024
 
-/**
- * 读不了的页面（浏览器内部页）。
- *
- * 这些页面上 `executeScript` 本来就会被浏览器拒绝，但**显式判**有两个好处：
- * 错误信息是人话（而不是 "Cannot access contents of the page"），
- * 且规则**看得见**（用户能知道「哪些页面读不了」）。
- */
+/* 读不了的页面（浏览器内部页）：显式判为了给人话错误，且让「哪些读不了」看得见。 */
 const BLOCKED_PROTOCOL = /^(chrome|edge|about|devtools|view-source|chrome-extension|edge-extension|moz-extension|chrome-untrusted):/i
 
 let port = null
@@ -132,13 +112,45 @@ function connect() {
   ping()
 }
 
-/** 点图标打开侧边栏（MV3 的 sidePanel 需要显式打开这个行为） */
-function bindActionToPanel() {
+/* ★ 点图标 = 真正的「执行操作」（activeTab 由此授予）→ 打开侧边栏。必须走
+   action.onClicked：`setPanelBehavior({openPanelOnActionClick})` 把图标点击接管成
+   「切换侧边栏显示」，不算 action 执行，activeTab 于是从不授予（真机踩过，见文件头）。
+   顺带把这次 invoke 记进 storage（`harborInvoke`）—— 诊断用：能看出 tab.url 可不可见。 */
+function bindAction() {
   try {
-    const p = chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true })
-    if (p && typeof p.catch === 'function') p.catch(() => {})
+    chrome.action.onClicked.addListener((tab) => {
+      const info = {
+        at: Date.now(),
+        tabId: tab && tab.id != null ? tab.id : null,
+        /* ★ 这一条就是 activeTab 的判据：true = 授予了（能看到地址） */
+        hasUrl: Boolean(tab && tab.url),
+        url: String((tab && tab.url) || ''),
+        opened: false,
+        openErr: null,
+      }
+      const done = (patch) => {
+        Object.assign(info, patch)
+        try {
+          chrome.storage.local.set({ harborInvoke: info })
+        } catch {
+          /* 存不下不影响开面板 */
+        }
+      }
+      try {
+        const opened = chrome.sidePanel.open({ windowId: tab.windowId })
+        if (opened && typeof opened.then === 'function') {
+          opened
+            .then(() => done({ opened: true }))
+            .catch((error) => done({ openErr: String((error && error.message) || error) }))
+        } else {
+          done({ opened: true })
+        }
+      } catch (error) {
+        done({ openErr: String((error && error.message) || error) })
+      }
+    })
   } catch {
-    /* 不支持就只是「点图标不开面板」，连不上都不算 */
+    /* 不支持 action.onClicked 就只是「点图标不开面板」——不算致命 */
   }
 }
 
@@ -146,15 +158,9 @@ function bindActionToPanel() {
    Phase 2：读当前页
    ══════════════════════════════════════════════════════════════ */
 
-/**
- * 把读到的内容交给 host，并等 host 的回帧。
- *
- * ⚠️ 回帧说明的是**「host 把字节写进管道了没有」**，不是「Harbor 处理成功了没有」——
- *   host 是单向写（`fs.writeFileSync`），读不到主进程的回复（探针实测，
- *   见 electron/core/ext-forward.cjs 的文件头）。所以界面文案按这个口径写。
- *   仍然要等回帧的原因是：至少要区分「发出去了」和「Harbor 没开 / 没装通道」——
- *   后者 host 会回一条人话错误（ENOENT），这正是用户最需要看到的那种失败。
- */
+/* 把读到的内容交给 host，并等 host 的回帧。⚠️ 回帧只说明「host 把字节写进管道了」，
+   不是「Harbor 处理成功了」—— host 是单向写，读不到主进程回复（见 ext-forward.cjs）。
+   仍要等回帧是为了区分「发出去了」和「Harbor 没开 / 没装通道」（后者 host 回人话错误）。 */
 function sendPageToHost(payload) {
   return new Promise((resolve) => {
     if (!port) {
@@ -197,10 +203,21 @@ async function readActivePage() {
 
   const url = String(tab.url || '')
   if (!url) {
-    /*
-     * url 为空 = activeTab 没授予（浏览器此时不告诉你地址）。
-     * 正常流程（点图标开侧边栏）不会走到这里；换过标签就会。
-     */
+    /* url 为空有两种原因，不能混成一句话（否则提示会**误导**用户反复点图标）：
+       (a) 这个标签没被 invoke 过（换过标签）→ 提示「先点图标」，点了有用；
+       (b) 这本就是**受限页面**（edge:// / about: / chrome://）—— 浏览器不给 url，
+           点多少图标都没用 → 得直接说「不支持读取」。
+       判据是 bindAction 留下的 harborInvoke：同一 tabId 且**当时也看不到** url → (b)。 */
+    const inv = await new Promise((resolve) => {
+      try {
+        chrome.storage.local.get('harborInvoke', (o) => resolve(o && o.harborInvoke))
+      } catch {
+        resolve(null)
+      }
+    })
+    if (inv && inv.tabId === tab.id && inv.hasUrl === false) {
+      return { ok: false, error: '该页面不支持读取（浏览器内部页读不了）' }
+    }
     return { ok: false, error: '读不到当前页地址 —— 先点一下工具栏的 Harbor 图标再试' }
   }
   if (BLOCKED_PROTOCOL.test(url)) {
@@ -274,10 +291,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 })
 
 chrome.runtime.onInstalled.addListener(() => {
-  bindActionToPanel()
+  bindAction()
   connect()
 })
 chrome.runtime.onStartup.addListener(connect)
 
-bindActionToPanel()
+bindAction()
 connect()

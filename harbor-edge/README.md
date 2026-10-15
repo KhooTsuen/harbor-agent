@@ -46,6 +46,26 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 
 ---
 
+## ★ 硬规则二：同一 profile 二次启动 Edge，扩展**不会**自动启用
+
+**改了 `extension/` 或 `src/sidepanel/` 后要真机验，必须换一个全新 profile 起 Edge。**
+
+Phase 2 手点验收时踩到（2026-10-15）：`--user-data-dir=<同一个 profile>` + `--load-extension`
+首次启动能装并跑起来；**重启同一个 profile，Edge 不再启用那个 unpacked 扩展** —— 症状是
+CDP 里**找不到我们扩展的 service_worker**（别的扩展的 SW 都在），点图标毫无反应。
+
+```bat
+rem ✗ 错：改完扩展后拿旧 profile 重启 —— SW 根本不启动
+msedge.exe --user-data-dir=harbor-edge\profiles\profile-manual --load-extension=harbor-edge\dist\sidepanel
+
+rem ✓ 对：换一个新 profile（ID 由**加载路径**决定，所以 ID 不变、host 清单不用改）
+msedge.exe --user-data-dir=harbor-edge\profiles\profile-manual2 --load-extension=harbor-edge\dist\sidepanel
+```
+
+**排查手法**：别猜「是不是代码坏了」，直接问 Edge —— 带 `--remote-debugging-port` 起，
+然后 `GET http://127.0.0.1:<port>/json/list`，看有没有
+`type=service_worker` 且 url 含我们扩展 ID 的 target。**没有 = 扩展没启用**（而不是代码错）。
+
 ## ★ 硬规则：禁止「固定毫秒等待」当就绪判据
 
 **任何脚本里都不准用「等 N 毫秒然后认为它好了」当判据。必须轮询目标状态，带超时上限。**

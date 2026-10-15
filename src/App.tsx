@@ -21,7 +21,7 @@ import { LAYOUT } from '@/constants'
 import { matchCombo } from '@/lib/utils'
 import { useBackendSubscriptions } from '@/hooks/useBackendSubscriptions'
 import { useApplyAppearance } from '@/hooks/useApplyAppearance'
-import { useExtActiveSession } from '@/hooks/useExtActiveSession'
+import { useExtBridge } from '@/hooks/useExtBridge'
 
 /* ══════════════════════════════════════════════════════════════
    App：设置同步到 <html> · 全局快捷键 · 三栏布局
@@ -93,8 +93,8 @@ function MainApp() {
     updateSettings({ lastThreadId: activeThreadId })
   }, [activeThreadId, updateSettings])
 
-  /* ②c Phase 2：把当前会话报给主进程（扩展读到的页面内容落进它） */
-  useExtActiveSession(activeThreadId)
+  /* ②c Phase 2：扩展桥（上报当前会话 + 收到 ext:page 时刷新界面） */
+  useExtBridge(activeThreadId)
   useEffect(() => {
     if (rightTabRestored) return
     setActiveRightTab(settings.lastRightTab)

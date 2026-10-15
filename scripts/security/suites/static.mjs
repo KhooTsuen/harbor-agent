@@ -95,6 +95,8 @@ function preloadSurface() {
     'chat:event', 'shell:data', 'pty:data', 'pty:exit', 'plugins:changed',
     'downloads:event', 'image:ready', 'image:failed', 'image:progress',
     'browser:request', 'browser:openTab', 'app:taskEnd', 'app:notificationClick',
+    /* Phase 2：扩展读到的页面已落进会话 —— 推给渲染层刷列表并重读那条消息 */
+    'ext:page',
   ])
   const badSubs = [...new Set(subscribed)].filter((c) => !knownSubs.has(c))
   sec('SEC-006', badSubs.length === 0, `订阅通道都在白名单内（越界：${badSubs.join(',') || '无'}）`)
