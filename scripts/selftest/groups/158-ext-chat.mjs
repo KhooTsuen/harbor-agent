@@ -150,38 +150,55 @@ export async function run() {
   check('★ 侧边栏显示的是主进程给的原话（不自己编错误文案）', /res\?\.error/.test(panelSrc))
   check('★ 侧边栏仍没做切会话（3c）', !/switch-session|onSelectSession/.test(panelSrc))
 
-  /* ── ⑥ Phase 3b 布局返工：三段堆叠 → 顶栏 + 对话区 + 会话抽屉 ── */
-  group('扩展对话 · 布局（顶栏 / 抽屉 / 状态锚点唯一）')
+  /* ── ⑥ Phase 3b 布局返工：三段堆叠 → 顶栏三区 + 对话区 + 会话抽屉 ── */
+  group('扩展对话 · 布局（顶栏三区 / 左侧抽屉 / 锚点唯一）')
 
   const appSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/App.tsx'), 'utf8')
   const drawerSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/SessionDrawer.tsx'), 'utf8')
   const readBtnSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/ReadPageButton.tsx'), 'utf8')
-  const panelProbe = readFileSync(join(ROOT, 'harbor-edge/lib/ext-probe-panel.cjs'), 'utf8')
+  const probePanelSrc = readFileSync(join(ROOT, 'harbor-edge/lib/ext-probe-panel.cjs'), 'utf8')
+  const cssSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/sidepanel.css'), 'utf8')
 
   check('★ 会话列表不再常驻（SessionList 已删，App 不再引用）', !/SessionList/.test(appSrc))
-  check('★ 会话列表搬进抽屉（覆盖式 absolute inset-0，不是并排）', /absolute inset-0/.test(drawerSrc))
   check('★ 抽屉默认收起（初始 false —— 侧边栏窄，不能常驻）', /const \[drawer, setDrawer\] = useState\(false\)/.test(appSrc))
+  /* 顶栏三区：左 ☰ / 中 状态区 / 右 新建+设置 */
+  check('★ 顶栏左是 ☰（免文字图标，lucide Menu）', /<Menu\b/.test(appSrc) && /label="选择对话"/.test(appSrc))
+  check('★ 顶栏中是状态区（连接状态 + 当前会话名）', /aria-label="连接状态"/.test(appSrc) && /aria-label="当前对话"/.test(appSrc))
+  check('★ 顶栏右是 新建 + 设置', /label="新建对话"/.test(appSrc) && /label="设置"/.test(appSrc))
+  /* 抽屉：覆盖式 + 从左侧滑出 + 点外面收起 */
+  check('★ 会话列表搬进抽屉（覆盖式 absolute inset-0，不是并排）', /absolute inset-0/.test(drawerSrc))
+  check('★ 抽屉从**左侧**滑出（translateX，不是从上 translateY）', /translateX\(-100%\)/.test(cssSrc) && !/translateY\(-100%\)/.test(cssSrc))
+  check('★ 点抽屉外面能收起（背板 onClick=onClose，面板自己 stopPropagation）', /onClick=\{onClose\}/.test(drawerSrc) && /stopPropagation/.test(drawerSrc))
+  /*
+   * ★ 这条挡的是最难查的假绿：☰ 与抽屉**同名**时，CLICK_TITLE_EXPR 会点到抽屉自身
+   *   （点自己 = 什么也没发生，判据照样过）。名字必须分开。
+   */
+  check('★ ☰（选择对话）与抽屉（会话抽屉）**不同名**', /aria-label="选择对话"/.test(appSrc) && /aria-label="会话抽屉"/.test(drawerSrc))
   /*
    * ★ 这条守的是「状态锚点唯一」：ext-probe 的 `STATUS_TEXT_EXPR` 取文档里**第一个**
-   *   `[role=status][aria-live=polite]`。顶栏的连接文字若也带上 aria-live，就会把它
-   *   顶掉 —— accept-phase2 / 3a 的「读当前页给人话」当场变假红（看起来像产品坏了）。
+   *   role=status + aria-live 的元素。顶栏的连接文字若也带上 aria-live，就会把它
+   *   顶掉 —— accept-phase2 / 3a 的「读当前页给人话」当场变假红（像产品坏了）。
    *
-   * ⚠️ 判据必须匹配**带引号的属性形态**（`aria-live="polite"`），不能只匹配
-   *    `aria-live` —— 文件头注释里正解释这件事，写裸词会被自己的注释判红
-   *    （156 那次「注释里提到 pendingRead」同族）。
+   * ⚠️ 判据必须匹配**带引号的属性形态**，不能只匹配裸词 —— 文件头注释里正解释这件事，
+   *   写裸词会被自己的注释判红（156 那次「注释里提到 pendingRead」同族）。
    */
   check(
     '★ 状态锚点唯一：对话区一个 role=status + aria-live，顶栏一个都没有',
     (panelSrc.match(/role="status"/g) ?? []).length === 1 &&
       /aria-live="polite"/.test(panelSrc) &&
-      !/aria-live="polite"/.test(appSrc),
+      !/aria-live=/.test(appSrc),
   )
+  check('★ 顶栏连接点只有 role=status、**没有** aria-live（不然会顶掉状态行）', /role="status"/.test(appSrc))
   check(
     '★ 「读当前页」是图标按钮（只能按 aria-label 找，没有可见文字）',
     /label="读当前页"/.test(readBtnSrc) && !/>\s*读当前页\s*</.test(readBtnSrc),
   )
   check(
     '★ 验收锚点与渲染层一致（一边改了另一边没跟进 = 脚本静默失效）',
-    panelProbe.includes('读当前页') && panelProbe.includes('选择对话') && appSrc.includes('选择对话'),
+    probePanelSrc.includes('读当前页') &&
+      probePanelSrc.includes('选择对话') &&
+      appSrc.includes('选择对话') &&
+      probePanelSrc.includes('当前对话') &&
+      appSrc.includes('当前对话'),
   )
 }

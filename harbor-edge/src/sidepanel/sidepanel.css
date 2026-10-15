@@ -27,7 +27,7 @@
 
    为什么用 CSS animation 而不是 Tailwind 的 transition：抽屉是**条件渲染**的
    （关闭时根本不在 DOM 里），没有「从 A 过渡到 B」的过程，只有挂载时的一次进入。
-   方向按要的形态 —— **从上滑下来覆盖对话区**（translateY(-100%) → 0），
+   方向按要的形态 —— **从左侧滑进来覆盖对话区**（translateX(-100%) → 0），
    由外层那个 `overflow-hidden` 的对话区裁掉滑入过程中超出部分。
 
    ★ 它会被全局那两条规则关掉（`src/index.css`）：
@@ -38,7 +38,7 @@
 @keyframes drawer-in {
   from {
     opacity: 0;
-    transform: translateY(-100%);
+    transform: translateX(-100%);
   }
   to {
     opacity: 1;

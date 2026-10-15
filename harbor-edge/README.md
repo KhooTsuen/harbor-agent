@@ -9,10 +9,12 @@
 > 会话选择器（点抽屉里的条目切换）是 **3c**，Agent 操作网页是 Phase 4 —— **未开工**。
 >
 > ⚠️ **验收脚本的锚点**（改了渲染层必须同步，否则脚本**静默失效**、照跑不误）：
-> 「读当前页」现在是**图标按钮**，只能按 `aria-label` 找；
+> `[aria-label="…"]` 的**归属表**在 `lib/ext-probe-panel.cjs` 的文件头（唯一真相源）。
+> 两条最容易忽略的：「读当前页」是**图标按钮**（只能按 `aria-label` 找）；
 > `STATUS_TEXT_EXPR` 取文档里**第一个** `[role=status][aria-live=polite]`
-> （所以顶栏的连接文字是**纯文本**、抽屉里的提示用 `role=alert`）；
-> 会话列表在**抽屉里**（默认不挂载），读之前要先点顶栏 `[aria-label="选择对话"]`。
+> （所以顶栏的连接文字是**纯文本**、抽屉里的提示用 `role=alert`）。
+> 会话列表在**抽屉里**（默认不挂载），读之前要先点顶栏 ☰ 的 `[aria-label="选择对话"]`；
+> 抽屉自己叫 `会话抽屉` —— **不能**叫「选择对话」，否则脚本会点到抽屉自身（假绿）。
 > 锚点唯一真相源：`lib/ext-probe-panel.cjs`（`ext-probe.cjs` 再导出它）。
 
 ## ★ 已知缺口（别忘）
@@ -87,7 +89,7 @@
 |---|---|
 | `extension/` | **真扩展的源**（`manifest.json` + `service-worker.js` + `lib/native.js`）—— 构建时原样拷进产物 |
 | `extension/lib/native.js` | 扩展侧**通道层**（Phase 3a）：连 host / 重连 / **按 id 匹配的 pending Map** / 状态广播 / **推送帧广播**（3b） |
-| `src/sidepanel/` | 侧边栏的 React 源：`index.html` / `main.tsx` / `App.tsx`（**顶栏**）/ `ChatPanel.tsx`（**对话区**）/ `SessionDrawer.tsx`（**会话抽屉**，3b 返工新增）/ `ReadPageButton.tsx`（读当前页，**图标按钮**） |
+| `src/sidepanel/` | 侧边栏的 React 源：`index.html` / `main.tsx` / `App.tsx`（**顶栏三区：☰ / 状态区 / 设置+新建**）/ `ChatPanel.tsx`（**对话区**）/ `SessionDrawer.tsx`（**会话抽屉，从左侧滑出**）/ `ReadPageButton.tsx`（读当前页，**图标按钮**） |
 | `src/sidepanel/ChatPanel.tsx` | 侧边栏**对话区**（3b）：发消息 + 流式回复显示（按 `seq` 丢弃重排的旧片） |
 | `vite.config.ext.ts` | 扩展的独立 Vite 配置（root / postcss / outDir / alias 都跟主应用不同） |
 | `postcss.config.js` | 扩展的 Tailwind 配置（theme 继承主 config、content 只扫扩展 + 用到的 UI 组件） |
@@ -95,7 +97,7 @@
 | `install-host.cmd` / `uninstall-host.cmd` | 装 / 卸 native host（注册表 + 清单，幂等） |
 | `lib/driver.cjs` | 验收共用的 Edge 驱动（隔离 profile / 注册表 / 读扩展 ID） |
 | `lib/ext-probe.cjs` | 验收共用：CDP 求值 / 找 SW / 喂帧（**再导出**下一条） |
-| `lib/ext-probe-panel.cjs` | 面板 **DOM 锚点**（**可访问文案的唯一真相源**）：状态行 / 读页面 / 顶栏标题 / 会话列表 |
+| `lib/ext-probe-panel.cjs` | 面板 **DOM 锚点**（**可访问文案的唯一真相源**，文件头带**归属表**）：状态行 / 读页面 / ☰ / 当前会话名 / 抽屉 / 会话列表 |
 | `lib/ext-stage.cjs` | 验收共用的**装/卸隔离 host**（真 exe + 真机制 + 隔离数据根） |
 | `tools/` | 验收脚本（见下） |
 | `ext/` | Phase 1b 的**探针扩展**（历史验收资产，**不要动**） |
@@ -122,12 +124,17 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-sidepanel.cjs` | 构建产物**能当扩展页加载**（Phase 1c 第一步） | `node harbor-edge/tools/accept-sidepanel.cjs` |
 | `tools/accept-extension.cjs` | 真扩展 + native host **端到端**：能读到哪些状态（Phase 1c 第二步） | `node harbor-edge/tools/accept-extension.cjs` |
 | `tools/accept-phase2.cjs` | 「读当前页 → 包装 → 落会话」（Phase 2） | `node harbor-edge/tools/accept-phase2.cjs` |
-| `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**15 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
+| `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**16 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
 | `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b，**15 条判据**） | `node harbor-edge/tools/accept-phase3b.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 
 全部脚本都**自己起隔离 Edge**（独立 `--user-data-dir` + 隔离数据根），**不碰**你正在用的那个。
+
+> ⚠️ **`accept-phase3a.cjs` 与 `accept-phase3b.cjs` 必须串行跑，绝不能并行。**
+> 两者都写同一个全局注册表键 `HKCU\...\NativeMessagingHosts\com.harbor.agent`
+> （`finally` 里「摘 → 装隔离 → 恢复原值」）—— 并行会让它们互相踩，**键可能被删掉**
+> （2026-10-16 真踩到，恢复要手工 `reg ADD` 回原值）。
 
 > ⚠️ `accept-phase3a.cjs` / `accept-phase3b.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
 > 隔离清单），跑完 `finally` 里**恢复原值** —— 如果你之前手动装过 host，跑完那条还在。

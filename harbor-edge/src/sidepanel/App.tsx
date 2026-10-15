@@ -1,31 +1,33 @@
 /**
- * Harbor 侧边栏（Phase 3b 布局返工：顶栏 + 对话区 + 输入框 + 会话抽屉）
+ * Harbor 侧边栏（Phase 3b 布局返工 v2：顶栏三区 + 对话区 + 输入框 + 会话抽屉）
  *
- * ── 为什么改（用户 2026-10-16 指出的理解偏差）────────────────
- *
- * 上一版是「三段堆叠」：连接状态 / 读当前页 / **常驻的会话列表** / 对话区。
- * 侧边栏只有 ~400px 宽，常驻列表把对话区压到只剩几条消息 —— 没有可用性。
- * 现在对齐浏览器插件的常见形态：
+ * ── 形态（用户 2026-10-16 定的）──────────────────────────────
  *
  *   ┌──────────────────────────────────────┐
- *   │ ● 已连接  [ 当前对话标题 ▾ ]  ＋  ⚙ │ ← 顶栏（一行）
+ *   │ ☰   ● 已连接 · 当前对话名      ＋  ⚙ │ ← 顶栏（一行三区）
  *   ├──────────────────────────────────────┤
  *   │            对话区（占满）             │
- *   │   （点 ▾ 时抽屉从这里上方滑下来覆盖）  │
+ *   │   （点 ☰ 时抽屉从**左侧**滑进来覆盖） │
  *   ├──────────────────────────────────────┤
  *   │ 📄 [ 输入框                ]  发送    │ ← 输入框（底部）
  *   └──────────────────────────────────────┘
  *
+ * 顶栏三区各自的职责：
+ *   · 左 **☰** —— 会话列表抽屉的开关（点它开、再点收；Esc / 点抽屉外也能收）。
+ *   · 中 **状态区** —— 「已连接 / 未连接」+（有的话）当前会话名。**纯文本**。
+ *   · 右 **设置 + 新建对话**图标。
+ *
  * 「读当前页」压成输入框左端一个图标按钮（原来它独占一块 + 三行结果文字）。
  *
- * ── ★ 两个可访问文案是验收脚本的锚点（改了就静默失效）────────
+ * ── ★ 两条可访问文案是验收脚本的锚点（改了就静默失效）────────
  *
- *   · 顶栏那个标题按钮的 `aria-label="选择对话"`：`lib/ext-probe.cjs` 的
- *     `CLICK_TITLE_EXPR` / `TITLE_EXPR` 按它找（点它开抽屉、读它判开合）。
- *   · **顶栏里绝不能出现 `[role=status][aria-live=polite]`**：`STATUS_TEXT_EXPR`
- *     取的是文档里**第一个**那样的元素，而它要读到的是对话区那行状态文字
- *     （读页面结果 / 发送提示）。顶栏的连接文字若也带上 aria-live，就会把它顶掉，
- *     accept-phase2 / 3a 的「读当前页给人话」当场变假红。所以连接文字是**纯文本**。
+ *   · ☰ 的 `aria-label="选择对话"`：`lib/ext-probe-panel.cjs` 的
+ *     `CLICK_TITLE_EXPR` 按它找（点它开抽屉）。
+ *   · 状态区里当前会话名那条的 `aria-label="当前对话"`：`TITLE_EXPR` 读它。
+ *   · **顶栏里绝不能出现 role=status 且同时带 aria-live 的元素**：
+ *     `STATUS_TEXT_EXPR` 取的是文档里**第一个**那样的元素，而它要读到的是对话区
+ *     那行状态文字（读页面结果 / 发送提示）。顶栏的连接文字因此是**纯文本**
+ *     （状态点只有 `role=status`、**没有** `aria-live`，两者同现才算命中）。
  *
  * ── 视觉为什么能跟主应用一致 ────────────────────────────────
  *
@@ -39,7 +41,7 @@
 /* global chrome */
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, Plus, Settings } from 'lucide-react'
+import { Menu, Plus, Settings } from 'lucide-react'
 import { IconButton } from '@/components/ui/IconButton'
 import type { StatusMessage } from './ReadPageButton'
 import { ChatPanel } from './ChatPanel'
@@ -64,6 +66,8 @@ const INITIAL: HarborState = { connected: false, lastError: null, lastPongAt: 0,
  * 那个组件依赖 `@/types` + `@/lib/agentPhase` + `@/lib/statusLanguage` 三处，
  * 而且语义是「**线程**执行状态」，跟这里要的「**与 Harbor 的连接**」不是同一件事。
  * 所以按「不能跨目录复用就在扩展侧写一份等价的」办 —— 颜色仍走主应用的 token。
+ *
+ * ⚠️ 这里**只带** `role=status`，**不带** `aria-live` —— 见文件头那条锚点规矩。
  */
 function ConnectionDot({ connected }: { connected: boolean }) {
   return (
@@ -131,13 +135,13 @@ export function App() {
   }, [])
 
   /*
-   * 顶栏标题：问「当前是哪条会话」→ 从会话快照里取它的标题。
+   * 状态区里那个会话名：问「当前是哪条会话」→ 从会话快照里取它的标题。
    *
    * ★ 为什么不去改 SW 让 `session-active` 直接回标题：那要动 `service-worker.js`，
-   *   超出本次「只改扩展侧这三个文件」的边界。用已有的 `session-active` + 冷启动
+   *   超出本次「只改扩展侧这几个文件」的边界。用已有的 `session-active` + 冷启动
    *   快照就够，且**不碰** 3b 那条已被真机验证过的链路。
    *   代价：Harbor 刚点「新建对话」时 active 是临时 id（`pending_…`），快照里查不到
-   *   → 标题显示成「Harbor」。这是**已知取舍**，记在交付报告里。
+   *   → 名字显示成「Harbor」。这是**已知取舍**，记在交付报告里。
    */
   const refreshTitle = useCallback(() => {
     try {
@@ -187,45 +191,43 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col bg-canvas text-fg-primary">
-      {/* ── 顶栏（一行）───────────────────────────────────────── */}
-      <header
-        aria-label="顶栏"
-        className="flex shrink-0 items-center gap-1.5 border-b border-line-hairline px-2 py-1.5"
-      >
-        <ConnectionDot connected={state.connected} />
-        {/*
-         * ★ 这行是**纯文本**，故意不带 role=status / aria-live（见文件头）——
-         *   带上会把 STATUS_TEXT_EXPR 的「第一个」抢走，让读页面那两条判据假红。
-         */}
-        <span aria-label="连接状态" className="shrink-0 text-2xs text-fg-tertiary">
-          {state.connected ? '已连接' : '未连接'}
-        </span>
-
-        {/* 标题 = 抽屉的开关（点它从上滑出会话列表）*/}
-        <button
-          type="button"
-          aria-label="选择对话"
+      {/* ── 顶栏（一行三区）───────────────────────────────────── */}
+      <header aria-label="顶栏" className="flex shrink-0 items-center gap-1 border-b border-line-hairline px-2 py-1.5">
+        {/* 左：会话抽屉的开关 */}
+        <IconButton
+          label="选择对话"
           aria-expanded={drawer}
-          title="选择对话"
           onClick={() => setDrawer((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1.5 py-1 text-left transition-colors duration-fast ease-out hover:bg-bg-hover"
+          className="shrink-0"
         >
-          <span className="truncate text-dense font-medium">{titleText}</span>
-          <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-fg-tertiary" />
-        </button>
+          <Menu size={16} aria-hidden="true" />
+        </IconButton>
 
-        {state.connected ? null : (
-          <button
-            type="button"
-            aria-label="重试连接"
-            onClick={retry}
-            className="shrink-0 rounded-sm px-1.5 py-1 text-2xs text-fg-secondary hover:bg-bg-hover hover:text-fg-primary"
-          >
-            重试
-          </button>
-        )}
-        {/* ⏭ 这两个是本轮的**占位**：真做要加 SW / host 的新 kind，超出
-            「只改扩展侧三个文件」的边界 —— 所以点它们只如实说一句，不假装能用。*/}
+        {/* 中：状态区（已连接/未连接 · 当前会话名）。★ 纯文本，不带 aria-live */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
+          <ConnectionDot connected={state.connected} />
+          <span aria-label="连接状态" className="shrink-0 text-2xs text-fg-tertiary">
+            {state.connected ? '已连接' : '未连接'}
+          </span>
+          <span className="shrink-0 text-2xs text-fg-tertiary">·</span>
+          <span aria-label="当前对话" title={titleText} className="truncate text-dense text-fg-secondary">
+            {titleText}
+          </span>
+          {state.connected ? null : (
+            <button
+              type="button"
+              aria-label="重试连接"
+              onClick={retry}
+              className="shrink-0 rounded-sm px-1 text-2xs text-fg-secondary hover:bg-bg-hover hover:text-fg-primary"
+            >
+              重试
+            </button>
+          )}
+        </div>
+
+        {/* 右：新建 + 设置。
+            ⏭ 这两个是本轮的**占位**：真做要加 SW / host 的新 kind，超出
+            「只改扩展侧这几个文件」的边界 —— 所以点它们只如实说一句，不假装能用。*/}
         <IconButton
           label="新建对话"
           onClick={() => setStatus({ text: '新建对话目前要在 Harbor 主窗口里点（侧边栏的新建还没做）', tone: 'info' })}

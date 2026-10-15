@@ -1,44 +1,36 @@
 /**
  * 侧边栏的「对话」区块（Phase 3b：发消息 + 看流式回复；本轮改布局）
  *
- * ── 它做什么 / 不做什么 ──────────────────────────────────────
- *
  * 做：把用户打的字交给 SW（→ host → 主进程 → **渲染层**去跑），并把主进程推来的
- *     流式分片显示出来；点顶栏 ▾ 时把会话抽屉滑出来**覆盖**这一块。
+ *     流式分片显示出来；点顶栏 **☰** 时把会话抽屉滑出来**覆盖**这一块。
  * 不做：**不落盘、不判忙**。落盘在渲染层（`replyPersistence.ts`）；「这条会话忙不忙」
  *     由主进程判（见 `electron/core/ext-chat.cjs`）—— 判据只有一处，扩展侧不自己猜。
  *
- * ── 布局（Phase 3b 返工）────────────────────────────────────
+ * ── 布局 ────────────────────────────────────────────────────
  *
  *   <section 对话>                      ← 占满顶栏与输入框之间
  *     <div relative overflow-hidden>    ← 消息区 + 抽屉（抽屉 absolute 盖住消息区）
- *       <div 消息流 可滚动/>
- *       {drawerOpen && <SessionDrawer/>}
+ *       <div 消息流 可滚动/>  {drawerOpen && <SessionDrawer/>}
  *     </div>
- *     <状态行/>                          ← 读页面结果 / 发送提示，**唯一**一个（由 App 持有）
+ *     <状态行：读页面结果 / 发送提示，**唯一**一个（由 App 持有）/>
  *     <输入框：📄 [textarea] 发送/>
  *   </section>
  *
- * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往**同一行**写话 ——
- * 而「只有一行」是硬要求（它是 ext-probe 的 `STATUS_TEXT_EXPR` 锚点）。
+ * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往**同一行**写话，而「只有一行」
+ * 是硬要求（它是 ext-probe 的 `STATUS_TEXT_EXPR` 锚点）。
  *
- * ── 流事件从哪来 ─────────────────────────────────────────────
+ * ── 流事件 / 冷启动 ─────────────────────────────────────────
  *
- * SW 广播 `{type:'harbor-push', push:{kind:'chat:event', payload:{…}}}`。
- * payload 字段（3b 钉死）：`sessionId` / `seq` / `type` / `text` / `done`。
- * `seq` 是**单调序号** —— 只认比手上更大的（网络/广播重排时不会把旧片盖上去）。
- *
- * ── 冷启动 / 重连 ────────────────────────────────────────────
- *
- * 打开面板时问一次 `chat-resume`（按 sessionId）拿**一份快照**（当前全文 + seq），
- * 而不是让主进程补发历史分片 —— 理由见 3b 设计说明 §3.2。
+ * SW 广播 `{type:'harbor-push', push:{kind:'chat:event', payload:{…}}}`，字段（3b 钉死）：
+ * `sessionId` / `seq` / `type` / `text` / `done`。`seq` 是**单调序号** —— 只认比手上
+ * 更大的（广播重排时不会把旧片盖上去）。打开面板时问一次 `chat-resume` 拿**快照**
+ * （当前全文 + seq），而不是让主进程补发历史分片 —— 理由见 3b 设计说明 §3.2。
  *
  * ── ★ 两个 aria-label 是验收脚本的锚点（改了就静默失效）──────
  *   · `回复正文` → accept-phase3b 的 `REPLY_TEXT`
- *   · `发送提示` → accept-phase3b 的 `NOTICE_TEXT`；它同时是
- *     `[role=status][aria-live=polite]`，也就是 ext-probe 的 `STATUS_TEXT_EXPR`
- *     （accept-phase2 / 3a 靠它读「读当前页」的结果）—— 所以这个元素**只能有一个**，
- *     且必须排在顶栏之后（顶栏那行连接文字因此是纯文本，见 App.tsx 文件头）。
+ *   · `发送提示` → accept-phase3b 的 `NOTICE_TEXT`；它同时是 ext-probe 的
+ *     `STATUS_TEXT_EXPR` 锚点（那个表达式取文档里**第一个** role=status + aria-live
+ *     的元素）→ 所以它**只能有一个**，且必须排在顶栏之后（顶栏的连接文字因此是纯文本）。
  */
 
 /* global chrome */
@@ -191,11 +183,8 @@ export function ChatPanel({
     if (!text || sending) return
     setSending(true)
     onStatus(null)
-    /*
-     * ★ 有回复正在流的时候**不要**把显示换掉：否则「忙时又发一条」会把自己
-     *   正在看的流清空（真机验收逮到：⑩ 判完 SESSION_BUSY，⑨⑪ 就再也收不到字了）。
-     *   这时只发请求，让主进程回 SESSION_BUSY 就行 —— 显示保持原样。
-     */
+    /* ★ 有回复正在流时**不要**换掉显示：否则「忙时又发一条」会把正在看的流清空
+       （真机逮到：⑩ 判完 SESSION_BUSY，⑨⑪ 就再也收不到字了）。只发请求、显示不动。 */
     const streaming = Boolean(turn && !turn.done)
     if (!streaming) setTurn({ ask: text, text: '', seq: 0, done: false })
     try {

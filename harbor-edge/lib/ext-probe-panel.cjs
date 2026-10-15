@@ -16,6 +16,19 @@
  *   渲染层改文案 / 改 aria-label 时，**这里必须同步**（与 `tools/shot/cards.mjs`
  *   那条规矩同源）。
  *
+ * ── 锚点归属表（Phase 3b 布局返工 v2 = ☰ / 状态区 / 设置+新建）──
+ *
+ *   | 渲染层元素                    | aria-label       | 哪个表达式用它 |
+ *   |-------------------------------|------------------|----------------|
+ *   | 顶栏 ☰（抽屉开关，**图标**）   | `选择对话`       | CLICK_TITLE_EXPR |
+ *   | 顶栏状态区的**当前会话名**     | `当前对话`       | TITLE_EXPR |
+ *   | 抽屉本身                       | `会话抽屉`       | DRAWER_OPEN_EXPR / CLICK_OUTSIDE_EXPR |
+ *   | 抽屉里的列表容器               | `Harbor 会话列表`| SESSION_LIST_EXPR |
+ *   | 输入框上方那行状态             | `发送提示`       | STATUS_TEXT_EXPR / NOTICE_TEXT |
+ *
+ *   ⚠️ ☰ 与抽屉**不能同名**：同名会让 `CLICK_TITLE_EXPR` 点到抽屉自身
+ *   （点自己 = 没反应，判据还照过 —— 最难查的那种假绿）。
+ *
  * ── 另一个必须守的不变量 ─────────────────────────────────────
  *
  *   `STATUS_TEXT_EXPR` 取的是**文档里第一个** `[role=status][aria-live=polite]`。
@@ -53,19 +66,34 @@ const CLICK_RETRY_EXPR = `(function(){
   return 'ok';
 })()`
 
-/* ── 顶栏的「当前对话」开关（Phase 3b 布局返工新增）────────── */
+/* ── 顶栏的「☰ / 当前对话」（Phase 3b 布局返工 v2）────────── */
 
-/** 顶栏那个标题按钮（它的文字就是当前对话标题） */
-const TITLE_EXPR = `(function(){
-  const b = document.querySelector('[aria-label="选择对话"]');
-  return b ? b.innerText : '';
-})()`
-
-/** 点它 → 会话抽屉开合 */
+/**
+ * 顶栏那个 **☰ 开关**（也是抽屉的开关）。
+ *
+ * ⚠️ 它是**图标按钮**（没有可见文字），只能按 `aria-label` 找 —— 点它开抽屉。
+ */
 const CLICK_TITLE_EXPR = `(function(){
   const b = document.querySelector('[aria-label="选择对话"]');
   if (!b) return 'no-button';
   b.click();
+  return 'clicked';
+})()`
+
+/** 状态区里那条**当前会话名**（顶栏中间；☰ 是图标没有文字，读标题要读它） */
+const TITLE_EXPR = `(function(){
+  const b = document.querySelector('[aria-label="当前对话"]');
+  return b ? b.innerText : '';
+})()`
+
+/** 抽屉开着没有（它在 DOM 里 = 开着；默认不挂载） */
+const DRAWER_OPEN_EXPR = `!!document.querySelector('[aria-label="会话抽屉"]')`
+
+/** 点抽屉**外面**（点背板 → 收起）—— 背板是抽屉的父节点 */
+const CLICK_OUTSIDE_EXPR = `(function(){
+  const d = document.querySelector('[aria-label="会话抽屉"]');
+  if (!d || !d.parentElement) return 'no-drawer';
+  d.parentElement.click();
   return 'clicked';
 })()`
 
@@ -75,7 +103,7 @@ const CLICK_TITLE_EXPR = `(function(){
  * 读会话列表区块当前渲染出来的东西（条数 + 每条的标题/时间）。
  *
  * ⚠️ **Phase 3b 后它在抽屉里**（默认不挂载）→ 读之前先 `CLICK_TITLE_EXPR`
- *    点开顶栏标题，否则拿到 `found:false`。
+ *    点开顶栏 ☰，否则拿到 `found:false`。
  */
 const SESSION_LIST_EXPR = `(function(){
   const sec = document.querySelector('[aria-label="Harbor 会话列表"]');
@@ -100,6 +128,8 @@ module.exports = {
   CLICK_RETRY_EXPR,
   TITLE_EXPR,
   CLICK_TITLE_EXPR,
+  DRAWER_OPEN_EXPR,
+  CLICK_OUTSIDE_EXPR,
   SESSION_LIST_EXPR,
   CLICK_REFRESH_EXPR,
 }

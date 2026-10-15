@@ -1,23 +1,27 @@
 /**
- * 会话抽屉（Phase 3b 布局返工）
+ * 会话抽屉（Phase 3b 布局返工 v2）
  *
  * ── 它取代了什么 ─────────────────────────────────────────────
  *
  * 原来会话列表是**常驻**的一个区块（`SessionList.tsx`，已删）。侧边栏只有 ~400px
  * 宽，常驻列表把对话区压到只剩几条消息 —— 用户 2026-10-16 指出这是理解偏差。
- * 现在改成「点顶栏标题旁的 ▾ 才挂载」的抽屉：从上方滑下来**覆盖对话区**
- * （不是并排），选完 / 点 ✕ / 按 Esc 收起。
+ * 现在改成「点顶栏 ☰ 才挂载」的抽屉：从**左侧**滑进来**覆盖对话区**（不是并排）。
+ *
+ * 收起的三条路（用户 2026-10-16 定的）：
+ *   · 点抽屉**外面**（点背板）   · 再点一次 ☰   · 按 Esc
  *
  * ── 数据从哪来（与原来一模一样）──────────────────────────────
  *
  * SW 的 `session-list`（→ host → 主进程 `session.list()`）。
- * 冷启动先读 `chrome.storage.local.harborSessions` 快照（打开即有内容，不等 SW 醒），
+ * 冷启动先读 `chrome.storage.local.harborSessions` 快照（挂载即有内容，不等 SW 醒），
  * 再异步刷新一次。
  *
- * ⚠️ `aria-label="Harbor 会话列表"` 是**验收脚本的锚点**
- *   （`lib/ext-probe.cjs` 的 `SESSION_LIST_EXPR` 按它找元素）。改名必须同步改那边，
- *   否则脚本**静默失效**（照跑不误、却读不到东西）—— 与 `tools/shot/cards.mjs`
- *   那条规矩同源。
+ * ── ★ 两个 aria-label 的归属（改了就静默失效）────────────────
+ *
+ *   · 抽屉自己叫 `会话抽屉` —— **绝不能**叫「选择对话」：那个名字是顶栏 ☰ 的，
+ *     `lib/ext-probe-panel.cjs` 的 `CLICK_TITLE_EXPR` 按它找开关；同名会让脚本
+ *     点到抽屉自身（点一下自己 = 什么也没发生，判据还照过）。
+ *   · `Harbor 会话列表` 是 `SESSION_LIST_EXPR` 的锚点，必须包着那些 `li`。
  *
  * ⚠️ 本阶段**不做**点击切换会话（那是 3c）：列表项现在只展示，点击没有动作。
  *   （自检 158 也钉着「侧边栏还没做切会话」。）
@@ -153,59 +157,64 @@ export function SessionDrawer({ onClose }: { onClose: () => void }) {
   }, [refresh, onClose])
 
   return (
-    <div
-      role="dialog"
-      aria-label="选择对话"
-      /* drawer-in：从上方滑下（见 sidepanel.css；防闪烁开关会关掉它） */
-      className="drawer-in absolute inset-0 flex flex-col border-b border-line-hairline bg-canvas"
-    >
-      <div className="flex shrink-0 items-center gap-2 border-b border-line-hairline px-3 py-2">
-        <span className="text-dense font-medium">选择对话</span>
-        <span className="text-2xs text-fg-tertiary">
-          {sessions.length > 0 ? `${sessions.length} 条` : ''}
-        </span>
-        <span className="flex-1" />
-        <Button size="sm" variant="ghost" aria-label="刷新会话列表" loading={loading} onClick={refresh}>
-          刷新
-        </Button>
-        <IconButton label="收起会话列表" onClick={onClose}>
-          <X size={16} aria-hidden="true" />
-        </IconButton>
-      </div>
+    /*
+     * 背板：盖住整个对话区，**点它 = 点抽屉外面 → 收起**（用户定的一条收起路径）。
+     * 内层面板 stopPropagation，点面板内部不会误收。
+     */
+    <div className="absolute inset-0 z-20" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="会话抽屉"
+        onClick={(e) => e.stopPropagation()}
+        /* drawer-in：从**左侧**滑进来（见 sidepanel.css；防闪烁开关会关掉它）*/
+        className="drawer-in absolute inset-y-0 left-0 flex w-[85%] max-w-[320px] flex-col border-r border-line-hairline bg-canvas shadow-lg"
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-line-hairline px-3 py-2">
+          <span className="text-dense font-medium">选择对话</span>
+          <span className="text-2xs text-fg-tertiary">{sessions.length > 0 ? `${sessions.length} 条` : ''}</span>
+          <span className="flex-1" />
+          <Button size="sm" variant="ghost" aria-label="刷新会话列表" loading={loading} onClick={refresh}>
+            刷新
+          </Button>
+          <IconButton label="收起会话列表" onClick={onClose}>
+            <X size={16} aria-hidden="true" />
+          </IconButton>
+        </div>
 
-      {/* ★ aria-label 是验收脚本的锚点（见文件头）—— 它必须包着那些 li */}
-      <div aria-label="Harbor 会话列表" className="min-h-0 flex-1 overflow-y-auto p-2">
-        {error ? (
-          /* ⚠️ 用 `role=alert` 而不是 `role=status aria-live=polite`：后者是
-             ext-probe 的 `STATUS_TEXT_EXPR` 锚点（它取文档里**第一个**）——
-             抽屉里再来一个就会把状态行那份顶掉（真机判据会读到错的元素）。 */
-          <div role="alert" className="text-2xs text-danger">
-            {error}
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="text-2xs text-fg-tertiary">
-            还没有会话（在 Harbor 里新建一条，或点上面的「刷新」）
-          </div>
-        ) : (
-          /*
-           * 点选切换是 3c 的活（本轮只展示）—— 所以这里是 li 而不是 button：
-           * 做成可点的样子却点了没反应，比先不可点更糟。
-           */
-          <ul role="list" className="flex flex-col gap-1">
-            {sessions.map((s) => (
-              <li key={s.id} className="rounded-base border border-line-hairline bg-bg-raised px-2.5 py-2">
-                <div className="truncate text-dense text-fg-primary">{s.title || '（无标题）'}</div>
-                <div className="mt-0.5 flex items-center gap-2 text-2xs text-fg-tertiary">
-                  <span className="truncate">{s.id}</span>
-                  <span className="shrink-0">{relativeTime(s.updatedAt)}</span>
-                  {typeof s.messageCount === 'number' ? (
-                    <span className="shrink-0">{s.messageCount} 条消息</span>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* ★ aria-label 是验收脚本的锚点（见文件头）—— 它必须包着那些 li */}
+        <div aria-label="Harbor 会话列表" className="min-h-0 flex-1 overflow-y-auto p-2">
+          {error ? (
+            /* ⚠️ 用 `role=alert` 而不是 `role=status aria-live=polite`：后者是
+               ext-probe 的 `STATUS_TEXT_EXPR` 锚点（它取文档里**第一个**）——
+               抽屉里再来一个就会把状态行那份顶掉（真机判据会读到错的元素）。 */
+            <div role="alert" className="text-2xs text-danger">
+              {error}
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className="text-2xs text-fg-tertiary">
+              还没有会话（在 Harbor 里新建一条，或点上面的「刷新」）
+            </div>
+          ) : (
+            /*
+             * 点选切换是 3c 的活（本轮只展示）—— 所以这里是 li 而不是 button：
+             * 做成可点的样子却点了没反应，比先不可点更糟。
+             */
+            <ul role="list" className="flex flex-col gap-1">
+              {sessions.map((s) => (
+                <li key={s.id} className="rounded-base border border-line-hairline bg-bg-raised px-2.5 py-2">
+                  <div className="truncate text-dense text-fg-primary">{s.title || '（无标题）'}</div>
+                  <div className="mt-0.5 flex items-center gap-2 text-2xs text-fg-tertiary">
+                    <span className="truncate">{s.id}</span>
+                    <span className="shrink-0">{relativeTime(s.updatedAt)}</span>
+                    {typeof s.messageCount === 'number' ? (
+                      <span className="shrink-0">{s.messageCount} 条消息</span>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   )
