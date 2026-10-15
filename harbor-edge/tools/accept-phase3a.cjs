@@ -8,7 +8,12 @@
  * ★ 这一轮**不需要用户手点**：`session:list` 不碰页面内容，不需要 `activeTab`。
  *     唯一仍需人手的仍是 Phase 2 那条 `activeTab` 路径（见 accept-phase2 的说明）。
  *
- * 隔离：独立 profile · 隔离数据根（data/unit-test-data）· 跑完删注册表 + 清产物。
+ * 隔离：独立 profile · 隔离数据根（data/unit-test-data）· 跑完**恢复注册表原值** + 清产物。
+ *
+ * ★ 2026-10-16 补上「恢复原值」：这个脚本原来是**只删不恢复**（`S.regDel` 之后没有
+ *   任何恢复代码）—— 于是每跑一次，用户手工装的那条 `com.harbor.agent` 就被永久抹掉。
+ *   3c 那轮我跑了它一次做回归，注册表就空了（`accept-phase3b/c` 都有 regOld 快照，
+ *   唯独这里漏了）。跑验证脚本**不该有副作用**，这是硬要求。
  */
 
 /* 隔离数据根：早于任何 require 设置（session/audit 都走 paths.cjs） */
@@ -39,6 +44,14 @@ const STAGE = path.join(DATA, 'p3a-ext')
 const PROFILE = 'profile-3a-list'
 const PORT = 9473
 const HOST_NAME = 'com.harbor.agent'
+
+/*
+ * ★ 进来先把注册表原值**快照**下来（必须在 stageHost 之前）——
+ *   跑完要**原样恢复**。原来这个脚本只删不恢复，把用户手工装的那条抹掉了
+ *   （见文件头 2026-10-16 那段）。
+ */
+const regKey = `HKCU\\SOFTWARE\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`
+const regOld = require('node:child_process').spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
 
 const results = []
 const rec = (name, pass, detail) => {
@@ -265,7 +278,14 @@ async function main() {
       /* 已退 */
     }
     await P.sleep(800)
-    S.regDel(HOST_NAME)
+    /* ★ 恢复注册表原值（不是删掉就走）—— 理由见文件头 2026-10-16 那一段 */
+    if (/REG_SZ/.test(regOld)) {
+      const val = (regOld.match(/REG_SZ\s+(.+)/) ?? [])[1]
+      if (val) S.regAdd(HOST_NAME, val.trim())
+      else S.regDel(HOST_NAME)
+    } else {
+      S.regDel(HOST_NAME)
+    }
     const removed = D.removeProfile(path.join(D.PROFILE_ROOT, PROFILE))
     try {
       bridge.stop()

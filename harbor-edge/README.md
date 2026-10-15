@@ -6,7 +6,8 @@
 > 阶段与实测记录见 `docs/research/edge-extension-*.md`。
 > 当前状态：**Phase 3b 完成** —— 侧边栏能**发消息**、看**流式回复**，且与主窗口**同一条会话**。
 > 布局经用户要求返工为「**顶栏 + 对话区 + 输入框 + 会话抽屉**」（会话列表不再常驻）。
-> 会话选择器（点抽屉里的条目切换）是 **3c**，Agent 操作网页是 Phase 4 —— **未开工**。
+> **Phase 3c 完成** —— 抽屉里点一条 = 侧边栏切过去（**主窗口不动**，用户拍板）；
+> 没选会话时发消息会**自动新建一条**；顶栏 ＋ 也是真的。Agent 操作网页是 Phase 4 —— **未开工**。
 >
 > ⚠️ **验收脚本的锚点**（改了渲染层必须同步，否则脚本**静默失效**、照跑不误）：
 > `[aria-label="…"]` 的**归属表**在 `lib/ext-probe-panel.cjs` 的文件头（唯一真相源）。
@@ -19,24 +20,19 @@
 
 ## ★ 已知缺口（别忘）
 
-### 侧边栏发给「当前打开的那条会话」（选目标仍是 3c）
+### ✅ 3c 已解决：侧边栏可以有自己的「选中会话」
 
-侧边栏发消息 / 点「读当前页」→ 都落进 **Harbor 主窗口里当前打开的那条会话** ——
-渲染层用 `src/hooks/useExtBridge.ts` 把 `activeThreadId` 报给主进程
-（通道 `ext:activeSession`，见 `electron/handlers/ext.cjs`）。
+**Phase 3c 起**，侧边栏维护**自己**的选中会话（主进程 `ext-chat.cjs` 的 `selectedSessionId`）：
 
-**因此多了一条硬约束**：想发到某条指定会话，就得**先打开 Harbor、切到那条会话、
-再回浏览器发**。**不打开 Harbor 就没法选目标**。
-
-> Phase 3a 已能**列出**会话（`session:list` + 会话抽屉），Phase 3b 能**发消息**了，
-> 但**点选注入**仍是 3c 的活 —— 列表现在只是只读展示。
-
-| | |
+| 动作 | 结果 |
 |---|---|
-| **缺的是什么** | 在侧边栏**点选**一条会话作为注入 / 发送目标（现在只能读列表 + 发给当前那条） |
-| **谁拍板延后** | 用户，2026-10-15 |
-| **为什么延后** | 与 3b 的「流式回复回侧边栏」一起设计（那时侧边栏与 Harbor 的交互会深得多），免得改两遍 |
-| **落到哪** | **3c**（是明确延后项，**不是**遗忘项） |
+| 抽屉里点一条 | **只切侧边栏**，主窗口不动（用户 2026-10-16 拍板） |
+| 一条都没选时发消息 | **自动新建一条**再发（两侧都出现） |
+| 顶栏 ＋ | 新建一条，**两侧都切过去** |
+
+> ⚠️ 「读当前页」**仍然**落进「主窗口当前打开的那条」（`ext:activeSession` 报的）——
+> 那是 Phase 2 起的语义，**本次没动**。两者目标不同：**发消息**看侧边栏的选中，
+> **读页面**看主窗口的当前会话。
 
 **兜底行为（内容不会丢）**：渲染层没报过、或报的那条会话已被删时，
 `electron/core/ext-ops.cjs` 的 `ingestPage()` 会**新建一条专用会话**把内容装进去。
@@ -126,17 +122,20 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-phase2.cjs` | 「读当前页 → 包装 → 落会话」（Phase 2） | `node harbor-edge/tools/accept-phase2.cjs` |
 | `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**16 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
 | `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b，**15 条判据**） | `node harbor-edge/tools/accept-phase3b.cjs` |
+| `tools/accept-phase3c.cjs` | **选会话（只切侧边栏）/ 未选中自动新建 / ＋**（Phase 3c，**20 条判据**） | `node harbor-edge/tools/accept-phase3c.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 
 全部脚本都**自己起隔离 Edge**（独立 `--user-data-dir` + 隔离数据根），**不碰**你正在用的那个。
 
-> ⚠️ **`accept-phase3a.cjs` 与 `accept-phase3b.cjs` 必须串行跑，绝不能并行。**
+> ⚠️ **`accept-phase3a/b/c.cjs` 必须串行跑，绝不能并行。**
+> （2026-10-16 补：`3a` 原来是**只删不恢复注册表**的，跑一次就把用户手工装的那条抹掉 ——
+> 现在三个脚本都会先快照、跑完**原样恢复**。）
 > 两者都写同一个全局注册表键 `HKCU\...\NativeMessagingHosts\com.harbor.agent`
 > （`finally` 里「摘 → 装隔离 → 恢复原值」）—— 并行会让它们互相踩，**键可能被删掉**
 > （2026-10-16 真踩到，恢复要手工 `reg ADD` 回原值）。
 
-> ⚠️ `accept-phase3a.cjs` / `accept-phase3b.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
+> ⚠️ `accept-phase3a/b/c.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
 > 隔离清单），跑完 `finally` 里**恢复原值** —— 如果你之前手动装过 host，跑完那条还在。
 > 另：3b 那一跑需要**源码树实例**（3b 改的是渲染层，打包版里是旧的）—— 脚本自己拉
 > `vite + electron .`，并把数据根指到 `data/unit-test-data`。

@@ -23,8 +23,10 @@
  *     点到抽屉自身（点一下自己 = 什么也没发生，判据还照过）。
  *   · `Harbor 会话列表` 是 `SESSION_LIST_EXPR` 的锚点，必须包着那些 `li`。
  *
- * ⚠️ 本阶段**不做**点击切换会话（那是 3c）：列表项现在只展示，点击没有动作。
- *   （自检 158 也钉着「侧边栏还没做切会话」。）
+ * ── Phase 3c：条目**可点**了 ─────────────────────────────────
+ *
+ * 点一条 = 切到它。但只切**侧边栏自己**，主窗口不动（用户 2026-10-16 拍板）——
+ * 所以这里点了只发一条 `session-select`，不去动 Harbor 的 activeSession。
  */
 
 /* global chrome */
@@ -64,7 +66,17 @@ function relativeTime(ts?: number): string {
   return new Date(ts).toLocaleDateString('zh-CN')
 }
 
-export function SessionDrawer({ onClose }: { onClose: () => void }) {
+export function SessionDrawer({
+  onClose,
+  selectedId,
+  onSelect,
+}: {
+  onClose: () => void
+  /** 侧边栏当前在看的那条（高亮它；空 = 还没选） */
+  selectedId: string
+  /** 点某一条 —— App 负责告诉 SW（`session-select`），抽屉自己不等结果 */
+  onSelect: (id: string) => void
+}) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -196,20 +208,32 @@ export function SessionDrawer({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             /*
-             * 点选切换是 3c 的活（本轮只展示）—— 所以这里是 li 而不是 button：
-             * 做成可点的样子却点了没反应，比先不可点更糟。
+             * Phase 3c：点一条 = 侧边栏切到它（**主窗口不动**，用户拍板）。
+             * 必须是真按钮 —— 做成可点的样子却点了没反应比先不可点更糟（上一版就是那样）。
              */
             <ul role="list" className="flex flex-col gap-1">
               {sessions.map((s) => (
-                <li key={s.id} className="rounded-base border border-line-hairline bg-bg-raised px-2.5 py-2">
-                  <div className="truncate text-dense text-fg-primary">{s.title || '（无标题）'}</div>
-                  <div className="mt-0.5 flex items-center gap-2 text-2xs text-fg-tertiary">
-                    <span className="truncate">{s.id}</span>
-                    <span className="shrink-0">{relativeTime(s.updatedAt)}</span>
-                    {typeof s.messageCount === 'number' ? (
-                      <span className="shrink-0">{s.messageCount} 条消息</span>
-                    ) : null}
-                  </div>
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    aria-label={`选择会话 ${s.title || s.id}`}
+                    aria-current={s.id === selectedId ? 'true' : undefined}
+                    onClick={() => onSelect(s.id)}
+                    className={`w-full rounded-base border px-2.5 py-2 text-left transition-colors duration-fast ${
+                      s.id === selectedId
+                        ? 'border-line-subtle bg-bg-active'
+                        : 'border-line-hairline bg-bg-raised hover:bg-bg-hover'
+                    }`}
+                  >
+                    <div className="truncate text-dense text-fg-primary">{s.title || '（无标题）'}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-2xs text-fg-tertiary">
+                      <span className="truncate">{s.id}</span>
+                      <span className="shrink-0">{relativeTime(s.updatedAt)}</span>
+                      {typeof s.messageCount === 'number' ? (
+                        <span className="shrink-0">{s.messageCount} 条消息</span>
+                      ) : null}
+                    </div>
+                  </button>
                 </li>
               ))}
             </ul>

@@ -85,23 +85,49 @@ export function App() {
   const [drawer, setDrawer] = useState(false)
   /** 状态行（读页面结果 / 发送提示 / 占位按钮的说明，共用对话区那一条） */
   const [status, setStatus] = useState<StatusMessage | null>(null)
-  /** Harbor 当前打开的是哪条会话 + 它的标题（标题让用户知道在跟谁对话） */
+  /**
+   * 侧边栏**自己**在看哪条会话（Phase 3c）。
+   *
+   * ★ 与「Harbor 主窗口当前打开的那条」是**两回事** —— 用户 2026-10-16 拍板
+   *   「侧边栏独立看一条，主窗口不动」。空串 = 还没选（这时发消息会新建一条）。
+   * ★ 真相在主进程（`ext-chat.cjs` 的 `selectedSessionId`）：它推 `session:selected`
+   *   过来，这里跟着设。冷启动先读 `chrome.storage` 里那份，免得闪一下空。
+   */
   const [sessionId, setSessionId] = useState('')
+  /** 当前会话的标题（只用于顶栏显示；从会话快照里查） */
   const [title, setTitle] = useState('')
+  /** 会话快照（抽屉刷新 / 顶栏查标题都用它） */
+  const [sessions, setSessions] = useState<SessionBrief[]>([])
 
   useEffect(() => {
     /* ① 先拿快照：SW 可能要几百毫秒才醒，不能让界面空着 */
     try {
-      chrome.storage.local.get('harborState').then((out) => {
+      chrome.storage.local.get(['harborState', 'harborSessions', 'harborSelected']).then((out) => {
         if (out && out.harborState) setState(out.harborState as HarborState)
+        const snap = out && out.harborSessions
+        if (snap && Array.isArray(snap.sessions)) setSessions(snap.sessions as SessionBrief[])
+        const sel = out && out.harborSelected
+        if (sel && typeof sel.sessionId === 'string') setSessionId(sel.sessionId)
       })
     } catch {
       /* 拿不到就用默认值 */
     }
 
-    /* ② 订阅 SW 广播 */
-    const onMsg = (msg: { type?: string; state?: HarborState }) => {
-      if (msg && msg.type === 'status' && msg.state) setState(msg.state)
+    /* ② 订阅 SW 广播：连接状态 + 主进程推来的「侧边栏现在在看哪条」 */
+    const onMsg = (msg: { type?: string; state?: HarborState; push?: { kind?: string; payload?: { sessionId?: string } } }) => {
+      if (msg && msg.type === 'status' && msg.state) {
+        setState(msg.state)
+        return
+      }
+      if (msg && msg.type === 'harbor-push' && msg.push?.kind === 'session:selected') {
+        const id = String(msg.push.payload?.sessionId ?? '')
+        setSessionId(id)
+        try {
+          chrome.storage.local.set({ harborSelected: { sessionId: id } })
+        } catch {
+          /* 存不下不影响本次 */
+        }
+      }
     }
     try {
       chrome.runtime.onMessage.addListener(onMsg)
@@ -134,42 +160,44 @@ export function App() {
     }
   }, [])
 
-  /*
-   * 状态区里那个会话名：问「当前是哪条会话」→ 从会话快照里取它的标题。
-   *
-   * ★ 为什么不去改 SW 让 `session-active` 直接回标题：那要动 `service-worker.js`，
-   *   超出本次「只改扩展侧这几个文件」的边界。用已有的 `session-active` + 冷启动
-   *   快照就够，且**不碰** 3b 那条已被真机验证过的链路。
-   *   代价：Harbor 刚点「新建对话」时 active 是临时 id（`pending_…`），快照里查不到
-   *   → 名字显示成「Harbor」。这是**已知取舍**，记在交付报告里。
-   */
-  const refreshTitle = useCallback(() => {
+  /* 会话快照变了就带上标题（抽屉刷新后会 setSessions） */
+  useEffect(() => {
+    if (!sessionId) return setTitle('')
+    const hit = sessions.find((s) => s.id === sessionId)
+    setTitle(String(hit?.title ?? ''))
+  }, [sessionId, sessions])
+
+  /* Phase 3c：抽屉里点了一条 —— **只切侧边栏**（主窗口不动），顺手收起抽屉 */
+  const selectSession = useCallback((id: string) => {
+    setDrawer(false)
+    setSessionId(id)
     try {
-      const p = chrome.runtime.sendMessage({ type: 'session-active' })
-      if (!p || typeof p.then !== 'function') return
-      p.then((res: { ok?: boolean; sessionId?: string } | undefined) => {
-        if (!res || res.ok !== true) return
-        const id = String(res.sessionId ?? '')
-        setSessionId(id)
-        if (!id) return setTitle('')
-        try {
-          chrome.storage.local.get('harborSessions').then((out) => {
-            const list = (out && out.harborSessions && out.harborSessions.sessions) as SessionBrief[] | undefined
-            const hit = Array.isArray(list) ? list.find((s) => s.id === id) : undefined
-            setTitle(String(hit?.title ?? ''))
-          })
-        } catch {
-          /* 忽略 */
-        }
-      }).catch(() => {})
+      chrome.storage.local.set({ harborSelected: { sessionId: id } })
+    } catch {
+      /* 忽略 */
+    }
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'session-select', sessionId: id })
+      if (p && typeof p.then === 'function') p.catch(() => {})
     } catch {
       /* 忽略 */
     }
   }, [])
 
-  useEffect(() => {
-    if (state.connected) refreshTitle()
-  }, [state.connected, refreshTitle])
+  /* Phase 3c：顶栏 ＋ —— 新建一条（渲染层会切过去；新 id 由 push 回来） */
+  const newSession = useCallback(() => {
+    setDrawer(false)
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'session-new' })
+      if (p && typeof p.then === 'function') {
+        p.then((res: { ok?: boolean; error?: string } | undefined) => {
+          if (!res || res.ok !== true) setStatus({ text: String(res?.error ?? '新建会话失败'), tone: 'danger' })
+        }).catch((e: unknown) => setStatus({ text: String((e as Error)?.message ?? e), tone: 'danger' }))
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }, [])
 
   const retry = useCallback(() => {
     try {
@@ -181,13 +209,9 @@ export function App() {
     requestStatus()
   }, [requestStatus])
 
-  /* 抽屉收起时把标题/状态重问一次（刚在 Harbor 里换了对话，回来要看见） */
-  const closeDrawer = useCallback(() => {
-    setDrawer(false)
-    refreshTitle()
-  }, [refreshTitle])
+  const closeDrawer = useCallback(() => setDrawer(false), [])
 
-  const titleText = title || (sessionId ? sessionId : 'Harbor')
+  const titleText = title || (sessionId ? sessionId : '未选对话')
 
   return (
     <div className="flex h-screen flex-col bg-canvas text-fg-primary">
@@ -225,18 +249,13 @@ export function App() {
           )}
         </div>
 
-        {/* 右：新建 + 设置。
-            ⏭ 这两个是本轮的**占位**：真做要加 SW / host 的新 kind，超出
-            「只改扩展侧这几个文件」的边界 —— 所以点它们只如实说一句，不假装能用。*/}
-        <IconButton
-          label="新建对话"
-          onClick={() => setStatus({ text: '新建对话目前要在 Harbor 主窗口里点（侧边栏的新建还没做）', tone: 'info' })}
-        >
+        {/* 右：新建 + 设置。＋ 现在是**真的**（Phase 3c）：新建一条并两侧切过去。 */}
+        <IconButton label="新建对话" onClick={newSession}>
           <Plus size={16} aria-hidden="true" />
         </IconButton>
         <IconButton
           label="设置"
-          onClick={() => setStatus({ text: '扩展设置还没做（现在只有这几个：连接、选对话、读当前页、发消息）', tone: 'info' })}
+          onClick={() => setStatus({ text: '扩展设置还没做（现在有：连接、选对话、新建、读当前页、发消息）', tone: 'info' })}
         >
           <Settings size={16} aria-hidden="true" />
         </IconButton>
@@ -245,8 +264,10 @@ export function App() {
       {/* ── 对话区（占满顶栏与输入框之间的全部空间）───────────── */}
       <ChatPanel
         connected={state.connected}
+        sessionId={sessionId}
         drawerOpen={drawer}
         onCloseDrawer={closeDrawer}
+        onSelectSession={selectSession}
         status={status}
         onStatus={setStatus}
       />

@@ -25,7 +25,7 @@ import type { AppState } from './types'
 type Setter = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
 type Getter = () => AppState
 
-type DiskActions = Pick<AppState, 'loadFromDisk' | 'openFromDisk'>
+type DiskActions = Pick<AppState, 'loadFromDisk' | 'openFromDisk' | 'hydrateThread'>
 
 /**
  * 元数据刷新时**留住内存里已有的消息**。
@@ -87,6 +87,24 @@ export function makeDiskActions(set: Setter, get: Getter): DiskActions {
       } finally {
         if (mustRead)
           set((state) => (state.loadingThreadId === id ? { loadingThreadId: null } : {}))
+      }
+    },
+
+    hydrateThread: async (id) => {
+      if (!useRealBackend) return
+      const before = get().threads.find((t) => t.id === id)
+      /* 不在列表里 = 调用方得先 loadFromDisk 让它出现；已经有消息 = 不用重读 */
+      if (!before || before.messages.length > 0) return
+      try {
+        const messages = await fetchMessagesFromDisk(id)
+        if (!messages) return
+        const current = get().threads.find((t) => t.id === id)
+        if (!current || current.messages !== before.messages) return
+        set((state) => ({
+          threads: state.threads.map((t) => (t.id === id ? { ...t, messages } : t)),
+        }))
+      } catch {
+        /* 读失败就让它空着：这一轮上下文会缺这段，但不该因此崩掉整条发送 */
       }
     },
   }

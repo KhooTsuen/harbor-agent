@@ -63,14 +63,24 @@ interface PushPayload {
 
 export function ChatPanel({
   connected,
+  sessionId,
   drawerOpen,
   onCloseDrawer,
+  onSelectSession,
   status,
   onStatus,
 }: {
   connected: boolean
+  /**
+   * 侧边栏**自己**在看的那条会话说（Phase 3c，由 App 持有并落 `chrome.storage`）。
+   * 空串 = 还没选 —— 这时发消息会**新建一条**（用户 2026-10-16 拍板），
+   * 而不是悄悄落进 Harbor 主窗口当时打开的那条（那是用户报的 bug 2）。
+   */
+  sessionId: string
   drawerOpen: boolean
   onCloseDrawer: () => void
+  /** 抽屉里点了某条（Phase 3c）—— App 负责发给 SW，且**只切侧边栏** */
+  onSelectSession: (id: string) => void
   /** 状态行**由 App 持有**：顶栏那两个占位按钮也要往同一行写话（单一元素，见文件头） */
   status: StatusMessage | null
   onStatus: (s: StatusMessage | null) => void
@@ -78,50 +88,30 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [turn, setTurn] = useState<TurnView | null>(null)
   const [sending, setSending] = useState(false)
-  /** Harbor 界面当前打开的那条会话 —— 落点由**主进程**认定，这里只问不猜 */
-  const [sessionId, setSessionId] = useState('')
   /** 当前在看的会话 —— 存 ref，避免闭包里拿到过期的值 */
   const sidRef = useRef(sessionId)
   sidRef.current = sessionId
 
-  /** 问一次「当前打开的是哪条会话」（唤醒 SW；连上后就问得到） */
-  const refreshSession = useCallback(() => {
-    try {
-      const p = chrome.runtime.sendMessage({ type: 'session-active' })
-      if (!p || typeof p.then !== 'function') return
-      p.then((res: { ok?: boolean; sessionId?: string } | undefined) => {
-        if (res && res.ok === true) setSessionId(String(res.sessionId ?? ''))
-      }).catch(() => {})
-    } catch {
-      /* 不在扩展上下文时忽略 */
-    }
-  }, [])
-
-  /* 连上时问一次（没连上问也白问） */
-  useEffect(() => {
-    if (connected) refreshSession()
-  }, [connected, refreshSession])
-
-  /* 订阅流式推送 */
+  /* 订阅流式推送（只认 chat:event；session:selected 归 App 处理） */
   useEffect(() => {
     const onMsg = (msg: { type?: string; push?: { kind?: string; payload?: PushPayload } }) => {
       if (!msg || msg.type !== 'harbor-push') return
+      if (msg.push?.kind !== 'chat:event') return
       const payload = msg.push?.payload
       if (!payload) return
       const incoming = String(payload.sessionId ?? '')
       /*
-       * ★ 只认「我正在看的那条会话」—— 但**要能跟着主进程换 id**。
+       * ★ 只认「我正在看的那条会话」—— 但**要能跟着换 id**。
        *
-       * 踩到的坑（真机）：主窗口刚点「新建对话」时，`session:active` 给的是
-       * **临时 id**（`pending_…`），而真正落盘那条是渲染层随后创建的 `sess_…`。
-       * 主进程推来的 `sessionId` 是**真的那个** —— 严格匹配会把每一片都丢掉
+       * 踩到的坑（真机）：刚新建的会话在渲染层那边先是**临时 id**（`pending_…`），
+       * 主进程推来的 `sessionId` 是落盘后的真 id —— 严格匹配会把每一片都丢掉
        * （现象：侧边栏一直只有一个光标，主窗口却有完整回复）。
-       * 所以：本地还是 `pending_`／空时，**以推送为准学过来**。
+       * 所以：本地还是 `pending_`／空时，**以推送为准学过来**（App 也会通过
+       * `session:selected` 同步它的那份；这里先学是为了不丢这一批分片）。
        */
       if (incoming && incoming !== sidRef.current) {
         const temp = !sidRef.current || sidRef.current.startsWith('pending_')
         if (!temp) return
-        setSessionId(incoming)
         sidRef.current = incoming
       }
       const seq = Number(payload.seq ?? 0)
@@ -188,7 +178,7 @@ export function ChatPanel({
     const streaming = Boolean(turn && !turn.done)
     if (!streaming) setTurn({ ask: text, text: '', seq: 0, done: false })
     try {
-      const p = chrome.runtime.sendMessage({ type: 'chat-send', text })
+      const p = chrome.runtime.sendMessage({ type: 'chat-send', text, sessionId })
       if (!p || typeof p.then !== 'function') {
         onStatus({ text: '扩展上下文不可用', tone: 'danger' })
         setSending(false)
@@ -198,11 +188,14 @@ export function ChatPanel({
         setSending(false)
         if (res && res.ok === true) {
           setInput('')
-          /* 主进程认的当前会话可能与本地缓存不同 —— 顺手对齐 */
-          refreshSession()
+          /*
+           * 空会话时主进程会请渲染层**新建一条**（`created: true`）——
+           * 新 id 由主进程 push `session:selected` 回来，App 那侧接住即可，
+           * 这里不等（等会把发送卡住）。
+           */
           return
         }
-        /* 被拒（忙 / 没窗口 / 没会话）—— 显示**主进程给的原话**，不自己编 */
+        /* 被拒（忙 / 没窗口）—— 显示**主进程给的原话**，不自己编 */
         onStatus({ text: String(res?.error ?? '发不出去'), tone: 'danger' })
         if (!streaming) setTurn(null)
       }).catch((error: unknown) => {
@@ -214,7 +207,7 @@ export function ChatPanel({
       setSending(false)
       onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
     }
-  }, [input, sending, turn, refreshSession, onStatus])
+  }, [input, sending, turn, sessionId, onStatus])
 
   return (
     <section aria-label="对话" className="flex min-h-0 flex-1 flex-col">
@@ -223,7 +216,11 @@ export function ChatPanel({
         <div aria-label="消息流" className="h-full overflow-y-auto px-3 py-2 text-dense">
           {!turn ? (
             <div className="text-2xs text-fg-tertiary">
-              {sessionId ? '在下面输入，发给 Harbor 当前打开的这条对话' : '先在 Harbor 里打开一条对话'}
+              {!connected
+                ? '还没连上 Harbor'
+                : sessionId
+                  ? '在下面输入，发给这条对话'
+                  : '在下面输入 —— 会新建一条对话'}
             </div>
           ) : (
             <>
@@ -246,7 +243,9 @@ export function ChatPanel({
           )}
         </div>
 
-        {drawerOpen ? <SessionDrawer onClose={onCloseDrawer} /> : null}
+        {drawerOpen ? (
+          <SessionDrawer onClose={onCloseDrawer} selectedId={sessionId} onSelect={onSelectSession} />
+        ) : null}
       </div>
 
       {/* 状态行：读页面结果 / 发送提示共用一个元素（见文件头） */}
@@ -278,16 +277,17 @@ export function ChatPanel({
                 send()
               }
             }}
-            placeholder={sessionId ? '说点什么…' : '先在 Harbor 里打开一条对话'}
+            placeholder={sessionId ? '说点什么…' : '说点什么（会新建一条对话）…'}
             aria-label="消息输入框"
             className="max-h-24 min-h-[28px] flex-1 resize-none bg-transparent text-dense text-fg-primary placeholder:text-fg-tertiary focus:outline-none"
           />
-          <Button size="sm" variant="primary" loading={sending} disabled={!sessionId || !input.trim()} onClick={send}>
+          {/* ★ 不再要求「先有会话」：没有会话时发送 = 新建一条（Phase 3c 拍板） */}
+          <Button size="sm" variant="primary" loading={sending} disabled={!input.trim()} onClick={send}>
             发送
           </Button>
         </div>
         <p className="mt-2 text-2xs text-fg-tertiary">
-          回复由 Harbor 主窗口那条对话产生，两处看到的是**同一条**。
+          回复由 Harbor 跑，两处看到的是**同一条**会话。
         </p>
       </div>
     </section>

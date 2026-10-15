@@ -41,7 +41,7 @@ interface ThreadState extends AttachmentSlice {
 
   setInput: (value: string) => void
   clearInput: () => void
-  sendMessage: (override?: string, resumeTaskId?: string) => void
+  sendMessage: (override?: string, resumeTaskId?: string, targetThreadId?: string) => void
   stopGeneration: () => void
   /** AG-011：暂停 —— 做完手上这步就停，之后可以接着做（不是立刻断） */
   pauseGeneration: () => void
@@ -102,7 +102,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   setInput: (value) => set({ input: value.slice(0, MAX_INPUT_LENGTH) }),
   clearInput: () => set({ input: '' }),
 
-  sendMessage: (override, resumeTaskId) => {
+  sendMessage: (override, resumeTaskId, targetThreadId) => {
     const raw = (override ?? get().input).trim()
     const files = get().inputFiles
     /* 只有图片 / 只有附件、没有文字，也算有效输入 */
@@ -122,7 +122,12 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
      * 弹「找不到项目 / 这个线程关联的项目已被删除」：那个 project 变量
      * 取出来检查完就再没用过，纯粹是改造前留下的挡路检查。
      */
-    let thread = getActiveThread(app)
+    /* Phase 3c：`targetThreadId` = 侧边栏选中的那条（可能不是主窗口当前那条）。
+       传了却不在内存里就直接返回 —— 绝不退回 getActiveThread，那会发到错的会话去。 */
+    let thread = targetThreadId
+      ? app.threads.find((t) => t.id === targetThreadId)
+      : getActiveThread(app)
+    if (targetThreadId && !thread) return
     if (!thread) {
       const id = app.createThread()
       thread = useAppStore.getState().threads.find((t) => t.id === id)

@@ -30,11 +30,19 @@ import { useThreadStore } from '@/stores/useThreadStore'
    浏览器预览下 `window.workbench` 整个不存在，不该让界面炸。
    ══════════════════════════════════════════════════════════════ */
 
-/** `ext:send` 的载荷形状（主进程发的，见 core/ext-chat.cjs） */
-interface ExtSendEvent {
+/**
+ * 主进程发来的**指令**形状（见 `core/ext-chat.cjs`）。
+ *
+ * 两条走同一条 `chat:event` 通道（**不是**新 IPC 通道）：
+ *   · `ext:send` —— 发一条消息，可能指定「侧边栏选中的那条」
+ *   · `ext:new`  —— 新建一条会话并切过去（侧边栏顶栏那个 ＋）
+ */
+interface ExtCommand {
   type?: string
   sessionId?: string
   text?: string
+  /** true = 侧边栏一个会话都没选中，请新建一条再发（Phase 3c） */
+  newSession?: boolean
 }
 
 export function useExtBridge(activeThreadId: string): void {
@@ -61,25 +69,62 @@ export function useExtBridge(activeThreadId: string): void {
     return off
   }, [])
 
-  /* Phase 3b：侧边栏发来的消息 —— 切到那条会话，然后照常发（与用户手打同一条路） */
+  /*
+   * Phase 3c：侧边栏发来的**指令** —— 两条。
+   *
+   *   · `ext:send` 发一条消息。**可能指定了「侧边栏选中的那条会话」**。
+   *   · `ext:new`  新建一条会话并切过去（顶栏那个 ＋）。
+   *
+   * ★ 为什么指定会话时必须先 `hydrateThread`：`sendMessage` 组 history 读的是内存里
+   *   的 `messages` —— 那条会话没读过就是空数组，**模型只看得见刚那一句**（上下文全丢）。
+   *   所以发之前先把它的消息从磁盘装进来。
+   *
+   * ★ 为什么不干脆 `openFromDisk` 切过去：用户 2026-10-16 拍板「侧边栏独立看一条，
+   *   主窗口不动」—— 切过去就等于动了主窗口（那是用户明确不要的）。
+   *
+   * ★ 为什么用 `onEvent` 订：`subscribeChatEvents` 是**每一轮内部**建的
+   *   （见 `thread/turns.ts`），而这两条恰恰是「还没有轮次」时来的。
+   */
   useEffect(() => {
     const off = window.workbench?.onEvent?.((raw) => {
-      const event = raw as ExtSendEvent
-      if (!event || event.type !== 'ext:send') return
-      const text = String(event.text ?? '')
-      if (!text) return
-      const sessionId = String(event.sessionId ?? '')
-      const store = useAppStore.getState()
-      const send = () => useThreadStore.getState().sendMessage(text)
-      if (sessionId && sessionId !== store.activeThreadId) {
-        /* 侧边栏看的是另一条会话 → 先切过去（否则消息会落进用户眼前这条） */
-        void store
-          .loadFromDisk()
-          .then(() => store.openFromDisk(sessionId))
-          .then(send)
+      const event = raw as ExtCommand
+      if (!event) return
+
+      if (event.type === 'ext:new') {
+        const id = useAppStore.getState().createThread()
+        useAppStore.getState().setActiveThread(id)
         return
       }
-      send()
+
+      if (event.type !== 'ext:send') return
+      const text = String(event.text ?? '')
+      if (!text) return
+
+      if (event.newSession) {
+        /* 侧边栏一条都没选中 → 新建一条再发（用户拍板：两侧都要出现这条） */
+        const id = useAppStore.getState().createThread()
+        useAppStore.getState().setActiveThread(id)
+        useThreadStore.getState().sendMessage(text)
+        return
+      }
+
+      const sessionId = String(event.sessionId ?? '')
+      if (!sessionId || sessionId === useAppStore.getState().activeThreadId) {
+        useThreadStore.getState().sendMessage(text)
+        return
+      }
+
+      /* 侧边栏在看**另一条** → 后台对那条跑一轮（主窗口不动） */
+      const ensureLoaded = async (): Promise<void> => {
+        /* 不在内存列表里先刷新一次（它可能是主窗口 load 之后才建的） */
+        if (!useAppStore.getState().threads.some((t) => t.id === sessionId)) {
+          await useAppStore.getState().loadFromDisk()
+        }
+        await useAppStore.getState().hydrateThread(sessionId)
+      }
+      void ensureLoaded().then(() => {
+        useThreadStore.getState().sendMessage(text, undefined, sessionId)
+      })
     })
     return off
   }, [])

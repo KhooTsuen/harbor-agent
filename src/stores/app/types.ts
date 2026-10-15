@@ -104,6 +104,19 @@ export interface AppState {
   loadFromDisk: () => Promise<void>
   /** 读某个会话的完整消息（侧栏点开时调） */
   openFromDisk: (id: string) => Promise<void>
+  /**
+   * 把某条会话的消息读进内存，但**不切换**当前打开的那条（Phase 3c）。
+   *
+   * 为什么需要它：侧边栏可以「独立看一条会话」（用户 2026-10-16 拍板），
+   * 发消息时渲染层要往**那条**跑一轮 —— 而 `sendMessage` 组 history 读的是
+   * 内存里的 `messages`。会话没读过 = 空数组 = 上下文全丢（模型只看到刚那句）。
+   * 所以发之前先把消息装进来。
+   *
+   * 与 `openFromDisk` 的差别只有两点：**不** `set({ activeThreadId })`、
+   * **不**挂 `loadingThreadId`（界面没在看它，挂上反而让当前那条变骨架屏）。
+   * 覆盖守卫与它一致（读盘期间没人动过 messages 才允许覆盖）。
+   */
+  hydrateThread: (id: string) => Promise<void>
   /** 把一条消息写进 jsonl */
   persistMessage: (id: string, message: StoredMessage) => void
   /** 同步标题到 jsonl 的 meta 行 */

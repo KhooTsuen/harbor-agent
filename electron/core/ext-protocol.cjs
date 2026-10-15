@@ -44,7 +44,7 @@ const MAX_PIPE_FRAME = 2 * 1024 * 1024
  * 扩展侧另有 15s（故意更长）：让 host **先**超时、回一条带 code 的人话。
  */
 const HOST_TIMEOUT_MS = 8000
-/** 消息类型（kind）—— 两侧共用。前两对走请求/应答，CHAT_EVENT 走推送 */
+/** 消息类型（kind）—— 两侧共用。前几对走请求/应答，带 EVENT 字样的走推送 */
 const KIND = {
   EXT_PAGE: 'ext:page', // 扩展读到的页面内容 → 落会话（Phase 2）
   SESSION_LIST: 'session:list', // 会话列表（Phase 3a）
@@ -52,6 +52,9 @@ const KIND = {
   CHAT_RESUME: 'chat:resume', // 重连 / 重开后要一份流快照（3b）
   SESSION_ACTIVE: 'session:active', // Harbor 界面当前打开的是哪条会话（3b）
   CHAT_EVENT: 'chat:event', // push：一轮里的流事件（3b，**无 id**）
+  SESSION_SELECT: 'session:select', // 侧边栏选了某条（3c）—— 只切它自己，主窗口不动
+  SESSION_NEW: 'session:new', // 侧边栏点 ＋（3c）—— 新建一条并两侧切过去
+  SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
 }
 
 /**
@@ -172,13 +175,10 @@ function failure({ id = '', kind = '', code = '', message = '' } = {}) {
 }
 
 /**
- * 主进程 → host：**主动推送**（3b 的流式分片用）。
+ * 主进程 → host：**主动推送**。★ 推送与应答靠「有没有 `id`」区分：有 = 应答，没有 = 推送。
  *
- * ★ 推送与应答靠「有没有 `id`」区分：有 `id` = 应答；没有 = 推送。
- *
- * `kind = chat:event` 时 payload 的字段（3b 钉死）：
- *   `requestId` 哪一轮 · `sessionId` 哪条会话 · `seq` 单调序号（缺口语义）
- *   `type` content/reasoning/… · `text` 增量正文 · `done` 这一轮结束
+ * `kind = chat:event` 时 payload 字段（3b 钉死）：`requestId` 哪一轮 · `sessionId`
+ * 哪条会话 · `seq` 单调序号（缺口语义）· `type` · `text` 增量正文 · `done` 这轮结束
  *
  * @param {{ kind?: string, payload?: object }} [input]
  */

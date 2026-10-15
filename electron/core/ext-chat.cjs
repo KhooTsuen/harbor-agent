@@ -1,5 +1,5 @@
 /**
- * 侧边栏发消息 / 流式回复（Phase 3b）
+ * 侧边栏发消息 / 流式回复（Phase 3b；3c 加了「选会话」）
  *
  * ── ★ 为什么主进程**不自己跑**这一轮（C-α，用户 2026-10-16 拍板）──
  *
@@ -9,23 +9,18 @@
  * （硬约束 #9 的同一件事写两遍）。所以这条路的定位是**校验 + 转发 + 旁听**：
  *
  *   侧边栏 chat:send
- *     → 这里校验（主窗口在不在 / 有没有当前会话 / 那条会话忙不忙）
- *     → `send('chat:event', { type:'ext:send', … })` 推给**渲染层**
- *     → 渲染层照常走它自己那条 turn（与用户手打**同一条路**）→ 既有链路落盘 ✓
+ *     → 这里校验（主窗口在不在 / 那条会话忙不忙）→ `chat:event` 推给**渲染层**
+ *     → 渲染层照常走它自己那条 turn → 既有链路落盘 ✓
  *   同时旁听每一轮的事件（`onChatEvent`）→ 更新快照 + 推给扩展（侧边栏看流式）
  *
- * ── 为什么「忙」要在**这里**拦，不能交给渲染层 ────────────────
+ * ── 为什么「忙」要在**这里**拦 ────────────────────────────────
  *
- * 渲染层 `useThreadStore.sendMessage` 遇到「这条会话在跑」是**静默排队**
- * （AG-025：`enqueueMessage` + toast「已加入队列」）。而侧边栏那边用户看不到
- * 主窗口的队列 —— 他会以为消息丢了。所以按设计说明 §6：**拒绝 + 人话**。
+ * 渲染层遇到「这条会话在跑」是**静默排队**（AG-025），侧边栏用户看不到那个队列 ——
+ * 会以为消息丢了。所以**拒绝 + 人话**（§6）。
  *
- * ── 快照是本阶段**唯一新增的状态** ─────────────────────────────
- *
- * `Map<requestId, { sessionId, seq, text, reasoning, done, at }>`。
- * 为什么不复用 `events.cjs`：它**刻意不落流式增量**，且环形缓冲全体共享
- * （一部长回答就冲光）—— 「上次流到哪」只能靠这份内存快照（设计说明 §3.2）。
- * `done` 之后延迟 60s 清（给重连留窗口），免得 Map 无限涨。
+ * ── 快照是本阶段唯一新增的状态 ───────────────────────────────
+ * `Map<requestId, {sessionId, seq, text, reasoning, done, at}>`，不复用 `events.cjs`：
+ * 它刻意不落流式增量、环形缓冲全体共享（长回答就冲光）。`done` 后延迟 60s 清。
  *
  * ⚠️ 本模块**不 require electron**（自检要能在纯 Node 里直接跑它）。
  */
@@ -34,6 +29,8 @@ const P = require('./ext-protocol.cjs')
 
 /** 推给渲染层的事件名（走 `chat:event` channel，**不是新 IPC 通道**） */
 const EXT_SEND = 'ext:send'
+/** 侧边栏点 ＋ → 请渲染层新建一条并切过去（Phase 3c） */
+const EXT_NEW = 'ext:new'
 
 /** `done` 之后快照留多久（给「刚跑完就重连」留窗口） */
 const KEEP_AFTER_DONE_MS = 60_000
@@ -86,26 +83,85 @@ function createChatRelay(deps) {
   }
 
   /**
+   * 侧边栏现在在看哪条（Phase 3c）。
+   *
+   * ★ 与 `activeSessionId`（Harbor 主窗口当前打开的那条）**是两回事** ——
+   *   用户 2026-10-16 拍板「侧边栏独立看一条，主窗口不动」。空串 = 还没选：
+   *   这时发消息**新建一条**再发，而不是悄悄落进主窗口那条（用户报的 bug 2）。
+   */
+  let selectedSessionId = ''
+  /** 刚请渲染层新建了一条，等它回报真实 id（见 noteActiveSession） */
+  let awaitingNew = false
+
+  /** 把「侧边栏在看哪条」推给扩展（显式选 / 自动新建之后都调） */
+  function pushSelected() {
+    bridge?.push?.(P.KIND.SESSION_SELECTED, { sessionId: selectedSessionId })
+  }
+
+  /** 侧边栏显式选了某条 —— **只改它自己，主窗口不动** */
+  function handleSelect(payload) {
+    const id = String(payload?.sessionId ?? '')
+    if (!id) return fail(P.ERR.NO_SESSION, '没说是哪条会话')
+    selectedSessionId = id
+    awaitingNew = false
+    pushSelected()
+    log?.info?.(`扩展通道：侧边栏切到会话 ${id}（主窗口不动）`)
+    return { ok: true, sessionId: id }
+  }
+
+  /** 侧边栏点 ＋：新建一条、两侧都切过去 */
+  function handleNew() {
+    if (!getMainWindow || !getMainWindow()) {
+      return fail(P.ERR.NO_WINDOW, 'Harbor 主窗口不在（先打开 Harbor 再新建）')
+    }
+    awaitingNew = true
+    send('chat:event', { type: EXT_NEW })
+    return { ok: true }
+  }
+
+  /**
+   * 渲染层换了当前会话 —— 侧边栏那套跟着学。
+   *
+   * 学两种情形：① 刚请它新建的（`awaitingNew`）；② 手里那个还是 `pending_…`
+   * 临时 id（渲染层刚把磁盘会话建好，见 `useAppStore` 的 `replaceThreadId`）。
+   * 不学的话主进程就留着一个作废的 id，侧边栏下一条消息会发丢。
+   */
+  function noteActiveSession(id) {
+    const next = String(id ?? '')
+    if (!next) return
+    const isTemp = (v) => v.startsWith('pending_')
+    if (awaitingNew || (selectedSessionId && isTemp(selectedSessionId) && next !== selectedSessionId)) {
+      selectedSessionId = next
+      awaitingNew = false
+      pushSelected()
+    }
+  }
+
+  /**
    * 侧边栏请求「发一条消息」。
    *
-   * @param {{ text?: string }} [payload]
+   * @param {{ text?: string, sessionId?: string }} [payload]
    */
   function handleSend(payload) {
     const text = String(payload?.text ?? '').trim()
     if (!text) return fail(P.ERR.INTERNAL, '消息是空的')
 
-    /*
-     * C-α：执行者是渲染层 —— 它不在，这一轮根本跑不起来，所以**早拒**，
-     * 回人话而不是让它挂着（设计说明 §1 已写明这是有意的取舍）。
-     * ★ 默认配置下关窗口 = hideToTray（main.cjs:135），窗口没销毁，这一条不会命中。
-     */
+    /* C-α：执行者是渲染层 —— 它不在这一轮根本跑不起来，所以早拒并回人话（§1）。
+       默认配置下关窗口 = hideToTray（main.cjs:135），窗口没销毁，这条不会命中。 */
     if (!getMainWindow || !getMainWindow()) {
       return fail(P.ERR.NO_WINDOW, 'Harbor 主窗口不在（先打开 Harbor 再发）')
     }
 
-    const sessionId = String(bridge?.getActiveSession?.() ?? '')
-    if (!sessionId) return fail(P.ERR.NO_SESSION, 'Harbor 里没有打开的对话（先打开一条）')
-
+    /* Phase 3c：侧边栏指明的优先（它才是真相源）；没带就退回主进程记的那个 */
+    const sessionId = String(payload?.sessionId ?? '') || selectedSessionId
+    if (sessionId) selectedSessionId = sessionId
+    /* 一条都没选 → 请渲染层新建一条再发（不再落进主窗口那条） */
+    if (!sessionId) {
+      awaitingNew = true
+      send('chat:event', { type: EXT_SEND, newSession: true, text })
+      log?.info?.('扩展通道：一条都没选 → 请渲染层新建一条再发')
+      return { ok: true, sessionId: '', created: true }
+    }
     if (busyRequestOf(sessionId)) {
       return fail(P.ERR.SESSION_BUSY, '这条对话正在别处运行（等它跑完，或先停止）')
     }
@@ -123,18 +179,16 @@ function createChatRelay(deps) {
   }
 
   /**
-   * 侧边栏重连 / 重开后要「上次流到哪」。
+   * 侧边栏重连 / 重开后要「上次流到哪」。回**一份快照**而不是补发历史分片 ——
+   * 补发要留着所有分片（内存 × 条数）还要处理竞态，快照一次拿全文天然没这个洞。
    *
-   * 回**一份快照**而不是补发历史分片：补发要把所有分片都留着（内存 × 条数），
-   * 还要处理「补发期间又来新片」的竞态 —— 快照一次拿到当前全文，天然没这个洞。
-   *
-   * ★ 按 **`sessionId`** 找（不是 requestId）：requestId 是渲染层生成的，
-   *   侧边栏从没听过它；它只知道「我在看哪条会话」。
+   * ★ 按 `sessionId` 找（不是 requestId）：requestId 是渲染层生成的，侧边栏从没听过。
    *
    * @param {{ sessionId?: string }} [payload]
    */
   function handleResume(payload) {
-    const want = String(payload?.sessionId ?? '') || String(bridge?.getActiveSession?.() ?? '')
+    const want =
+      String(payload?.sessionId ?? '') || selectedSessionId || String(bridge?.getActiveSession?.() ?? '')
     if (!want) return fail(P.ERR.NO_SESSION, '没说是哪条会话')
     /* 同一会话可能有多条快照（连发两条）—— 取最近的那条 */
     let best = null
@@ -143,10 +197,7 @@ function createChatRelay(deps) {
       if (!best || snap.at > best.at) best = snap
     }
     if (!best) return fail(P.ERR.NO_SESSION, '那条会话没有正在跑的回复（重新发一条即可）')
-    /*
-     * 回的是 `seq` + **全文**（不是分片）：侧边栏据此把已有文字一次补齐，
-     * 之后只认 `seq` 更大的分片（缺口语义见设计说明 §3.2）。
-     */
+    /* 回 `seq` + **全文**（不是分片）：侧边栏一次补齐，之后只认更大的 seq */
     return {
       ok: true,
       sessionId: best.sessionId,
@@ -162,18 +213,14 @@ function createChatRelay(deps) {
     bridge?.push?.(P.KIND.CHAT_EVENT, { requestId, sessionId, seq, type, text, done })
   }
 
-  /** 结构性事件（done / error / tool…）推到侧边栏：让「正在跑」这类状态也看得见 */
+  /** 结构性事件推到侧边栏：让「正在跑」这类状态也看得见 */
   const PUSH_TYPES = new Set(['content', 'reasoning', 'done', 'aborted', 'error', 'tool_start', 'tool_end'])
 
   /**
-   * 旁听一轮里的事件（由 `register-handlers.cjs` 包过的 `send` 出口调 —— 也就是
-   * 渲染层**收到的同一批**，content/reasoning 已经过 50ms 合批）。
-   *
-   * ★ 只读旁听：不改流向、不改事件形状 —— 渲染层那条路一个字节都不受影响。
-   * ★ `sessionId` 从 `streams` 反查（`chat:event` 的 payload 里没有它）——
-   *   这正是给 `streams.set` 补 `sessionId` 字段的用处。
-   *
-   * @param {{ type?: string, text?: string, content?: string, reasoning?: string, requestId?: string }} event
+   * 旁听一轮里的事件 —— 由 `register-handlers.cjs` 包过的 `send` 出口调，
+   * 也就是渲染层**收到的同一批**（content/reasoning 已过 50ms 合批）。
+   * ★ 只读旁听：不改流向、不改形状。★ `sessionId` 从 `streams` 反查
+   * （`chat:event` 的 payload 里没有它）—— 那正是给 `streams.set` 补该字段的用处。
    */
   function onChatEvent(event) {
     const requestId = String(event?.requestId ?? '')
@@ -227,6 +274,10 @@ function createChatRelay(deps) {
   return {
     handleSend,
     handleResume,
+    /* Phase 3c：侧边栏选会话 / 点 ＋ / 渲染层回报当前会话 */
+    handleSelect,
+    handleNew,
+    noteActiveSession,
     onChatEvent,
     /** 装配时绑上管道那头的桥（`push` 与 `getActiveSession` 都从它取） */
     setBridge(b) {
@@ -236,7 +287,11 @@ function createChatRelay(deps) {
     snapshotOf(requestId) {
       return snapshots.get(requestId) ?? null
     },
+    /** 自检用：侧边栏现在在看哪条 */
+    selectedOf() {
+      return selectedSessionId
+    },
   }
 }
 
-module.exports = { createChatRelay, EXT_SEND, KEEP_AFTER_DONE_MS }
+module.exports = { createChatRelay, EXT_SEND, EXT_NEW, KEEP_AFTER_DONE_MS }

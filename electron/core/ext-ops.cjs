@@ -26,7 +26,12 @@ const P = require('./ext-protocol.cjs')
  *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
  *   send: (name: string, payload: object) => void,
  *   getActiveSession?: () => string,
- *   chat?: { handleSend: Function, handleResume: Function },
+ *   chat?: {
+ *     handleSend: Function,
+ *     handleResume: Function,
+ *     handleSelect: Function,
+ *     handleNew: Function,
+ *   },
  * }} deps
  */
 function createOps(deps) {
@@ -126,6 +131,9 @@ function createOps(deps) {
     [P.KIND.CHAT_SEND]: (payload) => chat.handleSend(payload),
     [P.KIND.CHAT_RESUME]: (payload) => chat.handleResume(payload),
     [P.KIND.SESSION_ACTIVE]: () => ({ sessionId: String(getActiveSession() ?? '') }),
+    /* Phase 3c：选一条（只切侧边栏）/ 新建一条（两侧都切） */
+    [P.KIND.SESSION_SELECT]: (payload) => chat.handleSelect(payload),
+    [P.KIND.SESSION_NEW]: () => chat.handleNew(),
   }
 
   /**

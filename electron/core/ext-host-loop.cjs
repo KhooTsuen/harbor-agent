@@ -101,19 +101,31 @@ function createDispatcher(client) {
     /*
      * Phase 3b：侧边栏发消息 / 重连要流快照 —— 都是「转给主进程拿结果」，
      * 与上面两条同一种形状（host 只做转发，业务判断全在主进程）。
+     * Phase 3c 又加两条：选一条会话（session:select）/ 新建一条（session:new）。
      */
-    if (type === 'chat:send' || type === 'chat:resume') {
-      const isSend = type === 'chat:send'
-      const kind = isSend ? P.KIND.CHAT_SEND : P.KIND.CHAT_RESUME
-      /* 续流按 **sessionId** 问（真实那轮的 requestId 是渲染层生成的，扩展侧没听过它） */
-      const ask = isSend ? { text: String(obj.text ?? '') } : { sessionId: String(obj.sessionId ?? '') }
+    if (
+      type === 'chat:send' ||
+      type === 'chat:resume' ||
+      type === 'session:select' ||
+      type === 'session:new'
+    ) {
+      /** @type {Record<string, [string, object]>} */
+      const map = {
+        'chat:send': [P.KIND.CHAT_SEND, { text: String(obj.text ?? '') }],
+        /* 续流按 **sessionId** 问（真实那轮的 requestId 是渲染层生成的，扩展侧没听过） */
+        'chat:resume': [P.KIND.CHAT_RESUME, { sessionId: String(obj.sessionId ?? '') }],
+        'session:select': [P.KIND.SESSION_SELECT, { sessionId: String(obj.sessionId ?? '') }],
+        'session:new': [P.KIND.SESSION_NEW, {}],
+      }
+      const [kind, ask] = map[type]
       const res = await client.request(kind, ask)
       if (res.ok) return { ...res.payload, type: `${type}.result`, ok: true, id }
       return { type: `${type}.result`, ok: false, id, error: res.error.message, code: res.error.code }
     }
 
     return {
-      error: '只认 {"ping":…} / {type:"ext:page"} / {type:"ext:sessionList"} / {type:"ext:sessionActive"} / {type:"chat:send"} / {type:"chat:resume"}',
+      error:
+        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new',
       echo: message ?? null,
     }
   }

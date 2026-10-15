@@ -226,11 +226,13 @@ export async function run() {
     String(manifest.background?.type),
   )
   /*
-   * 3a 时这里钉的是「SW 里没有任何发送入口」。3b 起**发送合法了** ——
-   * 于是改成钉「发送有了，但**切会话仍然没有**」（那是 3c）。
-   * ★ 别把这条再写成「SW 不该有 X」的笼统形态：3a 那次就是这么写的，
-   *   到 3b 变成假红（红的是断言，不是产品）。
+   * 3a 时这里钉的是「SW 里没有任何发送入口」。3b 起**发送合法了**，于是改成
+   * 「发送有了，但切会话仍然没有」。**3c 起切会话也合法了** —— 所以这里改钉
+   * 「三条入口都在」（发送 / 选会话 / 新建）。
+   * ★ 教训（这条注释本身就是它）：**别把断言写成「SW 不该有 X」的笼统形态** ——
+   *   每个阶段合法化一个 X，它就变成一次假红（红的是断言，不是产品）。已连栽两次。
    */
   check('★ 3b：SW 有发送入口（chat-send）', /'chat-send'/.test(sw) && /sendChatMessage/.test(sw))
-  check('★ 3c 未做：SW 里仍没有「切会话」入口', !/switch-session|select-session/.test(sw))
+  check('★ 3c：SW 有选会话入口（session-select）', /'session-select'/.test(sw) && /selectSession/.test(sw))
+  check('★ 3c：SW 有新建会话入口（session-new）', /'session-new'/.test(sw) && /newSession/.test(sw))
 }

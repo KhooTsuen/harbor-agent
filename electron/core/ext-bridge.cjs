@@ -45,7 +45,7 @@ function createBridge() {
   /** 渲染层上报的「当前打开的会话」（见 handlers/ext.cjs 的 ext:activeSession） */
   let activeSessionId = ''
   /** @type {Record<string, any>} */
-  const deps = { send: null, session: null, audit: null, wrap: null, log: null }
+  const deps = { send: null, session: null, audit: null, wrap: null, log: null, chat: null }
   let ops = null
   /** 活着的连接（3a 起连接会保持，推送要能找到它们） */
   const socks = new Set()
@@ -181,7 +181,13 @@ function createBridge() {
      *   audit: object,
      *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
      *   log: object,
-     *   chat?: { handleSend: Function, handleResume: Function },
+     *   chat?: {
+     *     handleSend: Function,
+     *     handleResume: Function,
+     *     handleSelect: Function,
+     *     handleNew: Function,
+     *     noteActiveSession: Function,
+     *   },
      * }} options
      */
     start(options) {
@@ -191,6 +197,9 @@ function createBridge() {
       deps.audit = options.audit
       deps.wrap = options.wrap
       deps.log = options.log
+      /* ★ 必须赋给 deps：setActiveSession 要拿它 noteActiveSession。漏了 = undefined
+         + `?.` 短路 → 「点 ＋ 新建了但侧边栏标题不变」，**不报错**（真机逮到过）。 */
+      deps.chat = options.chat ?? null
 
       ops = createOps({
         session: options.session,
@@ -222,6 +231,17 @@ function createBridge() {
     /** 渲染层上报当前打开的会话（切会话时调） */
     setActiveSession(id) {
       activeSessionId = String(id ?? '')
+      /*
+       * Phase 3c：侧边栏那套「在看哪条」跟着渲染层的上报学（见 setActiveSession）。
+       * 必须在**这一刻**学：新建的会话在渲染层那边先是 `pending_…`，建好磁盘文件后
+       * 会换成 `sess_…` 并重报；不学就留着一个作废 id，侧边栏下一条消息会发丢。
+       */
+      try {
+        deps.chat?.noteActiveSession?.(activeSessionId)
+      } catch (error) {
+        /* 纯旁路：学不到只是侧边栏跟错，不能让正常上报失败 */
+        deps.log?.warn?.(`扩展桥：同步侧边栏选中失败（${error instanceof Error ? error.message : error}）`)
+      }
       return { ok: true }
     },
 
@@ -233,11 +253,7 @@ function createBridge() {
     /** 收一条消息（自检直接调，不必起管道） */
     ingest,
 
-    /**
-     * 主动推送给所有活着的连接（3b 的流式分片用；3a 不调，但通道先备好）。
-     *
-     * 推送帧**没有 id** —— 与应答的区别就在这儿（见 ext-protocol.cjs 的 push）。
-     */
+    /** 主动推送（流式分片用）。推送帧**没有 id** —— 与应答的区别就在这儿 */
     push(kind, payload) {
       const frame = P.encodeFrame(P.push({ kind, payload }))
       let sent = 0

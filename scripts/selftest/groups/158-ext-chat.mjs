@@ -28,8 +28,14 @@ export async function run() {
   /* ── ① 业务分支（注入假东西，不起 Electron） ── */
   group('扩展对话 · ext-chat 的业务分支')
 
-  /** 造一个 relay（`win` = 主窗口在不在；`busy` = 哪些会话在跑） */
-  function makeRelay({ win = {}, busy = [], active = 'sess_a' } = {}) {
+  /**
+   * 造一个 relay。
+   *
+   * `win` = 主窗口在不在；`busy` = 哪些会话在跑；`selected` = **侧边栏**当前选中哪条
+   * （Phase 3c 起 handleSend 用的是**侧边栏自己的选中**，不再跟随主窗口那条）。
+   * `selected: ''` = 一条都没选（那时发消息会新建一条）。
+   */
+  function makeRelay({ win = {}, busy = [], selected = 'sess_a' } = {}) {
     const streams = new Map()
     busy.forEach((sid, i) => streams.set(`req_${i}`, { sessionId: sid }))
     const pushed = []
@@ -41,8 +47,11 @@ export async function run() {
     })
     relay.setBridge({
       push: (kind, payload) => pushed.push({ push: { kind, payload } }),
-      getActiveSession: () => active,
+      getActiveSession: () => selected,
     })
+    /* 先「选中」一条（= 侧边栏点过它）→ 再清掉这一下的推送，免得混进下面的断言 */
+    if (selected) relay.handleSelect({ sessionId: selected })
+    pushed.length = 0
     return { relay, pushed, streams }
   }
 
@@ -60,8 +69,21 @@ export async function run() {
   check('★ C-α：主窗口不在 → NO_WINDOW（早拒，回人话）', noWin.ok === false && noWin.error.code === P.ERR.NO_WINDOW, noWin.error?.message)
   check('★ 窗口不在时不推给渲染层（推了也没人接）', rNoWin.pushed.length === 0)
 
-  const rNoSess = makeRelay({ active: '' })
-  check('★ 没有打开的会话 → NO_SESSION', rNoSess.relay.handleSend({ text: 'hi' }).error?.code === P.ERR.NO_SESSION)
+  /* Phase 3c：**一条都没选**不再回 NO_SESSION —— 改成「请渲染层新建一条再发」 */
+  const rNoSel = makeRelay({ selected: '' })
+  const noSel = rNoSel.relay.handleSend({ text: 'hi' })
+  check(
+    '★ 3c：一条都没选 → 请渲染层新建一条（不再落进主窗口那条）',
+    noSel.ok === true && noSel.created === true && noSel.sessionId === '',
+    JSON.stringify(noSel),
+  )
+  check(
+    '★ 3c：新建那条推给渲染层时带 newSession + 原文',
+    rNoSel.pushed[0]?.channel === 'chat:event' &&
+      rNoSel.pushed[0]?.payload?.newSession === true &&
+      rNoSel.pushed[0]?.payload?.text === 'hi',
+    JSON.stringify(rNoSel.pushed[0]?.payload),
+  )
 
   /* ── ② SESSION_BUSY（3b 唯一新增的判据） ── */
   group('扩展对话 · SESSION_BUSY（按 streams 里的 sessionId 扫）')
@@ -74,6 +96,44 @@ export async function run() {
 
   const rOther = makeRelay({ busy: ['sess_other'] })
   check('★ 别的会话在跑不算忙（只比 sessionId）', rOther.relay.handleSend({ text: 'hi' }).ok === true)
+
+  /* ── ②b Phase 3c：选一条 / 新建一条 ── */
+  group('扩展对话 · 选会话 / 新建（Phase 3c）')
+
+  const rSel = makeRelay({ selected: '' })
+  const sel = rSel.relay.handleSelect({ sessionId: 'sess_b' })
+  check('★ 选中某条：回 ok + 记住它', sel.ok === true && rSel.relay.selectedOf() === 'sess_b')
+  check(
+    '★ 选中后推 session:selected 给扩展（侧边栏据此更新）',
+    rSel.pushed.some((p) => p.push?.kind === P.KIND.SESSION_SELECTED),
+  )
+  check('★ 选中空 id → NO_SESSION（不静默）', rSel.relay.handleSelect({ sessionId: '' }).error?.code === P.ERR.NO_SESSION)
+
+  const rSelSend = makeRelay({ selected: '' })
+  rSelSend.relay.handleSelect({ sessionId: 'sess_b' })
+  const selSent = rSelSend.relay.handleSend({ text: 'x' })
+  check(
+    '★ 选中之后发消息就发给**它**（不再新建）',
+    selSent.ok === true && selSent.sessionId === 'sess_b' && selSent.created !== true,
+    JSON.stringify(selSent),
+  )
+  /* 侧边栏带 sessionId 发消息时，以它为准（比主进程记的那份更新） */
+  const rAsk = makeRelay({ selected: '' })
+  const askSent = rAsk.relay.handleSend({ text: 'x', sessionId: 'sess_c' })
+  check('★ 请求里带了 sessionId 就以它为准（并记住）', askSent.sessionId === 'sess_c' && rAsk.relay.selectedOf() === 'sess_c')
+
+  const rNew = makeRelay()
+  const created = rNew.relay.handleNew()
+  check(
+    '★ 点 ＋ → 请渲染层新建（推 ext:new）',
+    created.ok === true && rNew.pushed.some((p) => p.channel === 'chat:event' && p.payload?.type === CH.EXT_NEW),
+  )
+  check('★ 窗口不在时点 ＋ → NO_WINDOW（早拒）', makeRelay({ win: null }).relay.handleNew().error?.code === P.ERR.NO_WINDOW)
+  /* 渲染层把临时 id 换成真 id 后重报 → 侧边栏那套必须跟着学，否则下一条发丢 */
+  const rLearn = makeRelay({ selected: '' })
+  rLearn.relay.handleSend({ text: 'x' }) /* 触发新建 → 等回报 */
+  rLearn.relay.noteActiveSession('sess_real')
+  check('★ 渲染层回报真 id → 侧边栏跟着学（不然下一条发丢）', rLearn.relay.selectedOf() === 'sess_real')
 
   /* ── ③ 流快照 ── */
   group('扩展对话 · 流快照（上次流到哪）')
@@ -148,7 +208,8 @@ export async function run() {
   check('★ 侧边栏有输入框 + 发送（真的能发）', /消息输入框/.test(panelSrc) && /chat-send/.test(panelSrc))
   check('★ 侧边栏只认更大 seq（防重排把旧片盖上来）', /seq <= prev\.seq/.test(panelSrc))
   check('★ 侧边栏显示的是主进程给的原话（不自己编错误文案）', /res\?\.error/.test(panelSrc))
-  check('★ 侧边栏仍没做切会话（3c）', !/switch-session|onSelectSession/.test(panelSrc))
+  check('★ 3c：侧边栏**已做**切会话（点条目 → session-select）', /onSelectSession/.test(panelSrc))
+  check('★ 3c：SW 有选会话 / 新建入口', /'session-select'/.test(swSrc) && /'session-new'/.test(swSrc))
 
   /* ── ⑥ Phase 3b 布局返工：三段堆叠 → 顶栏三区 + 对话区 + 会话抽屉 ── */
   group('扩展对话 · 布局（顶栏三区 / 左侧抽屉 / 锚点唯一）')
@@ -193,6 +254,9 @@ export async function run() {
     '★ 「读当前页」是图标按钮（只能按 aria-label 找，没有可见文字）',
     /label="读当前页"/.test(readBtnSrc) && !/>\s*读当前页\s*</.test(readBtnSrc),
   )
+  check('★ 抽屉条目**可点**（button + onSelect，3c）', /<button/.test(drawerSrc) && /onSelect\(s\.id\)/.test(drawerSrc))
+  check('★ App 订阅 session:selected（主进程推的选中，跟它走）', /session:selected/.test(appSrc))
+  check('★ 顶栏 ＋ 是真的（onClick=newSession，不是占位）', /onClick=\{newSession\}/.test(appSrc))
   check(
     '★ 验收锚点与渲染层一致（一边改了另一边没跟进 = 脚本静默失效）',
     probePanelSrc.includes('读当前页') &&

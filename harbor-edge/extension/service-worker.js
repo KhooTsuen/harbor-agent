@@ -172,13 +172,14 @@ async function getSessionList() {
    ══════════════════════════════════════════════════════════════ */
 
 /**
- * 侧边栏发一条消息。
- *
- * ★ SW 只做**转发**：谁允许发 / 忙不忙 / 落到哪条会话，全由主进程判
- *   （见 electron/core/ext-chat.cjs）—— 判据只有一处，扩展侧不自己猜。
+ * 侧边栏发一条消息。`sessionId` = 侧边栏**自己**选中的那条（可能是空）。
+ * ★ SW 只做转发：谁允许发 / 忙不忙 / 落到哪条，全由主进程判（ext-chat.cjs）。
  */
-async function sendChatMessage(text) {
-  const reply = await requestHost('chat:send', { text: String(text ?? '') })
+async function sendChatMessage(text, sessionId = '') {
+  const reply = await requestHost('chat:send', {
+    text: String(text ?? ''),
+    sessionId: String(sessionId ?? ''),
+  })
   if (reply && reply.ok === true) {
     const info = { sessionId: String(reply.sessionId ?? ''), at: Date.now() }
     try {
@@ -214,6 +215,23 @@ async function getActiveSession() {
   return { ok: false, sessionId: '', error: (reply && reply.error) || '拿不到当前对话' }
 }
 
+/**
+ * Phase 3c：侧边栏**选**一条会话。
+ *
+ * ⚠️ 只改「侧边栏在看哪条」，**主窗口不动**（用户 2026-10-16 拍板）——
+ *    所以这里不碰 Harbor 的 activeSession，真相在主进程那套 selectedSessionId。
+ */
+async function selectSession(sessionId) {
+  const reply = await requestHost('session:select', { sessionId: String(sessionId ?? '') })
+  return reply && typeof reply === 'object' ? reply : { ok: false, error: '切会话失败' }
+}
+
+/** Phase 3c：侧边栏顶栏那个 ＋ —— 新建一条（渲染层会切过去，两侧同步） */
+async function newSession() {
+  const reply = await requestHost('session:new', {})
+  return reply && typeof reply === 'object' ? reply : { ok: false, error: '新建会话失败' }
+}
+
 /* ── 侧边栏来的消息 ────────────────────────────────────────── */
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'get-status') {
@@ -239,7 +257,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true
   }
   if (msg && msg.type === 'chat-send') {
-    sendChatMessage(msg.text)
+    sendChatMessage(msg.text, msg.sessionId)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
     return true
@@ -252,6 +270,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'session-active') {
     getActiveSession()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  /* Phase 3c：选一条（只切侧边栏）/ 新建一条（两侧都切） */
+  if (msg && msg.type === 'session-select') {
+    selectSession(msg.sessionId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  if (msg && msg.type === 'session-new') {
+    newSession()
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
     return true
