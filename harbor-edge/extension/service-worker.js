@@ -23,7 +23,7 @@
 import { connect, getState, ping, requestHost } from './lib/native.js'
 import { resolveActiveTab } from './lib/active-tab.js'
 /* M03：观察页面那一步（拆到单独文件，SW 贴 300 红线） */
-import { observePage } from './lib/observe-run.js'
+import { observePage, getElements } from './lib/observe-run.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
    可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
@@ -225,6 +225,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'observe-page') {
     observePage()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
+    return true
+  }
+  /* M04-1：只要元素列表（可带 ref —— 失效由主进程判） */
+  if (msg && msg.type === 'get-elements') {
+    getElements(msg.ref)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
     return true

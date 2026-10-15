@@ -315,6 +315,27 @@ void (async () => {
     } catch {
       /* 忽略 */
     }
+    /*
+     * ★ 恢复之后**必须回读比对**（2026-10-16 修，用户 2026-10-16 指出的缺陷）。
+     *
+     * 原来这里（下面那行 console.log）是**无条件**打印「注册表已恢复」的，而恢复段
+     * 整个包在 `catch { 忽略 }` 里 —— 就算恢复失败也照打印「已恢复」。真机就是这么
+     * 误导过一次：跑完 3c 去看，注册表还停在隔离值 `p3c-manifest.json`。
+     * 现在回读实际值，与期望不一致就**打印实际值 + 判失败**（退出码非 0）。
+     */
+    let regSame = true
+    try {
+      const out = spawnSync('reg', ['QUERY', regKey, '/ve'], { encoding: 'utf8' }).stdout ?? ''
+      const got = ((out.match(/REG_SZ\s+(.+)/) ?? [])[1] ?? '').trim()
+      const want = ((regOld.match(/REG_SZ\s+(.+)/) ?? [])[1] ?? '').trim()
+      regSame = got === want
+      console.log(`清理：注册表实际值 = ${got || '(键不存在)'}`)
+      console.log(`      恢复前原值   = ${want || '(键不存在)'} → ${regSame ? '✓ 一致' : '✗ 不一致（要手工 reg ADD 回原值）'}`)
+    } catch {
+      regSame = false
+      console.log('清理：注册表回读失败 —— 请手工确认 com.harbor.agent')
+    }
+    if (!regSame) ok = false
     for (const f of [stagedBox.cmd, stagedBox.manifest, stagedBox.cmd ? stagedBox.cmd.replace(/\.cmd$/, '.err') : null]) {
       try {
         if (f) fs.rmSync(f, { force: true })
@@ -334,7 +355,8 @@ void (async () => {
       /* 忽略 */
     }
     restoreData()
-    console.log('清理：注册表已恢复 / 隔离 host 已卸 / profile 已删 / 隔离数据已还原')
+    /* ★ 这里**不再**说「注册表已恢复」—— 那句改由上面的回读打印（实际值 + 比对） */
+    console.log('清理：隔离 host 已卸 / profile 已删 / 隔离数据已还原')
     process.exit(ok ? 0 : 1)
   }
 })()

@@ -130,6 +130,8 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-phase3a.cjs` | **双向通道 + 会话列表**（Phase 3a，**16 条判据**） | `node harbor-edge/tools/accept-phase3a.cjs` |
 | `tools/accept-phase3b.cjs` | **侧边栏发消息 + 流式回复 + 两端同一条**（Phase 3b，**15 条判据**） | `node harbor-edge/tools/accept-phase3b.cjs` |
 | `tools/accept-phase3c.cjs` | **选会话（只切侧边栏）/ 未选中自动新建 / ＋**（Phase 3c，**20 条判据**） | `node harbor-edge/tools/accept-phase3c.cjs` |
+| `tools/accept-m03.cjs` | **网页感知**（选区 / 元素 / iframe / 版本号；含密码遮蔽）（M03，**31 条判据**） | `node harbor-edge/tools/accept-m03.cjs` |
+| `tools/accept-m04a.cjs` | **元素列表 + 引用失效判定**（M04 第 1 步，**16 条判据**） | `node harbor-edge/tools/accept-m04a.cjs` |
 | `tools/accept-m03.cjs` | **M03 网页感知**（选区 / 元素 / **密码遮蔽** / 跨域 iframe / **版本号稳定与变化** / 落盘，**31 条判据**） | `node harbor-edge/tools/accept-m03.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
@@ -142,6 +144,15 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 > 两者都写同一个全局注册表键 `HKCU\...\NativeMessagingHosts\com.harbor.agent`
 > （`finally` 里「摘 → 装隔离 → 恢复原值」）—— 并行会让它们互相踩，**键可能被删掉**
 > （2026-10-16 真踩到，恢复要手工 `reg ADD` 回原值）。
+>
+> ⚠️ **别把多个脚本串在一条命令里跑**（同一个理由 + 端口）：每个脚本各自起 http server
+> （m03 用 8801/8802），前一个刚退出时端口可能还没释放 —— 后一个 `listen` 会 EADDRINUSE
+> 而**不报错**，于是拿一个「不是测试页」的页面跑完全部判据（一片假红）。
+> 2026-10-16 实测：串行跑 5 条时 m03 红 14 条，**单独跑 31/31 全通**。
+>
+> ⚠️ **3c 的注册表恢复现在会回读比对**（2026-10-16 修）：原来那句「注册表已恢复」是
+> **无条件打印**的，恢复失败也照说 —— 我被误导过。现在打印**实际值**并比对，
+> 不一致就判失败。其余脚本的恢复段也建议照这个口径写。
 
 > ⚠️ `accept-phase3a/b/c.cjs` 会**临时写 `com.harbor.agent` 注册表**（指到
 > 隔离清单），跑完 `finally` 里**恢复原值** —— 如果你之前手动装过 host，跑完那条还在。

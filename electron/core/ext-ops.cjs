@@ -19,7 +19,9 @@
 
 const P = require('./ext-protocol.cjs')
 /* M03：观察结果 → markdown。纯函数，单独一个文件（ext-ops 贴 300 红线） */
-const { renderObservation } = require('./ext-observe.cjs')
+const { renderObservation, renderElements } = require('./ext-observe.cjs')
+/* M04：ref 失效判据（`inspectRef`）只有那一处 —— 这里只调，不另写一套 */
+const { inspectRef } = require('./ext-command.cjs')
 
 /**
  * @param {{
@@ -34,6 +36,7 @@ const { renderObservation } = require('./ext-observe.cjs')
  *     handleSelect: Function,
  *     handleNew: Function,
  *   },
+ *   command?: { handleResult: Function },
  * }} deps
  */
 function createOps(deps) {
@@ -44,6 +47,8 @@ function createOps(deps) {
   const getActiveSession = deps.getActiveSession ?? (() => '')
   /* 侧边栏发消息那条路（Phase 3b）—— 它自己会回 `{ok:false,error}`（见下面 handle） */
   const chat = deps.chat ?? null
+  /* M04：下行指令的回执配对（扩展执行完回一帧，见 core/ext-command.cjs） */
+  const command = deps.command ?? null
 
   /**
    * 把渲染好的文本落进会话 + 审计 + 推渲染层。
@@ -183,6 +188,48 @@ function createOps(deps) {
     }
   }
 
+  /**
+   * `page:elements`：**元素列表视图**（M04 第 1 步 `browser.getElements`）。
+   *
+   * 与 `page:observe` 的关系：**同一份采集**（扩展侧复用 M03 的采集器、同一套版本号
+   * 算法），只是渲染成「只要元素」的视图，并且**解析调用方给的 ref** ——
+   * 失效判据见 `ext-command.cjs` 的 `inspectRef`（只有那一处，硬约束 #9）。
+   */
+  function ingestElements(payload) {
+    const obs = payload?.observation && typeof payload.observation === 'object' ? payload.observation : null
+    if (!obs) return fail(P.ERR.INTERNAL, '没收到页面元素数据（扩展侧采集失败？）')
+    const ref = String(payload?.ref ?? '')
+    const elements = Array.isArray(obs.elements) ? obs.elements : []
+    const pageVersion = String(obs.pageVersion ?? '')
+    const parsed = inspectRef(ref, pageVersion, elements)
+    const rendered = renderElements(obs, { ref, parsed })
+    const url = String(obs.url ?? '')
+    const title = String(obs.title ?? '')
+    const wrapped = wrap({ url, title, text: rendered.markdown, truncated: rendered.truncated === true })
+
+    const res = ingest(title || url || '未命名页面', wrapped, P.KIND.PAGE_ELEMENTS, {
+      url,
+      title,
+      chars: rendered.chars,
+      truncated: rendered.truncated === true,
+      pageVersion,
+      elements: elements.length,
+      ref,
+      stale: parsed.stale === true,
+    })
+    return {
+      sessionId: res.sessionId,
+      created: res.created,
+      chars: rendered.chars,
+      pageVersion,
+      elements: elements.length,
+      ref,
+      stale: parsed.stale === true,
+      reason: parsed.reason,
+      truncated: rendered.truncated === true,
+    }
+  }
+
   const table = {
     [P.KIND.EXT_PAGE]: (payload) => ingestPage(payload),
     [P.KIND.SESSION_LIST]: () => listSessions(),
@@ -195,6 +242,10 @@ function createOps(deps) {
     [P.KIND.SESSION_NEW]: () => chat.handleNew(),
     /* M03：结构化页面观察（选区 / 元素列表 / iframe / 页面版本号） */
     [P.KIND.PAGE_OBSERVE]: (payload) => observePage(payload),
+    /* M04-1：元素列表视图（带 ref 解析 / 失效判定） */
+    [P.KIND.PAGE_ELEMENTS]: (payload) => ingestElements(payload),
+    /* M04：扩展执行完下行指令的回执 —— 按 id 配对（见 core/ext-command.cjs） */
+    [P.KIND.PAGE_RESULT]: (payload) => (command ? command.handleResult(payload) : { ok: true, matched: false }),
   }
 
   /**

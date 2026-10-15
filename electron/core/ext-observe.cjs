@@ -29,6 +29,26 @@ const cell = (s) => String(s === null || s === undefined ? '' : s).replace(/\|/g
 const kv = (k, v) => `- ${k}：${v === '' || v === null || v === undefined ? '（空）' : v}`
 
 /**
+ * 可交互元素表格 —— **唯一一份实现**（完整观察与 `getElements` 共用，硬约束 #9）。
+ *
+ * ★ 敏感字段：连 `value` 都不进文本（采集器已置 null，这里再兜一次）。
+ */
+function elementsTable(elements) {
+  const lines = ['| # | 角色 | 文本 | 状态 | 引用 |', '|---|---|---|---|---|']
+  elements.forEach((el, i) => {
+    const e = el && typeof el === 'object' ? el : {}
+    const text = e.masked === true ? '（敏感字段，不读取）' : cell(e.text) || '（无文本）'
+    const state = []
+    if (e.disabled === true) state.push('disabled')
+    if (e.checked === true) state.push('已选中')
+    else if (e.checked === false) state.push('未选中')
+    if (e.masked === true) state.push('敏感')
+    lines.push(`| ${i + 1} | ${cell(e.role)} | ${text} | ${state.join(' ') || '—'} | ${cell(e.ref)} |`)
+  })
+  return lines
+}
+
+/**
  * 观察结果 → markdown。
  *
  * @param {object} obs `harbor-edge/extension/lib/observe.js` 的返回值
@@ -70,19 +90,7 @@ function renderObservation(obs) {
   if (!elements.length) {
     lines.push('（这个页面上没有可见的可交互元素）', '')
   } else {
-    lines.push('| # | 角色 | 文本 | 状态 | 引用 |')
-    lines.push('|---|---|---|---|---|')
-    elements.forEach((el, i) => {
-      const e = el && typeof el === 'object' ? el : {}
-      /* ★ 敏感字段：连 value 都不进文本（采集器已置 null，这里再兜一次） */
-      const text = e.masked === true ? '（敏感字段，不读取）' : cell(e.text) || '（无文本）'
-      const state = []
-      if (e.disabled === true) state.push('disabled')
-      if (e.checked === true) state.push('已选中')
-      else if (e.checked === false) state.push('未选中')
-      if (e.masked === true) state.push('敏感')
-      lines.push(`| ${i + 1} | ${cell(e.role)} | ${text} | ${state.join(' ') || '—'} | ${cell(e.ref)} |`)
-    })
+    lines.push(...elementsTable(elements))
     lines.push('')
     lines.push('> 想让 Agent 点某个元素或往某个输入框填字，就用上表「引用」列的值 —— 页面变了引用会失效，需要重新观察。', '')
   }
@@ -118,4 +126,67 @@ function renderObservation(obs) {
   return { markdown, truncated, chars: markdown.length }
 }
 
-module.exports = { renderObservation, MAX_CHARS }
+/**
+ * 「元素列表」视图（M04 第 1 步 `browser.getElements`）。
+ *
+ * 与完整观察的区别：**只要元素**（不渲染选区 / iframe / shadow）—— 规格 §4.5 对
+ * `getElements` 的输出要求就是「可交互元素引用、标签、状态」。
+ *
+ * ★ 传了 `ref` 时把**引用解析结果**写在最前面：失效就说清为什么 + 要求重新观察
+ *   （`parsed` 由 `core/ext-command.cjs` 的 `inspectRef` 算出 —— 判据只有那一处）。
+ *
+ * @param {object} obs 采集器返回值（至少含 url / title / pageVersion / elements）
+ * @param {{ ref?: string, parsed?: object }} [opts]
+ */
+function renderElements(obs, opts = {}) {
+  const o = obs && typeof obs === 'object' ? obs : {}
+  const ref = String(opts.ref ?? '')
+  const parsed = opts.parsed && typeof opts.parsed === 'object' ? opts.parsed : null
+  const elements = Array.isArray(o.elements) ? o.elements : []
+  const lines = ['## 页面元素', '']
+  lines.push(kv('来源 URL', String(o.url ?? '')))
+  lines.push(kv('标题', String(o.title ?? '')))
+  lines.push(kv('页面版本', String(o.pageVersion ?? '')), '')
+
+  if (ref) {
+    lines.push('### 你指定的元素', '')
+    if (parsed && parsed.stale === true) {
+      const why =
+        parsed.reason === 'page-changed'
+          ? `页面已经变了（引用是 ${cell(parsed.version)} 版，当前是 ${cell(parsed.currentVersion)} 版）`
+          : '这个元素不在当前页面的可交互列表里（可能被移除，或已不可交互）'
+      lines.push(`**引用 ${cell(ref)} 已失效**：${why}。`, '')
+      lines.push('→ 必须用下面**当前**这一版的引用重新指定，否则会点错东西。', '')
+    } else if (parsed && parsed.element) {
+      const e = parsed.element
+      const state = []
+      if (e.disabled === true) state.push('disabled')
+      if (e.checked === true) state.push('已选中')
+      if (e.masked === true) state.push('敏感')
+      lines.push(kv('引用', cell(e.ref)))
+      lines.push(kv('角色 / 标签', `${cell(e.role)} / ${cell(e.tag)}`))
+      lines.push(kv('文本', e.masked === true ? '（敏感字段，不读取）' : cell(e.text) || '（无文本）'))
+      lines.push(kv('状态', state.join(' ') || '可用'), '')
+    } else {
+      lines.push('（没有解析结果）', '')
+    }
+  }
+
+  lines.push('### 可交互元素', '')
+  if (!elements.length) {
+    lines.push('（这个页面上没有可见的可交互元素）', '')
+  } else {
+    lines.push(...elementsTable(elements))
+    lines.push('', '> 引用格式 `<页面版本>.<序号>` —— 页面一变，旧引用即失效。', '')
+  }
+
+  let markdown = lines.join('\n')
+  let truncated = false
+  if (markdown.length > MAX_CHARS) {
+    markdown = `${markdown.slice(0, MAX_CHARS)}\n\n（元素结果过长，已截断）`
+    truncated = true
+  }
+  return { markdown, truncated, chars: markdown.length }
+}
+
+module.exports = { renderObservation, renderElements, elementsTable, MAX_CHARS }

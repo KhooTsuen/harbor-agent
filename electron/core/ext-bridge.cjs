@@ -181,13 +181,9 @@ function createBridge() {
      *   audit: object,
      *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
      *   log: object,
-     *   chat?: {
-     *     handleSend: Function,
-     *     handleResume: Function,
-     *     handleSelect: Function,
-     *     handleNew: Function,
-     *     noteActiveSession: Function,
-     *   },
+     *   chat?: { handleSend: Function, handleResume: Function, handleSelect: Function,
+     *     handleNew: Function, noteActiveSession: Function },
+     *   command?: { handleResult: Function },
      * }} options
      */
     start(options) {
@@ -197,8 +193,7 @@ function createBridge() {
       deps.audit = options.audit
       deps.wrap = options.wrap
       deps.log = options.log
-      /* ★ 必须赋给 deps：setActiveSession 要拿它 noteActiveSession。漏了 = undefined
-         + `?.` 短路 → 「点 ＋ 新建了但侧边栏标题不变」，**不报错**（真机逮到过）。 */
+      /* ★ 必须赋给 deps：setActiveSession 要拿它 noteActiveSession（漏了会 `?.` 静默短路 —— 真机逮到过） */
       deps.chat = options.chat ?? null
 
       ops = createOps({
@@ -207,8 +202,8 @@ function createBridge() {
         wrap: options.wrap,
         send: options.send,
         getActiveSession: () => activeSessionId,
-        /* Phase 3b：侧边栏发消息那条路（装配处注入，见 register-handlers.cjs） */
-        chat: options.chat ?? null,
+        chat: options.chat ?? null, /* 3b：侧边栏发消息那条路（装配处注入） */
+        command: options.command ?? null, /* M04：下行指令的回执配对 */
       })
 
       token = P.writeToken(dataDir)

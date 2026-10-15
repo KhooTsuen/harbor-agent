@@ -24,9 +24,10 @@ import { collectPageContext } from './observe.js'
  *   ① 采的是**结构**（元素引用 + 状态 + 选区 + 版本号），不是整页正文；
  *   ② 走 `page:observe` 这个 kind（主进程那边渲染成 markdown 再落会话）。
  *
+ * @param {{ ref?: string }} [opts] `ref` 只有 `getElements` 那条走时才传（M04-1）
  * @returns {Promise<object>} 给侧边栏的**人话**结果（失败也在 `error` 里写好）
  */
-export async function observePage() {
+export async function observePage(opts = {}) {
   const target = await resolveActiveTab()
   if (!target.ok) return { ok: false, error: target.error }
   const { tab } = target
@@ -52,7 +53,24 @@ export async function observePage() {
     return { ok: false, error: '页面没有返回观察结果（可能是受限页面）' }
   }
 
-  const reply = await requestHost('observe-page', { observation })
+  /*
+   * ★ M04-1：`browser.getElements` 复用**同一份采集**（同一个注入函数、同一套版本号
+   *   算法、同一套 ref 登记），只是把 kind 换成 `page:elements` —— 主进程那边渲染成
+   *   「只要元素」的视图，并按 ref 解析失效（判据只有那一处，硬约束 #9）。
+   *   所以这里**不新写第二个采集器**（那必然漂）。
+   *
+   * ⚠️⚠️ 别把「发给 host 的 **type**」和「host 转给主进程的 **kind**」混了：
+   *   · type = `get-elements` / `observe-page`（**扩展 ↔ host** 的名字，host 的
+   *     dispatcher 按它分支）
+   *   · kind = `page:elements` / `page:observe`（**host ↔ 主进程** 的名字，在
+   *     `ext-protocol.cjs` 里定义）
+   *   第一版这里把 kind 当 type 发了 → host 认不出 → 落兜底（回一条**没有 id** 的
+   *   `{error}`）→ 扩展按 id 匹配 pending 永远配不上 → **每次都超时**
+   *   （而 host / 管道 / 主进程全都正常，最容易被误判成「桥坏了」）。
+   */
+  const ref = String(opts?.ref ?? '')
+  const type = opts?.elementsOnly === true ? 'get-elements' : 'observe-page'
+  const reply = await requestHost(type, ref ? { observation, ref } : { observation })
   const result = {
     ok: reply && reply.ok === true,
     error: reply && reply.ok === true ? null : (reply && reply.error) || 'Harbor 没有收下这次观察',
@@ -61,6 +79,10 @@ export async function observePage() {
     pageVersion: String(observation.pageVersion || ''),
     elements: Number(observation?.stats?.elements ?? 0),
     hasSelection: Boolean(observation.selection && observation.selection.text),
+    stale: reply && reply.stale === true,
+    /* ★ 失效的**理由**（`page-changed` / `not-found`）—— 主进程算的，这里只透传 */
+    reason: String((reply && reply.reason) || ''),
+    pageVersionAfter: String((reply && reply.pageVersion) || ''),
     sessionId: reply && reply.ok === true ? String(reply.sessionId ?? '') : '',
     at: Date.now(),
   }
@@ -71,4 +93,9 @@ export async function observePage() {
     /* 存不下不影响这次结果 */
   }
   return result
+}
+
+/** M04-1：只要元素列表（复用 `observePage` 的采集，换 kind + 带上 ref） */
+export async function getElements(ref = '') {
+  return observePage({ elementsOnly: true, ref: String(ref ?? '') })
 }

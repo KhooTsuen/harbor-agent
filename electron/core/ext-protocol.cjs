@@ -33,10 +33,7 @@ const V = 1
 /** Edge native messaging 的单帧上限（官方：host → Edge 1 MB） */
 const MAX_FRAME = 1024 * 1024
 
-/**
- * **管道**帧上限（2 MB）—— `ext:page` 正文截到 512 KB，JSON 转义后会膨胀；
- * 管道不经 Chromium，给 2 MB 余量，超了判 fatal 断开（对面不是我们的 host）。
- */
+/* **管道**帧上限（2 MB）—— 正文截 512KB，JSON 转义会膨胀；不经 Chromium，给余量，超了判 fatal 断开 */
 const MAX_PIPE_FRAME = 2 * 1024 * 1024
 /** host 等应答的期限（8 秒）。扩展侧另有 15s（故意更长）：让 host **先**超时、回一条带 code 的人话 */
 const HOST_TIMEOUT_MS = 8000
@@ -53,6 +50,9 @@ const KIND = {
   SESSION_NEW: 'session:new', // 侧边栏点 ＋（3c）—— 新建一条并两侧切过去
   SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
   PAGE_OBSERVE: 'page:observe', // 结构化页面观察（M03）：选区 / 元素列表 / iframe / 页面版本号
+  PAGE_ELEMENTS: 'page:elements', // 元素列表视图（M04-1）：带 ref 解析 / 失效判定
+  PAGE_COMMAND: 'page:command', // push：**下行指令**（M04）—— 主进程让扩展去做一件事
+  PAGE_RESULT: 'page:result', // 扩展执行完的**回执**（M04）—— 带 id，主进程按它配对
 }
 
 /**
@@ -69,6 +69,8 @@ const ERR = {  NO_HARBOR: 'NO_HARBOR', /* Harbor 没在运行（管道不存在�
   SESSION_BUSY: 'SESSION_BUSY', /* 那条会话正在别处跑（拒绝并发） */
   NO_SESSION: 'NO_SESSION', /* 目标会话不存在 */
   NO_WINDOW: 'NO_WINDOW', /* 主窗口不在（C-α：渲染层是执行者，缺它跑不了） */
+  NO_BROWSER: 'NO_BROWSER', /* 扩展不在（浏览器没开 / 没连上）—— 谈不上操作 */
+  STALE_REF: 'STALE_REF', /* 元素引用失效（页面版本变了 / 元素没了）—— 必须重新观察 */
 }
 
 /* ══════════════════════════════════════════════════════════════

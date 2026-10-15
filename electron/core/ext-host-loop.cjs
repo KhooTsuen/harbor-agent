@@ -127,9 +127,21 @@ function createDispatcher(client) {
       return { type: `${type}.result`, ok: false, id, error: res.error.message, code: res.error.code }
     }
 
+    /*
+     * M04-1：元素列表视图（`page:elements`）—— 与 observe-page 同一形状，
+     * 多带一个 `ref`（主进程按它解析失效）。host 仍只做转发。
+     */
+    if (type === 'get-elements') {
+      const ask = { observation: obj.observation ?? null }
+      if (obj.ref) ask.ref = String(obj.ref)
+      const res = await client.request(P.KIND.PAGE_ELEMENTS, ask)
+      if (res.ok) return { ...res.payload, type: 'get-elements.result', ok: true, id }
+      return { type: 'get-elements.result', ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
     return {
       error:
-        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new / observe-page',
+        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new / observe-page / get-elements',
       echo: message ?? null,
     }
   }
