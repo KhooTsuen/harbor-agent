@@ -1,0 +1,55 @@
+[
+  {
+    "stage": "started",
+    "at": "2026-10-15T11:39:14.924Z",
+    "argv": [
+      "E:\\nodejs\\node.exe",
+      "E:\\CodexWorkbench\\harbor-edge\\phase0\\probe-host.cjs"
+    ],
+    "markerSeen": false,
+    "cwd": "E:\\CodexWorkbench\\harbor-edge\\phase0",
+    "node": "v24.19.0"
+  },
+  {
+    "stage": "got-message",
+    "message": {
+      "ping": 1,
+      "at": 1792064354686
+    }
+  },
+  {
+    "stage": "started",
+    "at": "2026-10-15T11:39:15.064Z",
+    "argv": [
+      "E:\\nodejs\\node.exe",
+      "E:\\CodexWorkbench\\harbor-edge\\phase0\\probe-host.cjs"
+    ],
+    "markerSeen": false,
+    "cwd": "E:\\CodexWorkbench\\harbor-edge\\phase0",
+    "node": "v24.19.0"
+  },
+  {
+    "stage": "got-message",
+    "message": {
+      "ping": 1,
+      "at": 1792064354865
+    }
+  },
+  {
+    "stage": "started",
+    "at": "2026-10-15T11:39:17.780Z",
+    "argv": [
+      "E:\\nodejs\\node.exe",
+      "E:\\CodexWorkbench\\harbor-edge\\phase0\\probe-host.cjs"
+    ],
+    "markerSeen": false,
+    "cwd": "E:\\CodexWorkbench\\harbor-edge\\phase0",
+    "node": "v24.19.0"
+  },
+  {
+    "stage": "got-message",
+    "message": {
+      "ping": 1
+    }
+  }
+]

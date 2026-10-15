@@ -1,0 +1,9 @@
+{
+  "name": "com.harbor.phase0.probe",
+  "description": "Harbor Phase 0 probe (.cmd wrapper)",
+  "path": "E:\\CodexWorkbench\\harbor-edge\\phase0\\host.cmd",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://fgiopdanmkafnmpcjiiofkbbgikmdljn/"
+  ]
+}

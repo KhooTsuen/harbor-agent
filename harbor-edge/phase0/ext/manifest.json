@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor Phase0 Probe",
+  "version": "0.0.1",
+  "description": "Phase 0: native messaging feasibility probe (Harbor)",
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}

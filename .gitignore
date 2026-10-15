@@ -97,6 +97,11 @@ tools/import-rikkahub.py
 .chrome.log
 .chrome-path
 
+# Edge 扩展探针（harbor-edge/phase0/steps-*.cjs）每次跑都要一个隔离 profile，
+# 跑完即弃、不会自己删 —— 理由同上。
+harbor-edge/phase0/edge-profile*/
+harbor-edge/phase0/edge-trial-*/
+
 # 破坏性测试：隔离环境与备份（都是几百 MB 的整目录副本）
 test-env/
 backups/
