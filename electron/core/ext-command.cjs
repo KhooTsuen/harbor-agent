@@ -1,72 +1,45 @@
 /**
- * 下行指令：主进程 → 浏览器扩展，并等回执（M04）
+ * 下行指令（主进程 → 扩展，等回执）—— M04 起
  *
- * ── 为什么要有这个模块 ────────────────────────────────────────
- * M03 的方向是「扩展 → 主进程」；M04 要做「主进程 → 扩展」：**模型**决定要点哪个
- * 元素，主进程得让浏览器去执行。下行的物理通道**早就存在**（`ext-bridge.cjs` 的
- * `push` → host 转帧 → 扩展），过去只用来推流式分片 —— 这里把同一条通道当**指令**用：
- *
- *   call() → bridge.push(PAGE_COMMAND, {id, command, payload})
- *     → host 转给扩展 → SW 执行 → 回 {type:'page:result', id, result}
- *     → ext-ops 分派到 handleResult() → 按 id 配对 → resolve
- *
- * 所以**零新增 IPC 通道、零新增帧类型**（「推送 vs 应答」仍是「有没有 id」）。
- * ref 解析（三条判定）放**主进程**：它是纯数据比较、不碰 DOM，自检能直接覆盖。
+ * 通道**早就存在**（`ext-bridge` 的 push → host → 扩展），过去只推流式分片；这里把
+ * 同一条当**指令**用：call() → push(PAGE_COMMAND) → SW 执行 → 回 page:result →
+ * 按 id 配对。**零新增 IPC 通道、零新增帧类型**。
  *
  * ⚠️ 本模块**不 require electron**（自检要能在纯 Node 里直接跑它）。
  */
 
 const P = require('./ext-protocol.cjs')
+/* M04 剩余 + M05：动作层 / 标签页层 / 敏感判定（各有唯一一处实现，这里只调） */
+const { createActions } = require('./ext-actions.cjs')
+const { createTabs } = require('./ext-tabs.cjs')
+const gate = require('./ext-gate.cjs')
+/* ref 解析（纯函数，唯一一处判定）—— 本文件再导出，调用点不用改 */
+const { inspectRef } = require('./ext-ref.cjs')
 
 /** 等回执的期限（浏览器没开 / 扩展被回收 → 给带 code 的人话，不干等） */
 const COMMAND_TIMEOUT_MS = 15000
 
-/**
- * 解析一个元素引用（**纯函数** —— 三条判定，自检钉的就是它）。
- *
- * ref 形态（M03 定的）：`<pageVersion>.<序号>`，如 `60684574.3`。
- *
- *   ① 版本对不上 → 引用失效（`page-changed`）—— **必须重新观察**，否则会误点
- *   ② 版本对得上、ref 在列表里 → 有效，附它**当前**的状态
- *   ③ 版本对得上、ref 不在列表里 → 元素没了 / 不再可交互（`not-found`）
- *
- * ★ 为什么不用「deref 元素还在不在」当判据：deref 只能证明元素还在内存，
- *   **证明不了页面没变** —— 而防误点靠的正是后者。
- *
- * @param {string} ref
- * @param {string} currentVersion
- * @param {Array<{ref?: string}>} elements
- */
-function inspectRef(ref, currentVersion, elements) {
-  const want = String(ref ?? '')
-  if (!want) return { kind: 'list', stale: false, element: null }
-  const dot = want.lastIndexOf('.')
-  const version = dot > 0 ? want.slice(0, dot) : want
-  const cur = String(currentVersion ?? '')
-  const found = (elements ?? []).find((e) => e && e.ref === want) ?? null
-  if (version !== cur) {
-    return { kind: 'stale', stale: true, reason: 'page-changed', version, currentVersion: cur, element: found }
-  }
-  if (!found) {
-    return { kind: 'stale', stale: true, reason: 'not-found', version, currentVersion: cur, element: null }
-  }
-  return { kind: 'ok', stale: false, reason: '', version, currentVersion: cur, element: found }
-}
 
 /**
  * @param {{
  *   getBridge: () => ({ push?: (kind: string, payload: object) => { sent?: number } } | null),
  *   log?: { warn?: (m: string) => void, info?: (m: string) => void },
  *   land?: (kind: string, result: object, meta: object) => object,
+ *   confirm?: (request: object, meta?: object) => Promise<boolean>,
  * }} deps
- *   `land` 由装配处注入（`register-handlers.cjs`）：把「操作结果」渲染成 markdown、
- *   过 `wrapWebText`、落进会话 —— **不在这里 require ext-ops / ext-observe**，
- *   免得两个内核模块互相 require（自检也要能单独跑这一个）。
+ *   `land` / `confirm` 由装配处注入：前者把结果渲染 + 过 `wrapWebText` + 落会话，
+ *   后者弹既有确认卡（M04-3）。**不在这里 require 那两个** —— 免得内核互相 require。
  */
 function createCommand(deps) {
   const bridgeOf = deps.getBridge ?? (() => null)
   const log = deps.log
   const land = typeof deps.land === 'function' ? deps.land : null
+  /*
+   * ★ M04-3 敏感操作确认：**由装配处注入**（与 `land` 同一路子）——
+   *   确认卡要 `emit`，而 emit 只有 `electron/handlers/` 有（见 chat.cjs:143）。
+   *   没注入时 `click` 会**保守拒绝**（fail-closed），绝不放行。
+   */
+  const confirm = typeof deps.confirm === 'function' ? deps.confirm : null
 
   /** 发出去、还没等到回执的指令：id → { resolve, timer }（并发安全） */
   const pending = new Map()
@@ -101,12 +74,7 @@ function createCommand(deps) {
     }
   }
 
-  /**
-   * 发一条指令并等回执。
-   *
-   * @param {string} command 扩展侧的指令名（如 `get-elements`）
-   * @param {object} payload
-   */
+  /** 发一条指令并等回执（`command` = 扩展侧指令名，如 `get-elements`） */
   function call(command, payload = {}, timeoutMs = COMMAND_TIMEOUT_MS) {
     return new Promise((resolve) => {
       const bridge = bridgeOf()
@@ -203,13 +171,10 @@ function createCommand(deps) {
   }
 
   /**
-   * `browser.click`（M04）。
-   *
-   * ★ 两道闸，缺一不可：
-   *   ① **点之前**先观察一次当前页面拿**当前**版本号；对不上就**根本不发指令**
-   *      （点了才说「这个引用过期了」没用 —— 错的东西可能已经被点出去了）。
-   *   ② 点完把扩展给的**状态证据**渲染出来（`renderAction`）—— 「点了」≠「生效」。
-   * 落盘复用 `ingest` 那条链；网页内容依然过 `wrapWebText`（点完的页面文字同样不可信）。
+   * `browser.click`（M04）。三道闸，缺一不可：
+    *   ① **点前**拿当前版本号，不对就**根本不发指令**（发了才说过期没用）
+    *   ② **★ 敏感操作确认**（M04-3）：判定在 ext-gate（唯一一处），卡走既有 chat-confirm；
+    *      拒绝/超时 → **不点**，明确回「页面没被改动」。③ 结果带状态证据 —— 「点了」≠「生效」。
    *
    * @param {{ ref?: string, settleMs?: number, sessionTitleHint?: string }} [payload]
    */
@@ -226,10 +191,7 @@ function createCommand(deps) {
     const parsed = inspectRef(ref, cur.pageVersion, cur.elements ?? [])
     if (parsed.stale) {
       const why = parsed.reason === 'page-changed' ? '页面已经变了（你手上的引用是旧版本的）' : '这个元素不在当前页面的可交互列表里'
-      /*
-       * ★ 引用失效：**根本没发指令**。但也要**落一笔** —— 用户和模型都该看到
-       *   「为什么这次没点下去」（一片安静比一条明确的失败更糟）。
-       */
+      /* ★ 引用失效：**没发指令**。但也要落一笔 —— 得让人看到「为什么没点下去」 */
       const refused = {
         ok: false,
         reason: parsed.reason,
@@ -246,7 +208,34 @@ function createCommand(deps) {
       }
     }
 
-    /* ② 发指令（第一次真机用下行通道） */
+    /* ② ★ 敏感操作确认（M04-3）—— 判定在 `ext-gate.cjs`，这里只执行它的结论 */
+    const el = parsed.element && typeof parsed.element === 'object' ? parsed.element : {}
+    const verdict = gate.judge(el)
+    if (verdict.needsConfirm) {
+      if (typeof confirm !== 'function') {
+        /* ★ 没接线就**保守拒绝**（fail-closed）：不能因为装配漏了就把这道闸绕过去 */
+        log?.warn?.('扩展通道：敏感操作需要确认，但确认通道没接线 —— 按「不执行」处理')
+        return fail(P.ERR.DENIED, '这一步属于敏感操作，需要你确认；但确认窗口这会儿用不了 —— 已按「不执行」处理')
+      }
+      const allowed = await confirm(gate.describe(el, { url: cur.url, title: cur.title }), { ref })
+      if (allowed !== true) {
+        /* 拒绝 / 超时：**没点**。落一笔，并明确说「页面没被改动」 */
+        const denied = {
+          ok: false,
+          reason: 'denied-by-user',
+          ref,
+          sensitive: true,
+          pageUntouched: true,
+          message: '用户取消了这一步 —— **没有点击**，页面没有被改动。',
+        }
+        return {
+          ...landAction('click', denied, { ref, durationMs: 0, sessionTitleHint: payload.sessionTitleHint, confirmed: false }),
+          error: { code: P.ERR.DENIED, message: denied.message },
+        }
+      }
+    }
+
+    /* ③ 发指令（第一次真机用下行通道） */
     const t0 = Date.now()
     const res = await call('click', { ref, settleMs })
     const durationMs = Date.now() - t0
@@ -257,7 +246,7 @@ function createCommand(deps) {
      * 其余**都算「一次操作的结果」**（成功 / 点了但证据没采到）—— 统一落盘 + 统一形状：
      * 浏览器回来的东西放在 `result` 里（自检与真机各抓到一次「两种形状取空」的坑）。
      */
-    return landAction('click', res, { ref, durationMs, sessionTitleHint: payload.sessionTitleHint })
+    return landAction('click', res, { ref, durationMs, sessionTitleHint: payload.sessionTitleHint, confirmed: verdict.needsConfirm })
   }
 
   /**
@@ -275,10 +264,28 @@ function createCommand(deps) {
     return landAction('verify', res, { durationMs, sessionTitleHint: payload.sessionTitleHint })
   }
 
+  /*
+   * ── M04 剩余 + M05：其余动作**全部转给专门模块**（`ext-command.cjs` 已经贴线，
+   *    这批不再往里堆实现）。每个新能力都是薄转调 —— 校验与渲染都在那边。
+   *    `checkRef` 用同一份实现（`ext-actions` 里调 `getElements` + `inspectRef`）。
+   */
+  const actions = createActions({ call, getElements, landAction })
+  const tabs = createTabs({ call, landAction })
+
   return {
     getElements,
     click,
     verify,
+    /* M04 剩余 */
+    type: (payload) => actions.type(payload),
+    select: (payload) => actions.select(payload),
+    scroll: (payload) => actions.scroll(payload),
+    wait: (payload) => actions.wait(payload),
+    navigate: (payload) => actions.navigate(payload),
+    /* M05 */
+    tabsList: () => tabs.list(),
+    tabsSearch: (payload) => tabs.search(payload),
+    tabsActivate: (payload) => tabs.activate(payload),
     handleResult,
     /** 自检用：还有几条在途 */
     get pendingCount() {

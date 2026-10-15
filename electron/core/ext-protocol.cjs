@@ -27,8 +27,9 @@ const crypto = require('node:crypto')
    常量
    ══════════════════════════════════════════════════════════════ */
 
-/** 协议版本。报文里的 `v`。将来改形状靠它分流（3a 只有 1） */
-const V = 1
+/* kind / 错误码两张表在 ext-kinds.cjs（那边是纯数据，且两边都要用）—— 这里**再导出**，
+   调用点（P.KIND.XXX / P.ERR.XXX）一个都不用改。V 也在那边。 */
+const { V, KIND, ERR } = require('./ext-kinds.cjs')
 
 /** Edge native messaging 的单帧上限（官方：host → Edge 1 MB） */
 const MAX_FRAME = 1024 * 1024
@@ -38,40 +39,6 @@ const MAX_PIPE_FRAME = 2 * 1024 * 1024
 /** host 等应答的期限（8 秒）。扩展侧另有 15s（故意更长）：让 host **先**超时、回一条带 code 的人话 */
 const HOST_TIMEOUT_MS = 8000
 
-/** 消息类型（kind）—— 两侧共用。请求/应答带 id，`*_EVENT` / `*_SELECTED` 走推送（无 id） */
-const KIND = {
-  EXT_PAGE: 'ext:page', // 扩展读到的页面内容 → 落会话（Phase 2）
-  SESSION_LIST: 'session:list', // 会话列表（Phase 3a）
-  CHAT_SEND: 'chat:send', // 侧边栏发消息（3b）→ 主进程转给渲染层跑这一轮
-  CHAT_RESUME: 'chat:resume', // 重连 / 重开后要一份流快照（3b）
-  SESSION_ACTIVE: 'session:active', // Harbor 界面当前打开的是哪条会话（3b）
-  CHAT_EVENT: 'chat:event', // push：一轮里的流事件（3b，**无 id**）
-  SESSION_SELECT: 'session:select', // 侧边栏选了某条（3c）—— 只切它自己，主窗口不动
-  SESSION_NEW: 'session:new', // 侧边栏点 ＋（3c）—— 新建一条并两侧切过去
-  SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
-  PAGE_OBSERVE: 'page:observe', // 结构化页面观察（M03）：选区 / 元素列表 / iframe / 页面版本号
-  PAGE_ELEMENTS: 'page:elements', // 元素列表视图（M04-1）：带 ref 解析 / 失效判定
-  PAGE_COMMAND: 'page:command', // push：**下行指令**（M04）—— 主进程让扩展去做一件事
-  PAGE_RESULT: 'page:result', // 扩展执行完的**回执**（M04）—— 带 id，主进程按它配对
-}
-
-/**
- * 错误码 —— **唯一清单**。侧边栏文案由扩展侧渲染（它跑在浏览器里，require 不到
- * 这个模块），但**码**是契约：只有这里有定义，两侧的行为分支都按它。
- */
-const ERR = {  NO_HARBOR: 'NO_HARBOR', /* Harbor 没在运行（管道不存在） */
-  TIMEOUT: 'TIMEOUT', /* 主进程没在期限内回 */
-  BAD_TOKEN: 'BAD_TOKEN', /* token 不对 */
-  BAD_FRAME: 'BAD_FRAME', /* 帧解不开 */
-  UNKNOWN_KIND: 'UNKNOWN_KIND', /* 不认识的 kind */
-  INTERNAL: 'INTERNAL', /* 处理时抛异常 */
-  TOO_LARGE: 'TOO_LARGE', /* 超出单帧上限 */
-  SESSION_BUSY: 'SESSION_BUSY', /* 那条会话正在别处跑（拒绝并发） */
-  NO_SESSION: 'NO_SESSION', /* 目标会话不存在 */
-  NO_WINDOW: 'NO_WINDOW', /* 主窗口不在（C-α：渲染层是执行者，缺它跑不了） */
-  NO_BROWSER: 'NO_BROWSER', /* 扩展不在（浏览器没开 / 没连上）—— 谈不上操作 */
-  STALE_REF: 'STALE_REF', /* 元素引用失效（页面版本变了 / 元素没了）—— 必须重新观察 */
-}
 
 /* ══════════════════════════════════════════════════════════════
    帧编解码 —— 纯函数，不碰流（自检能在纯 Node 里直接跑）

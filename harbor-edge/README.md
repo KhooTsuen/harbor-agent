@@ -14,7 +14,14 @@
 > **M04 第 2 步完成** —— `browser.click` + `browser.verify`：**「点了」≠「生效」**（返回
 > URL / 标题 / 节点数 / 正文字数的**前后对比**做状态证据）；点击**前**先校验版本号，
 > 失效即 `STALE_REF` + 人话（**根本不发指令**）；verify 四类期望（文本 / 选择器 / URL）。
-> `type` / `select` / `scroll` / `wait` / `navigate` 与**敏感操作确认**是下一步 —— **未开工**。
+> **M04 剩余 + M05 完成** —— `type` / `select` / `scroll` / `wait` / `navigate` +
+> `tabs.list` / `tabs.activate` / `tabs.search`。
+> · **敏感字段（密码 / 信用卡）拒绝而非遮蔽** —— **一个字节都不写进页面**；
+> · **提交 / 支付 / 删除类按钮先弹确认卡**（复用 Harbor 既有确认卡），
+>   **拒绝或超时就根本不发点击指令**；没接线时保守拒绝；
+> · `tabs.activate` 的 id 必须在 list 里出现过（防编 id 去激活看不见的标签）；
+>   拿不到 url 的标签**如实标 `urlHidden`**（manifest 刻意没有 `tabs` 权限）。
+> **M08–M12 未开工**（截图 / extract / 跨页编排）。
 >
 > ⚠️ **验收脚本的锚点**（改了渲染层必须同步，否则脚本**静默失效**、照跑不误）：
 > `[aria-label="…"]` 的**归属表**在 `lib/ext-probe-panel.cjs` 的文件头（唯一真相源）。
@@ -139,6 +146,8 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 | `tools/accept-m03.cjs` | **M03 网页感知**（选区 / 元素 / **密码遮蔽** / 跨域 iframe / **版本号稳定与变化** / 落盘） | `node harbor-edge/tools/accept-m03.cjs` |
 | `tools/accept-m04a.cjs` | **M04-1 元素列表 + 引用失效判定** | `node harbor-edge/tools/accept-m04a.cjs` |
 | `tools/accept-m04b.cjs` | **M04-2 点击 + 验证**（真点击 / 状态证据 / 旧引用被拒 / 导航型点击如实说清） | `node harbor-edge/tools/accept-m04b.cjs` |
+| `tools/accept-m04c.cjs` | **M04-3 不打开侧边栏也能推指令**（主进程主动连 + 真推） | `node harbor-edge/tools/accept-m04c.cjs` |
+| `tools/accept-m04d.cjs` | **M04 剩余 + M05**（34 条）：type 拒密码/信用卡 · select · scroll · wait · navigate · **提交按钮弹确认卡 + 拒绝不点** · tabs 三件 | `node harbor-edge/tools/accept-m04d.cjs` |
 | `tools/accept-host.cjs` | Phase 1b 探针那条链路（native host ping/pong） | `node harbor-edge/tools/accept-host.cjs` |
 | `tools/read-extid.cjs` | 起一次隔离 Edge、读**真实**扩展 ID | 由 `install-host.cmd` 调 |
 

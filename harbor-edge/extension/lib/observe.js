@@ -6,9 +6,7 @@
  * 它经 `chrome.scripting.executeScript({ func })` 注入页面 —— Chrome 把函数
  * `toString()` **序列化**后送进页面，所以函数体内**只能引用自己的参数、局部
  * 变量、和嵌套定义的函数**。引用任何模块级常量 / 导入 → 注入后 `ReferenceError`。
- *
- * 而这**单测抓不到**（Node 里 require 时一切都在），**只有真机会现形**。
- * 所以常量写在函数体内、辅助函数嵌套在函数体内。真机判据 ⑥ 专门钉这条。
+ * 而这**单测抓不到**，**只有真机会现形**（常量和辅助函数因此都写在函数体内）。
  *
  * 形状与算法见 `docs/research/edge-extension-m03-design.md`（唯一真相源）。
  */
@@ -161,8 +159,16 @@ export function collectPageContext(opts) {
 
   /* ── ② 指纹 → 页面版本号（结构或文案变一个字符就变）── */
   const maskedFlags = picked.map((el) => isSensitive(el))
+  /*
+   * ★★ 指纹里的标签一律传 `masked: true` —— 让 `labelOf` **跳过 `el.value`**。
+   *   为什么（2026-10-16 真机逮到）：`labelOf` 在没有 placeholder / aria-label 时回退到
+   *   `el.value`，而 `<select>` 正是这种元素 → 「填一次表单」就把指纹打变了 → **后续所有
+   *   引用立刻失效**（实测：填完名字、选完下拉框，提交按钮的 ref 就过期了）。
+   *   指纹的目的是防误点，那取决于**结构**；输入框当前填着什么**不是结构**。
+   *   （`checked` / `disabled` 保留：那是元素自身状态，不是临时输入。）
+   */
   const signature = picked
-    .map((el, i) => [roleOf(el), el.tagName, labelOf(el, maskedFlags[i]), el.disabled ? 'd' : '', el.checked === true ? 'c' : ''].join('|'))
+    .map((el) => [roleOf(el), el.tagName, labelOf(el, true), el.disabled ? 'd' : '', el.checked === true ? 'c' : ''].join('|'))
     .join('\u0002')
   let bodyLen = 0
   try {
@@ -201,6 +207,9 @@ export function collectPageContext(opts) {
       /* ★ 敏感字段：value 一律 null（不脱敏、不截断，直接不给） */
       value: masked ? null : cut(el.value, TEXT_CAP) || null,
       masked,
+      /* ★ M04-3：敏感**操作**判定要用的两个字段（主进程 ext-gate.cjs 按它们分级） */
+      btnType: String(el.type || '').toLowerCase(),
+      formMethod: el.form && el.form.method ? String(el.form.method).toLowerCase() : '',
       placeholder: cut(el.getAttribute('placeholder') || '', TEXT_CAP),
       href: tag.toUpperCase() === 'A' ? clip(el.getAttribute('href') || '', 200) : '',
       visible: true,

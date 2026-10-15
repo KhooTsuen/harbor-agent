@@ -5,6 +5,49 @@
 
 ## [未发布]
 
+- **功能：M04 剩余（填表 / 滚动 / 等待 / 导航 / 敏感确认）+ M05（标签页三件）**（2026-10-16）。
+
+  **新增 8 个能力**：`browser.type` / `select` / `scroll` / `wait` / `navigate` +
+  `tabs.list` / `tabs.activate` / `tabs.search`。**协议层零新增 kind** —— 全部走 M04-2 建好的
+  通用下行指令通道（`PAGE_COMMAND` + `PAGE_RESULT`，用 `payload.command` 区分）。
+
+  · **敏感字段「拒绝」而不是「遮蔽」**（`type`）：`input[type=password]` 与
+    `autocomplete^="cc-"` 命中时，**一个字节都不写进页面**，返回 `sensitive-field` +
+    「页面没有被改动」。★ 判定在**页面里**做（不靠主进程猜），且拒绝发生在赋值**之前**。
+  · **敏感操作逐次确认**（`click`）：判定唯一一处 —— `core/ext-gate.cjs` 的 `judge()`
+    （危险词表 + `method=post` 的表单上下文；安全词优先）。确认卡**复用 Harbor 既有机制**
+    （`handlers/chat-confirm.cjs` 的 `askUser`），由装配处注入 `confirm`。
+    **拒绝 / 超时 → 根本不发 click 指令**（`DENIED` + `pageUntouched: true`）；
+    **没接线时保守拒绝**（fail-closed，不能因为装配漏了就把闸绕过去）。
+  · **`wait` 复用 `verifyPage` 轮询**（条件语义只一处实现，硬约束 #9）；
+    **`navigate` 用 `chrome.tabs.update`**（不注入）。
+  · **M05 三条边界**：`tabs.activate` 的 id **必须在 list 里出现过**（防网页/模型编 id 去激活
+    看不见的标签）；**如实标 `urlHidden`**（manifest 刻意没有 `tabs` 权限，
+    只有 activeTab 授予的那个标签读得到 url —— 不编假的、也不假装那条标签不存在）。
+  · **拆文件**：`ext-kinds` / `ext-ref` / `ext-actions` / `ext-tabs` / `ext-gate` /
+    `handlers/ext-confirm` / `act-form` / `act-nav` / `act-run` / `tabs-run`
+    （原有 9 个文件贴着 300 红线，不拆装不下）。
+  · **验收**：`harbor-edge/tools/accept-m04d.cjs` **34/34**（真 Edge + 真扩展 + 真 host +
+    真注入）。关键实测：密码框**页面里的值一个字没变**（`"secret123" → "secret123"`）·
+    提交按钮**先弹确认**（`asked=1`）· 拒绝后 **url 没变**（没提交）· 允许后**才真点**
+    （标题 →「已提交」）· `tabs.list` 4 条 · `tabs.activate` 回读确认切中 ·
+    编造的 id → `NO_TAB`。自检 **4932/0**（新增 162 组 44 条）· 单测 1765 · verify 全绿。
+
+  **★ 过程中逮到并修掉三个真缺陷**（都不是本批新写的功能，是**原有的**）：
+  1. **页面版本号会被「自己填表」打变**（`observe.js` 指纹）：指纹里的元素标签会回退到
+     `el.value`，而 `<select>` 正是这种元素 → 填完名字/选完下拉框，**后续所有 ref 立刻失效**，
+     模型得反复重新观察才能继续（实测 `refVersion: 8a733502 → pageVersion: 66cc88d4`）。
+     修法：**指纹按结构算**（`labelOf(el, true)` 跳过 value）—— 结果才是「防误点」该依赖的东西。
+  2. **只读按钮被当成提交**（`ext-gate.isSubmitLike`）：HTML 里 `<button>` 不写 type 时
+     `el.type` 读出来就是 `submit`，所以「凡 button 皆算提交」会把 POST 表单里的
+     「看详情」也拦下来（真机 ⑪ 逮到）。修法：用**显式否定的那一边** ——
+     作者写了 `type="button"` / `reset` 才是「不是提交」。
+  3. **`accept-m04c` 只有串行才红**：CDP 附着会把 target 激活，前一条的标签把测试页挤到
+     后台 → 「读不到当前页地址」。加了显式 `/json/activate`。
+
+  **遗留**：① `type` 是一次性 set value（不是逐字敲键盘）；② iframe 内部不能操作；
+     ③ 截图 / extract（M09 / M10）；④ 跨页编排（用户定的边界外）。
+
 - **修：两个真产品缺口 —— 导航型点击白等 15 秒 + ext-client 懒连接残留**（2026-10-16）。
   · **① 导航型点击不再白等**：点击触发页面跳转时，注入的上下文随页面卸载被销毁、
     注入 promise 永不 resolve，上一版「注入超时后再 `tabs.get` 判定」要白等 5 秒多。

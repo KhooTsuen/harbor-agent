@@ -190,6 +190,16 @@ function registerHandlers(deps) {
     getBridge: () => extBridge,
     log,
     land: (kind, result, meta) => extBridge.landAction(kind, result, meta),
+    /*
+     * ★ M04-3：敏感操作确认 —— 复用 Harbor 既有确认卡（`chat-confirm.askUser`）。
+     *   「要不要问」的判定在 `core/ext-gate.cjs`；这里只提供「怎么问」。
+     *   `getSessionId` 用渲染层上报的当前会话（见 handlers/ext-confirm.cjs 的文件头）。
+     */
+    confirm: require('./handlers/ext-confirm.cjs').createExtConfirm({
+      send,
+      getSessionId: () => extBridge.getActiveSession(),
+      log,
+    }),
   })
   extBridge.start({
     dataDir: require('./core/paths.cjs').DIRS.data,

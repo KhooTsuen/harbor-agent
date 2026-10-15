@@ -151,6 +151,19 @@ async function main() {
   /* 打开**测试页**（前台）—— 全程**不打开侧边栏** */
   const pageTab = await D.openTab(PORT_EDGE, `http://127.0.0.1:${PORT_PAGE}/`)
   await sleep(1200)
+  /*
+   * ★ 显式把测试页带到前台（2026-10-16 加）。
+   *   为什么需要：`SW` 只动**前台当前标签**，而 CDP 附着到任何 target **都会把它激活** ——
+   *   串行跑多条脚本时，前一条留下的标签会把测试页挤到后台，于是这里报
+   *   「读不到当前页地址」（看起来像坏，其实是前台跑偏）。
+   *   单独跑不会现形 —— 所以这条修的正是「只有串行才红」的那种不稳。
+   */
+  try {
+    await fetch(`http://127.0.0.1:${PORT_EDGE}/json/activate/${pageTab.target.id}`)
+  } catch {
+    /* 老版本没有这个端点：退化成「不切」，判据一旦红能看出来 */
+  }
+  await sleep(400)
 
   const stagedHost = S.stageHost({ dataDir: ISO, extId, name: HOST_NAME, tag: 'm04c' })
   rec('⑤ 装好隔离 host', fs.existsSync(stagedHost.exe), stagedHost.cmd)

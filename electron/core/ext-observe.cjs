@@ -1,15 +1,9 @@
-/**
- * M03 / M04：把「页面观察」「元素列表」「点击与验证」渲染成**给人看 / 给模型读**的
- * markdown（纯函数，自检能直接喂假数据跑）。硬约束 #9：「结果 → 文本」只有这一份实现。
- *
- * ★ 两条不能忘的规矩：
- *   ① **不捏造**：跨域 iframe 只说「读不到 + 为什么」，不填内容字段；closed shadow
- *      只说「无法枚举」，不猜数量。
- *   ② **敏感字段永不出现在文本里**：只写「（敏感字段，不读取）」（防将来有人改采集器）。
- *
- * 形状与预算见 `docs/research/edge-extension-m03-design.md`（唯一真相源）。
- * ⚠️ 本模块**不 require electron**（自检要能在纯 Node 里直接跑它）。
- */
+/* M03 / M04：把「观察 / 元素列表 / 点击验证 / 填表 / 标签页」的结果渲染成给人看、给模型读的
+   markdown（纯函数，自检直接喂假数据跑）。硬约束 #9：结果 → 文本只有这一份实现。
+   ★ 两条规矩：① **不捏造**（跨域 iframe 只说读不到 + 为什么，不填内容字段）；
+   ② **敏感字段永不出现在文本里**（采集器已置 null，这里再兜一次）。
+   形状见 docs/research/edge-extension-m03-design.md。
+   ⚠️ 不 require electron（自检要能裸跑）。 */
 
 /** 渲染结果的字符预算（文档 §6：输出必须有预算） */
 const MAX_CHARS = 20_000
@@ -112,18 +106,9 @@ function renderObservation(obs) {
   return finish(lines)
 }
 
-/**
- * 「元素列表」视图（M04 第 1 步 `browser.getElements`）。
- *
- * 与完整观察的区别：**只要元素**（不渲染选区 / iframe / shadow）—— 规格 §4.5 对
- * `getElements` 的输出要求就是「可交互元素引用、标签、状态」。
- *
- * ★ 传了 `ref` 时把**引用解析结果**写在最前面：失效就说清为什么 + 要求重新观察
- *   （`parsed` 由 `core/ext-command.cjs` 的 `inspectRef` 算出 —— 判据只有那一处）。
- *
- * @param {object} obs 采集器返回值（至少含 url / title / pageVersion / elements）
- * @param {{ ref?: string, parsed?: object }} [opts]
- */
+/* 「元素列表」视图（M04-1 browser.getElements）：**只要元素**（不渲染选区 / iframe / shadow）。
+   传了 `ref` 就把**引用解析结果**写在最前：失效要说清为什么 + 要求重新观察。
+   @param {object} obs 采集器返回值   @param {{ ref?: string, parsed?: object }} [opts] */
 function renderElements(obs, opts = {}) {
   const o = obs && typeof obs === 'object' ? obs : {}
   const ref = String(opts.ref ?? '')
@@ -182,25 +167,44 @@ function finish(lines) {
   return { markdown, truncated, chars: markdown.length }
 }
 
-/**
- * 「点击 / 验证」的结果 → markdown（M04 第 2 步）。
- *
- * ── ★ 为什么点击的结果要渲染成一张**前后对比表** ──────────────
- *
- * 用户定的硬要求：**「点了」≠「生效」**。所以这里不写「点击成功」，而是把
- * 四条状态信号（URL / 标题 / DOM / 目标元素）的前后值**并排摆出来**，
- * 让模型自己判断这一下有没有产生它要的效果。
- *
- * 失效（page-changed / not-found）与执行失败（`ok:false`）都在最前面说清 ——
- * 尤其是**失效**：那不是「操作失败」，是「你拿着过期的引用，我没敢点」，
- * 必须让模型知道要去重新观察。
- *
- * @param {string} kind `click` / `verify`
- * @param {object} result 扩展侧 `lib/act.js` 的返回值
- * @param {{ durationMs?: number }} [meta]
- */
+/* 「点击 / 验证 / 填表…」的结果 → markdown。
+   ★ 用户定的硬要求：**「点了」≠「生效」** —— 不写「点击成功」，而是把前后值并排摆出来
+   （URL / 标题 / DOM / 目标元素），让模型自己判断这一下有没有产生效果。
+   失效（page-changed / not-found）不是「操作失败」，是「你拿着过期引用，我没敢动」——
+   必须让模型知道要重新观察。
+   @param {string} kind   @param {object} result   @param {{ durationMs?: number, query?: string }} [meta] */
 function renderAction(kind, result, meta = {}) {
   const r = result && typeof result === 'object' ? result : {}
+
+  /*
+   * ★ M04-3：新动作的渲染**住在 `ext-actions.cjs` / `ext-tabs.cjs`**（各自带着自己的
+   *   渲染，就近）—— 这里只做**按 kind 转发**，不让本文件继续长大。
+   *   本文件自己只管 click / verify / type / select 这四个（它们共用「页面操作」那张表）。
+   */
+  if (kind === 'wait' || kind === 'navigate' || kind === 'scroll') {
+    const A = require('./ext-actions.cjs')
+    if (kind === 'wait') return A.renderWait(r)
+    if (kind === 'navigate') return A.renderNavigate(r)
+    return A.renderEvidence('滚动', r, [['方式', cell(r.how)]])
+  }
+  if (kind === 'tabs-list' || kind === 'tabs-search') {
+    /** @type {{ query?: string }} */
+    const m2 = meta && typeof meta === 'object' ? meta : {}
+    return require('./ext-tabs.cjs').renderTabs(r, { query: m2.query })
+  }
+  if (kind === 'tabs-activate') return require('./ext-tabs.cjs').renderActivate(r)
+
+  /* type / select：敏感字段被拒、选项找不到各有专用渲染（说清「页面没被改动」/ 列出可选值） */
+  if (kind === 'type' && r.reason === 'sensitive-field') return require('./ext-actions.cjs').renderSensitive(r)
+  if (kind === 'select' && r.reason === 'option-not-found') return require('./ext-actions.cjs').renderOptionNotFound(r)
+  if (kind === 'type') {
+    return require('./ext-actions.cjs').renderEvidence('填写文本', r, [['字符数', cell(r.charCount)]])
+  }
+  if (kind === 'select') {
+    const sel = r.selected && typeof r.selected === 'object' ? r.selected : {}
+    return require('./ext-actions.cjs').renderEvidence('选择下拉项', r, [['选中', cell(sel.label) || cell(sel.value)]])
+  }
+
   const isClick = kind === 'click'
   const lines = [isClick ? '## 页面操作：点击' : '## 页面验证', '']
   const ms = Number(meta.durationMs ?? 0)

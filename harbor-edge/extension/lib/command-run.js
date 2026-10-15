@@ -21,6 +21,10 @@
 import { requestHost } from './native.js'
 import { resolveActiveTab } from './active-tab.js'
 import { clickElement, verifyPage } from './act.js'
+/* M04 剩余：填表 / 滚动 / 等待 / 导航（拆到 act-run，见它的文件头） */
+import { runPageAction } from './act-run.js'
+/* M05：标签页三件（不注入任何东西，也不依赖「前台标签」） */
+import { listTabs, searchTabs, activateTab } from './tabs-run.js'
 /* get-elements：**复用 M03 的采集器**（同一个注入函数 / 同一套版本号 / 同一套 ref 登记）——
    绝不新写第二个（那必然漂，硬约束 #9）。 */
 import { collectPageContext } from './observe.js'
@@ -112,6 +116,26 @@ export async function runCommand(payload) {
   const id = String(payload?.id ?? '')
   const command = String(payload?.command ?? '')
   const args = payload?.payload && typeof payload.payload === 'object' ? payload.payload : {}
+  const reply = async (result) => {
+    try {
+      await requestHost('page-result', { id, result })
+    } catch {
+      /* 与 Harbor 断开了：主进程会走超时，不是这一层的错 */
+    }
+    return result
+  }
+
+  /*
+   * ★ M05：tabs 三件**不依赖前台标签**（它们碰的是标签页本身）—— 放在
+   *   `resolveActiveTab()` **之前**。否则「侧边栏页在前台」时会被那句
+   *   「该页面不支持读取」挡住，而 tabs.list 根本不需要看任何页面。
+   */
+  if (command === 'tabs-list' || command === 'tabs-search' || command === 'tabs-activate') {
+    if (command === 'tabs-list') return reply(await listTabs())
+    if (command === 'tabs-search') return reply(await searchTabs(args.query))
+    return reply(await activateTab(args))
+  }
+
   let result = { ok: false, error: `不认识的指令：${command || '(空)'}` }
 
   try {
@@ -181,15 +205,13 @@ export async function runCommand(payload) {
     } else if (command === 'verify') {
       const raw = await injectBounded(target.tab.id, verifyPage, [args.expect || {}], 8000)
       result = raw && typeof raw === 'object' && raw.__timeout !== true ? raw : { ok: false, error: '页面没返回验证结果（可能卡住或正在跳转）' }
+    } else {
+      /* M04 剩余：type / select / scroll / wait / navigate（转给 act-run；null = 不认识） */
+      const handled = await runPageAction(command, target.tab, args)
+      if (handled) result = handled
     }
   } catch (error) {
     result = { ok: false, error: `执行不了这个操作：${(error && error.message) || error}` }
   }
-
-  try {
-    await requestHost('page-result', { id, result })
-  } catch {
-    /* 与 Harbor 断开了：主进程会走超时，不是这一层的错 */
-  }
-  return result
+  return reply(result)
 }

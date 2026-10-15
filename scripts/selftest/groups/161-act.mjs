@@ -258,7 +258,8 @@ export async function run() {
   /* ── ⑤ 接线 ── */
   group('M04-2 · 接线（协议 / 分派 / 桥 / host / SW / native）')
 
-  const proto = readFileSync(join(ROOT, 'electron/core/ext-protocol.cjs'), 'utf8')
+  /* kind / 错误码的**真相源**是 `ext-kinds.cjs`（从 ext-protocol 拆出，后者再导出）—— 扫真相源，扫 ext-protocol 会假红 */
+  const proto = readFileSync(join(ROOT, 'electron/core/ext-kinds.cjs'), 'utf8')
   const opsSrc = readFileSync(join(ROOT, 'electron/core/ext-ops.cjs'), 'utf8')
   const brSrc = readFileSync(join(ROOT, 'electron/core/ext-bridge.cjs'), 'utf8')
   const hlSrc = readFileSync(join(ROOT, 'electron/core/ext-host-loop.cjs'), 'utf8')
