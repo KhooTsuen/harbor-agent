@@ -5,6 +5,36 @@
 
 ## [未发布]
 
+- **内置浏览器反拦截（第一批）：网页标签的 UA + Client Hints 补成标准 Chrome**（2026-10-15，只作用于 `persist:agent-browser`）。
+  · **为什么**：本地探针（服务端读原始请求头）实测，网页标签发的请求长这样 ——
+    `…harbor-agent/1.30.0 Chrome/152.0.7977.78 Electron/44.3.0 Safari/537.36`，且 **`sec-ch-ua` 三件套一个不发**。
+    同机同址用真 Chrome 访问，它发的是 `Chrome/156.0.0.0` + `sec-ch-ua: "Not:A-Brand";v="8", "Chromium";v="156", "Google Chrome";v="156"`。
+    这两条都是「不是真 Chrome」的**显式标记**（网站风控可直接判定），且没有任何功能价值 —— 纯属默认值。
+    指纹站 `bot.sannysoft.com` 的实测印证：整张表**只有 User Agent 一行异常**，WebDriver / Chrome 对象 / plugins / WebGL 全部与真 Chrome 一致。
+  · **改法**：新增 `electron/core/browser-identity.cjs`（`install(ses, {log, languages})`）：
+    ① `session.setUserAgent(标准UA)`；② `webRequest.onBeforeSendHeaders` 补 `sec-ch-ua` 三件套 + `accept-language`。
+    `electron/handlers/browser.cjs` 在 `session.fromPartition(PARTITION)` 那一行之后加一行调用（**只动那个分区，主窗口 UA 一字不变**）。
+  · **★ 三个刻意的决定**：
+    ① **UA 与 CH 必须一起补** —— 只改 UA 会留下「UA 说 Chrome、CH 说没有」的矛盾，**比不改更显眼**（真 Chrome 不可能不发 CH）。
+    ② **版本号不写死** —— 从 `process.versions.chrome` 现取主版本，形如 `Chrome/<主>.0.0.0`
+       （`.0.0.0` 是**故意对齐 Chrome 自己的 UA reduction**：真 Chrome 的 UA 里次版本就是被抹掉的；Electron 默认那条完整四段反而是特征）。
+    ③ **不伪造需要 native 支撑的东西** —— `window.chrome.csi/loadTimes` 属 Chromium native binding，
+       JS 假造的返回值比空着更容易被识破，所以本批**一行 JS 注入都不做**（那件事另议）。
+  · **实测排除的两条路**（别再试）：`app.userAgentFallback = <UA>` 会让**进程直接崩**（静默退出）；
+    命令行开关 `--user-agent=` 完全无效。能用的只有 `session.setUserAgent` + `onBeforeSendHeaders`。
+    ⚠️ 另外：`setUserAgent` 的第二个参数（语言）会产生**畸形 q 值**（`zh-CN,zh;q=0.9;q=0.9,…`），
+    所以 `accept-language` 是自己拼的（形如 `zh-CN,zh;q=0.9` —— 照真 Chrome 实测那条抄）。
+    ★ 这一处真机走查逮到过一次：早先用 `app.getPreferredSystemLanguages()`（给 `zh-Hans-CN`）当第一项，
+    结果头里写 `zh-Hans-CN`、而 JS 的 `navigator.languages[0]` 写 `zh-CN` —— **两者对不上本身就是特征**
+    （真 Chrome 这两处同源）。改成用 `app.getLocale()`、由它派生，两处对齐。
+  · **边界**：零新依赖（`process.versions` 内置）；零新 IPC；`webview-permissions.cjs` 一行未动；
+    `hardenWebview` 的四项一字未改；不碰 Runtime / 严格模式 / 防闪烁三件套。
+  · **验证**：自检新增 `groups/152-browser-identity.mjs`（30 条：UA 不含应用名/Electron、CH 三件套齐、
+    q 值无畸形、fail-safe 不猜版本号、只装机网页标签那个分区）；内核自检 **4448 / 0**（改前 4418）；真机走查见下条。
+  · **已知遗留**：`navigator.userAgentData.brands` 里的 `Google Chrome` 缺失**没修**（那要 webview preload，
+    会动 `hardenWebview` 的 `delete preload`）—— 按用户拍板**暂缓**，等这批落地后看 sannysoft 表剩几行异常再定。
+  · **透明性**：`SECURITY.md` 的「没有做什么」加了一条如实说明（UA 会伪装成标准 Chrome；不改权限、不绕访问控制）。
+
 - **界面字体：新增「SF Pro（苹果）」档位 —— 只写字体名，一个字体文件都不分发**（2026-10-15）。
   · **为什么**：想在 Windows 上把界面换成苹果的 San Francisco。但 SF Pro / 苹方的官方许可
     （<https://developer.apple.com/fonts/> 的 LICENSE AGREEMENT）明确写着：只许用于「给 Apple 平台做界面稿」，

@@ -28,6 +28,7 @@ const { createSettler, onAbort } = require('../core/abort.cjs')
 const cdp = require('../core/cdp.cjs')
 const browseAct = require('../core/browse-act.cjs')
 const webviewPermissions = require('../core/webview-permissions.cjs')
+const browserIdentity = require('../core/browser-identity.cjs')
 const downloadIntake = require('../core/download-intake.cjs')
 
 /** 等界面的上限（navigate 那条往返用）。读一个页面比「用户点确认」快得多 */
@@ -225,6 +226,12 @@ function register() {
     app.whenReady().then(() => {
       const ses = session.fromPartition(webviewPermissions.PARTITION)
       webviewPermissions.install(ses, log)
+      /*
+       * 浏览器身份（UA + Client Hints）：默认 UA 自报家门（应用名 + Electron），
+       * 且完全不发 `sec-ch-ua` 三件套 —— 都是「不是真 Chrome」的显式标记。
+       * 理由与实测见 core/browser-identity.cjs 的文件头。只装这个分区，不碰主窗口。
+       */
+      browserIdentity.install(ses, { log, locale: app.getLocale() })
       /*
        * 网页里的「下载」接进内置下载管理器（见 core/download-intake.cjs）：
        * 公开文件（http/https）交给内置引擎（分段 / 续传 / 进队列面板）；
