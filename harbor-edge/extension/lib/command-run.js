@@ -24,7 +24,7 @@ import { clickElement, verifyPage } from './act.js'
 /* M04 剩余：填表 / 滚动 / 等待 / 导航（拆到 act-run，见它的文件头） */
 import { runPageAction } from './act-run.js'
 /* M05：标签页三件（不注入任何东西，也不依赖「前台标签」） */
-import { listTabs, searchTabs, activateTab } from './tabs-run.js'
+import { listTabs, searchTabs, activateTab, createTab, closeTab } from './tabs-run.js'
 /* get-elements：**复用 M03 的采集器**（同一个注入函数 / 同一套版本号 / 同一套 ref 登记）——
    绝不新写第二个（那必然漂，硬约束 #9）。 */
 import { collectPageContext } from './observe.js'
@@ -130,9 +130,17 @@ export async function runCommand(payload) {
    *   `resolveActiveTab()` **之前**。否则「侧边栏页在前台」时会被那句
    *   「该页面不支持读取」挡住，而 tabs.list 根本不需要看任何页面。
    */
-  if (command === 'tabs-list' || command === 'tabs-search' || command === 'tabs-activate') {
+  if (
+    command === 'tabs-list' ||
+    command === 'tabs-search' ||
+    command === 'tabs-activate' ||
+    command === 'tabs-create' ||
+    command === 'tabs-close'
+  ) {
     if (command === 'tabs-list') return reply(await listTabs())
     if (command === 'tabs-search') return reply(await searchTabs(args.query))
+    if (command === 'tabs-create') return reply(await createTab(args))
+    if (command === 'tabs-close') return reply(await closeTab(args))
     return reply(await activateTab(args))
   }
 
@@ -166,12 +174,21 @@ export async function runCommand(payload) {
          * ★★ 导航信号先到（1~2 秒内）—— M04-3 修「白等 15 秒」。
          *   点会跳转的按钮，注入上下文随页面卸载被销毁、结果回不来；但「页面开始跳转」
          *   这个事实本身就是证据。如实说清：不代表没点上，别让模型去重试（会点两次）。
+         *   ★ 顺手读一次 urlAfter（硬证据）：导航刚发起时 tabs.get 常常已经拿到新地址。
          */
+        let afterUrl = ''
+        try {
+          const t = await chrome.tabs.get(target.tab.id)
+          afterUrl = String((t && t.url) || '')
+        } catch {
+          /* 拿不到就算了 —— message 里已说清「开始跳转」 */
+        }
         result = {
           ok: false,
           reason: 'navigating',
           navigated: true,
           urlBefore: beforeUrl,
+          urlAfter: afterUrl,
           message: '点击后页面开始跳转，状态证据没来得及采 —— **不代表没点上**。请用 browser.verify 确认结果。',
           timedOut: false,
         }
@@ -206,7 +223,8 @@ export async function runCommand(payload) {
       const raw = await injectBounded(target.tab.id, verifyPage, [args.expect || {}], 8000)
       result = raw && typeof raw === 'object' && raw.__timeout !== true ? raw : { ok: false, error: '页面没返回验证结果（可能卡住或正在跳转）' }
     } else {
-      /* M04 剩余：type / select / scroll / wait / navigate（转给 act-run；null = 不认识） */
+      /* M04 剩余 + 补齐：type / select / scroll / wait / navigate / clear / focus / key
+         （转给 act-run；null = 不认识） */
       const handled = await runPageAction(command, target.tab, args)
       if (handled) result = handled
     }

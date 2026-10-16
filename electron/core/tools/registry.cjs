@@ -30,6 +30,16 @@ const generateImage = require('./generate-image.cjs')
 const askUser = require('./ask_user.cjs')
 const subagentTool = require('./subagent-tool.cjs')
 const markStepDone = require('./mark_step_done.cjs')
+/* ── edge_*：操作**用户自己的 Edge**（与 browse_* 那族操作内嵌浏览器不是一回事）── */
+const edgePage = require('./edge-page.cjs')
+const edgeClick = require('./edge-click.cjs')
+const edgeType = require('./edge-type.cjs')
+const edgeSelect = require('./edge-select.cjs')
+const edgeScroll = require('./edge-scroll.cjs')
+const edgeWait = require('./edge-wait.cjs')
+const edgeKey = require('./edge-key.cjs')
+const edgeFocus = require('./edge-focus.cjs')
+const edgeTabs = require('./edge-tabs.cjs')
 const mcp = require('../mcp.cjs')
 const risk = require('../risk.cjs')
 const audit = require('../audit.cjs')
@@ -56,6 +66,16 @@ const ALL = [
   download,
   subagentTool,
   markStepDone,
+  /* edge_* —— 操作**用户自己的 Edge**（经扩展 ↔ host ↔ 主进程那条链） */
+  edgePage,
+  edgeClick,
+  edgeType,
+  edgeSelect,
+  edgeScroll,
+  edgeWait,
+  edgeKey,
+  edgeFocus,
+  edgeTabs,
 ]
 
 /*
@@ -93,7 +113,9 @@ const WRITE_TOOLS = new Set([
   'download',
 ])
 
-/** 会改动东西的 —— 比 `WRITE_TOOLS` 少了纯读的那四个（browse / elements / nav / ax） */
+/** 会改动东西的 —— 比 `WRITE_TOOLS` 少了纯读的那四个（browse / elements / nav / ax）。
+ *  ★ edge_* 写类**只在这里**（不进 WRITE_TOOLS）：用户 2026-10-16 拍板「只在敏感动作确认」——
+ *    风险框不弹，但「只分析，不修改」那一轮**必须拦**（否则「先别动」会被理解成可以操作浏览器）。 */
 const MUTATING_TOOLS = new Set([
   'write_file',
   'edit_file',
@@ -103,6 +125,14 @@ const MUTATING_TOOLS = new Set([
   'download',
   'browse_click',
   'browse_type',
+  'edge_page',
+  'edge_click',
+  'edge_type',
+  'edge_select',
+  'edge_scroll',
+  'edge_key',
+  'edge_focus',
+  'edge_tabs',
 ])
 
 /** 哪些工具会改文件（审计里记下来） */

@@ -5,6 +5,64 @@
 
 ## [未发布]
 
+- **功能：Edge 能力接成 Harbor 工具（对话里终于调得到）+ M04/M05 补齐动作**（2026-10-16）。
+
+  **为什么要做**：M04/M05 前几批做的 9 个能力（click / type / … / tabs）**只有验收脚本能调** ——
+  `registry.cjs` 的工具表里没有任何 edge 系工具，`extCommand` 在 `core/tools/**` 与 `loop.cjs`
+  里零引用。也就是说：**用户在对话里让我「去 Edge 点一下」，我做不到**。这一批把它接上。
+
+  **新增 9 个工具**（`core/tools/edge-*.cjs`）：`edge_page`（导航+读元素引用）/ `edge_click` /
+  `edge_type` / `edge_select` / `edge_scroll` / `edge_wait`（`timeoutMs:0` = 立刻验一次，
+  所以**不另做 edge_verify** —— 语义重复的工具只会让模型犹豫）/ `edge_key` / `edge_focus` /
+  `edge_tabs`（list / search / activate / create / close）。
+  · **与 `browse_*` 严格分开**：那族操作 Harbor **内嵌** webview，这族操作**用户自己的 Edge**。
+    工具描述里逐条点明，模型不会选错。
+  · **接线照 `browse.cjs` 的现成做法**：工具 `require('../../handlers/ext.cjs')` 取单例 ——
+    `handlers/ext.cjs` 从「只有 IPC」扩成也持有 `extCommand`（装配时 `setCommand` 注入）。
+    ★ 必须取**同一个**实例：自己 new 一个的话，回执按 id 配对就配不上。
+
+  **风险档（用户拍板「只在敏感动作确认」）**：写类（page/click/type/select/scroll/key/focus/tabs）
+  **进 `MUTATING_TOOLS`、不进 `WRITE_TOOLS`** —— 「需要确认」档**不弹风险框**，但
+  **「只分析，不修改」那一轮必须拦**（否则「先别动」会被理解成可以操作浏览器）。
+  连带修了 `tools/index.cjs` 的只读档判据：原来只看 `WRITE_TOOLS`，写类不进那个集合就漏了。
+  联网门也覆盖了 `edge_*`（它会真的访问网页）。
+  **M04 的敏感确认卡照旧**（提交/支付/删除类先问）—— 不弹风险框 ≠ 取消确认卡。
+
+  **M04 补齐三个动作**：`clear`（**复用 `type` 的空文本**，不另写注入函数 —— 少一处会漂的实现）/
+  `focus` / `key`（Enter / Tab / Escape，三种键盘事件都派 —— 只派一种会「有的页面管用有的不管用」）。
+  新增注入函数放 `harbor-edge/extension/lib/act-edit.js`（**自包含铁律同样成立**）。
+
+  **M05 补齐两个**：`tabs.create` / `tabs.close`。`close` 沿用 `activate` 那道闸并**加严**：
+  id 必须在 `list` 里出现过（防编 id 关掉看不见的标签）+ **关完回读确认**（「remove 没抛错」不算成功）。
+
+  **★ 文本只有一处来源（硬约束 #9）**：工具返回给模型的，就是落盘链渲染好的那份 markdown
+  （`ext-ops.ingestAction` 多返回 `markdown` → `landAction` 透传 → 工具直接用它）——
+  工具**不自己再格式化一遍**，否则「工具看到的」与「会话里记的」必然漂。
+
+  **工具地图**：`edge_*` 那个族 9 个已分组进 `tool-map.cjs`（含逐条「什么时候该用」）；
+  `MAX_DETAILED` 24 → 32 —— 28 个工具按 24 判会让**整层退化**成「分组名 + 计数」，
+  而这层的全部价值就在「什么时候用哪一个」（文件头 2026-10-13 那条教训）。
+
+  **验证**：自检 **4998/0**（新组 163，44 条）· 单测 1765 · `verify` 全绿 ·
+  **真机 `accept-m04f` 32/32**（**从 `tools.execute()` 进去调** —— 这是「能被调用」的唯一算数判据）·
+  十条回归逐条单独跑全绿：phase2 19/19 · 3a 17/17 · 3b 15/15 · 3c 20/20 · m03 32/32 ·
+  m04a 16/16 · m04b 34/34 · m04c 8/8 · m04d 34/34 · m04f 32/32。
+
+  **真机逮到并修掉的三处**：① `landAction` 漏了透传 `markdown`（工具只能回原始 JSON）；
+  ② `error` 是**字符串**时渲染成「错误：undefined」（`edge_tabs` 编造 id 那条）；
+  ③ `navigating` 落进通用分支被渲染成「**执行失败**」→ 会诱导模型重试（**点两次**），
+  已与 `no-result` 归为同族；顺手给导航型点击补上 `urlAfter` 硬证据。
+
+  **界面同步**：`src/lib/agentActivity.ts` 的三张表（`TOOL_LABELS` / `AGENT_ACTIONS` /
+  `TOOL_ICONS`）补上这 9 个工具 —— 时间线里显示「点击 Edge 元素」而不是 `edge_click`
+  （动作词带「Edge」是为了和 `browse_*` 的内嵌浏览器区分开）。★ 单测
+  `uiPolish.test.ts` 钉着「内核注册过的工具，人话表里都得有」+「两张表键集合一致」，
+  漏一个就报红。
+
+  **遗留（如实）**：M02 侧边栏 UI 面（任务卡 / 当前网页卡 / 设置区 / 停止生成 / Markdown 渲染）·
+  M03 阅读模式正文提取与「指定元素周边上下文」· M06 幂等去重 · M07 站点级权限与撤销 ·
+  **M08–M12 五个模块整体未开工**（extract / 文件与 PDF / 截图与坐标核验 / 工作流自动化 / 多窗口与跨页编排）。
+
 - **功能：M04 剩余（填表 / 滚动 / 等待 / 导航 / 敏感确认）+ M05（标签页三件）**（2026-10-16）。
 
   **新增 8 个能力**：`browser.type` / `select` / `scroll` / `wait` / `navigate` +

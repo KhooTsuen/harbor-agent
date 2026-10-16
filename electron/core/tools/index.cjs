@@ -191,12 +191,12 @@ async function execute(name, args, ctx = {}) {
   }
 
   /* 联网门：search_web 与 download 都算「要去网上」—— 本轮说不要联网时都得拦下 */
-  if (ctx.allowNetwork === false && (name === 'search_web' || name === 'download')) {
+  if (ctx.allowNetwork === false && (name === 'search_web' || name === 'download' || name.startsWith('edge_'))) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止联网' })
     return `错误：本轮对话禁止联网，${name} 被运行时拒绝。`
   }
 
-  if (ctx.permission === 'readonly' && isWrite) {
+  if (ctx.permission === 'readonly' && (isWrite || MUTATING_TOOLS.has(name))) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '只读模式拒绝' })
     return `错误：当前是「只读」权限，${name} 被拒绝。需要在设置里放宽权限。`
   }

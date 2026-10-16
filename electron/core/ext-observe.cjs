@@ -14,11 +14,7 @@ const cell = (s) => String(s === null || s === undefined ? '' : s).replace(/\|/g
 /** 一行「键: 值」，空值也写（如实比好看重要） */
 const kv = (k, v) => `- ${k}：${v === '' || v === null || v === undefined ? '（空）' : v}`
 
-/**
- * 可交互元素表格 —— **唯一一份实现**（完整观察与 `getElements` 共用，硬约束 #9）。
- *
- * ★ 敏感字段：连 `value` 都不进文本（采集器已置 null，这里再兜一次）。
- */
+/** 可交互元素表格 —— **唯一一份实现**（观察与 getElements 共用）。敏感字段连 value 都不进文本。 */
 function elementsTable(elements) {
   const lines = ['| # | 角色 | 文本 | 状态 | 引用 |', '|---|---|---|---|---|']
   elements.forEach((el, i) => {
@@ -35,9 +31,7 @@ function elementsTable(elements) {
 }
 
 /**
- * 观察结果 → markdown。
- *
- * @param {object} obs `harbor-edge/extension/lib/observe.js` 的返回值
+ * @param {object} obs 采集器返回值
  * @returns {{ markdown: string, truncated: boolean, chars: number }}
  */
 function renderObservation(obs) {
@@ -176,11 +170,7 @@ function finish(lines) {
 function renderAction(kind, result, meta = {}) {
   const r = result && typeof result === 'object' ? result : {}
 
-  /*
-   * ★ M04-3：新动作的渲染**住在 `ext-actions.cjs` / `ext-tabs.cjs`**（各自带着自己的
-   *   渲染，就近）—— 这里只做**按 kind 转发**，不让本文件继续长大。
-   *   本文件自己只管 click / verify / type / select 这四个（它们共用「页面操作」那张表）。
-   */
+  /* ★ 新动作的渲染住在各自模块（ext-actions / ext-tabs），这里只按 kind 转发，不让本文件长大。 */
   if (kind === 'wait' || kind === 'navigate' || kind === 'scroll') {
     const A = require('./ext-actions.cjs')
     if (kind === 'wait') return A.renderWait(r)
@@ -193,6 +183,15 @@ function renderAction(kind, result, meta = {}) {
     return require('./ext-tabs.cjs').renderTabs(r, { query: m2.query })
   }
   if (kind === 'tabs-activate') return require('./ext-tabs.cjs').renderActivate(r)
+  /* M05 补齐：新建 / 关闭 —— 与切标签同一套渲染口径（`ext-tabs.cjs`） */
+  if (kind === 'tabs-create') return require('./ext-tabs.cjs').renderCreate(r)
+  if (kind === 'tabs-close') return require('./ext-tabs.cjs').renderClose(r)
+
+  /* M04 补齐：clear / focus / key —— 通用证据表就够 */
+  const A2 = require('./ext-actions.cjs')
+  if (kind === 'clear') return A2.renderEvidence('清空输入框', r, [['字符数', cell(r.charCount)]])
+  if (kind === 'focus') return A2.renderEvidence('聚焦元素', r, [['焦点给了', cell((r.evidence || {}).activeAfter) || '（没给上）']])
+  if (kind === 'key') return A2.renderEvidence('按键', r, [['键', cell(r.key)], ['派发给', cell((r.evidence || {}).target)]])
 
   /* type / select：敏感字段被拒、选项找不到各有专用渲染（说清「页面没被改动」/ 列出可选值） */
   if (kind === 'type' && r.reason === 'sensitive-field') return require('./ext-actions.cjs').renderSensitive(r)
@@ -227,11 +226,13 @@ function renderAction(kind, result, meta = {}) {
     return finish(lines)
   }
   /*
-   * ★★ 「点了但证据没回来」—— 真机逮到的**真实情形**（M04-2）：点完页面就跳转了，
-   *   注入的上下文被销毁，结果回不来。必须说清「**不代表没点上**」+ 下一步做什么，
-   *   否则模型会以为失败而重试 —— 那一下可能已经点出去了，重试就点两次。
+   * ★★ 「点了但证据没回来」—— 真机逮到的**真实情形**（M04-2 / M04-3）：
+   *   点完页面就跳转了，注入的上下文被销毁，结果回不来。必须说清「**不代表没点上**」+
+   *   下一步做什么，否则模型会以为失败而重试 —— 那一下可能已经点出去了，重试就点两次。
+   *   ⚠️ `navigating`（M04-3 的双信号 race 先拿到导航）与 `no-result` **同族** ——
+   *     漏了它就会渲染成「执行失败」，那正是这条注释要防的误导（真机逮到过）。
    */
-  if (r.reason === 'no-result') {
+  if (r.reason === 'no-result' || r.reason === 'navigating') {
     lines.push(kv('结果', '**点击发出去了，但状态证据没采到**'), '')
     if (r.navigated === true) {
       lines.push(kv('页面跳转到了', cell(r.urlAfter)), '')

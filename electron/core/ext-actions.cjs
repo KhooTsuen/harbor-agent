@@ -19,25 +19,10 @@
  */
 
 const P = require('./ext-protocol.cjs')
-
-/** 表格单元格转义（与 ext-observe 同一口径，但那边是模块私有——这里只用到一条） */
-const cell = (s) => String(s === null || s === undefined ? '' : s).replace(/\|/g, '\\|').replace(/\n/g, ' ')
-
-/** 一行「键：值」 */
-const kv = (k, v) => `- ${k}：${v === '' || v === null || v === undefined ? '（空）' : v}`
-
-/** 收尾：拼 markdown + 截断（三个渲染器共用） */
-function finish(lines, maxChars) {
-  let md = lines.join('\n')
-  let truncated = false
-  if (md.length > maxChars) {
-    md = `${md.slice(0, maxChars)}\n\n（结果过长，已截断）`
-    truncated = true
-  }
-  return { markdown: md, truncated, chars: md.length }
-}
-
-const MAX_CHARS = 20_000
+/* M04 补齐：渲染拆到 ext-act-render.cjs（这边加三个动作会破 300 行）。
+   这里**再导出**那几个渲染器 —— 调用点（ext-observe / ext-ops）一个都不用改。 */
+const R = require('./ext-act-render.cjs')
+const { cell, kv, MAX_CHARS } = R
 
 /** 通用：把「扩展侧给的 reason」翻成人话 + 统一到 STALE_REF（判据一处） */
 function staleOr(res) {
@@ -178,120 +163,70 @@ function createActions(deps) {
     return done('navigate', res, {})
   }
 
-  return { type, select, scroll, wait, navigate, checkRef }
-}
 
-/* ══════════════════════════════════════════════════════════════
-   渲染：结果 → markdown（**与动作同住一个文件**，就近——`ext-observe.cjs` 不再长大）
-   ══════════════════════════════════════════════════════════════ */
-
-/** 有证据的动作：渲染一张「动作 + 前后对比」表 */
-function renderEvidence(title, res, rows) {
-  const lines = [`## 页面操作：${title}`, '']
-  const ev = res && res.evidence && typeof res.evidence === 'object' ? res.evidence : {}
-  if (res && res.ok === false && res.reason) {
-    lines.push(`- 结果：**没有完成**（${cell(res.reason)}）`, '')
-    if (res.message) lines.push(`- 说明：${cell(res.message)}`, '')
-  } else {
-    lines.push(`- 结果：${res && res.ok === true ? '执行完成' : '执行了但结果异常'}`, '')
+  /**
+   * `browser.clear`（M04 补齐）：清空输入框。
+   *
+   * ★ **不另写注入函数** —— 清空就是「填一个空串」（`type` 已支持 `clear`）。
+   *   少一个注入函数 = 少一处会跟 `type` 漂的实现（硬约束 #9）。
+   */
+  async function clear(payload = {}) {
+    const ref = String(payload.ref ?? '')
+    if (!ref) return fail(P.ERR.STALE_REF, '没给元素引用 —— 先用 browser.getElements 拿一个')
+    const pre = await checkRef(ref)
+    if (pre.ok !== true) return pre
+    const res = await call('clear', { ref })
+    const st = staleOr(res)
+    if (st) return st
+    if (res && res.reason === 'sensitive-field') return landAction('clear', res, { ref, denied: true, field: res.field })
+    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+    return done('clear', res, { ref })
   }
-  const body = rows.map(([k, v]) => kv(k, v)).filter(Boolean)
-  if (body.length) lines.push(...body, '')
-  if (Object.keys(ev).length) {
-    lines.push('| 项 | 之前 | 之后 |', '|---|---|---|')
-    for (const [k, v] of Object.entries(ev)) {
-      if (/Before$/.test(k)) {
-        const afterKey = k.replace(/Before$/, 'After')
-        lines.push(`| ${cell(k.replace(/Before$/, ''))} | ${cell(v)} | ${cell(ev[afterKey])} |`)
-      }
+
+  /**
+   * `browser.focus`（M04 补齐）：聚焦元素 —— 键盘操作（Enter / 输入法）前常要先给焦点。
+   * 与其它按引用的动作同口径：**先校验版本**，失效就根本不发指令。
+   */
+  async function focus(payload = {}) {
+    const ref = String(payload.ref ?? '')
+    if (!ref) return fail(P.ERR.STALE_REF, '没给元素引用 —— 先用 browser.getElements 拿一个')
+    const pre = await checkRef(ref)
+    if (pre.ok !== true) return pre
+    const res = await call('focus', { ref })
+    const st = staleOr(res)
+    if (st) return st
+    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+    return done('focus', res, { ref })
+  }
+
+  /**
+   * `browser.key`（M04 补齐）：派发键盘事件（默认 Enter）。
+   *
+   * `ref` 可空 —— 空就是「往当前焦点元素派」（Escape 关弹窗这类）。给了就先聚焦它。
+   */
+  async function key(payload = {}) {
+    const ref = String(payload.ref ?? '')
+    const k = String(payload.key ?? 'Enter')
+    if (ref) {
+      const pre = await checkRef(ref)
+      if (pre.ok !== true) return pre
     }
-    lines.push('')
+    const res = await call('key', { ref, key: k })
+    const st = staleOr(res)
+    if (st) return st
+    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+    return done('key', res, { ref })
   }
-  if (Array.isArray(res && res.checks) && res.checks.length) {
-    lines.push('| 检查 | 期望 | 实际 | 命中 |', '|---|---|---|---|')
-    for (const c of res.checks) {
-      const ch = c && typeof c === 'object' ? c : {}
-      lines.push(`| ${cell(ch.name)} | ${cell(ch.expected)} | ${cell(ch.actual)} | ${ch.pass === true ? '是' : '否'} |`)
-    }
-    lines.push('')
-  }
-  return finish(lines, MAX_CHARS)
+
+  return { type, select, scroll, wait, navigate, clear, focus, key, checkRef }
 }
 
-/** 敏感字段被拒：**说清「没有写进去」**，并告诉调用方该怎么做 */
-function renderSensitive(res) {
-  const r = res && typeof res === 'object' ? res : {}
-  const isPwd = r.field === 'password'
-  return finish(
-    [
-      '## 页面操作：填写文本',
-      '',
-      `- 结果：**拒绝执行**（${isPwd ? '密码字段' : '信用卡字段'}）`,
-      `- 说明：${cell(r.message || '按隐私规矩不代填这类字段')}`,
-      '',
-      '**页面没有被改动** —— 一个字节都没有写进去。',
-      '',
-      `→ 这一步需要**你自己输入**（${isPwd ? '密码' : '支付信息'}不该经过模型）。`,
-      '填完之后可以让我继续做后面的步骤。',
-    ],
-    MAX_CHARS,
-  )
+/* 渲染器**再导出**：ext-observe / ext-ops 仍从本模块取 —— 拆分对调用点是透明的。 */
+module.exports = {
+  createActions,
+  renderEvidence: R.renderEvidence,
+  renderSensitive: R.renderSensitive,
+  renderOptionNotFound: R.renderOptionNotFound,
+  renderWait: R.renderWait,
+  renderNavigate: R.renderNavigate,
 }
-
-/** 选项没找到：把**可选值全列出来**（不然调用方只能瞎猜下一次试什么） */
-function renderOptionNotFound(res) {
-  const opts = Array.isArray(res.options) ? res.options : []
-  const lines = ['## 页面操作：选择下拉项', '', '- 结果：**没找到这个选项**', '']
-  if (opts.length) {
-    lines.push('| # | 值 | 显示文本 |', '|---|---|---|')
-    for (const o of opts) lines.push(`| ${cell(o.index)} | ${cell(o.value)} | ${cell(o.label)} |`)
-    lines.push('')
-  } else {
-    lines.push('- 这个下拉框里**一个选项都没有**。', '')
-  }
-  return finish(lines, MAX_CHARS)
-}
-
-/** 等待：分成「等到了」与「等不到」两种写法（后者要如实说没等到） */
-function renderWait(res) {
-  const r = res && typeof res === 'object' ? res : {}
-  const lines = ['## 页面操作：等待条件', '']
-  const hit = r.matched === true
-  lines.push(`- 结果：${hit ? '**条件满足了**' : '**等到了上限，条件一直没满足**'}`)
-  lines.push(kv('等了多久', `${Number(r.waitedMs ?? 0)}ms（查了 ${Number(r.polls ?? 0)} 次）`))
-  lines.push(kv('当前地址', String(r.url ?? '')))
-  if (!hit) lines.push('', `- 这说明页面**没变成你等的那个样子**（不是报错）。${cell(r.message || '')}`)
-  lines.push('')
-  const checks = Array.isArray(r.checks) ? r.checks : []
-  if (checks.length) {
-    lines.push('| 条件 | 期望 | 实际 | 命中 |', '|---|---|---|---|')
-    for (const c of checks) {
-      const ch = c && typeof c === 'object' ? c : {}
-      lines.push(`| ${cell(ch.name)} | ${cell(ch.expected)} | ${cell(ch.actual)} | ${ch.pass === true ? '是' : '否'} |`)
-    }
-    lines.push('')
-  }
-  return finish(lines, MAX_CHARS)
-}
-
-/** 导航：url 前后 + 是否加载完 */
-function renderNavigate(res) {
-  const r = res && typeof res === 'object' ? res : {}
-  const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {}
-  return finish(
-    [
-      '## 页面操作：导航',
-      '',
-      `- 结果：${r.ok === true ? '**已经到新页面**' : '**没能导航过去**'}`,
-      kv('之前', String(ev.urlBefore ?? '')),
-      kv('之后', String(ev.urlAfter ?? '')),
-      kv('加载完成', ev.loadCompleted === true ? '是' : '否（可能还在加载，或超时）'),
-      '',
-      r.ok === true ? '' : `- 说明：${cell(r.error || r.threw || '未知')}`,
-      '',
-    ].filter((x) => x !== null),
-    MAX_CHARS,
-  )
-}
-
-module.exports = { createActions, renderEvidence, renderSensitive, renderOptionNotFound, renderWait, renderNavigate }

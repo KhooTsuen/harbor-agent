@@ -132,3 +132,87 @@ export async function activateTab(args) {
     requested: { id: found.id, index: found.index, title: found.title },
   }
 }
+
+/**
+ * 新建一个标签页（M05 补齐）。
+ *
+ * ★ 回读确认（与 activate 同一口径）：`chrome.tabs.create` 返回新 tab，但地址可能
+ *   还在加载 —— 所以先 `tabs.get` 读一次 url/title，拿不到就如实说「还在加载」。
+ *
+ * @param {{ url?: string, active?: boolean }} [args]
+ */
+export async function createTab(args) {
+  const a = args && typeof args === 'object' ? args : {}
+  const url = String(a.url || '').trim()
+  const active = a.active !== false
+  let created = null
+  try {
+    created = await chrome.tabs.create(url ? { url, active } : { active })
+  } catch (error) {
+    return { ok: false, error: `新建标签失败：${(error && error.message) || error}` }
+  }
+  const id = created && created.id != null ? created.id : null
+  if (id === null) return { ok: false, error: '标签建出来了但拿不到它的 id' }
+
+  /* 给页面一点时间（新标签通常立刻可读，但 url 可能晚一拍） */
+  await new Promise((r) => setTimeout(r, 400))
+  let title = ''
+  let realUrl = url
+  try {
+    const t = await chrome.tabs.get(id)
+    title = String((t && t.title) || '')
+    realUrl = String((t && t.url) || url)
+  } catch {
+    /* 读不到就用手上知道的 */
+  }
+  return { ok: true, created: { id, title, url: realUrl, active }, url, requestedActive: active }
+}
+
+/**
+ * 关闭一个标签页（M05 补齐）。
+ *
+ * ★★ 安全边界（比 activate 更要紧 —— 关掉是不可逆的）：
+ *   ① `id` **必须**在 `listTabs()` 里出现过（防编 id 关掉看不见的标签）；
+ *   ② 关完**回读确认**（那个 id 真的不在列表里了）—— 「调用了 remove 就成功」不算数；
+ *   ③ 「关哪个」只能由调用方明确给 id，**没有**「关掉当前标签」这种省略写法
+ *      （规格：不误关闭用户未授权的标签页）。
+ *
+ * @param {{ id?: number|string }} [args]
+ */
+export async function closeTab(args) {
+  const want = Number(args && args.id)
+  if (!Number.isFinite(want)) return { ok: false, error: '没给要关闭的标签 id' }
+
+  const before = await listTabs()
+  if (before.ok !== true) return before
+  const found = (before.tabs || []).find((t) => Number(t.id) === want)
+  if (!found) {
+    return {
+      ok: false,
+      reason: 'not-in-list',
+      error: '这个标签不在能操作的列表里（可能已关闭，或是浏览器内部页）—— 先 tabs.list 看一遍',
+      id: want,
+    }
+  }
+
+  let threw = ''
+  try {
+    await chrome.tabs.remove(want)
+  } catch (error) {
+    threw = String((error && error.message) || error)
+  }
+  if (threw) return { ok: false, error: `关不掉：${threw}`, id: want }
+
+  /* ★ 回读确认：真的不在了才算成功（不是「remove 没抛错」就算） */
+  await new Promise((r) => setTimeout(r, 300))
+  const after = await listTabs()
+  const still = after.ok === true ? (after.tabs || []).some((t) => Number(t.id) === want) : null
+  return {
+    ok: still === false,
+    id: want,
+    closed: { id: found.id, title: found.title, url: found.url },
+    stillInList: still,
+    remaining: after.ok === true ? (after.tabs || []).length : null,
+    message: still === false ? '' : '关闭指令发出去了，但回读时这个标签还在列表里 —— 请再 tabs.list 确认一次',
+  }
+}

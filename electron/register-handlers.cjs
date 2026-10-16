@@ -215,7 +215,14 @@ function registerHandlers(deps) {
   })
   /* 互相依赖所以晚绑：relay 要用 bridge 的 push 与 activeSession（见 ext-chat.cjs） */
   chatRelay.setBridge(extBridge)
-  require('./handlers/ext.cjs').register({ ipcMain, bridge: extBridge })
+  const extHandler = require('./handlers/ext.cjs')
+  extHandler.register({ ipcMain, bridge: extBridge })
+  /*
+   * ★ 把 extCommand 存成**模块级单例**：`core/tools/edge-*.cjs` 那一族工具不在装配链上
+   *   （按需 require），要靠它取到**同一个**指令实例 —— 自己再建一个的话回执配对就配不上
+   *   （回执只回真桥那条链）。见 handlers/ext.cjs 的文件头。
+   */
+  extHandler.setCommand(extCommand)
   /* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
   require('./handlers/browser.cjs').register()
   require('./handlers/export.cjs').register({ ipcMain, getMainWindow })

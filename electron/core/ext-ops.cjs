@@ -236,7 +236,8 @@ function createOps(deps) {
       reason: String(result?.reason ?? ''),
       durationMs: Number(meta?.durationMs ?? 0),
     })
-    return { sessionId: res.sessionId, chars: rendered.chars, truncated: rendered.truncated === true }
+    /* ★ `markdown` 一起返回：工具直接用这份讲给模型听 ——「操作结果 → 文本」只有这一处实现。 */
+    return { sessionId: res.sessionId, chars: rendered.chars, truncated: rendered.truncated === true, markdown: rendered.markdown }
   }
 
   const table = {

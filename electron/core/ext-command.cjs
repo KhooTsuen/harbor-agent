@@ -3,9 +3,7 @@
  *
  * 通道**早就存在**（`ext-bridge` 的 push → host → 扩展），过去只推流式分片；这里把
  * 同一条当**指令**用：call() → push(PAGE_COMMAND) → SW 执行 → 回 page:result →
- * 按 id 配对。**零新增 IPC 通道、零新增帧类型**。
- *
- * ⚠️ 本模块**不 require electron**（自检要能在纯 Node 里直接跑它）。
+ * 按 id 配对。**零新增 IPC 通道、零新增帧类型**。⚠️ 本模块**不 require electron**。
  */
 
 const P = require('./ext-protocol.cjs')
@@ -21,14 +19,8 @@ const COMMAND_TIMEOUT_MS = 15000
 
 
 /**
- * @param {{
- *   getBridge: () => ({ push?: (kind: string, payload: object) => { sent?: number } } | null),
- *   log?: { warn?: (m: string) => void, info?: (m: string) => void },
- *   land?: (kind: string, result: object, meta: object) => object,
- *   confirm?: (request: object, meta?: object) => Promise<boolean>,
- * }} deps
- *   `land` / `confirm` 由装配处注入：前者把结果渲染 + 过 `wrapWebText` + 落会话，
- *   后者弹既有确认卡（M04-3）。**不在这里 require 那两个** —— 免得内核互相 require。
+ * @param {{ getBridge: () => object, log?: object, land?: Function, confirm?: Function }} deps
+ *   `land` / `confirm` 由装配处注入（渲染+落盘 / 弹既有确认卡），免得内核互相 require。
  */
 function createCommand(deps) {
   const bridgeOf = deps.getBridge ?? (() => null)
@@ -65,12 +57,18 @@ function createCommand(deps) {
       title: String((payload && (payload.titleAfter || payload.title)) || ev.titleAfter || ''),
     }
     const saved = land && payload ? land(kind, payload, full) || {} : {}
+    /*
+     * ★ `markdown` 要一起带出去：`tools/edge-*.cjs` 用它讲给模型听 ——
+     *   「操作结果 → 文本」只有 `ext-ops.ingestAction` 那一处实现，工具**不自己再格式化**
+     *   （两份必然漂，硬约束 #9）。漏了这一行，工具就只能回原始 JSON（真机逮到过）。
+     */
     return {
       ok: Boolean(payload && payload.ok === true),
       result: payload,
       sessionId: saved.sessionId,
       chars: saved.chars,
       truncated: saved.truncated === true,
+      markdown: typeof saved.markdown === 'string' ? saved.markdown : '',
     }
   }
 
@@ -110,11 +108,7 @@ function createCommand(deps) {
     })
   }
 
-  /**
-   * 扩展回来的回执 —— `ext-ops.cjs` 把 `page:result` 分派到这里。
-   *
-   * 没配对上不算错（可能是超时后迟到的回执）—— 只记一行日志。
-   */
+  /** 扩展回来的回执（ext-ops 把 page:result 分派到这里）。没配对上不算错（可能是迟到的）。 */
   function handleResult(payload) {
     const id = String(payload?.id ?? '')
     const entry = pending.get(id)
@@ -282,10 +276,16 @@ function createCommand(deps) {
     scroll: (payload) => actions.scroll(payload),
     wait: (payload) => actions.wait(payload),
     navigate: (payload) => actions.navigate(payload),
+    /* M04 补齐：clear / focus / key */
+    clear: (payload) => actions.clear(payload),
+    focus: (payload) => actions.focus(payload),
+    key: (payload) => actions.key(payload),
     /* M05 */
     tabsList: () => tabs.list(),
     tabsSearch: (payload) => tabs.search(payload),
     tabsActivate: (payload) => tabs.activate(payload),
+    tabsCreate: (payload) => tabs.create(payload),
+    tabsClose: (payload) => tabs.close(payload),
     handleResult,
     /** 自检用：还有几条在途 */
     get pendingCount() {

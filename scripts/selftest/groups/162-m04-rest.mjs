@@ -74,14 +74,15 @@ export async function run() {
   check('★ 确认卡内容带页面 + 元素 + 后果', /http:\/\/x\//.test(card.impact.join(' ')) && /提交订单/.test(card.impact.join(' ')) && /不可撤销/.test(card.impact.join(' ')))
   check('★ 元素记录里采了 btnType / formMethod（判定靠它们）', /btnType:/.test(R('harbor-edge/extension/lib/observe.js')) && /formMethod:/.test(R('harbor-edge/extension/lib/observe.js')))
 
-  /* ── ④ 渲染 ── */
+  /* ── ④ 渲染（**已拆到 ext-act-render.cjs**，断言跟着真相源走）── */
   group('M04 剩余 · 渲染（拒绝 / 找不到 / 等待要说清楚）')
-  check('★★ 敏感字段被拒 → 明写「页面没有被改动」', /页面没有被改动/.test(actionsSrc) && /一个字节都没有写进去/.test(actionsSrc))
-  check('★ 拒绝那行要说「自己输入」', /你自己输入/.test(actionsSrc))
-  check('★ 选项找不到 → 把可选值列出来（不然只能瞎猜）', /没找到这个选项/.test(actionsSrc) && /显示文本/.test(actionsSrc))
-  check('★ 等待分「等到了」与「等不到」两种写法', /条件满足了/.test(actionsSrc) && /条件一直没满足/.test(actionsSrc))
-  check('★ 等不到时明确说「不是报错，是还没/没有」', /不是报错/.test(actionsSrc))
-  check('★ 渲染按 kind 转发（ext-observe 不再长大）', /kind === 'wait'/.test(obsSrc) && /renderWait/.test(actionsSrc))
+  const renderSrc = R('electron/core/ext-act-render.cjs')
+  check('★★ 敏感字段被拒 → 明写「页面没有被改动」', /页面没有被改动/.test(renderSrc) && /一个字节都没有写进去/.test(renderSrc))
+  check('★ 拒绝那行要说「自己输入」', /你自己输入/.test(renderSrc))
+  check('★ 选项找不到 → 把可选值列出来（不然只能瞎猜）', /没找到这个选项/.test(renderSrc) && /显示文本/.test(renderSrc))
+  check('★ 等待分「等到了」与「等不到」两种写法', /条件满足了/.test(renderSrc) && /条件一直没满足/.test(renderSrc))
+  check('★ 等不到时明确说「不是报错，是还没/没有」', /不是报错/.test(renderSrc))
+  check('★ 渲染按 kind 转发（ext-observe 不再长大）', /kind === 'wait'/.test(obsSrc) && /renderWait/.test(renderSrc))
   check('★ tabs 渲染标出「看不到 —— 没被授权」（如实，不编）', /看不到 —— 没被授权/.test(tabsMainSrc))
 
   /* ── ⑤ 接线 ── */

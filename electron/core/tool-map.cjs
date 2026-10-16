@@ -29,9 +29,13 @@ const tools = require('./tools/index.cjs')
  *
  * 为什么要有：系统提示**不参与** `context-builder` 的裁剪（那边只裁 memory/project/
  * task/conversation 四层）—— 这一层加进去的字是**每轮固定成本**，没有任何机制会替你裁。
- * 工具一多（装几个 MCP 服务器就够了），逐条写用途会吃掉几百 token/轮。
+ *
+ * ★ 24 → 32（2026-10-16）：`edge_*` 那族（9 个）接进来后本地工具到 28 个，按 24 判会
+ *   让**整层退化**成「分组名 + 计数」—— 而这层的全部价值就在「什么时候该用哪一个」
+ *   （文件头那段 2026-10-13 的教训）。32 留一点余量给后续模块。
+ *   ⚠️ 再加工具时要**重新权衡**：超了就该考虑让新族走「分组名 + 计数」（而不是一直抬）。
  */
-const MAX_DETAILED = 24
+const MAX_DETAILED = 32
 
 /**
  * 按**使用场景**分组，顺序照一次任务的实际流程走：
@@ -46,6 +50,10 @@ const TOOL_GROUPS = [
   {
     title: '上网查（先 search，再 browse，要操作才 elements/click/type）',
     tools: ['search_web', 'browse', 'browse_elements', 'browse_click', 'browse_type', 'browse_nav', 'browse_ax'],
+  },
+  {
+    title: '操作用户的 Edge（要动**他自己正开着的**浏览器时才用；只读网页用 browse）',
+    tools: ['edge_page', 'edge_wait', 'edge_click', 'edge_type', 'edge_select', 'edge_scroll', 'edge_key', 'edge_focus', 'edge_tabs'],
   },
   { title: '长期记忆', tools: ['memory_search', 'remember'] },
   { title: '协作与治理', tools: ['ask_user', 'mark_step_done', 'spawn_subagent', 'generate_image'] },
@@ -66,6 +74,16 @@ const TOOL_HINTS = {
   browse_type: '往输入框打字；填密码要先得到用户明确授权',
   browse_nav: '回上一步 / 下一页，别重开同一个地址',
   browse_ax: '读菜单 / 表单 / 表格的语义结构',
+  /* ── edge_*：动的是**用户自己的 Edge**（与 browse_* 操作内嵌浏览器不是一回事）── */
+  edge_page: '在他自己的 Edge 里打开地址并读回元素引用；不传 url 就只读当前页',
+  edge_wait: '等条件满足（timeoutMs 0 = 立刻验一次）；不改成页面',
+  edge_click: '按 edge_page 的引用点；提交/删除类会**先问用户**，引用失效则不点',
+  edge_type: '往输入框填；密码与信用卡字段会被拒（让他自己输）',
+  edge_select: '下拉框选值；找不到会把可选值都列出来',
+  edge_scroll: '滚到顶/底或按像素；给了 ref 就滚到那个元素',
+  edge_key: '真实按键（Enter/Tab/Escape）；有些控件只认键盘',
+  edge_focus: '先聚焦再按键；输入法与「失焦才校验」的表单要它',
+  edge_tabs: '列/搜/切/新建/关**他的**标签页；close 不可逆，会先确认在列表里',
   memory_search: '想确认「他以前说过吗」先搜它，别猜',
   remember: '记用户的习惯 / 项目约定 / 明确说过的偏好',
   ask_user: '要用户拍板先问（需求含糊 / 不可逆 / 范围不清）',

@@ -16,6 +16,7 @@
 
 import { typeText, selectOption } from './act-form.js'
 import { scrollPage } from './act-nav.js'
+import { focusElement, pressKey } from './act-edit.js'
 import { verifyPage } from './act.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -171,6 +172,19 @@ export async function runPageAction(command, tab, args) {
   }
   if (command === 'wait') {
     return waitFor(tab.id, a.expect, a.timeoutMs)
+  }
+  /* M04 补齐：clear 复用 `type` 的空文本（不另写一个注入函数 —— 少一处能漂的实现） */
+  if (command === 'clear') {
+    const raw = await injectBounded(tab.id, typeText, [String(a.ref ?? ''), { text: '', clear: true }], 8000)
+    return unwrap(raw, '清空')
+  }
+  if (command === 'focus') {
+    const raw = await injectBounded(tab.id, focusElement, [String(a.ref ?? '')], 8000)
+    return unwrap(raw, '聚焦')
+  }
+  if (command === 'key') {
+    const raw = await injectBounded(tab.id, pressKey, [String(a.ref ?? ''), String(a.key ?? 'Enter')], 8000)
+    return unwrap(raw, '按键')
   }
   if (command === 'navigate') {
     return navigateTo(tab.id, a.url, String(tab.url || ''))

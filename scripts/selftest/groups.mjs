@@ -40,6 +40,7 @@ import { run as extCommandGroup } from './groups/160-ext-command.mjs'
 import { run as observeGroup } from './groups/159-observe.mjs'
 import { run as actGroup } from './groups/161-act.mjs'
 import { run as m04RestGroup } from './groups/162-m04-rest.mjs'
+import { run as edgeToolsGroup } from './groups/163-edge-tools.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
 import { run as browser } from './groups/09-browser.mjs'
@@ -218,4 +219,5 @@ export const GROUPS = [
   extCommandGroup,
   actGroup,
   m04RestGroup,
+  edgeToolsGroup,
 ]

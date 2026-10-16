@@ -75,6 +75,19 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   mark_step_done: ['打卡', '步'],
   /* 记忆分层改造阶段 1（2026-10-13）：模型按关键词读长期记忆（只读工具） */
   memory_search: ['搜索记忆', '次'],
+  /*
+   * Edge 工具族（2026-10-16）：操作**用户自己的 Edge**（与 `browse_*` 的内嵌
+   * 浏览器区分开）—— 动作词带「Edge」，让时间线上一眼看出动的是哪个浏览器。
+   */
+  edge_page: ['打开', '个 Edge 页面'],
+  edge_click: ['点击 Edge 元素', '次'],
+  edge_type: ['填写 Edge 输入', '次'],
+  edge_select: ['选择 Edge 下拉项', '次'],
+  edge_scroll: ['滚动 Edge 页面', '次'],
+  edge_wait: ['等待 Edge 条件', '次'],
+  edge_key: ['向 Edge 按键', '次'],
+  edge_focus: ['聚焦 Edge 元素', '次'],
+  edge_tabs: ['操作 Edge 标签页', '次'],
 }
 
 /** 工具名的动作词；没收录的老实用原名（不编） */
@@ -113,6 +126,16 @@ export const TOOL_LABELS: Record<string, string> = {
   mark_step_done: '完成一步',
   /* 记忆分层改造阶段 1（2026-10-13）：模型搜长期记忆取回完整内容 */
   memory_search: '搜索长期记忆',
+  /* Edge 工具族（2026-10-16）：操作**用户自己的 Edge**，与 browse_* 的内嵌浏览器分开 */
+  edge_page: '打开 Edge 页面',
+  edge_click: '点击 Edge 元素',
+  edge_type: '填写 Edge 输入',
+  edge_select: '选择 Edge 下拉项',
+  edge_scroll: '滚动 Edge 页面',
+  edge_wait: '等待 Edge 条件',
+  edge_key: 'Edge 按键',
+  edge_focus: '聚焦 Edge 元素',
+  edge_tabs: '操作 Edge 标签页',
 }
 
 /** 工具名的人话；没收录的返回原名（不编） */
@@ -153,6 +176,16 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   spawn_subagent: Bot,
   mark_step_done: Check,
   memory_search: Search,
+  /* Edge 工具族（2026-10-16）：同族共用一枚（与 browse* 一样是「浏览」类） */
+  edge_page: Globe,
+  edge_click: Globe,
+  edge_type: Globe,
+  edge_select: Globe,
+  edge_scroll: Globe,
+  edge_wait: Globe,
+  edge_key: Globe,
+  edge_focus: Globe,
+  edge_tabs: Globe,
 }
 
 /** 工具名的图标；没收录的退回 `Terminal`（不空着、不抛） */

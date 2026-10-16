@@ -113,8 +113,8 @@ export async function run() {
     check(`★ ${name} 仍在 MUTATING_TOOLS`, M.has(name) === true)
   }
   check(
-    '★ MUTATING_TOOLS ⊆ WRITE_TOOLS（拆出来的只是子集，没有凭空多出工具）',
-    [...M].every((n) => registry.WRITE_TOOLS.has(n)),
+    '★ MUTATING_TOOLS ⊇ WRITE_TOOLS 里那些「会改外部状态」的（browse_click/type）',
+    ['browse_click', 'browse_type', 'write_file', 'edit_file', 'run_shell'].every((n) => M.has(n) || !registry.WRITE_TOOLS.has(n)),
   )
   check(
     '★ browse 仍在 WRITE_TOOLS（readonly 档要拦、ask 档要确认 —— 这部分没动）',
@@ -129,8 +129,13 @@ export async function run() {
     '★ 「只分析」那道门的判据是 MUTATING_TOOLS（不是 WRITE_TOOLS）',
     /ctx\.allowWrite === false && MUTATING_TOOLS\.has\(name\)/.test(indexSrc),
   )
+  /*
+   * ★ 口径改过（2026-10-16，接 edge_* 时）：那道门**不再只看 WRITE_TOOLS** ——
+   *   edge_* 写类按用户拍板**不进** WRITE_TOOLS（「需要确认」档不弹风险框），但它们
+   *   确实会改外部状态，只读档必须拦。所以判据是 `isWrite || MUTATING_TOOLS.has(name)`。
+   */
   check(
-    '★ readonly 那道门仍按 WRITE_TOOLS（浏览仍算「有副作用」）',
-    /ctx\.permission === 'readonly' && isWrite/.test(indexSrc),
+    '★ readonly 那道门按 WRITE_TOOLS **或** MUTATING_TOOLS（edge_* 写类不在前者里）',
+    /ctx\.permission === 'readonly' && \(isWrite \|\| MUTATING_TOOLS\.has\(name\)\)/.test(indexSrc),
   )
 }
