@@ -9,6 +9,9 @@ const codexCli = require('./codex-cli.cjs')
 const kinds = require('./provider-kinds.cjs')
 const log = require('./log.cjs')
 const configCore = require('./config.cjs')
+/* ★ 辅助任务（压缩 / 复核）**不复用主任务的 provider** —— 主模型可能是 CLI 后端
+   （没有 baseUrl），拿它走 llm.chatStream 必失败。判据见 aux-model.cjs。 */
+const auxModel = require('./aux-model.cjs')
 const errors = require('./errors.cjs')
 const observer = require('./error-observer.cjs')
 const perfMarks = require('./perf-marks.cjs')
@@ -78,12 +81,9 @@ async function callModelInner(options, emit) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
 
       try {
-        /*
-         * ★ 按**后端种类**分流 —— 全项目只有这一处（设计 §3）：
-         *   codex-cli → 本机 CLI 适配器；其余 → 原来的 HTTP/SSE。
-         * 两个模块的 `chatStream` 是**同形契约**（同入参、同返回、同取消语义），
-         * 所以循环 / 工具 / 审批 / 预算 / 恢复全都不感知这次分流。
-         */
+        /* ★ 按**后端种类**分流 —— 全项目只有这一处（设计 §3）：codex-cli → CLI 适配器，
+           其余 → 原来的 HTTP/SSE。两者 `chatStream` 是**同形契约**（同入参 / 返回 / 取消），
+           所以循环 / 工具 / 审批 / 预算 / 恢复全都不感知这次分流。 */
         const engine = kinds.isCodexCli(target) ? codexCli : llm
         const result = await engine.chatStream({
           ...options,
@@ -91,11 +91,8 @@ async function callModelInner(options, emit) {
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
           /* 每请求指标里记第几次尝试（0 = 首次）—— 指标写不写得进不影响请求 */
           retryIndex: attempt,
-          /*
-           * provider 要整个传下去：请求体里的 extraBody / omitParams / streamUsage
-           * 都是供应商级的（见 llm-body.cjs）。漏传的话——配置改了没反应，
-           * 而且不报错。
-           */
+          /* provider 整个传下去：extraBody / omitParams / streamUsage 都是供应商级的
+             （见 llm-body.cjs）。漏传 = 配置改了没反应，而且不报错。 */
           provider: target,
           baseUrl: target.baseUrl,
           apiKey: configCore.providerKey(target),
@@ -134,14 +131,12 @@ async function callModelInner(options, emit) {
         if (info.kind === 'aborted') throw error
         if (info.kind === 'context_overflow') {
           emit?.({ type: 'context_overflow', hint: info.hint })
-          /*
-           * AG-016：自动压缩一次再重试（文档策略表：ContextOverflow → Compact）。
-           * 只压一次 —— 压完还超限，说明不是「历史太长」而是「单条太长」，
-           * 那种再压也没用，直接报错让用户处理。
-           */
+          /* AG-016：自动压缩一次再重试（ContextOverflow → Compact）。只压一次 ——
+             压完还超限说明不是「历史太长」而是「单条太长」，再压也没用，直接报错。 */
           if (!compacted && Array.isArray(options.messages) && options.messages.length > 4) {
             compacted = true
-            await compactMessages({ ...options, provider: target })
+            /* ★ 不传主任务那个 provider：压缩是**辅助任务**，自己挑 HTTP 后端（见 compactMessages） */
+            await compactMessages({ messages: options.messages, config: options.config, emit: options.emit })
             continue
           }
           throw error
@@ -192,11 +187,8 @@ async function selfReview({ config, provider, model, content, userText, signal }
 }
 
 /**
- * 自检复核（带事件 + 开关判断）。
- *
- * 从 loop.cjs 搬过来的（那边贴着 300 行）。它原本是围在 selfReview 外面的
- * 一层包装：判断开关和模式、发 started/completed 事件、吞掉失败保留原回答。
- * 搬过来才完整。
+ * 自检复核（带事件 + 开关判断）。从 loop.cjs 搬来的（那边贴 300 行）：
+ * 判断开关和模式、发 started/completed 事件、吞掉失败保留原回答。
  */
 async function reviewWithEvents({
   config,
@@ -211,9 +203,25 @@ async function reviewWithEvents({
   if (config.assistant.selfReview !== true) return content
   if (mode !== 'execute' && mode !== 'goal' && mode !== 'plan') return content
 
+  /* ★ 复核是**辅助任务** → `resolveAux` 挑一个能走 HTTP 的后端，**不复用主任务那个**
+     （主模型可能是 codex-cli，baseUrl 空串 → 必失败）；一个候选都没有就跳过复核、
+     保留原回答。`provider`/`model` 只用于日志对照。 */
+  const aux = auxModel.resolveAux(config)
+  if (!aux) {
+    log.warn(`自检复核跳过：没有可用的 HTTP 后端（主任务 ${provider?.id ?? '?'}/${model ?? '?'}）`)
+    return content
+  }
+
   try {
     emit({ type: 'review', status: 'started' })
-    const reviewed = await selfReview({ config, provider, model, content, userText, signal })
+    const reviewed = await selfReview({
+      config,
+      provider: aux.provider,
+      model: aux.model,
+      content,
+      userText,
+      signal,
+    })
     emit({ type: 'review', status: 'completed' })
     return reviewed
   } catch (error) {
@@ -227,21 +235,26 @@ function sleep(ms) {
 }
 
 /**
- * AG-016：把历史压成一段摘要，**就地**换掉 `messages`。
+ * AG-016：把历史压成一段摘要，**就地**换掉 `messages`（就地改是为了让调用方
+ * 看得见：`loop.cjs` 的 `messages` 是同一个数组引用，下一轮直接用短的）。
+ * 压缩失败**不掩盖原来的错**：记一条日志，让调用方照旧抛 context_overflow。
  *
- * 就地改（`length = 0` + `push`）是为了让调用方看得见 —— `loop.cjs` 的
- * `messages` 是同一个数组引用，下一轮直接用短的就行。
- *
- * 压缩自己也失败时不掩盖原来的错：记一条日志，让调用方照旧抛 context_overflow。
+ * ★ 用**辅助后端**（`resolveAux`）而非主任务那个：主模型可能是 codex-cli
+ *   （baseUrl 空串）→ `llm.chatStream` 必失败。拿不到辅助后端就如实记一条跳过。
  */
-async function compactMessages({ messages, provider, model, apiKey, chatPath, emit }) {
+async function compactMessages({ messages, config, emit }) {
   try {
+    const aux = auxModel.resolveAux(config, { scene: 'compact' })
+    if (!aux) {
+      log.warn('自动压缩跳过：没有能走 HTTP 的供应商（辅助任务不复用 CLI 后端）')
+      return
+    }
     const compact = require('./compact.cjs')
     const summary = await compact.summarize({
-      baseUrl: provider.baseUrl,
-      apiKey,
-      chatPath: chatPath ?? provider.chatPath,
-      model,
+      baseUrl: aux.provider.baseUrl,
+      apiKey: configCore.providerKey(aux.provider),
+      chatPath: aux.provider.chatPath,
+      model: aux.model,
       messages,
     })
     const rebuilt = compact.rebuild(messages, summary)

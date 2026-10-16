@@ -54,4 +54,25 @@ function needsKey(provider) {
   return !isCodexCli(provider)
 }
 
-module.exports = { OPENAI, CODEX_CLI, KINDS, normalizeKind, isCodexCli, needsKey }
+/**
+ * 这个供应商**现在真的能走一次 HTTP 请求**吗（辅助任务用）。
+ *
+ * 辅助任务（起标题 / 压缩摘要 / 自检复核）调的是 `llm.chatStream` ——
+ * 它们**需要** baseUrl + 一个能用的 Key。走子进程的后端（codex-cli）在这条路上
+ * 必然失败（`baseUrl` 是空串 → 拼不出 URL），所以必须排除掉。
+ *
+ * ★ 判据放这里，别处 require 它（硬约束 #9）。三个条件缺一不可：
+ *   kind 不是 CLI 后端 · baseUrl 非空 · 有 Key。
+ *
+ * @param {object} provider
+ * @param {(p: object) => boolean} hasKey 判断「配好 Key 了吗」（调用方注入，见 config.cjs）
+ */
+function canHttp(provider, hasKey) {
+  if (!provider || typeof provider !== 'object') return false
+  if (isCodexCli(provider)) return false
+  if (!String(provider.baseUrl ?? '').trim()) return false
+  /* 没注入判据时**保守拒绝** —— 宁可漏掉一个可用后端，也不要拿空 Key 去发请求 */
+  return typeof hasKey === 'function' && hasKey(provider) === true
+}
+
+module.exports = { OPENAI, CODEX_CLI, KINDS, normalizeKind, isCodexCli, needsKey, canHttp }

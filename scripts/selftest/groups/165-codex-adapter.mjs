@@ -205,7 +205,52 @@ export async function run() {
   check('★ 用户手填覆盖仍优先（既有优先级没被改）', caps.resolve('codex-cli', { tool_call: true }, { kind: 'codex-cli' }).caps.tool_call === true)
   check('★ forProviders 会按 kind 算（界面那张矩阵才准）', caps.forProviders([{ id: 'c', kind: 'codex-cli', models: ['codex-cli'] }]).models['codex-cli'].caps.tool_call === false)
 
-  /* ── ⑨ 接线 ── */
+  /*
+   * ── ⑩ 辅助任务模型分离（2026-10-17）──
+   *
+   * 真机病：主任务能选 codex-cli（baseUrl 空串），而压缩 / 复核调的是 llm.chatStream ——
+   * 沿用主任务 provider 就必然拿空 baseUrl 发请求 → 必失败。这组的判据是
+   * 「辅助活自己挑一个能走 HTTP 的后端」，而不是跟着主任务一起坏。
+   */
+  group('Codex 后端 · 辅助任务不复用主任务后端（压缩 / 复核）')
+  const AUX = require(join(ROOT, 'electron/core/aux-model.cjs'))
+  const CLI_P = { id: 'codex-cli', kind: 'codex-cli', baseUrl: '', enabled: true, models: ['codex-cli'] }
+  const HTTP_P = { id: 'deepseek', kind: 'openai', baseUrl: 'https://api.deepseek.com/v1', enabled: true, models: ['deepseek-chat'] }
+  const keyOf = (p) => p.id === 'deepseek'
+  check('★ canHttp：codex-cli 不算「能走 HTTP」（它没有 baseUrl）', K.canHttp(CLI_P, keyOf) === false)
+  check('★ canHttp：有 baseUrl + 有 Key 的 openai 才算', K.canHttp(HTTP_P, keyOf) === true)
+  check('★ canHttp：没注入 hasKey 判据时**保守拒绝**（不拿空 Key 去发请求）', K.canHttp(HTTP_P, undefined) === false)
+  const auxCfg = { providers: [HTTP_P, CLI_P], assistant: { model: 'codex-cli' }, scenes: {} }
+  const picked = AUX.resolveAux(auxCfg, { scene: 'compact', hasKey: keyOf })
+  check('★★ 主任务选 codex-cli 时，辅助任务挑到 HTTP 后端（不是 codex-cli）', picked?.provider.id === 'deepseek', JSON.stringify(picked?.provider?.id))
+  check('★ 辅助模型名不复用主任务那个（退到对方能提供的）', picked?.model === 'deepseek-chat', picked?.model)
+  check(
+    '★★ 一个 HTTP 后端都没有 → null（**不回退**到那个必失败的 CLI 后端）',
+    AUX.resolveAux({ providers: [CLI_P], assistant: { model: 'codex-cli' }, scenes: {} }, { scene: 'compact', hasKey: keyOf }) === null,
+  )
+  check(
+    '★ 场景显式配置优先（`scenes` 就是「辅助模型」的现成入口，不新造字段）',
+    AUX.resolveAux(
+      { ...auxCfg, scenes: { compact: { providerId: 'deepseek', model: 'deepseek-reasoner' } } },
+      { scene: 'compact', hasKey: keyOf },
+    )?.model === 'deepseek-reasoner',
+  )
+  check(
+    '★ 主任务是 DeepSeek 时辅助任务照旧选它（回归未破）',
+    AUX.resolveAux({ ...auxCfg, assistant: { model: 'deepseek-chat' } }, { scene: 'compact', hasKey: keyOf })?.model === 'deepseek-chat',
+  )
+  check(
+    '★★ 接线：compactMessages 用 resolveAux，且不再吃主任务那个 provider',
+    /auxModel\.resolveAux\(config, \{ scene: 'compact' \}\)/.test(R('electron/core/loop-model.cjs')) &&
+      !/compactMessages\(\{ \.\.\.options, provider: target \}\)/.test(R('electron/core/loop-model.cjs')),
+  )
+  check('★ 接线：reviewWithEvents 把 aux.provider 交给 selfReview', /provider: aux\.provider/.test(R('electron/core/loop-model.cjs')))
+  check(
+    '★ 辅助判据只有一处（aux-model 不自己判 kind —— 硬约束 #9）',
+    !/isCodexCli|kind === 'codex-cli'/.test(R('electron/core/aux-model.cjs')),
+  )
+
+  /* ── ⑪ 接线 ── */
   group('Codex 后端 · 接线（少一处就是「静默不生效」）')
   check('★ loop-model 真的 require 了适配器', /require\('\.\/codex-cli\.cjs'\)/.test(R('electron/core/loop-model.cjs')))
   check('★ 配置层把 kind 写进白名单（不写会被静默丢掉）', /kind: pick\(str\(p\.kind\)/.test(R('electron/core/config-normalize-parts.cjs')))
@@ -223,6 +268,7 @@ export async function run() {
     'electron/core/codex-cli.cjs',
     'electron/core/provider-kinds.cjs',
     'electron/core/config-codex-preset.cjs',
+    'electron/core/aux-model.cjs',
     'electron/core/config.cjs',
     'electron/core/config-defaults.cjs',
     'electron/core/loop-model.cjs',

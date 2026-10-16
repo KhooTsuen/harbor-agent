@@ -5,6 +5,34 @@
 
 ## [未发布]
 
+- **修：Codex CLI 稳定性第 1 项 —— 辅助任务不再复用主任务后端**（2026-10-17）。
+
+  **真机病**：主模型可以选 `codex-cli`（本机 CLI 后端，`baseUrl` 是**空串**），
+  而**压缩**（`compactMessages`）与**自检复核**（`reviewWithEvents`）调的是
+  `llm.chatStream` —— 它们原来**吃的是主任务那个 provider**。于是：
+  长对话触发压缩 → 拿空 baseUrl 去 `buildUrl()` → 请求必失败 → 用户只看到
+  「上下文超限」，看不出是后端的锅。
+
+  **改法**（辅助任务与主任务**解耦**）：
+  · `provider-kinds.cjs` 加 `canHttp(provider, hasKey)` —— 「这个后端现在能不能走一次
+    HTTP 请求」的**唯一一处**判据（非 CLI 后端 + baseUrl 非空 + 有 Key）；
+  · 新增 `electron/core/aux-model.cjs` 的 `resolveAux(config, { scene })`：
+    候选 = 启用的 + `canHttp` 的；`config.scenes[scene]` **显式配了**就用它
+    （这就是「辅助模型」的**现成配置入口**，不新造字段）；否则取候选里第一个；
+    **一个候选都没有 → `null`**（不猜、不回退到那个必失败的 CLI 后端）；
+  · `loop-model.cjs`：`compactMessages` 改吃 `{ messages, config, emit }`（不再吃主任务
+    provider），`reviewWithEvents` 内部换 `aux.provider`。
+  · ★ **`loop.cjs` 一行未改** —— 换后端的逻辑收在 `reviewWithEvents` 内部，调用点不动。
+
+  **拿不到辅助后端时如实跳过**：压缩记一条 warn 后仍让调用方抛 context_overflow
+  （**不假装压过**）；复核保留原回答。不硬发一次注定失败的请求。
+
+  **验证**：自检 165 组新增 12 条（`5150 项 / 0 失败`）；探针 18/18（含「主任务选
+  codex-cli 时辅助任务真的挑到 DeepSeek」「只有 CLI 后端时返回 null」「DeepSeek 主任务
+  时行为不变」）；全库 1222 文件 ≤300 行。
+
+  **遗留**：`scenes.compact` 默认空 → 走「第一个 HTTP 后端」；要指定就在设置页的场景里配。
+
 - **功能：Codex CLI 模型适配器（实验性 · 纯文本后端）**（2026-10-17）。
 
   **做了什么**：新增 `provider.kind`（`'openai'` 缺省 / `'codex-cli'`），让**本机已登录的
