@@ -218,6 +218,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         models: ['codex-cli'],
         enabled: true,
         hasKey: false,
+        /* 三个可选项一律留空 —— 与内核预设（`config-codex-preset.cjs`）保持同一形状。
+           ★ 这里**不替用户预填**任何路径 / 代理地址 / 数据目录（自检钉住两处一致）。 */
+        codexPath: '',
+        proxy: '',
+        codexHome: '',
       },
     ]
     const config = await pushConfig({ providers: next })

@@ -114,6 +114,26 @@ export function CodexCliCard({ provider }: CodexCliCardProps) {
 
         <label className="block">
           <span className="mb-1 block text-2xs text-fg-tertiary">
+            数据目录（CODEX_HOME）
+            <span className="ml-1.5 text-fg-tertiary/70">（留空 = 用 Codex 自己的默认位置）</span>
+          </span>
+          <Field
+            value={provider.codexHome ?? ''}
+            onChange={(v) => void update(provider.id, { codexHome: v })}
+            placeholder="留空；想把 Codex 的数据挪出 C 盘时填一个新目录"
+            spellCheck={false}
+          />
+          {/* ★ 这两条必须写出来：用户不知道「改了要重新登录」「Harbor 不搬凭据」 */}
+          <span className="mt-1 block text-2xs leading-relaxed text-fg-tertiary">
+            ⚠️ 改这里之后需要在<b className="text-fg-secondary">新目录重新登录</b>一次 Codex。
+            <br />
+            Harbor <b className="text-fg-secondary">不会</b>复制、迁移或删除任何登录文件 ——
+            它只把路径告诉 Codex，其余由 Codex 自己管。
+          </span>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-2xs text-fg-tertiary">
             模型标识（逗号分隔）
             <span className="ml-1.5 text-fg-tertiary/70">
               （只是 Harbor 里选它用的名字，具体模型由 Codex 自己的配置决定）

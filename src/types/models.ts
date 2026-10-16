@@ -74,19 +74,19 @@ export interface ProviderConfig {
   strictTools?: boolean
   /** 用户手填的能力覆盖，按模型名分组（优先于内置预设）。维度见 @/types/model-caps */
   modelCapabilities?: Record<string, Partial<ModelCapabilities>>
-  /**
-   * 后端种类（决定「怎么调这个模型」）：
-   *   · `'openai'`（缺省）—— HTTP / SSE，`electron/core/llm.cjs`
-   *   · `'codex-cli'` —— 本机 ChatGPT Codex CLI 子进程，`electron/core/codex-cli.cjs`（实验性）
-   * ★ 传输方式与**模型能力**是两件事，能力看 `config.capabilities`（按 kind 声明）。
-   */
+  /** 后端种类（决定「怎么调这个模型」）：`'openai'`（缺省）走 HTTP/SSE（`core/llm.cjs`）；
+   * `'codex-cli'` 走本机 Codex CLI 子进程（`core/codex-cli.cjs`，实验性）。
+   * ★ 传输方式与**模型能力**是两件事，能力看 `config.capabilities`（按 kind 声明）。 */
   kind?: 'openai' | 'codex-cli'
-  /** codex-cli 用的启动器路径；留空 = 按 PATH 自动找（**不硬编码**任何本机路径） */
+  /* ── 以下三个字段只对 codex-cli 后端有意义（kind 不是它时留空即可，行为不变）── */
+  /** 启动器路径；留空 = 按 PATH 自动找（**不硬编码**任何本机路径） */
   codexPath?: string
-  /** codex-cli 走不走代理（可选）。留空 = 不给子进程设代理环境变量。
-   * chatgpt.com 在某些网络直连不通，而代理常是用户级环境变量（桌面图标启动的进程
-   * 不一定继承到，症状是「模型没有输出」）。不预填、不硬编码。 */
+  /** 走不走代理。留空 = 不设代理环境变量。chatgpt.com 在某些网络直连不通，而代理常是
+   * 用户级环境变量（桌面图标启动的进程不一定继承到，症状是「模型没有输出」）。 */
   proxy?: string
+  /** 数据目录（CODEX_HOME）。留空 = 用 CLI 默认（~/.codex）。★ Harbor 只把它当环境变量
+   * 传下去：**不建目录、不读、不写、不复制、不删除**（它含登录凭据）；改后要**重新登录**。 */
+  codexHome?: string
 }
 
 import type { CredentialsStatus } from './backend'

@@ -1,13 +1,15 @@
 /**
  * 自检 / Codex CLI 后端（M-Codex，2026-10-17）
  *
- * 十一块（细则见每组标题）：
+ * 九块（细则见每组标题）：
  *   ① 契约同形 ② JSONL 分块（半行/\r\n/坏行/超长行/结尾无换行）③ 事件归约
  *   ④ prompt 拍平 ⑤ 进程层安全底线（常量参数 · 沙箱只读 · 杀树按 pid）
  *   ⑥ 取消与超时（**真跑 runCodex + 注入假 spawn**，不真起 codex、不真杀进程）
  *   ⑦ 配置向后兼容 + 选择链路 ⑧ 能力按**后端种类**声明（与按模型名的预设表分开）
- *   ⑨ 辅助任务不复用主任务后端（压缩/复核挑 HTTP 后端）⑩ 可选代理（默认空 = 沿用 env）
- *   ⑪ 接线 + 行数
+ *   ⑨ 接线 + 行数
+ *
+ * ★ 「后来发现的三个稳定性问题」（辅助任务模型分离 / 可选代理 / CODEX_HOME）
+ *   在 **`166-codex-stability.mjs`** —— 那三组加进来时这边就贴 300 行了。
  *
  * ⚠️ 本组**不联网、不起真 codex**（只跑纯函数与假进程）。真机 E2E 见设计文档 §7。
  */
@@ -204,69 +206,7 @@ export async function run() {
   check('★ 用户手填覆盖仍优先（既有优先级没被改）', caps.resolve('codex-cli', { tool_call: true }, { kind: 'codex-cli' }).caps.tool_call === true)
   check('★ forProviders 会按 kind 算（界面那张矩阵才准）', caps.forProviders([{ id: 'c', kind: 'codex-cli', models: ['codex-cli'] }]).models['codex-cli'].caps.tool_call === false)
 
-  /*
-   * ── ⑩ 辅助任务模型分离（2026-10-17）──
-   *
-   * 真机病：主任务能选 codex-cli（baseUrl 空串），而压缩 / 复核调的是 llm.chatStream ——
-   * 沿用主任务 provider 就必然拿空 baseUrl 发请求 → 必失败。这组的判据是
-   * 「辅助活自己挑一个能走 HTTP 的后端」，而不是跟着主任务一起坏。
-   */
-  group('Codex 后端 · 辅助任务不复用主任务后端（压缩 / 复核）')
-  const AUX = require(join(ROOT, 'electron/core/aux-model.cjs'))
-  const CLI_P = { id: 'codex-cli', kind: 'codex-cli', baseUrl: '', enabled: true, models: ['codex-cli'] }
-  const HTTP_P = { id: 'deepseek', kind: 'openai', baseUrl: 'https://api.deepseek.com/v1', enabled: true, models: ['deepseek-chat'] }
-  const keyOf = (p) => p.id === 'deepseek'
-  check('★ canHttp：codex-cli 不算「能走 HTTP」（它没有 baseUrl）', K.canHttp(CLI_P, keyOf) === false)
-  check('★ canHttp：有 baseUrl + 有 Key 的 openai 才算', K.canHttp(HTTP_P, keyOf) === true)
-  check('★ canHttp：没注入 hasKey 判据时**保守拒绝**（不拿空 Key 去发请求）', K.canHttp(HTTP_P, undefined) === false)
-  const auxCfg = { providers: [HTTP_P, CLI_P], assistant: { model: 'codex-cli' }, scenes: {} }
-  const picked = AUX.resolveAux(auxCfg, { scene: 'compact', hasKey: keyOf })
-  check('★★ 主任务选 codex-cli 时，辅助任务挑到 HTTP 后端（不是 codex-cli）', picked?.provider.id === 'deepseek', JSON.stringify(picked?.provider?.id))
-  check('★ 辅助模型名不复用主任务那个（退到对方能提供的）', picked?.model === 'deepseek-chat', picked?.model)
-  check(
-    '★★ 一个 HTTP 后端都没有 → null（**不回退**到那个必失败的 CLI 后端）',
-    AUX.resolveAux({ providers: [CLI_P], assistant: { model: 'codex-cli' }, scenes: {} }, { scene: 'compact', hasKey: keyOf }) === null,
-  )
-  check(
-    '★ 场景显式配置优先（`scenes` 就是「辅助模型」的现成入口，不新造字段）',
-    AUX.resolveAux(
-      { ...auxCfg, scenes: { compact: { providerId: 'deepseek', model: 'deepseek-reasoner' } } },
-      { scene: 'compact', hasKey: keyOf },
-    )?.model === 'deepseek-reasoner',
-  )
-  check(
-    '★ 主任务是 DeepSeek 时辅助任务照旧选它（回归未破）',
-    AUX.resolveAux({ ...auxCfg, assistant: { model: 'deepseek-chat' } }, { scene: 'compact', hasKey: keyOf })?.model === 'deepseek-chat',
-  )
-  check(
-    '★★ 接线：compactMessages 用 resolveAux，且不再吃主任务那个 provider',
-    /auxModel\.resolveAux\(config, \{ scene: 'compact' \}\)/.test(R('electron/core/loop-model.cjs')) &&
-      !/compactMessages\(\{ \.\.\.options, provider: target \}\)/.test(R('electron/core/loop-model.cjs')),
-  )
-  check('★ 接线：reviewWithEvents 把 aux.provider 交给 selfReview', /provider: aux\.provider/.test(R('electron/core/loop-model.cjs')))
-  check(
-    '★ 辅助判据只有一处（aux-model 不自己判 kind —— 硬约束 #9）',
-    !/isCodexCli|kind === 'codex-cli'/.test(R('electron/core/aux-model.cjs')),
-  )
-
-  /* ── ⑪ 可选代理（默认不改行为）── */
-  group('Codex 后端 · 可选代理（默认空 = 逐字节沿用 process.env）')
-  const PROXY_SAMPLE = 'http://127.0.0.1:9999' /* 故意不是本机真实代理，证明不硬编码 */
-  check('★★ 没配 proxy → buildEnv 返回的**就是** process.env（同一个引用）', CLI.buildEnv({}) === process.env)
-  check('★ proxy 是空串 / 只有空白 → 一样（不注入空白值）', CLI.buildEnv({ proxy: '' }) === process.env && CLI.buildEnv({ proxy: '   ' }) === process.env)
-  const envP = CLI.buildEnv({ proxy: PROXY_SAMPLE })
-  const extraKeys = Object.keys(envP).filter((k) => !(k in process.env))
-  check('★★ 配了 proxy → 只多 HTTPS_PROXY / HTTP_PROXY 两个键', extraKeys.length === 2 && extraKeys.every((k) => /^(HTTPS|HTTP)_PROXY$/.test(k)), JSON.stringify(extraKeys))
-  check('★ 两个键都设成配置值（有些库只认 HTTP_PROXY）', envP.HTTPS_PROXY === PROXY_SAMPLE && envP.HTTP_PROXY === PROXY_SAMPLE)
-  check('★ 是在副本上改（不污染本进程）', envP !== process.env && process.env.HTTPS_PROXY !== PROXY_SAMPLE)
-  check('★ 前后空白被 trim', CLI.buildEnv({ proxy: `  ${PROXY_SAMPLE}  ` }).HTTPS_PROXY === PROXY_SAMPLE)
-  check('★ 规范化层认这个字段（不写白名单会被静默丢掉）', NP.normalizeProvider({ id: 'c', kind: 'codex-cli', proxy: PROXY_SAMPLE }, 0).proxy === PROXY_SAMPLE)
-  check('★ 老配置没有 proxy → 空串（默认值即兼容）', NP.normalizeProvider({ id: 'c', kind: 'codex-cli' }, 0).proxy === '')
-  check('★ 非字符串 → 空串（不信任输入）', NP.normalizeProvider({ id: 'c', kind: 'codex-cli', proxy: 1 }, 0).proxy === '')
-  check('★ 接线：适配器把 env 交给 runCodex', /env: buildEnv\(provider\)/.test(R('electron/core/codex-cli.cjs')))
-  check('★★ 内核与界面都**没有硬编码本机代理地址**（10808 一个都不许出现）', !/10808/.test(R('electron/core/codex-cli.cjs')) && !/10808/.test(R('electron/core/config-codex-preset.cjs')) && !/10808/.test(R('src/components/settings/providers/CodexCliCard.tsx')))
-
-  /* ── ⑫ 接线 ── */
+  /* ── ⑬ 接线 ── */
   group('Codex 后端 · 接线（少一处就是「静默不生效」）')
   check('★ loop-model 真的 require 了适配器', /require\('\.\/codex-cli\.cjs'\)/.test(R('electron/core/loop-model.cjs')))
   check('★ 配置层把 kind 写进白名单（不写会被静默丢掉）', /kind: pick\(str\(p\.kind\)/.test(R('electron/core/config-normalize-parts.cjs')))
@@ -285,6 +225,7 @@ export async function run() {
     'electron/core/provider-kinds.cjs',
     'electron/core/config-codex-preset.cjs',
     'electron/core/aux-model.cjs',
+    'scripts/selftest/groups/166-codex-stability.mjs',
     'electron/core/config.cjs',
     'electron/core/config-defaults.cjs',
     'electron/core/loop-model.cjs',

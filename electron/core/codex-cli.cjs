@@ -46,18 +46,36 @@ function finishReasonOf(state) {
  * 组子进程的环境变量。
  *
  * ★ 默认**逐字节沿用 `process.env`**（不加任何键）—— 修复前就是这样，不改变现有行为。
- * 只有用户**显式配了** `provider.proxy` 才注入 `HTTPS_PROXY` / `HTTP_PROXY`。
+ * 只有用户**显式配了**下面这两项才注入对应的键：
+ *   · `provider.proxy`     → `HTTPS_PROXY` / `HTTP_PROXY`
+ *   · `provider.codexHome` → `CODEX_HOME`
  *
- * 为什么需要（证据见设计 §5.6）：本机 `chatgpt.com` 直连不通，codex 必须走代理；
- * 而代理常见形态是**用户级环境变量** —— 从资源管理器/桌面快捷方式启动的进程
- * 不一定继承到它，症状是「模型没有输出」，用户完全看不出是代理的锅。
+ * ── 为什么代理要显式传（证据见设计 §5.6）─────────────────────
+ *
+ * 本机 `chatgpt.com` 直连不通，codex 必须走代理；而代理常见形态是**用户级环境变量**
+ * —— 从资源管理器/桌面快捷方式启动的进程不一定继承到它，症状是「模型没有输出」。
+ *
+ * ── ★★ 为什么 CODEX_HOME 只设环境变量、绝不碰那个目录 ────────
+ *
+ * 该目录里有 ChatGPT 的**登录凭据**（`auth.json`）。用户明令（2026-10-17 第 3 条）：
+ * **不得自动复制、迁移或删除认证文件**。所以这里**只设一个环境变量**：
+ * 不 `mkdir`、不读、不写、不复制、不删除 —— 那个目录存不存在、里面有什么，
+ * 全由 codex 自己管。配了之后需要在**新目录**重新登录（卡片上有提示）。
  *
  * @param {object} provider
  */
 function buildEnv(provider) {
   const proxy = String(provider?.proxy ?? '').trim()
-  if (!proxy) return process.env
-  return { ...process.env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy }
+  const codexHome = String(provider?.codexHome ?? '').trim()
+  /* ★ 两项都没配 → 原样返回 process.env（**同一个引用**，自检钉住这条） */
+  if (!proxy && !codexHome) return process.env
+  const env = { ...process.env }
+  if (proxy) {
+    env.HTTPS_PROXY = proxy
+    env.HTTP_PROXY = proxy
+  }
+  if (codexHome) env.CODEX_HOME = codexHome
+  return env
 }
 
 /** 把 stderr 尾部与进度提示收成一句人话（空输出时报错用）——**不猜**，只转述 */

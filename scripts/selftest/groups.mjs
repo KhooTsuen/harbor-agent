@@ -43,6 +43,7 @@ import { run as m04RestGroup } from './groups/162-m04-rest.mjs'
 import { run as edgeToolsGroup } from './groups/163-edge-tools.mjs'
 import { run as m02PanelGroup } from './groups/164-m02-panel.mjs'
 import { run as codexAdapterGroup } from './groups/165-codex-adapter.mjs'
+import { run as codexStabilityGroup } from './groups/166-codex-stability.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
 import { run as browser } from './groups/09-browser.mjs'
@@ -224,4 +225,5 @@ export const GROUPS = [
   edgeToolsGroup,
   m02PanelGroup,
   codexAdapterGroup,
+  codexStabilityGroup,
 ]

@@ -5,6 +5,38 @@
 
 ## [未发布]
 
+- **修：Codex CLI 稳定性第 3 项 —— 可配置 CODEX_HOME（默认不动；Harbor 绝不碰那个目录）**（2026-10-17）。
+
+  **问题**：`~/.codex` 实测 **569 MB / 2944 文件，全在 C 盘**（`sessions` / `log` / `cache` /
+  sqlite…），而每次 `codex exec` 都往里写一条 40–46 KB 的 rollout —— 与 Harbor
+  「任何数据不写 C 盘」的口径冲突。而 `paths.cjs` 的 `auditNonC()` 只审计 Harbor
+  自己的 5 类目录，**看不见**这个逃逸在外的大块。
+
+  **改法**（新增字段，默认空 = 逐字节不变）：
+  · `config-normalize-parts.cjs` 白名单加 `codexHome`；
+  · `codex-cli.buildEnv` 扩成同时认 `proxy` 与 `codexHome`：**两项都没配 → 原样返回
+    `process.env`**（同一引用）；配了才加对应的键；
+  · `CodexCliCard.tsx` 加「数据目录（CODEX_HOME）」输入框 + 两条硬提示；
+  · `src/types/models.ts` 加 `codexHome?: string`。
+
+  **★★ 用户第 3 条（不得自动复制 / 迁移 / 删除认证文件）的落实**：Harbor **只把这个值当
+  环境变量传下去** —— 不 `mkdir`、不读、不写、不复制、不删除。自检 166 组用
+  **剥掉注释后的源码**判据钉住：代码里不出现 `auth.json`、没有 `mkdir/cpSync/rmSync/
+  readFile/writeFile` 作用在 `codexHome` 上、`codexHome` 的唯一去处是 `env.CODEX_HOME`。
+  代价如实写在卡片上：**改了要在新目录重新登录**。
+
+  **顺带修掉一个真缺口**（自检逮到的）：用默认列表时 `config-normalize.cjs` **不跑**
+  `normalizeProvider`（直接深拷贝 `DEFAULTS.providers`），所以预设里缺的键就是
+  `undefined`。已给预设补齐 `codexPath` / `proxy` / `codexHome` 三个空串 ——
+  这样「默认预设」与「规范化后的 provider」**形状一致**。
+
+  **验证**：探针 28/28（含「给一个**不存在**的目录 → 调完之后它**仍然不存在**」这条
+  真做过的判据）；自检新增 **166 组**（稳定性三组整体拆出，165 组保持 240 行）；
+  合计 `5174 项 / 0 失败`；全库 1222 文件 ≤300 行。
+
+  **踩到的坑（第二次同族）**：源码级判据必须先**剥注释** —— 我第一次写的
+  「代码里不出现 auth.json」命中的是**我自己写的说明文字**，假红。
+
 - **修：Codex CLI 稳定性第 2 项 —— 可选代理（默认不改行为，不硬编码任何地址）**（2026-10-17）。
 
   **真机病**：本机（以及一些公司网络）`chatgpt.com` **直连不通**，codex 必须经代理；

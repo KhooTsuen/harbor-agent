@@ -73,6 +73,19 @@ function normalizeProvider(raw, index) {
      * ★ **不预填、不硬编码任何地址** —— 留空就与今天逐字节一致（设计 §5.6）。
      */
     proxy: str(p.proxy),
+    /**
+     * codex 的数据目录（`CODEX_HOME`）—— **可选**，默认留空 = 用 CLI 自己的默认
+     * （`%USERPROFILE%\.codex`，行为与今天完全一致）。
+     *
+     * 为什么要有：那个目录实测 569 MB / 2944 文件且**在 C 盘**（`sessions` / `log` /
+     * `cache` / sqlite…），与 Harbor「任何数据不写 C 盘」的口径冲突。改了它就能挪走。
+     *
+     * ★★ **Harbor 只把这个值当作环境变量传下去**（见 `codex-cli.buildEnv`）：
+     * 不建目录、不读、不写、不复制、不删除该目录里的任何东西 —— 那里有 ChatGPT 的
+     * 登录凭据（`auth.json`），用户明令不得自动搬运（2026-10-17 第 3 条）。
+     * 所以：改这里之后需要在**新目录重新登录**一次（卡片上有提示）。
+     */
+    codexHome: str(p.codexHome),
 
     /*
      * ── 高级：给中转站/怪站点留的兜底 ──

@@ -46,8 +46,15 @@ const CODEX_CLI_PROVIDER = {
   extraBody: {},
   omitParams: [],
   streamUsage: false,
+  /* ── 三个可选项一律留空（**不替用户决定**任何路径 / 代理 / 数据目录）──
+     为什么预设里也要写出来：用默认列表时 `config-normalize.cjs` **不跑** normalizeProvider
+     （直接深拷贝 DEFAULTS.providers），缺的键就是 `undefined` —— 写全了形状才一致。 */
+  codexPath: '',
   /** 代理留空 = 不给子进程设代理环境变量（本机需要时在设置里填；**不预填任何地址**） */
   proxy: '',
+  /** 数据目录留空 = 用 codex 自己的默认（`~/.codex`）；设了就当 `CODEX_HOME` 传下去
+   *  （Harbor 不建目录、不读、不写、不搬凭据 —— 那里面有登录凭据） */
+  codexHome: '',
 }
 
 module.exports = { CODEX_CLI_PROVIDER }
