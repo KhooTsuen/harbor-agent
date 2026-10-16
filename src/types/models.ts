@@ -74,6 +74,15 @@ export interface ProviderConfig {
   strictTools?: boolean
   /** 用户手填的能力覆盖，按模型名分组（优先于内置预设）。维度见 @/types/model-caps */
   modelCapabilities?: Record<string, Partial<ModelCapabilities>>
+  /**
+   * 后端种类（决定「怎么调这个模型」）：
+   *   · `'openai'`（缺省）—— HTTP / SSE，`electron/core/llm.cjs`
+   *   · `'codex-cli'` —— 本机 ChatGPT Codex CLI 子进程，`electron/core/codex-cli.cjs`（实验性）
+   * ★ 传输方式与**模型能力**是两件事，能力看 `config.capabilities`（按 kind 声明）。
+   */
+  kind?: 'openai' | 'codex-cli'
+  /** codex-cli 用的启动器路径；留空 = 按 PATH 自动找（**不硬编码**任何本机路径） */
+  codexPath?: string
 }
 
 import type { CredentialsStatus } from './backend'

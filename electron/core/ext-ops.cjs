@@ -28,6 +28,7 @@ const { inspectRef } = require('./ext-command.cjs')
  *     handleResume: Function,
  *     handleSelect: Function,
  *     handleNew: Function,
+ *     handleAbort: Function,  // M02-A2：侧边栏点「停止」→ 请渲染层停那条会话
  *   },
  *   command?: { handleResult: Function },
  * }} deps
@@ -246,6 +247,8 @@ function createOps(deps) {
     /* Phase 3b：侧边栏发消息 → 交给渲染层跑；重连要流快照；问「当前打开哪条」 */
     [P.KIND.CHAT_SEND]: (payload) => chat.handleSend(payload),
     [P.KIND.CHAT_RESUME]: (payload) => chat.handleResume(payload),
+    /* M02-A2：侧边栏点「停止」→ 请渲染层停那条会话（回执如实，没在跑就说没停） */
+    [P.KIND.CHAT_ABORT]: (payload) => chat.handleAbort(payload),
     [P.KIND.SESSION_ACTIVE]: () => ({ sessionId: String(getActiveSession() ?? '') }),
     /* Phase 3c：选一条（只切侧边栏）/ 新建一条（两侧都切） */
     [P.KIND.SESSION_SELECT]: (payload) => chat.handleSelect(payload),

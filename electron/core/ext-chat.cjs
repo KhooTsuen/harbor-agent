@@ -26,14 +26,20 @@
  */
 
 const P = require('./ext-protocol.cjs')
+/* 快照 + 旁听（M02-A：从本文件搬出去 —— 那边自成一体）；KEEP 常量原样再导出，调用点不变 */
+const { createStreamStore, KEEP_AFTER_DONE_MS } = require('./ext-chat-streams.cjs')
 
 /** 推给渲染层的事件名（走 `chat:event` channel，**不是新 IPC 通道**） */
 const EXT_SEND = 'ext:send'
 /** 侧边栏点 ＋ → 请渲染层新建一条并切过去（Phase 3c） */
 const EXT_NEW = 'ext:new'
-
-/** `done` 之后快照留多久（给「刚跑完就重连」留窗口） */
-const KEEP_AFTER_DONE_MS = 60_000
+/**
+ * M02-A2：侧边栏点「停止」→ 请渲染层停掉那条会话正在跑的一轮。
+ *
+ * ★ 与 `EXT_SEND` / `EXT_NEW` 同一条通道（`chat:event`），**不新增 IPC 通道**。
+ *   真相在渲染层：只有它手里有 AbortController（见 handleAbort 的注释）。
+ */
+const EXT_ABORT = 'ext:abort'
 
 /**
  * @param {{
@@ -49,8 +55,15 @@ function createChatRelay(deps) {
   const send = deps.send
   const log = deps.log
 
-  /** @type {Map<string, { sessionId: string, seq: number, text: string, reasoning: string, done: boolean, at: number }>} */
-  const snapshots = new Map()
+  /*
+   * 快照与「旁听一轮」整块在 `ext-chat-streams.cjs`（那边自成一体，133 行）——
+   * 本文件只管「发 / 选 / 停」。`push` 用闭包**晚取** bridge（装配时才 setBridge）。
+   */
+  const streamStore = createStreamStore({
+    sessionIdOfRequest: (rid) => String(streams.get(rid)?.sessionId ?? ''),
+    push: (kind, payload) => bridge?.push?.(kind, payload),
+    log,
+  })
   /**
    * 管道那头的桥 —— 装配时给（`setBridge`）。
    *
@@ -59,8 +72,6 @@ function createChatRelay(deps) {
    */
   let bridge = null
 
-  /** 只报一次「旁听到某一轮」（诊断用；不记每条 content，否则日志会被刷爆） */
-  const seen = new Set()
 
   /** 这个错误形状与 `ext-ops.handle` 一致（bridge 那边直接进 failure 帧） */
   const fail = (code, message) => ({ ok: false, error: { code, message } })
@@ -190,12 +201,7 @@ function createChatRelay(deps) {
     const want =
       String(payload?.sessionId ?? '') || selectedSessionId || String(bridge?.getActiveSession?.() ?? '')
     if (!want) return fail(P.ERR.NO_SESSION, '没说是哪条会话')
-    /* 同一会话可能有多条快照（连发两条）—— 取最近的那条 */
-    let best = null
-    for (const snap of snapshots.values()) {
-      if (snap.sessionId !== want) continue
-      if (!best || snap.at > best.at) best = snap
-    }
+    const best = streamStore.latestOf(want)
     if (!best) return fail(P.ERR.NO_SESSION, '那条会话没有正在跑的回复（重新发一条即可）')
     /* 回 `seq` + **全文**（不是分片）：侧边栏一次补齐，之后只认更大的 seq */
     return {
@@ -207,68 +213,31 @@ function createChatRelay(deps) {
       done: best.done,
     }
   }
-
-  /** 推一份分片给扩展（没绑桥就只记快照）—— 推的是**增量**，不含全文 */
-  function pushDelta(requestId, sessionId, seq, type, text, done) {
-    bridge?.push?.(P.KIND.CHAT_EVENT, { requestId, sessionId, seq, type, text, done })
-  }
-
-  /** 结构性事件推到侧边栏：让「正在跑」这类状态也看得见 */
-  const PUSH_TYPES = new Set(['content', 'reasoning', 'done', 'aborted', 'error', 'tool_start', 'tool_end'])
+  /* 快照与旁听整块在 `ext-chat-streams.cjs` —— 上面那个 streamStore。 */
+  const onChatEvent = (event) => streamStore.onChatEvent(event)
 
   /**
-   * 旁听一轮里的事件 —— 由 `register-handlers.cjs` 包过的 `send` 出口调，
-   * 也就是渲染层**收到的同一批**（content/reasoning 已过 50ms 合批）。
-   * ★ 只读旁听：不改流向、不改形状。★ `sessionId` 从 `streams` 反查
-   * （`chat:event` 的 payload 里没有它）—— 那正是给 `streams.set` 补该字段的用处。
+   * M02-A2：**停止**这条会话正在跑的那一轮（规格：「停止按钮真正取消相关请求」）。
+   *
+   * ★ 为什么不由主进程直接 abort：执行者是**渲染层**（C-α，见文件头）——
+   *   主进程手里没有那个 AbortController。所以这里只「请渲染层去停」
+   *   （推 `ext:abort`，与 `ext:send` / `ext:new` 同一条通道，零新增 IPC 通道），
+   *   渲染层接住后调它现成的 `stopActiveRequest`（唯一一处真正 abort 的实现）。
+   *
+   * ★ **没在跑时如实说没停**（不假装停掉了）—— 这与 M04 那批「没执行就说没执行」同一口径。
+   *   判据用 `busyRequestOf`（它扫的是 streams 的 sessionId 字段，是既有唯一口径）。
+   *
+   * @param {{ sessionId?: string }} [payload]
    */
-  function onChatEvent(event) {
-    const requestId = String(event?.requestId ?? '')
-    if (!requestId) {
-      /* 这条 warn 很重要：没有 requestId 就认不出是哪一轮，整条流都会丢 */
-      log?.warn?.(`扩展通道：旁听收到一条没有 requestId 的 chat:event（type=${String(event?.type ?? '')}）`)
-      return
+  function handleAbort(payload) {
+    const sessionId = String(payload?.sessionId ?? '') || selectedSessionId
+    if (!sessionId) return fail(P.ERR.NO_SESSION, '没说是哪条会话')
+    if (!busyRequestOf(sessionId)) {
+      return fail(P.ERR.NO_SESSION, '这条对话没有正在跑的回复（没什么可停的）')
     }
-    const sessionId = String(streams.get(requestId)?.sessionId ?? '')
-    const type = String(event?.type ?? '')
-    if (!seen.has(requestId)) {
-      seen.add(requestId)
-      log?.info?.(`扩展通道：旁听这一轮（${requestId} → 会话 ${sessionId || '(空)'}，首个事件 ${type}）`)
-    }
-
-    let snap = snapshots.get(requestId)
-    if (!snap) {
-      snap = { sessionId, seq: 0, text: '', reasoning: '', done: false, at: 0 }
-      snapshots.set(requestId, snap)
-    }
-    snap.at = Date.now()
-    /* done 带完整正文 —— 用它兜底（分段快照可能因为合批还没到齐） */
-    if (type === 'done') {
-      snap.text = String(event.content ?? snap.text)
-      snap.reasoning = String(event.reasoning ?? snap.reasoning)
-      snap.done = true
-    } else if (type === 'aborted' || type === 'error') {
-      snap.done = true
-    } else if (type === 'content' && typeof event.text === 'string') {
-      snap.text += event.text
-    } else if (type === 'reasoning' && typeof event.text === 'string') {
-      snap.reasoning += event.text
-    }
-
-    if (!PUSH_TYPES.has(type)) return
-    snap.seq += 1
-    /*
-     * ★ `done` 那片带**全文**（不是空 text）：侧边栏分片可能丢（广播没人听、
-     *   面板刚打开），最后一片拿全文覆盖，一次把缺的补回来 —— 两边最终一致。
-     */
-    pushDelta(requestId, snap.sessionId, snap.seq, type, type === 'done' ? snap.text : (event.text ?? ''), snap.done)
-
-    if (snap.done) {
-      /* 延迟清：立刻清的话，「刚跑完就重连」会问不到（用户看到空内容） */
-      const rid = requestId
-      const timer = setTimeout(() => snapshots.delete(rid), KEEP_AFTER_DONE_MS)
-      if (typeof timer.unref === 'function') timer.unref()
-    }
+    send('chat:event', { type: EXT_ABORT, sessionId })
+    log?.info?.(`扩展通道：侧边栏请求停止会话 ${sessionId} → 交给渲染层停`)
+    return { ok: true, sessionId }
   }
 
   return {
@@ -279,13 +248,15 @@ function createChatRelay(deps) {
     handleNew,
     noteActiveSession,
     onChatEvent,
+    /* M02-A2：停止这条会话正在跑的一轮（回执如实 —— 没在跑就说没停） */
+    handleAbort,
     /** 装配时绑上管道那头的桥（`push` 与 `getActiveSession` 都从它取） */
     setBridge(b) {
       bridge = b ?? null
     },
-    /** 自检用 */
+    /** 自检用（快照住在 ext-chat-streams，这里转发） */
     snapshotOf(requestId) {
-      return snapshots.get(requestId) ?? null
+      return streamStore.snapshotOf(requestId)
     },
     /** 自检用：侧边栏现在在看哪条 */
     selectedOf() {
@@ -294,4 +265,4 @@ function createChatRelay(deps) {
   }
 }
 
-module.exports = { createChatRelay, EXT_SEND, EXT_NEW, KEEP_AFTER_DONE_MS }
+module.exports = { createChatRelay, EXT_SEND, EXT_NEW, EXT_ABORT, KEEP_AFTER_DONE_MS }

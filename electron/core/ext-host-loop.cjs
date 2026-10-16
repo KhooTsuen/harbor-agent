@@ -107,6 +107,7 @@ function createDispatcher(client) {
     if (
       type === 'chat:send' ||
       type === 'chat:resume' ||
+      type === 'chat:abort' ||
       type === 'session:select' ||
       type === 'session:new' ||
       type === 'observe-page'
@@ -116,6 +117,8 @@ function createDispatcher(client) {
         'chat:send': [P.KIND.CHAT_SEND, { text: String(obj.text ?? '') }],
         /* 续流按 **sessionId** 问（真实那轮的 requestId 是渲染层生成的，扩展侧没听过） */
         'chat:resume': [P.KIND.CHAT_RESUME, { sessionId: String(obj.sessionId ?? '') }],
+        /* M02-A2：停止 —— 主进程把请求转给渲染层（执行者是它，见 ext-chat.handleAbort） */
+        'chat:abort': [P.KIND.CHAT_ABORT, { sessionId: String(obj.sessionId ?? '') }],
         'session:select': [P.KIND.SESSION_SELECT, { sessionId: String(obj.sessionId ?? '') }],
         'session:new': [P.KIND.SESSION_NEW, {}],
         /* ★ 观察结果是**结构化对象**，原样转（不 String()）—— 形状的真相源是 observe.js */
@@ -158,7 +161,7 @@ function createDispatcher(client) {
 
     return {
       error:
-        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / session:select / session:new / observe-page / get-elements / page-result',
+        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / chat:abort / session:select / session:new / observe-page / get-elements / page-result',
       echo: message ?? null,
     }
   }

@@ -5,6 +5,50 @@
 
 ## [未发布]
 
+- **功能：Codex CLI 模型适配器（实验性 · 纯文本后端）**（2026-10-17）。
+
+  **做了什么**：新增 `provider.kind`（`'openai'` 缺省 / `'codex-cli'`），让**本机已登录的
+  ChatGPT Codex CLI** 成为 Harbor 的**第二种模型后端** —— 与 DeepSeek 并列，同一个内核里切换。
+
+  · **同形契约**：适配器 `core/codex-cli.cjs` 的 `chatStream(options)` 与 `core/llm.cjs` 的
+    **签名 / 返回 / 取消语义完全一致**，所以分流全项目**只有一处**（`loop-model.cjs` 一行 `if`）。
+    循环 / 工具 / 审批 / 审计 / 预算 / 任务恢复**一行未改**。
+  · **6 个新文件**：`codex-jsonl.cjs`（JSONL 分块 + 事件归约，纯函数）· `codex-msg.cjs`
+    （messages → 单一 prompt）· `codex-run.cjs`（子进程起停）· `codex-cli.cjs`（适配器）·
+    `provider-kinds.cjs`（`kind` 与「需不需要 Key」的**唯一一处**判据）· `config-codex-preset.cjs`。
+  · **旧配置向后兼容**：`normalizeProvider` 新增 `kind` 字段，**缺省即 `'openai'`** ——
+    老 `config.json` 读进来行为**一字不变**（默认值即兼容，不写数据迁移、不删任何旧字段）。
+  · **默认列表**新增 codex-cli 预设但 **`enabled: false`**（不启用对任何人零影响，DeepSeek 仍是默认）；
+    界面上给老用户一个「添加 Codex CLI」入口（老配置里 providers 已有内容、不会自动补默认）。
+
+  **★ 能力限制（如实，不伪装完整兼容）**：`codex exec --json` **不产 `tool_call` 事件** ——
+  所以这条后端**没有 Harbor 的原生工具调用**（读写文件 / 跑命令 / 浏览器都用不了），
+  流式是 **item 级**（不是逐字），不能读图。这三条写进了**设置界面的卡片正文**与
+  `provider-capabilities.cjs`（按**后端种类**声明，与「按模型名」的预设表**分开**，
+  用户第 5 条）。`toolCalls` 恒为 `[]` 且**不调** `onToolCalls`。
+
+  **安全**：沙箱**固定 `-s read-only`**（开可写等于绕过 Harbor 审批直接改用户文件）；
+  prompt 走 **stdin**（命令行里只有常量 → 用户消息里的 `& | %` 不会被 cmd 解释，零注入面）；
+  取消只按**我们起的那个 pid** 杀树（`/T`，**绝不** `/IM`）；**不复制任何 ChatGPT 凭据**
+  （推理用 CLI 自己的登录态，Harbor 一个字节都不碰）。
+
+  **验证**：真机端到端 **通** —— `content="你好"` · `toolCalls=[]` · usage 是 OpenAI 原字段
+  （`prompt_tokens`/`completion_tokens`/`total_tokens`）· `finishReason="stop"` · 15.6 秒 ·
+  `onToolCalls` 未被调用。自检新增**第 165 组**（140 条：契约同形 / JSONL 分块 / 事件归约 /
+  prompt 拍平 / 进程层安全底线 / **取消与超时（真跑 `runCodex` + 注入假进程）** / 配置兼容 /
+  选择链路 / 能力按 kind / 接线）。`npm run verify` 全绿：内核 314 个 `.cjs` 无未定义标识符 ·
+  类型与基线一致 · 1221 文件 ≤300 行 · 单测 1765 · 自检 **5138/0**。
+
+  **真机逮到并修掉的一处**：Node 传给 `cmd.exe` 的参数被**再转义一层**（`\"C:\…\codex.cmd\"`），
+  cmd 于是把带引号的整串当命令名报「不是内部或外部命令」—— 加 `windowsVerbatimArguments` 修掉
+  （0.0 秒失败 → 15.6 秒成功）。
+
+  **已知遗留（如实）**：① 无 Harbor 原生工具调用（CLI 的架构限制，见上）；② 每次调用是新 thread，
+  多轮续接（`codex exec resume`）未做；③ 首次调用可能很慢（本机需代理、可能重连），
+  codex 路径用自己的宽超时（5 分钟无输出 / 15 分钟总上限）。**下一阶段研究项**：
+  ChatGPT **官方 API** 的 function calling（走现有 `llm.cjs`，工具调用天然可用）；以及把
+  Harbor 做成 **MCP server** 挂给 codex（让工具执行回到 Harbor 的审批体系内）。两者本批**均未实施**。
+
 - **功能：Edge 能力接成 Harbor 工具（对话里终于调得到）+ M04/M05 补齐动作**（2026-10-16）。
 
   **为什么要做**：M04/M05 前几批做的 9 个能力（click / type / … / tabs）**只有验收脚本能调** ——

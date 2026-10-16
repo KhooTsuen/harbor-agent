@@ -183,7 +183,10 @@ export async function run() {
   const hookSrc = readFileSync(join(ROOT, 'src/hooks/useExtBridge.ts'), 'utf8')
   const preload = readFileSync(join(ROOT, 'electron/preload.cjs'), 'utf8')
   const nativeSrc = readFileSync(join(ROOT, 'harbor-edge/extension/lib/native.js'), 'utf8')
-  const swSrc = readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8')
+  /* M02-A：消息分派搬到了 lib/messages.js（SW 贴 300 红线）—— 「有没有某个入口」两处一起读 */
+  const swSrc =
+    readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8') +
+    readFileSync(join(ROOT, 'harbor-edge/extension/lib/messages.js'), 'utf8')
   const panelSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/ChatPanel.tsx'), 'utf8')
 
   check('★ 装配处建了 relay（3b 的转发器）', /createChatRelay/.test(reg))

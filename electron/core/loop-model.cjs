@@ -4,6 +4,9 @@
  */
 
 const llm = require('./llm.cjs')
+/* ★ M-Codex：第二种后端种类（本机 ChatGPT Codex CLI）—— 与 llm 同形，见设计 §3 */
+const codexCli = require('./codex-cli.cjs')
+const kinds = require('./provider-kinds.cjs')
 const log = require('./log.cjs')
 const configCore = require('./config.cjs')
 const errors = require('./errors.cjs')
@@ -46,6 +49,10 @@ async function callModelInner(options, emit) {
   }
 
   const candidates = [provider]
+  /*
+   * ★ codex-cli 没有凭据 → 天然不在降级候选里：这是**有意的**。
+   *   用户没选它，就不该被自动换过去（换过去还会连工具一起丢，见设计 §1）。
+   */
   if (fb.enabled) {
     const others = (config.providers ?? []).filter(
       (p) =>
@@ -71,7 +78,14 @@ async function callModelInner(options, emit) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
 
       try {
-        const result = await llm.chatStream({
+        /*
+         * ★ 按**后端种类**分流 —— 全项目只有这一处（设计 §3）：
+         *   codex-cli → 本机 CLI 适配器；其余 → 原来的 HTTP/SSE。
+         * 两个模块的 `chatStream` 是**同形契约**（同入参、同返回、同取消语义），
+         * 所以循环 / 工具 / 审批 / 预算 / 恢复全都不感知这次分流。
+         */
+        const engine = kinds.isCodexCli(target) ? codexCli : llm
+        const result = await engine.chatStream({
           ...options,
           /* 日志里能一眼分出「对话轮次」和「起标题/建议」那种场景调用 */
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,

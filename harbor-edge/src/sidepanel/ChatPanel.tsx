@@ -1,59 +1,38 @@
 /**
- * 侧边栏的「对话」区块（Phase 3b：发消息 + 看流式回复；本轮改布局）
+ * 侧边栏的「对话」区块（发消息 + 看流式回复）
  *
  * 做：把用户打的字交给 SW（→ host → 主进程 → **渲染层**去跑），并把主进程推来的
  *     流式分片显示出来；点顶栏 **☰** 时把会话抽屉滑出来**覆盖**这一块。
- * 不做：**不落盘、不判忙**。落盘在渲染层（`replyPersistence.ts`）；「这条会话忙不忙」
- *     由主进程判（见 `electron/core/ext-chat.cjs`）—— 判据只有一处，扩展侧不自己猜。
- *
- * ── 布局 ────────────────────────────────────────────────────
- *
- *   <section 对话>                      ← 占满顶栏与输入框之间
- *     <div relative overflow-hidden>    ← 消息区 + 抽屉（抽屉 absolute 盖住消息区）
- *       <div 消息流 可滚动/>  {drawerOpen && <SessionDrawer/>}
- *     </div>
- *     <状态行：读页面结果 / 发送提示，**唯一**一个（由 App 持有）/>
- *     <输入框：📄 [textarea] 发送/>
- *   </section>
- *
- * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往**同一行**写话，而「只有一行」
- * 是硬要求（它是 ext-probe 的 `STATUS_TEXT_EXPR` 锚点）。
+ * 不做：**不落盘、不判忙**。落盘在渲染层（`replyPersistence.ts`）；「忙不忙」
+ *     由主进程判（`electron/core/ext-chat.cjs`）—— 判据只有一处，扩展侧不自己猜。
+ * 一轮的显示（含 Markdown）在 `TurnBubble.tsx`（本文件贴 300 红线，拆出去）。
  *
  * ── 流事件 / 冷启动 ─────────────────────────────────────────
- *
- * SW 广播 `{type:'harbor-push', push:{kind:'chat:event', payload:{…}}}`，字段（3b 钉死）：
- * `sessionId` / `seq` / `type` / `text` / `done`。`seq` 是**单调序号** —— 只认比手上
- * 更大的（广播重排时不会把旧片盖上去）。打开面板时问一次 `chat-resume` 拿**快照**
- * （当前全文 + seq），而不是让主进程补发历史分片 —— 理由见 3b 设计说明 §3.2。
+ * SW 广播 `chat:event`，字段：`sessionId` / `seq` / `type` / `text` / `done`。
+ * `seq` 单调 —— 只认更大的（广播重排不会把旧片盖上去）。打开面板时问一次
+ * `chat-resume` 拿**快照**（全文 + seq），而不是补发历史分片（见 3b 设计 §3.2）。
  *
  * ── ★ 两个 aria-label 是验收脚本的锚点（改了就静默失效）──────
- *   · `回复正文` → accept-phase3b 的 `REPLY_TEXT`
- *   · `发送提示` → accept-phase3b 的 `NOTICE_TEXT`；它同时是 ext-probe 的
- *     `STATUS_TEXT_EXPR` 锚点（那个表达式取文档里**第一个** role=status + aria-live
- *     的元素）→ 所以它**只能有一个**，且必须排在顶栏之后（顶栏的连接文字因此是纯文本）。
+ *   · `回复正文`（在 TurnBubble）→ accept-phase3b 的 `REPLY_TEXT`
+ *   · `发送提示` → `NOTICE_TEXT`，同时是 ext-probe 的 `STATUS_TEXT_EXPR` 锚点
+ *     （取文档里**第一个** role=status + aria-live）→ **只能有一个**。
+ *
+ * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往同一行写话，而「只有一行」
+ * 是硬要求（同上是锚点）。
  */
 
 /* global chrome */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ReadPageButton, type StatusMessage } from './ReadPageButton'
 import { ObserveButton } from './ObserveButton'
 import { SessionDrawer } from './SessionDrawer'
+/* M02-A：一轮的显示 + Markdown 搬到 TurnBubble（本文件贴 300 红线） */
+import { TurnBubble, type TurnView } from './TurnBubble'
 
-/** 正在显示的一轮（一次提问 + 它的回答） */
-interface TurnView {
-  /** 用户发的那句 */
-  ask: string
-  /** 回答正文（流式累加） */
-  text: string
-  /** 已收到的最大 seq（只认更大的，防重排） */
-  seq: number
-  done: boolean
-  error?: string | null
-}
-
-/** 主进程推来的分片（形状见 electron/core/ext-protocol.cjs 的 push） */
+/** 主进程推来的分片（形状见 `electron/core/ext-protocol.cjs` 的 push） */
 interface PushPayload {
   sessionId?: string
   seq?: number
@@ -73,9 +52,8 @@ export function ChatPanel({
 }: {
   connected: boolean
   /**
-   * 侧边栏**自己**在看的那条会话说（Phase 3c，由 App 持有并落 `chrome.storage`）。
-   * 空串 = 还没选 —— 这时发消息会**新建一条**（用户 2026-10-16 拍板），
-   * 而不是悄悄落进 Harbor 主窗口当时打开的那条（那是用户报的 bug 2）。
+   * 侧边栏**自己**在看的那条会话（Phase 3c，App 持有并落 `chrome.storage`）。
+   * 空串 = 还没选 —— 这时发消息会**新建一条**，而不是悄悄落进主窗口那条（用户拍板）。
    */
   sessionId: string
   drawerOpen: boolean
@@ -89,6 +67,8 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [turn, setTurn] = useState<TurnView | null>(null)
   const [sending, setSending] = useState(false)
+  /** M02-A2：正在等「停止」的回执（防连点） */
+  const [stopping, setStopping] = useState(false)
   /** 当前在看的会话 —— 存 ref，避免闭包里拿到过期的值 */
   const sidRef = useRef(sessionId)
   sidRef.current = sessionId
@@ -102,13 +82,10 @@ export function ChatPanel({
       if (!payload) return
       const incoming = String(payload.sessionId ?? '')
       /*
-       * ★ 只认「我正在看的那条会话」—— 但**要能跟着换 id**。
-       *
-       * 踩到的坑（真机）：刚新建的会话在渲染层那边先是**临时 id**（`pending_…`），
-       * 主进程推来的 `sessionId` 是落盘后的真 id —— 严格匹配会把每一片都丢掉
-       * （现象：侧边栏一直只有一个光标，主窗口却有完整回复）。
-       * 所以：本地还是 `pending_`／空时，**以推送为准学过来**（App 也会通过
-       * `session:selected` 同步它的那份；这里先学是为了不丢这一批分片）。
+       * ★ 只认「我正在看的那条会话」—— 但**要能跟着换 id**（真机踩过）：
+       * 刚新建的会话在渲染层那边先是**临时 id**（`pending_…`），主进程推来的是
+       * 落盘后的真 id —— 严格匹配会把每一片都丢掉（现象：侧边栏只有一个光标，
+       * 主窗口却有完整回复）。所以本地还是 `pending_`／空时，以推送为准学过来。
        */
       if (incoming && incoming !== sidRef.current) {
         const temp = !sidRef.current || sidRef.current.startsWith('pending_')
@@ -124,7 +101,7 @@ export function ChatPanel({
         if (type === 'content' && typeof payload.text === 'string') next.text += payload.text
         if (type === 'done' || type === 'aborted') {
           next.done = true
-          /* done 那片带**全文**（主进程给的）—— 用它覆盖，把可能丢掉的片补回来 */
+          /* done 那片带**全文** —— 用它覆盖，把可能丢掉的片补回来 */
           if (typeof payload.text === 'string' && payload.text) next.text = payload.text
         }
         if (type === 'error') {
@@ -169,14 +146,17 @@ export function ChatPanel({
     }
   }, [sessionId])
 
+  /* 有回复正在流吗（组件作用域：发送 / 停止按钮 / 停止本身三处共用）。
+     ⚠️ 原先它是 `send` 里的局部 const 却被 JSX 用了 → 真机**整页白屏**
+     （ReferenceError: streaming is not defined）—— 那种错只有真机跑才现形。 */
+  const streaming = Boolean(turn && !turn.done)
+
   const send = useCallback(() => {
     const text = input.trim()
     if (!text || sending) return
     setSending(true)
     onStatus(null)
-    /* ★ 有回复正在流时**不要**换掉显示：否则「忙时又发一条」会把正在看的流清空
-       （真机逮到：⑩ 判完 SESSION_BUSY，⑨⑪ 就再也收不到字了）。只发请求、显示不动。 */
-    const streaming = Boolean(turn && !turn.done)
+    /* ★ 正在流时**不要**换掉显示：否则「忙时又发一条」会把正在看的流清空（真机逮到） */
     if (!streaming) setTurn({ ask: text, text: '', seq: 0, done: false })
     try {
       const p = chrome.runtime.sendMessage({ type: 'chat-send', text, sessionId })
@@ -189,11 +169,7 @@ export function ChatPanel({
         setSending(false)
         if (res && res.ok === true) {
           setInput('')
-          /*
-           * 空会话时主进程会请渲染层**新建一条**（`created: true`）——
-           * 新 id 由主进程 push `session:selected` 回来，App 那侧接住即可，
-           * 这里不等（等会把发送卡住）。
-           */
+          /* 空会话时主进程请渲染层**新建一条**；新 id 由 `session:selected` 推回来，这里不等 */
           return
         }
         /* 被拒（忙 / 没窗口）—— 显示**主进程给的原话**，不自己编 */
@@ -210,6 +186,34 @@ export function ChatPanel({
     }
   }, [input, sending, turn, sessionId, onStatus])
 
+  /* M02-A2：**停止**正在跑的这一轮。
+     ★ 不做「本地把显示停掉」—— 那是放弃接收、主进程照跑（规格要的是**真正取消**）。
+     回执原话进状态行；**没在跑时它会如实说没停**。 */
+  const stop = useCallback(() => {
+    setStopping(true)
+    const sid = sidRef.current
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'chat-abort', sessionId: sid })
+      if (!p || typeof p.then !== 'function') {
+        setStopping(false)
+        return
+      }
+      p.then((res: { ok?: boolean; error?: string } | undefined) => {
+        setStopping(false)
+        onStatus({
+          text: res && res.ok === true ? '已请求停止 —— 这条对话正在收尾' : String(res?.error ?? '停不了'),
+          tone: res && res.ok === true ? 'info' : 'danger',
+        })
+      }).catch((error: unknown) => {
+        setStopping(false)
+        onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+      })
+    } catch (error) {
+      setStopping(false)
+      onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+    }
+  }, [onStatus])
+
   return (
     <section aria-label="对话" className="flex min-h-0 flex-1 flex-col">
       {/* 消息区 + 抽屉：抽屉是 absolute 覆盖，**不是**并排（400px 宽容不下并排）*/}
@@ -224,23 +228,7 @@ export function ChatPanel({
                   : '在下面输入 —— 会新建一条对话'}
             </div>
           ) : (
-            <>
-              {turn.ask ? (
-                <div className="mb-2 rounded-base bg-bg-raised px-2 py-1.5 text-fg-secondary">{turn.ask}</div>
-              ) : null}
-              <div className="whitespace-pre-wrap text-fg-primary" aria-label="回复正文">
-                {turn.text}
-                {!turn.done && !turn.error ? <span className="text-fg-tertiary">▍</span> : null}
-              </div>
-              {turn.error ? (
-                <div aria-label="回复错误" className="mt-1 text-2xs text-danger">
-                  {turn.error}
-                </div>
-              ) : null}
-              {turn.done && !turn.error ? (
-                <div className="mt-1 text-2xs text-fg-tertiary">已完成（同一条也在 Harbor 主窗口里）</div>
-              ) : null}
-            </>
+            <TurnBubble turn={turn} />
           )}
         </div>
 
@@ -285,6 +273,18 @@ export function ChatPanel({
             className="max-h-24 min-h-[28px] flex-1 resize-none bg-transparent text-dense text-fg-primary placeholder:text-fg-tertiary focus:outline-none"
           />
           {/* ★ 不再要求「先有会话」：没有会话时发送 = 新建一条（Phase 3c 拍板） */}
+          {/* M02-A2：正在跑时给「停止」—— 按 aria-label 找（图标按钮，验收脚本锚点） */}
+          {streaming || stopping ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="停止生成"
+              loading={stopping}
+              onClick={stop}
+            >
+              <Square size={14} aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button size="sm" variant="primary" loading={sending} disabled={!input.trim()} onClick={send}>
             发送
           </Button>

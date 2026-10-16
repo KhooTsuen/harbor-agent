@@ -24,7 +24,10 @@ export async function run() {
   const OP = require(join(ROOT, 'electron/core/ext-ops.cjs'))
 
   const obsSrc = readFileSync(join(ROOT, 'harbor-edge/extension/lib/observe.js'), 'utf8')
-  const swSrc = readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8')
+  /* M02-A：消息分派搬到了 lib/messages.js —— 「有没有那个入口」两处一起读 */
+  const swSrc =
+    readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8') +
+    readFileSync(join(ROOT, 'harbor-edge/extension/lib/messages.js'), 'utf8')
   const runSrc = readFileSync(join(ROOT, 'harbor-edge/extension/lib/observe-run.js'), 'utf8')
   const hlSrc = readFileSync(join(ROOT, 'electron/core/ext-host-loop.cjs'), 'utf8')
   const btnSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/ObserveButton.tsx'), 'utf8')

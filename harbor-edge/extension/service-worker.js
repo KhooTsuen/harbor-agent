@@ -25,6 +25,8 @@ import { resolveActiveTab } from './lib/active-tab.js'
 /* M03：观察页面（拆到单独文件，SW 贴 300 红线）· M04：指令执行 */
 import { observePage, getElements } from './lib/observe-run.js'
 import { runCommand } from './lib/command-run.js'
+/* M02-A：侧边栏消息的那些 if 分支搬到 `lib/messages.js`（SW 贴 300 红线，整块搬走） */
+import { createPanelRouter } from './lib/messages.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
    可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
@@ -206,75 +208,36 @@ async function newSession() {
   return reply && typeof reply === 'object' ? reply : { ok: false, error: '新建会话失败' }
 }
 
-/* ── 侧边栏来的消息 ────────────────────────────────────────── */
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg && msg.type === 'get-status') {
-    sendResponse({ state: getState() })
-    return
-  }
-  if (msg && msg.type === 'ping') {
-    ping()
-    sendResponse({ ok: true, state: getState() })
-    return
-  }
-  if (msg && msg.type === 'read-page') {
-    /* 异步：返回 true 保持通道，处理完再 sendResponse */
-    readActivePage()
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  if (msg && msg.type === 'observe-page') {
-    observePage()
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  /* M04-1：只要元素列表（可带 ref —— 失效由主进程判） */
-  if (msg && msg.type === 'get-elements') {
-    getElements(msg.ref)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  if (msg && msg.type === 'session-list') {
-    getSessionList()
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  if (msg && msg.type === 'chat-send') {
-    sendChatMessage(msg.text, msg.sessionId)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  if (msg && msg.type === 'chat-resume') {
-    resumeChat(msg.sessionId)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  if (msg && msg.type === 'session-active') {
-    getActiveSession()
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  /* Phase 3c：选一条（只切侧边栏）/ 新建一条（两侧都切） */
-  if (msg && msg.type === 'session-select') {
-    selectSession(msg.sessionId)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-  if (msg && msg.type === 'session-new') {
-    newSession()
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String((error && error.message) || error) }))
-    return true
-  }
-})
+/**
+ * M02-A2：**真正**停止这条会话正在跑的那一轮。
+ *
+ * ★ 为什么不在这里「自己停」：扩展侧点一下只能「不再显示后续分片」，
+ *   主进程那边照跑不误 —— 而规格要求的是「停止按钮**真正取消相关请求**」。
+ *   所以必须走主进程（`ext-chat.handleAbort` → 渲染层 `stopActiveRequest`），
+ *   连回执都来自它。★ 没在跑时它**如实回 ok:false**（不许假装停掉了）。
+ */
+async function abortChat(sessionId) {
+  const reply = await requestHost('chat:abort', { sessionId: String(sessionId ?? '') })
+  return reply && typeof reply === 'object' ? reply : { ok: false, error: '停不了（Harbor 没回话）' }
+}
+
+/* ── 侧边栏来的消息（M02-A：路由表搬到 `lib/messages.js`）────── */
+chrome.runtime.onMessage.addListener(
+  createPanelRouter({
+    getState,
+    ping,
+    readActivePage,
+    observePage,
+    getElements,
+    getSessionList,
+    sendChatMessage,
+    resumeChat,
+    getActiveSession,
+    selectSession,
+    newSession,
+    abortChat,
+  }),
+)
 
 chrome.runtime.onInstalled.addListener(() => {
   bindAction()

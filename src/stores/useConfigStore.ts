@@ -44,6 +44,8 @@ interface ConfigState {
   patchDownloads: (patch: Partial<AppConfig['downloads']>) => Promise<void>
   updateProvider: (id: string, patch: Partial<ProviderConfig>) => Promise<void>
   addProvider: () => Promise<void>
+  /** 一键加「ChatGPT Codex CLI（实验性）」后端 —— 老用户的 providers 数组里没有它 */
+  addCodexProvider: () => Promise<void>
   removeProvider: (id: string) => Promise<void>
   chooseWorkdir: () => Promise<boolean>
   testProvider: (id?: string) => Promise<{ ok: boolean; model?: string; error?: string }>
@@ -179,6 +181,41 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         apiKey: '',
         chatPath: '/chat/completions',
         models: ['gpt-4o-mini'],
+        enabled: true,
+        hasKey: false,
+      },
+    ]
+    const config = await pushConfig({ providers: next })
+    if (config) set({ config })
+  },
+
+  /**
+   * 一键加 Codex CLI 后端（实验性）。
+   *
+   * 为什么需要它：`config-normalize.cjs` 只在「用户配置里**没有** providers」时才用默认
+   * 列表 —— 已有用户的 config.json 里早就有 providers 数组，新预设**不会**自动出现。
+   * 没有这个入口，老用户根本选不到 Codex 后端（验收标准「能在模型设置里选它」不成立）。
+   *
+   * ★ 默认 `enabled: true`：用户点「添加」就是要用它。
+   * ★ **没有任何凭据字段** —— 推理用 CLI 自己的登录态（Harbor 不碰 ChatGPT 凭据）。
+   */
+  addCodexProvider: async () => {
+    const current = get().config
+    if (!current) return
+    /* 已经有了就不重复加（连点两下不该出现两个 Codex 后端） */
+    if (current.providers.some((p) => p.kind === 'codex-cli')) return
+    const next: ProviderConfig[] = [
+      ...current.providers,
+      {
+        id: 'codex-cli',
+        name: 'ChatGPT Codex CLI（实验性）',
+        kind: 'codex-cli',
+        /* 走 CLI 不走 HTTP：两个都空是**有意的**，不是漏填 */
+        baseUrl: '',
+        apiKey: '',
+        credentialRef: '',
+        chatPath: '/chat/completions',
+        models: ['codex-cli'],
         enabled: true,
         hasKey: false,
       },

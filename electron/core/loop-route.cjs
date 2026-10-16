@@ -16,6 +16,8 @@
 const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const modeRouter = require('./mode-router.cjs')
+/* 「需不需要 API Key」的判据在 provider-kinds.cjs（唯一一处）—— codex-cli 不需要 */
+const kinds = require('./provider-kinds.cjs')
 
 /**
  * 这次跑该用哪个供应商：
@@ -35,7 +37,10 @@ function providerForRun(config) {
   if (!base) throw new Error('没有可用的供应商')
   /* 传 config 进去：会话级模型是注入到这份配置里的，两边必须看同一份 */
   const provider = configCore.providerForModel(config.assistant.model, config) ?? base
-  if (!configCore.hasKey(provider)) throw new Error(`${provider.name} 还没填 API Key`)
+  /* ★ codex-cli 不需要 Key（走本机 CLI 登录态）—— 别在这里误报「还没填 API Key」 */
+  if (kinds.needsKey(provider) && !configCore.hasKey(provider)) {
+    throw new Error(`${provider.name} 还没填 API Key`)
+  }
   return provider
 }
 

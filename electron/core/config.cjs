@@ -1,9 +1,7 @@
 /**
- * 配置：读写
- *
- * 只负责「存取 + 迁移 + 给界面安全版本」。字段校验在 config-normalize.cjs，默认值在 config-defaults.cjs。
- * **最重要的一条：apiKey 不落这个文件** —— 老配置的明文 key 首次加载时搬进凭证库
- * （credentials.cjs）并从文件抹掉；界面看到的永远是掩码 + `hasKey`。
+ * 配置：读写（字段校验在 config-normalize.cjs，默认值在 config-defaults.cjs）。
+ * ★ apiKey **不落这个文件**：老配置的明文 key 首次加载时搬进凭证库（credentials.cjs）
+ *   并从文件抹掉；界面看到的永远是掩码 + `hasKey`。
  */
 
 const fs = require('node:fs')
@@ -15,6 +13,8 @@ const log = require('./log.cjs')
 const credentials = require('./credentials.cjs')
 const redact = require('./redact.cjs')
 const providerCaps = require('./provider-capabilities.cjs')
+/* 后端种类（openai / codex-cli）与「需不需要 Key」—— 判据的**唯一一处**（硬约束 #9） */
+const kinds = require('./provider-kinds.cjs')
 
 let cache = null
 
@@ -78,14 +78,11 @@ function load() {
     raw = JSON.parse(original)
   } catch (error) {
     /*
-     * 配置读不出来时，**先把现场留一份**再回退默认值。不这么做的话：启动后的某次设置同步
-     * 会把坏文件覆盖成默认值 —— 用户原来的 provider 列表、工作目录、快捷键全部静默消失，
-     * 而且没有任何提示。这是破坏性测试实测出来的（截断 config.json 后启动，providers
-     * 从 2 个变 1 个、workdir 被清空）。
-     *
-     * 注意 credentials.json 那边的做法更好（坏文件原样不动），配置这边做不到「不回写」
-     * —— 设置改一次就要写一次 —— 所以退而求其次：至少让原文件活在一份 .broken-<时间戳>
-     * 里，并且让界面能提示用户。
+     * 配置读不出来时**先留一份现场**再回退默认：否则启动后某次设置同步会把坏文件
+     * 覆盖成默认值，用户的 provider 列表 / 工作目录 / 快捷键静默消失、毫无提示
+     * （破坏性测试实测：截断 config.json 后启动，providers 2→1、workdir 被清空）。
+     * 配置这边做不到「不回写」（设置改一次就要写一次），所以至少让原文件活在一份
+     * `.broken-<时间戳>` 里并让界面能提示；credentials.cjs 那边更好（坏文件原样不动）。
      */
     loadWarning = error instanceof Error ? messageOf(error) : String(error)
     if (original) {
@@ -235,15 +232,18 @@ function activeProvider() {
   return enabled.find((p) => hasKey(p)) ?? enabled[0] ?? null
 }
 
-/**
- * 发**这个模型**时该用哪个供应商（`activeProvider` 不看模型）；models 为空 = 没声明 → 当作「都能」。
- * `cfg` 可选：调用方手里已有配置（如会话级模型注入后的那份）就传进来，保证两边同一份。
- */
+/** 发**这个模型**时用哪个供应商（`activeProvider` 不看模型）；models 空 = 都能。
+ *  `cfg` 可选：调用方手里已有配置（会话级模型注入后的那份）就传进来，保证两边同一份。 */
 function providerForModel(model, cfg = load()) {
   const name = String(model ?? '').trim()
   if (!name) return activeProvider()
-  const enabled = cfg.providers.filter((p) => p.enabled && p.baseUrl)
-  const pool = enabled.filter((p) => hasKey(p))
+  /*
+   * ★ 没有 Key 的后端（codex-cli）也算「可用」：它的推理走本机已登录的 CLI，
+   *   Harbor 不存凭据。不加这条，用户选了它的模型会被**静默换掉**
+   *   （pool 里只有别的供应商 → 落到 candidates[0]）—— 见 provider-kinds.cjs 文件头。
+   */
+  const enabled = cfg.providers.filter((p) => p.enabled && (p.baseUrl || !kinds.needsKey(p)))
+  const pool = enabled.filter((p) => hasKey(p) || !kinds.needsKey(p))
   const candidates = pool.length > 0 ? pool : enabled
   const serves = (p) => {
     const list = Array.isArray(p.models) ? p.models : []

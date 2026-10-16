@@ -25,6 +25,8 @@
  */
 
 const presets = require('./provider-presets.cjs')
+/* 后端种类（openai / codex-cli）—— 能力要按**种类**声明，见下面 capsForKind */
+const kinds = require('./provider-kinds.cjs')
 
 /** 十个维度。加维度时**四处要一起改**：这里、LABELS、provider-presets、src/types/model-caps.ts */
 const DIMENSIONS = [
@@ -106,17 +108,60 @@ function overridesFor(model, overrides) {
 }
 
 /**
+ * codex-cli 后端的**能力声明**（2026-10-17）。
+ *
+ * ★ 为什么它不写在 `provider-presets.cjs`（那张按**模型名**匹配的表）里：
+ *   这张表说的不是「某个模型会什么」，而是「**这种传输方式**会什么」——
+ *   `codex exec` 不出 token 级流、不产 tool_call。两件事混在一起会漂
+ *   （同一个模型走 HTTP 有工具、走 CLI 没工具）。用户 2026-10-17 第 5 条正是这个。
+ *
+ * 每条都有实测依据（设计 §2/§4），**不确定的不写**（不猜，见文件头）。
+ */
+const CODEX_CLI_CAPS = {
+  chat: true, // 实测拿到 agent_message.text
+  streaming: false, // 只有 item 级，没有 token 级 delta（事实 1）
+  tool_call: false, // ★ 没有 tool_call 事件（事实 2）—— 不伪装成有
+  vision: false,
+  structured_output: false,
+  reasoning: false, // 只报 reasoning 的 token 数，没有正文
+  attachments: false,
+  search: false,
+}
+
+/** 依据原文（界面上能看到「这个结论是哪来的」） */
+const CODEX_CLI_NOTE = '来自后端种类（codex CLI）的声明：`codex exec --json` 不出 tool_call、无 token 级流'
+
+/**
+ * 按**后端种类**算能力（不是按模型名）。
+ *
+ * @returns {object|null} 非 codex-cli 时返回 `null`（交给按模型名的预设那条路）
+ */
+function capsForKind(provider) {
+  if (!kinds.isCodexCli(provider)) return null
+  const caps = sanitize(CODEX_CLI_CAPS)
+  const source = {}
+  for (const dim of DIMENSIONS) {
+    /* 只对**显式声明**过的维度说「有结论」，其余照旧 'unknown'（不猜） */
+    source[dim] = Object.prototype.hasOwnProperty.call(CODEX_CLI_CAPS, dim) ? 'preset' : 'unknown'
+  }
+  return { caps, source, preset: 'codex-cli-backend', presetNote: CODEX_CLI_NOTE }
+}
+
+/**
  * 解析一个模型的能力。
  *
  * @param {string} model 模型名（各家写法都行，预设那边会归一化）
  * @param {object} [overrides] 用户覆盖，两种形状都认（见 overridesFor）
+ * @param {object} [provider] 供应商（**可选**）—— 传了才能按**后端种类**算能力（见 capsForKind）
  * @returns {{ model: string, caps: object, source: object, preset: string|null, presetNote: string }}
  *          `source[dim]` ∈ 'override' | 'preset' | 'unknown' —— 界面上能看出每个结论是谁给的
  */
-function resolve(model, overrides) {
+function resolve(model, overrides, provider) {
   const name = String(model ?? '').trim()
+  /* ★ 后端种类优先于「按模型名」的预设表（用户第 5 条：传输方式与模型能力分开） */
+  const byKind = capsForKind(provider)
   const hit = presets.match(name)
-  const base = hit ? sanitize(hit.caps) : blank()
+  const base = byKind ? byKind.caps : hit ? sanitize(hit.caps) : blank()
   const own = sanitize(overridesFor(name, overrides))
 
   const caps = { ...base }
@@ -134,8 +179,8 @@ function resolve(model, overrides) {
     model: name,
     caps,
     source,
-    preset: hit ? hit.id : null,
-    presetNote: hit ? hit.note : '',
+    preset: byKind ? byKind.preset : hit ? hit.id : null,
+    presetNote: byKind ? byKind.presetNote : hit ? hit.note : '',
   }
 }
 
@@ -145,7 +190,7 @@ function resolve(model, overrides) {
  * @param {string} model
  * @param {string|string[]} needs 这次任务需要的能力（维度名）
  * @param {object} [overrides] 用户覆盖
- * @returns {{ model, caps, source, preset, presetNote, ok, missing, unknown }}
+ * @returns {{ model, caps, source, preset, presetNote, needs, ok, missing, unknown }}
  *          ok = 没有**明确不支持**的项（说不准的不算失败）
  */
 function missing(model, needs, overrides) {
@@ -204,7 +249,7 @@ function forProviders(providers) {
     for (const raw of list) {
       const name = String(raw ?? '').trim()
       if (!name || models[name]) continue
-      const resolved = resolve(name, provider?.modelCapabilities)
+      const resolved = resolve(name, provider?.modelCapabilities, provider)
       models[name] = {
         caps: resolved.caps,
         source: resolved.source,
@@ -228,6 +273,9 @@ module.exports = {
   NUMERIC_DIMS,
   LABELS,
   NOTE,
+  CODEX_CLI_CAPS,
+  CODEX_CLI_NOTE,
+  capsForKind,
   blank,
   sanitize,
   cleanOverrides,

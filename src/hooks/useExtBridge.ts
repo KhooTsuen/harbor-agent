@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { stopActiveRequest } from '@/stores/thread/turnControl'
 
 /* ══════════════════════════════════════════════════════════════
    Phase 2：浏览器扩展桥（**双向**，缺一半都不算通）
@@ -36,6 +37,7 @@ import { useThreadStore } from '@/stores/useThreadStore'
  * 两条走同一条 `chat:event` 通道（**不是**新 IPC 通道）：
  *   · `ext:send` —— 发一条消息，可能指定「侧边栏选中的那条」
  *   · `ext:new`  —— 新建一条会话并切过去（侧边栏顶栏那个 ＋）
+ *   · `ext:abort`—— M02-A2：请渲染层**真正**停掉那条会话正在跑的一轮（停止按钮）
  */
 interface ExtCommand {
   type?: string
@@ -44,6 +46,11 @@ interface ExtCommand {
   /** true = 侧边栏一个会话都没选中，请新建一条再发（Phase 3c） */
   newSession?: boolean
 }
+
+/**
+ * 侧边栏来的三条指令（`ext:*`）—— `ext:abort` 只是「请你去停」，名字容易误解成
+ * 「已经停了」。所以这里写清：**真正 abort 的是渲染层**（它手里有 AbortController）。
+ */
 
 export function useExtBridge(activeThreadId: string): void {
   useEffect(() => {
@@ -93,6 +100,24 @@ export function useExtBridge(activeThreadId: string): void {
       if (event.type === 'ext:new') {
         const id = useAppStore.getState().createThread()
         useAppStore.getState().setActiveThread(id)
+        return
+      }
+
+      /*
+       * M02-A2：侧边栏点了「停止」—— 真正的中断在这里发生。
+       *
+       * ★ 为什么必须由渲染层做：只有它手里有那一轮的 AbortController。调的是
+       *   `stopActiveRequest`（`thread/turnControl.ts`）—— **唯一一处**真正 abort 的
+       *   实现：它会先收掉挂在这条对话上的澄清卡 / 权限卡（不然主进程干等到超时，
+       *   被当成「用户离场」按默认选项继续），再 abort 请求、拆掉兜底时钟。
+       *   不另写一套（硬约束 #9）。
+       *
+       * 传 threadId（= sessionId）：只停那一条；不传会把所有在跑的对话都停掉。
+       */
+      if (event.type === 'ext:abort') {
+        const tid = String(event.sessionId ?? '')
+        if (!tid) return
+        stopActiveRequest(tid)
         return
       }
 

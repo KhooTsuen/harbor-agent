@@ -33,6 +33,7 @@ const KIND = {
   CHAT_EVENT: 'chat:event', // push：一轮里的流事件（3b，**无 id**）
   SESSION_SELECT: 'session:select', // 侧边栏选了某条（3c）—— 只切它自己，主窗口不动
   SESSION_NEW: 'session:new', // 侧边栏点 ＋（3c）—— 新建一条并两侧切过去
+  CHAT_ABORT: 'chat:abort', // M02-A2：侧边栏点「停止」→ 请**渲染层**停掉那条会话正在跑的一轮
   SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
   PAGE_OBSERVE: 'page:observe', // 结构化页面观察（M03）：选区 / 元素列表 / iframe / 页面版本号
   PAGE_ELEMENTS: 'page:elements', // 元素列表视图（M04-1）：带 ref 解析 / 失效判定

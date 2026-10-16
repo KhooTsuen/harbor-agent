@@ -51,6 +51,20 @@ function normalizeProvider(raw, index) {
     chatPath: str(p.chatPath) || '/chat/completions',
     models: Array.isArray(p.models) ? p.models.filter((m) => typeof m === 'string') : [],
     enabled: p.enabled !== false,
+    /*
+     * ── 后端种类（2026-10-17）──────────────────────────────────
+     * `'openai'` = HTTP/SSE（`llm.cjs`）/ `'codex-cli'` = 本机 codex 子进程（`codex-cli.cjs`）。
+     * ★ **缺省即 `'openai'`** —— 旧配置里没有这个字段，读进来就是 `'openai'`，
+     *   行为**一字不变**（默认值即兼容，不需要写数据迁移）。见设计文档 §1。
+     * ★ 不认识的写法一律回落 `'openai'`（不信任输入）—— 别让一个手改的值把
+     *   供应商变成「谁都不认识的种类」，那比报错更难查。
+     */
+    kind: pick(str(p.kind), ['openai', 'codex-cli'], 'openai'),
+    /**
+     * codex-cli 用的 launcher（`codex` / `codex.cmd` / 自备 .cmd 的完整路径）。
+     * 留空 = 适配器按 PATH 与 npm 全局目录自己解析 —— **不硬编码本机路径**（设计 §5.4）。
+     */
+    codexPath: str(p.codexPath),
 
     /*
      * ── 高级：给中转站/怪站点留的兜底 ──

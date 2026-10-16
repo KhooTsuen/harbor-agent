@@ -72,6 +72,7 @@ const DEFAULTS = {
       omitParams: [],
       streamUsage: true,
     },
+    require('./config-codex-preset.cjs').CODEX_CLI_PROVIDER,
   ],
 
   assistant: {

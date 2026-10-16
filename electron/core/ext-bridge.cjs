@@ -166,7 +166,7 @@ function createBridge() {
      *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
      *   log: object,
      *   chat?: { handleSend: Function, handleResume: Function, handleSelect: Function,
-     *     handleNew: Function, noteActiveSession: Function },
+     *     handleNew: Function, handleAbort: Function, noteActiveSession: Function },
      *   command?: { handleResult: Function },
      * }} options
      */

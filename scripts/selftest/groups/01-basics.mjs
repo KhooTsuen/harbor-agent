@@ -47,7 +47,7 @@ export async function run() {
   check('默认主题是 default', defaults.general.theme === 'default')
   check('玻璃拟态默认关', defaults.general.glassmorphism === false)
   check('默认权限是 ask', defaults.tools.permission === 'ask')
-  check('默认有一个供应商', defaults.providers.length === 1)
+  check('默认有供应商（第一条是 DeepSeek —— 默认后端没变）', defaults.providers.length >= 1 && defaults.providers[0].id === 'deepseek', String(defaults.providers.length))
 
   const dirty = configModule.normalize({
     general: { theme: '不存在的主题', fontScale: 9999, glassmorphism: 'yes' },
@@ -59,7 +59,7 @@ export async function run() {
   check('glassmorphism 只认 true', dirty.general.glassmorphism === false)
   check('脏权限被纠正', dirty.tools.permission === 'ask')
   check('超时被夹取到 5', dirty.tools.shellTimeout === 5, String(dirty.tools.shellTimeout))
-  check('空供应商列表被补回默认', dirty.providers.length === 1)
+  check('空供应商列表被补回默认', dirty.providers.length >= 1 && dirty.providers[0].id === 'deepseek', String(dirty.providers.length))
 
   const saved = configModule.save({ ...defaults, general: { ...defaults.general, fontScale: 123 } })
   check('保存后立即生效', configModule.get().general.fontScale === 123)

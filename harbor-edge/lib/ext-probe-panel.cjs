@@ -27,6 +27,7 @@
  *   | 输入框上方那行状态             | `发送提示`       | STATUS_TEXT_EXPR / NOTICE_TEXT |
  *   | 输入框左端「读当前页」（图标）  | `读当前页`       | CLICK_READ_EXPR |
  *   | 输入框左端「观察页面」（图标，M03） | `观察页面`    | CLICK_OBSERVE_EXPR |
+ *   | 输入框右端「停止生成」（图标，M02-A2） | `停止生成`   | CLICK_STOP_EXPR |
  *
  *   ⚠️ ☰ 与抽屉**不能同名**：同名会让 `CLICK_TITLE_EXPR` 点到抽屉自身
  *   （点自己 = 没反应，判据还照过 —— 最难查的那种假绿）。
@@ -79,6 +80,21 @@ const CLICK_RETRY_EXPR = `(function(){
   const b = [...document.querySelectorAll('button')].find(x => /重试/.test(x.textContent));
   if (b) b.click();
   return 'ok';
+})()`
+
+/**
+ * 点「停止生成」（M02-A2）—— **图标按钮**，只能按 aria-label 找。
+ *
+ * ⚠️ 它**只在有回复正在流时才存在**（`streaming` 为真才渲染）。所以脚本在
+ *   「没在跑」时点它会拿到 `no-button` —— 那是**正确行为**（没得停就不该有按钮），
+ *   不是判据失效。反向验证（没在跑时停止必须如实回绝）要**直接调消息**，
+ *   而不是靠点这个按钮。
+ */
+const CLICK_STOP_EXPR = `(function(){
+  const b = document.querySelector('[aria-label="停止生成"]');
+  if (!b) return 'no-button';
+  b.click();
+  return 'clicked';
 })()`
 
 /* ── 顶栏的「☰ / 当前对话」（Phase 3b 布局返工 v2）────────── */
@@ -142,6 +158,7 @@ module.exports = {
   CLICK_READ_EXPR,
   CLICK_OBSERVE_EXPR,
   CLICK_RETRY_EXPR,
+  CLICK_STOP_EXPR,
   TITLE_EXPR,
   CLICK_TITLE_EXPR,
   DRAWER_OPEN_EXPR,

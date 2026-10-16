@@ -195,14 +195,26 @@ export async function run() {
   check('★ 没有 host_permissions（本阶段绝不加 <all_urls>）', manifest.host_permissions === undefined)
   check('★ 没有 optional_host_permissions（同样本阶段不加）', manifest.optional_host_permissions === undefined)
 
-  const sw = readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8')
+  /*
+   * M02-A：侧边栏消息的 if 链搬到了 `lib/messages.js`（SW 贴 300 红线）。
+   * 下面那些「SW 有没有某个入口」的判据问的是**扩展侧整体** —— 所以两处一起读，
+   * 否则断言会扫不到入口而假红（搬走 ≠ 入口消失）。
+   */
+  const sw =
+    readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8') +
+    readFileSync(join(ROOT, 'harbor-edge/extension/lib/messages.js'), 'utf8')
   /*
    * ★ M03 起「拿前台标签 + 判受限页」抽到了 `lib/active-tab.js`（读正文与观察页面共用
    *   一处 —— 各写一份必定漂，硬约束 #9）。所以下面两条判据跟着**真相源**走，不跟着 SW 文件。
    */
   const activeTab = readFileSync(join(ROOT, 'harbor-edge/extension/lib/active-tab.js'), 'utf8')
   check('★ 只查活动标签（active + currentWindow，不遍历后台页）', /active:\s*true,\s*currentWindow:\s*true/.test(activeTab))
-  check('★ 读页面只由消息触发（没有任何定时器去读页面）', /msg\.type === 'read-page'/.test(sw))
+  /* M02-A：这条入口现在住在 `lib/messages.js` 的路由表里（不再是 SW 里的一串 if）——
+     判据的**原意**不变：读页面**只由消息触发**，没有任何定时器自己去读。 */
+  check(
+    '★ 读页面只由消息触发（没有任何定时器去读页面）',
+    /'read-page': \(m\) => h\.readActivePage\(m\)/.test(sw) && !/setInterval/.test(sw),
+  )
   check('★ 内部页要拒（chrome:// edge:// about: …）', /BLOCKED_PROTOCOL/.test(activeTab) && /edge/.test(activeTab))
   check('★ 拒的话术是给用户看的人话', /该页面不支持读取/.test(activeTab))
   check('★ 「拿前台标签」只有一处实现（read 与 observe 共用，不各写一份）', /resolveActiveTab/.test(sw))

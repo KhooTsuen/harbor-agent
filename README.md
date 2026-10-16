@@ -95,6 +95,10 @@
 
 仓库里没有任何内置密钥，也不代付——模型费用你自己和厂商结算。`config.example.json` 里能看到完整配置长什么样，所有密钥那一项都是空的。密钥不会进日志，也不会发给界面。
 
+> **也可以不填密钥**：模型设置里有「**添加 Codex CLI**」——用你本机已登录的 ChatGPT Codex CLI
+> 当后端（实验性，**纯文本**）。注意它**不支持 Harbor 的工具调用**（读写文件 / 跑命令 / 浏览器都用不了），
+> 回复也不是逐字的。为什么、边界在哪，见 [`docs/research/codex-cli-adapter-design.md`](docs/research/codex-cli-adapter-design.md)。
+
 ### 3. 跑通第一个任务（约 30 秒）
 
 1. **新建对话**：左上角「新建对话」，或 `Ctrl+N`

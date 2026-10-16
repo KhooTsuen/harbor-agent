@@ -142,7 +142,10 @@ export async function run() {
   const host = readFileSync(join(ROOT, 'electron/core/ext-host-loop.cjs'), 'utf8')
   check('★ host 转发 get-elements', /'get-elements'/.test(host) && /P\.KIND\.PAGE_ELEMENTS/.test(host))
 
-  const sw = readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8')
+  /* M02-A：消息分派搬到了 lib/messages.js —— 「有没有那个入口」两处一起读 */
+  const sw =
+    readFileSync(join(ROOT, 'harbor-edge/extension/service-worker.js'), 'utf8') +
+    readFileSync(join(ROOT, 'harbor-edge/extension/lib/messages.js'), 'utf8')
   check('★ SW 有 get-elements 入口', /'get-elements'/.test(sw) && /getElements/.test(sw))
 
   const run = readFileSync(join(ROOT, 'harbor-edge/extension/lib/observe-run.js'), 'utf8')
