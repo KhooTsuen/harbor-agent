@@ -42,6 +42,24 @@ function finishReasonOf(state) {
   return state.turnCompleted ? 'stop' : ''
 }
 
+/**
+ * 组子进程的环境变量。
+ *
+ * ★ 默认**逐字节沿用 `process.env`**（不加任何键）—— 修复前就是这样，不改变现有行为。
+ * 只有用户**显式配了** `provider.proxy` 才注入 `HTTPS_PROXY` / `HTTP_PROXY`。
+ *
+ * 为什么需要（证据见设计 §5.6）：本机 `chatgpt.com` 直连不通，codex 必须走代理；
+ * 而代理常见形态是**用户级环境变量** —— 从资源管理器/桌面快捷方式启动的进程
+ * 不一定继承到它，症状是「模型没有输出」，用户完全看不出是代理的锅。
+ *
+ * @param {object} provider
+ */
+function buildEnv(provider) {
+  const proxy = String(provider?.proxy ?? '').trim()
+  if (!proxy) return process.env
+  return { ...process.env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy }
+}
+
 /** 把 stderr 尾部与进度提示收成一句人话（空输出时报错用）——**不猜**，只转述 */
 function explainEmpty(state, stderrTail) {
   const notices = state.notices.map((n) => String(n).trim()).filter(Boolean)
@@ -73,6 +91,8 @@ async function chatStream(options = {}) {
     launcher,
     prompt,
     cwd: options.cwd ?? options.workdir,
+    /* 配了 provider.proxy 才注入代理环境变量；没配就是原样 process.env */
+    env: buildEnv(provider),
     signal: options.signal,
     /* codex 自己的宽超时（刻意不用 idleTimeoutMs —— 那是 HTTP 路径的约定） */
     idleMs: DEFAULT_IDLE_MS,
@@ -138,4 +158,4 @@ async function chatStream(options = {}) {
   }
 }
 
-module.exports = { chatStream, finishReasonOf, explainEmpty }
+module.exports = { chatStream, finishReasonOf, explainEmpty, buildEnv }

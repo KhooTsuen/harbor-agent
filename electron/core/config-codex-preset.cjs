@@ -46,6 +46,8 @@ const CODEX_CLI_PROVIDER = {
   extraBody: {},
   omitParams: [],
   streamUsage: false,
+  /** 代理留空 = 不给子进程设代理环境变量（本机需要时在设置里填；**不预填任何地址**） */
+  proxy: '',
 }
 
 module.exports = { CODEX_CLI_PROVIDER }

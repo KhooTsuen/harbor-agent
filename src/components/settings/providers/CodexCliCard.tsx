@@ -99,6 +99,21 @@ export function CodexCliCard({ provider }: CodexCliCardProps) {
 
         <label className="block">
           <span className="mb-1 block text-2xs text-fg-tertiary">
+            代理地址
+            <span className="ml-1.5 text-fg-tertiary/70">
+              （可留空 = 不设代理；本机/公司网络下 Codex 连不上 ChatGPT 时再填）
+            </span>
+          </span>
+          <Field
+            value={provider.proxy ?? ''}
+            onChange={(v) => void update(provider.id, { proxy: v })}
+            placeholder="留空；需要时形如 http://127.0.0.1:8080"
+            spellCheck={false}
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-2xs text-fg-tertiary">
             模型标识（逗号分隔）
             <span className="ml-1.5 text-fg-tertiary/70">
               （只是 Harbor 里选它用的名字，具体模型由 Codex 自己的配置决定）

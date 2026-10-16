@@ -1,16 +1,13 @@
 /**
  * 自检 / Codex CLI 后端（M-Codex，2026-10-17）
  *
- * 九块：
- *   ① 契约同形（适配器导出与 `llm.chatStream` 同名同形；分流全项目只有一处）
- *   ② JSONL 分块（半行 / 多行 / \r\n / 坏行 / 超长行 / 结尾无换行）
- *   ③ 事件归约（agent_message → content · usage → OpenAI 字段 · error 不抛）
- *   ④ prompt 拍平（system 在前 · 最后一条 user 当请求 · **如实声明没有工具**）
- *   ⑤ 进程层（参数全是常量 · 沙箱固定只读 · launcher 解析 · 杀树按 pid 不按映像名）
- *   ⑥ 取消与超时（**真跑 runCodex + 注入假 spawn** —— 不真起 codex、不真杀进程）
- *   ⑦ 配置向后兼容（旧配置无 kind → openai）+ 选择链路（DeepSeek 有 Key 时仍选得中 codex-cli）
- *   ⑧ 能力按**后端种类**声明（与「按模型名」的预设表分开）
- *   ⑨ 接线（少一处就是「静默不生效」）
+ * 十一块（细则见每组标题）：
+ *   ① 契约同形 ② JSONL 分块（半行/\r\n/坏行/超长行/结尾无换行）③ 事件归约
+ *   ④ prompt 拍平 ⑤ 进程层安全底线（常量参数 · 沙箱只读 · 杀树按 pid）
+ *   ⑥ 取消与超时（**真跑 runCodex + 注入假 spawn**，不真起 codex、不真杀进程）
+ *   ⑦ 配置向后兼容 + 选择链路 ⑧ 能力按**后端种类**声明（与按模型名的预设表分开）
+ *   ⑨ 辅助任务不复用主任务后端（压缩/复核挑 HTTP 后端）⑩ 可选代理（默认空 = 沿用 env）
+ *   ⑪ 接线 + 行数
  *
  * ⚠️ 本组**不联网、不起真 codex**（只跑纯函数与假进程）。真机 E2E 见设计文档 §7。
  */
@@ -57,6 +54,8 @@ export async function run() {
   const RUN = require(join(ROOT, 'electron/core/codex-run.cjs'))
   const CLI = require(join(ROOT, 'electron/core/codex-cli.cjs'))
   const K = require(join(ROOT, 'electron/core/provider-kinds.cjs'))
+  /* 配置规范化层的「原料」函数（验白名单字段用 —— 不写进白名单的字段会被静默丢掉） */
+  const NP = require(join(ROOT, 'electron/core/config-normalize-parts.cjs'))
   const caps = require(join(ROOT, 'electron/core/provider-capabilities.cjs'))
   const parts = require(join(ROOT, 'electron/core/config-normalize-parts.cjs'))
   const defaults = require(join(ROOT, 'electron/core/config-defaults.cjs'))
@@ -250,7 +249,24 @@ export async function run() {
     !/isCodexCli|kind === 'codex-cli'/.test(R('electron/core/aux-model.cjs')),
   )
 
-  /* ── ⑪ 接线 ── */
+  /* ── ⑪ 可选代理（默认不改行为）── */
+  group('Codex 后端 · 可选代理（默认空 = 逐字节沿用 process.env）')
+  const PROXY_SAMPLE = 'http://127.0.0.1:9999' /* 故意不是本机真实代理，证明不硬编码 */
+  check('★★ 没配 proxy → buildEnv 返回的**就是** process.env（同一个引用）', CLI.buildEnv({}) === process.env)
+  check('★ proxy 是空串 / 只有空白 → 一样（不注入空白值）', CLI.buildEnv({ proxy: '' }) === process.env && CLI.buildEnv({ proxy: '   ' }) === process.env)
+  const envP = CLI.buildEnv({ proxy: PROXY_SAMPLE })
+  const extraKeys = Object.keys(envP).filter((k) => !(k in process.env))
+  check('★★ 配了 proxy → 只多 HTTPS_PROXY / HTTP_PROXY 两个键', extraKeys.length === 2 && extraKeys.every((k) => /^(HTTPS|HTTP)_PROXY$/.test(k)), JSON.stringify(extraKeys))
+  check('★ 两个键都设成配置值（有些库只认 HTTP_PROXY）', envP.HTTPS_PROXY === PROXY_SAMPLE && envP.HTTP_PROXY === PROXY_SAMPLE)
+  check('★ 是在副本上改（不污染本进程）', envP !== process.env && process.env.HTTPS_PROXY !== PROXY_SAMPLE)
+  check('★ 前后空白被 trim', CLI.buildEnv({ proxy: `  ${PROXY_SAMPLE}  ` }).HTTPS_PROXY === PROXY_SAMPLE)
+  check('★ 规范化层认这个字段（不写白名单会被静默丢掉）', NP.normalizeProvider({ id: 'c', kind: 'codex-cli', proxy: PROXY_SAMPLE }, 0).proxy === PROXY_SAMPLE)
+  check('★ 老配置没有 proxy → 空串（默认值即兼容）', NP.normalizeProvider({ id: 'c', kind: 'codex-cli' }, 0).proxy === '')
+  check('★ 非字符串 → 空串（不信任输入）', NP.normalizeProvider({ id: 'c', kind: 'codex-cli', proxy: 1 }, 0).proxy === '')
+  check('★ 接线：适配器把 env 交给 runCodex', /env: buildEnv\(provider\)/.test(R('electron/core/codex-cli.cjs')))
+  check('★★ 内核与界面都**没有硬编码本机代理地址**（10808 一个都不许出现）', !/10808/.test(R('electron/core/codex-cli.cjs')) && !/10808/.test(R('electron/core/config-codex-preset.cjs')) && !/10808/.test(R('src/components/settings/providers/CodexCliCard.tsx')))
+
+  /* ── ⑫ 接线 ── */
   group('Codex 后端 · 接线（少一处就是「静默不生效」）')
   check('★ loop-model 真的 require 了适配器', /require\('\.\/codex-cli\.cjs'\)/.test(R('electron/core/loop-model.cjs')))
   check('★ 配置层把 kind 写进白名单（不写会被静默丢掉）', /kind: pick\(str\(p\.kind\)/.test(R('electron/core/config-normalize-parts.cjs')))

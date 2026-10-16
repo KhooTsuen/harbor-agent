@@ -83,6 +83,10 @@ export interface ProviderConfig {
   kind?: 'openai' | 'codex-cli'
   /** codex-cli 用的启动器路径；留空 = 按 PATH 自动找（**不硬编码**任何本机路径） */
   codexPath?: string
+  /** codex-cli 走不走代理（可选）。留空 = 不给子进程设代理环境变量。
+   * chatgpt.com 在某些网络直连不通，而代理常是用户级环境变量（桌面图标启动的进程
+   * 不一定继承到，症状是「模型没有输出」）。不预填、不硬编码。 */
+  proxy?: string
 }
 
 import type { CredentialsStatus } from './backend'
