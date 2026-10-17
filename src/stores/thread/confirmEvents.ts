@@ -146,8 +146,13 @@ export function askPermissionFor(event: Record<string, unknown>): void {
 
   const risk = (event.risk ?? null) as { level?: string } | null
   const high = risk?.level === 'high'
-  /* 和 core/tools/approval.cjs 的 REMEMBERED 保持一致 */
-  const remembered = kind === 'write' || kind === 'mcp'
+  /*
+   * 和 core/tools/approval.cjs 的 REMEMBERED 保持一致。
+   * ★ 但 `alwaysAsk`（Codex 经 MCP 的写路径，逐次审批）时**必须为 false** ——
+   *   那种情况卡片上说「本轮内同类不再询问」是**反的**（用户第 3 条）。
+   */
+  const remembered = (kind === 'write' || kind === 'mcp') && event.alwaysAsk !== true
+  const alwaysAsk = event.alwaysAsk === true
 
   useUIStore.getState().askPermission({
     /*
@@ -163,6 +168,9 @@ export function askPermissionFor(event: Record<string, unknown>): void {
     description: [
       String(event.summary ?? ''),
       remembered ? '同意后，**本轮**内同类操作不再询问。' : '',
+      alwaysAsk
+        ? '这是外部 Codex 经 MCP 发起的写入，**每一次都会单独询问**（不会记住本次同意）。'
+        : '',
     ]
       .filter(Boolean)
       .join('\n\n'),

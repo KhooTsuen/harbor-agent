@@ -122,4 +122,46 @@ export async function run() {
   check('端到端：最后一条通过 → passed', oc.outcomeOf(listed).tests === 'passed')
   taskCore.remove(task.id)
   check('测试任务已清理', taskCore.get(task.id) === null)
+
+  /* ── ⑤ 项目测试的六态分类（3A）────────────────────────────
+   * 那一组判据只看 `run_shell` 的原文标记 —— 所以这里喂**真实标记原文**，
+   * 而不是自己编一个「差不多」的字符串（硬约束 9：形状只有一处）。
+   */
+  group('项目测试 / 六态分类（PASS/FAIL/TIMEOUT/CANCELLED/DENIED/ERROR）')
+  const PT = require(join(ROOT, 'electron/core/project-tests.cjs'))
+  const ST = PT.STATUS
+  check('★★ 退出码 0 → PASS', PT.classifyRun('ok\n\n[退出码 0]').status === ST.PASS)
+  check('★★★ 退出码非 0 → FAIL（不包装成成功）', PT.classifyRun('挂了\n\n[退出码 1]').status === ST.FAIL)
+  check(
+    '★★★ 超时标记 → TIMEOUT（run_shell 真会吐这一行）',
+    PT.classifyRun('[进程被超时杀掉（60s）：已连同子进程一起终止]').status === ST.TIMEOUT,
+  )
+  check(
+    '★★★ 中断标记 → CANCELLED',
+    PT.classifyRun('[已被用户中断，这条命令的子进程已经终止]').status === ST.CANCELLED,
+  )
+  check('★★★ 用户拒绝文案 → DENIED', PT.classifyRun('用户拒绝了这个操作：执行命令：npm test').status === ST.DENIED)
+  check('★★★ 空输出 → ERROR（不冒充 PASS）', PT.classifyRun('').status === ST.ERROR)
+  check('★★ 六种状态互不相同', new Set(Object.values(ST)).size === 6)
+
+  group('项目测试 / 命令与配置的收紧')
+  const isoRoot = join(ROOT, 'data', 'unit-test-data')
+  check('★★★ 命令带串联字符 → 拒', PT.validateItem({ root: isoRoot, command: 'npm test & whoami' }).ok === false)
+  check('★★ 命令带重定向 → 拒', PT.validateItem({ root: isoRoot, command: 'npm test > log.txt' }).ok === false)
+  check('★★ 命令带引号 → 拒（只允许一条简单命令）', PT.validateItem({ root: isoRoot, command: 'node -e "x"' }).ok === false)
+  check('★ 普通命令放行', PT.validateItem({ root: isoRoot, command: 'npm run test:unit' }).ok === true)
+  check('★★★ 默认全关', PT.PROJECT_TESTS_DEFAULTS.enabled === false && PT.PROJECT_TESTS_DEFAULTS.items.length === 0)
+  check(
+    '★★ 只认 === true（"yes"/1 都不算开）',
+    PT.normalizeProjectTests({ enabled: 'yes', items: [] }).enabled === false,
+  )
+  const reg2 = require(join(ROOT, 'electron/core/tools/registry.cjs'))
+  check(
+    '★★★ run_project_test 进 MUTATING_TOOLS（「只分析」那一轮会拦）',
+    reg2.MUTATING_TOOLS.has('run_project_test') && reg2.WRITE_TOOLS.has('run_project_test'),
+  )
+  check(
+    '★★ 它没有 command 参数（模型给不出命令）',
+    !Object.prototype.hasOwnProperty.call(reg2.byName('run_project_test').parameters.properties, 'command'),
+  )
 }

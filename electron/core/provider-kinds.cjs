@@ -75,4 +75,30 @@ function canHttp(provider, hasKey) {
   return typeof hasKey === 'function' && hasKey(provider) === true
 }
 
-module.exports = { OPENAI, CODEX_CLI, KINDS, normalizeKind, isCodexCli, needsKey, canHttp }
+/**
+ * 这个供应商在「选谁发请求」时算不算**候选**（`activeProvider` / `providerForModel` 用）。
+ *
+ * 判据两条：「启用」+「真的能发出去」。第二条对 HTTP 后端是 `baseUrl` 非空，
+ * 对 codex-cli 是「它本来就不需要 baseUrl/Key」（`needsKey === false`）。
+ *
+ * ★ 为什么单列一个函数：这条判据原先散在 `config.cjs` 的两处（`activeProvider` 与
+ *   `providerForModel`），**漏改一处就会出现「只配了 codex-cli 的机器报没有可用的供应商」**
+ *   （2026-10-17 真机 e2e 实测踩到：第二处改了、第一处没改）。收在这里，两边调同一个。
+ *
+ * @param {object} provider
+ */
+function usableProvider(provider) {
+  if (!provider || provider.enabled === false) return false
+  return Boolean(String(provider.baseUrl ?? '').trim()) || !needsKey(provider)
+}
+
+module.exports = {
+  OPENAI,
+  CODEX_CLI,
+  KINDS,
+  normalizeKind,
+  isCodexCli,
+  needsKey,
+  canHttp,
+  usableProvider,
+}

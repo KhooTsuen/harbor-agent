@@ -51,7 +51,7 @@ const exitsIn = decisions.exitsIn
  *
  * @param {string} requestId 对话的 requestId（只用来记日志，**不能当审批 id**）
  * @param {{ name?: string, summary?: string, args?: unknown, kind?: string, risk?: unknown,
- *           diff?: unknown, diffNote?: string, impact?: string[] }} request
+ *           diff?: unknown, diffNote?: string, impact?: string[], alwaysAsk?: boolean }} request
  * @param {(event: Record<string, unknown>) => void} emit 推事件给渲染层
  * @param {string} [sessionId] 这条对话的 id —— 只用于「需要你确认」那条系统通知
  * @returns {Promise<boolean>}
@@ -87,6 +87,8 @@ function askUser(requestId, request, emit, sessionId = '', timeoutMs = CONFIRM_T
         diff: request.diff ?? null,
         diffNote: request.diffNote ?? '',
         impact: request.impact ?? [],
+        /* ★ 逐次审批（Codex 写路径）：卡片要照它改文案，别写「本轮不再询问」 */
+        alwaysAsk: request.alwaysAsk === true,
       },
       emitReply: (payload) => {
         cardId = String(payload.confirmId ?? '')

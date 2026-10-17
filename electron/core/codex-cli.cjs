@@ -36,6 +36,9 @@
 const { buildPrompt } = require('./codex-msg.cjs')
 const { newState, applyEvent } = require('./codex-jsonl.cjs')
 const { runCodex, resolveLauncher, DEFAULT_IDLE_MS, DEFAULT_TOTAL_MS } = require('./codex-run.cjs')
+/* ★ 启用时（HARBOR_CODEX_MCP=1）给 codex **临时**注入 MCP server 配置（走 `-c`，
+   绝不写用户的 config.toml）；未启用时它返回空数组，行为与改动前一致。 */
+const mcpLifecycle = require('./codex-mcp-lifecycle.cjs')
 
 /** codex 事件 → Harbor 终止原因。它只报「turn 完成」，没有 length 那种截断信号 */
 function finishReasonOf(state) {
@@ -101,7 +104,12 @@ async function chatStream(options = {}) {
   const provider = options.provider && typeof options.provider === 'object' ? options.provider : {}
   const model = String(options.model ?? '')
   const launcher = resolveLauncher(provider.codexPath)
-  const prompt = buildPrompt(options.messages, { tools: options.tools })
+  const prompt = buildPrompt(options.messages, {
+    tools: options.tools,
+    /* ★ 桥启用时，Codex **真能调到**这些 MCP 工具 —— 提示词不能再否认有工具
+       （否则它有时信以为真、回「当前未提供 xxx MCP 工具」，见 codex-msg.cjs） */
+    mcpTools: mcpLifecycle.exposedToolNames(),
+  })
   const state = newState()
   let ttftMs = null
 
@@ -111,6 +119,9 @@ async function chatStream(options = {}) {
     cwd: options.cwd ?? options.workdir,
     /* 配了 provider.proxy 才注入代理环境变量；没配就是原样 process.env */
     env: buildEnv(provider),
+    /* ★ 启用 MCP 桥时才非空 —— 让 codex 能通过桥调 Harbor 的能力（沙箱仍 read-only）；
+       末位带上**这一轮的 runId**，桥据此把审批卡发给发起它的那条对话 */
+    extraArgs: mcpLifecycle.codexExtraArgs(options.traceId ?? options.taskId ?? ''),
     signal: options.signal,
     /* codex 自己的宽超时（刻意不用 idleTimeoutMs —— 那是 HTTP 路径的约定） */
     idleMs: DEFAULT_IDLE_MS,

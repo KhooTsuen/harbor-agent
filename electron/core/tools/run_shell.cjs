@@ -258,6 +258,16 @@ module.exports = {
           finish(truncateWithLog(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT, '命令输出超出上限'))
         },
       )
+      /*
+       * 让调用方拿得到这个子进程（项目测试要**确认「取消之后进程真的没了」**，
+       * 只置一个状态标记不算终止 —— 见 project-test-run.cjs 的 B3）。
+       * 可选钩子：不传就是原来的行为，任何现有调用方都不受影响。
+       */
+      try {
+        ctx.onChild?.(child)
+      } catch {
+        /* 回调自己坏了不该影响命令本身 */
+      }
     })
   },
 

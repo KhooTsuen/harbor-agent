@@ -9,7 +9,9 @@ import { Field } from '@/components/ui/Field'
 import type { McpServerConfig } from '@/types/models'
 import { IconButton } from '@/components/ui/IconButton'
 import { Row, SectionTitle } from '../parts'
+import { ProjectTestsPanel } from '../ProjectTestsPanel'
 import { ServerList } from './ServerList'
+import { CodexMcpPanel } from '../CodexMcpPanel'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 扩展（MCP）
@@ -218,6 +220,12 @@ export function McpTab() {
           </div>
         )}
       </Row>
+
+      {/* Codex MCP 桥（默认全关；显示的是主进程算出的真实生效状态） */}
+      <CodexMcpPanel />
+
+      {/* 项目自定义测试（3A）：模型只能点名 id，命令只能来自用户配置 */}
+      <ProjectTestsPanel />
     </div>
   )
 }

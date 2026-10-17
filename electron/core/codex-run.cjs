@@ -73,10 +73,18 @@ function resolveLauncher(codexPath, env = process.env) {
 
 /**
  * 拼命令行（Windows 用）。
- * ⚠️ 只拼**常量参数**；任何用户内容都不许出现在这里（底线 ②）。
+ * ⚠️ 基础参数**全是常量**；用户内容一律走 stdin（底线 ②）。
+ *
+ * `extraArgs` 只给**由 Harbor 自己算出来的**开关用（当前唯一用途：`HARBOR_CODEX_MCP=1`
+ * 时注入 MCP server 配置，见 `codex-mcp-lifecycle.cjs` 的 `codexExtraArgs`）。
+ * 它**插在末尾那个 `-` 之前** —— `-` 必须留在最后（「prompt 从 stdin 读」的约定）。
+ * 默认空数组 → 结果与改动前**逐字节一致**。
  */
-function buildCommandLine(launcher) {
-  return `"${String(launcher)}" ${EXEC_ARGS.join(' ')}`
+function buildCommandLine(launcher, extraArgs = []) {
+  const extra = (Array.isArray(extraArgs) ? extraArgs : []).map((a) => String(a))
+  const base = EXEC_ARGS.slice(0, -1)
+  const tail = EXEC_ARGS[EXEC_ARGS.length - 1]
+  return `"${String(launcher)}" ${[...base, ...extra, tail].join(' ')}`
 }
 
 /**
@@ -94,12 +102,13 @@ function buildCommandLine(launcher) {
  * `windowsVerbatimArguments: true` 让它原样传；配合 `/s`，cmd 按「剥掉首尾引号」
  * 的规则解析，正好执行 `"路径" 常量参数`。
  */
-function spawnSpec(launcher, env = process.env) {
+function spawnSpec(launcher, env = process.env, extraArgs = []) {
+  const extra = (Array.isArray(extraArgs) ? extraArgs : []).map((a) => String(a))
   if (process.platform === 'win32') {
     const comspec = String(env.ComSpec ?? env.COMSPEC ?? '').trim() || 'cmd.exe'
-    return { cmd: comspec, args: ['/d', '/s', '/c', buildCommandLine(launcher)], verbatim: true }
+    return { cmd: comspec, args: ['/d', '/s', '/c', buildCommandLine(launcher, extra)], verbatim: true }
   }
-  return { cmd: String(launcher), args: [...EXEC_ARGS], verbatim: false }
+  return { cmd: String(launcher), args: [...EXEC_ARGS.slice(0, -1), ...extra, '-'], verbatim: false }
 }
 
 /**
@@ -132,7 +141,7 @@ function killTree(pid, opts = {}) {
  * 跑一次 `codex exec`，把事件按顺序交给 `onEvent`。
  *
  * @param {{ launcher?: string, prompt?: string, cwd?: string, env?: Record<string,string>,
- *           signal?: AbortSignal, idleMs?: number, totalMs?: number,
+ *           extraArgs?: string[], signal?: AbortSignal, idleMs?: number, totalMs?: number,
  *           onEvent?: (event: object) => void, spawnFn?: Function }} [options]
  * @returns {Promise<{ events: object[], exitCode: number|null, stderrTail: string,
  *           stats: object, timedOut: boolean, aborted: boolean, spawnError: string|null }>}
@@ -146,7 +155,8 @@ function runCodex(options = {}) {
   const onEvent = typeof options.onEvent === 'function' ? options.onEvent : null
   const spawnFn = typeof options.spawnFn === 'function' ? options.spawnFn : spawn
   const env = options.env && typeof options.env === 'object' ? options.env : process.env
-  const spec = spawnSpec(launcher, env)
+  /* extraArgs：Harbor 自己算的附加参数（如 MCP server 配置）——默认空，行为不变 */
+  const spec = spawnSpec(launcher, env, options.extraArgs)
 
   return new Promise((resolve) => {
     const events = []

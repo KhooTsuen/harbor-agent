@@ -58,6 +58,12 @@ const EXPECTED_CHANNELS = [
   'config:get',
   'config:patch',
   'config:reset',
+  /* Codex MCP 桥的设置与真实生效状态（第四阶段；写目录在主进程校验） */
+  'codexMcp:status',
+  'codexMcp:set',
+  /* 项目自定义测试（3A）：设置 + 每条的真实校验结果（项目根由主进程验） */
+  'projectTests:status',
+  'projectTests:set',
   'credentials:status',
   'diagnostics:copy',
   'diagnostics:openDir',

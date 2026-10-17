@@ -10,6 +10,8 @@
  */
 
 const { NETWORK_MODES, SECURITY_DEFAULTS } = require('./config-security.cjs')
+const { CODEX_MCP_DEFAULTS } = require('./config-codex-mcp.cjs') /* 默认全关；形状只在那边定义 */
+const { PROJECT_TESTS_DEFAULTS } = require('./project-tests.cjs') /* 项目自定义测试（默认关） */
 const { MCP_ENV_ALLOWLIST } = require('./config-mcp-env.cjs')
 /* 单价价目表单独一个文件（这边 292 行，塞下两个模型的价就过线了）—— 见 pricing-defaults.cjs */
 const { PRICING_DEFAULTS } = require('./pricing-defaults.cjs')
@@ -139,14 +141,13 @@ const DEFAULTS = {
   },
 
   mcp: {
-    /**
-     * 每个 server：
-     * { id, name, command, args, env, enabled, useBundledNode,
-     *   inheritEnvironment, envAllowlist, cwd, network, timeoutMs, permission }
-     * **默认不继承环境变量、不给网络、工具按写操作对待。**
-     */
+    /* 每个 server：{ id, name, command, args, env, enabled, useBundledNode, inheritEnvironment,
+       envAllowlist, cwd, network, timeoutMs, permission }。**默认不继承环境变量、不给网络。** */
     servers: [],
   },
+  /* Codex MCP 桥（外部 Codex CLI 经命名管道调用 Harbor 工具）。**默认全关**，见 config-codex-mcp.cjs */
+  codexMcp: CODEX_MCP_DEFAULTS,
+  projectTests: PROJECT_TESTS_DEFAULTS /* 项目自定义测试（默认全关，见 project-tests.cjs） */,
 
   search: {
     provider: 'duckduckgo',

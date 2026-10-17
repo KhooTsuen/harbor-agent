@@ -5,6 +5,374 @@
 
 ## [未发布]
 
+- **3A 收尾：进程树终止确认 · MCP 入口实证 · 两个真实缺陷**（2026-10-17 · 3A 第三轮）。
+
+  **新增 `core/proc-tree.cjs`**（211 行）：`childrenOf`（wmic → PowerShell CIM 回退）、
+  `listDescendants`（广度优先，深度 ≤6 / 节点 ≤400，超限如实标 `truncated`）、
+  `waitAllGone`、`confirmTreeGone`（快照 → 补杀 → 逐个确认）。**先快照再杀**是关键：
+  父进程一死，孤儿仍带着原 `ParentProcessId`，事后才查反而查得到残留。
+
+  **`core/project-test-run.cjs`**：终止确认从「父 pid 消失」改成「父 + 全部受控后代逐个确认」。
+  取消 / 撤权 / 超时三条路径都覆盖；确认不了的原样写进结果正文（不冒充杀干净）。
+  结果正文补 `审批：` 一行、`meta` 补 `approved / treeSize / remaining / treeTruncated`。
+
+  **修复两个真实缺陷（都只有真走一遍 MCP 链路才现形）**
+  1. `codex-mcp-bridge.cjs` 的 `recheck` 第一行是 `if (writeEnabled !== true) return false`，
+     于是「项目测试」也被要求先开 `codexMcp.write`（它的权限其实是 `projectTests.enabled`）——
+     用户开了项目测试、没开写文件（默认关）时，**每次调用都被按拒绝结算**。
+     现在按工具分类：write/edit 仍要 writeEnabled，edit 另加版本校验，其余不在此处管。
+  2. `tools/index.cjs` 里 risk-gate 问过的那一类调用（`run_shell`：诊断 / 项目测试）
+     批准结果没回填给审计 → 审计记成 `approval:null`，事后看不出用户批没批。
+     修法：`approval` 声明提到 risk-gate **之前**（否则 TDZ，`chat.cjs` 的 phaseKey 踩过同样一次），
+     问过之后回填 `gated.approved`。
+
+  **审计可读性**：项目测试执行时给 args 带上 `projectTestId`（`run_shell` 不读它），
+  这样审计里一眼能认出「这条 run_shell 属于哪条项目测试」。
+
+  **设置界面**（`ProjectTestsPanel.tsx`）：按用户要求写明「项目测试会以当前用户权限运行，
+  可能访问项目外文件和网络。仅对可信项目启用。」并说明取消/超时会连受控子进程一起终止、
+  但脱离进程树的进程无法保证收回。
+
+  **实测（E 盘隔离工作区，0 次真实 Codex 调用）**
+  - F1/F2/F3：取消 / 撤权 / 超时三条路径，**父进程与孙子进程 pid 全部确认消失**（22/22）。
+  - F4：真命名管道 + 真 stdio JSON-RPC 走通 `harbor_run_project_test`（15/15）——
+    `tools/list` 有它、schema 只有 `id`、审批被请求、审计落盘且 `approval:true`、
+    失败时 `isError:true`、关权限后立即拒绝。
+  - 回归：自检 5224:0 · 单测 194 文件 / 1765 用例 · typecheck / lint / format / 行数 1248 / 内核 lint / 内核类型 全绿。
+
+- **3A 收尾：补齐项目测试的运行控制与安全边界实测**（2026-10-17 · 3A 第二轮）。
+
+  **运行控制（`core/project-test-run.cjs`）**
+  - **并发上限 2**：超了直接 `TOO_MANY_RUNNING`，不排队（排队会让「跑完没跑完」更难判）。
+  - **执行期间撤权**：每 500ms 复查总开关与条目；撤掉就 `abort()` → `killTree` 杀进程树，
+    终态**强制记 CANCELLED，哪怕进程恰好在同一瞬间跑完了也不许报 PASS**。
+  - **审批后复核**：`confirm` 通过后再读一次配置，审批期间被关掉 → 按拒绝结算。
+  - **终止确认**：`run_shell` 新增可选钩子 `ctx.onChild` 把子进程交出来，这里记 pid；
+    中断 / 超时 / 撤权之后**真去查这个 pid 还在不在**（`kill(pid,0)` + 最长等 3s），
+    结论写进正文与 `meta.pidGone`。只置一个状态标记不算证明。
+  - 超时路径也纳入终止确认（原来只有取消/撤权才查）。
+
+  **`core/tools/run_shell.cjs`**：只在末尾加了一个可选 `ctx.onChild?.(child)` 回调，
+  不传就是原行为 —— 现有调用方零影响。
+
+  **实测出来的真实边界（写进代码注释与设置面板，不是猜测）**
+  - 越界读 `E:\CodexWorkbench\electron\main.cjs` → **成功**
+  - 越界写 `E:\CodexWorkbench\tmp\` → **成功**
+  - 连本机代理 `127.0.0.1:10808` → **connected**；连 `223.5.5.5:443` → **connected**；DNS 解析 → **成功**
+
+  结论：Harbor **没有** OS 级文件/网络隔离（无 AppContainer / Job Object / 防火墙规则）。
+  `& | < > ^ %` 只是「配置层不许写一段脚本」，**不是进程沙箱**。所以「安全」的依据始终是
+  「用户亲笔授权 + 逐次审批 + 审计 + cwd 钉死」，不是「已证明它只读」。要真隔离需要独立方案
+  （AppContainer 或 Job Object + 网络 ACL），本轮不做。
+
+- **功能：项目自定义测试（受控执行 · 默认关闭）**（2026-10-17 · 3A）。
+
+  **做了什么**：用户可以在「设置 → 扩展 → 项目测试」为自己**某个项目**写一条测试命令
+  （项目根 + 命令 + 超时），之后模型**只能点名跑哪一条**（`id`），**给不出命令**。
+
+  **新增**
+  - `core/project-tests.cjs` —— 配置形状 + 校验 + 上限。命令里出现 `& | < > ^ %` 引号或换行
+    一律拒（目标是「一条简单命令」，不是「一段脚本」）。
+  - `core/project-test-status.cjs` —— 六态分类 `PASS / FAIL / TIMEOUT / CANCELLED / DENIED / ERROR`。
+    判据认 `run_shell` 真实会吐的标记（`[退出码 N]` / `[进程被超时杀掉` / `[已被用户中断`）。
+  - `core/project-test-run.cjs` —— 执行段（**DeepSeek 与 Codex 共用同一个函数**）：
+    现读总开关 → 按 id 取条目 → `policy.resolveWriteRoot` 判项目根边界 → 固定 cwd → 走
+    `tools.execute('run_shell')`（权限档 / 风险分级 / 逐次审批 / 审计全在里面）。
+  - `tools/run_project_test.cjs` —— DeepSeek 那条路的本地工具（**无 command 参数**）。
+  - `handlers/project-tests.cjs` + `projectTests:status/set` —— 设置 IPC，**项目根在主进程校验**
+    （realpath 后仍须落在允许的数据根内，挡 `..` / 符号链接 / 目录联接）。
+  - `CodexMcpPanel` 旁新增 `ProjectTestsPanel`（六态含义、逐次审批、以及「Harbor 没有进程级沙箱」的说明）。
+  - Codex 侧新增 MCP 工具 `harbor_run_project_test`（同样只给 id）；`exposedToolNames` 改为
+    「没开就不宣称有它」，三个开关各自独立。
+
+  **语义修正**：退出码非 0 **不再算工具成功**（`toolOk:false`）；超时 / 中断 / 用户拒绝各有独立状态。
+
+  **诚实登记**：Harbor **没有**进程级沙箱 —— `npm test` 内部能做什么事前看不出来。
+  所以边界是「用户亲笔授权 + 逐次审批 + 审计 + cwd 钉死」，**不是**「已证明它只读」。
+  这句话同时写在面板上和模块文件头里，不靠文档暗示。
+
+- **修复：用户约束识别把「对象限定的禁改」误判成整轮只读**（2026-10-17 · 第七阶段）。
+
+  **病**：`noWriteIn('不修改用户全局 Codex 配置')` 返回 `true` —— 那句话只是护住**那一份**配置，
+  其余已授权的修改照做，判据却升级成整轮 `allowWrite=false`，于是 `run_shell` / `write_file`
+  全被拒。这条在真机上**连拦三次正常开发**（都因为这一句「不修改用户全局 Codex 配置」）。
+
+  **判据**（`electron/core/user-constraints.cjs`）
+  - `NO_WRITE_VERB_OBJECT` 加了第 4 个捕获组：拿到**动词与宾语之间那段修饰语** ——
+     是区分「全部」和「特定一个」的唯一依据。
+  - 新增 `SCOPED_MODIFIER`（具体限定信号：拉丁字母 / 数字 / 点 · 该 此 这个 上述 现有 ·
+     正式 历史 生产 稳定版 打包版 用户全局…）→ 命中即**不**升级为整轮。
+  - 新增 `EXHAUSTIVE_MODIFIER`（任何 / 所有 / 全部 / 一切…）→ **优先于**上一条，一定是整轮。
+    自测逮到的漏放：「不要修改任何 .js 文件」修饰段带 `.` 会被当成具体对象而放行。
+  - 新增 `NO_WRITE_PHASED`（未经批准 / 未获授权 / 等确认 / 先别动…）→ 补住
+    「先调查，未经批准不要修改」这类**没有宾语**的分阶段要求（要求 6：不许自动放行未授权写入）。
+  - `noWriteIn` 改为三层叠加；`blocksAllWrites` 导出供测试直接钉。
+  - ⚠️ 「我的」**故意不收**进 `SCOPED_MODIFIER`：「不要改我的文件」= 说话人全部文件 = 整轮。
+
+  **没有改**：`allowsWrite` / `allowsNetwork` 的组合口径（显式设置仍优先于文本启发式）、
+  PermissionBar、工作区限制、工具审批、Codex MCP 开关、审计 —— 一行未动。
+  `loop.cjs` 的调用点也没动（它只消费 `allowsWrite`，签名不变）。
+
+  **验证**：判据表 32/32 · 自检 5209:0（153 组新增 13 条断言）· 单测 194 文件全过 ·
+  行数 196 / 170 均 ≤300 · typecheck / lint / format / 内核 lint / 内核类型 全绿 · 0 提交。
+
+  **已知遗留**（既有缺陷，**不是**本轮引入，已用 `git show HEAD:` 取旧版对照确认）：
+  宾语清单只收中文词，所以「不要修改所有 config.json」这类**纯英文文件名**仍不进判据。
+  按「不顺手扩大范围」留作独立任务。
+
+- **功能：Codex MCP 安全局部编辑 `harbor_edit_file`（实验性 · 默认关闭）**（2026-10-17 · 第六阶段）。
+
+  **做了什么**：Codex 现在能**只改一段**，不必整文件覆盖。四样必须齐 —— 目标文件、
+  待匹配原文 `oldText`、替换内容 `newText`、期望版本 `expectHash`。
+
+  **改动**
+  - 新增 `codex-mcp-edit-rules.cjs`：`hashOf`（sha256 前 16 位，版本标识）· `lf`（CRLF 归一，
+    否则 Windows 文件配 LF 原文会假失败成 0 次匹配）· `resolveForEdit`（**三条拒绝**：
+    版本冲突 / 0 次匹配 / 多次匹配）· `recheckEdit`（审批**通过后**整段再跑一遍）。
+  - 新增 `codex-mcp-edit.cjs`：执行段 —— 判据 → 逐次审批 → `tools.execute('edit_file')`。
+  - `codex-mcp-tools.cjs` 加工具定义 + `cleanEditFile`（缺 `expectHash` 直接拒）。
+  - `codex-mcp-bridge.cjs` 分发 `harbor_edit_file`；`recheck` 扩展成「批准后复核写入开关 +
+    局部编辑的文件版本」；**`harbor_read_file` 正文末尾附「（文件版本：…）」** ——
+    Codex 只看得到 `payload.text`，版本必须写进正文才拿得到。
+  - `codex-mcp-lifecycle.cjs` 的 `exposedToolNames()` 写没开时同样不宣称有 `harbor_edit_file`。
+
+  **复用而非新建**：路径边界 / 大小 / 目录 / 符号链接全走 `policy.resolveForWrite`；
+  审批走既有 PermissionBar；diff 走 `write-diff.cjs`（它本来就支持 `edit_file`，行号真实）；
+  审计 / 权限档 / 只读沙箱一行没改。
+
+  **★ 两个真机踩到的缺陷（都已修，都是「批准了却没写」）**
+  1. `recheck` 从 `request.args` 读 `expectHash`，而执行段只把它放在 `ctx` 里 →
+     复核判「缺版本」→ 明明点了允许却被按拒绝结算。**修**：`expectHash` 一并进 args。
+  2. 复核拿到的路径是**绝对路径**（`before.abs`），而 `resolveForEdit` 对外部入口
+     **拒绝绝对路径** → `ABSOLUTE_PATH` 把已批准的编辑判成拒绝。
+     **修**：复核前先归一成写根内相对路径（`toWorkspaceRelative`，根外原样返回交给下游拒）。
+
+  **L3 本地（不调 Codex）22/22**：唯一匹配成功 · 0 次匹配拒（`NO_MATCH`）· 多处匹配拒
+  （`MULTIPLE_MATCH`，不猜位置）· 版本冲突拒（`VERSION_CONFLICT`）· 缺版本拒
+  （`EXPECT_HASH_MISSING`）· `..` 穿越 / 绝对路径 / 写根指向正式源码全拒 ·
+  用户拒绝不写 · 写入关闭立即拒 · 复核（版本变 / 权限关）正确判否。
+  每个拒绝用例都同时断言**文件哈希没变**。
+
+  **L4 真机（开发版 Electron + 真实 PermissionBar）· 真实 Codex 调用 2 次**
+  - **成功路径 11/11**：Codex 先 `harbor_read_file` 拿版本 → `harbor_edit_file` →
+    渲染层真弹卡（卡上有 `−1 +1 行`、目标路径、来源「Codex（经 MCP 桥）」、查看 Diff）→
+    点「允许本次」→ 文件 `0e361765c689` → `6fac961d3565`，**内容 = 只换了那一行**，
+    其余字节不变 → 审计 `approval:true`。
+  - **拒绝路径 6/6**：真弹卡 → 点「取消」→ 文件哈希**完全没变** → `toolOk=false` →
+    审计 `approval:false` → Codex 如实说「用户拒绝」。
+
+- **功能：Codex MCP 能力接进设置界面（权限状态管理 · 默认全关）**（2026-10-17 · 第五阶段）。
+
+  **做了什么**：前面几阶段那几个开发期环境变量开关，现在有了自己的设置面板 ——
+  「设置 → 扩展 → Codex MCP 桥」。四项能力分别可开关，**默认全关**，用户不主动打开
+  就没有任何外部通道。面板显示的是**主进程算出来的真实生效状态**，不是配置里的原值。
+
+  **改动**
+  - 新增 `core/config-codex-mcp.cjs`：设置段 `codexMcp` 的默认值与规范化（形状只定义一处）。
+  - 新增 `core/codex-mcp-switch.cjs`：开关判定从 lifecycle 拆出（那边贴着 300 行）。
+    两套来源（配置 / 环境变量）→ **一份判定**；`resolveState()` 给界面的是生效值 + 来源标注。
+  - 新增 `handlers/codex-mcp.cjs` + IPC `codexMcp:status` / `codexMcp:set`。
+    ★ **写目录在这里由主进程验**（`policy.resolveWriteRoot`：必须落在隔离数据根内，
+    realpath 之后再判 —— 越界 / 符号链接 / 目录联接全部拒绝），前端校验只是体验。
+  - 新增 `src/components/settings/CodexMcpPanel.tsx` + `types/codexMcp.ts`，挂在「扩展」页。
+  - 桥的三个开关改为**每次调用现读**（`getSwitch`），不再是装配时快照 →
+    **关掉写入/测试/总开关后，新请求立刻被拒，不用重启**。
+  - `confirm` 层加 `recheck`：用户点了「允许」之后**再核一次**开关 ——
+    卡挂着期间权限被关掉，就按拒绝结算（不会因为点得早就拿到旧权限）。
+  - 总开关 `enabled` 仍然需要重启（桥在启动时装配命名管道）：`needsRestart` 如实报给界面，
+    面板显示「重启应用后生效」，**不会把未生效显示成已启用**。
+
+  **验证**（本轮只验设置与权限变更，未重复上一阶段的编程闭环；**0 次 Codex 调用**）
+  - **L4 真实开发版 Electron 14/14**：面板真渲染、默认全关、越界目录被主进程拒、
+    合法目录被接受、打开写入 state 立刻 true、总开关改动后 `needsRestart=true`、
+    关掉写入 state 立刻 false。截图 `tmp/s1-evidence/settings-codex-mcp.png`。
+  - **L3 本地 19/19**（不调 Codex）：默认值全关 · 只认 `=== true` · 越界/联接拒绝 ·
+    关掉后立即 `WRITE_DISABLED` / `TEST_DISABLED` / `MCP_DISABLED` ·
+    批准期间权限被关 → 仍按拒绝结算且文件未写。
+  - 自检 5196 项 / 0 失败（+5）；单测 194 文件 / 1765 全过；
+    静态六项 exit=0（行数 1238 文件全 ≤300 · 内核 lint 328 · 内核类型与基线一致）。
+
+- **功能：Codex MCP 受限测试执行 —— 打通「读码 → 改 → 审批 → 测试 → 汇报」闭环**（2026-10-17 · 第四阶段 · 实验性 · 默认关闭）。
+
+  **做了什么**：Codex 改完代码，能**经 Harbor** 跑一次预先允许的测试并拿到真实结果，
+  整条闭环在**不开放任意 shell** 的前提下走通。
+
+  **改动**
+  - 新增 `electron/core/codex-mcp-test.cjs`：`harbor_run_test` 的执行段。
+    命令是常量（`node --test`）、cwd 固定 = 隔离测试工作区（过 `resolveWriteRoot` 的
+    realpath 校验，**必须落在隔离数据根内**）、外部**只能给白名单 id、给不出命令**、
+    默认关闭。执行仍走 `toolsIndex.execute('run_shell', …)` —— 权限档/风险/审计全复用。
+  - `codex-mcp-tools.cjs`：加 `harbor_run_test` 定义 + `cleanRunTest`（多余字段丢弃）。
+  - `codex-mcp-bridge.cjs` / `codex-mcp-approval.cjs`：白名单从「诊断命令」扩成
+    「受信任命令」（诊断 + 受限测试），命令仍全部是 Harbor 的常量。
+  - `codex-mcp-lifecycle.cjs`：`exposedToolNames()` 在写能力没开时也不宣称有测试工具。
+
+  **★ 顺带修掉一个真实缺陷（用户第 6 条）**：`run_shell` 只要进程起来了就算工具成功
+  （输出末尾附 `[退出码 N]`，但**不以「错误：」开头**），所以 `isToolFailure` 判不出
+  「测试跑了、断言挂了」—— 实测 `node --test` 退出码 1 上层却拿到 `toolOk=true`，
+  **等于把测试失败包装成成功**。现在测试工具自己按退出码给 `toolOk`（`parseExitCode`）。
+
+  **验证（分层标注）**
+  - L1 静态：行数 1233 文件全 ≤300 · 内核 lint 325 `.cjs` · 内核类型与基线一致（179）。
+  - L3 本地隔离（**不调 Codex**）8/8：初始测试确实失败（失败项就是 `add(2, 3)`）·
+    未启用拒 · 测试根越界拒 · 非白名单项拒 · 真跑且 `toolOk=false`。
+  - **L4 真机（开发版 Electron + 真实 PermissionBar）**：
+    - 批准路径 **11/11**：Codex 先跑测试（如实拿到失败）→ 读 `calc.js` →
+      经 `harbor_write_file` 提交 `return a + b`（**改法正确**）→ 真卡审批 → 写入
+      （哈希 `7f85d58c8851` → `ab9f1f37b9e9`）→ 再跑测试 `toolOk=true` → 汇报「3 项全部通过」。
+    - 拒绝路径 **6/6**：两次写入都被拒绝、**文件哈希未变**（`7f85d58c8851`）、
+      审计 `approval:false`、桥侧 `toolOk:false`，Codex 如实回「用户拒绝了写入，文件未修改」。
+  - 回归：`typecheck` / `lint` / `check:format` / 行数 / 内核 lint / 内核类型 / 规范检查
+    全过；自检 **5191 项 / 0 失败**；单测 **194 文件 / 1765 用例**。
+
+  **边界（未变）**：Codex 仍 `-s read-only`（无 bypass）· 写入必经真实审批 · 不开放任意
+  shell · DeepSeek 内核与工具路径零改动 · 只动 E 盘隔离数据 · 未碰稳定版 exe · 未提交。
+
+- **功能：Codex MCP 桥的真实审批 UI + 受限写入（实验性 · 默认关闭）**（2026-10-17 · 第三阶段）。
+
+  **做了什么**：Codex 经 MCP 请求写文件时，**由 Harbor 弹真的 PermissionBar 卡**，用户点了
+  「允许本次」才写；拒绝 / 超时 / 拿不到发起操作的那一轮对话上下文 → **一律不写**。
+
+  **改动**
+  - 新增 `codex-mcp-context.cjs`：按 `runId` 登记「这一轮的审批上下文」（requestId /
+    sessionId / confirm）。`chat:send` 开跑时登记、收尾（含 `chat:abort`）注销。
+  - 新增 `codex-mcp-approval.cjs`：白名单诊断命令 → 策略批准；**其余（写文件）→ 委派给
+    发起那一轮对话的真 `chatConfirm.askUser`**（即渲染层 PermissionBar）。拿不到上下文 → 拒绝。
+  - 新增 `codex-mcp-write.cjs`：`harbor_write_file` 的执行段（默认关 → 写根校验 →
+    路径规范化 → 逐次审批 → 交给 `tools.execute`）。
+  - `codex-mcp-policy.cjs` 加 `resolveWriteRoot`（**写根必须落在隔离数据根内**，代码判据）
+    与 `resolveForWrite`（`..` / 绝对路径 / 符号链接 / 目录联接 / 目录目标 全拒）。
+  - `tools/approval.cjs` 加 `ctx.freshApproval`：为真时**既不读也不写**那个「批准窗口」
+    两分钟记忆 → 连续两次写**分别弹卡**。默认未设 = 既有行为逐字节不变（DeepSeek 路径零影响）。
+  - 卡上补「来源 = Codex（经 MCP 桥）」「每一次都会单独询问」——渲染层按
+    `event.alwaysAsk` 换文案（默认不写该字段，既有卡片一字不变）。
+  - ★ `codex exec` 非交互下写类 MCP 工具会被它自己按 `approval policy is never` 拒绝
+    （请求到不了 Harbor）。实测能改的是 **MCP server 级**的
+    `default_tools_approval_mode='approve'`（`approval_policy` 各种写法都无效）。
+    **仅写能力启用时才加这条**；`-s read-only` 沙箱保留，且**它不是安全控制** ——
+    真正的闸门是 Harbor 侧的写根校验 + 逐次真人审批 + 审计。
+  - `codex-mcp-lifecycle.cjs`：新增 `HARBOR_CODEX_MCP_WRITE` / `_WRITE_ROOT` /
+    `_CONFIRM_MS` 三个开发期开关（**默认关**）；`codexExtraArgs(runId)` 带上本轮标识。
+
+  **真机验证**（开发版 + 隔离数据根，`-s read-only`，无 bypass）
+  - **批准路径 11/11**：渲染层**真的弹出 PermissionBar**（含截图与卡上原文）、点「允许本次」→
+    文件写入（`ORIGINAL-CONTENT` → `APPROVED-BY-CODEX`，哈希 `c7f86303c7b8` → `f5f0f4458aee`）、
+    桥侧 `toolOk=true`、审计 `approval:true`。
+  - **拒绝路径 10/10**（2026-10-17 补测）：卡真弹出、点「取消」→ 文件**内容未变**（哈希同前）、
+    桥侧 `toolOk=false`、审计 `ok:false` + `approval:false` + `error:"用户拒绝"`。
+  - **超时路径 10/10**（补测）：不点任何按钮 → 卡在第 28 秒自己收掉（`CONFIRM_MS=20000`）、
+    文件**未变**、桥侧 `toolOk=false`、审计 `approval:false`。
+  - **连续两次 12/12**（补测）：两次写**分别弹卡**（第二次卡真出现才点），两次都真写入
+    （最终内容 `SECOND-WRITE`），两条审计各自 `approval:true` —— 没有走两分钟记忆。
+  - **切会话不错配 9/9**（补测）：卡在对话 A 弹出 → 新建对话后**新对话里卡数 = 0**（按发起
+    对话过滤，不是「当前活跃会话」）→ 文件**未写**（卡收掉即按拒绝结算）、桥侧 `toolOk=false`。
+  - **Codex 直写被沙箱挡 6/6**（补测）：用 Harbor 自己的 `runCodex`（参数从模块读，
+    `-s read-only`）让它用 PowerShell 改受保护文件 → `UnauthorizedAccessException` / `exit_code:1`、
+    文件内容保持 `PROTECTED-ORIGINAL`。
+    挡住它的是 **OS 层的只读沙箱**（那次尝试根本没走 MCP），不是 Harbor 的闸门 —— 如实记录。
+  - 隔离探针 **35/35**：默认关不可写 · 写根指向正式源码被拒 · `..`/绝对路径/符号链接/目录全拒 ·
+    拿不到上下文即拒（fail-closed）· 连续两次分别弹卡 · 超时按拒绝不写 ·
+    既有 `kind=write` 的两分钟记忆**未被改坏** · 只读工具的失败语义未被改坏。
+
+  - ★ **修一处真机阻断**（`codex-msg.cjs` + `codex-mcp-lifecycle.cjs` + `codex-cli.cjs`）：
+    MCP 桥开着时 Codex **真有工具**，而 prompt 仍在说「本次运行**没有可用的工具**」——
+    它于是有时信了那句、回「当前未提供 harbor_write_file MCP 工具」（这就是拒绝/超时/连续两次
+    那几条第一次没验成的原因）。现在提示词**三态**：有 MCP 工具 → 如实列出（并写明
+    「写操作会先弹给用户确认」「你自己没有 shell，沙箱是只读的」）；否则维持原样。
+    `exposedToolNames()` 跟着写开关走 —— **写没开就不宣称有写工具**。
+
+  **已知遗留**：`harbor_write_file` **默认关闭**（要显式配 `HARBOR_CODEX_MCP_WRITE=1` +
+  `_WRITE_ROOT`）；写根校验的判据在 `codex-mcp-policy.cjs`（唯一一处）。
+
+- **修：MCP 桥的结果语义分三层（工具失败不再对外报成功）+ 开发版真实链路复核 read-only 沙箱**（2026-10-17 · 第二阶段修正）。
+
+  **问题（用户第 1 条）**：桥把 `tools.execute()` 的返回**无条件**包成 `ok:true`。而
+  `execute()` 是**恒返回字符串**的契约 —— 失败时以「错误：…」/「用户拒绝了…」开头。
+  于是 `harbor_read_file` 读不到文件时，MCP 侧照样回成功，**Codex 收到 `status=completed`
+  加一段错误文案**，以为调用成功了。这正好命中用户明令禁止的那条。
+
+  **改法（三层分开，语义各归其位）**：
+  - `codex-mcp-policy.cjs` 加 `isToolFailure()` —— **工具层**的判据（唯一一处）。
+    ⚠️ 如实登记：同一个判据在 `tools/index.cjs:255` / `loop-tools.cjs:25` / `tool-runner.cjs:33`
+    已各有一份（**三处重复实现**）。本批**不重构**它们（超出授权），下一批应抽成一个函数四处共用。
+  - `codex-mcp-bridge.cjs` 回 `payload.toolOk`（**转发层** `ok` 与**工具层** `toolOk` 分开）；
+    `harbor_env_diag` **逐项**判、把失败的诊断项记进 `meta.failed`，全成功时输出**逐字节不变**。
+  - `mcp-server-standalone.cjs` 把 `toolOk:false` 翻成 MCP 的 `isError:true`，文案
+    「Harbor 工具执行失败：…」（与「转发失败」的文案分开，两种失败不再混为一谈）。
+
+  **顺带修掉一个真缺陷**：MCP server 收到 stdin `end` 就 `process.exit(0)` ——
+  异步的 `tools/call` 还没回、stdout 还没 flush 就被掐掉，**结果凭空消失**。
+  现改为等「在飞请求 + 未 flush 输出」都完再退（5 秒兜底）。
+
+  **验证**：
+  - 探针 22/22（真管道 + 真 span MCP server）：工具失败 → `toolOk:false` → MCP `isError:true`；
+    成功路径不带 `isError`；转发层拒绝（穿越 / 未知工具）与通道层拒绝（错 token）各自可分。
+  - **真机 7/7**（由 Harbor 的 `runCodex` 启动 Codex）：读存在的文件 → `status=completed`；
+    读不存在的 → **`status=failed`**（修正前是 `completed`）。Codex 自己在回复里复述了 `isError: true`。
+    ★ 如实说明：codex **不透传**该字段，它把它消化成 `status:'failed'`。
+
+  **同批：read-only 沙箱复核（用户第 2 条，开发版真实链路）**：
+  - 走 Harbor 的 codex-cli 后端（完整链路）：Codex **压根没尝试**碰文件 ——
+    `codex-msg.cjs` 的 `NO_TOOLS_NOTE` 在 prompt 里声明了「本次没有可用的工具」。文件未变。
+  - 用 Harbor 的 `runCodex` + **从模块读的** `EXEC_ARGS`（`-s read-only`，无 bypass）、
+    prompt 去掉那句作对照：Codex **能读**（exit=0）但**写被拒**
+    （`Set-Content` exit=1 / `UnauthorizedAccessException`），文件**内容未变**。6/6。
+  - 结论（如实）：**双层保护**。第一层是 Harbor 的 prompt 声明，第二层是 codex 自己的
+    read-only 沙箱（OS 层）。挡住写操作的是**第二层**，**不是** Harbor 的闸门 ——
+    因为那次尝试根本没经过 MCP（审计里 0 条写记录）。
+
+  **回归**：`typecheck` / `lint` / `format` / 行数（1229 文件 ≤300）/ `lint:kernel`（321 `.cjs`）/
+  `typecheck:kernel`（基线 180）全 exit=0 · 自检 **5182/0**（第 166 组 +8 条）· 单测 **194 文件 / 1765 用例**。
+  **未跑 build**（不碰 dist / 打包产物）。
+
+  **没做的（如实）**：未开放写能力 · **未接确认卡 UI**（只出方案，见报告）· 未改
+  `loop.cjs` / `tools/**` / `approval.cjs` / `audit.cjs` · 未新增 Git 提交。
+
+- **功能：Codex MCP 桥接入 Harbor 主进程（开发期开关，默认关）**（2026-10-17 · 第二阶段）。
+
+  **做了什么**：让运行中的 Harbor 能把 Codex CLI 当 MCP client 用 —— Codex 经 stdio MCP 调
+  Harbor 主进程执行**受控只读能力**（`harbor_read_file` / `harbor_env_diag`）。
+
+  **新增 6 个文件**：`core/codex-mcp-protocol.cjs`（通道协议，复用 `ext-protocol.cjs` 的帧与 token
+  机制，独立管道前缀 `harbor-codex-mcp-`）/ `core/codex-mcp-policy.cjs`（真实路径校验 + 诊断白名单）/
+  `core/codex-mcp-tools.cjs`（工具 schema + 参数净化）/ `core/codex-mcp-bridge.cjs`（**主进程侧宿主**：
+  验 token → 调 `tools/index.cjs` 的 `execute()`）/ `core/codex-mcp-lifecycle.cjs`（开关 + 装配 +
+  codex 启动参数）/ `mcp-server-standalone.cjs`（stdio MCP 协议层，**只转发不执行**）。
+
+  **改 5 个文件（最小必要）**：`register-handlers.cjs` 加 1 行装配；`codex-run.cjs` 的
+  `spawnSpec`/`buildCommandLine` 加 `extraArgs`（默认空数组 → 逐字节不变）；`codex-cli.cjs`
+  传 `extraArgs`；`config.cjs` 的 `activeProvider` 与 `providerForModel` 共用
+  `provider-kinds.usableProvider`（**只配 codex-cli 的机器原先会报「没有可用的供应商」**）；
+  `provider-kinds.cjs` 新增 `usableProvider`。
+
+  **★ 开发期开关 `HARBOR_CODEX_MCP=1`，默认关**：未启用时 `install()` 直接返回 null ——
+  不建命名管道、不写 token、不改任何现有行为（DeepSeek 路径零影响）。
+
+  **★ 沙箱与参数（E1 实验结论）**：codex 用 `-s read-only`，**不需要**
+  `--dangerously-bypass-approvals-and-sandbox` —— 给两个只读工具声明 MCP
+  `annotations.readOnlyHint: true` 即可放行（`readOnlyHint` 只解决兼容性，
+  **不作为安全控制**；边界是 Harbor 侧的白名单 + 路径校验 + 审计）。
+  MCP 配置经 `-c` **临时注入**，**不写用户的 `~/.codex/config.toml`**。
+
+  **★ 两个 cmd 引号坑（真机实测，都写进了代码注释）**：
+  ① `cmd` **不认 `\"` 转义** —— `args=[\"a\",\"b\"]` 会让引号配对错乱，cmd 把整段当命令名；
+  正解是 TOML **单引号字面字符串、不加外层引号**（单引号在 cmd 里不是特殊字符）。
+  ② 命令行若**以引号结尾**会被 `cmd /s /c` 剥掉首尾引号 → 命令名错乱。
+
+  **真机验收（开发版主进程）**：隔离数据根 + 开关打开起源码树 Harbor → 发一条消息 →
+  Codex 产生 `mcp_tool_call` → 主进程执行 `harbor_env_diag`（5 条 `run_shell` 落审计：
+  `node -v` / `git --version` / `cd` / 两条 `echo`）+ `harbor_read_file`（读到隔离工作区文件）
+  → 界面显示诊断原文（v24.19.0 / git 2.55.0.windows.3 / 工作区路径 / 隔离目录 / CODEX_HOME 未设置）。
+  **三方证据**：`codex-mcp-calls.jsonl`（桥侧）+ `audit/*.jsonl`（`sessionId=codex-mcp`）+ 界面回复。
+
+  **口径**：这是 **Codex 的 agent loop 通过 MCP 使用 Harbor 的受控能力**，
+  **不是** Harbor 原生模型工具调用（Harbor 的工具 schema 没有进 codex 的 function-calling）。
+
+  **验证**：开关探针 33/33 · 真机 e2e 5/5 · 自检 5174/0 · 单测 194 文件 1765 全过 ·
+  内核 321 个 `.cjs` 无未定义 · 类型基线一致（180）· 1229 文件 ≤300 行。
+  **遗留**：审批仍是显式策略（未接确认卡 UI）；只开放两个只读能力，**未开放写文件**；
+  上游「工具返回错误文本」与桥「转发成功」是两个层面（审计如实记工具真实成败）。
+
 - **修：Codex CLI 稳定性第 3 项 —— 可配置 CODEX_HOME（默认不动；Harbor 绝不碰那个目录）**（2026-10-17）。
 
   **问题**：`~/.codex` 实测 **569 MB / 2944 文件，全在 C 盘**（`sessions` / `log` / `cache` /

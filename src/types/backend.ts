@@ -18,6 +18,8 @@ import type {
   StatsSummary,
   BalanceResult,
 } from './models'
+import type { CodexMcpSettings, CodexMcpState } from './codexMcp'
+import type { ProjectTestsSettings, ProjectTestsState } from './projectTests'
 
 import type { MemoryStats, SafetyBridge } from './safety'
 import type { ImageDonePayload } from './image'
@@ -174,6 +176,20 @@ export interface WorkbenchBridge
   mcpStatus: () => Promise<McpServerStatus[]>
   mcpPresets: () => Promise<McpPreset[]>
   mcpRestart: () => Promise<{ ok: boolean; servers: McpServerStatus[] }>
+  /* Codex MCP 桥的设置与**真实生效状态**（主进程算的，不是前端猜的） */
+  codexMcpStatus: () => Promise<{ ok: boolean; state: CodexMcpState }>
+  codexMcpSet: (partial: Partial<CodexMcpSettings>) => Promise<{
+    ok: boolean
+    error?: string
+    state: CodexMcpState
+  }>
+  /* 项目自定义测试：设置 + 每条的真实校验结果（项目根由主进程校验） */
+  projectTestsStatus: () => Promise<{ ok: boolean; state: ProjectTestsState }>
+  projectTestsSet: (partial: Partial<ProjectTestsSettings>) => Promise<{
+    ok: boolean
+    error?: string
+    state: ProjectTestsState
+  }>
 
   diagnosticsCopy: () => Promise<{
     ok: boolean

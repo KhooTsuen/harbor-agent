@@ -227,8 +227,7 @@ function forRenderer() {
 
 /** 发请求时用这个：带 key 且启用的供应商 */
 function activeProvider() {
-  const c = load()
-  const enabled = c.providers.filter((p) => p.enabled && p.baseUrl)
+  const enabled = load().providers.filter(kinds.usableProvider)
   return enabled.find((p) => hasKey(p)) ?? enabled[0] ?? null
 }
 
@@ -242,7 +241,7 @@ function providerForModel(model, cfg = load()) {
    *   Harbor 不存凭据。不加这条，用户选了它的模型会被**静默换掉**
    *   （pool 里只有别的供应商 → 落到 candidates[0]）—— 见 provider-kinds.cjs 文件头。
    */
-  const enabled = cfg.providers.filter((p) => p.enabled && (p.baseUrl || !kinds.needsKey(p)))
+  const enabled = cfg.providers.filter(kinds.usableProvider)
   const pool = enabled.filter((p) => hasKey(p) || !kinds.needsKey(p))
   const candidates = pool.length > 0 ? pool : enabled
   const serves = (p) => {

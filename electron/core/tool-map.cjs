@@ -46,7 +46,7 @@ const MAX_DETAILED = 32
 const TOOL_GROUPS = [
   { title: '摸清现状（动手前）', tools: ['list_dir', 'read_file'] },
   { title: '改文件', tools: ['edit_file', 'write_file', 'download'] },
-  { title: '跑命令', tools: ['run_shell'] },
+  { title: '跑命令', tools: ['run_shell', 'run_project_test'] },
   {
     title: '上网查（先 search，再 browse，要操作才 elements/click/type）',
     tools: ['search_web', 'browse', 'browse_elements', 'browse_click', 'browse_type', 'browse_nav', 'browse_ax'],
@@ -67,6 +67,7 @@ const TOOL_HINTS = {
   write_file: '只有新建文件、或整体重写才用它',
   download: '存文件到磁盘；网页正文要用 browse，别用它',
   run_shell: '需要交互的命令别用它（会卡住）；可以给 cwd',
+  run_project_test: '跑用户为某个项目配好的测试（只能给 id，命令由用户配置）；没配置就先用 list_dir / read_file 看清项目',
   search_web: '你的知识里没有、或可能已经变了的，先用它',
   browse: '要读整页正文 / JS 渲染的页面；只是中转读一眼，传 sameTab',
   browse_elements: '要操作页面，先看这儿有什么、能点什么',

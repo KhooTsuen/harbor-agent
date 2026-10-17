@@ -60,9 +60,8 @@ async function execute(name, args, ctx = {}) {
 
   /*
    * ── MCP 工具：外部进程，按写操作对待 ──
-   * 确认一律用 `approval !== true`，不用 `!approval`：真值判断会把非假值都当同意
-   * （破坏性测试传过 `{ ok: false }`，本意是拒绝，却被当同意、还写进了磁盘）。
-   * fail-closed：**不是明确的 true 就是拒绝**。
+   * 确认一律用 `approval !== true`：fail-closed，不是明确的 true 就是拒绝
+   * （破坏性测试传过 `{ ok: false }`，本意拒绝却被当同意、还写进了磁盘）。
    */
   if (isMcpTool(name)) {
     let approval = null
@@ -143,9 +142,10 @@ async function execute(name, args, ctx = {}) {
 
   /* ── ② 风险分级（只有 run_shell 有）── */
   const verdict = name === 'run_shell' ? risk.classify(args?.command) : null
-  let summary = tool.summarize
-    ? tool.summarize(args)
-    : `${name}(${JSON.stringify(args).slice(0, 120)})`
+  let summary = tool.summarize ? tool.summarize(args) : `${name}(${JSON.stringify(args).slice(0, 120)})`
+  /* ★ 必须在 risk-gate **之前**声明：那边问过之后要把批准结果回填进来
+     （放在下面「写操作」那一段会 TDZ —— chat.cjs 的 phaseKey 踩过同样一次） */
+  let approval = null
 
   if (verdict) {
     /*
@@ -167,8 +167,13 @@ async function execute(name, args, ctx = {}) {
     if (gated.asked === true && gated.approved !== true) {
       return `用户拒绝了这个操作：${summary}`
     }
-    /* 已经问过了 —— 下面「写操作」那一段别再问一次 */
-    if (gated.asked === true) riskApproved = true
+    /* 已经问过了 —— 下面「写操作」那一段别再问一次。★ 批准结果要回填给审计：
+       否则 risk-gate 问过的那一类（run_shell：诊断 / 项目测试）在审计里记成
+       `approval:null`（= 这一层没问），事后看不出用户到底批没批。 */
+    if (gated.asked === true) {
+      riskApproved = true
+      approval = gated.approved === true
+    }
     summary = `${summary}\n风险：${gated.label}`
   }
 
@@ -179,29 +184,24 @@ async function execute(name, args, ctx = {}) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本次对话关闭工具' })
     return `错误：本次对话已关闭工具调用，${name} 被拒绝。`
   }
-
   if (ctx.allowWrite === false && MUTATING_TOOLS.has(name)) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
     return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
   }
-
   if (ctx.temporary && name === 'remember') {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '临时对话禁止写长期记忆' })
     return '错误：这是临时对话，禁止写入长期记忆。'
   }
-
   /* 联网门：search_web 与 download 都算「要去网上」—— 本轮说不要联网时都得拦下 */
   if (ctx.allowNetwork === false && (name === 'search_web' || name === 'download' || name.startsWith('edge_'))) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止联网' })
     return `错误：本轮对话禁止联网，${name} 被运行时拒绝。`
   }
-
   if (ctx.permission === 'readonly' && (isWrite || MUTATING_TOOLS.has(name))) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '只读模式拒绝' })
     return `错误：当前是「只读」权限，${name} 被拒绝。需要在设置里放宽权限。`
   }
 
-  let approval = null
   if (isWrite && typeof ctx.confirm === 'function') {
     /* ask 档：确认；full 档：只读+低风险的 shell 不打扰，写文件也不打扰 */
     const needAsk = ctx.permission === 'ask' && !riskApproved

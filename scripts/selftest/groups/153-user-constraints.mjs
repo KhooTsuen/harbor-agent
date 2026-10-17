@@ -99,6 +99,34 @@ export async function run() {
     U.allowsNetwork({ userText: '离线跑' }) === false && U.allowsNetwork({ userText: '联网查' }) === true,
   )
 
+  /*
+   * ── 2026-10-17 修掉的范围误判：**对象限定的禁改 ≠ 整轮只读** ──
+   *
+   * 病：`noWriteIn('不修改用户全局 Codex 配置')` 返回 true。那句话只是护住
+   * 那一份配置，其余已授权的修改照做；判据却把它升级成整轮 allowWrite=false，
+   * 于是 write_file / run_shell 全被拒（这条在真机上连拦了三次正常开发）。
+   * 判据见 user-constraints.cjs 的 SCOPED_MODIFIER（看动词与宾语之间的修饰段）。
+   */
+  group('用户约束 · 对象限定 vs 整轮只读（2026-10-17 范围误判的回归钉子）')
+
+  check('★★ 「不修改用户全局 Codex 配置」不算整轮禁写（只护那一份）', U.noWriteIn('不修改用户全局 Codex 配置') === false)
+  check('★★ 「不修改稳定版 Harbor.exe」不算整轮禁写', U.noWriteIn('不修改稳定版 Harbor.exe') === false)
+  check('★★ 「不修改历史审计记录」不算整轮禁写', U.noWriteIn('不修改历史审计记录') === false)
+  check('★ 「只修改测试脚本，不要动正式数据」不算整轮禁写', U.noWriteIn('只修改测试脚本，不要动正式数据') === false)
+  check('★★ 「只分析，不修改」仍拦（明确短语）', U.noWriteIn('只分析，不修改') === true)
+  check('★★ 「不要修改任何代码或配置」仍拦（全局量词，不是具体对象）', U.noWriteIn('不要修改任何代码或配置') === true)
+  check('★★ 「先调查，未经批准不要修改」仍拦（缺授权的分阶段要求）', U.noWriteIn('先调查，未经批准不要修改') === true)
+  /*
+   * ★ 全量词优先于具体限定：自测逮到的漏放 —— 「不要修改任何 .js 文件」的修饰段
+   *   带着 `.` 和拉丁字母，只按 ②-b 会被当成"具体对象"而**放行**，但它指一整类。
+   */
+  check('★★ 全量词 + 英文后缀仍拦（「不要修改任何 .js 文件」不是具体对象）', U.noWriteIn('不要修改任何 .js 文件') === true)
+  check('★ 全量词 + 专名仍拦（「不许改动任何项目文件」）', U.noWriteIn('不许改动任何项目文件') === true)
+  check('★ 反过来：「先分析一下这个 bug 再改」不算禁写（已授权，只是要求顺序）', U.noWriteIn('先分析一下这个 bug 再改') === false)
+  check('★ 对象限定不是放行它点名的对象：「不要改我的文件」仍拦', U.noWriteIn('不要改我的文件') === true)
+  check('★ allowsWrite 口径跟着对：对象限定 → 允许写', U.allowsWrite({ userText: '不修改用户全局 Codex 配置' }) === true)
+  check('★ allowsWrite 口径跟着对：缺授权 → 不许写', U.allowsWrite({ userText: '先调查，未经批准不要修改' }) === false)
+
   group('用户约束 · C 纯读浏览不再被「只分析」拦')
 
   const M = registry.MUTATING_TOOLS

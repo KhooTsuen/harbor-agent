@@ -24,6 +24,9 @@ const {
   normalizePricing,
 } = require('./config-normalize-parts.cjs')
 const securityCfg = require('./config-security.cjs')
+/* Codex MCP 桥设置段（形状在那边定义一处，这里只调） */
+const { normalizeCodexMcp } = require('./config-codex-mcp.cjs')
+const { normalizeProjectTests } = require('./project-tests.cjs')
 
 /**
  * 上下文基准（token）取值 + **旧默认值迁移**。
@@ -148,6 +151,10 @@ function normalize(raw) {
             .slice(0, 20)
         : [],
     },
+
+    /* Codex MCP 桥（默认全关）。改这段要同时看 config-codex-mcp.cjs 的文件头 */
+    codexMcp: normalizeCodexMcp(g.codexMcp),
+    projectTests: normalizeProjectTests(g.projectTests),
 
     search: {
       provider: pick(str(search.provider, 'duckduckgo'), C.SEARCH_PROVIDERS, 'duckduckgo'),

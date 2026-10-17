@@ -37,6 +37,18 @@
 
 const NO_WRITE_PHRASE = /(只分析|不执行修改)/
 
+/* ── ①-b 分阶段要求：写入**还没被授权** ────────────────────────
+ *
+ * 「先调查，未经批准不要修改」—— 这句禁的不是某个对象，而是「现在还不许写」。
+ * 它没有宾语，② 抓不到，所以必须单独列一条，否则修 ② 之后它会被**放行**
+ * （要求 6：不得把尚未授权的写入自动放行）。
+ *
+ * ★ 只收「缺授权」的强信号。「先分析一下这个 bug 再改」这种**已经授权、
+ *   只是要求顺序**的不在此列 —— 那句话本轮就该能改，拦它是又一次误判。
+ */
+const NO_WRITE_PHASED =
+  /(未经(我)?(明确)?(批准|同意|确认|授权)|未获(得)?(批准|授权)|等(我|用户)(来)?(批准|确认)|待(我|用户)(来)?(批准|确认)|经(我|用户)确认后再|确认后再(写|改|修改|动)|先别动)/
+
 /* ── ② 泛动词 + 文件类对象（必须同现）────────────────────────
  *
  * `(?!成)` 挡的是「写成/改成」这类**输出要求**的固定搭配：
@@ -48,21 +60,84 @@ const NO_WRITE_PHRASE = /(只分析|不执行修改)/
  *   宾语越泛，误判越多，而漏判（罕见说法没拦住）最多只是那一轮没生效。
  */
 const NO_WRITE_VERB_OBJECT =
-  /(不许|不要|不准|严禁|禁止|不能|别|切勿|不)(再|去|自己|乱|随便)?(写|改|改动|修改|动|碰|删|删除|覆盖)(?!成)[^。！？；\n]{0,12}(文件|代码|脚本|配置|仓库|目录|磁盘|硬盘|项目|数据库|落盘|产物)/
+  /(不许|不要|不准|严禁|禁止|不能|别|切勿|不)(再|去|自己|乱|随便)?(写|改|改动|修改|动|碰|删|删除|覆盖)(?!成)([^。！？；\n]{0,12})(文件|代码|脚本|配置|仓库|目录|磁盘|硬盘|项目|数据库|落盘|产物)/
+
+/* ── ②-b 修饰段的**具体限定**：禁的是「某几个特定对象」，不是整轮 ──
+ *
+ * ★ 2026-10-17 修掉的误判（本轮之前连拦三次正常开发）
+ *
+ *   用户写「不修改用户全局 Codex 配置」—— 那是在**保护一个特定对象**，
+ *   其余已授权的修改照做。旧判据只看「否定词 + 泛动词 + 12 字内 + 文件类宾语」，
+ *   于是整轮 `allowWrite=false`，`run_shell` / `write_file` 全被拒，
+ *   而那句话的本意只是"别碰全局那份配置"。
+ *
+ *   判据：看**动词与宾语之间**那段修饰语（第 4 组）。含下列强信号 = 指向特定对象。
+ *     · 拉丁字母 / 数字 / 点 —— 专名（Codex / Harbor.exe / config.json）
+ *     · 指示与限定：该 此 这个 那个 上述 前述 前面 现有 原有 既有 指定 特定 被保护
+ *     · 范围与版本：正式 历史 生产 稳定版 测试版 打包版 用户全局
+ *
+ * ★ 为什么「我的」**不在**清单里：「不要改我的文件」指的是说话人**全部**文件，
+ *   实质上就是整轮 —— 自检 153 组钉着这条，别为了省事把它放进来。
+ * ★ 为什么清单只收**强信号**：漏放一个罕见说法，最多是那一轮没生效（无害）；
+ *   错拦一次，整轮工具全废（正是这次要修的病）。方向必须是"宁可漏放"。
+ */
+const SCOPED_MODIFIER =
+  /[A-Za-z]|\d|\.|该|此|这个|那个|上述|前述|前面|现有|原有|既有|指定|特定|被保护|正式|历史|生产|稳定版|测试版|打包版|用户全局/
+
+/* ── ②-c 修饰段的**全量词**：反过来，一定是整轮 ──
+ *
+ * ★ 为什么必须有这一条（自测逮到的漏放）：
+ *   「不要修改**任何** .js 文件」「不要修改**所有** config.json」——
+ *   修饰段里带着 `.` 和拉丁字母，被 ②-b 判成"具体对象"就**放行**了。
+ *   但这两句指的是"那一整类/那一整套"，就是整轮。没这一条会真的漏放。
+ *
+ * 优先级：全量词 > 具体限定。含义不明确时按整轮处理（要求 7：保持安全边界）。
+ */
+const EXHAUSTIVE_MODIFIER = /任何|所有|全部|一切|每个|每一|任一|各个|都/
 
 /* ── 联网（判据保持原样，只是搬了个家）──────────────────────── */
 
 const NO_NETWORK_PHRASE = /(不联网|不要联网|禁止联网|离线)/
 
 /**
+ * ② 的「逐个匹配」版本：命中的那几处里，**只要有一处**说的是"全部"就算整轮禁写。
+ *
+ * 为什么不能直接用 `NO_WRITE_VERB_OBJECT.test()`：它只回 true/false，
+ * 拿不到「动词与宾语之间到底是什么」，于是区分不了
+ * 「不要改**我的**文件」（全部）和「不修改**用户全局 Codex** 配置」（特定一个）。
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+function blocksAllWrites(text) {
+  const re = new RegExp(NO_WRITE_VERB_OBJECT.source, 'g')
+  let m = re.exec(text)
+  while (m !== null) {
+    const modifier = String(m[4] ?? '')
+    /* 全量词（任何 / 所有 / 全部…）→ 无论后面点了什么名，都是整轮 */
+    if (EXHAUSTIVE_MODIFIER.test(modifier)) return true
+    /* 这一段是"具体的某一个对象" → 这句不升级为整轮只读 */
+    if (!SCOPED_MODIFIER.test(modifier)) return true
+    /* 零宽匹配时手动前移，避免 exec 原地打转 */
+    if (re.lastIndex <= m.index) re.lastIndex = m.index + 1
+    m = re.exec(text)
+  }
+  return false
+}
+
+/**
  * 这轮算不算「别动东西」。
+ *
+ * 三层：① 明确短语（语义自足）· ①-b 缺授权的分阶段要求 · ② 泛动词 + 宾语且**没说具体是哪一个**。
  *
  * @param {string} [userText] 历史里最后一条用户消息的原文（`loop-route.lastUserText`）
  * @returns {boolean}
  */
 function noWriteIn(userText) {
   const text = typeof userText === 'string' ? userText : ''
-  return NO_WRITE_PHRASE.test(text) || NO_WRITE_VERB_OBJECT.test(text)
+  if (NO_WRITE_PHRASE.test(text)) return true
+  if (NO_WRITE_PHASED.test(text)) return true
+  return blocksAllWrites(text)
 }
 
 /**
@@ -107,9 +182,13 @@ function allowsNetwork(input = {}) {
 
 module.exports = {
   NO_WRITE_PHRASE,
+  NO_WRITE_PHASED,
   NO_WRITE_VERB_OBJECT,
+  SCOPED_MODIFIER,
+  EXHAUSTIVE_MODIFIER,
   NO_NETWORK_PHRASE,
   noWriteIn,
+  blocksAllWrites,
   noNetworkIn,
   allowsWrite,
   allowsNetwork,

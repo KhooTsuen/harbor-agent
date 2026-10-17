@@ -63,6 +63,11 @@ const api = {
   getConfig: () => call('config:get'),
   patchConfig: (partial) => call('config:patch', partial),
   resetConfig: () => call('config:reset'),
+  /* Codex MCP 桥 / 项目自定义测试的设置与真实生效状态（校验都在主进程） */
+  codexMcpStatus: () => call('codexMcp:status'),
+  codexMcpSet: (partial) => call('codexMcp:set', partial),
+  projectTestsStatus: () => call('projectTests:status'),
+  projectTestsSet: (partial) => call('projectTests:set', partial),
   pingProvider: (providerId) => call('provider:ping', providerId),
   listModels: (providerId) => call('provider:listModels', providerId),
   /* 账户余额（DeepSeek 专有）—— 只由用户点击触发，主进程不做缓存/轮询 */
@@ -258,24 +263,18 @@ const api = {
   },
 
   onPluginsChanged: (callback) => subscribe('plugins:changed', callback), /* 插件热插拔 */
-
   /** 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
   onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
-
-  /* 订阅「生图完成 / 失败」：生图是异步的（提交完就返回，出图可能几分钟后），那轮对话早结束了 → 靠推事件把图插进对话 */
-  onImageDone: (callback) =>
-    subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
-
+  /* 订阅生图完成/失败：生图异步（提交即返回，出图可能几分钟后），靠推事件把图插进对话 */
+  onImageDone: (callback) => subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
   /* 浏览：主进程发来的操作请求（见 useBrowseBridge.ts）+ 网页弹窗转过来的新标签地址 */
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
   onBrowserOpenTab: (callback) => subscribe('browser:openTab', callback),
-
-  /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准），渲染层只负责「用户没在看就弹个提示」 */
+  /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准） */
   onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
 
   /** 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
   onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
-
   /** 把「当前标签的 webContents id / 就绪」推给主进程（B5：主进程据此直连，不必每次往返） */
   browserActive: (payload) => call('browser:active', payload),
   /* 扩展桥（Phase 2）：把「界面当前打开的会话」报给主进程 + 订阅「扩展刚读了一个页面」 */

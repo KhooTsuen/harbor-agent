@@ -145,14 +145,23 @@ async function raceConfirm(ctx, request) {
  *
  * @param {object} ctx  工具上下文；`ctx.granted` 是本轮已批准的类型集合（跨轮保留），
  *                      `ctx.confirmTimeoutMs` 可覆盖兜底超时
- * @param {{ kind: string, name?: string, args?: object, summary?: string, scope?: string }} request
+ * @param {{ kind: string, name?: string, args?: object, summary?: string, scope?: string,
+ *           alwaysAsk?: boolean, requestId?: string }} request
  *        会**被就地写入** `requestId` —— 调用方因此也能拿到本次确认的 id
  *        `scope` 说明这次批准管到哪儿（缺省 `once`），原样记进台账
+ *        `alwaysAsk`（由 `ctx.freshApproval` 决定）= 逐次审批，卡片要照它改文案
  * @returns {Promise<boolean>} true = 允许；超时按**拒绝**（false）
  */
 async function ask(ctx, request) {
   const kind = String(request.kind ?? '')
   const name = request.name ?? ''
+  /*
+   * ★ 逐次审批（2026-10-17 第三阶段）：`ctx.freshApproval === true` 时，这一类的
+   *   「窗口内不再问」**与**「批过就记住」**都不生效** —— 每次都得真人点头。
+   *   用途：Codex 经 MCP 的写入（用户要求「必须分别弹卡，不得利用两分钟记忆自动批准」）。
+   *   ★ 默认未设 = 既有行为**逐字节不变**（`REMEMBERED` 与窗口常量一个都没动）。
+   */
+  const fresh = ctx.freshApproval === true
   /*
    * 每次生成 id 并写回请求体：界面/日志/台账要能对上「同一条确认」。
    * 写回 request 而不是另起返回对象 —— 三个调用点一直在用布尔返回值
@@ -160,13 +169,19 @@ async function ask(ctx, request) {
    */
   const requestId = newRequestId()
   request.requestId = requestId
+  /*
+   * ★ 把「这次是逐次审批」告诉渲染层 —— 否则卡片会照 `kind` 显示
+   *   「同意后本轮内同类不再询问」，而那对这条**是错的**（用户第 3 条）。
+   *   只在 fresh 时写；默认不写 → 既有卡片的文案一字不变。
+   */
+  if (fresh) request.alwaysAsk = true
   /* 这次批准管到哪儿 —— 调用方可以点名 session/permanent，缺省一次性 */
   const scope = scopeOf(request.scope)
 
   /* ctx.granted 是 Map<类型, 批准时刻>（跨轮保留） */
   const grantedAt = ctx.granted?.get(kind)
 
-  if (REMEMBERED.has(kind) && grantedAt && Date.now() - grantedAt < GRANT_WINDOW_MS) {
+  if (!fresh && REMEMBERED.has(kind) && grantedAt && Date.now() - grantedAt < GRANT_WINDOW_MS) {
     /* 窗口内已经批过这一类 —— 不再打扰，但记一笔「这条是靠上面的批准放行的」。
        它确实被放行了（`approved: true`），只是没问人 —— 照实记，别让它看起来像没发生 */
     record(ctx, { requestId, kind, name, scope, auto: true, approved: true })
@@ -188,7 +203,8 @@ async function ask(ctx, request) {
 
   const ok = answer === true
   if (ok) {
-    if (REMEMBERED.has(kind)) ctx.granted?.set(kind, Date.now())
+    /* ★ 逐次审批时**不记**批准 —— 下一次同类还要再问（见上面 `fresh` 那段） */
+    if (!fresh && REMEMBERED.has(kind)) ctx.granted?.set(kind, Date.now())
     record(ctx, { requestId, kind, name, approved: true, scope })
   } else {
     /*

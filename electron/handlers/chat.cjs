@@ -17,6 +17,8 @@ const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
 const { withRequestedModel } = require('../core/model-select.cjs')
 /* AG-053：两条「问一句等回话」的往返拆到 ./chat-confirm.cjs（这边贴着 300 行） */
 const chatConfirm = require('./chat-confirm.cjs')
+/* Codex MCP 桥：把这一轮的审批上下文按 runId 登记（见 codex-mcp-context.cjs） */
+const codexMcp = require('../core/codex-mcp-lifecycle.cjs')
 
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
   chatConfirm.register({ ipcMain })
@@ -54,11 +56,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const phaseKey = (typeof payload?.taskId === 'string' && payload.taskId) || requestId
 
     /*
-     * ★ 这一行必须放在最后（history / mode / workdir / phaseKey 都算出来之后）。
-     *   第一版图省事写在函数开头 —— TDZ：`phaseKey`、`workdir` 都还没初始化，
-     *   结果 `chat:send` 直接抛 ReferenceError，**消息根本发不出去**，
-     *   而且日志里一个字都没有（因为就抛在这一行）。
-     *   真机探针逮到的；第 57 组自检里钉了顺序，改回去会红。
+     * ★ 这一行必须放在最后（history / mode / workdir / phaseKey 都算出来之后）——
+     *   第一版写在函数开头，TDZ 让 `chat:send` 直接抛 ReferenceError：消息发不出去、
+     *   日志一个字没有（真机探针逮到；第 57 组自检钉了顺序）。
      */
     const here = log.tagged(`sess…${log.shortId(sessionId)} · ${log.shortId(phaseKey)}`)
     here.info(
@@ -87,16 +87,10 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
     /*
      * 长消息落文件（2026-10-04，见 `core/long-paste.cjs` 的文件头）。
-     *
-     * 为什么在内核做、而且在这里做：
-     *   · 写文件要落在**工作目录**里（目录内模型免授权就能 read_file），而工作目录
-     *     是内核解析出来的（`resolveWorkdir`，会话挂的目录不在了会回落）；
-     *   · 渲染层没有「静默写文件」的通道（只有带保存对话框的 `export:saveText`），
-     *     为这个功能新开一条 IPC 是更大的改动，也不该开；
-     *   · 只动**这一轮刚发的那条** user 消息（历史里更早的长消息不回头改写）。
-     *
-     * ★ 只改「发给模型的那一份」：会话文件与气泡里一直是完整原文；
-     *   落了文件就发一条 attachment 事件让界面把路径显出来（不静默，不许悄悄换）。
+     * 为什么在内核做：要落在**工作目录**里（内核才解析得出它），而渲染层没有
+     * 「静默写文件」的通道（新开一条 IPC 是更大的改动，也不该开）；只动这一轮刚发的那条。
+     * ★ 只改「发给模型的那一份」：会话文件与气泡里一直是完整原文；落了文件就发一条
+     *   attachment 事件把路径显出来（不静默，不许悄悄换）。
      */
     const lastUserAt = (() => {
       for (let i = history.length - 1; i >= 0; i -= 1) if (history[i]?.role === 'user') return i
@@ -141,6 +135,9 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
     /* sessionId 一并带上：「需要你确认」的系统通知点开后要跳回这条对话（P1-3） */
     const confirm = (request) => chatConfirm.askUser(requestId, request, emit, sessionId)
+    /* ★ Codex MCP 桥的审批上下文：桥按 runId 找回**这条对话**的 confirm ——
+       卡于是天然绑在正确的 requestId 上（切会话不会错配）。未启用时是空操作。 */
+    codexMcp.registerRun(phaseKey, { requestId, sessionId, confirm })
 
     /*
      * AG-001：状态机的每次转移都推给渲染层（前端只读、不自己猜）。
@@ -247,10 +244,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
         void taskEnd?.({ sessionId })
 
         /*
-         * M1：一轮结束 → 立刻冲一次错误观察哨（别等它的 15s 定时器 / 进程退出，否则
-         * 右栏「错误」角标滞后）。放 finally 不放上面的 `done`：done 只在成功路发，
-         * 刚记过错误往往是失败路，而 finally 是成功 / 失败 / 中断三路唯一汇聚点。
-         * 独立 try-catch 是双保险：异常只记日志，绝不挡住后面的收尾。
+         * M1：一轮结束 → 立刻冲一次错误观察哨（别等 15s 定时器 / 进程退出，否则右栏
+         * 角标滞后）。放 finally：它是成功 / 失败 / 中断三路唯一汇聚点。独立 try 是双保险。
          */
         try {
           require('../core/error-observer.cjs').flush()
@@ -268,6 +263,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
         streams.delete(requestId)
         /* 收尾：把这轮没答复的确认全部按「拒绝」处理，避免悬挂 */
         chatConfirm.closeOut(requestId)
+        /* ★ 这一轮结束了 → 注销 MCP 桥的审批上下文（此后再拿它发起的审批一律被拒） */
+        codexMcp.unregisterRun(phaseKey)
       }
     })()
 
@@ -284,6 +281,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
     /* 同样的收尾：用户按了停止，那张确认卡不该还挂着 */
     chatConfirm.closeOut(requestId)
+    /* 停止也等于这一轮结束 → 注销桥的审批上下文（否则那张卡还能被桥找回） */
+    codexMcp.unregisterRunByRequest(requestId)
     return { ok: true }
   })
 

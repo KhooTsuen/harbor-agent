@@ -28,6 +28,28 @@ const NO_TOOLS_NOTE = [
   '不要声称你执行过任何操作。',
 ].join('\n')
 
+/**
+ * ★ MCP 桥启用时的**如实声明**（2026-10-17 真机修的矛盾）。
+ *
+ * 有 MCP 工具时**不能再写** `NO_TOOLS_NOTE` —— 那会让 Codex 有时信以为真、
+ * 回「当前未提供 xxx MCP 工具」（真机复现多次，写入验收因此时灵时不灵）。
+ * 但它也**不能说成「你有一堆内置工具」**：这些工具的**执行者是 Harbor 主进程**，
+ * 且写类会**先弹给用户审批**（可能被拒）。所以这里三件事都写清楚：
+ * 有哪些 · 怎么调 · 调了会发生什么。
+ *
+ * @param {string[]} names
+ */
+function mcpToolsNote(names) {
+  const list = (Array.isArray(names) ? names : []).filter((n) => typeof n === 'string' && n.trim())
+  return [
+    '【关于工具】本次运行**有可用的工具** —— 由本机 MCP 服务提供，**执行者是 Harbor 主进程**：',
+    ...list.map((n) => `  · ${n}`),
+    '要用就**真的调用**它们（通过 MCP），不要只用文字声称你做了。',
+    '⚠️ 需要写文件的工具会**先弹给用户确认**，用户可能同意也可能拒绝 —— 被拒就如实说明，不要假装写成功。',
+    '⚠️ 你**自己没有** shell / 文件读写能力（沙箱是只读的），一切读写都必须经上面这些工具。',
+  ].join('\n')
+}
+
 /** 单条消息内容的取法：只认字符串；数组（多模态）取其中的文本片段，其余如实标注 */
 function contentOf(message) {
   const content = message && message.content
@@ -65,7 +87,9 @@ function contentOf(message) {
  *   放在最后 = 最靠近它要做的动作；历史带角色标记，免得它把历史也当成新指令。
  *
  * @param {Array<{role?: string, content?: unknown}>} messages
- * @param {{ tools?: unknown[], includeNoToolsNote?: boolean }} [opts]
+ * @param {{ tools?: unknown[], mcpTools?: string[], includeNoToolsNote?: boolean }} [opts]
+ *        `mcpTools` = **Codex 经 MCP 真能调到的工具名**（见 mcpToolsNote）；非空时
+ *        不再写「没有工具」那句，改如实列出。
  * @returns {string}
  */
 function buildPrompt(messages, opts = {}) {
@@ -89,9 +113,16 @@ function buildPrompt(messages, opts = {}) {
   const blocks = []
   if (systems.length > 0) blocks.push(systems.join('\n\n'))
 
-  /* 有工具时才声明「没有工具」——Harbor 没给工具就不必说 */
+  /*
+   * 工具声明：**三态**，别混。
+   *   · 有 MCP 工具（`opts.mcpTools` 非空）→ 如实列出（它们是真能用的）
+   *   · 否则 Harbor 带了 tools → 老的「本次没有工具」（纯文本后端的事实）
+   *   · 都没有 → 什么也不写（Harbor 本来就没给工具）
+   */
   const hasTools = Array.isArray(opts.tools) && opts.tools.length > 0
-  if (hasTools || opts.includeNoToolsNote === true) blocks.push(NO_TOOLS_NOTE)
+  const mcpTools = Array.isArray(opts.mcpTools) ? opts.mcpTools.filter(Boolean) : []
+  if (mcpTools.length > 0) blocks.push(mcpToolsNote(mcpTools))
+  else if (hasTools || opts.includeNoToolsNote === true) blocks.push(NO_TOOLS_NOTE)
 
   if (history.length > 0) {
     blocks.push(['── 对话历史（以下是已经发生过的对话）──', ...history.map((m) => `${m.role}：${m.text}`)].join('\n'))
@@ -103,4 +134,4 @@ function buildPrompt(messages, opts = {}) {
   return blocks.join('\n\n').trim()
 }
 
-module.exports = { buildPrompt, contentOf, NO_TOOLS_NOTE, ROLE_LABEL }
+module.exports = { buildPrompt, contentOf, NO_TOOLS_NOTE, mcpToolsNote, ROLE_LABEL }

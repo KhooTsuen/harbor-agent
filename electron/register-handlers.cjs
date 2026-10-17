@@ -219,10 +219,14 @@ function registerHandlers(deps) {
   extHandler.register({ ipcMain, bridge: extBridge })
   /*
    * ★ 把 extCommand 存成**模块级单例**：`core/tools/edge-*.cjs` 那一族工具不在装配链上
-   *   （按需 require），要靠它取到**同一个**指令实例 —— 自己再建一个的话回执配对就配不上
-   *   （回执只回真桥那条链）。见 handlers/ext.cjs 的文件头。
+   *   （按需 require），要靠它取到**同一个**指令实例 —— 自建一个的话回执配对就配不上。
    */
   extHandler.setCommand(extCommand)
+  /* Codex MCP 桥：默认关（未启用时零副作用），见 core/codex-mcp-lifecycle.cjs */
+  require('./core/codex-mcp-lifecycle.cjs').install({ app, log, resolveWorkdir })
+  /* 它的设置与权限状态；项目自定义测试的设置（两处的主进程校验各见其 handlers） */
+  require('./handlers/codex-mcp.cjs').register({ ipcMain })
+  require('./handlers/project-tests.cjs').register({ ipcMain })
   /* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
   require('./handlers/browser.cjs').register()
   require('./handlers/export.cjs').register({ ipcMain, getMainWindow })
@@ -242,11 +246,8 @@ function registerHandlers(deps) {
   require('./handlers/safety.cjs').register({ ipcMain })
   /* 成果（Artifact）：落盘 + 版本历史 + 打开文件，数据在 data/artifacts/ */
   require('./handlers/artifact.cjs').register({ ipcMain })
-  /*
-   * 定时任务：台账 CRUD + 立刻跑一次。
-   * 心跳（30 秒一跳）不在这里起 —— 它要等 app ready，由 main.cjs 调
-   * `handlers/schedules.cjs` 的 `start()`（同一处装配依赖，免得两套）。
-   */
+  /* 定时任务：台账 CRUD + 立刻跑一次。心跳（30 秒一跳）不在这里起 —— 它要等 app ready，
+     由 main.cjs 调 `handlers/schedules.cjs` 的 `start()`（同一处装配依赖，免得两套）。 */
   const schedules = require('./handlers/schedules.cjs')
   schedules.register({ ipcMain })
   /* 下载管理器（并行分段 / 续传 / 重试 + 队列 / 限速），台账在 data/downloads.json */

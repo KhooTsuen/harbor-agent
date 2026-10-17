@@ -30,6 +30,8 @@ const generateImage = require('./generate-image.cjs')
 const askUser = require('./ask_user.cjs')
 const subagentTool = require('./subagent-tool.cjs')
 const markStepDone = require('./mark_step_done.cjs')
+/* 项目自定义测试（3A）：只能点名用户配好的条目，给不出自由命令 */
+const runProjectTest = require('./run_project_test.cjs')
 /* ── edge_*：操作**用户自己的 Edge**（与 browse_* 那族操作内嵌浏览器不是一回事）── */
 const edgePage = require('./edge-page.cjs')
 const edgeClick = require('./edge-click.cjs')
@@ -66,6 +68,7 @@ const ALL = [
   download,
   subagentTool,
   markStepDone,
+  runProjectTest,
   /* edge_* —— 操作**用户自己的 Edge**（经扩展 ↔ host ↔ 主进程那条链） */
   edgePage,
   edgeClick,
@@ -111,6 +114,8 @@ const WRITE_TOOLS = new Set([
   'generate_image',
   'remember',
   'download',
+  /* 跑项目测试会执行代码（可能产出构建物 / 改快照）→ 只读档拦、ask 档确认 */
+  'run_project_test',
 ])
 
 /** 会改动东西的 —— 比 `WRITE_TOOLS` 少了纯读的那四个（browse / elements / nav / ax）。
@@ -123,6 +128,8 @@ const MUTATING_TOOLS = new Set([
   'generate_image',
   'remember',
   'download',
+  /* 「只分析，不修改」那一轮必须拦住它：跑测试会执行代码 */
+  'run_project_test',
   'browse_click',
   'browse_type',
   'edge_page',

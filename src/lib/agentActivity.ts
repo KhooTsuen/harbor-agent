@@ -55,6 +55,8 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   edit_file: ['修改', '个文件'],
   list_dir: ['查看', '个目录'],
   run_shell: ['运行', '条命令'],
+  /* 项目自定义测试（3A）：跑用户为某个项目配好的测试 —— 与「运行命令」区分开 */
+  run_project_test: ['跑项目测试', '次'],
   search_web: ['搜索', '次'],
   remember: ['记录', '条记忆'],
   browse: ['打开', '个网页'],
@@ -108,6 +110,7 @@ export const TOOL_LABELS: Record<string, string> = {
   edit_file: '修改文件',
   list_dir: '查看目录',
   run_shell: '运行命令',
+  run_project_test: '跑项目测试',
   search_web: '联网搜索',
   remember: '记入长期记忆',
   browse: '打开网页',
@@ -162,6 +165,8 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   edit_file: FilePen,
   list_dir: FolderTree,
   run_shell: Terminal,
+  /* 项目测试也用终端图标：它本质就是「在命令行里跑一条用户配好的命令」 */
+  run_project_test: Terminal,
   search_web: Search,
   remember: Brain,
   browse: Globe,
