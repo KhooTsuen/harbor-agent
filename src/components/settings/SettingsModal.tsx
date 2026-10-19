@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/useSettingsStore'
@@ -16,6 +16,7 @@ import { DataUsagePanel } from './panels/DataUsagePanel'
 import { ExtensionPanel } from './panels/ExtensionPanel'
 import { ModelsPanel } from './panels/ModelsPanel'
 import { AppearanceTab } from './tabs/AppearanceTab'
+import { SettingsSearchBox } from './SettingsSearchBox'
 import { useConfigSaveStatus } from '@/stores/configSaveStatus'
 
 /* ══════════════════════════════════════════════════════════════
@@ -60,6 +61,15 @@ export function SettingsModal() {
   )
   /* 简洁视图下被收起来的那些页 —— 顶部点名，别让它们悄悄生效 */
   const hiddenTabs = useMemo(() => hiddenTabsOf(SETTINGS_TABS, settingsView), [settingsView])
+
+  /*
+   * P3 #20：设置搜索。
+   *
+   * `query` 只是界面状态 —— 搜什么、点哪条，都**不改任何配置**
+   * （文档验收要求「搜索与视图切换不更改配置值、权限或默认模式」）。
+   */
+  const [query, setQuery] = useState('')
+  const tabOf = useCallback((id: SettingsTabId) => SETTINGS_TABS.find((item) => item.id === id), [])
 
   return (
     <Modal
@@ -144,6 +154,18 @@ export function SettingsModal() {
 
         {/* 右侧内容 */}
         <div className="settings-body min-w-0 flex-1 overflow-y-auto pr-1.5">
+          {/* P3 #20：搜索框在最上面 —— 找不到东西时第一反应就是搜 */}
+          <SettingsSearchBox
+            query={query}
+            onQueryChange={setQuery}
+            tabOf={tabOf}
+            view={settingsView}
+            onPick={(entry) => {
+              setTab(entry.tab)
+              /* 点了结果就收起结果列表（否则结果压着那一页，用户还得自己关） */
+              setQuery('')
+            }}
+          />
           {/*
             P2 #1：简洁视图必须**点名**那些被收起、但仍在生效的专业设置 ——
             否则「看不到」会被理解成「没启用」，用户改了个行为却找不到原因。

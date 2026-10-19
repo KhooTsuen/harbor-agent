@@ -170,6 +170,8 @@ export function RightPanel() {
         taskPending={badges.taskPending}
         downloadsActive={badges.downloadsActive}
         artifactPresent={badges.artifactPresent}
+        taskRunning={badges.runningTasks > 0}
+        downloadRunning={badges.downloadRunning}
         onSelect={(tab) => {
           setActiveRightTab(tab)
           /* 用户自己点开「浏览器」看过了 —— 角标减掉 */

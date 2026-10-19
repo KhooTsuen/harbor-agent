@@ -168,7 +168,7 @@ export function ProjectTestsPanel() {
       {state.items.length > 0 ? (
         <ul className="mt-2 flex flex-col gap-2">
           {state.items.map((item) => (
-            <li key={item.id} className="acrylic-card flex items-start gap-2 p-2">
+            <li key={item.id} className="acrylic-card flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-dense text-fg-primary">{item.label}</span>

@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, Pause, Play, RotateCcw, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Download } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
-import {
-  fileNameFromUrl,
-  humanBytes,
-  humanSpeed,
-  joinTarget,
-  percentOf,
-  statusText,
-  type DownloadItem,
-} from '@/lib/downloadsApi'
+import { fileNameFromUrl, joinTarget } from '@/lib/downloadsApi'
 import { useDownloadsStore } from '@/stores/useDownloadsStore'
+import { DownloadsRow } from './downloadsRow'
 
 /* ══════════════════════════════════════════════════════════════
    右栏「下载」标签：任务队列 + 限速 + 进度
@@ -22,112 +14,6 @@ import { useDownloadsStore } from '@/stores/useDownloadsStore'
    现在订阅常驻在 `hooks/useDownloadNotifications.ts`，这里只管渲染，
    挂载时拉一次整表补状态。后端依然是唯一真相源。
    ══════════════════════════════════════════════════════════════ */
-
-const STATUS_STYLE: Record<string, string> = {
-  running: 'text-accent',
-  queued: 'text-fg-secondary',
-  paused: 'text-warning',
-  done: 'text-success',
-  failed: 'text-danger',
-}
-
-function Row({
-  item,
-  onAct,
-}: {
-  item: DownloadItem
-  onAct: (id: string, action: 'pause' | 'resume' | 'retry' | 'remove') => void
-}) {
-  const pct = percentOf(item)
-  const active = item.status === 'running'
-  return (
-    <div className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-1.5">
-      <div className="flex items-center gap-2">
-        {item.origin === 'browser' ? (
-          <span
-            className="shrink-0 rounded-sm bg-bg-overlay px-1 text-2xs text-fg-tertiary"
-            title="来自内置浏览器"
-          >
-            网页
-          </span>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-2xs text-fg-primary" title={item.file}>
-          {item.name}
-        </span>
-        <span className={cn('shrink-0 text-2xs', STATUS_STYLE[item.status] ?? 'text-fg-tertiary')}>
-          {statusText(item.status)}
-        </span>
-      </div>
-
-      {/* 进度条：total 未知（服务器没给 content-length）时只显示已收字节 */}
-      <div className="mt-1 h-1 overflow-hidden rounded-full bg-bg-hover">
-        <div
-          className={cn(
-            'h-full transition-all duration-200',
-            active ? 'bg-accent' : 'bg-fg-tertiary',
-          )}
-          style={{ width: pct === null ? (active ? '100%' : '0%') : `${pct}%` }}
-        />
-      </div>
-
-      <div className="mt-1 flex items-center gap-2 text-2xs text-fg-tertiary">
-        <span className="font-mono">
-          {pct === null
-            ? `已收 ${humanBytes(item.received)}`
-            : `${pct}% · ${humanBytes(item.received)} / ${humanBytes(item.total)}`}
-        </span>
-        {item.speedBps > 0 ? <span className="font-mono">{humanSpeed(item.speedBps)}</span> : null}
-        {item.attempts > 1 ? <span>· 第 {item.attempts} 次</span> : null}
-        <span className="ml-auto flex items-center gap-1">
-          {active ? (
-            <IconBtn label="暂停" onClick={() => onAct(item.id, 'pause')}>
-              <Pause size={12} />
-            </IconBtn>
-          ) : item.status === 'done' ? null : item.status === 'failed' ? (
-            <IconBtn label="重试" onClick={() => onAct(item.id, 'retry')}>
-              <RotateCcw size={12} />
-            </IconBtn>
-          ) : (
-            <IconBtn label="继续" onClick={() => onAct(item.id, 'resume')}>
-              <Play size={12} />
-            </IconBtn>
-          )}
-          <IconBtn label="删除" onClick={() => onAct(item.id, 'remove')}>
-            <Trash2 size={12} />
-          </IconBtn>
-        </span>
-      </div>
-
-      {item.status === 'failed' && item.error ? (
-        <p className="mt-1 text-2xs text-danger" title={item.error}>
-          {item.error}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function IconBtn({
-  label,
-  onClick,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="flex size-5 items-center justify-center rounded-sm text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
-    >
-      {children}
-    </button>
-  )
-}
 
 export function DownloadsPanel() {
   const items = useDownloadsStore((s) => s.items)
@@ -183,9 +69,10 @@ export function DownloadsPanel() {
         <button
           type="button"
           onClick={() => void clearFinished()}
+          title="只清理列表里已完成 / 已失败的记录，磁盘上的文件不受影响"
           className="ml-auto rounded-sm px-1.5 py-0.5 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
         >
-          清空已完成
+          清理已完成记录
         </button>
       </div>
 
@@ -285,7 +172,7 @@ export function DownloadsPanel() {
         ) : (
           <div className="flex flex-col gap-1.5">
             {items.map((item) => (
-              <Row key={item.id} item={item} onAct={act} />
+              <DownloadsRow key={item.id} item={item} onAct={act} />
             ))}
           </div>
         )}

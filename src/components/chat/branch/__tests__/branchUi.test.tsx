@@ -1,8 +1,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getForkPoints } from '@/lib/branchPath'
-import { BranchBreadcrumb } from '../BranchBreadcrumb'
 import { ForkBadge } from '../ForkBadge'
 import { ForkMenuList } from '../ForkPopover'
 import { AnswerVersions } from '@/components/chat/message/AnswerVersions'
@@ -11,12 +12,13 @@ import { switchBranch } from '@/stores/thread/branchSwitch'
 import type { Message } from '@/types'
 
 /* ══════════════════════════════════════════════════════════════
-   分支导航界面（验收 a / b / e）
+   分支导航界面（验收 e）
 
-   a. 面包屑列全部分叉点
-   b. 点面包屑某段 → 弹出兄弟菜单 → 选一条 → switchBranch 被调用
-      （「整条后续链跟着切换」是 switchBranch 两个动作自己的既有行为）
-   e. 消息旁 L 标：L 层号 + 分支数；点开是同一份菜单
+   e. 消息旁 L 标：L 层号 + 分支数；点开是同一份兄弟菜单
+
+   ★ P3 #10 撤掉了聊天区顶部那条面包屑（`BranchBreadcrumb`）——
+     它原来守的「点某段切分支」改由 L 标与侧栏分支树承担，两者都还在测
+     （L 标那两条 + `ForkMenuList` 的限高那条）。切分支本身仍是 `switchBranch`。
    ══════════════════════════════════════════════════════════════ */
 
 vi.mock('@/stores/thread/branchSwitch', () => ({ switchBranch: vi.fn() }))
@@ -90,28 +92,20 @@ afterEach(() => {
   document.querySelectorAll('[data-fork-menu]').forEach((el) => el.remove())
 })
 
-describe('面包屑（验收 a）', () => {
-  it('a · 显示路径上全部分叉点 + 主干 + 当前', () => {
-    render(<BranchBreadcrumb forks={forks} />)
-    const text = container.textContent ?? ''
-    expect(text).toContain('主干')
-    expect(text).toContain('提问 1 · 2/2')
-    expect(text).toContain('答复 1 · 2/2')
-    expect(text).toContain('提问 2 · 3/3')
-    expect(text).toContain('当前')
-    expect(container.querySelectorAll('[data-branch-crumb]')).toHaveLength(3)
+describe('P3 #10 · 顶部分支导航已移除', () => {
+  it('聊天区不再有面包屑组件（文件已删，没人能把它挂回来）', () => {
+    /*
+     * 不 import 它（vite 会在 transform 阶段就解析动态 import 直接失败），
+     * 直接看文件在不在 —— 这比「渲染后断言 DOM 里没有」更硬：
+     * DOM 断言只能证明「这次没渲染」，文件不在了才证明「挂不回来」。
+     */
+    const dir = resolve(__dirname, '..')
+    expect(existsSync(join(dir, 'BranchBreadcrumb.tsx'))).toBe(false)
   })
 
-  it('没有分叉 → 整条不渲染（不给界面添噪音）', () => {
-    render(<BranchBreadcrumb forks={[]} />)
-    expect(container.querySelector('[data-branch-breadcrumb]')).toBeFalsy()
-  })
-})
-
-describe('点面包屑切分支（验收 b）', () => {
-  it('b · 点开某段 → 兄弟菜单 → 选另一条 → switchBranch 调用（带 fork + 序号）', () => {
-    render(<BranchBreadcrumb forks={forks} />)
-    click(container.querySelector('[data-branch-crumb="1"]'))
+  it('切分支的能力仍在：L 标菜单里选另一条 → switchBranch 调用（带 fork + 序号）', () => {
+    render(<ForkBadge fork={forks[0]!} />)
+    click(container.querySelector('button[aria-label="分支 L1"]'))
 
     const menu = document.body.querySelector('[data-fork-menu="1"]')
     expect(menu).toBeTruthy()
@@ -123,8 +117,8 @@ describe('点面包屑切分支（验收 b）', () => {
   })
 
   it('选「当前」那条不动作（免得白写一遍盘）', () => {
-    render(<BranchBreadcrumb forks={forks} />)
-    click(container.querySelector('[data-branch-crumb="1"]'))
+    render(<ForkBadge fork={forks[0]!} />)
+    click(container.querySelector('button[aria-label="分支 L1"]'))
     const options = document.body.querySelectorAll('[data-fork-menu="1"] [role="menuitem"]')
     click(options[1] as Element)
     expect(vi.mocked(switchBranch)).not.toHaveBeenCalled()

@@ -152,7 +152,7 @@ export function McpTab() {
           <SectionTitle>内置预设（省得记命令行）</SectionTitle>
           <ul className="flex flex-col gap-1.5">
             {presets.map((preset) => (
-              <li key={preset.id} className="acrylic-card flex items-start gap-2 p-2">
+              <li key={preset.id} className="acrylic-card flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <span className="text-dense text-fg-primary">{preset.name}</span>
                   <p className="mt-0.5 text-dense text-fg-secondary">{preset.description}</p>

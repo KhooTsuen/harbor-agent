@@ -109,7 +109,13 @@ export function Sidebar({ loading = false }: SidebarProps) {
       */}
       {bulk.active ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          <BulkSelectList threads={threads} selected={bulk.selected} onToggle={bulk.toggle} />
+          <BulkSelectList
+            threads={threads}
+            selected={bulk.selected}
+            onToggle={bulk.toggle}
+            onSelectAll={bulk.selectAll}
+            onClearAll={bulk.clearAll}
+          />
         </div>
       ) : loading ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">

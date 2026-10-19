@@ -4,7 +4,6 @@ import { getForkPoints, type ForkPoint } from '@/lib/branchPath'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import { useAppStore } from '@/stores/useAppStore'
 import { MessageItem } from './MessageItem'
-import { BranchBreadcrumb } from './branch/BranchBreadcrumb'
 import { LaunchScreen } from './launch/LaunchScreen'
 import { MessageSkeleton } from './MessageSkeleton'
 import { ScrollGuardContext } from './scrollGuard'
@@ -16,6 +15,12 @@ import { CheckpointRollbackBar } from './rollback/CheckpointRollbackBar'
    滚动策略是一个显式状态机（`hooks/useAutoScroll.ts`）：
      FOLLOW 看最新（新内容自动跟上）/ FREE 看历史（程序一行都不写）
    状态只由用户动作迁移，程序行为（流式、增删消息、切换对话）不改它。
+
+   ★ P3 #10：这里曾经在消息区顶部渲染一条 `BranchBreadcrumb`
+     （「主干 › 提问 35 · 2/3 › 答复 1 › 1/2 › 当前」）。它占一整行高度、
+     长对话里几乎天天出现，而切分支的主要入口是侧栏分支树与消息旁的
+     `ForkBadge` —— 顶部那条属于重复导航。已撤掉，**分支功能一个没动**：
+     分叉点仍由 `forkMap` 算出并挂在每条消息上（`MessageItem` 的 fork prop）。
    ══════════════════════════════════════════════════════════════ */
 
 export interface MessageListProps {
@@ -143,7 +148,6 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <BranchBreadcrumb forks={forks} />
       <div className="relative min-h-0 flex-1">
         {/*
          * tabIndex=-1：点一下消息区就聚焦，PageUp/PageDown/Home/End 才收得到。

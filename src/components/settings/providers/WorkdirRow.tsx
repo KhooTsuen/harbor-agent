@@ -37,7 +37,7 @@ export function WorkdirRow() {
   }
 
   return (
-    <div className="acrylic-card rounded-base px-3.5 py-3">
+    <div className="acrylic-card">
       <p className="mb-1 text-2xs text-fg-tertiary">工作目录（模型看到的「相对路径」是相对这里）</p>
       <div className="flex items-center gap-2">
         <input

@@ -175,7 +175,7 @@ export function Row({
       ref={rowRef}
       className={cn(
         /* 每个子选项 = 一块独立的亚克力板（用户明确过粒度是子选项，不是节） */
-        'acrylic-card flex items-center gap-5 rounded-base px-3.5 py-3',
+        'acrylic-card flex items-center gap-5',
         danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
       )}
     >

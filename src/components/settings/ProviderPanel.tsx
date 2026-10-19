@@ -256,8 +256,8 @@ export function ToolsPanel() {
               onClick={() => void patchTools({ permission: p.id })}
               className={
                 config.tools.permission === p.id
-                  ? 'acrylic-card rounded-base px-3 py-2 text-left'
-                  : 'acrylic-card rounded-base px-3 py-2 text-left transition-colors hover:bg-bg-hover'
+                  ? 'acrylic-card text-left'
+                  : 'acrylic-card text-left transition-colors hover:bg-bg-hover'
               }
             >
               <span className="flex items-center gap-2 text-dense text-fg-primary">
@@ -276,7 +276,7 @@ export function ToolsPanel() {
 
       <WorkdirRow />
 
-      <label className="acrylic-card rounded-base block px-3.5 py-3">
+      <label className="acrylic-card block">
         <span className="mb-1 block text-2xs text-fg-tertiary">命令超时（秒）</span>
         <Field
           type="number"

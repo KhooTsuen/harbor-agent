@@ -32,6 +32,8 @@ export interface RightTabBadges {
   artifactPresent: boolean
   /** 顶栏兜底：**正在跑**的后台任务数 */
   runningTasks: number
+  /** P3 #9：「下载」标签是否真有传输在跑（区分「有列表」与「正在传」） */
+  downloadRunning: boolean
 }
 
 export function useRightTabBadges(): RightTabBadges {
@@ -44,6 +46,13 @@ export function useRightTabBadges(): RightTabBadges {
   )
   const runningTasks = useTaskStore((s) => s.tasks.filter((t) => t.status === 'running').length)
   const downloadsActive = useDownloadsStore((s) => s.items.length > 0)
+  /*
+   * P3 #9：「有列表」不等于「在传」。呼吸光晕只应该给**真在跑**的下载 ——
+   * 否则一个已经下完躺在列表里的文件会让那个标签一直闪。
+   */
+  const downloadRunning = useDownloadsStore(
+    (s) => s.running.length > 0 || s.items.some((item) => item.status === 'running'),
+  )
 
   /*
    * 「成果」的「有内容」提示取自**当前会话内存里的正式产物**（消息上的 artifacts）——
@@ -65,5 +74,6 @@ export function useRightTabBadges(): RightTabBadges {
     downloadsActive,
     artifactPresent,
     runningTasks,
+    downloadRunning,
   }
 }

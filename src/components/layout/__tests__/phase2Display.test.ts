@@ -78,8 +78,17 @@ describe('Phase 2 · 视觉语义分离：有内容 ≠ 未读错误', () => {
     expect(tabs).toContain('taskPending')
     expect(tabs).toContain('downloadsActive')
     expect(tabs).toContain('artifactPresent')
-    /* 「有内容」与「未读」互斥渲染：有未读时不叠一个空心环上去 */
-    expect(tabs).toContain('!unread && hasContent[tab.id]')
+    /*
+     * 「有内容」与「未读」互斥渲染：有未读时不叠一个空心环上去。
+     * P3 #9 之后这条判据从「一个布尔 hasContent」升级成三态
+     * （`activityOf` 返回 none / running / waiting / content，互斥天然成立），
+     * 于是断言也跟着从「源码里写了这句短路」改成「三态只挑一个画」——
+     * 意图一字未变：**同一个位置不可能既显示空心环又显示未读实心点**。
+     */
+    expect(tabs).toContain("activity === 'content' ? <ContentDot />")
+    expect(tabs).toContain("activity === 'waiting' ? <UnreadDot")
+    /* 三态两两互斥由 activityOf 保证（见 tabShelf 的单测） */
+    expect(tabs).not.toContain('hasContent[')
   })
 })
 

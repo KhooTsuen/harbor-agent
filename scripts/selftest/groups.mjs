@@ -48,6 +48,7 @@ import { run as probeIsolationGroup } from './groups/167-probe-isolation.mjs'
 import { run as projectRootsGroup } from './groups/169-project-roots.mjs'
 import { run as collabGroup } from './groups/170-collab.mjs'
 import { run as collabStateGroup } from './groups/171-collab-state.mjs'
+import { run as downloadProgressGroup } from './groups/172-download-progress.mjs'
 import { run as testFixGroup } from './groups/168-test-fix.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
@@ -236,4 +237,5 @@ export const GROUPS = [
   projectRootsGroup,
   collabGroup,
   collabStateGroup,
+  downloadProgressGroup,
 ]

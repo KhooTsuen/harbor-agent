@@ -65,7 +65,7 @@ export function ShortcutsTab() {
             {SHORTCUTS.filter((s) => s.group === group).map((shortcut) => (
               <li
                 key={shortcut.id}
-                className="acrylic-card flex items-center justify-between rounded-base px-3.5 py-2.5 text-sm text-fg-secondary"
+                className="acrylic-card flex items-center justify-between text-sm text-fg-secondary"
               >
                 <span>{shortcut.label}</span>
                 <button

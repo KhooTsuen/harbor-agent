@@ -692,6 +692,19 @@
     background: var(--bg-surface);
     border: 1px solid var(--border-hairline);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+    /*
+     * P3 #6：**内边距与圆角也只在这里定义一次**。
+     *
+     * 以前各调用点自己写：`px-3.5 py-3` / `p-3` / `px-3 py-2` / `p-2` /
+     * `px-3.5 py-2.5` 五种混着来 —— 于是「相邻卡片间距一致」这件事根本
+     * 无从保证：两个卡片内边距不同，看起来的缝隙就不同。
+     *
+     * 现在默认值给在这里，调用点**不要**再写 padding / rounded-base
+     * （Tailwind 的 utility 层在这之后，写了就会盖掉它）。确实需要更紧的
+     * 场合（列表里的一行）才显式写一档，并在调用点注明为什么。
+     */
+    border-radius: var(--radius-base);
+    padding: 0.75rem 0.875rem;
   }
 
   [data-glass='on'] .acrylic-card {
@@ -917,6 +930,37 @@
   50%,
   95% {
     opacity: 0;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   P3 #9：右栏标签的「进行中」呼吸
+
+   只给**真有活动**的入口用（判据是 `layout/tabShelf.ts` 的 `activityOf`）：
+   任务在跑 / 下载在传。打开一个静态面板不会让任何标签发光。
+
+   ★ 幅度刻意压得很轻（box-shadow 最大 6px、不透明度 0.35）：右栏很窄，
+     光晕一重就会盖住旁边标签的文字。
+   ★ 减少动效（prefers-reduced-motion）时整段动画被关掉 —— 组件那边另给了
+     一条静态描边（`motion-reduce:ring-1`），含义同时写在 title / aria-label 里，
+     所以不靠颜色也读得懂。
+   ══════════════════════════════════════════════════════════════ */
+@keyframes tabBreath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-blue) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 6px 0 color-mix(in srgb, var(--accent-blue) 35%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes tabBreath {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+    }
   }
 }
 

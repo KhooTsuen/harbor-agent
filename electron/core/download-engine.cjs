@@ -228,7 +228,10 @@ async function downloadFile(options) {
     const now = Date.now()
     if (!force && now - lastAt < PROGRESS_MIN_MS) return
     lastAt = now
-    if (onProgress) onProgress({ received, total: total || received })
+    /* ★ `total` 原样传，不许写成 `total || received`（2026-10-20 真机逮到）：
+     *   服务端不给 Content-Length 时 total=0，那个兜底会把它填成已收字节数，
+     *   于是 received/total 恒为 1 —— 界面永远 100%。total=0 的含义就是「不知道」。 */
+    if (onProgress) onProgress({ received, total })
   }
   progress(true)
 
