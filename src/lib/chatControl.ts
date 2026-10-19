@@ -12,12 +12,13 @@ import { bridge } from './bridge'
  *     pause  —— 先把手上这一步做完，在下一个安全点停住，之后可以接着做
  */
 
-export async function abortChat(requestId: string): Promise<void> {
-  if (!bridge) return
+export async function abortChat(requestId: string): Promise<boolean> {
+  if (!bridge) return false
   try {
-    await bridge.abortChat(requestId)
+    const result = await bridge.abortChat(requestId)
+    return result.ok === true
   } catch {
-    /* 中断失败没什么可做的 */
+    return false
   }
 }
 

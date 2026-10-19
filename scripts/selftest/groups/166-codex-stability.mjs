@@ -1,21 +1,14 @@
 /**
- * 自检 / Codex CLI 后端 —— **接入稳定性修复**（2026-10-17）
- *
- * 从 `165-codex-adapter.mjs` 拆出来的（那边加完这三组贴 300 行了）。分工：
- *   · **165** 管「适配器本体」—— 契约同形 / JSONL / 事件归约 / prompt / 进程层 /
- *     取消超时 / 配置兼容 / 能力声明 / 接线 / 行数
- *   · **166（本文件）** 管「后来发现的三个稳定性问题」：
+ * 自检 / Codex CLI 接入稳定性：
  *       ⑨ 辅助任务不复用主任务后端（压缩 / 复核不能再拿空 baseUrl 去发请求）
  *       ⑩ 可选代理（默认空 = 逐字节沿用 `process.env`；不硬编码任何地址）
  *       ⑪ 可配置 CODEX_HOME（默认空 = 原样不动；**Harbor 绝不碰那个目录**）
- *
- * ⚠️ 本组**不联网、不起真 codex**（只跑纯函数与假 provider）。
- *
+ * 本组不联网、不起真 codex；所有检查均在 run 内、隔离环境初始化后执行。
  * ★ 三组都遵守同一条硬判据：**「默认」必须是不改变现有行为**。
  *   所以每组第一条都钉「没配 → `buildEnv` 返回的就是 `process.env` 本身」。
  */
 
-import { readFileSync, join, require, ROOT } from '../env.mjs'
+import { readFileSync, mkdirSync, join, require, ROOT, paths } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 const R = (p) => readFileSync(join(ROOT, p), 'utf8')
@@ -28,6 +21,11 @@ const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\
 
 /** 一个**不是本机真实代理**的样例 —— 用它才能证明「没有硬编码任何地址」 */
 const PROXY_SAMPLE = 'http://127.0.0.1:9999'
+const matchesOverrides = (env, overrides) => {
+  const expected = { ...process.env, ...overrides }
+  return Object.keys(env).length === Object.keys(expected).length &&
+    Object.entries(expected).every(([key, value]) => env[key] === value)
+}
 
 export async function run() {
   const CLI = require(join(ROOT, 'electron/core/codex-cli.cjs'))
@@ -80,8 +78,7 @@ export async function run() {
   check('★★ 没配 proxy → buildEnv 返回的**就是** process.env（同一个引用）', CLI.buildEnv({}) === process.env)
   check('★ proxy 是空串 / 只有空白 → 一样（不注入空白值）', CLI.buildEnv({ proxy: '' }) === process.env && CLI.buildEnv({ proxy: '   ' }) === process.env)
   const envP = CLI.buildEnv({ proxy: PROXY_SAMPLE })
-  const extraKeys = Object.keys(envP).filter((k) => !(k in process.env))
-  check('★★ 配了 proxy → 只多 HTTPS_PROXY / HTTP_PROXY 两个键', extraKeys.length === 2 && extraKeys.every((k) => /^(HTTPS|HTTP)_PROXY$/.test(k)), JSON.stringify(extraKeys))
+  check('★★ 配了 proxy → 只覆盖 HTTPS_PROXY / HTTP_PROXY，其余环境完整保留', matchesOverrides(envP, { HTTPS_PROXY: PROXY_SAMPLE, HTTP_PROXY: PROXY_SAMPLE }))
   check('★ 两个键都设成配置值（有些库只认 HTTP_PROXY）', envP.HTTPS_PROXY === PROXY_SAMPLE && envP.HTTP_PROXY === PROXY_SAMPLE)
   check('★ 是在副本上改（不污染本进程）', envP !== process.env && process.env.HTTPS_PROXY !== PROXY_SAMPLE)
   check('★ 前后空白被 trim', CLI.buildEnv({ proxy: `  ${PROXY_SAMPLE}  ` }).HTTPS_PROXY === PROXY_SAMPLE)
@@ -96,12 +93,11 @@ export async function run() {
   const HOME_PROBE = 'E:\\CodexWorkbench\\data\\unit-test-data\\codex-home-probe'
   check('★ 没配 → 仍是 process.env 本身（默认不改行为）', CLI.buildEnv({ codexHome: '' }) === process.env && CLI.buildEnv({ codexHome: '  ' }) === process.env)
   const envH = CLI.buildEnv({ codexHome: HOME_PROBE })
-  const extraH = Object.keys(envH).filter((k) => !(k in process.env))
-  check('★★ 配了 → 只多 CODEX_HOME 一个键，其余键值全同', extraH.length === 1 && extraH[0] === 'CODEX_HOME' && envH.CODEX_HOME === HOME_PROBE, JSON.stringify(extraH))
+  check('★★ 配了 → 只覆盖 CODEX_HOME，其余键值全同', matchesOverrides(envH, { CODEX_HOME: HOME_PROBE }))
   check(
     '★ 与代理同上时三个键齐',
-    JSON.stringify(Object.keys(CLI.buildEnv({ proxy: PROXY_SAMPLE, codexHome: HOME_PROBE })).filter((k) => !(k in process.env)).sort()) ===
-      JSON.stringify(['CODEX_HOME', 'HTTP_PROXY', 'HTTPS_PROXY'].sort()),
+    matchesOverrides(CLI.buildEnv({ proxy: PROXY_SAMPLE, codexHome: HOME_PROBE }),
+      { CODEX_HOME: HOME_PROBE, HTTP_PROXY: PROXY_SAMPLE, HTTPS_PROXY: PROXY_SAMPLE }),
   )
   /*
    * ★★ 这几条是**用户第 3 条**（不得自动复制/迁移/删除认证文件）的落地判据。
@@ -239,7 +235,6 @@ export async function run() {
   check('★★ MCP 层把工具失败翻成 isError:true（Codex 才不会以为成功了）', mcpLayer?.result?.isError === true, JSON.stringify(mcpLayer?.result ?? {}).slice(0, 90))
   check('★ 文案点名「Harbor 工具执行失败」', /Harbor 工具执行失败/.test(mcpLayer?.result?.content?.[0]?.text ?? ''))
   fsx.rmSync(DATA2, { recursive: true, force: true })
-}
 
 /* ── ⑩ 提示词里的「工具声明」三态（2026-10-17 真机修的矛盾）──
  *
@@ -264,7 +259,7 @@ const saveEnv = { m: process.env.HARBOR_CODEX_MCP, w: process.env.HARBOR_CODEX_M
 delete process.env.HARBOR_CODEX_MCP
 check('★ 桥未启用 → 暴露工具为空（不认识任何 MCP 工具）', LIFE.exposedToolNames().length === 0)
 process.env.HARBOR_CODEX_MCP = '1'
-check('★ 桥开了、写没开 → 只有两个只读工具', JSON.stringify(LIFE.exposedToolNames()) === JSON.stringify(['harbor_read_file', 'harbor_env_diag']))
+check('★ 桥开了、写没开 → 只读文件、图片和分析工具可用', JSON.stringify(LIFE.exposedToolNames()) === JSON.stringify(['harbor_read_file', 'harbor_read_image', 'harbor_env_diag', 'harbor_analyze_test_failure']))
 process.env.HARBOR_CODEX_MCP_WRITE = '1'
 process.env.HARBOR_CODEX_MCP_WRITE_ROOT = 'E:\\CodexWorkbench\\data\\unit-test-data\\selftest-ws'
 check('★★ 写也开了 → 三个工具（含写）', LIFE.exposedToolNames().includes('harbor_write_file'))
@@ -293,7 +288,8 @@ check(
   junkMcp.enabled === false && junkMcp.write === false && junkMcp.runTest === false && !('evilKey' in junkMcp),
 )
 check('★ 缺字段 / 非对象 → 回落成全关', CM.normalizeCodexMcp(undefined).enabled === false && CM.normalizeCodexMcp(null).write === false)
-const isoRoot = join(ROOT, 'data', 'unit-test-data')
+const isoRoot = join(paths.DIRS.data, 'codex-mcp-settings')
+mkdirSync(isoRoot, { recursive: true })
 check('★★ 写根指向正式源码 → 被 policy 拒（代码判据）', PM.resolveWriteRoot(join(ROOT, 'electron'), isoRoot).ok === false)
 check('★ 写根落在隔离数据根内 → 放行', PM.resolveWriteRoot(isoRoot, isoRoot).ok === true)
-
+}

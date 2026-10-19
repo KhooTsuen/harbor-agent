@@ -49,11 +49,8 @@ describe('Phase 5：一轮收尾的事件生命周期钉子', () => {
     expect(block).toContain('stopActiveRequest(threadId)')
   })
 
-  it('★ A3：「停止」要拆掉兜底时钟（消灭遗留的 300s 定时炸弹）', () => {
+  it('★ A3：收到终态后拆掉兜底时钟，停止请求期间仍监视未结束任务', () => {
     expect(controlSrc).toContain('export function disposeTurnWatchdog')
-    const block = controlSrc.slice(controlSrc.indexOf('export function stopActiveRequest'))
-    expect(block).toContain('disposeTurnWatchdog(threadId)')
-    /* 收尾那条路也要拆（幂等） */
     expect(turnsSrc).toContain('disposeTurnWatchdog(threadId)')
   })
 

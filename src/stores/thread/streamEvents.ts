@@ -14,11 +14,7 @@ import { handleAttachmentEvent } from './attachmentEvents'
 import { askPermissionFor, applyPauseAfterTurn, onCardTimeout } from './confirmEvents'
 import { logError } from '@/lib/actionLog'
 
-/* ══════════════════════════════════════════════════════════════
-   流式聊天事件的处理：每种事件怎么落到消息上（turns.ts 只管发起、收尾、中断）。
-   ⚠️ 拆这个文件踩过的坑：只留空函数占位 → tsc 全绿但流式/工具/引用全不更新，
-   跨层接线必须真跑一遍（详见 docs/踩坑记录.md）。
-   ══════════════════════════════════════════════════════════════ */
+/* 流式事件落到消息；跨层接线必须真跑，空占位事故见 docs/踩坑记录.md。 */
 
 export interface StreamState {
   /** 消息的累积内容（分片事件会不断追加） */
@@ -212,6 +208,10 @@ export function handleStreamEvent(
       const finalContent = String(event.content ?? '') || state.content
       /* ★ 顺序：**先收尾，再写字段** —— patch 一抛，finish 就永远轮不到（2026-10-04 事故） */
       runSafely('done.finish', () => state.finish())
+      /* 后台汇总可能不同于逐轮流式正文；rounds 是实际渲染入口，不能只更新聚合字段。 */
+      if (finalContent !== state.content && state.rounds.at(-1)?.content !== finalContent) {
+        state.rounds.push({ reasoning: '', content: finalContent, tools: [] })
+      }
       runSafely('done.patch', () =>
         state.patch({
           content: finalContent,

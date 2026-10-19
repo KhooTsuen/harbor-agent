@@ -1,40 +1,30 @@
 /**
- * 暴露给 Codex 的 **MCP 工具定义**（2026-10-17 第二阶段 · 生产版）
+ * 暴露给 Codex 的 **MCP 工具定义**（2026-10-17 · 生产版）
  *
- * ★ 这一层只做两件事：**schema**（告诉 codex 有哪些工具、参数长什么样）与
- * **参数净化**（把外部 JSON 收成干净对象）。**一个字节的执行都没有** ——
- * 真正干活的是主进程侧的 `tools.execute`（在 `codex-mcp-bridge.cjs` 里）。
- *
- * ★ 形状层与语义层分工：这里收紧**形状**（字段名 / 类型 / 长度 / 枚举）；
- * **语义**判据（路径越界、命令白名单）在 `codex-mcp-policy.cjs`。两层都不可省。
- *
- * ★ `annotations.readOnlyHint` 是**诚实的描述**，**不是**安全控制：
- * 真正的边界是 Harbor 侧的白名单 + 路径校验 + 逐次审批 + 审计。
- *
+ * ★ 这一层只做两件事：**schema** 与 **参数净化**，一个字节的执行都没有 ——
+ * 真正干活的是主进程侧的 `tools.execute`（`codex-mcp-bridge.cjs`）。
+ * ★ 形状层（字段 / 类型 / 长度 / 枚举）在这里；**语义**判据（路径越界、命令白名单）
+ * 在 `codex-mcp-policy.cjs`。两层都不可省。
+ * ★ `annotations.readOnlyHint` 是**诚实的描述**，不是安全控制。
  * ⚠️ 不 require electron。
  */
 
 const policy = require('./codex-mcp-policy.cjs')
 const test = require('./codex-mcp-test.cjs')
+const imageTool = require('./codex-mcp-image-tool.cjs')
 
-/** 单个路径参数的长度上限（畸形输入别把下游撑爆） */
-const MAX_PATH_LEN = 400
-
-/** 工具名 → 定义（**只有这两个**，本阶段不开放写文件） */
+/** 工具名 → 定义 */
 const TOOLS = [
   {
     name: 'harbor_read_file',
     description:
       '读取 Harbor **隔离工作区**内的一个文本文件（只读）。只接受工作区内的相对路径；' +
-      '绝对路径、含 `..` 的穿越路径、以及真实路径落到工作区外的符号链接一律被 Harbor 拒绝。',
+      '绝对路径、含 `..` 的穿越、以及真实路径落到工作区外的符号链接一律被拒绝。',
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     inputSchema: {
       type: 'object',
       properties: {
-        path: {
-          type: 'string',
-          description: '工作区内的相对路径，例如 `hello.txt` 或 `sub/a.md`（不接受绝对路径）',
-        },
+        path: { type: 'string', description: '工作区内的相对路径（如 `sub/a.md`；不接受绝对路径）' },
         offset: { type: 'integer', description: '从第几行开始（1 开始），默认 1' },
         limit: { type: 'integer', description: '最多读多少行，默认 400' },
       },
@@ -42,6 +32,7 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  ...imageTool.TOOLS,
   {
     name: 'harbor_env_diag',
     description:
@@ -62,10 +53,9 @@ const TOOLS = [
   },
   {
     /*
-     * ★ 唯一的**写**能力（第三阶段 · 默认关到"没配写根就用不了"）。
-     * annotations 如实：readOnlyHint:false / destructiveHint:true（会覆盖已有内容）——
-     * 与两个只读工具形成对照，codex 侧据此知道自己请求的是写操作。
-     * ⚠️ 它**不是**安全控制：真正的边界是 Harbor 的写根校验 + 逐次审批 + 审计。
+     * ★ 唯一的**写**能力（默认关到"没配写根就用不了"）。annotations 如实：
+     * readOnlyHint:false / destructiveHint:true。⚠️ 它不是安全控制 —— 真正的边界是
+     * Harbor 的写根校验 + 逐次审批 + 审计。
      */
     name: 'harbor_write_file',
     description:
@@ -103,10 +93,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         path: { type: 'string', description: '工作区内的相对路径（不接受绝对路径）' },
-        oldText: {
-          type: 'string',
-          description: '要被替换的原文（必须**恰好出现一次**，逐字匹配，含缩进）',
-        },
+        oldText: { type: 'string', description: '要被替换的原文（必须**恰好出现一次**，逐字匹配，含缩进）' },
         newText: { type: 'string', description: '替换成什么（留空 = 删掉这段）' },
         expectHash: {
           type: 'string',
@@ -119,9 +106,8 @@ const TOOLS = [
   },
   {
     /*
-     * ★ 受限**测试执行**（第四阶段 · 默认关）：跑的是**预先允许的固定命令**，
-     * 外部**只能给 id、给不出命令**（命令行由常量表拼，cwd 固定 = 隔离测试工作区）。
-     * 它不修改文件，但会**执行代码** —— 所以默认关、且必须落在隔离工作区内。
+     * ★ 受限**测试执行**（第四阶段 · 默认关）：跑**预先允许的固定命令**，外部只能给 id。
+     * 它不改文件但**会执行代码** —— 所以默认关、且必须落在隔离工作区内。
      */
     name: 'harbor_run_test',
     description:
@@ -142,11 +128,9 @@ const TOOLS = [
     },
   },
   {
-    /*
-     * ★ **项目自定义测试**（3A · 默认关）：跑的是**用户亲笔配置**的命令，
-     * 外部只能给 id、给不出命令。cwd 固定 = 用户配的那个项目根（主进程校验边界）。
-     * 与 harbor_run_test 的区别：那个跑 Harbor 常量命令，这个跑用户自己的项目测试。
-     */
+    /* ★ **项目自定义测试**（默认关）：跑**用户亲笔配置**的命令，外部只能给 id。
+       cwd = 用户配的那个项目根（主进程校验边界）。与 harbor_run_test 的区别：
+       那个跑 Harbor 常量命令，这个跑用户自己的项目测试。 */
     name: 'harbor_run_project_test',
     description:
       '在**用户指定项目的根目录**里执行用户**预先配置好**的一条测试命令（不接受自定义命令）。' +
@@ -162,6 +146,16 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    /*
+     * ★ **测试失败分析**（3B-1 · 纯只读）：只能给 executionId / testId，
+     * 状态从执行记录里读 —— 调用方声明不了一个「未经证实的 FAIL」。
+     * 定义与净化住在 `codex-mcp-analyze-tool.cjs`（这个文件贴 300 行红线）。
+     */
+    ...require('./codex-mcp-analyze-tool.cjs').TOOL,
+  },
+  /* ★ 受控修复 / 精确回退（3B-2 / 3B-3）：会写项目源码 —— 逐次审批 + 哈希复核 + 恢复点 */
+  ...require('./codex-mcp-fix-tool.cjs').TOOLS,
 ]
 
 /** 认识的工具名 */
@@ -182,7 +176,7 @@ function cleanReadFile(args) {
   if (typeof path !== 'string' || !path.trim()) {
     return { ok: false, message: 'path 必填，且必须是非空字符串' }
   }
-  if (path.length > MAX_PATH_LEN) return { ok: false, message: `path 过长（上限 ${MAX_PATH_LEN} 字符）` }
+  if (path.length > imageTool.MAX_PATH_LEN) return { ok: false, message: `path 过长（上限 ${imageTool.MAX_PATH_LEN} 字符）` }
   const out = { path: path.trim() }
   if (a.offset !== undefined) {
     if (!isNum(Number(a.offset))) return { ok: false, message: 'offset 必须是数字' }
@@ -218,7 +212,7 @@ function cleanWriteFile(args) {
   if (typeof path !== 'string' || !path.trim()) {
     return { ok: false, message: 'path 必填，且必须是非空字符串' }
   }
-  if (path.length > MAX_PATH_LEN) return { ok: false, message: `path 过长（上限 ${MAX_PATH_LEN} 字符）` }
+  if (path.length > imageTool.MAX_PATH_LEN) return { ok: false, message: `path 过长（上限 ${imageTool.MAX_PATH_LEN} 字符）` }
   if (typeof a.content !== 'string') return { ok: false, message: 'content 必填，且必须是字符串' }
   if (a.content.length > policy.MAX_WRITE_CHARS) {
     return { ok: false, message: `content 过大（上限 ${policy.MAX_WRITE_CHARS} 字符）` }
@@ -235,7 +229,7 @@ function cleanEditFile(args) {
   const a = args && typeof args === 'object' && !Array.isArray(args) ? args : {}
   const path = a.path
   if (typeof path !== 'string' || !path.trim()) return { ok: false, message: 'path 必填，且必须是非空字符串' }
-  if (path.length > MAX_PATH_LEN) return { ok: false, message: `path 过长（上限 ${MAX_PATH_LEN} 字符）` }
+  if (path.length > imageTool.MAX_PATH_LEN) return { ok: false, message: `path 过长（上限 ${imageTool.MAX_PATH_LEN} 字符）` }
   if (typeof a.oldText !== 'string' || !a.oldText) return { ok: false, message: 'oldText 必填，且必须是非空字符串' }
   if (typeof a.newText !== 'string') return { ok: false, message: 'newText 必填，且必须是字符串（删除就传空串）' }
   if (a.oldText.length + a.newText.length > policy.MAX_WRITE_CHARS) {
@@ -267,6 +261,12 @@ function cleanProjectTest(args) {
   return { ok: true, args: { id } }
 }
 
+/** 净化 `harbor_analyze_test_failure` 的参数（判据在 3B-1 那个文件里，这里只转发） */
+const cleanAnalyze = (args) => require('./codex-mcp-analyze-tool.cjs').clean(args)
+
+/** 净化 `harbor_apply_test_fix` / `harbor_restore_test_fix` 的参数（判据在 3B-2/3-3 那个文件里） */
+const cleanFix = (name, args) => require('./codex-mcp-fix-tool.cjs').cleanCall(name, args)
+
 /**
  * 工具名 + 原始参数 → 干净参数（或明确拒绝）。
  * @param {string} name @param {object} rawArgs
@@ -277,10 +277,13 @@ function cleanCall(name, rawArgs) {
     return { ok: false, message: `没有名为 ${String(name)} 的工具（只有：${TOOL_NAMES.join(' / ')}）` }
   }
   if (name === 'harbor_read_file') return cleanReadFile(rawArgs)
+  if (name === 'harbor_read_image') return imageTool.cleanReadImage(rawArgs)
   if (name === 'harbor_write_file') return cleanWriteFile(rawArgs)
   if (name === 'harbor_edit_file') return cleanEditFile(rawArgs)
   if (name === 'harbor_run_test') return cleanRunTest(rawArgs)
   if (name === 'harbor_run_project_test') return cleanProjectTest(rawArgs)
+  if (name === 'harbor_analyze_test_failure') return cleanAnalyze(rawArgs)
+  if (name === 'harbor_apply_test_fix' || name === 'harbor_restore_test_fix') return cleanFix(name, rawArgs)
   return cleanEnvDiag(rawArgs)
 }
 
@@ -288,7 +291,8 @@ module.exports = {
   TOOLS,
   TOOL_NAMES,
   cleanCall,
-  MAX_PATH_LEN,
+  cleanAnalyze,
+  MAX_PATH_LEN: imageTool.MAX_PATH_LEN,
   cleanWriteFile,
   cleanEditFile,
   cleanRunTest,

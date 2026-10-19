@@ -89,6 +89,135 @@ export function explainGaps(input: {
 export function infoOf(
   matrix: ProviderCapabilityMatrix | undefined,
   model: string,
+  providerId?: string,
 ): ModelCapabilityInfo | undefined {
-  return matrix?.models[model.trim()]
+  const name = model.trim()
+  return (providerId ? matrix?.providers?.[providerId]?.[name] : undefined) ?? matrix?.models[name]
+}
+
+/* ══════════════════════════════════════════════════════════════
+   「这张图最后交给谁」—— 与内核**同一套判据**
+
+   ★ 为什么必须收在这里（2026-10-18 修的真不一致）：
+     内核 `core/collab-images.cjs` 的 `prepareRoles` 在多模型时会拿
+     **另一个选中角色**当视觉辅助；而界面只算了 `scenes.ocr` 这一条，
+     于是「A 能看图、B 不能、又没配 OCR」被误报成「无法读取图片」——
+     用户按提示去配 OCR，其实根本不需要。
+
+   内核那条链的优先级（`tools/read_image.cjs` 的 `visionTarget`）：
+     ① 当前角色自己 openai + vision===true → 原图直接给它
+     ② 另一角色 openai + vision===true（且地址/Key 齐）→ 它转成文字
+     ③ `scenes.ocr` 配了可用视觉模型 → 它转成文字
+     ④ 都没有 → 明确失败
+
+   还有两条**容易漏**的内核细节，这里必须跟着：
+     · `codex-cli` 即使被手填覆盖成 `vision:true`，内核也**不会**让它直接收图
+       （`prepare` 的 direct 判据要求 `kind === 'openai'`）
+     · ②③ 要真发得出请求才算数（`visionTarget` 查 `baseUrl` 与 `hasKey`）
+   ══════════════════════════════════════════════════════════════ */
+
+/** 一个角色（A / B / 单模型当前助手）—— 与 `collab-task.cjs` 的 resolveRoles 同形 */
+export interface VisionRoleLike {
+  label: string
+  kind?: string
+  model?: string
+  providerId?: string
+}
+
+/** 供应商里判据用得到的几项（`forRenderer` 都会给） */
+export interface VisionProviderLike {
+  id?: string
+  kind?: string
+  enabled?: boolean
+  baseUrl?: string
+  hasKey?: boolean
+  models?: string[]
+}
+
+/** 这个角色最后怎么拿到图 */
+export interface VisionPlan {
+  /** direct = 原图直接给它；helper = 由文字分析代替；none = 读不了 */
+  mode: 'direct' | 'helper' | 'none'
+  /** 走的是哪条路 —— 文案要分开说，别糊成一句 */
+  via: 'self' | 'role' | 'ocr' | ''
+}
+
+/**
+ * 按角色取供应商（口径对齐 `core/collab-task.cjs` 的 `providerForRole`）：
+ * 必须存在、未禁用、kind 与选择一致、模型确实在这家名下。
+ */
+export function providerOfRole(
+  providers: readonly VisionProviderLike[] | undefined,
+  role: VisionRoleLike,
+): VisionProviderLike | undefined {
+  const id = String(role.providerId ?? '')
+  if (!id) return undefined
+  const hit = (providers ?? []).find((item) => item.id === id)
+  if (!hit || hit.enabled === false) return undefined
+  if (role.kind && hit.kind && hit.kind !== role.kind) return undefined
+  if (role.kind === 'openai' && role.model && !(hit.models ?? []).includes(role.model))
+    return undefined
+  return hit
+}
+
+/** 内核 `visionTarget` 的口径：能真发出请求才算数（有地址、有 Key） */
+function canSend(provider: VisionProviderLike | undefined): boolean {
+  return Boolean(
+    provider &&
+    provider.enabled !== false &&
+    String(provider.baseUrl ?? '').trim() &&
+    provider.hasKey !== false,
+  )
+}
+
+/** 这个角色自己能不能直接收图（只认 openai —— 见上面文件头那两条内核细节） */
+function acceptsDirect(
+  matrix: ProviderCapabilityMatrix | undefined,
+  role: VisionRoleLike,
+): boolean {
+  if (role.kind !== 'openai') return false
+  return infoOf(matrix, String(role.model ?? ''), role.providerId)?.caps.vision === true
+}
+
+/** 某个角色能不能当别人的视觉辅助 */
+function usableAsHelper(
+  matrix: ProviderCapabilityMatrix | undefined,
+  providers: readonly VisionProviderLike[] | undefined,
+  role: VisionRoleLike,
+): boolean {
+  if (role.kind !== 'openai') return false
+  if (!canSend(providerOfRole(providers, role))) return false
+  return infoOf(matrix, String(role.model ?? ''), role.providerId)?.caps.vision === true
+}
+
+/**
+ * 算出一个角色的视觉路径。
+ *
+ * @param input.role   要判的角色
+ * @param input.others 其余选中角色（多模型时是另一个；单模型传空数组）
+ * @param input.ocr    `config.scenes.ocr`（第三顺位，与内核一致）
+ */
+export function visionPlanFor(input: {
+  role: VisionRoleLike
+  others?: readonly VisionRoleLike[]
+  matrix: ProviderCapabilityMatrix | undefined
+  providers?: readonly VisionProviderLike[]
+  ocr?: { providerId?: string; model?: string }
+}): VisionPlan {
+  const { role, others, matrix, providers, ocr } = input
+  if (acceptsDirect(matrix, role)) return { mode: 'direct', via: 'self' }
+
+  for (const other of others ?? []) {
+    if (other === role) continue
+    if (usableAsHelper(matrix, providers, other)) return { mode: 'helper', via: 'role' }
+  }
+
+  const ocrModel = String(ocr?.model ?? '').trim()
+  if (ocrModel) {
+    const ocrProvider = (providers ?? []).find((item) => item.id === ocr?.providerId)
+    if (canSend(ocrProvider) && infoOf(matrix, ocrModel, ocr?.providerId)?.caps.vision === true) {
+      return { mode: 'helper', via: 'ocr' }
+    }
+  }
+  return { mode: 'none', via: '' }
 }

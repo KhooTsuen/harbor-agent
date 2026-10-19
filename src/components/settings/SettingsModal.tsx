@@ -16,6 +16,7 @@ import { DataUsagePanel } from './panels/DataUsagePanel'
 import { ExtensionPanel } from './panels/ExtensionPanel'
 import { ModelsPanel } from './panels/ModelsPanel'
 import { AppearanceTab } from './tabs/AppearanceTab'
+import { useConfigSaveStatus } from '@/stores/configSaveStatus'
 
 /* ══════════════════════════════════════════════════════════════
    设置
@@ -37,6 +38,7 @@ export function SettingsModal() {
   const askPermission = useUIStore((s) => s.askPermission)
 
   const resetSettings = useSettingsStore((s) => s.resetSettings)
+  const configSaveState = useConfigSaveStatus((s) => s.state)
 
   const [tab, setTab] = useState<SettingsTabId>('general')
   /*
@@ -53,7 +55,7 @@ export function SettingsModal() {
       open={open}
       onClose={closeSettings}
       title="设置"
-      description="改完立刻生效，配置存本机"
+      description="设置自动保存到本机；保存结果显示在下方"
       width="2xl"
       /*
        * 固定高度：不传的话弹窗会随标签页内容变高变矮，
@@ -131,6 +133,18 @@ export function SettingsModal() {
 
         {/* 右侧内容 */}
         <div className="settings-body min-w-0 flex-1 overflow-y-auto pr-1.5">
+          <p
+            role="status"
+            className={`mb-2 text-xs ${configSaveState === 'failed' ? 'text-danger' : 'text-fg-tertiary'}`}
+          >
+            {configSaveState === 'saving'
+              ? '配置正在保存…'
+              : configSaveState === 'failed'
+                ? '配置保存失败。请检查数据目录或重试修改。'
+                : configSaveState === 'saved'
+                  ? '配置已自动保存'
+                  : '修改配置后自动保存'}
+          </p>
           {tab === 'profile' ? <ProfileTab /> : null}
           {tab === 'general' ? <GeneralPanel /> : null}
           {tab === 'appearance' ? <AppearanceTab /> : null}

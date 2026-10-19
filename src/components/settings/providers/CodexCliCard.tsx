@@ -15,7 +15,7 @@
  * 依据见 `docs/research/codex-cli-adapter-design.md` §2/§4（每条都有实测）。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ProviderConfig } from '@/types/backend'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Field } from '@/components/ui/Field'
@@ -31,12 +31,44 @@ export function CodexCliCard({ provider }: CodexCliCardProps) {
   const update = useConfigStore((s) => s.updateProvider)
   const remove = useConfigStore((s) => s.removeProvider)
   const count = useConfigStore((s) => s.config?.providers.length ?? 1)
+  const test = useConfigStore((s) => s.testProvider)
   const [modelsDraft, setModelsDraft] = useState(provider.models.join(', '))
+  const [checking, setChecking] = useState(false)
+  const [status, setStatus] = useState('尚未检查本机 Codex CLI')
+  const fingerprint = JSON.stringify([
+    provider.codexPath,
+    provider.codexHome,
+    provider.proxy,
+    provider.enabled,
+  ])
+  const currentFingerprint = useRef(fingerprint)
 
   /* 外部（重置配置等）改了 provider，输入框要跟着同步 */
   useEffect(() => {
     setModelsDraft(provider.models.join(', '))
   }, [provider.models])
+  useEffect(() => {
+    if (currentFingerprint.current === fingerprint) return
+    currentFingerprint.current = fingerprint
+    setStatus('配置已变化，请重新检查')
+  }, [fingerprint])
+
+  async function checkConnection(): Promise<void> {
+    const tested = fingerprint
+    setChecking(true)
+    setStatus('正在检查安装与登录状态…')
+    try {
+      const result = await test(provider.id)
+      if (currentFingerprint.current !== tested) return
+      setStatus(
+        result.ok
+          ? '本机 CLI 已安装并已登录；尚未验证模型请求。工具访问仍由当前对话权限决定。'
+          : (result.error ?? '无法确认 Codex CLI 状态'),
+      )
+    } finally {
+      setChecking(false)
+    }
+  }
 
   return (
     <div className="acrylic-card rounded-base border border-line-hairline p-3">
@@ -68,18 +100,31 @@ export function CodexCliCard({ provider }: CodexCliCardProps) {
         这个后端不用填 API Key：推理走本机已登录的 ChatGPT Codex CLI。Harbor 不保存、不复制你的
         ChatGPT 登录凭据 —— 它只负责启动本机那个命令行程序。
       </p>
+      <div className="mt-2 flex items-center gap-2 text-2xs text-fg-secondary">
+        <button
+          type="button"
+          disabled={checking}
+          onClick={() => void checkConnection()}
+          className="rounded-sm border border-line-hairline px-2 py-1 disabled:opacity-50"
+        >
+          {checking ? '检查中…' : '检查安装与登录'}
+        </button>
+        <span role="status">{status}</span>
+      </div>
+      <p className="mt-1 text-2xs text-fg-tertiary">
+        登录只让 Harbor 能调用本机 CLI；读取文件、运行命令仍需当前对话授权。
+      </p>
 
       {/* ★ 能力限制：如实写在卡片上（不是附注） */}
       <div className="mt-2 rounded-sm border border-line-hairline bg-bg-subtle/40 p-2">
         <p className="text-2xs font-medium text-fg-secondary">已知限制（如实说明）</p>
         <ul className="mt-1 list-disc pl-4 text-2xs leading-relaxed text-fg-tertiary">
           <li>
-            <span className="text-fg-secondary">不支持 Harbor 的工具调用</span>
-            ：读写文件 / 跑命令 / 操作浏览器在这个后端下用不了（Codex CLI 不产出工具调用）。
+            Harbor 工具访问取决于 MCP 桥是否启用，以及当前对话的授权范围；单独登录不会授予权限。
           </li>
           <li>回复是整段出现的，不是逐字打字机效果。</li>
           <li>首次调用可能明显较慢（要连 ChatGPT，本机可能还需要代理）。</li>
-          <li>不能读图、不能联网搜索。</li>
+          <li>读图可由已授权的读图工具和可用视觉模型辅助；未实际传入图像时不会声称已经看过。</li>
         </ul>
       </div>
 

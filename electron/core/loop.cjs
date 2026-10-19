@@ -1,6 +1,3 @@
-/* Agent 循环：一轮对话 = 若干「回合」—— 调模型 → 要工具 → 执行 → 结果喂回去 → … → 不再要工具。
- * 两个硬边界：maxTurns 防烧 token；AbortSignal 让「停止」立刻停住（含 shell）。
- * 状态由 AG-001 的 lifecycle 驱动（每次转移都发事件，UI 只读不猜）。 */
 const tools = require('./tools/index.cjs')
 const stats = require('./stats.cjs')
 const budget = require('./budget.cjs')
@@ -12,10 +9,9 @@ const taskCore = require('./task.cjs')
 const taskResume = require('./task-resume.cjs')
 const taskContext = require('./task-context.cjs')
 const life = require('./lifecycle.cjs')
-const skillPin = require('./skill-pin.cjs')
 const taskPresets = require('./task-presets.cjs')
 const changeset = require('./changeset.cjs')
-/* run() 的形参也叫 config，模块得换名引 —— 否则 config.hasKey() 会在普通对象上调用。 */
+
 const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const {
@@ -31,24 +27,21 @@ const { resolveRoute, providerForRun } = require('./loop-route.cjs')
 const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
-const userConstraints = require('./user-constraints.cjs')
-/* 失控兜底轮数（AG-040）：用户看得见的边界是任务预算的 maxSteps；这个 200 只防「预算设成不限而模型抽风」。★ 两个机制不能做同一件事。 */
+const { buildToolContext } = require('./loop-tool-context.cjs')
+
 const MAX_TURNS = 200
 
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
 const LOOP_NUDGE_LIMIT = 2
-/* ── 主循环 ───────────────────────────────────────────────── */
 
-/* 状态事件的 key。不能用 options.taskId（那是台账 id）—— 调用方按自己的 requestId 过滤，两边对不上事件就全丢 →「UI 显示空闲、后台在跑」。 */
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
 }
 
-/** 真正的循环。包一层 run() 是为了把「任务/事务的开始与收尾」集中在一处，不用在十几种出口上各写一遍 */
 async function runLoop(options) {
   const { history, config, workdir, mode, signal, emit, confirm } = options
   const threadSettings = options.threadSettings ?? {}
-  /* 「这次跑该用哪个供应商」按**模型**挑（含 key 检查）—— 见 loop-route.providerForRun */
+
   const provider = providerForRun(config)
 
   const {
@@ -64,41 +57,39 @@ async function runLoop(options) {
   /* AG-035：记下是哪只模型在干这个活（诊断报告要写它） */
   if (options.taskId) taskCore.recordModel(options.taskId, useModel)
 
-  /* 环境 / 工具清单 / 记忆 / 项目说明 / 分层系统提示 —— 见 loop-prompt.cjs */
   const { messages, promptVersion } = buildPromptContext({
-    config, workdir, mode, history, threadSettings, options, model: useModel, provider: useProvider,
+    config,
+    workdir,
+    mode,
+    history,
+    threadSettings,
+    options,
+    model: useModel,
+    provider: useProvider,
   })
   /* ②-1：提示词版本也记进台账（和模型一样，是「为什么这次不一样」的线索） */
   if (options.taskId) taskCore.recordPromptVersion(options.taskId, promptVersion)
 
-  const ctx = {
+  const ctx = buildToolContext({
+    options,
+    config,
     workdir,
-    sessionId: options.sessionId ?? '',
-    taskId: options.taskId ?? '',
-    changeSetId: options.changeSetId ?? '',
-    permission: config.tools.permission,
-    /* 用户约束是运行时约束，不依赖模型遵守 Prompt（判据见 core/user-constraints.cjs） */
-    allowTools: threadSettings.allowTools !== false,
-    allowWrite: userConstraints.allowsWrite({ userText, mode, threadAllowWrite: threadSettings.allowWrite }),
-    allowNetwork: userConstraints.allowsNetwork({ userText, threadAllowNetwork: threadSettings.allowNetwork }),
-    temporary: options.temporary === true,
-    shellTimeout: config.tools.shellTimeout,
-    shellPolicy: config.tools.shellPolicy,
-    fileScope: config.tools.fileScope,
-    outputLimit: config.tools.outputLimit,
-    /* 技能钉到这次对话时，它的 network 声明会在这里生效（见 skill-pin.cjs） */
-    signal, confirm, log, ...skillPin.ctxGrant(threadSettings),
-    /* 工具要给界面发**不打断**的提示时用它（完全访问下访问敏感文件会说一声，见 tools/permission.cjs） */
+    mode,
+    threadSettings,
+    userText,
+    useProvider,
+    useModel,
+    signal,
+    confirm,
     emit,
-    granted: new Map() /* AG-013：「允许本次」的批准时刻，见 tools/approval.cjs */,
-  }
+  })
 
   let totalUsage = null
   const toolRuns = []
   let turn = 0
-  /* 收尾门禁的账：顶回去几次 + 上一轮进度快照（两道门禁各存一份，见 completionGate） */
+
   let gateSeen = {}
-  /* 逐轮累积：只回最后一轮的话，复制/导出/下一轮历史都会缺内容（见 loop-transcript） */
+
   const transcript = createTranscript()
   /* 预算软阈值只提醒一次（token 优化 §八） */
   let softNoted = false
@@ -109,7 +100,6 @@ async function runLoop(options) {
   /* AG-001：状态由引擎驱动（以前是前端自己 setThreadStatus） */
   life.mark('preparing', traceKey(options))
 
-  /* AG-040：任务预算（内置默认 ← 设置 ← 任务自己的覆盖）；carry = 重新生成继承的用量基线（预算不重置） */
   const taskRecord = taskCore.get(options.taskId) ?? null
   const plan = budget.resolve(config, taskRecord)
   const carry = taskRecord?.budgetCarry ?? null
@@ -127,27 +117,38 @@ async function runLoop(options) {
     const loopHit = loopGuard.detect(loopGuard.signaturesOf(toolRuns))
     if (loopHit.looping && loopNudges >= LOOP_NUDGE_LIMIT) {
       emit({ type: 'loop', ...loopHit, handedOver: true })
-      /* ★ 用 paused 不用 waiting_user（AG-043 真机）—— 后者渲染层算「还在跑」 */
+
       life.mark('paused', traceKey(options))
-      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, loopHit, transcript })
+      return exhaustedResult({
+        turn,
+        usage: totalUsage,
+        toolRuns,
+        maxTurns: turn,
+        loopHit,
+        transcript,
+      })
     }
     if (loopHit.looping) {
       loopNudges += 1
       emit({ type: 'loop', ...loopHit, handedOver: false, nudge: loopNudges })
       messages.push({ role: 'user', content: loopGuard.nudgeMessage(loopHit) })
     } else if (options.taskId) {
-      /* CE-011：**不同的尝试**也在失败（≠ loop-guard 的「同一个调用转圈」）→ 让它换方案。
-         走 else：loop-guard 这轮推过了就让给它（共用一个「本轮已推」，同一轮不重复推）。 */
       failureStreak.pushNote(options.taskId, messages)
     }
 
-    /* AG-040：轮次边界查一次预算（每轮开头 = 上一轮工具已跑完，不会停在改了一半的状态） */
     const hit = budget.atTurnBoundary({ plan, startedAt, turn, toolRuns, usage: totalUsage, carry })
     if (hit.exceeded) {
       emit({ type: 'budget', ...hit, blocked: false })
       /* 同上：撞预算也是「停下来了」，不是「还挂着在等你确认」 */
       life.mark('paused', traceKey(options))
-      return exhaustedResult({ turn, usage: totalUsage, toolRuns, maxTurns: turn, budgetHit: hit, transcript })
+      return exhaustedResult({
+        turn,
+        usage: totalUsage,
+        toolRuns,
+        maxTurns: turn,
+        budgetHit: hit,
+        transcript,
+      })
     }
     /* 软阈值（token 优化 §八）：只提醒、不阻断 —— 优先保验证与安全，砍解释与重复读 */
     if (hit.soft === true && !softNoted) {
@@ -171,12 +172,13 @@ async function runLoop(options) {
       temperature: taskPresets.temperatureOf(threadSettings, config),
       topP: config.assistant.topP,
       maxTokens: config.assistant.maxTokens,
-      /* 思考强度档位（thread 里选的 low/high/max）—— 以前这里漏了，档位从没传给模型 */
+
       reasoningEffort: threadSettings.reasoning,
       /* AG-037：以前 emit 从没传进来过 —— 重试/降级/超限提示在界面上从未出现过 */
       traceId: traceKey(options),
       emit,
       signal,
+      allowNetwork: ctx.allowNetwork,
       /* AG-040：自动重试次数由预算决定（默认 3） */
       maxRetries: plan.maxRetries,
       onContent: stream.content,

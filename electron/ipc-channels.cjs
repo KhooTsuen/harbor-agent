@@ -64,6 +64,11 @@ const EXPECTED_CHANNELS = [
   /* 项目自定义测试（3A）：设置 + 每条的真实校验结果（项目根由主进程验） */
   'projectTests:status',
   'projectTests:set',
+  /* 双模型协作（默认关）：状态 / 开关 / 启动 / 停止 */
+  'collab:status',
+  'collab:set',
+  'collab:run',
+  'collab:stop',
   'credentials:status',
   'diagnostics:copy',
   'diagnostics:openDir',

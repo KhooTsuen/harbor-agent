@@ -61,7 +61,10 @@ export async function run() {
   group('逐轮累积 / 最后一轮的终稿')
   const tail = createTranscript()
   feeder(tail).say('原稿')
-  check('★ 传终稿就用终稿（自检复核会改写最后一轮）', tail.soFar('复核后的稿').content === '复核后的稿')
+  check(
+    '★ 传终稿就用终稿（自检复核会改写最后一轮）',
+    tail.soFar('复核后的稿').content === '复核后的稿',
+  )
   check('传空 → 退回这一轮攒的原文（别把最后一轮弄丢）', tail.soFar('').content === '原稿')
 
   group('逐轮累积 / 提前结束')
@@ -73,7 +76,8 @@ export async function run() {
   const notice = stopped.withNotice('（任务已暂停，可以从这里继续）')
   check(
     '★ 提示接在后面 —— 正文没被换掉（以前只剩那句提示）',
-    notice.content.startsWith('做了一半') && notice.content.endsWith('（任务已暂停，可以从这里继续）'),
+    notice.content.startsWith('做了一半') &&
+      notice.content.endsWith('（任务已暂停，可以从这里继续）'),
     notice.content,
   )
   check('这一轮写的东西也在', notice.content.includes('又写了一点'))
@@ -82,13 +86,18 @@ export async function run() {
   group('逐轮累积 / 接线')
   const loopSrc = read('electron/core/loop.cjs')
   check('★ 每一轮结束都并进总账', loopSrc.includes('transcript.mergeRound()'))
-  check('★ 正常收尾回的是**全量**，不是最后一轮', loopSrc.includes('...transcript.soFar(finalContent)'))
+  check(
+    '★ 正常收尾回的是**全量**，不是最后一轮',
+    loopSrc.includes('...transcript.soFar(finalContent)'),
+  )
   check(
     '★ 四条提前结束的路都带上了（暂停 / 撞预算 / 转圈交人 / 轮数到顶）',
-    loopSrc.includes('pausedResult({ turn, usage: totalUsage, toolRuns, transcript })') &&
-      loopSrc.includes('budgetHit: hit, transcript })') &&
-      loopSrc.includes('loopHit, transcript })') &&
-      loopSrc.includes('maxTurns: MAX_TURNS, transcript })'),
+    /pausedResult\(\{\s*turn,\s*usage: totalUsage,\s*toolRuns,\s*transcript,?\s*\}\)/.test(
+      loopSrc,
+    ) &&
+      /budgetHit: hit,\s*transcript,?\s*\}\)/.test(loopSrc) &&
+      /loopHit,\s*transcript,?\s*\}\)/.test(loopSrc) &&
+      /maxTurns: MAX_TURNS,\s*transcript,?\s*\}\)/.test(loopSrc),
   )
   check(
     '★ 提示不再把正文换掉（换成接在上面）',

@@ -12,9 +12,7 @@ import { auditClear, taskRemoveMany } from './safetyApi'
         memory:clear / audit:clear。没有为这个面板新开通道。
 
    ⚠️ 备份盖不住的东西要照实说（见 BACKUP_MISSES）：
-     内核 backup.cjs 的清单只有 config.json / memory.md / sessions / skills。
-     任务台账、审计日志、结构化记忆（memory.json）都不在里面 ——
-     这三档删了，只有「导出全部」那一份 JSON 能救。
+     备份含配置、结构化记忆、会话、技能、任务和改动事务；不含审计日志与凭据。
    ══════════════════════════════════════════════════════════════ */
 
 export type WipeId = 'sessions' | 'tasks' | 'memory' | 'audit'
@@ -28,9 +26,16 @@ export interface WipeOutcome {
 }
 
 /** 自动备份**含**这些（内核 backup.cjs 的 ITEMS，照抄） */
-export const BACKUP_COVERS = ['config.json', 'memory.md', 'sessions', 'skills']
+export const BACKUP_COVERS = [
+  'config.json',
+  'memory.json',
+  'sessions',
+  'skills',
+  'tasks',
+  'changesets',
+]
 /** 自动备份**不含**这些 —— 面板必须写出来，否则用户以为删了还能恢复 */
-export const BACKUP_MISSES = ['任务台账', '审计日志', '结构化记忆（memory.json）']
+export const BACKUP_MISSES = ['审计日志', '登录凭据', '诊断日志']
 
 /**
  * 内核 task.cjs 的 LIVE_STATUSES —— 这两个状态删不掉（内核跳过并在 skipped 里报回来）。
@@ -53,6 +58,8 @@ function bridgeMissing(): WipeOutcome {
 async function wipeSessions(): Promise<WipeOutcome> {
   if (!useRealBackend) return bridgeMissing()
   const removed = await clearAllSessions()
+  if (removed === null)
+    return { ok: false, removed: 0, skipped: 0, error: '删除对话失败，原数据保留' }
   return { ok: true, removed, skipped: 0 }
 }
 
@@ -111,14 +118,14 @@ export const WIPE_TIERS: readonly WipeTier[] = [
     id: 'tasks',
     label: '删除任务台账',
     what: '删掉任务运行记录（计划、步骤、改了哪些文件、命令）',
-    recover: '不自动备份 —— 删了就真没了',
+    recover: '任务台账包含在本机备份中；恢复会覆盖整份数据，不能只恢复单条任务',
     run: wipeTasks,
   },
   {
     id: 'memory',
     label: '清空记忆',
     what: '清掉结构化记忆与旧版整篇记忆',
-    recover: '不自动备份 —— 删了就真没了',
+    recover: '结构化记忆包含在本机备份中；恢复会覆盖整份数据',
     run: wipeMemory,
   },
   {
@@ -141,8 +148,11 @@ export async function backupBeforeWipe(): Promise<{ ok: boolean; name?: string; 
 }
 
 /** 依次跑完这几档，返回每档一行人话（「删除全部」用） */
-export async function wipeMany(ids: readonly WipeId[]): Promise<{ ok: boolean; lines: string[] }> {
+export async function wipeMany(
+  ids: readonly WipeId[],
+): Promise<{ ok: boolean; lines: string[]; completed: WipeId[] }> {
   const lines: string[] = []
+  const completed: WipeId[] = []
   let ok = true
   for (const id of ids) {
     const tier = WIPE_TIERS.find((item) => item.id === id)
@@ -154,7 +164,8 @@ export async function wipeMany(ids: readonly WipeId[]): Promise<{ ok: boolean; l
       continue
     }
     const skipped = result.skipped > 0 ? `（${result.skipped} 条在跑，跳过）` : ''
+    completed.push(id)
     lines.push(`${tier.label}：${result.removed} 条${skipped}`)
   }
-  return { ok, lines }
+  return { ok, lines, completed }
 }

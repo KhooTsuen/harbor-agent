@@ -1,4 +1,4 @@
-import type { BalanceResult, WorkbenchBridge } from '@/types/backend'
+import type { BalanceResult, ProviderConnectionResult, WorkbenchBridge } from '@/types/backend'
 
 /* ══════════════════════════════════════════════════════════════
    供应商相关的桥包装
@@ -11,9 +11,7 @@ const bridge: WorkbenchBridge | undefined =
   typeof window !== 'undefined' ? window.workbench : undefined
 
 /** 测连接：发一条极短的消息，看服务端认不认这个 Key */
-export async function pingProvider(
-  providerId?: string,
-): Promise<{ ok: boolean; model?: string; error?: string }> {
+export async function pingProvider(providerId?: string): Promise<ProviderConnectionResult> {
   if (!bridge) return { ok: false, error: '浏览器预览不支持真实连接，请使用桌面版' }
   try {
     return await bridge.pingProvider(providerId)

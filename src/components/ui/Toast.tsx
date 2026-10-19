@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react'
 import type { Toast, ToastKind } from '@/types'
@@ -24,12 +24,35 @@ const AUTO_DISMISS_WITH_ACTION_MS = 9000
 function ToastCard({ toast }: { toast: Toast }) {
   const hideToast = useUIStore((s) => s.hideToast)
   const { icon: Icon, color } = KIND_META[toast.kind]
+  const timer = useRef<number | null>(null)
+  const started = useRef(0)
+  const remaining = useRef(toast.action ? AUTO_DISMISS_WITH_ACTION_MS : AUTO_DISMISS_MS)
+  const hovered = useRef(false)
+  const focused = useRef(false)
+
+  const pause = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current)
+      timer.current = null
+      remaining.current -= Date.now() - started.current
+    }
+  }, [])
+  const resume = useCallback(() => {
+    if (toast.kind === 'error' || toast.kind === 'warning' || toast.action) return
+    if (hovered.current || focused.current || document.hidden || timer.current !== null) return
+    started.current = Date.now()
+    timer.current = window.setTimeout(() => hideToast(toast.id), Math.max(0, remaining.current))
+  }, [toast.kind, toast.action, toast.id, hideToast])
 
   useEffect(() => {
-    const ttl = toast.action ? AUTO_DISMISS_WITH_ACTION_MS : AUTO_DISMISS_MS
-    const timer = window.setTimeout(() => hideToast(toast.id), ttl)
-    return () => window.clearTimeout(timer)
-  }, [toast.id, toast.action, hideToast])
+    const visibility = () => (document.hidden ? pause() : resume())
+    document.addEventListener('visibilitychange', visibility)
+    resume()
+    return () => {
+      pause()
+      document.removeEventListener('visibilitychange', visibility)
+    }
+  }, [pause, resume])
 
   return (
     <motion.div
@@ -41,6 +64,23 @@ function ToastCard({ toast }: { toast: Toast }) {
       className="glass pointer-events-auto flex w-80 items-start gap-2.5 rounded-md p-3 shadow-high"
       role="status"
       aria-live="polite"
+      onMouseEnter={() => {
+        hovered.current = true
+        pause()
+      }}
+      onMouseLeave={() => {
+        hovered.current = false
+        resume()
+      }}
+      onFocusCapture={() => {
+        focused.current = true
+        pause()
+      }}
+      onBlurCapture={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return
+        focused.current = false
+        resume()
+      }}
     >
       <Icon size={16} style={{ color }} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
@@ -78,6 +118,8 @@ function ToastCard({ toast }: { toast: Toast }) {
 
 export function ToastViewport() {
   const toasts = useUIStore((s) => s.toasts)
+  const history = useUIStore((s) => s.toastHistory)
+  const [showHistory, setShowHistory] = useState(false)
 
   return (
     <div
@@ -85,6 +127,43 @@ export function ToastViewport() {
       aria-live="polite"
       aria-atomic="false"
     >
+      {history.length > 0 ? (
+        <div className="pointer-events-auto self-end">
+          <button
+            type="button"
+            onClick={() => setShowHistory((open) => !open)}
+            className="rounded-sm border border-line-hairline bg-bg-raised px-2 py-1 text-xs text-fg-secondary"
+          >
+            重要通知记录（{history.length}）
+          </button>
+          {showHistory ? (
+            <div className="mt-1 max-h-64 w-80 overflow-y-auto rounded-sm border border-line-hairline bg-bg-raised p-2">
+              <p className="mb-1 text-2xs text-fg-tertiary">本次打开期间的重要通知</p>
+              {history
+                .slice()
+                .reverse()
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="border-t border-line-hairline py-1 text-xs text-fg-secondary"
+                  >
+                    <b>{item.title}</b>
+                    {item.description ? ` · ${item.description}` : ''}
+                    {item.action ? (
+                      <button
+                        type="button"
+                        className="ml-1 underline"
+                        onClick={item.action.onClick}
+                      >
+                        {item.action.label}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} />

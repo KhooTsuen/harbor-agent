@@ -11,44 +11,46 @@ import { tryHandleCommand } from './thread/commands'
 import { runMockTurn } from './thread/mockTurn'
 import { makeVersionActions } from './thread/messageVersions'
 import { attachBlock, makeAttachmentActions, type AttachmentSlice } from './thread/attachments'
+import { prepareOutgoing } from './thread/outgoing'
 import { questionTargetOf } from '@/lib/answers'
 import { userRecord } from './thread/userRecord'
 import { getActiveThread, useAppStore } from './useAppStore'
 import { useUIStore } from './useUIStore'
 import { useConfigStore } from './useConfigStore'
+import type { MessageAttachments, QueueEntry } from './thread/messageDraft'
+import { replaceDraftOwner } from './thread/draftOwner'
+import { migratePendingDraft } from './thread/pendingDraft'
+import { makeSendImmediately } from './thread/sendImmediately'
 
-/* ══════════════════════════════════════════════════════════════
-   当前线程的输入与生成（Electron 真流式 / 浏览器预览静态回复，两条路产出一样）
-   ══════════════════════════════════════════════════════════════ */
-
-interface ThreadState extends AttachmentSlice {
+export interface ThreadState extends AttachmentSlice {
   input: string
   /** 正在跑的对话 id（按对话记，后端每个请求独立，别的对话不拦） */
   sendingThreads: string[]
-  /** 当前会话的「建议回复」（一轮结束后生成，点一下填进输入框） */
   suggestions: string[]
   setSuggestions: (threadId: string, list: string[]) => void
 
-  /** AG-025：每条对话排队的消息（对话在跑时用户又发的），任务结束自动发第一条 */
-  queuedMessages: Record<string, string[]>
-  enqueueMessage: (threadId: string, text: string) => void
+  queuedMessages: Record<string, QueueEntry[]>
+  enqueueMessage: (threadId: string, text: QueueEntry) => void
   removeQueuedMessage: (threadId: string, index: number) => void
 
-  /** AG-026：每条对话的输入草稿（切换线程时保留，切回来还在） */
   drafts: Record<string, string>
+  attachmentDrafts: Record<string, MessageAttachments>
   /** 切换线程时调：把当前 input 存进旧线程的草稿，再把新线程的草稿恢复到 input */
   switchDraft: (fromId: string | null, toId: string) => void
 
   setInput: (value: string) => void
   clearInput: () => void
-  sendMessage: (override?: string, resumeTaskId?: string, targetThreadId?: string) => void
+  sendMessage: (
+    override?: string,
+    resumeTaskId?: string,
+    targetThreadId?: string,
+    attachments?: MessageAttachments,
+  ) => void
   stopGeneration: () => void
-  /** AG-011：暂停 —— 做完手上这步就停，之后可以接着做（不是立刻断） */
+  sendImmediately: () => Promise<boolean>
   pauseGeneration: () => void
-  /** AG-011：继续一条暂停的任务（复用原任务，不新建） */
   resumeTask: (taskId: string) => void
   regenerateMessage: (messageId: string) => void
-  /** 编辑并重新回答：同一条消息多一版（不再另发一条，避免出现两条同样的提问） */
   editAndRerun: (threadId: string, messageId: string, text: string) => void
   /** 切到某一版重新回答（界面上 ‹ n / N ›） */
   activateUserVersion: (threadId: string, messageId: string, index: number) => void
@@ -67,17 +69,25 @@ interface ThreadState extends AttachmentSlice {
 export const useThreadStore = create<ThreadState>((set, get) => ({
   input: '',
   sendingThreads: [],
-  /* 待发送的图片 / 文件（附件那一摊见 thread/attachments.ts） */
   ...makeAttachmentActions(set),
   suggestions: [],
   queuedMessages: {},
   drafts: {},
-
+  attachmentDrafts: {},
   switchDraft: (fromId, toId) =>
     set((s) => {
       const drafts = { ...s.drafts }
+      const attachmentDrafts = { ...s.attachmentDrafts }
       if (fromId) drafts[fromId] = s.input
-      return { drafts, input: drafts[toId] ?? '' }
+      if (fromId) attachmentDrafts[fromId] = { images: s.inputImages, files: s.inputFiles }
+      const saved = attachmentDrafts[toId]
+      return {
+        drafts,
+        attachmentDrafts,
+        input: drafts[toId] ?? '',
+        inputImages: saved?.images ?? [],
+        inputFiles: saved?.files ?? [],
+      }
     }),
 
   enqueueMessage: (threadId, text) =>
@@ -94,7 +104,6 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       const queuedMessages = { ...s.queuedMessages }
       if (next.length) queuedMessages[threadId] = next
       else delete queuedMessages[threadId]
-      /* AG-032：删掉的那条肉眼看不出来（列表只是少了一项）→ 给句回执 */
       useUIStore.getState().showToast('info', '已移出队列')
       return { queuedMessages }
     }),
@@ -102,28 +111,22 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   setInput: (value) => set({ input: value.slice(0, MAX_INPUT_LENGTH) }),
   clearInput: () => set({ input: '' }),
 
-  sendMessage: (override, resumeTaskId, targetThreadId) => {
-    const raw = (override ?? get().input).trim()
-    const files = get().inputFiles
-    /* 只有图片 / 只有附件、没有文字，也算有效输入 */
-    if (!raw && get().inputImages.length === 0 && files.length === 0) return
+  sendMessage: (override, resumeTaskId, targetThreadId, attachments) => {
+    const outgoing = prepareOutgoing({
+      text: override ?? get().input,
+      attachments,
+      draftFiles: get().inputFiles,
+      draftImages: get().inputImages,
+    })
+    if (!outgoing) return
+    const { raw, files, images } = outgoing
 
     const app = useAppStore.getState()
     const ui = useUIStore.getState()
 
-    /* 斜杠命令：/compact /temporary /new /clear /readonly…（抽到了 thread/commands.ts） */
-    if (tryHandleCommand(raw)) return
+    if (!targetThreadId && tryHandleCommand(raw)) return
 
-    /*
-     * 没有对话就新建一条。
-     *
-     * **不需要先有「文件夹」** —— 单独对话（workdir 为空）用的是默认工作目录，
-     * 照样能聊。以前这里要求必须有项目，于是单独对话一发消息就被拦下，
-     * 弹「找不到项目 / 这个线程关联的项目已被删除」：那个 project 变量
-     * 取出来检查完就再没用过，纯粹是改造前留下的挡路检查。
-     */
-    /* Phase 3c：`targetThreadId` = 侧边栏选中的那条（可能不是主窗口当前那条）。
-       传了却不在内存里就直接返回 —— 绝不退回 getActiveThread，那会发到错的会话去。 */
+    /* 指定目标不存在时不退回当前对话。 */
     let thread = targetThreadId
       ? app.threads.find((t) => t.id === targetThreadId)
       : getActiveThread(app)
@@ -137,12 +140,14 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const threadId = thread.id
     const wasUntitled = thread.title === '新对话'
 
-    /* AG-025：这条对话在跑 → 排队。用 sendingThreads 判断（旧的 status==='running' 在 AG-001 后从不会设成 running，空转）。任务结束自动发第一条。 */
+    /* 运行中的对话排队，保存完整附件。 */
     if (get().sendingThreads.includes(threadId)) {
-      get().enqueueMessage(threadId, raw)
-      get().clearInput()
-      get().clearInputImages()
-      get().clearInputFiles()
+      get().enqueueMessage(threadId, { text: raw, images: [...images], files: [...files] })
+      if (!attachments) {
+        get().clearInput()
+        get().clearInputImages()
+        get().clearInputFiles()
+      }
       /* AG-032：措辞与文档的例子对齐（「已加入队列」）*/
       ui.showToast('info', '已加入队列', '当前任务完成后自动发送')
       return
@@ -155,29 +160,37 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
           title: '新对话',
           mode: thread.mode,
           model: thread.model,
-          /* 思考强度档位随会话一起落盘，重启后才记得住 */
           reasoning: thread.reasoning,
           /* 单独对话要显式传 ''，否则主进程会把它塞进全局工作目录那个文件夹 */
           workdir: thread.workdir ?? '',
           threadSettings: thread.settings ? { ...thread.settings } : undefined,
+          collab: thread.collab,
         })
         if (!meta) {
           ui.showToast('error', '创建会话失败', '无法在 data/sessions 中创建会话文件')
           return
         }
+        const current = get()
+        set(
+          migratePendingDraft(
+            { ...current, images: current.inputImages, files: current.inputFiles },
+            threadId,
+            meta.id,
+            { text: raw, images, files },
+            useAppStore.getState().activeThreadId === threadId,
+          ),
+        )
+        replaceDraftOwner(threadId, meta.id)
         useAppStore.getState().replaceThreadId(threadId, meta.id)
-        useThreadStore.getState().sendMessage(raw)
+        useThreadStore.getState().sendMessage(raw, resumeTaskId, meta.id, { images, files })
       })()
       return
     }
 
-    /* 上下文检查：超提示线就提醒，超自动线就后台压（不阻塞这次发送） */
-    /* 基准读 context.baseTokens（2026-10-04 拆开）；0/没填 → adviseCompact 退到 CONTEXT_BASE_TOKENS */
+    /* 上下文过长时提示或压缩。 */
     const cfg = useConfigStore.getState().config
     const maxTokens = cfg?.context?.baseTokens ?? 0
-    /* 窗口从能力矩阵取（未知 = null）；分母 = min(窗口×0.8, 用户上限)，见 compact.ts */
     const window = modelWindowOf(cfg?.capabilities, thread.model)
-    /* 两条线从配置取（设置页改的就是这份）—— 以前这里写死 0.4/0.6，改设置不生效 */
     const ratios = { warn: cfg?.context?.compactAt, auto: cfg?.context?.autoCompactAt }
     const advice = adviseCompact(thread.messages, maxTokens, ratios, window)
     if (advice.auto) {
@@ -186,40 +199,31 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       ui.showToast('info', '上下文偏长', '输入 /compact 可以压缩一下')
     }
 
-    /* 用户消息 —— 两条路径都要 */
-    const images = get().inputImages
     const userMessage: Message = {
       id: uid('msg'),
       threadId,
       role: 'user',
-      /* 附件正文拼进来 —— 模型这一轮读的就是它（见 thread/attachments.ts 的 attachBlock） */
       content: raw + attachBlock(files),
       kind: 'text',
       status: 'sent',
       timestamp: Date.now(),
-      /* 图片跟着这条消息走：显示、以及发给模型时都要用 */
       ...(images.length > 0 ? { images } : {}),
     }
     useAppStore.getState().addMessage(threadId, userMessage)
-    /* 这条接在哪条提问的哪一版后面（读会话时按当前那一版筛"树"那一层）。
-       ★ 要在 addMessage 之前取 —— 加进去以后「最近一条提问」就是它自己了。 */
+    /* 保留消息所属的问答版本。 */
     const parent = questionTargetOf(thread?.messages ?? [])
-    /* 落盘形态（含图片）见 thread/userRecord.ts —— 那里面记着「为什么必须带 images」 */
     useAppStore.getState().persistMessage(threadId, userRecord(userMessage, parent))
-    get().clearInput()
-    /* 待发附件三样一起清。以前这里漏了 `clearInputImages` —— 图发是发出去了（消息带着 images），
-       输入框上方那条「N 张 · 会一起发给模型」却赖着不走，得手动点掉（2026-10-13 真机报的）。 */
-    get().clearInputImages()
-    get().clearInputFiles()
+    if (!attachments) get().clearInput()
+    if (!attachments) {
+      get().clearInputImages()
+      get().clearInputFiles()
+    }
 
     if (wasUntitled) {
-      /* 先用第一句话占个位（titleAuto = true），之后模型起了更好的会覆盖。
-         只有图片时没有文字可截，起个占位名，等模型起了再换。 */
       useAppStore.getState().autoTitle(threadId, deriveTitle(raw) || '看图')
     }
 
     if (useRealBackend) {
-      /* 日志里说得清这一轮是谁起的：点「继续」还是真发了条消息 */
       void runElectronTurn(threadId, raw, set, resumeTaskId ?? '', {
         reason: resumeTaskId ? '点继续' : '用户发送',
       })
@@ -229,23 +233,15 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   },
 
   pauseGeneration: () => {
-    /* 和 stop 一样只针对当前这条；但不删 activeRequests（请求还在跑，只是要收尾了） */
     const current = getActiveThread(useAppStore.getState())
     if (!current) return
-    /*
-     * AG-011：必须给**即时**反馈。暂停是「做完手上这步再停」—— 那一轮可能
-     * 模型流式 + 一条长命令，几十秒都正常；不给提示会以为按钮坏了（实测 30 秒没动静）。
-     */
+    /* 暂停会等当前步骤结束，先反馈给用户。 */
     useUIStore.getState().showToast('info', '正在暂停', '做完手上这一步就会停下来')
     pauseActiveRequest(current.id)
   },
 
   resumeTask: (taskId: string) => {
-    /*
-     * AG-011：把一条暂停的任务接着做。走普通发送链路（当成用户说了一句话）——
-     * 历史、事件、生命周期全照旧；区别只在多带 resumeTaskId，主进程看到它就
-     * **复用原任务**（steps/plan/changedFiles 都在），而不是新建。
-     */
+    /* 复用原任务继续执行。 */
     if (!taskId) return
     get().sendMessage('继续刚才的任务，从上次停下的地方接着做，别重复已经完成的步骤。', taskId)
   },
@@ -259,23 +255,27 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   stopGeneration: () => {
     /* 只停当前这条 —— 别的对话在跑的不受影响 */
     const current = getActiveThread(useAppStore.getState())
-    stopActiveRequest(current?.id)
-    if (current) {
-      set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== current.id) }))
-    }
-    /*
-     * AG-032：停止是**异步生效**的（要等主进程把工具/命令收干净），
-     * 光看按钮变回「发送」不够 —— 给一句回执，免得用户连点。
-     */
-    useUIStore.getState().showToast('info', '已停止', '这一轮不再往下跑，已经产出的内容留在对话里')
+    void stopActiveRequest(current?.id).then((stopped) => {
+      if (!stopped) {
+        useUIStore
+          .getState()
+          .showToast('error', '停止失败', '后台未确认取消；请重试，运行中的命令可能继续执行')
+        return
+      }
+      if (current)
+        useUIStore.getState().showToast('info', '正在停止', '等待当前步骤结束后再发送新消息')
+    })
+    /* 先告知停止请求已发出；后端确认后更新为「正在停止」，失败时显示失败原因。 */
+    useUIStore.getState().showToast('info', '正在请求停止', '确认当前任务结束前，不会启动新的执行')
   },
+
+  sendImmediately: makeSendImmediately(set, get),
 
   continueThread: () => {
     const current = getActiveThread(useAppStore.getState())
     if (current) get().sendMessage('继续刚才的任务，直接从当前状态往下做。')
   },
 
-  /* 多版本 / 从某条重跑 —— 实现与来由见 thread/messageVersions.ts */
   ...makeVersionActions(set, get),
 }))
 
@@ -286,10 +286,7 @@ export function useActiveMode(): Thread['mode'] {
   return thread?.mode ?? MODES[1].id
 }
 
-/*
- * AG-026：订阅 activeThreadId 变化切换草稿。用 store 订阅而不是在 setActiveThread
- * 里手动调（避免 useAppStore import useThreadStore 的循环依赖），切线程入口再多也只靠这一处。
- */
+/* 所有对话切换通过订阅同步草稿。 */
 let lastDraftThread = useAppStore.getState().activeThreadId
 useAppStore.subscribe((state) => {
   const current = state.activeThreadId

@@ -108,8 +108,10 @@ export async function run() {
   )
   check(
     '★ loop.run 收到的是注入后的配置',
-    /loop\.run\(\{[\s\S]*?config: effective/.test(chatSrc),
-    'chat.cjs 里应为 config: effective',
+    /loop\.run\(\{[\s\S]*?config: effective/.test(
+      readFileSync(join(ROOT, 'electron/handlers/chat-run.cjs'), 'utf8'),
+    ),
+    'chat-run.cjs 里应为 config: effective',
   )
   check(
     '日志里说得出用的是哪个模型、来自会话还是全局',

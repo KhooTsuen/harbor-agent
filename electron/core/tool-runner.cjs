@@ -1,15 +1,11 @@
 /**
  * 工具执行器（token 优化 · 阶段 2；从 loop-tools.cjs 演进）
  *
- * 与旧版的差别：
- *   · **并行**：同一轮里「连续、只读、目标不同」的调用合成一批并发跑
- *     （写入 / 同目标 / 有依赖的一律串行 —— 计划见 tool-scheduler.cjs）；
- *   · **部分成功检测**：写文件失败时对比目标文件前后的 hash —— 被改过就先提醒
- *     「重试前看现场」，不许盲目重放（§六）；
- *   · **结构化失败摘要**：error_kind / 目标 / retry_count 进「失败后继续」提示（不再只给名字）；
- *   · **调用统计**：calls / invalid / duplicates / cacheHits 进任务台账（无效调用率的分子）。
+ * 与旧版的差别：**并行**（连续/只读/目标不同才并发，见 tool-scheduler.cjs）·
+ * **部分成功检测**（写失败时比前后 hash，先提醒看现场）· **结构化失败摘要**
+ * （error_kind / 目标 / retry_count 进「失败后继续」提示）· **调用统计**进台账。
  *
- * 事件与消息顺序纪律：事件带 toolCallId（并行时稳定映射）；tool 消息按**原始调用顺序**入队。
+ * 事件与消息顺序纪律：事件带 toolCallId；tool 消息按**原始调用顺序**入队。
  */
 
 const log = require('./log.cjs')
@@ -27,10 +23,28 @@ const { buildRunCtx } = require('./tool-run-ctx.cjs')
 const actionCore = require('./action.cjs')
 const { lastUserText } = require('./loop-route.cjs')
 
-/** 工具返回算不算成功 —— 全项目只有这一处判定 */
+/**
+ * 工具返回算不算成功 —— 全项目只有这一处判定。
+ *
+ * ★ 两种输入形态：
+ *   · **字符串**（老契约，绝大多数工具）：看开头是不是拒绝/错误文案
+ *   · **`{ text, toolOk }`**（结构化）：`toolOk` 说了算，但**拒绝文案永远优先**
+ *     （fail-closed：工具不能靠自己声明 true 把一个拒绝说成成功）
+ *
+ * 为什么需要结构化（3B-1 / B12）：项目测试「跑了但断言挂了」的正文完全正常，
+ * 只看前缀会判成功 —— 活动记录里 FAIL 显示成绿勾。测试的状态与「这次调用
+ * 成不成功」是两个概念，只能由工具自己结构化回报，不能靠文本前缀伪装。
+ */
 function isToolOk(output) {
-  const text = String(output ?? '')
-  return !text.startsWith('错误：') && !text.startsWith('用户拒绝了')
+  const text = String(output !== null && typeof output === 'object' ? output.text : output ?? '')
+  if (text.startsWith('错误：') || text.startsWith('用户拒绝了')) return false
+  if (output !== null && typeof output === 'object' && typeof output.toolOk === 'boolean') return output.toolOk
+  return true
+}
+
+/** 工具返回 → 正文文本（结构化 `{ text, ok }` 取 text；字符串原样） */
+function outTextOf(output) {
+  return String(output !== null && typeof output === 'object' ? output.text ?? '' : output ?? '')
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -122,10 +136,8 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     const duplicateInvalid = duplicate && scheduler.isReadonly(item.name)
 
     /*
-     * P0-3：这一次调用的 **Action**（危险度 / 规模 / 可逆性 / 范围）——「一次工具调用
-     * 一个对象」。组装只此一处（见 `docs/Runtime领域模型.md` 4.2）；判据仍来自
-     * risk / scale / task-intent 各自那个家，这里只收拢、不重判。
-     * 跟着 `agent.tool.started` 推给渲染层与诊断（事件落盘会过 `redact.scrub`）。
+     * P0-3：这次调用的 **Action**（危险度/规模/可逆性/范围）——「一次工具调用一个对象」。
+     * 组装只此一处；判据仍来自 risk / scale / task-intent 各自的家，这里只收拢不重判。
      */
     const action = actionCore.of({
       name: call.name,
@@ -136,50 +148,40 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args, parallel, action })
     const startedAt = Date.now()
 
-    /*
-     * 这次调用专用的 ctx：`progress`（工具自报进度）+ `subagentEmit`（子代理把内部
-     * 每一步转出来）。两个注入都要贴上 `call.id` —— 工具自己不知道它，理由与形状
-     * 都在 `tool-run-ctx.cjs`（从这儿搬出去的，因为这文件贴着 300 行红线）。
-     */
+    /* 这次调用专用的 ctx：`progress` + `subagentEmit`，都贴上 call.id（见 tool-run-ctx.cjs） */
     const runCtx = buildRunCtx(ctx, { emit, toolCallId: call.id, toolName: call.name })
     /* P0-3 步骤 4：把这次调用的 Action 一并交给执行层 —— 各 gate 把权限结论回填到它上面 */
     runCtx.action = action
 
-    /*
-     * AG-016：失败后自动恢复（只读工具才自动重试 —— 理由见 errors.canAutoRecover）。
-     */
-    let output = await tools.execute(call.name, args, runCtx)
+    /* AG-016：失败后自动恢复（只读工具才自动重试 —— 见 errors.canAutoRecover） */
+    let output = await tools.execute(call.name, args, { ...runCtx, wantMeta: true })
     let autoRetries = 0
     const maxRetries = Number.isFinite(options.budget?.maxRetries)
       ? Math.max(0, options.budget.maxRetries)
       : errors.MAX_AUTO_RETRY
     for (let retry = 0; retry < maxRetries && !isToolOk(output); retry += 1) {
-      const retryInfo = errors.classifyToolOutput(output, { name: call.name })
+      const retryInfo = errors.classifyToolOutput(outTextOf(output), { name: call.name })
       if (!errors.canAutoRecover(retryInfo, call.name)) break
       autoRetries += 1
-      emit({
-        type: 'agent.retrying',
-        toolCallId: call.id,
-        name: call.name,
-        attempt: retry + 1,
-        kind: retryInfo.kind,
-        hint: retryInfo.hint,
-      })
+      emit({ type: 'agent.retrying', toolCallId: call.id, name: call.name, attempt: retry + 1, kind: retryInfo.kind, hint: retryInfo.hint })
       await sleep(errors.backoffMs(retry, retryInfo.kind))
-      output = await tools.execute(call.name, args, runCtx)
+      output = await tools.execute(call.name, args, { ...runCtx, wantMeta: true })
     }
 
+    /* ★ 统一成文本再往下走（台账/事件/模型消息/观察哨只该看到正文）；
+       成败由 isToolOk 一处判，它认结构化里的 toolOk。 */
+    const outText = outTextOf(output)
     const ok = isToolOk(output)
     if (ok) doneNames.push(call.name)
-    const run = { id: call.id, name: call.name, args, ok, output, ms: Date.now() - startedAt, parallel: parallel === true }
+    const run = { id: call.id, name: call.name, args, ok, output: outText, ms: Date.now() - startedAt, parallel: parallel === true }
     toolRuns.push(run)
 
     /* ── 任务台账：这一步干了什么 ── */
     if (options.taskId) {
       try {
-        taskCore.addStep(options.taskId, { tool: call.name, ok, summary: output, ms: run.ms, args, action })
+        taskCore.addStep(options.taskId, { tool: call.name, ok, summary: outText, ms: run.ms, args, action })
         if (call.name === 'run_shell' && typeof args.command === 'string') {
-          taskCore.addCommand(options.taskId, args.command, output)
+          taskCore.addCommand(options.taskId, args.command, outText)
         }
         if (typeof args.path === 'string' && (call.name === 'write_file' || call.name === 'edit_file')) {
           taskCore.addChangedFile(options.taskId, args.path)
@@ -191,20 +193,20 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     }
     bumpStats({ calls: 1, invalid: duplicateInvalid ? 1 : 0, duplicates: duplicate ? 1 : 0 })
 
-    const info = ok ? null : errors.classifyToolOutput(output, { name: call.name })
+    const info = ok ? null : errors.classifyToolOutput(outText, { name: call.name })
     /*
      * 工具失败：记一笔。分类结果直接带给观察哨（它就不再分一次类了）。
      * 只记录，不动 `info` —— 重试 / 提示 / 中止等行为与以前完全一致。
      */
     if (info) {
-      observer.record(info.message || String(output ?? ''), {
+      observer.record(info.message || outText, {
         source: 'tool',
         location: call.name,
         kind: info.kind,
         needsUser: info.needsUser,
         retryable: info.retryable,
         hint: info.hint,
-        raw: output,
+        raw: outText,
         tool: call.name,
         taskId: options.taskId,
       })
@@ -215,17 +217,17 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       toolCallId: call.id,
       name: call.name,
       ok,
-      result: output,
+      result: outText,
       ms: run.ms,
       parallel: parallel === true,
       ...(info ? { errorKind: info.kind, errorHint: info.hint } : {}),
     })
 
     /* 失败时附分类与建议；写操作再附「部分成功检测」 */
-    let content = output
+    let content = outText
     let partial = null
     if (info) {
-      const bits = [`${output}\n\n[错误分类] ${info.kind} —— ${info.hint}。建议：${errors.STRATEGY_TEXT[info.strategy] ?? info.strategy}`]
+      const bits = [`${outText}\n\n[错误分类] ${info.kind} —— ${info.hint}。建议：${errors.STRATEGY_TEXT[info.strategy] ?? info.strategy}`]
       const check = scheduler.partialResultOf(writeSnap, call)
       if (check && (check.changed || check.created)) {
         partial = check
@@ -243,7 +245,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
         partial,
       })
     } else if (duplicateInvalid) {
-      content = `${output}\n\n[重复调用提示] 这次调用与本次任务中已有的一次成功调用完全相同（结果见历史）。目标未变化时不必重复读取。`
+      content = `${outText}\n\n[重复调用提示] 这次调用与本次任务中已有的一次成功调用完全相同（结果见历史）。目标未变化时不必重复读取。`
     }
 
     return { role: 'tool', tool_call_id: call.id, content }

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { ProjectTestItem, ProjectTestsSettings, ProjectTestsState } from '@/types/projectTests'
+import type {
+  ProjectTestItem,
+  ProjectTestItemStatus,
+  ProjectTestsSettings,
+  ProjectTestsState,
+} from '@/types/projectTests'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { useUIStore } from '@/stores/useUIStore'
@@ -31,7 +36,15 @@ const bridge = typeof window !== 'undefined' ? window.workbench : undefined
 
 /** 空草稿 */
 function blank(): ProjectTestItem {
-  return { id: '', label: '', root: '', command: '', timeoutSec: 300 }
+  return { id: '', label: '', root: '', command: '', timeoutSec: 300, allowWrite: false }
+}
+
+/** 动作人话（主进程算 actions，界面只翻译） */
+const ACTION_TEXT: Record<string, string> = {
+  read: '读源码',
+  test: '跑测试',
+  write: '改文件',
+  restore: '回退改动',
 }
 
 /** 状态徽标 */
@@ -90,6 +103,7 @@ export function ProjectTestsPanel() {
       root: draft.root.trim(),
       command: draft.command.trim(),
       timeoutSec: draft.timeoutSec,
+      allowWrite: draft.allowWrite === true,
     }
     const ok = await save({ enabled: state.enabled, items: [...state.items, item] })
     if (ok) {
@@ -100,6 +114,18 @@ export function ProjectTestsPanel() {
 
   async function remove(id: string): Promise<void> {
     const items = state.items.filter((x) => x.id !== id).map(toPlain)
+    await save({ enabled: state.enabled, items })
+  }
+
+  /** 切换「允许改文件」（3C-2）：外部项目默认只能读/跑测试，写要用户显式打开 */
+  async function toggleWrite(item: ProjectTestItemStatus): Promise<void> {
+    if (!item.allowWrite && !item.rootValid) {
+      showToast('warning', '先修好项目根', item.rootError || '这个目录当前不可用')
+      return
+    }
+    const items = state.items.map((x) =>
+      x.id === item.id ? { ...toPlain(x), allowWrite: x.allowWrite !== true } : toPlain(x),
+    )
     await save({ enabled: state.enabled, items })
   }
 
@@ -159,15 +185,30 @@ export function ProjectTestsPanel() {
                 <p className="mt-0.5 truncate font-mono text-2xs text-fg-tertiary">
                   {item.root} · 超时 {item.timeoutSec}s
                 </p>
+                <p className="mt-0.5 text-2xs text-fg-tertiary">
+                  允许：
+                  {(item.actions ?? []).map((a) => ACTION_TEXT[a] ?? a).join(' / ') || '（无）'}
+                </p>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => void remove(item.id)}
-              >
-                删除
-              </Button>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void toggleWrite(item)}
+                  title="允许 Harbor 在这个项目里改文件（修复闭环要用）"
+                >
+                  {item.allowWrite ? '禁止改文件' : '允许改文件'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void remove(item.id)}
+                >
+                  删除
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
@@ -175,7 +216,10 @@ export function ProjectTestsPanel() {
         <p className="mt-2 text-dense text-fg-tertiary">还没有条目。下面填一条试试。</p>
       )}
 
-      <Row label="新增一条" hint="项目根必须在 Harbor 允许的数据根之内（主进程会校验并给出原因）">
+      <Row
+        label="新增一条"
+        hint="项目根要真实存在且不是盘符根/系统目录。外部项目默认只授权「读 / 跑测试」，要参与修复闭环再加「允许改文件」。"
+      >
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
             <Field
@@ -192,7 +236,7 @@ export function ProjectTestsPanel() {
           <Field
             value={draft.root}
             onChange={(v) => setDraft({ ...draft, root: v })}
-            placeholder="项目根，例如 E:\CodexWorkbench\data\unit-test-data\my-proj"
+            placeholder="项目根，例如 E:\独立游戏 或 E:\CodexWorkbench\data\unit-test-data\my-proj"
           />
           <Field
             value={draft.command}
@@ -205,6 +249,14 @@ export function ProjectTestsPanel() {
               onChange={(v) => setDraft({ ...draft, timeoutSec: Number(v) || 0 })}
               placeholder="超时秒数（5 ~ 600，默认 300）"
             />
+            <label className="flex shrink-0 items-center gap-1 text-dense text-fg-secondary">
+              <input
+                type="checkbox"
+                checked={draft.allowWrite === true}
+                onChange={(e) => setDraft({ ...draft, allowWrite: e.target.checked })}
+              />
+              允许改文件
+            </label>
             <Button variant="primary" size="sm" disabled={busy} onClick={() => void add()}>
               添加
             </Button>
@@ -234,5 +286,6 @@ function toPlain(item: ProjectTestItem): ProjectTestItem {
     root: item.root,
     command: item.command,
     timeoutSec: item.timeoutSec,
+    allowWrite: item.allowWrite === true,
   }
 }

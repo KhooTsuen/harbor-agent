@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { ErrorsPanel } from '../ErrorsPanel'
+import { useErrorsStore } from '@/stores/useErrorsStore'
 import { formatEntryForCopy, formatReport } from '@/lib/errorsApi'
 import type { ErrorListResult } from '@/types/errors'
 
@@ -50,6 +54,24 @@ const FIXTURE: ErrorListResult = {
 }
 
 describe('错误面板：复制文案', () => {
+  it('界面优先说明问题、受影响任务和处理入口，技术分类留在详情', () => {
+    const before = useErrorsStore.getState()
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    useErrorsStore.setState({ snapshot: FIXTURE, refresh: async () => {}, acknowledge: () => {} })
+    try {
+      act(() => root.render(createElement(ErrorsPanel)))
+      const html = host.innerHTML
+      expect(html).toContain('模型账户或密钥验证失败')
+      expect(html).toContain('需要检查')
+      expect(html).toContain('受影响任务：t1')
+      expect(html).toContain('检查模型连接')
+      expect(html).toContain('技术分类：auth')
+    } finally {
+      act(() => root.unmount())
+      useErrorsStore.setState(before)
+    }
+  })
   it('单条包含严重性 / 次数 / 位置 / 原文（缺了就没法查）', () => {
     const text = formatEntryForCopy(FIXTURE.entries[0])
     expect(text).toContain('[P0]')

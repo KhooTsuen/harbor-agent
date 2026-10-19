@@ -54,7 +54,8 @@ export async function run() {
   const steerSrc = read('electron/core/task-steering.cjs')
   check(
     '★ 判据只认台账上的事实（写类工具 + run_shell），不猜「跑的是不是测试」',
-    steerSrc.includes("new Set(['write_file', 'edit_file'])") && steerSrc.includes("=== 'run_shell'"),
+    steerSrc.includes("new Set(['write_file', 'edit_file'])") &&
+      steerSrc.includes("=== 'run_shell'"),
   )
 
   group('开关接线 / verifyAfterEdit 的判定')
@@ -190,7 +191,8 @@ export async function run() {
   const lintSrc = read('scripts/lint-kernel.mjs')
   check(
     '★ 允许清单是「待修」不是「豁免」：空着，或者每条都写清 why',
-    (lintSrc.includes('export const KNOWN = []') || lintSrc.includes('why:')) && lintSrc.includes('允许清单过期'),
+    (lintSrc.includes('export const KNOWN = []') || lintSrc.includes('why:')) &&
+      lintSrc.includes('允许清单过期'),
   )
 
   /*
@@ -212,7 +214,7 @@ export async function run() {
   )
   check(
     '★ loop 把「这轮实际用的模型/供应商」传给提示层（窗口按它算）',
-    read('electron/core/loop.cjs').includes('model: useModel, provider: useProvider'),
+    /model:\s*useModel,\s*provider:\s*useProvider/.test(read('electron/core/loop.cjs')),
   )
   check(
     '★ 输出那条路没被跟着改（还是 assistant.maxTokens）',
@@ -221,10 +223,17 @@ export async function run() {
   const ctxWin = require(join(ROOT, 'electron/core/context-window.cjs'))
   const capsCore = require(join(ROOT, 'electron/core/provider-capabilities.cjs'))
   const { DEFAULT_CONTEXT_TOKENS } = require(join(ROOT, 'electron/core/context-builder.cjs'))
-  const base = (baseTokens, model) => ctxWin.effectiveBaseTokens({ config: { context: { baseTokens } }, model, provider: {} })
+  const base = (baseTokens, model) =>
+    ctxWin.effectiveBaseTokens({ config: { context: { baseTokens } }, model, provider: {} })
   check('★ 1M 窗口 → 基准 80 万（不再被 16384 压住）', base(0, 'deepseek-v4-pro') === 800_000)
-  check('★ 用户上限是刹车：窗口再大，填了 32000 就用 32000', base(32000, 'deepseek-v4-pro') === 32000)
-  check('★ 窗口未知 → 退回死值基准（不是 0，也不是忽略）', base(0, '没有预设的模型') === DEFAULT_CONTEXT_TOKENS)
+  check(
+    '★ 用户上限是刹车：窗口再大，填了 32000 就用 32000',
+    base(32000, 'deepseek-v4-pro') === 32000,
+  )
+  check(
+    '★ 窗口未知 → 退回死值基准（不是 0，也不是忽略）',
+    base(0, '没有预设的模型') === DEFAULT_CONTEXT_TOKENS,
+  )
   check('★ 显式上限 + 窗口未知 → 听用户的', base(32000, '没有预设的模型') === 32000)
   check(
     '★ 声明随官方更新：v4-pro = 1M/384K 且**不支持读图**，flash 支持读图',
@@ -232,8 +241,11 @@ export async function run() {
       const pro = capsCore.resolve('deepseek-v4-pro', {}).caps
       const flash = capsCore.resolve('deepseek-flash', {}).caps
       return (
-        pro.context_window === 1_000_000 && pro.max_output === 384_000 && pro.vision === false &&
-        flash.vision === true && flash.context_window === 1_000_000
+        pro.context_window === 1_000_000 &&
+        pro.max_output === 384_000 &&
+        pro.vision === false &&
+        flash.vision === true &&
+        flash.context_window === 1_000_000
       )
     })(),
   )

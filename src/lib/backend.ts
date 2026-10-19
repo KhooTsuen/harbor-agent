@@ -9,13 +9,11 @@ import type {
 } from '@/types/backend'
 import type { Thread } from '@/types'
 import { bridge, isElectron, useRealBackend } from './bridge'
+import { useConfigSaveStatus } from '@/stores/configSaveStatus'
 
-/* 桥和环境判断住在 ./bridge.ts（拆出去是为了打破与 chatControl 的环）；
-   中断/暂停住在 ./chatControl.ts。两边都从这儿 re-export，调用方不用改 import。 */
 export { bridge, isElectron, useRealBackend }
 export * from './chatControl'
 
-/** 版本号：优先取环境变量，没有就用 package.json 里的 0.1.0 */
 /* 版本号由 vite.config.ts 从 package.json 注入。兜底写「未知」而不是某个
  * 具体版本 —— 写 0.1.0 的话，注入失效时会静默显示一个看着合理但错的版本（踩过）。 */
 export const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? '未知'
@@ -38,10 +36,13 @@ export async function loadConfig(): Promise<AppConfig | null> {
 
 export async function pushConfig(patch: Record<string, unknown>): Promise<AppConfig | null> {
   if (!bridge || Object.keys(patch).length === 0) return null
+  useConfigSaveStatus.getState().begin()
   try {
     const result = await bridge.patchConfig(patch)
+    useConfigSaveStatus.getState().finish(result.ok)
     return result.ok ? result.config : null
   } catch {
+    useConfigSaveStatus.getState().finish(false)
     return null
   }
 }
@@ -55,10 +56,13 @@ export async function pushGeneral(
 
 export async function resetConfig(): Promise<AppConfig | null> {
   if (!bridge) return null
+  useConfigSaveStatus.getState().begin()
   try {
     const result = await bridge.resetConfig()
+    useConfigSaveStatus.getState().finish(result.ok)
     return result.ok ? result.config : null
   } catch {
+    useConfigSaveStatus.getState().finish(false)
     return null
   }
 }
@@ -131,6 +135,7 @@ export async function createSession(options?: {
   workdir?: string
   reasoning?: string
   threadSettings?: Record<string, unknown>
+  collab?: Thread['collab']
 }): Promise<{ id: string; title: string } | null> {
   if (!bridge) return null
   try {
@@ -169,6 +174,8 @@ export async function updateSessionMeta(
     /** 思考强度档位（low / high / max） */
     reasoning?: string
     threadSettings?: Record<string, unknown>
+    /** 多模型协作的 A/B 选择（null = 清除，切回单模型） */
+    collab?: Thread['collab'] | null
   },
 ): Promise<void> {
   if (!bridge) return
@@ -188,13 +195,13 @@ export async function removeSession(id: string): Promise<void> {
   }
 }
 
-export async function clearAllSessions(): Promise<number> {
-  if (!bridge) return 0
+export async function clearAllSessions(): Promise<number | null> {
+  if (!bridge) return null
   try {
     const result = await bridge.removeAllSessions()
-    return result.count
+    return result.ok ? result.count : null
   } catch {
-    return 0
+    return null
   }
 }
 

@@ -1,8 +1,10 @@
 import { abortChat, pauseChat } from '@/lib/backend'
 import { useThreadStore } from '../useThreadStore'
+import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 import { abortMockTurn } from './mockTurn'
 import { clearPermissionForThread } from './confirmEvents'
+import { queuedMessage } from './messageDraft'
 
 /* ══════════════════════════════════════════════════════════════
    「在跑的那几个请求」：登记 · 停止 · 暂停 · 跑完接着发排队
@@ -16,15 +18,14 @@ import { clearPermissionForThread } from './confirmEvents'
 
 /** 正在进行的真实请求：threadId → requestId */
 const activeRequests = new Map<string, string>()
+const turnWaiters = new Map<string, { promise: Promise<void>; resolve: () => void }>()
 
 /*
  * A3（Phase 5）：每轮对话的「兜底时钟」收尾器。
  *
  * 看门狗是 `runElectronTurn` 闭包里的局部量，原本只有 `finish()` 能 dispose 它。
- * 而用户按「停止」走的是 `stopActiveRequest`（不经过 finish）—— 于是那个 300s
- * 定时器还挂着，到点会把**用户已经停掉的**那一轮标成 error、并写「长时间没有新内容」
- * （用户看到「我明明停了，它过几分钟自己变错误」）。
- * 这里按对话登记它的 dispose，让「停止」也能把它拆掉（消灭那条遗留定时炸弹）。
+ * 终态事件到来时由 `finish()` 拆掉它；停止请求本身不提前清理，避免实际取消失败后
+ * 这一轮失去兜底收尾。
  */
 const activeWatchdogs = new Map<string, () => void>()
 
@@ -33,7 +34,7 @@ export function registerTurnWatchdog(threadId: string, dispose: () => void): voi
   activeWatchdogs.set(threadId, dispose)
 }
 
-/** 拆掉这条对话的兜底时钟（收尾 / 停止都调；幂等，没登记就算了） */
+/** 拆掉这条对话的兜底时钟（终态收尾调；幂等，没登记就算了） */
 export function disposeTurnWatchdog(threadId: string): void {
   const dispose = activeWatchdogs.get(threadId)
   if (!dispose) return
@@ -44,6 +45,11 @@ export function disposeTurnWatchdog(threadId: string): void {
 /** 这一轮开始了（`runElectronTurn` 里登记） */
 export function beginTurnRequest(threadId: string, requestId: string): void {
   activeRequests.set(threadId, requestId)
+  let resolve = () => {}
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  turnWaiters.set(threadId, { promise, resolve })
 }
 
 /** 这一轮结束了 —— 收尾与「发送中止」都要调，别让它一直挂在那儿 */
@@ -57,6 +63,21 @@ export function endTurnRequest(threadId: string): void {
    */
   clearPermissionForThread(threadId)
   activeRequests.delete(threadId)
+  turnWaiters.get(threadId)?.resolve()
+  turnWaiters.delete(threadId)
+}
+
+/** 立即发送必须等旧一轮真正收到终态，避免两个 Agent 同时改同一目录。 */
+export async function waitForTurnEnd(threadId: string, timeoutMs = 10_000): Promise<boolean> {
+  const waiter = turnWaiters.get(threadId)
+  if (!waiter) return !activeRequests.has(threadId)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs)
+    void waiter.promise.then(() => {
+      clearTimeout(timer)
+      resolve(true)
+    })
+  })
 }
 
 /**
@@ -71,13 +92,21 @@ export function drainQueued(threadId: string): void {
   const { queuedMessages, removeQueuedMessage, sendMessage } = useThreadStore.getState()
   const list = queuedMessages[threadId]
   if (!list || list.length === 0) return
-  const next = list[0]
-  removeQueuedMessage(threadId, 0)
-  sendMessage(next)
+  const before = useAppStore.getState().threads.find((thread) => thread.id === threadId)
+  if (!before) return
+  const next = queuedMessage(list[0])
+  sendMessage(next.text, undefined, threadId, next)
+  const after = useAppStore.getState().threads.find((thread) => thread.id === threadId)
+  if (
+    after?.messages.some(
+      (message) => message.role === 'user' && !before.messages.some((old) => old.id === message.id),
+    )
+  )
+    removeQueuedMessage(threadId, 0)
 }
 
 /** 传 threadId 只停那一条；不传就把所有在跑的都停掉 */
-export function stopActiveRequest(threadId?: string): void {
+export async function stopActiveRequest(threadId?: string): Promise<boolean> {
   /*
    * 停了这条对话，它上面挂着的澄清卡也就没意义了（2026-10-04，小尾巴 #4）：
    * 留着它的话，用户一按「停止」卡还在问，而主进程那边其实已经在等一个不会来的答案 ——
@@ -96,21 +125,17 @@ export function stopActiveRequest(threadId?: string): void {
     useUIStore.getState().cancelPermission()
   }
 
+  let stopped = true
   if (threadId) {
-    /*
-     * A3（Phase 5）：先把这条对话的兜底时钟拆了 —— 用户已经停了，别再让它在
-     * 300s 后醒来把这一轮标成 error（RC-4）。
-     */
-    disposeTurnWatchdog(threadId)
     const id = activeRequests.get(threadId)
-    if (id) void abortChat(id)
-    activeRequests.delete(threadId)
+    if (id) stopped = await abortChat(id)
   } else {
-    for (const id of [...activeWatchdogs.keys()]) disposeTurnWatchdog(id)
-    for (const id of activeRequests.values()) void abortChat(id)
-    activeRequests.clear()
+    const ids = [...activeRequests.entries()]
+    const results = await Promise.all(ids.map(([, id]) => abortChat(id)))
+    stopped = results.every(Boolean)
   }
   abortMockTurn()
+  return stopped
 }
 
 /**

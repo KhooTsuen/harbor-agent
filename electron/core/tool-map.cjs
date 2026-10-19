@@ -35,7 +35,7 @@ const tools = require('./tools/index.cjs')
  *   （文件头那段 2026-10-13 的教训）。32 留一点余量给后续模块。
  *   ⚠️ 再加工具时要**重新权衡**：超了就该考虑让新族走「分组名 + 计数」（而不是一直抬）。
  */
-const MAX_DETAILED = 32
+const MAX_DETAILED = 40
 
 /**
  * 按**使用场景**分组，顺序照一次任务的实际流程走：
@@ -44,30 +44,62 @@ const MAX_DETAILED = 32
  * 组名与成员都手写（见文件头 ①）。
  */
 const TOOL_GROUPS = [
-  { title: '摸清现状（动手前）', tools: ['list_dir', 'read_file'] },
+  { title: '摸清现状（动手前）', tools: ['list_dir', 'read_file', 'read_image'] },
   { title: '改文件', tools: ['edit_file', 'write_file', 'download'] },
-  { title: '跑命令', tools: ['run_shell', 'run_project_test'] },
+  {
+    title: '跑命令与测试',
+    tools: [
+      'run_shell',
+      'run_project_test',
+      'analyze_test_failure',
+      'apply_test_fix',
+      'restore_test_fix',
+    ],
+  },
   {
     title: '上网查（先 search，再 browse，要操作才 elements/click/type）',
-    tools: ['search_web', 'browse', 'browse_elements', 'browse_click', 'browse_type', 'browse_nav', 'browse_ax'],
+    tools: [
+      'search_web',
+      'browse',
+      'browse_elements',
+      'browse_click',
+      'browse_type',
+      'browse_nav',
+      'browse_ax',
+    ],
   },
   {
     title: '操作用户的 Edge（要动**他自己正开着的**浏览器时才用；只读网页用 browse）',
-    tools: ['edge_page', 'edge_wait', 'edge_click', 'edge_type', 'edge_select', 'edge_scroll', 'edge_key', 'edge_focus', 'edge_tabs'],
+    tools: [
+      'edge_page',
+      'edge_wait',
+      'edge_click',
+      'edge_type',
+      'edge_select',
+      'edge_scroll',
+      'edge_key',
+      'edge_focus',
+      'edge_tabs',
+    ],
   },
   { title: '长期记忆', tools: ['memory_search', 'remember'] },
-  { title: '协作与治理', tools: ['ask_user', 'mark_step_done', 'spawn_subagent', 'generate_image'] },
+  {
+    title: '协作与治理',
+    tools: ['ask_user', 'mark_step_done', 'spawn_subagent', 'generate_image'],
+  },
 ]
 
 /** 每个工具一句话：**重点写「什么时候该掏它」**，不是复述它是什么（键集合有自检钉） */
 const TOOL_HINTS = {
   list_dir: '不确定项目结构时先看这里',
   read_file: '不确定路径先用 list_dir；大文件给 offset/limit',
+  read_image: '用户提到图片或你发现图片路径时用它看真实图像，无法识别要如实说明',
   edit_file: '改少量内容优先用它，比 write_file 安全',
   write_file: '只有新建文件、或整体重写才用它',
   download: '存文件到磁盘；网页正文要用 browse，别用它',
   run_shell: '需要交互的命令别用它（会卡住）；可以给 cwd',
-  run_project_test: '跑用户为某个项目配好的测试（只能给 id，命令由用户配置）；没配置就先用 list_dir / read_file 看清项目',
+  run_project_test:
+    '跑用户为某个项目配好的测试（只能给 id，命令由用户配置）；没配置就先用 list_dir / read_file 看清项目',
   search_web: '你的知识里没有、或可能已经变了的，先用它',
   browse: '要读整页正文 / JS 渲染的页面；只是中转读一眼，传 sameTab',
   browse_elements: '要操作页面，先看这儿有什么、能点什么',
@@ -89,6 +121,11 @@ const TOOL_HINTS = {
   remember: '记用户的习惯 / 项目约定 / 明确说过的偏好',
   ask_user: '要用户拍板先问（需求含糊 / 不可逆 / 范围不清）',
   mark_step_done: '做完一步打卡；它不验证，验证照常跑命令',
+  /* 3B-1：只读分析工具（不跑命令、不写文件、不重跑测试） */
+  analyze_test_failure: '测试挂了想先弄清原因时用它；它只分析已有结果，不重跑',
+  /* 3B-2 / 3B-3：分析完之后真的动手 —— 会写源码，逐次审批 */
+  apply_test_fix: '分析完、有具体改法时用它改那一处并重测；会写盘，需用户点头',
+  restore_test_fix: '这次修复改坏了要退回时用它；只回退那次改过的文件',
   spawn_subagent: '要读很多份、但只要结论',
   generate_image: '提交生图任务；它立刻返回、不等出图',
 }
@@ -117,7 +154,9 @@ function buildToolMap(list = tools.ALL) {
     const mapped = new Set(TOOL_GROUPS.flatMap((g) => g.tools))
     const rest = names.filter((n) => !mapped.has(n)).length
     if (rest > 0) rows.push(`- **其他**：${rest} 个`)
-    return [header, ...rows, `工具较多（${list.length} 个），每个的用途与参数看 schema。`].join('\n')
+    return [header, ...rows, `工具较多（${list.length} 个），每个的用途与参数看 schema。`].join(
+      '\n',
+    )
   }
 
   const lines = [header]

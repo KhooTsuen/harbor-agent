@@ -104,6 +104,18 @@ const CHAT_EVENT_TYPES = [
   /* 调试信息：意图分类与模型选择 */
   'mode',
   'route',
+
+  /*
+   * 双模型协作（默认关）：阶段切换 / 计划 / 执行痕迹 / 验收 / 收尾。
+   * ★ 这几个事件只在开启协作时才会发；单模型模式下一条都不会出现。
+   */
+  'collab.phase',
+  'collab.plan',
+  'collab.executed',
+  'collab.result',
+  'collab.done',
+  'collab.failed',
+  'collab.error',
 ]
 
 module.exports = { AGENT_EVENTS, CHAT_EVENT_TYPES, DECISION_EVENTS }

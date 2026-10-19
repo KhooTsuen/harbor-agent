@@ -59,6 +59,8 @@ export interface ProviderCapabilityMatrix {
   /** 哪几个维度是数字（token 数）而不是布尔 */
   numeric: CapabilityDim[]
   models: Record<string, ModelCapabilityInfo>
+  /** 按供应商 id 保留模型能力，避免同名模型跨供应商时取错声明。 */
+  providers?: Record<string, Record<string, ModelCapabilityInfo>>
   /** 「这是声明与预设，不是探测」那句话，主进程给的原文，界面直接显示别自己写 */
   note: string
 }

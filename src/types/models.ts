@@ -267,17 +267,19 @@ export interface ChatSendPayload {
    * 主进程据此把新任务挂上 `regeneratedFrom`、给旧改动事务盖「被替代」标记。
    */
   regenerateOf?: string
-  /** 被重新生成的是不是**最后一轮**（只有它是，旧台账 / 旧事务才一定属于它；逐字来自 renderer 的判定） */
   regenerateIsLast?: boolean
   projectId?: string
   temporary?: boolean
+  collab?: {
+    planner?: { kind: string; model?: string; providerId?: string }
+    executor?: { kind: string; model?: string; providerId?: string }
+  }
   threadSettings?: {
     responseDepth?: 'concise' | 'standard' | 'detailed' | 'deep'
     allowNetwork?: boolean
     allowTools?: boolean
     allowWrite?: boolean
     useMemory?: boolean
-    /** 思考强度（DeepSeek reasoning_effort）：low / high / max */
     reasoning?: 'low' | 'high' | 'max'
   }
   messages: Array<{

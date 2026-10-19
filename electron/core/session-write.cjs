@@ -11,6 +11,37 @@ const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const { fileFor, newId, safeTitle, readLines, writeLines, writeMetaLine, serializeLine } = require('./session-io.cjs')
 
+function normalizeCollabRole(input) {
+  if (!input || typeof input !== 'object') return null
+  const kind = input.kind === 'openai' || input.kind === 'codex-cli' ? input.kind : ''
+  const providerId = typeof input.providerId === 'string' ? input.providerId.trim() : ''
+  const model = typeof input.model === 'string' ? input.model.trim() : ''
+  if (!kind || !providerId || (kind === 'openai' && !model)) return null
+  return {
+    kind,
+    ...(model ? { model } : {}),
+    providerId,
+  }
+}
+
+function normalizeCollab(input) {
+  if (!input || typeof input !== 'object') return null
+  const planner = normalizeCollabRole(input.planner)
+  const executor = normalizeCollabRole(input.executor)
+  return planner && executor ? { planner, executor } : null
+}
+
+/**
+ * @param {{
+ *   title?: string,
+ *   mode?: string,
+ *   model?: string,
+ *   workdir?: string,
+ *   reasoning?: unknown,
+ *   threadSettings?: unknown,
+ *   collab?: unknown,
+ * }} options
+ */
 function create({
   title = '新对话',
   mode = 'pair',
@@ -18,6 +49,7 @@ function create({
   workdir = '',
   reasoning,
   threadSettings,
+  collab,
 } = {}) {
   const id = newId()
   const dir = typeof workdir === 'string' ? workdir : ''
@@ -54,6 +86,7 @@ function create({
     workdir: dir,
     ...(projectId ? { projectId } : {}),
     ...(threadSettings && typeof threadSettings === 'object' ? { threadSettings } : {}),
+    ...(normalizeCollab(collab) ? { collab: normalizeCollab(collab) } : {}),
     createdAt: Date.now(),
   }
   writeLines(id, [meta])
@@ -142,6 +175,15 @@ function updateMeta(id, patch) {
   /* 思考强度档位（low/high/max）—— 以前不在白名单里，所以选了也存不下来 */
   if (patch.reasoning !== undefined) meta.reasoning = String(patch.reasoning)
   if (patch.threadSettings !== undefined) meta.threadSettings = patch.threadSettings
+  /* 多模型协作的 A/B 选择（undefined = 清除） */
+  if (patch.collab !== undefined) {
+    if (patch.collab === null) delete meta.collab
+    else {
+      const normalized = normalizeCollab(patch.collab)
+      if (normalized) meta.collab = normalized
+      else delete meta.collab
+    }
+  }
 
   const written = writeMetaLine(id, meta)
   return written.ok ? meta : null
@@ -190,6 +232,7 @@ function importThreads(threadList) {
       title: typeof thread.title === 'string' ? thread.title : '导入的对话',
       mode: typeof thread.mode === 'string' ? thread.mode : 'pair',
       model: typeof thread.model === 'string' ? thread.model : '',
+      collab: thread.collab,
     })
 
     const list = Array.isArray(thread.messages) ? thread.messages : []

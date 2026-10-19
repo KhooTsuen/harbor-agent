@@ -39,7 +39,11 @@ export interface DiskWorkspace {
  *   · `reasoning` 本来就没写进 `SessionSummary`（以前这里用的是内联结构类型），
  *     而会话列表确实会返回它。
  */
-type SessionRow = SessionSummary & { projectId?: string; reasoning?: string }
+type SessionRow = SessionSummary & {
+  projectId?: string
+  reasoning?: string
+  collab?: Thread['collab']
+}
 
 /** 会话列表 → 界面 Thread（懒加载 messages） */
 function toThread(item: SessionRow): Thread {
@@ -68,6 +72,7 @@ function toThread(item: SessionRow): Thread {
     /* 以前这里硬编码 'medium'，从不读盘 —— 所以档位重启就丢 */
     reasoning: (item.reasoning as ReasoningLevel) || 'high',
     ...(item.threadSettings ? { settings: item.threadSettings } : {}),
+    ...(item.collab ? { collab: item.collab } : {}),
     pinned: false,
     archived: false,
     tags: [],

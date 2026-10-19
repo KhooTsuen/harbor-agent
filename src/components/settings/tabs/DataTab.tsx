@@ -1,16 +1,11 @@
 import { useState } from 'react'
-import { Download, FileDown, FileJson, Stethoscope, Trash2, Upload } from 'lucide-react'
+import { Download, FileDown, FileJson, Stethoscope, Upload } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
-import {
-  saveText,
-  clearAllSessions,
-  copyDiagnostics,
-  saveDiagnostics,
-  pickJsonFile,
-} from '@/lib/backend'
+import { useConfigSaveStatus } from '@/stores/configSaveStatus'
+import { saveText, copyDiagnostics, saveDiagnostics, pickJsonFile } from '@/lib/backend'
 import { migrateImport } from '@/lib/migrations'
 import { threadToMarkdown } from '@/lib/export'
 import { Button } from '@/components/ui/Button'
@@ -21,14 +16,13 @@ import { DataPortPanel } from '../panels/DataPortPanel'
 /* ══════════════════════════════════════════════════════════════
    设置 → 数据与隐私
 
-   导出（Markdown / JSON）、清空会话、重置设置。
+   导出（Markdown / JSON）、重置设置；清空会话统一走上方删前备份入口。
    所有危险操作都走权限确认（二次确认）。
    ══════════════════════════════════════════════════════════════ */
 
 export function DataTab() {
   const threads = useAppStore((s) => s.threads)
   const activeThreadId = useAppStore((s) => s.activeThreadId)
-  const clearMessages = useAppStore((s) => s.clearMessages)
 
   const applyImport = useAppStore((s) => s.applyImport)
   const resetSettings = useSettingsStore((s) => s.resetSettings)
@@ -165,33 +159,6 @@ export function DataTab() {
 
       <SectionTitle>危险操作</SectionTitle>
 
-      <Row label="清空所有对话" hint={`共 ${threads.length} 条，删掉后不可恢复`}>
-        <Button
-          variant="danger"
-          size="sm"
-          icon={<Trash2 size={13} />}
-          disabled={threads.length === 0}
-          onClick={() =>
-            askPermission({
-              kind: 'clear-data',
-              title: '清空所有对话？',
-              description: `会删掉全部 ${threads.length} 条对话，这个操作不能撤销。建议先导出备份。`,
-              confirmText: '全部删除',
-              danger: true,
-              onConfirm: () => {
-                void (async () => {
-                  const count = await clearAllSessions()
-                  threads.forEach((t) => clearMessages(t.id))
-                  showToast('success', '已清空', `删掉了 ${count} 条对话`)
-                })()
-              },
-            })
-          }
-        >
-          清空对话
-        </Button>
-      </Row>
-
       <Row label="重置设置" hint="主题、布局宽度、开关都回到默认值（对话不受影响）">
         <Button
           variant="danger"
@@ -205,8 +172,13 @@ export function DataTab() {
               danger: true,
               onConfirm: () => {
                 resetSettings()
-                void resetToDefaults()
-                showToast('success', '设置已重置')
+                void resetToDefaults().then(() => {
+                  const status = useConfigSaveStatus.getState().state
+                  showToast(
+                    status === 'failed' ? 'error' : 'success',
+                    status === 'failed' ? '设置重置失败' : '设置已重置',
+                  )
+                })
               },
             })
           }
@@ -216,16 +188,16 @@ export function DataTab() {
       </Row>
 
       <p className="mt-3 border-t border-line-hairline pt-3 text-dense leading-relaxed text-fg-tertiary">
-        数据都存在软件目录的 <span className="font-mono">data/</span> 下：
+        主要数据保存在软件目录的 <span className="font-mono">data/</span> 下：
         <span className="font-mono">sessions/</span>（对话）、
         <span className="font-mono">config.json</span>
-        （设置）。删掉整个文件夹就是卸载，不会在系统里留任何东西。
+        （设置）。登录凭据单独加密存放；清理前请先核对备份和导出范围。
       </p>
       <SectionTitle>诊断</SectionTitle>
 
       <Row
         label="导出诊断信息"
-        hint="把版本、配置、日志、会话结构打包成一份文本。API Key 会自动打码，可以放心发给别人看"
+        hint="把版本、配置、日志和会话结构打包；会自动遮盖疑似密钥，分享前仍建议检查内容"
       >
         <div className="flex gap-2">
           <Button

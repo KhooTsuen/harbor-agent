@@ -86,4 +86,31 @@ describe('流式分轮（rounds 要随事件同步到消息上）', () => {
     expect(patch.rounds).toHaveLength(1)
     expect(patch.rounds?.[0].content).toBe('半截话')
   })
+
+  it('最终汇报与流式过程不同，最终汇报必须进入实际渲染的 rounds', () => {
+    const { state, patches } = harness()
+    handleStreamEvent({ type: 'content', text: '规划与执行过程' }, state)
+    handleStreamEvent({ type: 'done', content: '最终协作汇报' }, state)
+    expect(last(patches).content).toBe('最终协作汇报')
+    expect(last(patches).rounds?.map((round) => round.content)).toEqual([
+      '规划与执行过程',
+      '最终协作汇报',
+    ])
+  })
+
+  it('最终正文已经在最后一轮时，不重复追加', () => {
+    const { state, patches } = harness()
+    handleStreamEvent({ type: 'content', text: '过程' }, state)
+    handleStreamEvent({ type: 'turn_start' }, state)
+    handleStreamEvent({ type: 'content', text: '最终正文' }, state)
+    handleStreamEvent({ type: 'done', content: '最终正文' }, state)
+    expect(last(patches).rounds).toHaveLength(2)
+  })
+
+  it('普通单轮流式收尾保持一轮，不重复正文', () => {
+    const { state, patches } = harness()
+    handleStreamEvent({ type: 'content', text: '普通回答' }, state)
+    handleStreamEvent({ type: 'done', content: '普通回答' }, state)
+    expect(last(patches).rounds).toHaveLength(1)
+  })
 })

@@ -1,4 +1,5 @@
-import { ArrowUp, Pause, Square } from 'lucide-react'
+import { ArrowUp, LoaderCircle, Pause, Send, Square } from 'lucide-react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -16,18 +17,23 @@ export function SendControls({
   sending,
   hasContent,
   canSend,
+  unavailableReason,
   onSend,
   onPause,
   onStop,
+  onSendImmediately,
 }: {
   sending: boolean
   /** 输入框里有东西吗 —— 决定停止按钮的提示要不要多说一句 */
   hasContent: boolean
   canSend: boolean
+  unavailableReason: string | null
   onSend: () => void
   onPause: () => void
   onStop: () => void
+  onSendImmediately: () => Promise<boolean>
 }) {
+  const [sendingImmediately, setSendingImmediately] = useState(false)
   if (sending) {
     return (
       <>
@@ -50,6 +56,7 @@ export function SendControls({
             <button
               type="button"
               onClick={onSend}
+              disabled={!canSend}
               aria-label="排队发送"
               className={cn(
                 'grid size-8 place-items-center rounded-full transition-colors duration-fast',
@@ -60,12 +67,37 @@ export function SendControls({
             </button>
           </Tooltip>
         ) : null}
+        {hasContent ? (
+          <Tooltip content="先停止当前任务，确认停止后立即发送这条消息；原队列保留">
+            <button
+              type="button"
+              disabled={!canSend}
+              onClick={() => {
+                if (sendingImmediately) return
+                setSendingImmediately(true)
+                void onSendImmediately().finally(() => setSendingImmediately(false))
+              }}
+              aria-label="立即发送（先停止当前任务）"
+              className={cn(
+                'flex h-8 items-center gap-1 rounded-full px-2.5 text-xs transition-colors duration-fast',
+                'bg-bg-raised text-fg-primary hover:bg-bg-hover disabled:opacity-60',
+              )}
+            >
+              {sendingImmediately ? (
+                <LoaderCircle size={13} className="animate-spin" />
+              ) : (
+                <Send size={13} />
+              )}
+              立即发送
+            </button>
+          </Tooltip>
+        ) : null}
       </>
     )
   }
 
   return (
-    <Tooltip content={canSend ? '发送' : '先写点什么'}>
+    <Tooltip content={canSend ? '发送' : (unavailableReason ?? '暂时无法发送')}>
       <button
         type="button"
         onClick={onSend}

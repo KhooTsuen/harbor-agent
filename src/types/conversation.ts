@@ -275,6 +275,11 @@ export interface Thread {
   mode: ThreadMode
   model: string
   reasoning: ReasoningLevel
+  /** 可选的 A/B 后端选择；旧对话缺省为单模型。 */
+  collab?: {
+    planner?: { kind: 'codex-cli' | 'openai'; model?: string; providerId?: string }
+    executor?: { kind: 'codex-cli' | 'openai'; model?: string; providerId?: string }
+  }
   /** 是否固定到侧栏顶部 */
   pinned: boolean
   /** 归档后从侧栏默认视图隐藏，可在「已归档」里找回 */

@@ -8,7 +8,8 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { ModePicker } from './composer/ModePicker'
 import { SendControls } from './composer/SendControls'
 import { QueuedMessages } from './composer/QueuedMessages'
-import { ModelPicker } from './composer/ModelPicker'
+
+import { CollabPicker } from './composer/CollabPicker'
 import { SuggestionChips } from './composer/SuggestionChips'
 import { NextSteps } from './composer/NextSteps'
 import { ComposerContextRow } from './composer/ContextRow'
@@ -16,6 +17,7 @@ import { ToolsMenu } from './composer/ToolsMenu'
 import { ImageAttachments } from './composer/ImageAttachments'
 import { FileAttachments } from './composer/FileAttachments'
 import { CapabilityWarning } from './composer/CapabilityWarning'
+import { SendAvailability } from './composer/SendAvailability'
 import { PlanBar } from './composer/PlanBar'
 import { useComposerState } from './composer/useComposerState'
 import { AboveInputCards } from './AboveInputCards'
@@ -33,6 +35,9 @@ export function Composer({ onFocusRequest }: ComposerProps) {
     input,
     setInput,
     stopGeneration,
+    sendImmediately,
+    sendBlock,
+    sendUnavailableReason,
     pauseGeneration,
     activeThreadId,
     queuedList,
@@ -55,6 +60,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
     setThreadModel,
     reasoning,
     setThreadReasoning,
+    collab,
+    setThreadCollab,
     atLimit,
     hasContent,
     canSend,
@@ -149,6 +156,8 @@ export function Composer({ onFocusRequest }: ComposerProps) {
               }
               if (
                 e.key === 'Enter' &&
+                !e.nativeEvent.isComposing &&
+                e.nativeEvent.keyCode !== 229 &&
                 !e.shiftKey &&
                 !e.altKey &&
                 (sendOnEnter || e.ctrlKey || e.metaKey)
@@ -212,7 +221,9 @@ export function Composer({ onFocusRequest }: ComposerProps) {
                 </span>
               ) : null}
 
-              <ModelPicker
+              {/* 单模型 / 双模型共用一个选择面板，避免两个入口产生冲突。 */}
+              <CollabPicker
+                collab={collab}
                 model={model}
                 reasoning={reasoning}
                 onModel={(id) => {
@@ -221,15 +232,23 @@ export function Composer({ onFocusRequest }: ComposerProps) {
                 onReasoning={(level) => {
                   if (activeThreadId) setThreadReasoning(activeThreadId, level)
                 }}
+                onChange={(c) => {
+                  if (activeThreadId) setThreadCollab(activeThreadId, c)
+                }}
+                onClear={() => {
+                  if (activeThreadId) setThreadCollab(activeThreadId, null)
+                }}
               />
 
               <SendControls
                 sending={sending}
                 hasContent={hasContent}
                 canSend={canSend}
+                unavailableReason={sendUnavailableReason}
                 onSend={submit}
                 onPause={pauseGeneration}
                 onStop={stopGeneration}
+                onSendImmediately={() => (canSend ? sendImmediately() : Promise.resolve(false))}
               />
             </div>
           </div>
@@ -239,6 +258,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
         <ImageAttachments />
         {/* 待发送的文件（任何格式） */}
         <FileAttachments />
+        <SendAvailability block={sendBlock} />
         {/* 这活当前模型干得了吗（据声明，不是实测） */}
         <CapabilityWarning />
 

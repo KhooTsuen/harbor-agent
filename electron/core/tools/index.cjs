@@ -1,16 +1,6 @@
-/**
- * 工具执行
- *
- * 这个文件是**所有工具调用的唯一咽喉**，所以四件事都放在这里做，
- * 而不是让每个工具自己记得：
- *
- *   ① 参数校验（模型给的参数不能全信：缺字段、类型不对都要拦下来）
- *   ② 风险分级（shell 命令按 low/medium/high/critical 给策略）
- *   ③ 路径授权（工作目录之外先问用户，批了给一次会话授权）④ 审计落盘（谁、何时、
- *      什么权限、做了什么、成没成）
- *
- * ① 在 registry.cjs，③④ 在 permission.cjs，这里是把它们串起来的执行流程。
- */
+/** 工具执行。**所有工具调用的唯一咽喉**：① 参数校验（registry）② 风险分级 ③ 路径授权
+ *  （permission）④ 审计落盘（permission）—— 四件事都在这里串起来，不让每个工具自己记得。
+ *  工具可返回 `{ text, toolOk }` 结构化回报成败；返回字符串仍是老契约（见 ③ 段）。 */
 
 const mcp = require('../mcp.cjs')
 const approvals = require('./approval.cjs')
@@ -58,11 +48,8 @@ async function execute(name, args, ctx = {}) {
   /* 风险确认已经问过一次了吗 —— 同一个动作弹两次窗最招人烦（见下面的写操作确认） */
   let riskApproved = false
 
-  /*
-   * ── MCP 工具：外部进程，按写操作对待 ──
-   * 确认一律用 `approval !== true`：fail-closed，不是明确的 true 就是拒绝
-   * （破坏性测试传过 `{ ok: false }`，本意拒绝却被当同意、还写进了磁盘）。
-   */
+  /* ── MCP 工具：外部进程，按写操作对待。确认一律 `approval !== true`（fail-closed；
+        破坏性测试传过 `{ ok: false }`，本意拒绝却被当同意、还写进了磁盘）。 ── */
   if (isMcpTool(name)) {
     let approval = null
     if (ctx.permission === 'readonly') {
@@ -249,10 +236,19 @@ async function execute(name, args, ctx = {}) {
   /* ── ③ 真正执行 ── ★ 顺序铁律：run_shell **先落「意图」再执行** —— 见 task-intent.cjs */
   const shellStep = taskIntent.beginShell(ctx.taskId, name, args, startedAt)
   try {
+    if (ctx.signal?.aborted) throw Object.assign(new Error('用户已停止任务，工具没有执行'), { name: 'AbortError' })
     const result = await runWithPathPermission(tool, args ?? {}, ctx)
-    const text = typeof result === 'string' ? result : JSON.stringify(result)
+    /*
+     * ★ 工具可以用**结构化**方式回报成败：`{ text, toolOk }`（返回字符串仍是老契约）。
+     *   为什么需要（3B-1 / B12）：项目测试「跑了但断言挂了」时正文完全正常，只看
+     *   字符串前缀就会判成 ok:true —— 活动记录里显示绿勾。★ 两个概念保持独立：
+     *   `ok` = **这次调用**成不成功；测试的 PASS / FAIL 仍在正文与 meta 的 `status` 里。
+     */
+    const structured = result !== null && typeof result === 'object' && !Array.isArray(result)
+    const text = structured ? String(result.text ?? '') : typeof result === 'string' ? result : JSON.stringify(result)
     const limited = limitOutput(text, ctx)
-    const ok = !limited.startsWith('错误：') && !limited.startsWith('用户拒绝了')
+    const denied = limited.startsWith('错误：') || limited.startsWith('用户拒绝了')
+    const ok = denied ? false : structured && typeof result.toolOk === 'boolean' ? result.toolOk : true
 
     auditCall(ctx, {
       tool: name,
@@ -267,7 +263,9 @@ async function execute(name, args, ctx = {}) {
 
     if (shellStep) taskIntent.endShell(ctx.taskId, shellStep, { ok, summary: limited })
 
-    return limited
+    /* ★ `ctx.wantMeta` 的调用方（tool-runner）要拿到「成败」，否则活动记录只能猜文本前缀。
+       其余调用方（MCP 桥、自检）保持老契约：拿到的一直是字符串。 */
+    return ctx.wantMeta === true ? { text: limited, toolOk: ok } : limited
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     ctx.log?.warn(`工具 ${name} 失败：${message}`)

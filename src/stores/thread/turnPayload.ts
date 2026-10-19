@@ -27,6 +27,8 @@ export function buildSendPayload(opts: {
   temporary?: boolean
   threadSettings?: SendPayload['threadSettings']
   workdir?: string
+  /** 多模型协作的 A/B 选择（有 = 走协作链路，不是单模型 loop） */
+  collab?: SendPayload['collab']
 }): SendPayload {
   return {
     requestId: opts.requestId,
@@ -49,5 +51,6 @@ export function buildSendPayload(opts: {
     /* 思考档位跟着 threadSettings 一起发 —— 以前漏了，档位从没到过主进程 */
     threadSettings: opts.threadSettings,
     ...(opts.workdir ? { workdir: opts.workdir } : {}),
+    ...(opts.collab ? { collab: opts.collab } : {}),
   }
 }

@@ -6,6 +6,7 @@ import { openDataDir } from '@/lib/diagnosticsApi'
 import { useErrorsStore } from '@/stores/useErrorsStore'
 import { STATUS_CLASS, type UiStatus } from '@/lib/statusLanguage'
 import { cn } from '@/lib/utils'
+import { useUIStore } from '@/stores/useUIStore'
 
 /* ══════════════════════════════════════════════════════════════
    错误清单（右栏「错误」标签）
@@ -43,6 +44,17 @@ const WINDOWS: readonly { days: number; label: string }[] = [
   { days: 7, label: '7 天' },
   { days: 30, label: '30 天' },
 ]
+
+const ISSUE_NAMES: Record<string, string> = {
+  auth: '模型账户或密钥验证失败',
+  network: '网络连接失败',
+  rate_limit: '服务暂时限制请求',
+  timeout: '操作等待超时',
+  permission: '操作需要授权',
+  tool_failure: '工具执行失败',
+  process_exit: '本机程序提前退出',
+  context_overflow: '对话内容超出模型上限',
+}
 
 function fmtTime(ts: number): string {
   if (!ts) return '—'
@@ -164,8 +176,7 @@ export function ErrorsPanel(): ReactElement {
       */}
       {result && result.ok && result.entries.length > 0 ? (
         <p className="shrink-0 border-b border-line-subtle px-2 py-1 text-2xs text-fg-tertiary">
-          这里只记录、不改动。打开这一页只清掉「未读」提示 ——
-          错误本身不会消失，也不会被标记为已处理。
+          这里保留历史错误；打开只清除未读提示。恢复状态需要实际复测，不能仅凭打开面板判断。
         </p>
       ) : null}
 
@@ -221,12 +232,15 @@ export function ErrorsPanel(): ReactElement {
  */
 function ErrorRow({ entry }: { entry: ErrorEntry }) {
   const tone = STATUS_CLASS[SEV_STATUS[entry.severity] ?? 'neutral']
+  const openSettings = useUIStore((s) => s.openSettings)
   return (
     <li className="rounded-sm border border-line-hairline bg-bg-raised/30">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1 text-xs text-fg-secondary hover:bg-bg-hover">
           <span className={cn('size-1.5 shrink-0 rounded-full', tone.bg)} aria-hidden />
-          <span className="shrink-0 font-mono text-2xs text-fg-tertiary">{entry.kind}</span>
+          <span className="shrink-0 text-2xs text-fg-secondary">
+            {ISSUE_NAMES[entry.kind] ?? '运行问题'}
+          </span>
           <span className="min-w-0 flex-1 truncate" title={entry.message}>
             {entry.message}
           </span>
@@ -238,7 +252,22 @@ function ErrorRow({ entry }: { entry: ErrorEntry }) {
           </span>
         </summary>
         <div className="flex flex-col gap-1 border-t border-line-hairline px-2 py-1 text-2xs text-fg-tertiary">
+          <p>
+            {entry.needsUser ? '需要检查 · 可能阻碍当前操作' : '历史记录 · 当前是否恢复尚未验证'}
+          </p>
+          {entry.context?.sessionId ? <p>受影响对话：{entry.context.sessionId}</p> : null}
+          {entry.context?.taskId ? <p>受影响任务：{entry.context.taskId}</p> : null}
           {entry.hint ? <p className="text-fg-secondary">建议：{entry.hint}</p> : null}
+          {entry.kind === 'auth' ? (
+            <button
+              type="button"
+              className="self-start underline"
+              onClick={() => openSettings('models')}
+            >
+              检查模型连接
+            </button>
+          ) : null}
+          <p>技术分类：{entry.kind}</p>
           <p>
             位置：<span className="font-mono text-fg-secondary">{entry.location}</span>
           </p>

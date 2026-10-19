@@ -212,7 +212,7 @@ export async function run() {
   check('★ 配置层把 kind 写进白名单（不写会被静默丢掉）', /kind: pick\(str\(p\.kind\)/.test(R('electron/core/config-normalize-parts.cjs')))
   check('★ 界面类型有 kind / codexPath', /kind\?: 'openai' \| 'codex-cli'/.test(R('src/types/models.ts')))
   check('★ 界面有「添加 Codex CLI」入口（老用户否则选不到）', /addCodexProvider/.test(R('src/stores/useConfigStore.ts')) && /AddCodex|addCodex/.test(R('src/components/settings/ProviderPanel.tsx')))
-  check('★★ 能力限制写在**用户看得见的地方**（卡片正文，不是注释）', /不支持 Harbor 的工具调用/.test(R('src/components/settings/providers/CodexCliCard.tsx')))
+  check('★★ 工具能力条件写在**用户看得见的地方**（卡片正文，不是注释）', /Harbor 工具访问取决于 MCP 桥是否启用，以及当前对话的授权范围/.test(R('src/components/settings/providers/CodexCliCard.tsx')))
   check('★ 没动工具执行链（模型只产 toolCalls，执行在 tools/ —— 这条后端不产，所以自然不调）', !/codex/i.test(R('electron/core/tools/index.cjs')))
 
   /* ── 行数（贴线是这一批最容易踩的） ── */

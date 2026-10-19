@@ -20,6 +20,7 @@ import type {
 } from './models'
 import type { CodexMcpSettings, CodexMcpState } from './codexMcp'
 import type { ProjectTestsSettings, ProjectTestsState } from './projectTests'
+import type { CollabState, CollabRunResult } from './collab'
 
 import type { MemoryStats, SafetyBridge } from './safety'
 import type { ImageDonePayload } from './image'
@@ -55,6 +56,15 @@ export interface ModelProbeResult {
   error?: string
 }
 
+export interface ProviderConnectionResult {
+  ok: boolean
+  model?: string
+  error?: string
+  /** Codex CLI 的本机安装/登录检查；不等于实际模型请求或工具授权。 */
+  installation?: 'available' | 'missing' | 'unknown'
+  login?: 'signed-in' | 'signed-out' | 'unknown'
+}
+
 export interface WorkbenchBridge
   extends
     SafetyBridge,
@@ -71,7 +81,7 @@ export interface WorkbenchBridge
   getConfig: () => Promise<AppConfig>
   patchConfig: (partial: Record<string, unknown>) => Promise<{ ok: boolean; config: AppConfig }>
   resetConfig: () => Promise<{ ok: boolean; config: AppConfig }>
-  pingProvider: (providerId?: string) => Promise<{ ok: boolean; model?: string; error?: string }>
+  pingProvider: (providerId?: string) => Promise<ProviderConnectionResult>
   listModels: (providerId?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>
   /*
    * 账户余额（DeepSeek 专有）。**只由用户点击触发** —— 主进程不缓存、不轮询。
@@ -110,6 +120,7 @@ export interface WorkbenchBridge
     workdir?: string
     reasoning?: string
     threadSettings?: Record<string, unknown>
+    collab?: import('./conversation').Thread['collab']
   }) => Promise<{ id: string; title: string; mode: string; model: string; createdAt: number }>
   loadSession: (id: string) => Promise<SessionDetail | null>
   appendMessage: (id: string, message: StoredMessage) => Promise<{ ok: boolean }>
@@ -122,6 +133,7 @@ export interface WorkbenchBridge
       workdir?: string
       reasoning?: string
       threadSettings?: Record<string, unknown>
+      collab?: import('./conversation').Thread['collab'] | null
     },
   ) => Promise<{ id: string; title: string } | null>
   removeSession: (id: string) => Promise<{ ok: boolean }>
@@ -166,6 +178,9 @@ export interface WorkbenchBridge
   backupRestore: (name: string) => Promise<{
     ok: boolean
     restored?: string[]
+    skipped?: string[]
+    rolledBack?: string[]
+    rolledBackAll?: boolean
     safetyBackup?: string
     needsRestart?: boolean
     error?: string
@@ -190,6 +205,18 @@ export interface WorkbenchBridge
     error?: string
     state: ProjectTestsState
   }>
+  /* 双模型协作（默认关）：状态 / 开关 / 启动 / 停止（角色固定，不给外部指定） */
+  collabStatus: () => Promise<{ ok: boolean; state: CollabState }>
+  collabSet: (partial: {
+    enabled: boolean
+  }) => Promise<{ ok: boolean; error?: string; state: CollabState }>
+  collabRun: (payload: { goal: string; projectRoot: string }) => Promise<{
+    ok: boolean
+    error?: string
+    result?: CollabRunResult
+    state: CollabState
+  }>
+  collabStop: () => Promise<{ ok: boolean; error?: string }>
 
   diagnosticsCopy: () => Promise<{
     ok: boolean

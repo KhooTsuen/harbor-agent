@@ -42,15 +42,11 @@ function sourceFiles(dir: string = SRC): string[] {
 const rel = (p: string): string => relative(SRC, p).replace(/\\/g, '/')
 const FILES = sourceFiles()
 
-/** 取出每个 `disabled=` 后面紧跟的一小段（属性可能跨行写） */
+/** 只取 disabled 属性表达式，避免把后面的 onClick 回调误判为禁用条件。 */
 function disabledExprs(src: string): string[] {
-  const out: string[] = []
-  let i = src.indexOf('disabled=')
-  while (i !== -1) {
-    out.push(src.slice(i, i + 120).replace(/\s+/g, ' '))
-    i = src.indexOf('disabled=', i + 1)
-  }
-  return out
+  return [...src.matchAll(/disabled\s*=\s*\{([^}]*)\}/g)].map((match) =>
+    match[1].replace(/\s+/g, ' '),
+  )
 }
 
 describe('AG-009 / Renderer 不阻塞', () => {

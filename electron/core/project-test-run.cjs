@@ -42,6 +42,7 @@
  */
 
 const tests = require('./project-tests.cjs')
+const history = require('./project-test-history.cjs')
 const { onAbort } = require('./abort.cjs')
 
 /** 同时最多跑几条项目测试（并发上限） */
@@ -85,8 +86,15 @@ async function runProjectTest(input) {
   if (picked.ok === false) return { ok: false, error: { code: picked.code, message: picked.message } }
   const item = picked.item
 
-  /* ③ 项目根边界（唯一判据在 policy） */
-  const root = policy.resolveWriteRoot(item.root, isoDir)
+  /* ③ 项目根边界（唯一判据在 project-roots.cjs）
+   *
+   * ★ 3C-2 改造：原来要求根必须落在数据根之内，于是**用户自己的项目目录**
+   *   （E:\独立游戏 这类）在结构上必然被拒 —— 3C-1 真机自举就撞在这里。
+   *   现在改成「用户显式授权的项目根」：授权来源只有 `projectTests.items[].root`，
+   *   模型给不出；每个根仍要过 realpath / 禁区 / 是否在授权清单里三道。
+   *   跑测试只需要 `test` 权限（不需要写权限）。 */
+  const roots = require('./project-roots.cjs')
+  const root = roots.resolveAuthorizedRoot({ root: item.root, isoDir, items: cfg.items, action: 'test' })
   if (root.ok === false) return { ok: false, error: { code: root.code, message: root.message } }
 
   /* ④ 命令再筛一次（配置可能是手工改的） */
@@ -123,6 +131,13 @@ async function runProjectTest(input) {
 
   const runCtx = {
     ...ctx,
+    /*
+     * ★ 嵌套调用**必须**要纯文本：`wantMeta` 是给最外层（tool-runner）用的，
+     *   它通过 ctx 的展开会一路漏到这里 —— 于是 `execute('run_shell')` 返回
+     *   `{text, toolOk}` 对象，`classifyRun(String(obj))` 就成了 `[object Object]`
+     *   → 状态被判成 ERROR（2026-10-17 端到端实测踩到）。这行是那个修复。
+     */
+    wantMeta: false,
     signal: ctrl.signal,
     /** run_shell 把子进程交出来 → 记 pid（终止后要靠它确认进程真的没了） */
     onChild: (child) => {
@@ -201,6 +216,23 @@ async function runProjectTest(input) {
   }
 
   const passed = status === tests.STATUS.PASS
+  /*
+   * ⑪ 落一条**有界脱敏快照**（3B-1 / B11）：分析层按 executionId 取它，
+   *    所以「分析已有结果」不必再跑一次测试。
+   *    ★ 只有这里会调 `history.record()` —— 调用方给不出 status，只能给 id（B14）。
+   */
+  const snap = history.record({
+    kind: 'project',
+    testId: item.id,
+    label: item.label,
+    projectRoot: root.abs,
+    command: item.command,
+    status,
+    exitCode: verdict.exitCode,
+    ms: Date.now() - startedAt,
+    approved,
+    output: out,
+  })
   const summary = passed ? [] : tests.summarizeFailure(out)
   const head = passed
     ? `测试通过（${item.label}）`
@@ -237,6 +269,8 @@ async function runProjectTest(input) {
       toolOk: passed,
       meta: {
         harborTool: 'run_shell',
+        /* 分析层按它取快照（3B-1）：模型要分析这次结果就把这个 id 传回来 */
+        executionId: snap.executionId,
         testId: item.id,
         label: item.label,
         projectRoot: root.abs,

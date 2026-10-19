@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import type { AttachedFile } from '@/types/backend-io'
 import { IconButton } from '@/components/ui/IconButton'
-import { formatSize } from '@/stores/thread/attachments'
+import { attachmentBlock, formatSize, usableFiles } from '@/stores/thread/attachments'
 import { useThreadStore } from '@/stores/useThreadStore'
 
 /* ══════════════════════════════════════════════════════════════
@@ -40,8 +40,18 @@ function detailOf(file: AttachedFile): string {
   if (file.pages) return `${file.pages} 页`
   if (file.sheets) return `${file.sheets} 张表`
   if (file.slides) return `${file.slides} 张`
-  if (file.text) return `${file.text.length} 字${file.truncated ? '（已截断）' : ''}`
+  if (file.text) return `${file.text.length} 字`
   return ''
+}
+
+function readStatus(file: AttachedFile): string {
+  if (!file.ok) return '读取失败'
+  if (file.truncated) return '仅提供部分内容 · 已截断'
+  if (file.kind === 'binary') return '仅提供文件信息'
+  if (file.kind === 'image') return '原图随消息传递'
+  if (file.note && !file.text && !file.entries?.length) return '未读到正文 · 仅提供提取说明'
+  if (file.note) return '部分读取 · 详情见下方'
+  return '已读取可提取内容'
 }
 
 export function FileAttachments() {
@@ -50,10 +60,14 @@ export function FileAttachments() {
 
   if (files.length === 0) return null
 
+  /* 编号按「可用附件」排 —— 与真正拼进消息里的那个序号一致（P1 #26） */
+  const usable = usableFiles(files)
+
   return (
     <div className="flex flex-wrap items-center gap-2 px-1 pb-1.5">
       {files.map((file, index) => {
         const Icon = ICONS[file.kind ?? 'binary'] ?? FileText
+        const usableIndex = usable.indexOf(file)
         return (
           <div
             key={`${file.path ?? file.name}-${index}`}
@@ -67,6 +81,19 @@ export function FileAttachments() {
                 {file.size ? ` · ${formatSize(file.size)}` : ''}
                 {detailOf(file) ? ` · ${detailOf(file)}` : ''}
               </span>
+              <span
+                className={`text-2xs ${!file.ok || file.truncated ? 'text-warning' : 'text-fg-tertiary'}`}
+              >
+                {readStatus(file)}
+              </span>
+              <details className="max-w-[18rem] text-2xs text-fg-secondary">
+                <summary className="cursor-pointer">查看提供给助手的内容</summary>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-bg-raised p-2">
+                  {file.ok
+                    ? attachmentBlock(file, usableIndex + 1).trimStart()
+                    : (file.error ?? '未能读取附件内容')}
+                </pre>
+              </details>
             </div>
             <IconButton label={`移除 ${file.name}`} size={28} onClick={() => remove(index)}>
               <X size={12} />

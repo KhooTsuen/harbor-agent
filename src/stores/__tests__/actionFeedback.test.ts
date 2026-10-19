@@ -31,9 +31,9 @@ describe('AG-032 / 文档点名的六种反馈', () => {
     expect(last()?.title).toBe('正在暂停')
   })
 
-  it('★ 已停止', () => {
+  it('★ 停止请求先显示等待确认，不提前宣称已停止', () => {
     useThreadStore.getState().stopGeneration()
-    expect(last()?.title).toBe('已停止')
+    expect(last()?.title).toBe('正在请求停止')
     expect(last()?.kind).toBe('info')
   })
 
@@ -43,7 +43,9 @@ describe('AG-032 / 文档点名的六种反馈', () => {
     useThreadStore.setState({ input: '排队这句' })
     useThreadStore.getState().sendMessage()
     expect(last()?.title).toBe('已加入队列')
-    expect(useThreadStore.getState().queuedMessages[id]).toEqual(['排队这句'])
+    expect(useThreadStore.getState().queuedMessages[id]).toEqual([
+      { text: '排队这句', images: [], files: [] },
+    ])
   })
 
   it('★ 已移出队列', () => {

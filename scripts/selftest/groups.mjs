@@ -44,6 +44,10 @@ import { run as edgeToolsGroup } from './groups/163-edge-tools.mjs'
 import { run as m02PanelGroup } from './groups/164-m02-panel.mjs'
 import { run as codexAdapterGroup } from './groups/165-codex-adapter.mjs'
 import { run as codexStabilityGroup } from './groups/166-codex-stability.mjs'
+import { run as probeIsolationGroup } from './groups/167-probe-isolation.mjs'
+import { run as projectRootsGroup } from './groups/169-project-roots.mjs'
+import { run as collabGroup } from './groups/170-collab.mjs'
+import { run as testFixGroup } from './groups/168-test-fix.mjs'
 import { run as llmBody } from './groups/07-llm-body.mjs'
 import { run as limits } from './groups/08-limits.mjs'
 import { run as browser } from './groups/09-browser.mjs'
@@ -226,4 +230,8 @@ export const GROUPS = [
   m02PanelGroup,
   codexAdapterGroup,
   codexStabilityGroup,
+  probeIsolationGroup,
+  testFixGroup,
+  projectRootsGroup,
+  collabGroup,
 ]

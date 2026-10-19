@@ -1,10 +1,11 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import type { FontFamilyId, ReasoningLevel, Settings, SettingsPatch } from '@/types'
 import { LAYOUT } from '@/constants'
 import { clamp } from '@/lib/utils'
 import { useRealBackend, pushGeneral } from '@/lib/backend'
 import { settingsToConfig } from '@/lib/configMapping'
+import { useConfigSaveStatus } from './configSaveStatus'
 
 /* ══════════════════════════════════════════════════════════════
    设置
@@ -204,6 +205,35 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'personal-agent:settings',
       version: 3,
+      storage: createJSONStorage(() => ({
+        getItem: (name) => {
+          try {
+            return localStorage.getItem(name)
+          } catch {
+            useConfigSaveStatus.getState().begin()
+            useConfigSaveStatus.getState().finish(false)
+            return null
+          }
+        },
+        setItem: (name, value) => {
+          useConfigSaveStatus.getState().begin()
+          try {
+            localStorage.setItem(name, value)
+            useConfigSaveStatus.getState().finish(true)
+          } catch {
+            useConfigSaveStatus.getState().finish(false)
+          }
+        },
+        removeItem: (name) => {
+          useConfigSaveStatus.getState().begin()
+          try {
+            localStorage.removeItem(name)
+            useConfigSaveStatus.getState().finish(true)
+          } catch {
+            useConfigSaveStatus.getState().finish(false)
+          }
+        },
+      })),
       /* 老版本升上来时只过一遍归一化（它会按新的 min/max 夹范围）——
          别在这里强塞默认值：那等于把用户自己调过的面板宽度清掉 */
       migrate: (persisted) => {

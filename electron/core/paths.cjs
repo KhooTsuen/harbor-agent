@@ -72,11 +72,40 @@ function isUnitTestRun() {
   return process.env.HARBOR_UNIT_TEST === '1'
 }
 
+/**
+ * 当前进程是不是一个**临时探针**（入口脚本落在 `<root>/tmp/` 下）。
+ *
+ * ★ 为什么要有这条兜底（2026-10-17 真实污染）：`tmp/` 下的纯 Node 探针
+ *   两个隔离条件都不满足 —— 入口不是 `scripts/selftest.mjs`，也没人替它设
+ *   `HARBOR_UNIT_TEST` —— 于是 `DIRS.data` 解析成**源码开发版的数据根**，
+ *   探针的审计/日志直接写进 `data/audit/*.jsonl`（当天实测多出 9 条）。
+ *   当时靠「探针自己记得 require('./_iso.cjs')」兜，结果自己就漏了一次。
+ *
+ *   所以判据挪到这里：**位置**本身就是信号，不依赖人的记性。
+ *   白名单式的「逐个探针补一行」不解决问题 —— 新写的探针照样会漏。
+ *
+ * ★ 影响面很小：Electron 主进程的 argv[1] 是 electron 本体，不在 tmp/；
+ *   自检走 selftest-data；打包版在上面那行 `packaged` 就返回了。只有
+ *   「人手在 tmp/ 里 node 一个脚本」会命中 —— 那本来就该用隔离数据。
+ */
+function isProbeRun() {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    const probeDir = path.join(rootDir(), 'tmp') + path.sep
+    return path.resolve(entry).toLowerCase().startsWith(probeDir.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
 /** 隔离运行的数据目录名（自检 / 单测各一份）；不在隔离运行时返回 null */
 function isolationDirName() {
   if (packaged) return null
   if (isSelftestRun()) return 'selftest-data'
   if (isUnitTestRun()) return 'unit-test-data'
+  /* tmp/ 下的探针默认当单测对待（同目录，便于事后一起清） */
+  if (isProbeRun()) return 'unit-test-data'
   return null
 }
 
@@ -233,4 +262,5 @@ module.exports = {
   realDataDir,
   isSelftestRun,
   isUnitTestRun,
+  isProbeRun,
 }

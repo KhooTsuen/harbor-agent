@@ -220,6 +220,22 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    /* 装配会读配置并预热凭据：必须等 safeStorage 就绪，且早于窗口发起 IPC。 */
+    const handlers = registerHandlers({
+      ipcMain,
+      app,
+      Notification, powerMonitor,
+      config,
+      log,
+      send,
+      streams,
+      setQuitting,
+      showWindow,
+      getMainWindow: () => mainWindow,
+      workdir: { currentWorkdir, resolveWorkdir },
+    })
+    trayNotifier = handlers.notifier
+    handlers.schedules.start()
     log.info(`启动：Electron ${process.versions.electron} / Node ${process.versions.node}`)
     log.info(`数据目录：${DIRS.data}`)
     log.info(`参数：${process.argv.slice(1).join(' ')}`)
@@ -273,25 +289,5 @@ if (!gotLock) {
     bootCleanup.onQuit({ destroyTray })
   })
 }
-
-/* 渲染层用到的处理器：清单在 register-handlers.cjs（那边能一眼看全注册了哪些通道） */
-const handlers = registerHandlers({
-  ipcMain,
-  app,
-  Notification, powerMonitor,
-  config,
-  log,
-  send,
-  streams,
-  setQuitting,
-  showWindow,
-  getMainWindow: () => mainWindow,
-  workdir: { currentWorkdir, resolveWorkdir },
-})
-trayNotifier = handlers.notifier
-
-/* 定时任务心跳（30 秒一跳）。为什么放这儿起、以及「没人在场」的授权边界，
-   都写在 handlers/schedules.cjs 的 start() 上面。 */
-handlers.schedules.start()
 
 module.exports = { currentWorkdir, send }

@@ -12,8 +12,9 @@
 const { NETWORK_MODES, SECURITY_DEFAULTS } = require('./config-security.cjs')
 const { CODEX_MCP_DEFAULTS } = require('./config-codex-mcp.cjs') /* 默认全关；形状只在那边定义 */
 const { PROJECT_TESTS_DEFAULTS } = require('./project-tests.cjs') /* 项目自定义测试（默认关） */
+const { COLLAB_DEFAULTS } = require('./collab-config.cjs') /* 双模型由用户主动开启 */
 const { MCP_ENV_ALLOWLIST } = require('./config-mcp-env.cjs')
-/* 单价价目表单独一个文件（这边 292 行，塞下两个模型的价就过线了）—— 见 pricing-defaults.cjs */
+/* 单价价目表单独一个文件（这边贴线，塞下两个模型的价就过线了）—— 见 pricing-defaults.cjs */
 const { PRICING_DEFAULTS } = require('./pricing-defaults.cjs')
 const {
   BRAND,
@@ -128,9 +129,8 @@ const DEFAULTS = {
     image: { providerId: '', model: '' },
   },
 
-  /* 生图相关的杂项设置 */
+  /* 生图：保存目录（空 = 工作目录下的 generated/） */
   image: {
-    /** 保存目录。空 = 工作目录下的 generated/；填了就用填的（绝对路径） */
     dir: '',
   },
 
@@ -141,13 +141,13 @@ const DEFAULTS = {
   },
 
   mcp: {
-    /* 每个 server：{ id, name, command, args, env, enabled, useBundledNode, inheritEnvironment,
-       envAllowlist, cwd, network, timeoutMs, permission }。**默认不继承环境变量、不给网络。** */
+    /* servers: { id, name, command, args, env, enabled, useBundledNode, inheritEnvironment, envAllowlist, cwd, network, timeoutMs, permission }。**默认不继承环境变量、不给网络。** */
     servers: [],
   },
-  /* Codex MCP 桥（外部 Codex CLI 经命名管道调用 Harbor 工具）。**默认全关**，见 config-codex-mcp.cjs */
+  /* Codex MCP 桥（外部 Codex CLI 经命名管道调用 Harbor 工具）。**默认全关** */
   codexMcp: CODEX_MCP_DEFAULTS,
-  projectTests: PROJECT_TESTS_DEFAULTS /* 项目自定义测试（默认全关，见 project-tests.cjs） */,
+  projectTests: PROJECT_TESTS_DEFAULTS /* 项目自定义测试（默认关） */,
+  collab: COLLAB_DEFAULTS /* 双模型由用户主动开启 */,
 
   search: {
     provider: 'duckduckgo',

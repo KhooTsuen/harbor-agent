@@ -66,4 +66,12 @@ export async function run() {
   )
 
   check('含 .on 注册的 log:action / log:error（原来就漏了这俩）', spec.has('log:action') && spec.has('log:error'))
+  const main = readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8')
+  const ready = main.indexOf('app.whenReady().then(() => {')
+  const register = main.indexOf('const handlers = registerHandlers({')
+  const window = main.indexOf('createWindow()', ready)
+  check('业务 IPC 装配在 app ready 后、建窗前（不能提前缓存 safeStorage 不可用）',
+    ready >= 0 && register > ready && register < window)
+  const heartbeat = main.indexOf('handlers.schedules.start()', register)
+  check('任务心跳也在 ready 后才启动', heartbeat > register && heartbeat < window)
 }

@@ -157,7 +157,12 @@ export async function backupList(): Promise<BackupInfo[]> {
   }
 }
 
-export async function backupCreate(): Promise<{ ok: boolean; name?: string; error?: string }> {
+export async function backupCreate(): Promise<{
+  ok: boolean
+  name?: string
+  error?: string
+  items?: string[]
+}> {
   if (!bridge) return { ok: false, error: '浏览器预览不支持备份，请使用桌面版' }
   try {
     return await bridge.backupCreate()
@@ -169,6 +174,9 @@ export async function backupCreate(): Promise<{ ok: boolean; name?: string; erro
 export async function backupRestore(name: string): Promise<{
   ok: boolean
   restored?: string[]
+  skipped?: string[]
+  rolledBack?: string[]
+  rolledBackAll?: boolean
   safetyBackup?: string
   needsRestart?: boolean
   error?: string

@@ -91,7 +91,7 @@ export function DataPortPanel() {
     }
     const result = await wipeMany(ids)
     /* 磁盘删了，界面上的会话也得跟着清，否则列表里还挂着一堆空壳 */
-    if (ids.includes('sessions')) threads.forEach((thread) => clearMessages(thread.id))
+    if (result.completed.includes('sessions')) threads.forEach((thread) => clearMessages(thread.id))
     setBusy('')
     setArmed(false)
     setWord('')

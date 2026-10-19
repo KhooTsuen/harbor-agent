@@ -26,6 +26,7 @@ interface UIState {
   searchQuery: string
   permission: PermissionRequest | null
   toasts: Toast[]
+  toastHistory: Toast[]
   /**
    * AG-042 控制台要用：底部面板（日志 / 终端）的开合与当前视图。
    * 原来这是 App.tsx 里的局部 state —— 任务行里的「查看 Tool」够不着它。
@@ -138,6 +139,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   bottomPanelOpen: false,
   bottomPanelView: 'log',
   toasts: [],
+  toastHistory: [],
   nextSteps: null,
   harborStatsOpen: false,
 
@@ -154,6 +156,17 @@ export const useUIStore = create<UIState>((set, get) => ({
   setSearchQuery: (q) => set({ searchQuery: q }),
 
   showToast: (kind, title, description, action) => {
+    const existing =
+      (kind === 'error' || kind === 'warning') && !action
+        ? get().toasts.find(
+            (toast) =>
+              toast.kind === kind &&
+              toast.title === title &&
+              toast.description === description &&
+              !toast.action,
+          )
+        : undefined
+    if (existing) return existing.id
     const id = uid('toast')
     const toast: Toast = {
       id,
@@ -162,7 +175,13 @@ export const useUIStore = create<UIState>((set, get) => ({
       ...(description ? { description } : {}),
       ...(action ? { action } : {}),
     }
-    set((s) => ({ toasts: [...s.toasts, toast] }))
+    set((s) => ({
+      toasts: [...s.toasts, toast],
+      toastHistory:
+        kind === 'error' || kind === 'warning' || action
+          ? [...s.toastHistory, toast].slice(-100)
+          : s.toastHistory,
+    }))
     return id
   },
 

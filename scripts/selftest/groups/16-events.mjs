@@ -224,7 +224,8 @@ export async function run() {
     loopSrc.includes('function traceKey'),
   )
   check('★ 所有 life.mark 都走 traceKey，没有残留的 tid', !/life\.mark\([^)]*tid/.test(loopSrc))
-  check('chat.cjs 传了 traceId', chatSrc.includes('traceId: phaseKey'))
+  const runSrc = readFileSync(join(ROOT, 'electron/handlers/chat-run.cjs'), 'utf8')
+  check('chat-run.cjs 传了 traceId', runSrc.includes('traceId: phaseKey'))
 
   events.clear()
 }

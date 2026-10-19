@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, Plug, RefreshCw, Trash2 } from 'lucide-react'
 import type { ProviderConfig } from '@/types/backend'
 import { useConfigStore } from '@/stores/useConfigStore'
@@ -32,18 +32,34 @@ export function ProviderCard({ provider }: ProviderCardProps) {
   const [testing, setTesting] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const fingerprint = JSON.stringify([
+    provider.baseUrl,
+    provider.chatPath,
+    provider.apiKey,
+    provider.hasKey,
+    provider.enabled,
+    provider.models,
+  ])
+  const currentFingerprint = useRef(fingerprint)
 
   /* 外部（重置配置等）改了 provider，输入框要跟着同步 */
   useEffect(() => {
     setKeyDraft(provider.apiKey)
     setModelsDraft(provider.models.join(', '))
   }, [provider.apiKey, provider.models])
+  useEffect(() => {
+    if (currentFingerprint.current === fingerprint) return
+    currentFingerprint.current = fingerprint
+    setResult(null)
+  }, [fingerprint])
 
   async function runTest(): Promise<void> {
+    const tested = fingerprint
     setTesting(true)
     setResult(null)
     const res = await test(provider.id)
     setTesting(false)
+    if (currentFingerprint.current !== tested) return
     setResult(
       res.ok
         ? { ok: true, text: `连上了，模型 ${res.model ?? '未知'}` }
@@ -120,7 +136,7 @@ export function ProviderCard({ provider }: ProviderCardProps) {
           <span className="mb-1 block text-2xs text-fg-tertiary">
             API Key
             <span className="ml-1.5 text-fg-tertiary/70">
-              （只存在本机 data/config.json，界面上不回显）
+              （保存在本机加密凭据中，配置只记录引用；界面上不回显）
             </span>
           </span>
           <Field
@@ -128,6 +144,7 @@ export function ProviderCard({ provider }: ProviderCardProps) {
             value={keyDraft}
             onChange={(v) => {
               setKeyDraft(v)
+              setResult(null)
               void update(provider.id, { apiKey: v })
             }}
             placeholder="sk-…"

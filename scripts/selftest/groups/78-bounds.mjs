@@ -63,7 +63,7 @@ export async function run() {
   check('★ 查完推给界面', chatSrc.includes("type: 'boundary'"))
   check(
     '★ 查在跑之前（别等用户等到一半才说）',
-    chatSrc.indexOf('bounds.check(') < chatSrc.indexOf('const result = await loop.run({'),
+    chatSrc.indexOf('bounds.check(') < chatSrc.indexOf('.runTurn({'),
   )
   /* 只提示、不拦：这一条靠「没有 return / 没有 abort」钉住 */
   check(

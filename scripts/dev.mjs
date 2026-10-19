@@ -16,9 +16,9 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, watch } from 'node:fs'
+import { existsSync, watch, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, join } from 'node:path'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.DEV_PORT ?? 5273)
@@ -165,8 +165,24 @@ if (process.env.DEV_NO_WATCH !== '1') {
       if (!file || !/\.(cjs|mjs|js|json)$/.test(file)) return
       if (Date.now() - startedAt < 2000) return
       if (pendingRestart) clearTimeout(pendingRestart)
-      /* 防抖：一次保存可能触发好几个事件，300ms 内只重启一次 */
-      pendingRestart = setTimeout(() => restartElectron(`electron/${file} 变了`), 300)
+      pendingRestart = setTimeout(() => {
+        /*
+         * ★ 防误报重启（2026-10-17 真机「点开始协作就闪退」的根因）。
+         * Windows 的 fs.watch(recursive) 会因杀毒扫描 / 文件索引 / 临时文件
+         * 在 electron/ 下**误报 change**，文件其实一个字没变。以前只凭「事件到了」
+         * 就 taskkill 整个 Electron → 用户看到窗口瞬间消失（闪退）。
+         * 现在重启前再查一次 mtime：事件是误报的话，文件 mtime 没变（还是旧的），
+         * 就**不重启**。真实保存文件时 mtime 是刚刚（< 1.5 秒内），正常重启。
+         */
+        const abs = join(resolve(ROOT, 'electron'), file)
+        try {
+          const st = statSync(abs)
+          if (Date.now() - st.mtimeMs > 1500) return /* 文件没在最近改过 → 误报，忽略 */
+        } catch {
+          return /* 读不到（已删/被锁）→ 不重启，避免误杀 */
+        }
+        restartElectron(`electron/${file} 变了`)
+      }, 300)
     })
     process.on('exit', () => watcher.close())
     console.log('监听 electron/ —— 改了主进程代码会自动重启（DEV_NO_WATCH=1 可关）\n')

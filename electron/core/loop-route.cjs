@@ -35,8 +35,12 @@ function providerForRun(config) {
   const raw = config.activeProvider
   const base = typeof raw === 'function' ? raw() : raw || configCore.activeProvider()
   if (!base) throw new Error('没有可用的供应商')
+  const pinnedId = String(config._collabProviderId ?? '')
+  const pinned = pinnedId ? (config.providers ?? []).find((item) => item.id === pinnedId) : null
+  if (pinnedId && (!pinned || pinned.enabled === false || !(pinned.models ?? []).includes(config.assistant.model)))
+    throw new Error('当前对话指定的供应商已不可用或不再提供此模型')
   /* 传 config 进去：会话级模型是注入到这份配置里的，两边必须看同一份 */
-  const provider = configCore.providerForModel(config.assistant.model, config) ?? base
+  const provider = pinned ?? configCore.providerForModel(config.assistant.model, config) ?? base
   /* ★ codex-cli 不需要 Key（走本机 CLI 登录态）—— 别在这里误报「还没填 API Key」 */
   if (kinds.needsKey(provider) && !configCore.hasKey(provider)) {
     throw new Error(`${provider.name} 还没填 API Key`)
@@ -119,7 +123,10 @@ function personaOf(history) {
    *
    * 路由（router）明确指定了供应商就听路由的；否则按模型挑。
    */
-  const useProvider = routed.provider ?? configCore.providerForModel(useModel) ?? provider
+  const pinned = String(config._collabProviderId ?? '')
+    ? (config.providers ?? []).find((item) => item.id === config._collabProviderId)
+    : null
+  const useProvider = pinned ?? routed.provider ?? configCore.providerForModel(useModel, config) ?? provider
 
   if (routed.role) {
     emit({

@@ -185,6 +185,23 @@ export const useAppStore = create<AppState>()(
         if (useRealBackend && !id.startsWith('pending_')) void updateSessionMeta(id, { reasoning })
       },
 
+      setThreadCollab: (id, collab) => {
+        set((s) => ({
+          threads: s.threads.map((t) => {
+            if (t.id !== id) return t
+            if (!collab) {
+              const next = { ...t }
+              delete next.collab
+              return next
+            }
+            return { ...t, collab }
+          }),
+        }))
+        if (useRealBackend && !id.startsWith('pending_')) {
+          void updateSessionMeta(id, { collab: collab ?? null })
+        }
+      },
+
       /* 分支 / 编辑 / 对话状态 / 线程级设置：见 app/threadEdits.ts */
       ...makeThreadEditActions(set, get),
 

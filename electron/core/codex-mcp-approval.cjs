@@ -53,7 +53,7 @@ function decorate(request, entry) {
  * 造一个 `makeConfirm(runId)`。
  *
  * @param {{ trustedCmdSet?: Set<string>, note?: (m: string) => void,
- *           recheck?: (name: string, request: object) => boolean }} deps
+ *           recheck?: (name: string, request: object, runId: string) => boolean }} deps
  *        `trustedCmdSet` = 受信任命令集合（诊断 + 受限测试；命令都是 Harbor 的常量）
  *        `recheck` = 用户点了「允许」**之后**再核一次开关（批准期间权限被关掉 → 按拒绝）
  * @returns {(runId: string) => (request: object) => Promise<boolean>}
@@ -101,7 +101,7 @@ function createApproval(deps = {}) {
        *   所以批准之后**再核一次**当前开关 —— 拿到的权限必须是「此刻仍然开着」的。
        * 判据由调用方注入（`recheck` 返回 true = 仍然允许）；没注入时按「不变」处理。
        */
-      if (typeof deps.recheck === 'function' && deps.recheck(name, request) !== true) {
+      if (typeof deps.recheck === 'function' && deps.recheck(name, request, runId) !== true) {
         note(`审批：${name} → 拒绝（批准期间权限已被关闭，按拒绝结算）`)
         return false
       }

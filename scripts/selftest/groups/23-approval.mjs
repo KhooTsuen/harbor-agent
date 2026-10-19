@@ -101,7 +101,7 @@ export async function run() {
   const apprSrc = readCore('electron/core/tools/approval.cjs')
   check(
     '★ 批准记忆建在循环的 ctx 里（跟到任务结束，不是每轮清空）',
-    loopSrc.includes('granted: new Map()'),
+    loopSrc.includes('buildToolContext(') && readCore('electron/core/loop-tool-context.cjs').includes('granted: new Map()'),
   )
   check(
     '★ 不是每轮重置 —— 真机测过：每轮清空会弹三次框',

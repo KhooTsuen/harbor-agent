@@ -110,8 +110,8 @@ export async function run() {
      修法：chat.cjs 另外把**完整** payload 传下来（`fullHistory`），只给 persona 用。
      下面这条是它变红才会被发现的回归测试。 */
   group('CE-005 / 长会话：完整 payload（不被截窗滑走）')
-  const chatSrc = readFileSync(join(ROOT, 'electron/handlers/chat.cjs'), 'utf8')
-  check('★ chat.cjs 把完整 payload 传下去（fullHistory: rawHistory）', /fullHistory:\s*rawHistory/.test(chatSrc))
+  const chatSrc = readFileSync(join(ROOT, 'electron/handlers/chat-run.cjs'), 'utf8')
+  check('★ chat-run.cjs 把完整 payload 传下去（fullHistory: rawHistory）', /fullHistory:\s*rawHistory/.test(chatSrc))
   check('★ loop-prompt 优先用 fullHistory', /personaOf\(options\?\.fullHistory/.test(promptSrc))
 
   const longHistory = [

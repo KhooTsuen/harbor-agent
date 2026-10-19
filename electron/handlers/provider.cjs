@@ -19,6 +19,10 @@ function register({ ipcMain }) {
     const all = config.get().providers
     const target = providerId ? all.find((p) => p.id === providerId) : config.activeProvider()
     if (!target) return { ok: false, error: '没有可用的供应商' }
+    if (target.kind === 'codex-cli') {
+      return require('../core/codex-status.cjs').checkCodex(target)
+    }
+    if (!target.baseUrl) return { ok: false, error: '这个供应商还没填接口地址' }
     if (!config.hasKey(target)) return { ok: false, error: '这个供应商还没填 API Key' }
 
     try {

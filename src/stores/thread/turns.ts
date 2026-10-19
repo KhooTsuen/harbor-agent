@@ -41,6 +41,7 @@ export {
   drainQueued,
   pauseActiveRequest,
   stopActiveRequest,
+  waitForTurnEnd,
   type ThreadPartial,
   type TurnSetter,
 } from './turnControl'
@@ -193,7 +194,7 @@ export async function runElectronTurn(
     }
     drainPendingRegen(threadId)
     /* AG-025：这条跑完了，自动发排队的下一条 */
-    drainQueued(threadId)
+    if (lastEventType === 'done' && !finishReason) drainQueued(threadId)
   }
 
   /* 兜底时钟超阈值时的收口：**先叫停主进程**（A2，复用 chat:abort）——只放弃接收不叫停的话，
@@ -266,6 +267,7 @@ export async function runElectronTurn(
         temporary: Boolean(thread?.temporary),
         threadSettings: { ...thread?.settings, reasoning: thread?.reasoning },
         ...(thread?.workdir ? { workdir: thread.workdir } : {}),
+        ...(thread?.collab ? { collab: thread.collab } : {}),
         ...(opts.reason ? { reason: opts.reason } : {}),
         ...(opts.regeneratedFrom
           ? {

@@ -79,7 +79,8 @@ export async function runSkillPinChecks(netPolicy) {
 
     /* 接线钉子：光有内核函数不算，得真的接进循环 */
     const loopSrc = readFileSync(join(ROOT, 'electron/core/loop.cjs'), 'utf8')
-    check('★ loop.cjs 把 ctxGrant 展开进了工具 ctx', /skillPin\.ctxGrant\(threadSettings\)/.test(loopSrc))
+    check('★ loop.cjs 把 ctxGrant 展开进了工具 ctx', loopSrc.includes('buildToolContext(') &&
+      /skillPin\.ctxGrant\(threadSettings\)/.test(readFileSync(join(ROOT, 'electron/core/loop-tool-context.cjs'), 'utf8')))
     const promptSrc = readFileSync(join(ROOT, 'electron/core/loop-prompt.cjs'), 'utf8')
     check('★ loop-prompt.cjs 把正文并进了技能层', /skillPin\.promptSection\(threadSettings\)/.test(promptSrc))
     const typesSrc = readFileSync(join(ROOT, 'src/types/conversation.ts'), 'utf8')

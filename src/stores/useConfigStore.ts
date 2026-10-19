@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import type { AppConfig, ProviderConfig, SceneConfig, SceneId } from '@/types/backend'
+import type {
+  AppConfig,
+  ProviderConfig,
+  ProviderConnectionResult,
+  SceneConfig,
+  SceneId,
+} from '@/types/backend'
 import {
   isElectron,
   loadConfig,
@@ -48,7 +54,7 @@ interface ConfigState {
   addCodexProvider: () => Promise<void>
   removeProvider: (id: string) => Promise<void>
   chooseWorkdir: () => Promise<boolean>
-  testProvider: (id?: string) => Promise<{ ok: boolean; model?: string; error?: string }>
+  testProvider: (id?: string) => Promise<ProviderConnectionResult>
   resetToDefaults: () => Promise<void>
 }
 

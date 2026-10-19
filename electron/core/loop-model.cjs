@@ -76,6 +76,9 @@ async function callModelInner(options, emit) {
   for (let index = 0; index < candidates.length; index += 1) {
     const target = candidates[index]
     const maxAttempts = index === 0 && fb.enabled ? fb.attempts : 0
+    const preparedMessages = await require('./vision-messages.cjs').prepareMessages(options.messages, {
+      config, provider: target, model, signal, allowNetwork: options.allowNetwork, emit,
+    })
 
     for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
@@ -87,6 +90,7 @@ async function callModelInner(options, emit) {
         const engine = kinds.isCodexCli(target) ? codexCli : llm
         const result = await engine.chatStream({
           ...options,
+          messages: preparedMessages,
           /* 日志里能一眼分出「对话轮次」和「起标题/建议」那种场景调用 */
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
           /* 每请求指标里记第几次尝试（0 = 首次）—— 指标写不写得进不影响请求 */
@@ -290,7 +294,6 @@ module.exports = {
   selfReview,
   reviewWithEvents,
   mergeUsage,
-  /* `pausedResult` / `exhaustedResult` 搬去了 loop-result.cjs（这边贴 300 行）。
-     这里原样再导出，调用方（loop.cjs）的 require 一行都不用改。 */
+  /* 保留 loop-result 的旧导出接口。 */
   ...require('./loop-result.cjs'),
 }

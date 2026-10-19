@@ -39,7 +39,7 @@ export function ImageAttachments() {
       ))}
       <span className="flex items-center gap-1 text-2xs text-fg-tertiary">
         <ImageIcon size={11} />
-        {images.length} 张 · 会一起发给模型
+        {images.length} 张 · 原图随消息提交，能否直接识别取决于模型能力
       </span>
     </div>
   )

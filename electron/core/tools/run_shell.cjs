@@ -10,7 +10,6 @@ const { createSettler, killTree, onAbort } = require('../abort.cjs')
  *
  * 和 `risk.cjs` 的分级是两层：那边负责「分级 + 让用户确认」，这边是**最后一道**，
  * 只管那些「agent 任何情况下都不该做」的（格式化磁盘、关机器、建账户）。
- * 所以这里宁可和那边重复 —— 重复的代价是多写几行，漏掉的代价是不可挽回。
  */
 const DANGEROUS = [
   /\brm\s+-rf\s+[\/~]/i,
@@ -157,6 +156,7 @@ module.exports = {
        拿到的是同一个对象，所以就地把实际值回填进去（只在不一样时写一笔）。 */
     if (args.cwd !== cwd) args.cwd = cwd
     const timeoutSec = Math.min(600, Math.max(5, Number(args.timeout) || ctx.shellTimeout || 60))
+    if (ctx.signal?.aborted) return '[用户已停止：命令没有启动]'
 
     return await new Promise((resolve) => {
       const finish = createSettler(resolve)
@@ -164,8 +164,8 @@ module.exports = {
          那时 child 还是 null —— killTree(null) 是安全的，这条顺序能兜住 */
       let child = null
       let timer = null
+      let killTimer = null
       let heartbeat = null
-      /* 心跳也要在每条死亡路径上停掉（否则白醒、拖住进程退出） */
       const stopHeartbeat = () => {
         if (heartbeat) clearInterval(heartbeat)
         heartbeat = null
@@ -174,22 +174,46 @@ module.exports = {
       const done = () => {
         if (timer) clearTimeout(timer)
         timer = null
+        if (killTimer) clearTimeout(killTimer)
+        killTimer = null
         stopHeartbeat()
         off()
       }
       let off = () => {}
       off = onAbort(ctx.signal, () => {
-        killTree(child)
-        /* 停掉超时 timer —— 不然它 10 分钟后还要醒一次，白拖住进程退出 */
-        done()
-        /*
-         * AG-010：**不等 exec 的 callback**。
-         * callback 要等输出管道关掉才来 —— 实测中断之后又等了 29.6 秒
-         * （命令自己跑完），等于用户点了停止还得瞪半分钟。
-         * 进程已经交给 killTree 了，这里立刻把 Promise 结掉。
-         */
-        finish('[已被用户中断，这条命令的子进程已经终止]')
+        if (!child) {
+          done()
+          finish('[用户已停止：命令没有启动]')
+          return
+        }
+        const settleKill = createSettler(({ status, reason }) => {
+          if (killTimer) clearTimeout(killTimer)
+          done()
+          const message =
+            status === 'terminated'
+              ? '系统已确认终止命令进程树'
+              : status === 'already-exited'
+                ? '停止时命令已结束'
+                : status === 'unknown'
+                  ? '已发送终止请求，但未能确认进程退出'
+                  : `终止命令失败，进程可能仍在运行：${reason ?? '未知原因'}`
+          ctx.log?.info?.(message)
+          ctx.emit?.({
+            type: 'notice',
+            level: status === 'failed' || status === 'unknown' ? 'warning' : 'info',
+            title: '命令停止结果',
+            text: message,
+          })
+          finish(`[已被用户中断；停止结果：${message}]`)
+        })
+        killTimer = setTimeout(() => settleKill({ status: 'unknown' }), 3000)
+        killTree(child, settleKill)
       })
+      if (ctx.signal?.aborted && !child) {
+        done()
+        finish('[用户已停止：命令没有启动]')
+        return
+      }
 
       /*
        * 超时自己管（审计问题 16）：
@@ -239,6 +263,7 @@ module.exports = {
           shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
         },
         (error, stdout, stderr) => {
+          if (ctx.signal?.aborted) return // 取消结果由进程树终止回执统一结算。
           done()
           const parts = []
           const out = encoding.decode(stdout).trimEnd()
@@ -255,14 +280,12 @@ module.exports = {
             parts.push('[退出码 0]')
           }
 
-          finish(truncateWithLog(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT, '命令输出超出上限'))
+          finish(
+            truncateWithLog(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT, '命令输出超出上限'),
+          )
         },
       )
-      /*
-       * 让调用方拿得到这个子进程（项目测试要**确认「取消之后进程真的没了」**，
-       * 只置一个状态标记不算终止 —— 见 project-test-run.cjs 的 B3）。
-       * 可选钩子：不传就是原来的行为，任何现有调用方都不受影响。
-       */
+      /* 可选钩子用于确认项目测试取消后进程确实退出（project-test-run.cjs B3）。 */
       try {
         ctx.onChild?.(child)
       } catch {

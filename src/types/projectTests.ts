@@ -9,12 +9,19 @@
 export interface ProjectTestItem {
   id: string
   label: string
-  /** 项目根（绝对路径；主进程校验必须落在允许的数据根内） */
+  /** 项目根（绝对路径；主进程校验必须真实存在且不是盘符根/系统目录） */
   root: string
   /** 用户亲笔写的命令（不含 & | < > ^ % 引号 换行） */
   command: string
   /** 超时秒数（5 ~ 600） */
   timeoutSec: number
+  /**
+   * 是否允许 Harbor 在这个项目根里**改文件**（3C-2）。
+   *
+   * 外部项目默认只有「读 / 跑测试」；要让它参与修复闭环，用户必须在这里显式打开。
+   * 隔离区内的根（`<data>` 之下）不需要这个开关 —— 那本来就是受控测试区。
+   */
+  allowWrite?: boolean
 }
 
 /** 配置段（默认全关、零条目） */
@@ -30,6 +37,8 @@ export interface ProjectTestItemStatus extends ProjectTestItem {
   rootError: string
   commandValid: boolean
   commandError: string
+  /** 这条根上允许的动作（读/跑测试/改/恢复）—— 主进程算的，前端只显示 */
+  actions: string[]
   /** 真正可用 = 总开关开着 + 根合法 + 命令合法 */
   usable: boolean
 }

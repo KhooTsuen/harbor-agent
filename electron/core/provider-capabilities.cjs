@@ -244,18 +244,23 @@ function cleanOverrides(raw) {
  */
 function forProviders(providers) {
   const models = {}
+  const byProvider = {}
   for (const provider of Array.isArray(providers) ? providers : []) {
+    const providerId = String(provider?.id ?? '')
+    if (providerId) byProvider[providerId] = {}
     const list = Array.isArray(provider?.models) ? provider.models : []
     for (const raw of list) {
       const name = String(raw ?? '').trim()
-      if (!name || models[name]) continue
+      if (!name) continue
       const resolved = resolve(name, provider?.modelCapabilities, provider)
-      models[name] = {
+      const info = {
         caps: resolved.caps,
         source: resolved.source,
         preset: resolved.preset,
         presetNote: resolved.presetNote,
       }
+      if (providerId) byProvider[providerId][name] = info
+      if (!models[name]) models[name] = info
     }
   }
 
@@ -264,6 +269,7 @@ function forProviders(providers) {
     labels: { ...LABELS },
     numeric: [...NUMERIC_DIMS],
     models,
+    providers: byProvider,
     note: NOTE,
   }
 }

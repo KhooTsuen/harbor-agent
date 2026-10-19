@@ -43,7 +43,9 @@ const RUN_ID_RE = /^[A-Za-z0-9_-]{1,120}$/
  * 登记一轮对话的上下文。
  *
  * @param {string} runId 这一轮的标识（= `chat:send` 的 `phaseKey`，也是 codex 的 `traceId`）
- * @param {{ requestId?: string, sessionId?: string, confirm?: Function, source?: string }} ctx
+ * @param {{ requestId?: string, sessionId?: string, confirm?: Function, source?: string,
+ * collab?: boolean, workdir?: string, permission?: string, threadSettings?: object,
+ * allowWrite?: boolean, allowNetwork?: boolean, vision?: object, signal?: AbortSignal }} ctx
  * @returns {boolean} 登记成功了吗（runId 形状不对 / 没有 confirm → false）
  */
 function register(runId, ctx = {}) {
@@ -53,6 +55,14 @@ function register(runId, ctx = {}) {
   entries.set(key, {
     requestId: String(ctx.requestId ?? ''),
     sessionId: String(ctx.sessionId ?? ''),
+    collab: ctx.collab === true,
+    workdir: String(ctx.workdir ?? ''),
+    permission: String(ctx.permission ?? 'ask'),
+    threadSettings: { ...ctx.threadSettings },
+    allowWrite: ctx.allowWrite !== false,
+    allowNetwork: ctx.allowNetwork !== false,
+    vision: ctx.vision ?? null,
+    signal: ctx.signal,
     confirm: ctx.confirm,
     /* 卡的来源标注（现在是 'codex'，将来别的通道接进来能复用这张表） */
     source: String(ctx.source ?? 'codex'),
@@ -65,7 +75,9 @@ function register(runId, ctx = {}) {
  * 取回上下文（**过期的一律当没有**）。
  *
  * @param {string} runId
- * @returns {{ requestId: string, sessionId: string, confirm: Function, source: string, at: number } | null}
+ * @returns {{ requestId: string, sessionId: string, confirm: Function, source: string, at: number,
+ * collab: boolean, workdir: string, permission: string, threadSettings: object,
+ * allowWrite: boolean, allowNetwork: boolean, vision: object|null, signal?: AbortSignal } | null}
  */
 function get(runId) {
   const key = String(runId ?? '')

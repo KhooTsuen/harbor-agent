@@ -224,9 +224,10 @@ function registerHandlers(deps) {
   extHandler.setCommand(extCommand)
   /* Codex MCP 桥：默认关（未启用时零副作用），见 core/codex-mcp-lifecycle.cjs */
   require('./core/codex-mcp-lifecycle.cjs').install({ app, log, resolveWorkdir })
-  /* 它的设置与权限状态；项目自定义测试的设置（两处的主进程校验各见其 handlers） */
+  /* 它的设置与权限状态；项目测试与协作的设置各见其 handlers（默认全关） */
   require('./handlers/codex-mcp.cjs').register({ ipcMain })
   require('./handlers/project-tests.cjs').register({ ipcMain })
+  require('./handlers/collab.cjs').register({ ipcMain, getMainWindow })
   /* 让主进程能驱动渲染层那个内嵌浏览器（<webview> 在主进程碰不到） */
   require('./handlers/browser.cjs').register()
   require('./handlers/export.cjs').register({ ipcMain, getMainWindow })
@@ -295,5 +296,4 @@ function registerHandlers(deps) {
   /* 交给 main.cjs：藏到托盘时用它给用户一句「我还在这儿」 */
   return { notifier, schedules }
 }
-
 module.exports = { registerHandlers, wrapInvokeHandlers, trustedSender }

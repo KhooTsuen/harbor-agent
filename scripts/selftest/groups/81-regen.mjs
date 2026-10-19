@@ -131,8 +131,9 @@ export async function run() {
   const loopSrc = readFileSync(join(ROOT, 'electron/core/loop.cjs'), 'utf8')
   check('★ loop.cjs 把 carry 递进轮次边界查账', loopSrc.includes('usage: totalUsage, carry'))
   const chatSrc = readFileSync(join(ROOT, 'electron/handlers/chat.cjs'), 'utf8')
-  check('chat:send 透传 regenerateOf', chatSrc.includes('payload?.regenerateOf'))
-  check('chat:send 透传 regenerateIsLast', chatSrc.includes('payload?.regenerateIsLast'))
+  const runSrc = readFileSync(join(ROOT, 'electron/handlers/chat-run.cjs'), 'utf8')
+  check('chat:send 透传 regenerateOf', runSrc.includes('payload?.regenerateOf'))
+  check('chat:send 透传 regenerateIsLast', runSrc.includes('payload?.regenerateIsLast'))
   const mrSrc = readFileSync(join(ROOT, 'src/stores/thread/messageVersions.ts'), 'utf8')
   check('渲染层把 regeneratedFrom 交给这一轮', mrSrc.includes('extra.regeneratedFrom'))
 

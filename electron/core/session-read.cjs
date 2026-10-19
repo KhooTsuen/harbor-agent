@@ -153,6 +153,7 @@ function list() {
         meta?.threadSettings && typeof meta.threadSettings === 'object'
           ? meta.threadSettings
           : undefined,
+      ...(meta?.collab && typeof meta.collab === 'object' ? { collab: meta.collab } : {}),
       messageCount,
       createdAt: typeof meta?.createdAt === 'number' ? meta.createdAt : stat.birthtimeMs,
       updatedAt: stat.mtimeMs,

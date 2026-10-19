@@ -30,6 +30,7 @@ const MODES = ['once', 'session', 'permanent']
  * 刻意保持简短：宁可多问一次，也不要放一个过期的浏览器 Profile 进来。
  * 每一条都写清「为什么敏感」，确认框会把它显示给用户。
  */
+/** @type {Array<[RegExp, string]>} */
 const SENSITIVE = [
   [/[\\/]\.ssh[\\/]|[\\/]\.ssh$/i, 'SSH 目录（里面是私钥）'],
   [/[\\/]id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i, 'SSH 私钥'],
@@ -143,9 +144,12 @@ function currentScope() {
  * `fileScope` 与授权说的是「这个路径允不允许」；**要不要弹窗问用户**是另一回事，
  * 那一层在 `tools/permission.cjs`（它手里有 `ctx.permission`）。
  *
- * @returns {{ ok: boolean, path: string, absolute: string, reason?: string, needGrant?: boolean, sensitive?: string }}
+ * @param {string} target
+ * @param {{ workdir?: string, sessionId?: string, consumeOnce?: boolean }} [options]
+ * @returns {{ ok: boolean, path: string, absolute: string, reason?: string, needGrant?: boolean, sensitive?: string, granted?: string }}
  */
-function check(target, { workdir, sessionId } = {}) {
+function check(target, options = {}) {
+  const { workdir, sessionId, consumeOnce = true } = options
   const absolute = realpath(target)
   const scope = currentScope()
 
@@ -159,7 +163,7 @@ function check(target, { workdir, sessionId } = {}) {
   /* 工作目录之外，或者命中敏感规则 —— 看有没有有效授权 */
   const grant = findGrant(absolute, sessionId)
   if (grant && !sensitive) {
-    if (grant.mode === 'once') consumeGrant(grant.path)
+    if (grant.mode === 'once' && consumeOnce !== false) consumeGrant(grant.path)
     return { ok: true, path: target, absolute, granted: grant.mode }
   }
 

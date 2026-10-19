@@ -127,6 +127,9 @@ function normalizeProjectTests(src) {
       root,
       command,
       timeoutSec: clamp(item.timeoutSec, 5, LIMITS.timeoutSec, LIMITS.defaultTimeoutSec),
+      /* 3C-2：外部项目默认**只能读/测**，写要用户逐条显式打开（旧数据没有这个键 → false，
+         行为与 3B 一致：只有隔离区内的根才允许写）。判据在 project-roots.cjs。 */
+      allowWrite: item.allowWrite === true,
     })
   }
   return { enabled, items }

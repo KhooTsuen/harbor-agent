@@ -70,12 +70,12 @@ export function formatSize(bytes: number): string {
 }
 
 /** 一个附件在消息里占的那一段正文 */
-function bodyOf(file: AttachedFile): string {
+export function attachmentBody(file: AttachedFile): string {
   if (file.kind === 'image') return '（图片，随消息一起发给模型，这里不重复）'
   if (file.kind === 'binary') return '（二进制文件，只登记了文件名和大小，没有读取内容）'
   if (file.kind === 'archive') {
     const head = `（压缩包，共 ${file.entryCount ?? 0} 个条目${file.truncated ? '，下面只列前 500 个' : ''}）`
-    return `${head}\n${(file.entries ?? []).join('\n')}`
+    return `${head}\n${(file.entries ?? []).join('\n')}${file.note ? `\n（${file.note}）` : ''}`
   }
   const text = file.text ?? ''
   if (file.note) return `${text}\n（${file.note}）`
@@ -83,7 +83,33 @@ function bodyOf(file: AttachedFile): string {
 }
 
 /**
- * 把附件正文拼成「随用户消息一起发出去」的那一段。没附件时返回 ''。
+ * 一个附件在消息正文里的**那一段**。
+ *
+ * ★ 预览与实发必须调这同一处（P1 #26 的验收就钉这一条：「预览与实际请求内容一致」）。
+ *   以前附件卡里的「查看提供给助手的内容」用的是 `attachmentBody`，而真正发出去的是
+ *   `attachBlock` 拼的 —— 后者多一段 `--- 附件 N：名字（类型, 大小）---` 分隔头，
+ *   编号还按可用附件的顺序重排。于是**预览看到的和模型收到的是两段不同的文本**。
+ *
+ * `index` 是它在**可用附件**里的序号（从 1 起），与 `attachBlock` 给出的编号一致。
+ */
+export function attachmentBlock(file: AttachedFile, index: number): string {
+  const label = file.label ?? file.kind ?? '文件'
+  const size = file.size ? `，${formatSize(file.size)}` : ''
+  return `\n\n--- 附件 ${index}：${file.name}（${label}${size}）---\n${attachmentBody(file)}`
+}
+
+/**
+ * 真正会随消息发出去的附件。
+ *
+ * 读失败的不进消息（`attachBlock` 过滤的就是这一份），所以界面判断「能不能发送」
+ * 也必须按它算 —— 否则只剩失败附件时会以为有内容，发出一条空壳消息（P1 #29）。
+ */
+export function usableFiles(files: AttachedFile[]): AttachedFile[] {
+  return files.filter((file) => file.ok)
+}
+
+/**
+ * 把附件正文拼成「随用户消息一起发出去」的那一段。没可用附件时返回 ''。
  *
  * ★ 为什么是**直接拼进消息正文**，而不是单开一个字段：
  *   模型这一轮读的是**会话历史**（`thread/turns.ts` 里 `buildHistory(...)`），
@@ -92,13 +118,7 @@ function bodyOf(file: AttachedFile): string {
  *   那条路**本来就在**，不用为附件另造一套。
  */
 export function attachBlock(files: AttachedFile[]): string {
-  const usable = files.filter((f) => f.ok)
-  let out = ''
-  usable.forEach((file, index) => {
-    const label = file.label ?? file.kind ?? '文件'
-    const size = file.size ? `，${formatSize(file.size)}` : ''
-    out += `\n\n--- 附件 ${index + 1}：${file.name}（${label}${size}）---\n`
-    out += bodyOf(file)
-  })
-  return out
+  return usableFiles(files)
+    .map((file, index) => attachmentBlock(file, index + 1))
+    .join('')
 }

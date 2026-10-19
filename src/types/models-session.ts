@@ -8,7 +8,7 @@
 import type { UsageBucket } from './stats'
 import type { StoredClarify } from './clarify'
 /* 时间线片段与 UI 侧共用一份定义（type-only import，没有运行时循环） */
-import type { MessageRound } from './conversation'
+import type { MessageRound, Thread } from './conversation'
 
 export interface ConversationStateHistory {
   version: number
@@ -30,6 +30,7 @@ export interface SessionSummary {
     allowWrite?: boolean
     useMemory?: boolean
   }
+  collab?: Thread['collab']
   parentThreadId?: string
   branchPointMessageId?: string
   messageCount: number
@@ -142,6 +143,7 @@ export interface SessionDetail {
       allowWrite?: boolean
       useMemory?: boolean
     }
+    collab?: Thread['collab']
   }
   messages: StoredMessage[]
   /** 压缩点（可能为空数组） */

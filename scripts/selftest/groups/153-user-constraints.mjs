@@ -127,6 +127,43 @@ export async function run() {
   check('★ allowsWrite 口径跟着对：对象限定 → 允许写', U.allowsWrite({ userText: '不修改用户全局 Codex 配置' }) === true)
   check('★ allowsWrite 口径跟着对：缺授权 → 不许写', U.allowsWrite({ userText: '先调查，未经批准不要修改' }) === false)
 
+  /*
+   * ── 2026-10-17（3C-2）修掉的第五次误判：**文件类别**限定 ≠ 整轮只读 ──
+   *
+   * 真机现场：「不要改测试文件去迁就实现」—— 那是**只保护测试文件**，
+   * 恰恰为了让修复必须改源码。判据却把它升级成整轮 allowWrite=false，
+   * 于是 run_project_test 与 apply_test_fix 一起被拒，自举第一步就卡死。
+   */
+  group('用户约束 · 文件类别限定（3C-2 第五次误判的回归钉子）')
+  check('★★★ 「不要改测试文件」不算整轮禁写（只护测试文件）', U.noWriteIn('不要改测试文件去迁就实现') === false)
+  check('★★ 「别改测试」也不算整轮禁写', U.noWriteIn('别改测试') === false)
+  check('★★ 「别动自检文件」同样放行', U.noWriteIn('别动自检文件') === false)
+  check('★★★ 但全量词仍然拦：「不要修改任何测试文件」', U.noWriteIn('不要修改任何测试文件') === true)
+  check('★★★ 「只分析，不修改任何文件」仍拦（这条不能被上面放软）', U.noWriteIn('本轮只分析，不修改任何文件') === true)
+
+  /*
+   * ── 2026-10-17（3B-1）修掉的第三次误判：**「缺授权」短语必须与动作同现** ──
+   *
+   * 病：`noWriteIn('未经批准创建新的 Git commit')` 返回 true。那句话是在**保护一个
+   * 具体动作**（提交要单独批准），用户同一段里其实是在授权开发源码修改；判据只看
+   * 「未经批准」四个字就整轮锁死，开发 Agent 连 run_shell / write_file 全被拒。
+   *
+   * 判据见 user-constraints.cjs 的 PHASED_LACK：短语后 10 字内必须出现写类动作。
+   */
+  group('用户约束 · 缺授权短语必须与动作同现（3B-1 误判的回归钉子）')
+
+  check('★★★ 「未经批准创建新的 Git commit」不算整轮禁写（护的是一个动作）', U.noWriteIn('未经批准创建新的 Git commit') === false)
+  check('★★★ 「不自动写入项目源码」不算整轮禁写（那是"写之前问我"）', U.noWriteIn('不自动写入项目源码') === false)
+  check('★★ 「不清理临时文件，不创建 commit，不进入下一阶段」不算整轮禁写', U.noWriteIn('不清理既有临时文件，不创建 Git commit，不进入 3B-2') === false)
+  check(
+    '★★ 产品运行时只读的表述不锁死开发会话',
+    U.noWriteIn('产品功能在运行时必须保持只读；这不限制开发 Agent 对源码进行经授权的修改') === false,
+  )
+  check('★★ 「只读检查，不执行写入」仍拦（同义明确短语）', U.noWriteIn('只读检查，不执行写入') === true)
+  check('★★ 「未经批准不要实施修改」仍拦（短语后紧跟写类动作）', U.noWriteIn('先调查，未经批准不要实施修改') === true)
+  check('★★ 「未经批准，先别动」仍拦', U.noWriteIn('未经批准，先别动') === true)
+  check('★ 反向自证：「不要自动修改任何文件」不算整轮禁写（"自动"才是被否的）', U.noWriteIn('不要自动修改任何文件') === false)
+
   group('用户约束 · C 纯读浏览不再被「只分析」拦')
 
   const M = registry.MUTATING_TOOLS
@@ -151,7 +188,8 @@ export async function run() {
 
   group('用户约束 · 接线（真的被用上了，不是躺着的死代码）')
 
-  check('★ loop.cjs 用的是 user-constraints（不再是内联正则）', /userConstraints\.allowsWrite/.test(loopSrc))
+  check('★ loop.cjs 用的是 user-constraints（不再是内联正则）',
+    loopSrc.includes('buildToolContext(') && /userConstraints\.allowsWrite/.test(require('node:fs').readFileSync(join(ROOT, 'electron/core/loop-tool-context.cjs'), 'utf8')))
   check('★ loop.cjs 里不再有那条把「不许写」当约束的内联正则', !/不许写/.test(loopSrc))
   check(
     '★ 「只分析」那道门的判据是 MUTATING_TOOLS（不是 WRITE_TOOLS）',

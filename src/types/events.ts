@@ -84,6 +84,15 @@ export const EVENT_TYPES = [
   /* 有意忽略：意图分类与模型选择（调试信息），台账走 IPC 不走事件流 */
   'mode',
   'route',
+
+  /* 双模型协作（默认关）：阶段 / 计划 / 执行痕迹 / 验收 / 收尾 */
+  'collab.phase',
+  'collab.plan',
+  'collab.executed',
+  'collab.result',
+  'collab.done',
+  'collab.failed',
+  'collab.error',
 ] as const
 
 export type AgentEventType = (typeof EVENT_TYPES)[number]

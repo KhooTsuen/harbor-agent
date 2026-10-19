@@ -61,6 +61,8 @@ export interface AppState {
   setThreadMode: (id: string, mode: ThreadMode) => void
   setThreadModel: (id: string, model: string) => void
   setThreadReasoning: (id: string, reasoning: Thread['reasoning']) => void
+  /** 多模型协作的 A/B 选择（null/undefined = 切回单模型） */
+  setThreadCollab: (id: string, collab: Thread['collab'] | null) => void
   branchThread: (threadId: string, messageId?: string) => string
   editUserMessage: (threadId: string, messageId: string, content: string) => void
   updateThreadSettings: (threadId: string, patch: NonNullable<Thread['settings']>) => void

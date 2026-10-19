@@ -10,6 +10,7 @@ import type { McpServerConfig } from '@/types/models'
 import { IconButton } from '@/components/ui/IconButton'
 import { Row, SectionTitle } from '../parts'
 import { ProjectTestsPanel } from '../ProjectTestsPanel'
+import { CollabPanel } from '../CollabPanel'
 import { ServerList } from './ServerList'
 import { CodexMcpPanel } from '../CodexMcpPanel'
 
@@ -226,6 +227,9 @@ export function McpTab() {
 
       {/* 项目自定义测试（3A）：模型只能点名 id，命令只能来自用户配置 */}
       <ProjectTestsPanel />
+
+      {/* 双模型协作（默认关）：Codex 规划/验收 + DeepSeek 执行 */}
+      <CollabPanel />
     </div>
   )
 }

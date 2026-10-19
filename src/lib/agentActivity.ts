@@ -51,12 +51,17 @@ import { phaseLabel } from './agentPhase'
  */
 export const AGENT_ACTIONS: Record<string, [string, string]> = {
   read_file: ['读取', '个文件'],
+  read_image: ['识别', '张图片'],
   write_file: ['写入', '个文件'],
   edit_file: ['修改', '个文件'],
   list_dir: ['查看', '个目录'],
   run_shell: ['运行', '条命令'],
   /* 项目自定义测试（3A）：跑用户为某个项目配好的测试 —— 与「运行命令」区分开 */
   run_project_test: ['跑项目测试', '次'],
+  /* 3B-1 / 3B-2 / 3B-3：分析失败 → 按分析改一处 → 退回那次修改 */
+  analyze_test_failure: ['分析测试失败', '次'],
+  apply_test_fix: ['按分析修代码', '次'],
+  restore_test_fix: ['退回修复', '次'],
   search_web: ['搜索', '次'],
   remember: ['记录', '条记忆'],
   browse: ['打开', '个网页'],
@@ -106,11 +111,15 @@ export function verbOf(name: string): string {
  */
 export const TOOL_LABELS: Record<string, string> = {
   read_file: '读取文件',
+  read_image: '读取图片',
   write_file: '写入文件',
   edit_file: '修改文件',
   list_dir: '查看目录',
   run_shell: '运行命令',
   run_project_test: '跑项目测试',
+  analyze_test_failure: '分析测试失败',
+  apply_test_fix: '按分析修代码',
+  restore_test_fix: '退回修复',
   search_web: '联网搜索',
   remember: '记入长期记忆',
   browse: '打开网页',
@@ -161,12 +170,17 @@ const FALLBACK_ICON: LucideIcon = Terminal
  */
 export const TOOL_ICONS: Record<string, LucideIcon> = {
   read_file: FileText,
+  read_image: Image,
   write_file: FilePen,
   edit_file: FilePen,
   list_dir: FolderTree,
   run_shell: Terminal,
   /* 项目测试也用终端图标：它本质就是「在命令行里跑一条用户配好的命令」 */
   run_project_test: Terminal,
+  /* 3B-1 分析用 Brain（判断类）；3B-2 修复用 FilePen（会改文件）；回退用 Check */
+  analyze_test_failure: Brain,
+  apply_test_fix: FilePen,
+  restore_test_fix: Check,
   search_web: Search,
   remember: Brain,
   browse: Globe,

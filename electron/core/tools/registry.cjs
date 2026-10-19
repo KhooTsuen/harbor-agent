@@ -12,6 +12,7 @@
  */
 
 const readFile = require('./read_file.cjs')
+const readImage = require('./read_image.cjs')
 const writeFile = require('./write_file.cjs')
 const editFile = require('./edit_file.cjs')
 const listDir = require('./list_dir.cjs')
@@ -32,6 +33,11 @@ const subagentTool = require('./subagent-tool.cjs')
 const markStepDone = require('./mark_step_done.cjs')
 /* 项目自定义测试（3A）：只能点名用户配好的条目，给不出自由命令 */
 const runProjectTest = require('./run_project_test.cjs')
+/* 3B-1：分析**已执行**的测试失败（纯只读，不跑命令、不写文件、不调模型） */
+const analyzeTestFailure = require('./analyze_test_failure.cjs')
+/* 3B-2 / 3B-3：按分析结果**真的改一次**源码并重测；以及精确退回那次修改（都会写盘） */
+const applyTestFix = require('./apply_test_fix.cjs')
+const restoreTestFix = require('./restore_test_fix.cjs')
 /* ── edge_*：操作**用户自己的 Edge**（与 browse_* 那族操作内嵌浏览器不是一回事）── */
 const edgePage = require('./edge-page.cjs')
 const edgeClick = require('./edge-click.cjs')
@@ -50,6 +56,7 @@ const plugins = require('../plugins.cjs')
 
 const ALL = [
   readFile,
+  readImage,
   writeFile,
   editFile,
   listDir,
@@ -69,6 +76,11 @@ const ALL = [
   subagentTool,
   markStepDone,
   runProjectTest,
+  /* 3B-1：只读分析工具（不进 WRITE_TOOLS / MUTATING_TOOLS —— 「只分析」那一轮该放行它） */
+  analyzeTestFailure,
+  /* 3B-2 / 3B-3：会写项目源码，进 WRITE_TOOLS + MUTATING_TOOLS */
+  applyTestFix,
+  restoreTestFix,
   /* edge_* —— 操作**用户自己的 Edge**（经扩展 ↔ host ↔ 主进程那条链） */
   edgePage,
   edgeClick,
@@ -116,6 +128,12 @@ const WRITE_TOOLS = new Set([
   'download',
   /* 跑项目测试会执行代码（可能产出构建物 / 改快照）→ 只读档拦、ask 档确认 */
   'run_project_test',
+  /*
+   * ★ `apply_test_fix` / `restore_test_fix` **故意不在这个集合里**：它们自己会弹一次审批，
+   *   而且那张卡里有真实 diff（`project-test-fix.cjs` / `tools/restore_test_fix.cjs` 算的）。
+   *   放进来会在工具层再问一次，而工具层那张卡算不出 diff——同一个动作问两遍，
+   *   第二次还是张"闭眼签"的空卡。它们仍在 MUTATING_TOOLS 里，「只分析」那一轮照样拦。
+   */
 ])
 
 /** 会改动东西的 —— 比 `WRITE_TOOLS` 少了纯读的那四个（browse / elements / nav / ax）。
@@ -130,6 +148,9 @@ const MUTATING_TOOLS = new Set([
   'download',
   /* 「只分析，不修改」那一轮必须拦住它：跑测试会执行代码 */
   'run_project_test',
+  /* 3B-2 / 3B-3：会写项目源码 —— 「只分析」那一轮必须拦 */
+  'apply_test_fix',
+  'restore_test_fix',
   'browse_click',
   'browse_type',
   'edge_page',
@@ -143,7 +164,13 @@ const MUTATING_TOOLS = new Set([
 ])
 
 /** 哪些工具会改文件（审计里记下来） */
-const FILE_WRITERS = new Set(['write_file', 'edit_file', 'download'])
+const FILE_WRITERS = new Set([
+  'write_file',
+  'edit_file',
+  'download',
+  'apply_test_fix',
+  'restore_test_fix',
+])
 
 /* 内置工具 + 本地插件（插件是动态的，读一次合并缓存起来） */
 let _pluginTools = null

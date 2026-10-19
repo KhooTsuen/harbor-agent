@@ -52,7 +52,11 @@ export function BackupPanel() {
     setBusy(false)
     if (result.ok) {
       await refresh()
-      showToast('success', '已备份', result.name)
+      showToast(
+        'success',
+        '已备份',
+        `${result.name ?? ''} · 已保存 ${(result.items ?? []).join('、') || '清单见下方'}`,
+      )
     } else {
       showToast('error', '备份失败', result.error)
     }
@@ -60,7 +64,10 @@ export function BackupPanel() {
 
   return (
     <>
-      <Row label="立即备份" hint="配置、记忆、对话、技能。每 24 小时自动一次，最多留 10 份">
+      <Row
+        label="立即备份"
+        hint="配置、记忆、对话、技能、任务台账和改动记录；不含登录凭据与诊断日志。每 24 小时自动检查一次，最多留 10 份"
+      >
         <div className="flex gap-2">
           <Button
             variant="secondary"
@@ -131,18 +138,25 @@ export function BackupPanel() {
                     askPermission({
                       kind: 'clear-data',
                       title: `恢复到 ${formatTime(item.createdAt)}？`,
-                      description:
-                        '当前的配置、记忆、对话和技能都会被这份备份覆盖。恢复前会自动存一份「恢复前状态」，但那也要你手动再恢复一次。恢复之后需要重启软件。',
+                      description: `会用这份备份覆盖其中的项目：${item.items.join('、')}。登录凭据和诊断日志不在备份中。恢复前会先保存当前状态；如需退回，要手动恢复那份备份。完成后请重启软件。`,
                       confirmText: '恢复',
                       danger: true,
                       onConfirm: () => {
                         void (async () => {
                           const result = await backupRestore(item.name)
                           if (result.ok) {
-                            showToast('success', '已恢复', '请重启软件让改动全部生效')
+                            showToast(
+                              'success',
+                              '已恢复',
+                              `已恢复 ${(result.restored ?? []).join('、')}；${result.skipped?.length ? `跳过 ${result.skipped.join('、')}；` : ''}请重启软件`,
+                            )
                             await refresh()
                           } else {
-                            showToast('error', '恢复失败', result.error)
+                            showToast(
+                              'error',
+                              '恢复失败',
+                              `${result.error ?? '未知原因'}${result.rolledBackAll === false ? '；回滚未完全成功，请先检查数据目录' : result.rolledBack?.length ? '；已从恢复前快照回滚' : ''}`,
+                            )
                           }
                         })()
                       },

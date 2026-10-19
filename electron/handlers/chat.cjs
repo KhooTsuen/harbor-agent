@@ -3,8 +3,6 @@
  * 把 loop 的事件转成渲染层能懂的消息，并把「写操作确认」变成一次 IPC 往返。
  */
 
-const loop = require('../core/loop.cjs')
-const taskContext = require('../core/task-context.cjs')
 const bounds = require('../core/capability-bounds.cjs')
 const life = require('../core/lifecycle.cjs')
 const bus = require('../core/events.cjs')
@@ -15,6 +13,7 @@ const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
 const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
 const { withRequestedModel } = require('../core/model-select.cjs')
+const userConstraints = require('../core/user-constraints.cjs')
 /* AG-053：两条「问一句等回话」的往返拆到 ./chat-confirm.cjs（这边贴着 300 行） */
 const chatConfirm = require('./chat-confirm.cjs')
 /* Codex MCP 桥：把这一轮的审批上下文按 runId 登记（见 codex-mcp-context.cjs） */
@@ -135,9 +134,34 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
 
     /* sessionId 一并带上：「需要你确认」的系统通知点开后要跳回这条对话（P1-3） */
     const confirm = (request) => chatConfirm.askUser(requestId, request, emit, sessionId)
+    const latestUserText = lastUserText(history)
+    const { provider: visionProvider, model: visionModel } = require('../core/codex-mcp-vision.cjs').forRun(payload, effective, provider)
     /* ★ Codex MCP 桥的审批上下文：桥按 runId 找回**这条对话**的 confirm ——
        卡于是天然绑在正确的 requestId 上（切会话不会错配）。未启用时是空操作。 */
-    codexMcp.registerRun(phaseKey, { requestId, sessionId, confirm })
+    codexMcp.registerRun(phaseKey, {
+      requestId,
+      sessionId,
+      confirm,
+      workdir,
+      permission: effective.tools.permission,
+      threadSettings: payload.threadSettings ?? {},
+      allowWrite: userConstraints.allowsWrite({
+        userText: latestUserText,
+        mode,
+        threadAllowWrite: payload.threadSettings?.allowWrite,
+      }),
+      allowNetwork: userConstraints.allowsNetwork({
+        userText: latestUserText,
+        threadAllowNetwork: payload.threadSettings?.allowNetwork,
+      }),
+      signal: controller.signal,
+      vision: { config: effective, provider: visionProvider, model: visionModel },
+      ...(payload?.collab
+        ? {
+            collab: true,
+          }
+        : {}),
+    })
 
     /*
      * AG-001：状态机的每次转移都推给渲染层（前端只读、不自己猜）。
@@ -172,49 +196,23 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
         const boundary = bounds.check(lastUserText(history))
         if (boundary) emit({ type: 'boundary', ...boundary })
 
-        const result = await loop.run({
+        const result = await require('./chat-run.cjs').runTurn({
+          payload,
           history,
-          /* CE-005：persona 按**完整** payload 的第一条用户消息锁定（history 是按 historyLimit 截过的窗口；长会话里第一条会被滑走 → persona 会中途翻档）。只给 persona 用，模型上下文仍只用 history；子代理不传它 ⇒ 用自己那条（天然隔离）。 */
-          fullHistory: rawHistory,
-          config: effective,
+          rawHistory,
+          effective,
           workdir,
           mode,
-          signal: controller.signal,
-          /* AG-011：让循环能问「用户是不是请求暂停了」 */
-          controls: { pauseRequested: () => pause.requested },
-          /* AG-011：带这个就是「接着上次那条任务做」——循环会复用原任务 */
-          resumeTaskId: typeof payload?.resumeTaskId === 'string' ? payload.resumeTaskId : '',
-          /* 重新生成：被替代那条回答的磁盘 key + 是否最后一轮（见 core/task-regen.cjs） */
-          regenerateOf: typeof payload?.regenerateOf === 'string' ? payload.regenerateOf : '',
-          regenerateLast: payload?.regenerateIsLast === true,
+          controller,
+          pause,
           emit,
           confirm,
-          /* 会话 id：审计、授权、任务记录都靠它串起来 */
           sessionId,
-          projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
-          /* 事件流的 key（≠ 任务台账 id）：状态转移订阅、总线落盘都用它 —— 以前拿任务 id 去比，永远对不上 */
-          traceId: phaseKey,
-          /*
-           * 把未完成任务的台账注入提示（taskState 层）—— 模型以前不知道
-           * 还有没干完的活，长对话里就是「目标漂移」。
-           */
-          taskState: taskContext.buildTaskState({
-            sessionId,
-            taskId: typeof payload?.taskId === 'string' ? payload.taskId : '',
-            /* AG-018：把用户这句话也交给它 —— 说「继续」时要明确告诉他“这是接着做” */
-            userText: lastUserText(history),
-            /* 新活第一轮要按**这个目录**给验证口径（有没有测试入口），见 verify-hint.cjs */
-            workdir,
-            /* 记忆反射要按项目范围取（project 范围的记忆只在该项目里生效） */
-            projectId: typeof payload?.projectId === 'string' ? payload.projectId : '',
-          }),
-          /* 拿用户那句话当任务目标：不传的话任务标题永远是「未命名任务」，
-             用户根本不知道那条没干完的活是啥。 */
-          goal: lastUserText(history),
-          temporary: payload?.temporary === true,
-          threadSettings: payload?.threadSettings ?? {},
+          phaseKey,
         })
 
+        if (controller.signal.aborted)
+          throw Object.assign(new Error('用户已停止任务'), { name: 'AbortError' })
         emit({
           type: 'done',
           content: result.content,
@@ -276,14 +274,14 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
   ipcMain.handle('chat:abort', (_event, requestId) => {
     const entry = streams.get(requestId)
     if (!entry) return { ok: false, error: '这个请求已经结束了' }
+    if (entry.controller.signal.aborted) return { ok: true, state: 'stopping' }
     entry.controller.abort()
-    streams.delete(requestId)
 
     /* 同样的收尾：用户按了停止，那张确认卡不该还挂着 */
     chatConfirm.closeOut(requestId)
     /* 停止也等于这一轮结束 → 注销桥的审批上下文（否则那张卡还能被桥找回） */
     codexMcp.unregisterRunByRequest(requestId)
-    return { ok: true }
+    return { ok: true, state: 'stopping' }
   })
 
   /* ── 暂停（AG-011）：abort 立刻断（在跑的工具也杀），pause 是**做完手上这步**再停。

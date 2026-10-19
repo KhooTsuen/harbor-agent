@@ -82,9 +82,10 @@ export async function run() {
 
   /* ── 接线 ── */
   const chatSrc = readCore('electron/handlers/chat.cjs')
+  const runSrc = readCore('electron/handlers/chat-run.cjs')
   check(
-    '★ chat.cjs 把用户那句话交给了 buildTaskState',
-    chatSrc.includes('userText: lastUserText(history)'),
+    '★ chat-run.cjs 把用户那句话交给了 buildTaskState',
+    runSrc.includes('userText: lastUserText(history)'),
   )
   check('并且导出了 isContinueIntent', taskContext.isContinueIntent !== undefined)
 

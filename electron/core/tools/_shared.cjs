@@ -29,7 +29,7 @@ class PermissionRequiredError extends Error {
  *
  * @param {string} input
  * @param {string} workdir
- * @param {{ sessionId?: string }} [ctx]
+ * @param {{ sessionId?: string, threadId?: string }} [ctx]
  */
 function resolvePath(input, workdir, ctx) {
   if (!input) throw new Error('缺少路径参数')

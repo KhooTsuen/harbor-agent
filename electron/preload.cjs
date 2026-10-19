@@ -63,19 +63,21 @@ const api = {
   getConfig: () => call('config:get'),
   patchConfig: (partial) => call('config:patch', partial),
   resetConfig: () => call('config:reset'),
-  /* Codex MCP 桥 / 项目自定义测试的设置与真实生效状态（校验都在主进程） */
+  /* Codex MCP 桥 / 项目测试 / 双模型协作的设置与真实生效状态（校验都在主进程） */
   codexMcpStatus: () => call('codexMcp:status'),
   codexMcpSet: (partial) => call('codexMcp:set', partial),
   projectTestsStatus: () => call('projectTests:status'),
   projectTestsSet: (partial) => call('projectTests:set', partial),
+  collabStatus: () => call('collab:status'),
+  collabSet: (partial) => call('collab:set', partial),
+  collabRun: (payload) => call('collab:run', payload),
+  collabStop: () => call('collab:stop'),
   pingProvider: (providerId) => call('provider:ping', providerId),
   listModels: (providerId) => call('provider:listModels', providerId),
-  /* 账户余额（DeepSeek 专有）—— 只由用户点击触发，主进程不做缓存/轮询 */
   providerBalance: (providerId) => call('provider:balance', providerId),
   getWorkdir: () => call('workdir:get'),
   pickWorkdir: () => call('workdir:pick'),
-  /** 只挑目录，不改全局默认（给单条对话挂目录用） */
-  chooseFolder: () => call('workdir:choose'),
+  chooseFolder: () => call('workdir:choose') /* 只挑目录，不改全局默认 */,
   workspaceScan: (dir) => call('workspace:scan', dir),
   listSessions: () => call('session:list'),
   searchSessions: (query, limit) => call('session:search', query, limit),
@@ -119,7 +121,6 @@ const api = {
   sceneSuggest: (messages) => call('scene:suggest', { messages }),
   sceneOcr: (imageDataUrl) => call('scene:ocr', { imageDataUrl }),
   sceneImage: (prompt, size) => call('scene:image', { prompt, size }),
-
   fsWorkdir: () => call('fs:workdir'),
   fsTree: (dir) => call('fs:tree', dir),
   /* root = 该对话的目录（右栏文件树那个根）。不传 → 内核回落全局工作目录 */
@@ -295,5 +296,4 @@ const api = {
 
   isElectron: true,
 }
-
 contextBridge.exposeInMainWorld('workbench', api)

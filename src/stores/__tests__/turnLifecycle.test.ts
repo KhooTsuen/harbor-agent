@@ -35,6 +35,7 @@ vi.mock('@/lib/backend', async (importOriginal) => {
     },
     abortChat: async () => {
       h.abortCalled += 1
+      return true
     },
     confirmChat: async () => {},
   }
@@ -114,9 +115,9 @@ describe('Phase 5：一轮收尾的生命周期（长命令 / 中断并发）', 
     emitFromBackend({ type: 'phase', phase: 'executing' })
 
     useThreadStore.getState().stopGeneration()
-    /* ③ 主进程收到 abort　② 本地「在跑」清空 */
+    /* 停止请求已送达，但在收到终态前仍须保持「在跑」。 */
     expect(h.abortCalled).toBeGreaterThan(0)
-    expect(useThreadStore.getState().sendingThreads).not.toContain(threadId)
+    expect(useThreadStore.getState().sendingThreads).toContain(threadId)
 
     /* 主进程回执 aborted → ① phase 进终态 */
     emitFromBackend({ type: 'aborted' })
@@ -125,6 +126,7 @@ describe('Phase 5：一轮收尾的生命周期（长命令 / 中断并发）', 
         'cancelled',
       ),
     )
+    expect(useThreadStore.getState().sendingThreads).not.toContain(threadId)
 
     /* ④ 停止之后还能再发一条（队列不死锁） */
     h.sent = null
@@ -140,9 +142,10 @@ describe('Phase 5：一轮收尾的生命周期（长命令 / 中断并发）', 
 
     useThreadStore.getState().stopGeneration()
     const abortsAfterStop = h.abortCalled
+    emitFromBackend({ type: 'aborted' })
     await sleep(SILENCE + 200) // 远超静默线
 
     expect(h.abortCalled).toBe(abortsAfterStop) // 看门狗没再叫停
-    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.phase).toBe('executing')
+    expect(useAppStore.getState().threads.find((t) => t.id === threadId)?.phase).toBe('cancelled')
   })
 })

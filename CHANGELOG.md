@@ -5,6 +5,274 @@
 
 ## [未发布]
 
+- P1 三项按需求文档验收条件补缺口（2026-10-19，对照 `Harbor-后续需求/P1-附件透明与基础使用.md`）：
+  **#26** 附件卡「查看提供给助手的内容」以前用 `attachmentBody`，而真正发出去的是
+  `attachBlock` 拼的（多一段 `--- 附件 N：名字（类型，大小）---` 分隔头、编号按可用附件重排），
+  于是预览和模型收到的**不是同一段文字**。现在两者共用 `attachmentBlock(file, index)`，
+  编号也按可用附件算 —— 预览即实发内容，测试逐字比对两边的拼接结果。
+  **#29** 只剩读失败的附件时，`files.length > 0` 会被当成「有内容」，从而发出一条只含
+  占位文字的空壳消息；现在「有没有内容」按 `usableFiles()` 算，与 `attachBlock` 的过滤同一口径。
+  **#14** 发送不可用原因以前是一条字符串，而 `SendAvailability` 靠 `reason.includes('附件')`
+  猜类型 —— 文案一改，「打开模型设置」按钮就会串到「附件正在读取」下面。现在收成
+  `composer/sendBlock.ts` 的 `{ kind, text }`，按 `pending / attachment-failed / empty / connection`
+  四类判断，多条原因同时存在时先说正在读取的附件。针对性测试从 5 条增到 10 条。
+
+- 单模型 / 双模型选择器合成同一个面板（2026-10-19，按用户手绘参考图重排）：左栏在「供应商列表」与「模型 A 预览 / 模型 B 预览」之间切换，右栏是对应的模型列表（模型多了能搜），底部一条始终可见的「单模型 / 双模型」切换条；双模型下另一角色已选的模型显式禁用并写清原因。**切换条不再静默变灰** —— 凑不出两个可用模型时仍然可点，点了直接说缺什么（原来点了没反应，用户截图报的就是这个）。判据抽到 `composer/collabOptions.ts`、两栏渲染抽到 `composer/CollabPanels.tsx`（原 `CollabPicker.tsx` 378 行破了 300 行红线）；回归测试 5 条覆盖单模型列表、A/B 互斥、只剩一个可用模型时仍可点。
+
+- 模型选择器的 A/B 协作选择现在随会话元数据保存并在重启后恢复；旧会话缺少该字段时继续按单模型运行，切回单模型会删除旧选择。
+
+- P1 附件、连接与数据反馈：附件卡和队列可查看实际拼入消息的内容，醒目标出部分读取；异步附件读取按发起对话显示状态并阻止提前发送，发送按钮说明缺失的模型连接。设置显示真实自动保存状态，Codex CLI 提供本机安装与登录检查；错误面板以问题和建议为主，重要通知保留且可在本次打开期间找回。清空对话失败时不清除界面记录，并按实际备份清单说明恢复范围。
+
+- **#15 能力提示与内核判据对齐**（2026-10-18）。输入框下的提示以前对「能不能读图」只认 `scenes.ocr`
+  这一条辅助，而后端 `core/collab-images.cjs` 的 `prepareRoles` 在多模型时还会拿**另一个选中角色**
+  做视觉辅助 —— 于是「A 能看图、B 不能、又没配 OCR」被误报成「无法读取图片」，用户照着提示
+  去配 OCR 其实根本不需要。现在视觉判据收进 `src/lib/modelCapabilityWarn.ts` 的
+  `visionPlanFor`（顺位与内核 `tools/read_image.cjs` 的 `visionTarget` 一致：自己直接读 →
+  另一选中角色转文字 → 已配置识图模型 → 明确失败），并按内核口径补了三条细节：
+  `codex-cli` 即使手填 `vision:true` 也不直接收图、辅助来源必须真有地址与 Key、
+  未知（null）不算能读。`CapabilityWarning` 改为只负责把它说成人话，并按 **MCP 真实运行态**
+  说 Codex：坐 A 位（只读沙箱）时不再暗示需要 MCP；坐 B 位（工作模型）时缺哪一项就直说哪一项。
+  新增 `src/lib/__tests__/visionPlan.test.ts`（16 条）与
+  `src/components/chat/__tests__/capabilityWarningVision.test.tsx`（7 条，真渲染查界面文字）。
+  单模型的判据不受多模型语义污染。
+
+- 新增受现有路径授权约束的 `read_image` 工具；当前视觉模型可直接识图，其他模型可调用用户已配置的视觉辅助模型，未配置时明确报错。只记录路径与文字结果，不把图像数据写入工具日志。
+- 新建对话落盘期间迁移文字、附件草稿和队列归属；完成异步附件读取时仍投递至发起的对话。
+- 停止命令后即时返回取消状态，并在系统的进程树终止命令结束时另行报告成功或失败；中断前已失效的信号不再启动命令。
+
+- 待发附件按对话隔离，异步读取归属发起对话；消息队列保留图片与文件并定向发回原对话。取消或失败不再自动启动下一条排队消息，支持仅文件发送。
+
+- 协作规划与验收沿用对话工作目录、会话身份及工具限制；访问当前项目不再要求重复登记项目测试条目。
+- Codex CLI 协作执行通过本轮 MCP 登记继承对话目录和授权，不再依赖另填隔离写根；只开放当前对话内的读写工具，并在批准后复核文件版本及授权有效期。
+- 双模型选择入口默认可用，保留每条对话的单模型选择；A/B 改成并排的两个入口，分别选择模型与供应商，支持同一供应商的不同模型。
+
+- **修复：启动早期缓存系统加密不可用**（2026-10-18）。业务 IPC 装配（含 Codex MCP
+  配置读取）与任务心跳延后至 Electron ready 后、建窗前，避免配置加载预热凭据时把
+  ready 前的 safeStorage=false 永久缓存；不修改加密、拒写保护或用户凭据文件。
+
+- **修复：协作开发线验证阻断**（2026-10-18）。角色输入按未知对象收窄，
+  聊天入口按协作结果分支读取字段，失败元数据保留原语义；不扩大内核类型基线。
+  Codex 稳定性自检延后到测试环境初始化后运行，避免模块加载阶段缓存凭证状态、
+  随后清理测试目录造成写入保护误报；真实凭证保护不变。
+  代理/CODEX_HOME 检查同时覆盖新增与覆盖已有环境变量的情况，测试目录由本轮隔离根生成。
+  修复 B 工作模型选择未传给执行层、界面同类后端总显示首个模型的问题，补充规划拒绝、
+  取消、失败结果与模型选择回归检查；收敛注释行数及格式。验证结果见本次接手交付报告。
+  真机补验发现最终汇报只更新聚合正文、没有进入实际渲染的 rounds；现将与过程不同的
+  最终正文追加为收尾轮，保留过程与工具下标，已有最终轮不重复追加，并补充回归测试。
+
+- **修复：dev 模式点击协作「闪退」（fs.watch 误报导致误杀 Electron）**（2026-10-17）。
+
+  真机现象：用户在源码树 dev 实例里点「开始协作」，窗口瞬间消失，随后 1~2 秒内连续
+  出现 3 次「启动：Electron」，且有一次标记「上次是强杀或崩溃退出」—— 而 electron/
+  目录下最近修改的文件 mtime 停在点击前约 1 小时（没有任何文件真的变过）。
+
+  根因：`scripts/dev.mjs` 的 `fs.watch(electron/, recursive)` 会因杀毒扫描 / 文件索引等
+  **误报 change**，旧代码只凭「事件到了」就 `taskkill /T /F` 杀整个 Electron 进程树
+  （= 用户看到的闪退）；`restartElectron` 又缺少「进程已退出就不再触发」的防护，
+  一次持续误报能连触发多次重启。
+
+  修复：重启前加 mtime 校验 —— 文件 mtime 不在最近 1.5 秒内（说明不是刚保存的）就
+  忽略这次事件。真实保存（mtime 刚更新）仍正常重启，误报（mtime 没变）不再误杀。
+
+- **双模型协作 MVP：Codex CLI 规划/验收 + DeepSeek 执行**（2026-10-17）。
+
+  **做了什么**：新增「双模型协作」——A 方 Codex CLI 读项目、给出结构化计划（问题 / 范围 / 预期 / 验证），
+  用户确认后由 Harbor 内核把任务交给 B 方 DeepSeek 走**现有工具链**执行（读 / 审批改 / 授权测试），
+  最后 A 方再调一次验收（PASS / NEEDS_CHANGES / BLOCKED）。**默认关闭**，只能由用户主动开启。
+
+  **权限边界不在提示词里**：Codex 的沙箱是 `codex-run.cjs` 里写死的 `-s read-only`（改不了文件）；
+  DeepSeek 的每次写入走 `tools.execute`（审批 / 路径 / 哈希 / 审计 / 恢复点）；项目根必须先被
+  用户授权（`project-roots.cjs`）。协作参数只有 `goal` + `projectRoot`，**没有 provider / model / role 字段**。
+
+  **新增文件**：`core/collab-config.cjs`（角色表 + 默认关）、`core/collab-codex.cjs`（两次调用 + 严格 JSON 解析）、
+  `core/collab-trace.cjs`（从 `toolRuns` 抽真实痕迹 + 渲染汇报）、`core/collab.cjs`（编排）、
+  `handlers/collab.cjs`（IPC）、`src/components/settings/CollabPanel.tsx`、`src/types/collab.ts`、
+  自检组 `170-collab.mjs`。
+
+  **真实验证**（E 盘外部项目 `E:\Harbor-CollabProj`，真 DeepSeek + 真 Codex 子进程）：
+  测试 FAIL(1/3 失败) → Codex 自己诊断为「省略号没算进预算」并只圈定 `lib/text.js`
+  → 用户批准计划 → DeepSeek 用 `list_dir → read_file → edit_file → run_project_test`
+  改好并让测试 PASS → Codex 独立验收结论 **PASS**。`test.js` 一个字没改。
+  安全分支 10/10：计划被拒（零工具调用、零写入）、预先取消、未授权根、默认关。
+
+  **修掉的真缺陷**：`collab` 的 `signal` 没兜底 → `runLoop` 直接读 `signal.aborted` 崩溃
+  （与 `subagent.cjs:197` 同口径补上）；`createEmitter` 返回的是对象不是函数，handler 里用错。
+
+  **界面能看到进度**：`CollabPanel` 订阅已有的 `chat:event`（不新增 IPC 通道），
+  把 `collab.phase` 的三个阶段（plan / execute / review）实时显示出来 —— 那 350 秒里
+  用户不再只看到「协作进行中」。`collab.done` / `collab.error` 同时登记进
+  `event-types.cjs` 的 `CHAT_EVENT_TYPES` 与渲染层 `EVENT_TYPES`（自检 126 组盯着两侧对齐）。
+
+- **3C-2：授权项目根（外部项目可用）+ 凭据不复制密钥材料 + 第五次约束误判**（2026-10-17 · 3C-2）。
+
+  **背景（3C-1 真机撞到的阻断）**：`run_project_test` 要求项目根落在 `data/` 之内，而 `data/` 永远在源码根之下 —— 于是「用户自己的项目目录」（`E:\独立游戏` 这类）在结构上必然被拒。
+
+  **新增 `core/project-roots.cjs`（授权项目根，唯一判据）**：授权来源**只有**用户在设置里写的
+  `projectTests.items[].root` —— 模型给不出新根（`apply_test_fix` / MCP 侧的参数里都没有 root/items）。
+  每个根独立校验：realpath 归一 → 拒绝盘符根与系统目录 → 必须在授权清单里（大小写不敏感、符号链接按真实路径判）。
+  **四种动作分开授权**：读 / 跑测试默认放开；**写 / 恢复要求条目上显式 `allowWrite: true`**；
+  隔离区内的根（`<data>` 之下）四种全放行（它本来就是受控测试区）。
+
+  **改造四处调用点**：`project-test-run.cjs`（action=test）、`project-test-fix.cjs`（action=write）、
+  `project-test-restore.cjs`（action=restore，**授权撤销后恢复立刻失效**）、
+  `tools/analyze_test_failure.cjs`（action=read，没读到时说明是被拒而不是"没读到"）。
+  `handlers/project-tests.cjs` 保存时改为「目录真实存在 + 不是盘符根/系统目录」，不再要求落在 data 内。
+
+  **界面**：`ProjectTestsPanel` 每条显示「允许：读源码 / 跑测试 / 改文件 / 回退改动」，
+  并给一个「允许改文件 / 禁止改文件」开关 + 新增条目时的勾选框；草稿占位符改成真实外部路径示例。
+
+  **凭据（任务第 5 条）**：新增 `tools/bootstrap-runner.cjs`。3C-1 为了让自举副本能解密 Provider Key，
+  把正式 userData 的 `Local State`（含 `os_crypt.encrypted_key`）**复制**进了副本 —— 等于把密钥材料搬了一份出去。
+  现在改成 `userData` 指正式（只读地解一次密）+ `sessionData` 指副本，并给副本的 `Local State`
+  建**符号链接**（全机仍只有一份密钥文件，副本里只有指针）。实测建链接前后正式 `Local State`
+  的 SHA256 未变；明文只活在内存，不打印不落盘。建不起链接就**如实失败**，不退回复制。
+
+  **第五次约束误判**：「不要改测试文件去迁就实现」被判成整轮只读 —— 那句话本意恰恰是
+  **只保护测试文件**、好让修复必须改源码，结果 `run_project_test` 与 `apply_test_fix` 一起被拒。
+  修法：`SCOPED_MODIFIER` 补文件类别（测试 / 单测 / 自检）；全量词仍优先
+  （「不要修改任何测试文件」照旧整轮拦）。
+
+  **真实闭环**（外部项目 `E:\Harbor-C2Proj`，真实 DeepSeek）：FAIL 3/4 → 读源码 → `apply_test_fix`
+  改 1 个文件 → 重测 **PASS 4/4**；`test.js` 一个字没改。验收 23/23（拒绝零写入 / 未授权拒 /
+  授权撤销拒 / `..` 与绝对路径拒 / 未开写开关拒 / 取消不写 / 恢复需审批 / 恢复精确回退 / 第三方改动拒绝覆盖）。
+
+  **污染核查**：正式 `data/audit/2026-10-17.jsonl` 仍 8560 字节 · `d9372884…`（= 基线）；
+  正式 `data/` 下 `project-test-runs.jsonl` / `project-test-attempts.jsonl` / `project-test-restores`
+  **均未创建**；正式 `config.json` 的 `projectTests` 仍为空。
+
+- **3C-1 首次受控自举：真跑通 + 两个真缺陷**（2026-10-17 · 3C-1）。
+
+  **自举实录**：在独立副本 `E:\Harbor-Bootstrap\bo-20261017122910` 里，用**真实 DeepSeek +
+  真实 Agent 循环**（`loop.run` → API → `executeToolCalls` → `tools.execute`）让 Harbor
+  自己修了一个真缺陷：`pickFileRefs` 的 `FILE_REF` 字符类不含冒号，导致 Windows 盘符路径
+  `E:\proj\a.js:12:34` 整条抓不到。模型自己跑测试（FAIL 2/4）→ 读源码 → 说清根因 →
+  调 `apply_test_fix` 出 diff → 审批 → 写入 → 重跑 **PASS 4/4**。
+
+  **自举时逮到的两个真缺陷**：
+  ① `project-test-fix.cjs` 的重跑用 `String(execute(...))`，而 tool-runner 传下来的 ctx
+     带 `wantMeta:true` → `{text,toolOk}` 被串成 `[object Object]` → `classifyRun` 判不出
+     退出码，一律 ERROR（真机现象：「改成功了，重跑却报 ERROR」，还白吃一次尝试额度）。
+     修法：重跑显式 `wantMeta:false` 并取 `.text`。
+  ② `src/lib/agentActivity.ts` 三张表里 `analyze_test_failure` 重复插入，tsc 报 TS1117
+     ×3（`npm run typecheck` 红）。修法：删掉重复行。
+
+  **演练结果**（全部走真实工具链）：拒绝写入 → 文件哈希不变（零写入）；批准 → 真写入；
+  取消 → AbortError 且不再重测；恢复走 `restore_test_fix` 且有审批，拒绝则不写；
+  第三方改过后恢复 → `conflict` 拒绝覆盖、别人的改动一字未动。
+
+  **尚未修（如实记录）**：`run_project_test` / `apply_test_fix` 要求项目根落在**数据根之内**
+  （`policy.resolveWriteRoot`），而 `data/` 永远在源码根之下 —— 所以「项目根 = 源码根」
+  在结构上必然被拒。自举因此改用 `data/boot-proj` 承载。真实用户把自己的项目挂在
+  `E:\独立游戏` 这类路径时会直接被拒，需要单独设计（不能简单放宽：那道闸是防
+  「MCP 外部进程写到正式源码」的）。
+
+- **3B 可靠性收尾：恢复点独立 / 先存后写 / 三方一致 / 预算如实标注**（2026-10-17 · 3B 收尾）。
+
+  **修掉 6 个真缺陷 + 纠正 1 处伪称**，全部来自对 3B-2/3B-3 的逐条复核：
+
+  1. **多次尝试复用 executionId 会覆盖恢复点**（`project-test-restore.cjs`）。原来文件就叫
+     `<executionId>.json`，第 2 次写入把第 1 次的现场覆盖掉 —— 用户只能退到"改1"，退不回原始，
+     而 3B-3 本就允许多次尝试。现在按 `<executionId>__a<尝试序号>` 命名，**同名拒绝覆盖**；
+     `pointId` 在结果与审计里都给出来，可精确退到某一次。
+  2. **恢复点写不进去也照改源码**。`savePoint` 的返回值被丢弃了 —— 磁盘满 / 只读时改完
+     就再也退不回来。现在存不下就 `RESTORE_FAILED` 且**一个字节不写**。
+  3. **审批展示的 diff 与最终写入不是同一份基线**。diff 用的是模型自报的 `prop.before`，
+     审批后复核也拿它比 —— 模型报一份、磁盘是另一份时，用户看到的是假 diff。现在 diff 基线
+     一律用**真实读到的** `current`，待写入内容的 hash 在审批时记下，写前再比（`CONTENT_SWAPPED`），
+     写完再验磁盘（`WRITE_INCONSISTENT`）。
+  4. **恢复点缺数据保护**：补 0600 权限（原内容未脱敏，只能在权限侧收紧）、14 天过期清理、
+     条目数上限，并把**写根 `root`** 存进点里。
+  5. **恢复侧没有路径校验**：`abs` 来自磁盘上的 JSON，同机别的进程能改它 —— 不验就是
+     「往任意路径写文本」的通道。现在恢复前一律过 `policy.isInside(root, abs)`。
+  6. **恢复不需要审批**。`restore_test_fix` 原来是"备份过的内容想写哪就写哪"：现在先算真实
+     diff → 弹审批 → 不批零写入 → 落审计（含 approval 字段）。
+  7. **纠正伪称**：`project-test-loop.cjs` 文件头写"次数、耗时、模型调用三种预算都在这里管"，
+     但模型费用预算从未实现。改为如实标注，并在 `meta.budgets` 里给出
+     `{ attempts: true, elapsed: true, modelCost: false }`。
+
+  另补：序号不再只信额度账本（账本会被环形裁剪，丢行后 attemptNo 从 1 重算会撞上已有的
+  `__a1` 导致修复卡死）；取消检查补到「写入后、重测前」（`CANCELLED_AFTER_WRITE`）。
+
+  **验证**：自检 5331 通过 / 0 失败（本组新增 34 条）；真实端到端 26/26（真跑 FAIL → 两次独立
+  恢复点 → 退点2 得 V1 → 退点1 得原始 → 第三方改过拒绝覆盖 → 恢复拒绝零写入 → 取消不写不重测
+  → 真修通过）；恢复点失败反证 7/7（目录不可写 → `RESTORE_FAILED` 且源文件一字未改）。
+  单测 194 文件 / 1765 用例全过；typecheck / lint / format / 行数 / 内核 lint / 内核类型全绿。
+
+- **3B-2 / 3B-3：受控自主修复闭环（失败 → 提案 → 审批 → 改 → 重测 → 有限重试 / 精确回退）**（2026-10-17）。
+
+  **3B-2 单次受控修复**：`apply_test_fix` 以**真实执行记录**为起点（只认 executionId / testId，
+  status 从 `project-test-history` 读 —— 调用方声明不了一次没跑过的 FAIL），只有 FAIL 可修。
+  写入前展示真实 diff（`diffFile` 算出，不是摘要）、依据、影响范围与验证方式，**必须用户审批**；
+  审批通过后再复核一次文件 hash，被别人改过就拒绝覆盖；随后只重跑那一条测试，按六态如实报。
+
+  **3B-3 有限循环**：尝试额度按 executionId 计账，**默认 1 次、硬上限 3 次**（要更多直接夹到 3），
+  另有 10 分钟耗时预算。★ **只有真的写了一次才算一次尝试** —— 用户点拒绝、审批期间文件被改、
+  中途取消都不消耗额度。写前建**文件级恢复点**（原内容 + 前后 hash），`restore_test_fix` 只回退
+  这一次改过的文件，且只在「当前仍是改后那份」时才写回；文件已被第三方改动则**拒绝覆盖**。
+
+  **取消优先于批准**：用户在审批期间点停止（`ctx.signal` 已 abort），即使刚点过「允许」也不写。
+
+  **双 Provider 各自独立**：DeepSeek 走本地三个工具，Codex 走 MCP 的三个同名工具，
+  **通同一个执行段**（`project-test-fix.cjs`），不自动切换、不双模型协作；
+  项目测试关闭时修复类工具不出现在暴露清单里（不宣称一个必然被拒的工具）。
+
+  **顺带修掉的判据缺陷**：`registry` 里 `apply_test_fix` **不进 WRITE_TOOLS** ——
+  它自己弹的那张审批卡带真实 diff，放进 WRITE_TOOLS 会在工具层再问一次，而那张卡算不出 diff
+  （args 里没有 path），等于同一动作问两遍、第二遍还是"闭眼签"的空卡。
+
+  新增自检组 `168-test-fix`（72 条），覆盖门控、参数形状、预算、恢复点三分支、集合语义、MCP 侧。
+
+- **修：探针默认写正式审计（历史审计被追加污染的根因）+ 审计恢复**（2026-10-17 · 3B-1 收尾）。
+
+  **根因**：`tmp/` 下的纯 Node 探针两个隔离条件都不满足 —— 入口不是
+  `scripts/selftest.mjs`，也没人替它设 `HARBOR_UNIT_TEST` —— 于是 `DIRS.data`
+  解析成**源码开发版数据根**，审计直接追加进 `data/audit/2026-10-17.jsonl`
+  （实测多出 9 条 `b1-selftest`，把历史审计污染了）。
+
+  **修法**：`paths.cjs` 新增 `isProbeRun()` —— 入口脚本落在 `<root>/tmp/` 下
+  就按单元测试对待，数据根自动落到 `data/unit-test-data`。判据**按位置**判断，
+  不依赖「探针记得 require('./_iso.cjs')」这种人的记性（写那个兜底的人自己就漏用了）。
+
+  **防回归**：新增自检组 `167-probe-isolation.mjs`（10 条）——钉住判据在、真的
+  接在 `isolationDirName` 上、`tmp-evil/` 不会蒙混、自检/打包版不被改道。
+
+  **审计恢复**：污染态先备份到 `E:\Harbor-Backups\audit-dirty-20261017-115246\`
+  （含 `WHY.md` 与 `CHECKSUMS.txt`），四条前置条件（独占打开、前 8560 字节哈希
+  等于基线、末尾恰好 9 条、全属 `b1-selftest`）全部成立后截断回 8560 字节。
+  复验：SHA256 回到 `d9372884…f19e38`、10 条记录。
+
+- **3B-1：测试失败分析（只读）+ 修掉「FAIL 显示成成功」与用户约束误判**（2026-10-17 · 3B-1）。
+
+  **做了什么**：模型现在能对**已经跑过的**项目测试做失败分析 —— 读上一次的真实结果快照，
+  按规则给出「事实 / 推测 / 未知」三分明的结论、建议检查的文件、修复建议，
+  证据足够时给 unified diff **预览**（不写盘）。全程只读：不重跑测试、不改文件、跑不了 shell。
+
+  **修掉两个已确认缺陷**
+  - `user-constraints.cjs`：`NO_WRITE_PHRASE` 补「不执行写入」；`NO_WRITE_PHASED`
+    改成「缺授权短语 + 10 字内出现写类动作」才成立 —— 原来「未经批准创建 Git commit」
+    这种**对象限定**的句子会把整轮锁成只读（本阶段被它连拦两次正常开发）。
+  - `tool-runner.cjs` / `tools/index.cjs`：工具可以**结构化**回报 `{ text, toolOk }`，
+    `isToolOk(output)` 认它。原来只按字符串前缀判，于是「测试跑了但断言挂了」被记成
+    `ok:true`，活动记录里**红叉变绿勾**（MCP 路径早就是对的，本地工具路径漏了）。
+    ★ 两个概念保持独立：`ok` = 这次调用成不成功；测试的 PASS/FAIL 仍在正文与 `meta.status`。
+    拒绝文案永远优先（工具不能靠自报 true 把拒绝说成成功）。
+
+  **新增**
+  - `core/project-test-history.cjs` —— **有界脱敏结果快照**（内存环，按 `executionId` 存
+    testId / status / exitCode / ms / approved / 截断后的输出）。分析只认快照，
+    **不接受调用方自己声明的状态**（伪造 executionId 一律拒）。
+  - `core/project-test-analyze.cjs` —— 状态门控（只有 FAIL 进代码级分析）+ 结构化结论。
+  - `core/project-test-rules.cjs` —— 错误类型规则表（断言 / 类型空值 / 路径 / 网络 / 语法）。
+  - `core/project-test-render.cjs` —— 渲染成人看的文本（活动记录直接显示）。
+  - `core/project-test-analyze-source.cjs` —— 只读取证：过 `resolveInWorkspace`
+    （挡绝对路径 / `..` / 符号链接越界）+ 白名单拒绝（audit / credentials）。
+  - `core/tools/analyze_test_failure.cjs` —— DeepSeek 本地工具（参数只有 executionId/testId）。
+  - `codex-mcp-analyze-tool.cjs` —— Codex MCP 侧工具定义 + 参数净化（同一执行段）。
+
+  **★ 明确不含模型推理**：这套结论是**规则诊断**，不是 AI 根因分析。每条推测都带
+  `confidence` 和「来源=关键词匹配」的说明；没读到源码时结论进 unknowns，不编。
+  diff 只在「有真实源码 + 具体拟议修改」时生成，且 `applied=false`、正文写明「尚未修改」。
+
 - **3A 收尾：进程树终止确认 · MCP 入口实证 · 两个真实缺陷**（2026-10-17 · 3A 第三轮）。
 
   **新增 `core/proc-tree.cjs`**（211 行）：`childrenOf`（wmic → PowerShell CIM 回退）、

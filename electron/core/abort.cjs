@@ -29,23 +29,41 @@ function isAborted(signal) {
  *
  * 传 null / undefined 安全（`onAbort` 可能在 child 还没赋值时就触发）。
  */
-function killTree(child) {
-  if (!child || child.killed || child.exitCode !== null) return
+/** @param {import('node:child_process').ChildProcess|null|undefined} child
+ * @param {(result: {status: string, reason?: string}) => void} [onResult] */
+function killTree(child, onResult = () => {}) {
+  if (!child || child.exitCode !== null) {
+    onResult({ status: 'already-exited' })
+    return
+  }
   try {
     if (process.platform === 'win32' && child.pid) {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      let reported = false
+      const report = (result) => {
+        if (reported) return
+        reported = true
+        onResult(result)
+      }
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
         windowsHide: true,
         stdio: 'ignore',
-      }).unref()
+      })
+      killer.once('error', (error) => report({ status: 'failed', reason: error.message }))
+      killer.once('exit', (code) =>
+        report({ status: code === 0 ? 'terminated' : 'failed', reason: `taskkill 退出码 ${code}` }),
+      )
+      killer.unref()
     } else {
       try {
         process.kill(-child.pid, 'SIGKILL')
       } catch {
         child.kill('SIGKILL')
       }
+      if (child.exitCode !== null) onResult({ status: 'already-exited' })
+      else child.once('exit', () => onResult({ status: 'terminated' }))
     }
-  } catch {
-    /* 进程可能已经不在了 */
+  } catch (error) {
+    onResult({ status: 'failed', reason: error instanceof Error ? error.message : String(error) })
   }
 }
 
@@ -68,6 +86,7 @@ function onAbort(signal, fn) {
  * 「谁先到算谁」的结算器 —— 包一个 Promise 的 resolve。
  * 返回的函数重复调用只会生效第一次，返回 true 表示「这次是我结的」。
  */
+/** @template T @param {(value: T) => void} resolve @returns {(value: T) => boolean} */
 function createSettler(resolve) {
   let settled = false
   return (value) => {

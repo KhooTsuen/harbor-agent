@@ -7,6 +7,15 @@ import { useConfigStore } from '@/stores/useConfigStore'
 import { useCompletions } from './useCompletions'
 import { useComposerAttachments } from '@/hooks/useComposerAttachments'
 import { useAgentActive } from '@/hooks/useAgentActive'
+import {
+  attachmentFailureFor,
+  pendingReadsFor,
+  useAttachmentActivity,
+} from '@/stores/attachmentActivity'
+import { connectionIssue } from './connectionIssue'
+import { sendBlockOf } from './sendBlock'
+import { usableFiles } from '@/stores/thread/attachments'
+import { isElectron } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
    Composer 的状态与逻辑（从 Composer.tsx 拆出来的）
@@ -22,8 +31,13 @@ export function useComposerState() {
   const setInput = useThreadStore((s) => s.setInput)
   const sendMessage = useThreadStore((s) => s.sendMessage)
   const stopGeneration = useThreadStore((s) => s.stopGeneration)
+  const sendImmediately = useThreadStore((s) => s.sendImmediately)
   const pauseGeneration = useThreadStore((s) => s.pauseGeneration)
   const activeThreadId = useAppStore((s) => s.activeThreadId)
+  const pendingReads = useAttachmentActivity((s) => pendingReadsFor(s.reads, activeThreadId))
+  const attachmentFailure = useAttachmentActivity((s) =>
+    attachmentFailureFor(s.failures, activeThreadId),
+  )
   /* AG-025：当前对话排队的消息（跑着时用户又发的）。必须在 activeThreadId 之后声明 */
   const queuedList = useThreadStore((s) =>
     activeThreadId ? s.queuedMessages[activeThreadId] : undefined,
@@ -45,6 +59,7 @@ export function useComposerState() {
   const setThreadMode = useAppStore((s) => s.setThreadMode)
   const setThreadModel = useAppStore((s) => s.setThreadModel)
   const setThreadReasoning = useAppStore((s) => s.setThreadReasoning)
+  const setThreadCollab = useAppStore((s) => s.setThreadCollab)
   const updateThreadSettings = useAppStore((s) => s.updateThreadSettings)
 
   const sendOnEnter = useSettingsStore((s) => s.settings.sendOnEnter)
@@ -56,7 +71,8 @@ export function useComposerState() {
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   const [draggingHeight, setDraggingHeight] = useState<number | null>(null)
   const composerHeight = draggingHeight ?? savedComposerHeight
-  const configuredModel = useConfigStore((s) => s.config?.assistant.model)
+  const config = useConfigStore((s) => s.config)
+  const configuredModel = config?.assistant.model
 
   /* 补全（打 / 出命令、打 @ 出文件）—— 逻辑在 composer/useCompletions.ts */
   const completions = useCompletions(input, setInput, project?.path)
@@ -68,18 +84,42 @@ export function useComposerState() {
   const mode = thread?.mode ?? 'pair'
   const model = thread?.model || configuredModel || ''
   const reasoning = thread?.reasoning ?? 'high'
+  /* 多模型协作：这条对话选没选 A/B（没有 = 单模型） */
+  const collab = thread?.collab ?? null
+  const providerReason = isElectron ? connectionIssue(config, model, collab) : null
 
   const trimmed = input.trim()
   const atLimit = input.length >= MAX_INPUT_LENGTH /* 只作提示，不拦发送：见 constants */
   /* 光贴一张图不写字也该能发 —— 截图提问是很常见的用法 */
   const hasImages = useThreadStore((s) => s.inputImages.length > 0)
+  const inputFiles = useThreadStore((s) => s.inputFiles)
+  /*
+   * 「有附件」要按**能进消息的**那几只算（P1 #29）。
+   * 读失败的附件不会拼进正文，把它们算成"有内容"会发出一条空壳消息。
+   */
+  const usableFileCount = usableFiles(inputFiles).length
+  const hasFiles = usableFileCount > 0
   /*
    * 「写了东西」和「能发」是两回事：跑着的时候写了东西也发不出去（下面按钮会变成停止）。
    * 拆开是因为要拿 hasContent 给停止按钮做提示 —— AG-009 留下的「用户以为按钮坏了」。
    */
-  const hasContent = trimmed.length > 0 || hasImages
+  const hasContent = trimmed.length > 0 || hasImages || hasFiles
   /* AG-025：sending 时也能发 —— 只是排队（拦不拦由 sendMessage 按 sendingThreads 判断） */
-  const canSend = hasContent /* 长度不参与：能写出来就能发（上限由输入框与 store 卡住） */
+  const canSend = hasContent && pendingReads === 0 && !providerReason
+  /*
+   * 只剩读失败的附件时，失败原因从附件本身取 —— 不能指望 store 里那条
+   * `attachmentFailure` 一定在（部分成功时不会写它）。
+   */
+  const failedFile = inputFiles.find((file) => !file.ok)
+  const sendBlock = sendBlockOf({
+    pendingReads,
+    hasContent,
+    attachmentFailure:
+      attachmentFailure ?? (failedFile ? (failedFile.error ?? failedFile.name) : null),
+    providerReason,
+  })
+  /* 给按钮的 tooltip 用：发送可用时说「发送」，否则说清楚为什么 */
+  const sendUnavailableReason = sendBlock?.text ?? null
 
   /* 补全菜单开不开 / 有哪些候选项，都由 useCompletions 管 */
 
@@ -92,6 +132,9 @@ export function useComposerState() {
     input,
     setInput,
     stopGeneration,
+    sendImmediately,
+    sendBlock,
+    sendUnavailableReason,
     pauseGeneration,
     activeThreadId,
     queuedList,
@@ -114,6 +157,8 @@ export function useComposerState() {
     setThreadModel,
     reasoning,
     setThreadReasoning,
+    collab,
+    setThreadCollab,
     atLimit,
     hasContent,
     canSend,

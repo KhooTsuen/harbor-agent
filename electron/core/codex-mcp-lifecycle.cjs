@@ -1,8 +1,7 @@
 /**
- * Codex MCP 桥的**生命周期与开关**（2026-10-17 第二阶段 · 接线）
+ * Codex MCP 桥的生命周期与开关。
  *
- * ── 它管三件事 ────────────────────────────────────────────────
- *
+ * ── 它管三件事 ──
  *   ① **开关**：`HARBOR_CODEX_MCP=1` 才启用。默认**关着** —— 不建命名管道、
  *      不起 MCP 服务、不动 token、不改任何现有行为（用户第 2 条）。
  *   ② **装配/收摊**：启用时把 `codex-mcp-bridge.cjs` 接到主进程，并在
@@ -220,13 +219,14 @@ function install(deps = {}) {
 }
 
 /**
- * 一轮对话开始 → 登记它的审批上下文；结束 → 注销。
- *
+ * 登记一轮审批上下文，结束时注销。
  * 桥按 `runId` 找回**发起这次操作的那条对话**的 `confirm`（审批卡据此落在正确对话上）。
  * **未启用时什么都不做**（Map 都不碰）—— 保证「未启用零副作用」。
  *
  * @param {string} runId = `chat:send` 的 `phaseKey`（也是 codex 的 `traceId`）
- * @param {{ requestId?: string, sessionId?: string, confirm?: Function }} ctx
+ * @param {{ requestId?: string, sessionId?: string, confirm?: Function, collab?: boolean,
+ * workdir?: string, permission?: string, threadSettings?: object, allowWrite?: boolean,
+ * allowNetwork?: boolean, vision?: object, signal?: AbortSignal }} ctx
  */
 function registerRun(runId, ctx) {
   if (!enabled()) return false
@@ -262,17 +262,19 @@ function exposedToolNames() {
   if (!enabled()) return []
   try {
     const names = [...require('./codex-mcp-tools.cjs').TOOL_NAMES]
-    /* ★ 没开就不许宣称有它（否则 Codex 会调一个必然被拒的工具，白烧一轮）。三个判据独立。 */
+    /* ★ 没开就不许宣称有它（否则 Codex 会调一个必然被拒的工具，白烧一轮）。判据彼此独立。 */
     const can = { write: writeConfig().writeEnabled, test: testConfig().testEnabled, project: false }
     try {
       can.project = require('./project-tests.cjs').load().enabled === true
     } catch {
       can.project = false
     }
+    /* 3B-2 / 3B-3 的修复与回退跟随项目测试：没启用时没有失败记录可修，宣称有它只会白烧一轮 */
+    const projectOnly = ['harbor_run_project_test', 'harbor_apply_test_fix', 'harbor_restore_test_fix']
     return names.filter((n) => {
       if (n === 'harbor_write_file' || n === 'harbor_edit_file') return can.write
       if (n === 'harbor_run_test') return can.test
-      if (n === 'harbor_run_project_test') return can.project
+      if (projectOnly.includes(n)) return can.project
       return true
     })
   } catch {

@@ -58,7 +58,20 @@ module.exports = {
       startedAt: Date.now(),
     })
     if (res.ok === false) return `错误：${res.error.message}`
-    return String(/** @type {any} */ (res.payload)?.text ?? '')
+    /*
+     * ★ 返回**结构化**结果（`tools/index.cjs` 支持）：`text` 是给人看的正文，
+     *   `toolOk` 是「这次工具调用成功了吗」。
+     *
+     *   为什么不能只返回字符串（3B-1 / B12 的真 bug）：测试跑了但断言挂了时，
+     *   正文是「测试未通过：FAIL（退出码 1）…」—— 完全不像错误，`execute()` 只看
+     *   「有没有『错误：』前缀」就会判 ok:true，活动记录显示**绿勾**。而 Codex 路径
+     *   走 `payload.toolOk → isError` 是对的，两条路径语义不一致。
+     *
+     *   ★ 不伪造 `错误：` 前缀：那会把「测试失败」和「工具调用失败」搅成一个概念，
+     *     还会污染 `project-test-status` 的 ERROR 判据（它把「错误：」当执行前拒绝）。
+     */
+    const payload = /** @type {any} */ (res.payload)
+    return { text: String(payload?.text ?? ''), toolOk: payload?.toolOk !== false }
   },
 
   summarize(args) {

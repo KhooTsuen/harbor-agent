@@ -155,6 +155,7 @@ function normalize(raw) {
     /* Codex MCP 桥（默认全关）。改这段要同时看 config-codex-mcp.cjs 的文件头 */
     codexMcp: normalizeCodexMcp(g.codexMcp),
     projectTests: normalizeProjectTests(g.projectTests),
+    collab: require('./collab-config.cjs').normalize(g.collab),
 
     search: {
       provider: pick(str(search.provider, 'duckduckgo'), C.SEARCH_PROVIDERS, 'duckduckgo'),

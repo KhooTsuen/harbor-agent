@@ -127,7 +127,8 @@ export async function run() {
   check('chat.cjs 有 chat:pause 通道', chatSrc.includes("ipcMain.handle('chat:pause'"))
   check('pause 只置标记，不 abort（两件事）', chatSrc.includes('entry.pause.requested = true'))
   check('abort 仍然 abort', chatSrc.includes('entry.controller.abort()'))
-  check('resumeTaskId 透传给循环', chatSrc.includes('resumeTaskId:'))
+  const runSrc = readCore('electron/handlers/chat-run.cjs')
+  check('resumeTaskId 透传给循环', runSrc.includes('resumeTaskId:'))
 
   const resumeSrc = readCore('electron/core/task-resume.cjs')
   check('task-resume 用 mtime 判环境变化', resumeSrc.includes('.mtimeMs >'))
