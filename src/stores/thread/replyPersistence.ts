@@ -1,4 +1,5 @@
 import type { StoredMessage } from '@/types/backend'
+import type { MessageRound, ToolRunRecord } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { shouldFlushPartial } from '@/lib/partialFlush'
 
@@ -25,6 +26,27 @@ export interface ReplyPersistence {
   persistReply: () => void
 }
 
+/**
+ * 分段快照里的工具记录：**去掉 `output` 正文**。
+ *
+ * ★ 为什么必须去掉（2026-10-20）：快照每 3 秒按「长了 10%」重写一次，而工具输出
+ *   平均 1.3KB、最长 16KB（真机 22709 条统计）。连 output 一起写，一次长任务的
+ *   快照总量会翻好几倍 —— 而快照存在的唯一目的是「进程被打断时别什么都不剩」。
+ *   留下名字 / 参数摘要 / 成败 / 耗时，就足够让用户看出「它跑过什么」；
+ *   完整输出在收尾那条里（`persistReply` 写全量）。
+ */
+function traceOf(toolRuns: ToolRunRecord[] | undefined): ToolRunRecord[] {
+  return (toolRuns ?? []).map((run) => ({
+    id: run.id,
+    name: run.name,
+    ...(run.summary ? { summary: run.summary } : {}),
+    ok: run.ok,
+    output: '',
+    ...(run.ms === undefined ? {} : { ms: run.ms }),
+    ...(run.subagent ? { subagent: run.subagent } : {}),
+  }))
+}
+
 export function createReplyPersistence(opts: {
   threadId: string
   /** 占位消息的 id —— 同一条回复的所有记录共用它当 key */
@@ -48,6 +70,24 @@ export function createReplyPersistence(opts: {
   getEventType: () => string
 }): ReplyPersistence {
   const { threadId, messageId, timestamp, getContent, getReasoning, getEventType } = opts
+  /*
+   * 痕迹（时间线 + 工具记录）从这个占位消息上读**当前值**。
+   *
+   * ★ 为什么读 store 而不是让调用方再传两个 getter（2026-10-20）：`rounds` /
+   *   `toolRuns` 由 streamEvents 就地改，而「此刻界面上已经显示出来的那一份」
+   *   就是 store 里这条消息的。让调用方再包一层，只会多两处可能不同步的拷贝
+   *   （`turns.ts` 也因此涨了 15 行、破了 300 行红线）。
+   */
+  const current = (): {
+    rounds: MessageRound[]
+    toolRuns: ToolRunRecord[]
+  } => {
+    const message = useAppStore
+      .getState()
+      .threads.find((t) => t.id === threadId)
+      ?.messages.find((m) => m.id === messageId)
+    return { rounds: message?.rounds ?? [], toolRuns: message?.toolRuns ?? [] }
+  }
   const answer = {
     ...(opts.answersKey ? { answersKey: opts.answersKey } : {}),
     ...(opts.answersVersion !== undefined ? { answersVersion: opts.answersVersion } : {}),
@@ -61,12 +101,24 @@ export function createReplyPersistence(opts: {
      * 流式过程中分段落盘。
      *
      * 节奏交给 shouldFlushPartial（至少隔几秒、且内容长了才写）。
-     * 记录里**不带 toolRuns** —— 每次都要写整段，把工具日志每几秒重写一遍
-     * 太浪费；工具干过什么在任务台账里有（步骤摘要）。
+     *
+     * ★ 2026-10-20 补：**快照也要带痕迹**（`rounds` + 轻量 `toolRuns`）。
+     *
+     *   以前这里只写 content / reasoning，理由是「工具日志每几秒重写一遍太浪费」。
+     *   代价是：**这一轮被打断（崩溃 / 强杀 / 用户停止）时，磁盘上只剩正文和思考，
+     *   思考块与工具行全没了** —— 读回来那条消息只有一大段文字，用户看到的就是
+     *   「工作痕迹不见了」（真机复现：25 轮里 23 个思考块、33 次工具调用全丢，
+     *   只剩「这条回复没写完」那句话）。
+     *
+     *   所以现在带上 rounds（分段是「哪段思考属于哪一轮」的唯一来源）和去掉
+     *   `output` 正文的工具记录（见 traceOf：平均 1.3KB、最长 16KB，全量写会把
+     *   快照量翻好几倍）。收尾那条仍然写全量。
      */
     flushPartial: () => {
       const content = getContent()
       const reasoning = getReasoning()
+      const { rounds, toolRuns: runs } = current()
+      const traces = traceOf(runs)
       const now = Date.now()
       /*
        * ★ 度量用「正文 + 思考」：只看正文的话，一段长思考（或纯工具轮）期间
@@ -83,6 +135,11 @@ export function createReplyPersistence(opts: {
         partial: true,
         content,
         ...(reasoning ? { reasoning } : {}),
+        /* 时间线：逐轮复制一份（别和 store 里的草稿共享引用） */
+        ...(rounds.length
+          ? { rounds: rounds.map((round) => ({ ...round, tools: [...round.tools] })) }
+          : {}),
+        ...(traces.length ? { toolRuns: traces } : {}),
         ...answer,
         ts: timestamp,
       })
