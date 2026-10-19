@@ -19,7 +19,9 @@ import { FileAttachments } from './composer/FileAttachments'
 import { CapabilityWarning } from './composer/CapabilityWarning'
 import { SendAvailability } from './composer/SendAvailability'
 import { PlanBar } from './composer/PlanBar'
+import { TaskSummaryCard } from './composer/TaskSummaryCard'
 import { useComposerState } from './composer/useComposerState'
+import { enterIntent } from './composer/enterIntent'
 import { AboveInputCards } from './AboveInputCards'
 
 /* ══════════════════════════════════════════════════════════════ Composer  这是这类工具最有辨识度的组件，结构照它排： ① 输入区 ② 工具行：+ / 模式 / 权限 … 模型 · 推理 · 发送 ③ 上下文行：项目路径 / 提文件 / 命令  发送键是**白色圆形 + 黑色箭头**（实测三张截图一致），不是彩色。 ══════════════════════════════════════════════════════════════ */
@@ -154,14 +156,24 @@ export function Composer({ onFocusRequest }: ComposerProps) {
                 completions.close()
                 return
               }
-              if (
-                e.key === 'Enter' &&
-                !e.nativeEvent.isComposing &&
-                e.nativeEvent.keyCode !== 229 &&
-                !e.shiftKey &&
-                !e.altKey &&
-                (sendOnEnter || e.ctrlKey || e.metaKey)
-              ) {
+              /*
+               * P2 #13：键盘判据收到 `enterIntent`（有测试钉着）。
+               * 中文输入法组词时的 Enter 会落成 `ignore` —— 既不发送，也不换行。
+               */
+              const intent = enterIntent(
+                {
+                  key: e.key,
+                  shiftKey: e.shiftKey,
+                  altKey: e.altKey,
+                  ctrlKey: e.ctrlKey,
+                  metaKey: e.metaKey,
+                  isComposing: e.nativeEvent.isComposing,
+                  keyCode: e.nativeEvent.keyCode,
+                },
+                sendOnEnter,
+              )
+              if (intent === 'ignore') return
+              if (intent === 'send') {
                 e.preventDefault()
                 submit()
               }
@@ -263,6 +275,7 @@ export function Composer({ onFocusRequest }: ComposerProps) {
         <CapabilityWarning />
 
         {/* 输入框上方只放一样：任务刚跑完 → 下一步（AG-033）；平时 → 建议回复 */}
+        <TaskSummaryCard />
         <NextSteps />
         {activeThreadId ? (
           <SuggestionChips threadId={activeThreadId} onPick={(text) => setInput(text)} />

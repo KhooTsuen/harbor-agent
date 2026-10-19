@@ -60,6 +60,28 @@ const GRANT_WINDOW_MS = 2 * 60 * 1000
 const REMEMBERED = new Set(['write', 'mcp'])
 
 /**
+ * 这一次确认「值不值得记住」。
+ *
+ * ★ 为什么不让 `risk` 整个进 `REMEMBERED`（2026-10-20）：`risk` 覆盖
+ *   `run_shell` 的全部等级 —— 一条 `npm test`（中风险）和一条 `npm i -g`
+ *   （高风险）会被当成同一类，批了前者的两分钟里，后者就**不再问**。
+ *   那不是放宽，那是把高风险拖到中风险的水平上。
+ *
+ * 所以记住的范围由**调用方按等级决定**：只有中风险给 `rememberKey`，
+ * 高风险 / 危险一律不给 → 每次都问。键里带等级，规则一眼可读。
+ *
+ * @param {object} request 确认请求（`ask` 会就地读写 requestId，这里只读）
+ * @returns {string} 记住用的键；空串 = 这一类不记
+ */
+function rememberKeyOf(request) {
+  const explicit = String(request?.rememberKey ?? '')
+  if (explicit) return explicit
+  /* 老路径：`write` / `mcp` 按 kind 记住（行为与以前逐字节一致） */
+  const kind = String(request?.kind ?? '')
+  return REMEMBERED.has(kind) ? kind : ''
+}
+
+/**
  * 等用户答复的兜底上限。
  * 界面层的超时是 5 分钟（handlers/chat.cjs），工具层故意留得更宽 ——
  * 它只在**上层彻底失灵**（弹窗没弹出来、答复消息丢了）时才该响，
@@ -179,9 +201,10 @@ async function ask(ctx, request) {
   const scope = scopeOf(request.scope)
 
   /* ctx.granted 是 Map<类型, 批准时刻>（跨轮保留） */
-  const grantedAt = ctx.granted?.get(kind)
+  const rememberKey = fresh ? '' : rememberKeyOf(request)
+  const grantedAt = rememberKey ? ctx.granted?.get(rememberKey) : undefined
 
-  if (!fresh && REMEMBERED.has(kind) && grantedAt && Date.now() - grantedAt < GRANT_WINDOW_MS) {
+  if (rememberKey && grantedAt && Date.now() - grantedAt < GRANT_WINDOW_MS) {
     /* 窗口内已经批过这一类 —— 不再打扰，但记一笔「这条是靠上面的批准放行的」。
        它确实被放行了（`approved: true`），只是没问人 —— 照实记，别让它看起来像没发生 */
     record(ctx, { requestId, kind, name, scope, auto: true, approved: true })
@@ -204,7 +227,7 @@ async function ask(ctx, request) {
   const ok = answer === true
   if (ok) {
     /* ★ 逐次审批时**不记**批准 —— 下一次同类还要再问（见上面 `fresh` 那段） */
-    if (!fresh && REMEMBERED.has(kind)) ctx.granted?.set(kind, Date.now())
+    if (!fresh && rememberKey) ctx.granted?.set(rememberKey, Date.now())
     record(ctx, { requestId, kind, name, approved: true, scope })
   } else {
     /*
@@ -261,6 +284,7 @@ module.exports = {
   SCOPES,
   scopeOf,
   REMEMBERED,
+  rememberKeyOf,
   GRANT_WINDOW_MS,
   DEFAULT_CONFIRM_TIMEOUT_MS,
 }

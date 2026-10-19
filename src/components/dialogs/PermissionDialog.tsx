@@ -22,6 +22,11 @@ import { colorOf } from '@/lib/statusLanguage'
    权限确认使用 anchored 形态：贴在输入区上方、不遮罩、不抢页面点击。点击窗口外不会
    触发拒绝，只有「允许本次」或「取消」会答复主进程。
    ══════════════════════════════════════════════════════════════ */
+/** 危险确认要居中、写操作确认贴输入区 —— 判据只此一处（P2 #12，有测试钉着） */
+export function isCenteredConfirm(danger?: boolean): boolean {
+  return danger === true
+}
+
 export function PermissionDialog() {
   const permission = useUIStore((s) => s.permission)
   const closePermission = useUIStore((s) => s.closePermission)
@@ -39,6 +44,17 @@ export function PermissionDialog() {
 
   if (!permission || permission.kind === 'run-command') return null
 
+  /*
+   * 两种确认，位置不一样（P2 #12）：
+   *
+   *   · **危险操作**（删对话、清空数据、恢复默认）→ 居中弹窗。这类要求用户
+   *     「明确做一次决定」，贴在输入框上方会让人误以为它跟这一轮对话有关，
+   *     而且对话滚动 / 右栏开合 / 窗口缩放都会把它挤变形。
+   *   · **模型要写文件 / 跑命令** → 仍贴输入区（anchored）。它属于当前这一轮，
+   *     用户正在那儿读模型的话，位置绑定是对的；也不遮罩，不挡他看消息。
+   */
+  const centered = isCenteredConfirm(permission?.danger)
+
   function handleClose(): void {
     if (!confirmedRef.current) permission?.onCancel?.()
     confirmedRef.current = false
@@ -51,12 +67,23 @@ export function PermissionDialog() {
       onClose={handleClose}
       title={permission?.title ?? ''}
       width="xl"
-      variant="anchored"
+      variant={centered ? 'modal' : 'anchored'}
       showClose={false}
-      disableBackdropClose
+      /* 居中时点遮罩 = 取消（不是批准）；两条路都走 handleClose */
+      disableBackdropClose={false}
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={handleClose}>
+          {/*
+            危险确认默认聚焦**取消**（P2 #19）：正文里可能先出现「查看 Diff」之类的
+            按钮，不标这一个的话，用户敲 Enter 得到的是「展开 Diff」而不是他以为的
+            「确认」。`data-initial-focus` 由 Modal 的首次聚焦逻辑识别。
+          */}
+          <Button
+            variant="secondary"
+            size="sm"
+            data-initial-focus={centered ? '' : undefined}
+            onClick={handleClose}
+          >
             取消
           </Button>
           <Button

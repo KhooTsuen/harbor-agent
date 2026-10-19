@@ -97,6 +97,12 @@ async function gate({ name, args, ctx, verdict, summary, startedAt, audit, impac
     name,
     args,
     risk: verdict,
+    /*
+     * 只有**中风险**记住（2026-10-20 放宽）：`npm test` 这类同质命令在一轮里
+     * 会被模型连着跑好几遍，每次都弹是纯骚扰。高风险（装全局包、提权、写系统目录）
+     * 与危险级**一律不给键** → 每次都问，等级不同不被拉平。
+     */
+    rememberKey: verdict.level === 'medium' ? 'risk:medium' : '',
     summary: `${summary}\n\n风险：${label}`,
     impact,
   })

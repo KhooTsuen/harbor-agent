@@ -75,6 +75,10 @@ export const useAppStore = create<AppState>()(
         onLeaveThread(get().activeThreadId)
 
         set({ activeThreadId: id })
+
+        /* P2 #7：打开这条对话 = 看过了，未读点清掉（不动别的对话的未读） */
+        useUIStore.getState().markRead(id)
+
         const thread = get().threads.find((t) => t.id === id)
         if (thread) set({ activeProjectId: thread.projectId })
 

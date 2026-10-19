@@ -145,7 +145,13 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
 
   /* CE-002：从会话恢复独立状态；状态损坏只回退为空，不影响聊天。 */
   let state = null
-  if (options.sessionId) {
+  /*
+   * ★ `collabSubStep`：协作里 A 规划 / 验收的子步骤**不读写会话状态**。
+   * 否则 A 那句「你是只读规划者，没有写文件能力」会作为会话 topic 落盘，
+   * 被随后执行的 B 读回去 → B 只读不写，最后报「没有改动文件」（2026-10-20 真机）。
+   */
+  const subStep = options.collabSubStep === true
+  if (options.sessionId && !subStep) {
     try {
       state = sessionCore.load(options.sessionId)?.state ?? null
     } catch {
@@ -275,7 +281,7 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
       ? [{ role: 'system', content: custom }]
       : []
   const messages = [...head, ...assembled.messages, ...(variable ? [variable] : [])]
-  if (options.sessionId) {
+  if (options.sessionId && !subStep) {
     try {
       sessionCore.appendState(options.sessionId, state)
     } catch {

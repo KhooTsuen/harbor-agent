@@ -26,15 +26,7 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { useThreadHasTask } from '@/stores/useTaskStore'
 import { colorOf } from '@/lib/statusLanguage'
 
-/* ══════════════════════════════════════════════════════════════
-   侧栏里的一行线程
-
-   三种状态挤在一行里：
-     · 平时：状态点 + 标题 +「多久前」+ 模式首字
-     · 悬停：时间换成操作菜单按钮
-     · 重命名：整行变成输入框
-   ══════════════════════════════════════════════════════════════ */
-
+/* 侧栏里的一行线程：平时 = 状态点 + 标题 + 多久前 + 模式首字；重命名时整行变输入框 */
 export interface ThreadRowProps {
   thread: Thread
   onDelete: () => void
@@ -55,6 +47,8 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
   const showToast = useUIStore((s) => s.showToast)
   /* 这条对话有没干完的任务 → 挂个黄点（别的地方不再乱弹横幅） */
   const hasUnfinishedTask = useThreadHasTask(thread.id)
+  /* P2 #7：这一轮在别的对话里跑完了、你还没打开过 → 挂个未读点 */
+  const unread = useUIStore((s) => s.unreadThreads[thread.id] !== undefined)
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -140,6 +134,20 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
             aria-label="有没干完的任务"
             className="inline-block size-1.5 shrink-0 rounded-full"
             style={{ background: colorOf('warning') }}
+          />
+        </Tooltip>
+      ) : null}
+
+      {/*
+        P2 #7：未读点 —— 「它在你没看的时候跑完了一轮」（消息视角）。
+        和上面黄点（任务没干完）含义不同，所以位置和颜色都分开；选中时不显示。
+      */}
+      {unread && !active ? (
+        <Tooltip content="有新结果，还没看过">
+          <span
+            aria-label="未读"
+            className="inline-block size-1.5 shrink-0 rounded-full"
+            style={{ background: colorOf('running') }}
           />
         </Tooltip>
       ) : null}

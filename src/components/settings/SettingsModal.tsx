@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { SETTINGS_TABS, type SettingsTabId } from './parts'
+import { SETTINGS_TABS, hiddenTabsOf, visibleTabsOf, type SettingsTabId } from './parts'
 import { AboutTab } from './tabs/AboutTab'
 import { MemoryTab } from './tabs/MemoryTab'
 import { ProfileTab } from './tabs/ProfileTab'
@@ -39,6 +39,8 @@ export function SettingsModal() {
 
   const resetSettings = useSettingsStore((s) => s.resetSettings)
   const configSaveState = useConfigSaveStatus((s) => s.state)
+  const settingsView = useSettingsStore((s) => s.settings.settingsView)
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
 
   const [tab, setTab] = useState<SettingsTabId>('general')
   /*
@@ -50,6 +52,15 @@ export function SettingsModal() {
   useEffect(() => {
     if (open && wantedTab) setTab(wantedTab as SettingsTabId)
   }, [open, wantedTab])
+
+  /* P2 #1：简洁视图不列 detailedOnly 的标签；但用户被指到那一页时仍要能进去 */
+  const visibleTabs = useMemo(
+    () => visibleTabsOf(SETTINGS_TABS, settingsView, tab),
+    [settingsView, tab],
+  )
+  /* 简洁视图下被收起来的那些页 —— 顶部点名，别让它们悄悄生效 */
+  const hiddenTabs = useMemo(() => hiddenTabsOf(SETTINGS_TABS, settingsView), [settingsView])
+
   return (
     <Modal
       open={open}
@@ -103,8 +114,8 @@ export function SettingsModal() {
               按 group 分段渲染。分组标题只是视觉分隔 —— 不分组的话
               9 个标签平铺着看还是一片，用户仍然要靠猜。
             */}
-            {SETTINGS_TABS.map(({ id, label, icon: Icon, group }, index) => {
-              const prev = SETTINGS_TABS[index - 1]
+            {visibleTabs.map(({ id, label, icon: Icon, group }, index) => {
+              const prev = visibleTabs[index - 1]
               const startsGroup = Boolean(group) && prev?.group !== group
               return (
                 <li key={id}>
@@ -133,6 +144,24 @@ export function SettingsModal() {
 
         {/* 右侧内容 */}
         <div className="settings-body min-w-0 flex-1 overflow-y-auto pr-1.5">
+          {/*
+            P2 #1：简洁视图必须**点名**那些被收起、但仍在生效的专业设置 ——
+            否则「看不到」会被理解成「没启用」，用户改了个行为却找不到原因。
+            这里只提示 + 给一个直达入口，不复制那些设置本身。
+          */}
+          {hiddenTabs.length > 0 ? (
+            <p className="mb-2 rounded-sm border border-line-hairline bg-bg-raised/30 px-2 py-1.5 text-2xs leading-relaxed text-fg-secondary">
+              另有 {hiddenTabs.map((item) => item.label).join('、')} 等专业设置**仍在生效**。
+              <button
+                type="button"
+                className="ml-1 underline hover:text-fg-primary"
+                onClick={() => updateSettings({ settingsView: 'detailed' })}
+              >
+                切到详细视图
+              </button>
+              查看或调整。
+            </p>
+          ) : null}
           <p
             role="status"
             className={`mb-2 text-xs ${configSaveState === 'failed' ? 'text-danger' : 'text-fg-tertiary'}`}

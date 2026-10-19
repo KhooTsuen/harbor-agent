@@ -60,6 +60,15 @@ export const SETTINGS_TABS: readonly {
   icon: typeof Settings2
   /** 分组标题（null = 不分组，直接列在最下面） */
   group: string | null
+  /**
+   * 只在详细视图显示（P2 #1）。
+   *
+   * 判据是「普通用户为了**正常用**需不需要碰它」：`access`（权限档位 / 网络
+   * 策略 / 审计）、`memory`（结构化记忆）属于配置一次就不动、但改错会出事的那类，
+   * 默认收进详细视图。**不代表它们关了就不生效** —— 简洁视图顶部会点名列出
+   * 当前生效的专业设置（见 SettingsModal）。
+   */
+  detailedOnly?: boolean
 }[] = [
   { id: 'profile', label: '个人资料', icon: UserRound, group: '常用' },
   { id: 'general', label: '通用', icon: Settings2, group: '常用' },
@@ -67,10 +76,10 @@ export const SETTINGS_TABS: readonly {
   { id: 'conversation', label: '对话', icon: SlidersHorizontal, group: '常用' },
   { id: 'models', label: '模型', icon: Cpu, group: '常用' },
 
-  { id: 'access', label: '权限与安全', icon: Shield, group: '高级' },
+  { id: 'access', label: '权限与安全', icon: Shield, group: '高级', detailedOnly: true },
   { id: 'datausage', label: '数据与用量', icon: Database, group: '高级' },
   { id: 'extension', label: '扩展', icon: Puzzle, group: '高级' },
-  { id: 'memory', label: '记忆', icon: BrainCircuit, group: '高级' },
+  { id: 'memory', label: '记忆', icon: BrainCircuit, group: '高级', detailedOnly: true },
 
   { id: 'about', label: '关于', icon: Info, group: null },
 ] as const
@@ -88,6 +97,27 @@ export const SETTINGS_TABS: readonly {
  * 用统一的类名而不是给每处写样式：9 个标签页、几十个设置项，
  * 改一处全部生效 —— 这也是它值得单独一个组件的原因。
  */
+/**
+ * 设置视图过滤（P2 #1）。抽成函数是因为它是**纯判据**，值得单独测：
+ *   · 简洁视图只列非 detailedOnly 的标签
+ *   · 但用户被某个入口指到详细页时，那一页必须仍然出现（否则点了没反应）
+ */
+export function visibleTabsOf(
+  tabs: typeof SETTINGS_TABS,
+  view: 'simple' | 'detailed',
+  current: string,
+): typeof SETTINGS_TABS {
+  const kept = tabs.filter(
+    (item) => view === 'detailed' || !item.detailedOnly || item.id === current,
+  )
+  return kept as unknown as typeof SETTINGS_TABS
+}
+
+/** 简洁视图下被收起来的那些页（顶部要「点名」它们仍在生效） */
+export function hiddenTabsOf(tabs: typeof SETTINGS_TABS, view: 'simple' | 'detailed') {
+  return view === 'detailed' ? [] : tabs.filter((item) => item.detailedOnly)
+}
+
 /**
  * 这一行的控件里有没有**文本类**控件（input/select/textarea，排除勾选类）。
  * 有的话标题才给「可点」的样子 —— 开关行里点标题聚焦不到东西，不该装成能点。

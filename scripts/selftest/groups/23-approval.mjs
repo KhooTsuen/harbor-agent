@@ -200,4 +200,57 @@ export async function run() {
 
   taskCore.remove(t.id)
   check('测试任务已清理', taskCore.get(t.id) === null)
+
+  /* ══ 2026-10-20 放宽：中风险同类只问一次，高风险逐次问 ══
+     真机反馈：一轮协作里模型连着跑了 7 次诊断命令，每次都弹卡（审计里
+     7 条 approval=true），烦到没法用。放宽的边界**只在风险等级上**：
+     中风险给 `rememberKey`，高风险 / 危险一律不给 —— 绝不把 `risk` 整个
+     丢进 REMEMBERED，否则批了一条 `npm test` 就等于批了 `npm i -g`。 */
+  group('审批放宽 · 只有中风险按时间窗记住')
+
+  /** 连问 n 次，返回真的弹了几次 */
+  async function askTimes(request, times = 3, extra = {}) {
+    const box = { asked: 0 }
+    const c = {
+      granted: new Map(),
+      confirm: async () => {
+        box.asked += 1
+        return true
+      },
+      ...extra,
+    }
+    for (let i = 0; i < times; i += 1) await approvals.ask(c, { ...request })
+    return box.asked
+  }
+
+  check(
+    '★ 中风险连跑三次只弹一次',
+    (await askTimes({ kind: 'risk', name: 'run_shell', rememberKey: 'risk:medium' })) === 1,
+  )
+  check(
+    '★ 高风险没有键 → 每次都要问（三次 = 三次）',
+    (await askTimes({ kind: 'risk', name: 'run_shell', rememberKey: '' })) === 3,
+  )
+  check(
+    '★ 老路径 write 行为不变（仍是一轮一次）',
+    (await askTimes({ kind: 'write', name: 'edit_file' })) === 1,
+  )
+  check(
+    '★ 逐次审批（freshApproval）照旧每次都问，放宽管不到它',
+    (await askTimes({ kind: 'risk', name: 'run_shell', rememberKey: 'risk:medium' }, 3, {
+      freshApproval: true,
+    })) === 3,
+  )
+  check(
+    '★ 键只来自调用方点名或老的 write/mcp，裸 risk 不给键',
+    approvals.rememberKeyOf({ kind: 'risk' }) === '' &&
+      approvals.rememberKeyOf({ kind: 'write' }) === 'write' &&
+      approvals.rememberKeyOf({ kind: 'risk', rememberKey: 'risk:medium' }) === 'risk:medium',
+  )
+  check(
+    '★ risk-gate 只给 medium 发键（等级不同不被拉平）',
+    readCore('electron/core/tools/risk-gate.cjs').includes(
+      "rememberKey: verdict.level === 'medium' ? 'risk:medium' : ''",
+    ),
+  )
 }

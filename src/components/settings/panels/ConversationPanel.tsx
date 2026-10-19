@@ -4,6 +4,7 @@ import { ImageSaveTab } from '../tabs/ImageSaveTab'
 import { DownloadSaveTab } from '../tabs/DownloadSaveTab'
 import { ThreadSettingsTab } from '../tabs/ThreadSettingsTab'
 import { ProjectContextTab } from '../tabs/ProjectContextTab'
+import { ConversationExperienceTab } from '../tabs/ConversationExperienceTab'
 
 /* ══════════════════════════════════════════════════════════════
    对话 = 全局默认（模型/路由/预算）+ 本次会话 + 项目上下文
@@ -18,6 +19,8 @@ import { ProjectContextTab } from '../tabs/ProjectContextTab'
 export function ConversationPanel(): React.ReactElement {
   return (
     <>
+      <ConversationExperienceTab />
+
       <ScenesTab />
 
       <div className="py-2">

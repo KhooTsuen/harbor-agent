@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { anchoredPlacement } from '@/lib/anchor'
 import { IconButton } from './IconButton'
+import { useModalFocus } from './useModalFocus'
 
 /* ══════════════════════════════════════════════════════════════
    Modal
@@ -113,33 +114,8 @@ export function Modal({
   /* 真的贴上了（找到了输入区）才算 anchored；否则回退到居中模态 */
   const anchoredHere = variant === 'anchored' && anchorRect !== null
 
-  /* Esc 关闭 + 焦点管理 */
-  useEffect(() => {
-    if (!open) return
-
-    if (variant === 'anchored') return
-
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const panel = panelRef.current
-    /* 优先聚焦第一个可交互元素，没有就聚焦容器本身 */
-    const first = panel?.querySelector<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    )
-    ;(first ?? panel)?.focus()
-
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      restoreFocusRef.current?.focus()
-    }
-  }, [open, onClose, variant])
+  /* Esc 关闭 + 焦点管理 + Tab 循环（实现在 useModalFocus.ts） */
+  useModalFocus(open, panelRef, restoreFocusRef, onClose, variant !== 'anchored')
 
   return (
     <AnimatePresence>

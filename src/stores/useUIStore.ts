@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { PermissionRequest, RightTab, Toast, ToastKind } from '@/types'
-import type { TaskOutcome } from '@/types/notify'
+import type { TaskEndPayload, TaskOutcome } from '@/types/notify'
 import { uid } from '@/lib/utils'
 
 /* ══════════════════════════════════════════════════════════════
@@ -70,6 +70,31 @@ interface UIState {
   hideToast: (id: string) => void
 
   setNextSteps: (value: { threadId: string; outcome: TaskOutcome } | null) => void
+  /**
+   * 本轮结束的结果摘要（P2 #30）。`null` = 没有可显示的摘要。
+   *
+   * 与 `nextSteps` 分工：那个是「接下来能做什么」的快捷入口（只认成功、只给
+   * 当前对话）；这个是「这一轮到底成了没成」的事实摘要 —— 完成 / 失败 /
+   * 已到上限都显示，且**是否显示由设置 `taskSummary` 决定**（默认关）。
+   */
+  taskSummary: { threadId: string; payload: TaskEndPayload } | null
+  setTaskSummary: (value: { threadId: string; payload: TaskEndPayload } | null) => void
+  /**
+   * 哪些对话里有「你还没看过的新结果」（P2 #7 未读区分）。
+   *
+   * 判据只有一个来源：**这一轮在别的对话里跑完了**（`app:taskEnd`）。
+   * 不拿 `updatedAt` 比时间戳 —— 改名、改设置也会动它，那样「未读」会
+   * 因为无关操作亮起来，用户就再也不信这个点。
+   *
+   * 和任务完成提醒是同一件事的两个层次：提醒负责当下叫你（toast / 系统通知），
+   * 这个点负责「回来之后一眼看是哪条」。
+   *
+   * ★ 只在**本次打开期间**有效（和 `toastHistory` 同一口径）—— 重启后不留，
+   *   否则用户清理不掉一堆不知道哪来的点。
+   */
+  unreadThreads: Record<string, number>
+  markUnread: (threadId: string) => void
+  markRead: (threadId: string) => void
   askPermission: (request: PermissionRequest) => void
   /**
    * 收起权限卡（写操作确认）。
@@ -141,6 +166,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   toasts: [],
   toastHistory: [],
   nextSteps: null,
+  taskSummary: null,
+  unreadThreads: {},
   harborStatsOpen: false,
 
   openHarborStats: () => set({ harborStatsOpen: true }),
@@ -191,6 +218,18 @@ export const useUIStore = create<UIState>((set, get) => ({
   openBottomPanel: (view) => set({ bottomPanelOpen: true, bottomPanelView: view }),
 
   setNextSteps: (value) => set({ nextSteps: value }),
+  setTaskSummary: (value) => set({ taskSummary: value }),
+  markUnread: (threadId) =>
+    threadId
+      ? set((s) => ({ unreadThreads: { ...s.unreadThreads, [threadId]: Date.now() } }))
+      : undefined,
+  markRead: (threadId) =>
+    set((s) => {
+      if (!threadId || !(threadId in s.unreadThreads)) return s
+      const next = { ...s.unreadThreads }
+      delete next[threadId]
+      return { unreadThreads: next }
+    }),
 
   askPermission: (request) => set({ permission: request }),
   closePermission: (confirmId) =>

@@ -49,6 +49,10 @@ export const DEFAULT_SETTINGS: Settings = {
   lastBottomPanelOpen: false,
   /* 默认与已上线行为一致：有项目时只看当前项目的任务 */
   taskScope: 'project',
+  /* P2 #1：默认简洁视图（首次使用不该被几十个专业选项吓到） */
+  settingsView: 'simple',
+  /* P2 #30：任务结果摘要默认关（用户主动开才显示） */
+  taskSummary: false,
   /* ★ 开屏性格层默认开；夜航主题默认没解锁；航道畅通计数从 0 起 */
   persona: true,
   nightUnlocked: false,
@@ -109,6 +113,8 @@ function normalize(input: Partial<Settings> | undefined): Settings {
         : 'diff',
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,
     taskScope: s.taskScope === 'all' ? 'all' : 'project',
+    settingsView: s.settingsView === 'detailed' ? 'detailed' : 'simple',
+    taskSummary: s.taskSummary === true,
     persona: s.persona !== false,
     nightUnlocked: s.nightUnlocked === true,
     greenRuns: Math.max(0, Math.floor(Number(s.greenRuns) || 0)),

@@ -4,6 +4,7 @@ import { subscribeNotificationClick, subscribeTaskEnd } from '@/lib/subscription
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useBrowserStore } from '@/stores/useBrowserStore'
+import { useSettingsStore } from '@/stores/useSettingsStore'
 import { useRealBackend } from '@/lib/backend'
 
 /* ══════════════════════════════════════════════════════════════
@@ -69,6 +70,20 @@ export function useTaskNotifications(): void {
     if (!useRealBackend) return
     return subscribeTaskEnd((payload) => {
       /*
+       * P2 #30：结果摘要。**是否显示由设置决定**（默认关），这里只负责在
+       * 开着的时候把这一轮的事实记下来 —— 判读在 `lib/taskSummary.ts`。
+       *
+       * 只认当前对话：别的对话跑完了，摘要不该压在眼前这条上（那是「不抢焦点」
+       * 的同一条理由）。
+       */
+      if (
+        useSettingsStore.getState().settings.taskSummary &&
+        payload.sessionId === useAppStore.getState().activeThreadId
+      ) {
+        useUIStore.getState().setTaskSummary({ threadId: payload.sessionId, payload })
+      }
+
+      /*
        * AG-033：任务**成功完成**且就是当前这条对话 → 亮出「下一步」入口。
        *   · 只看 success（文档说的是「任务完成后」；失败/取消给建议没意义）
        *   · 只认当前对话（别的对话跑完，用户还在这条上）
@@ -91,6 +106,10 @@ export function useTaskNotifications(): void {
         })
       ) {
         return
+      }
+      /* P2 #7：在**别的**对话里跑完了 → 侧栏那条挂个未读点（回来一眼看是哪条） */
+      if (payload.sessionId !== useAppStore.getState().activeThreadId) {
+        useUIStore.getState().markUnread(payload.sessionId)
       }
       useUIStore.getState().showToast(payload.kind, payload.title, payload.description, {
         label: '查看结果',
