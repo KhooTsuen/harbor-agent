@@ -142,8 +142,26 @@ export async function run() {
   check('★ codexPath 显式给了就优先用它（不硬编码本机路径）', RUN.resolveLauncher('E:\\x\\my-codex.cmd') === 'E:\\x\\my-codex.cmd')
   check('★ 没给就在 PATH 里解析出 codex 启动器', /codex($|\.cmd$|\.exe$)/.test(RUN.resolveLauncher('')))
   const killArgs = (() => { let a = null; RUN.killTree(9999, { spawnFn: (_c, args) => { a = args; return { unref() {} } } }); return a })()
-  check('★★ 取消按 **pid + /T** 杀树', Boolean(killArgs) && killArgs.includes('/pid') && killArgs.includes('9999') && killArgs.includes('/T'))
-  check('★★ **绝不**按映像名杀（/IM 会误杀用户正开着的窗口）', Boolean(killArgs) && !killArgs.includes('/IM'))
+  /*
+   * ★ 这两条原来写在 win32 守卫**外面** —— 2026-10-20 CI 第一次跑就红了：
+   *   Windows 上 killTree 走 `taskkill /pid <pid> /T`，参数里有 /pid 和 /T；
+   *   Linux/macOS 上它直接用 `process.kill(-pid)` 杀进程组，**根本不 spawn**，
+   *   于是 killArgs 为 null，两条判据必然失败。产品行为没问题，是判据没分平台。
+   *
+   * 为什么 Linux 分支不是「什么都不验」：核心契约是「**绝不按映像名杀**」
+   *   —— 它会误杀用户正开着的窗口。非 Windows 上不调 taskkill 天然满足，
+   *   但这条契约要显式钉住（将来有人为跨平台统一而加 /IM，这里立刻红）。
+   */
+  if (process.platform === 'win32') {
+    check('★★ 取消按 **pid + /T** 杀树', Boolean(killArgs) && killArgs.includes('/pid') && killArgs.includes('9999') && killArgs.includes('/T'))
+    check('★★ **绝不**按映像名杀（/IM 会误杀用户正开着的窗口）', Boolean(killArgs) && !killArgs.includes('/IM'))
+  } else {
+    check(
+      '★★ 非 Windows 不调 taskkill，因此**绝不**按映像名杀（同一份核心契约）',
+      killArgs === null || !killArgs.includes('/IM'),
+      String(killArgs),
+    )
+  }
   check('非法 pid 不发杀进程指令', RUN.killTree(0, { spawnFn: () => ({}) }) === false)
 
   /* ── ⑥ 取消与超时（真跑 runCodex + 假 spawn）── */

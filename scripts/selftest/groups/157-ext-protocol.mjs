@@ -226,12 +226,13 @@ check(
   check('★ main.cjs 仍未被改（3a 的装配不在那儿 —— 裁决 A3）', !/ext-bridge|ext-protocol|ext-client|ext-host-loop/.test(mainSrc))
 
   /* ── ⑤ 裸 JSON 兜底：**真管道**跑一遍（判据 6）── */
+  /* ⚠️ Windows 专属（2026-10-20 CI 第一次跑就红了）：靠 Windows 命名管道，POSIX 上连不上。 */
+  if (process.platform !== 'win32') {
+    group('扩展通道 · 裸 JSON 兜底（真管道）—— Windows 专属，本平台跳过')
+  } else {
   group('扩展通道 · 裸 JSON 兜底（真管道，旧 host → 新主进程）')
 
-  /*
-   * 必须真跑：判据是「fatal + 首字节 `{`」——纯函数测不出来。
-   * 场景：用户 Edge 开着时升级 Harbor，旧 host 还活着，发的就是裸 JSON。
-   */
+  /* 必须真跑：判据是「fatal + 首字节 `{`」，纯函数测不出来。场景：Edge 开着时升级 Harbor。 */
   const net = require('node:net')
   const tmpDir2 = join(ROOT, 'data', 'selftest-data', 'ext-bridge-legacy')
   const B2 = require(join(ROOT, 'electron/core/ext-bridge.cjs'))
@@ -293,5 +294,6 @@ check(
         /* 忽略 */
       }
     }
+  }
   }
 }

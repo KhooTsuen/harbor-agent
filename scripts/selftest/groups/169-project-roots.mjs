@@ -110,10 +110,20 @@ export function run() {
     roots.resolveAuthorizedRoot({ root: iso, isoDir: dataDir, items: [{ root: iso }], action: 'write' }).isolated === true,
   )
 
-  group('3C-2 · 禁区：盘符根 / 系统目录一律拒（写进配置也不认）')
-  const driveRoot = path.parse(dataDir).root
-  check('★★★ 盘符根（E:\\）被拒', roots.resolveAuthorizedRoot({ root: driveRoot, items: [{ root: driveRoot, allowWrite: true }] }).ok === false)
-  check('★★ 盘符根的错误码是 FORBIDDEN', roots.resolveAuthorizedRoot({ root: driveRoot, items: [] }).code === 'PROJECT_ROOT_FORBIDDEN')
+  /*
+   * Windows 专属（2026-10-20 CI 第一次跑就红了 4 项）：
+   *   「盘符根」在 POSIX 上不存在（path.parse('/a/b').root === '/'，不是盘符），
+   *   「盘符大小写不敏感」「反斜杠尾缀归一」也都是 Windows 路径语义。
+   *   产品逻辑没问题 —— 是判据只适用于 Windows。这里跳过并**写在标题里**，
+   *   免得日志读者以为这几条验过。
+   */
+  const winOnly = process.platform === 'win32'
+  group(`3C-2 · 禁区：盘符根 / 系统目录一律拒（写进配置也不认）${winOnly ? '' : '（Windows 专属，本平台跳过）'}`)
+  if (winOnly) {
+    const driveRoot = path.parse(dataDir).root
+    check('★★★ 盘符根（E:\\）被拒', roots.resolveAuthorizedRoot({ root: driveRoot, items: [{ root: driveRoot, allowWrite: true }] }).ok === false)
+    check('★★ 盘符根的错误码是 FORBIDDEN', roots.resolveAuthorizedRoot({ root: driveRoot, items: [] }).code === 'PROJECT_ROOT_FORBIDDEN')
+  }
   const winDir = process.env.SystemRoot || 'C:\\Windows'
   const winIn = path.join(winDir, 'System32')
   if (fs.existsSync(winIn)) {
@@ -124,17 +134,19 @@ export function run() {
     )
   }
 
-  group('3C-2 · 大小写与符号链接')
-  check(
-    '★★★ 盘符大小写不同也算同一条授权（Windows 路径不区分大小写）',
-    roots.resolveAuthorizedRoot({
-      root: outside.toUpperCase(),
-      isoDir: '/nonexistent-iso',
-      items: readOnly,
-      action: 'read',
-    }).ok === true,
-  )
-  check('★★ 归一后带尾斜杠也能认', roots.realRoot(`${outside}\\`) !== '')
+  group(`3C-2 · 大小写与符号链接${winOnly ? '' : '（Windows 专属，本平台跳过）'}`)
+  if (winOnly) {
+    check(
+      '★★★ 盘符大小写不同也算同一条授权（Windows 路径不区分大小写）',
+      roots.resolveAuthorizedRoot({
+        root: outside.toUpperCase(),
+        isoDir: '/nonexistent-iso',
+        items: readOnly,
+        action: 'read',
+      }).ok === true,
+    )
+    check('★★ 归一后带尾斜杠也能认', roots.realRoot(`${outside}\\`) !== '')
+  }
 
   /* 符号链接/junction：真实路径落在别处时，用它自己的真实路径去比对授权清单 */
   const linkPath = path.join(dataDir, 'c2-link')

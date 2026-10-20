@@ -137,8 +137,19 @@ export async function run() {
   group('3B · 可靠性收尾 · 恢复侧路径校验（防越界写）')
   const policy = require(join(ROOT, 'electron/core/codex-mcp-policy.cjs'))
   check('★★★ 没有 root 的恢复点 → 拒绝恢复', restore.pathAllowed({ abs: 'E:\\x\\a.txt' }, policy.isInside).ok === false)
-  check('★★★ 目标在 root 内 → 放行', restore.pathAllowed({ abs: 'E:\\x\\sub\\a.txt', root: 'E:\\x' }, policy.isInside).ok === true)
-  check('★★★ 目标在 root 外 → 拒绝（恢复点文件被改也写不到外面）', restore.pathAllowed({ abs: 'E:\\Windows\\win.ini', root: 'E:\\x' }, policy.isInside).ok === false)
+  /*
+   * ★ 这两条原来写死 `E:\x` / `E:\Windows\win.ini`（2026-10-20 CI 第一次跑就红了）：
+   *   判据要验的是「**包含判定**」，但 Windows 字面量在 POSIX 上不成立 ——
+   *   `E:\x\sub\a.txt` 不以 `E:\x` 开头（POSIX 分隔符是 `/`），于是「在 root 内」
+   *   被判成不在，判据失败。产品逻辑没问题，是夹具绑死了平台。
+   *   改用 join(ROOT, ...) 构造：两个平台都是「真正的父子目录」，语义不变。
+   */
+  const pRoot = join(ROOT, 'selftest-path-root')
+  check('★★★ 目标在 root 内 → 放行', restore.pathAllowed({ abs: join(pRoot, 'sub', 'a.txt'), root: pRoot }, policy.isInside).ok === true)
+  check(
+    '★★★ 目标在 root 外 → 拒绝（恢复点文件被改也写不到外面）',
+    restore.pathAllowed({ abs: join(ROOT, 'selftest-path-outside', 'win.ini'), root: pRoot }, policy.isInside).ok === false,
+  )
 
   group('3B · 可靠性收尾 · 预算如实标注（不伪称支持）')
   check('★★ 次数预算有默认值 1', loop.DEFAULT_ATTEMPTS === 1)
