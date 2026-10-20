@@ -246,7 +246,7 @@ export function ToolsPanel() {
           <Shield size={12} />
           工具权限
         </p>
-        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="工具权限">
+        <div className="flex flex-col gap-2" role="radiogroup" aria-label="工具权限">
           {PERMISSIONS.map((p) => (
             <button
               key={p.id}

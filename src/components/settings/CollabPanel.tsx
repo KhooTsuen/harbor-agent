@@ -57,7 +57,7 @@ export function CollabPanel(): React.JSX.Element {
   const roles = Object.values(state.roles)
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-2">
       <SectionTitle>双模型协作</SectionTitle>
 
       <Row label="启用" hint="双模型默认关闭。你在聊天框主动选择双模型时会开启；也可以在这里关闭。">

@@ -96,7 +96,7 @@ export function UsageTab() {
       : null
 
   return (
-    <div className="py-1">
+    <div className="flex flex-col gap-2 py-1">
       <SectionTitle>用量闸（预算）</SectionTitle>
       <BudgetLimit />
       {/* 开关下面立刻说清楚「现在到底限不限、还剩多少」—— 别再让人猜 */}

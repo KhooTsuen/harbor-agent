@@ -23,25 +23,23 @@ export function ConversationPanel(): React.ReactElement {
 
       <ScenesTab />
 
-      <div className="py-2">
+      <div className="flex flex-col gap-2 py-2">
         <SectionTitle>生图</SectionTitle>
         <ImageSaveTab />
       </div>
 
-      <div className="py-2">
+      <div className="flex flex-col gap-2 py-2">
         <SectionTitle>下载</SectionTitle>
         <DownloadSaveTab />
       </div>
 
-      <div>
+      <div className="flex flex-col gap-2">
         <SectionTitle>项目上下文</SectionTitle>
-        <p className="py-1 text-dense leading-relaxed text-fg-tertiary">
+        <p className="text-dense leading-relaxed text-fg-tertiary">
           下面两项是**覆盖**：只在当前项目 / 当前这条对话里生效，不动上面的全局默认。
         </p>
         <ProjectContextTab />
-        <div>
-          <ThreadSettingsTab />
-        </div>
+        <ThreadSettingsTab />
       </div>
     </>
   )

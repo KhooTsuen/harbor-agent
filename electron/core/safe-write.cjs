@@ -53,9 +53,24 @@ function renameWithRetry(tmp, file) {
 }
 
 function writeAtomic(file, text) {
+  writeAtomicBy(file, (tmp) => fs.writeFileSync(tmp, text, 'utf8'))
+}
+
+/**
+ * 原子写的**通用形式**：先让调用方把内容写进临时文件，再重试替换上去。
+ *
+ * 为什么要有它（2026-10-20）：把 141 MB 会话的首行从 227 字节扩成 4096 字节
+ * 必须整篇重写，而整篇读进内存再 `writeFileSync` 要 20 秒、峰值近 1 GB。
+ * 用这个入口就能「1 MB 一块地流式写临时文件」，同时仍然走**同一套**
+ * 退避重试与清理 —— 不新增第二份原子写实现（自检 `118-safe-write` 钉着）。
+ *
+ * @param {string} file 目标文件
+ * @param {(tmp: string) => void} writeInto 把内容写进 tmp（同步）
+ */
+function writeAtomicBy(file, writeInto) {
   const tmp = `${file}.tmp-${process.pid}`
-  fs.writeFileSync(tmp, text, 'utf8')
   try {
+    writeInto(tmp)
     renameWithRetry(tmp, file)
   } catch (error) {
     /* 重试也没成：把临时文件清掉，别在 data/ 里留一地 .tmp-* 垃圾（已经留过） */
@@ -81,4 +96,4 @@ function keepCorruptCopy(file) {
   }
 }
 
-module.exports = { writeAtomic, keepCorruptCopy }
+module.exports = { writeAtomic, writeAtomicBy, keepCorruptCopy }

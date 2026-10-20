@@ -61,7 +61,7 @@ export function ShortcutsTab() {
       {Array.from(new Set(SHORTCUTS.map((s) => s.group))).map((group) => (
         <div key={group}>
           <p className="mb-1.5 mt-3 text-2xs text-fg-tertiary">{group}</p>
-          <ul className="flex flex-col gap-1.5">
+          <ul className="flex flex-col gap-2">
             {SHORTCUTS.filter((s) => s.group === group).map((shortcut) => (
               <li
                 key={shortcut.id}

@@ -130,7 +130,7 @@ export function ProjectTestsPanel() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       <SectionTitle hint="为你的项目写一条测试命令。模型只能点名跑哪一条，给不出命令；默认关闭，执行前仍会弹确认。">
         项目测试
       </SectionTitle>

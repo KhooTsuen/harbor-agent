@@ -131,6 +131,19 @@ export function AppearanceTab() {
         />
       </Row>
 
+      <SectionTitle>提示</SectionTitle>
+
+      <Row
+        label="重要通知记录"
+        hint="右下角那个可展开的历史按钮——记下本次打开期间的错误、警告和带操作按钮的提示（最多 100 条，只存在内存里）。关掉后不再记录，按钮也不再出现；错误和警告本身的提示照常弹"
+      >
+        <Switch
+          checked={settings.noticeHistory}
+          onChange={(v) => updateSettings({ noticeHistory: v })}
+          label="重要通知记录"
+        />
+      </Row>
+
       <SectionTitle>材质</SectionTitle>
 
       <Row

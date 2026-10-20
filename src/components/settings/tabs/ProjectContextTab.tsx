@@ -3,7 +3,7 @@ import { FolderOpen, Save } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { fsRead } from '@/lib/fsApi'
 import { Button } from '@/components/ui/Button'
-import { Row, SectionTitle } from '../parts'
+import { Row } from '../parts'
 
 export function ProjectContextTab() {
   const project = useAppStore((s) => s.projects.find((p) => p.id === s.activeProjectId))
@@ -37,9 +37,8 @@ export function ProjectContextTab() {
   }
 
   return (
-    <div className="py-1">
-      <SectionTitle>项目上下文</SectionTitle>
-      <p className="py-2 text-dense text-fg-secondary">
+    <div className="flex flex-col gap-2">
+      <p className="text-dense leading-relaxed text-fg-secondary">
         当前项目规则来自工作目录中的 AGENT.md。它只影响当前项目，不会污染其他项目。
       </p>
       <Row label="当前项目" hint="切换工作目录后重新读取">

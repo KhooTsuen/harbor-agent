@@ -747,7 +747,19 @@
     padding: 0 0.25rem;
   }
 
-  .settings-body > .settings-section-title:first-child {
+  /*
+   * 页首那个标题不要顶部留白。
+   *
+   * ★ 选择器**不能**写成 `.settings-body > .settings-section-title:first-child`
+   *   （2026-10-20 修）：子选择器只认直接子元素，而标题被 `<div className="...gap-2">`
+   *   包一层是常见写法（对话页的「生图 / 下载 / 项目上下文」、扩展页的两个面板）。
+   *   一被包住它就不是 .settings-body 的 :first-child，20px 留白照样落在页面顶部，
+   *   表现为「设置页第一屏莫名其妙空一大块」。
+   *
+   *   去掉子选择器：凡是**自己父容器里排第一**的节标题都不留顶部空隙 ——
+   *   语义本来就是「第一个标题上方不需要再分隔」。非首个标题不受影响。
+   */
+  .settings-section-title:first-child {
     margin-top: 0;
   }
 

@@ -17,7 +17,14 @@ const summary = require('../core/workspace-summary.cjs')
 const taskCore = require('../core/task.cjs')
 const outcome = require('../core/task-outcome.cjs')
 
-ipcMain.handle('workspace:scan', (_event, dir) => summary.scanWorkspace(resolveWorkdir(dir)))
+/*
+ * ★ 走异步版（2026-10-20）：原来的同步版用 spawnSync 跑两条 git 命令（≈400ms），
+ *   期间 Electron 主进程完全停住 —— 实测轻量 IPC 从 2.5ms 被拖到 455ms。
+ *   返回形状与同步版逐字一致。
+ */
+ipcMain.handle('workspace:scan', (_event, dir) =>
+  summary.scanWorkspaceAsync(resolveWorkdir(dir)),
+)
 
 /**
  * 最近一次测试：从最近 50 条任务里找**最后一条测试命令**。

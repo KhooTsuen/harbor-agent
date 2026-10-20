@@ -92,7 +92,7 @@ export function ScheduleForm({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <SectionTitle>{initial ? `编辑「${initial.name}」` : '新建定时任务'}</SectionTitle>
 
       <Row label="名字" hint="给它起个一眼能认出来的名字，任务台账和会话都用它">

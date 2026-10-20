@@ -5,11 +5,18 @@
  */
 
 const session = require('../core/session.cjs')
+const { listFast } = require('../core/session-list-async.cjs')
 const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
 
 function register({ ipcMain }) {
-  ipcMain.handle('session:list', () => session.list())
+  /*
+   * ★ 走**启动快路径**（2026-10-20）：开发版有个 141 MB 的会话，原来同步版
+   *   要把每个会话整篇读进来逐行解析（连数条数一起），实测 10 个这样的会话
+   *   要 21.9 秒，期间事件循环被占死 → 界面「点了没反应」。
+   *   现在只读首行 + 后台补条数，列表秒出，结果形状与 `session.list()` 相同。
+   */
+  ipcMain.handle('session:list', () => listFast())
   ipcMain.handle('session:search', (_event, query, limit) =>
     session.search(query, Number(limit) || 50),
   )

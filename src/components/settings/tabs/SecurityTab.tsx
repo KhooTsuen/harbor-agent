@@ -66,7 +66,7 @@ export function SecurityTab() {
      网络策略单独留着 —— 它会自己说明「桥没接上」。 */
   if (!creds && grants.length === 0 && entries.length === 0 && !busy) {
     return (
-      <div className="flex flex-col gap-1 pb-6">
+      <div className="flex flex-col gap-2 pb-6">
         <NetworkPolicyPanel />
         <SessionCryptoPanel />
         <p className="p-3 text-dense text-fg-tertiary">
@@ -77,7 +77,7 @@ export function SecurityTab() {
   }
 
   return (
-    <div className="flex flex-col gap-1 pb-6">
+    <div className="flex flex-col gap-2 pb-6">
       <SectionTitle>文件访问范围</SectionTitle>
       <Row
         label="Agent 能碰哪些文件"

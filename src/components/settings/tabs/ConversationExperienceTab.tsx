@@ -17,7 +17,7 @@ export function ConversationExperienceTab(): React.ReactElement {
   const update = useSettingsStore((s) => s.updateSettings)
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       <SectionTitle hint="只影响显示，不改变 Agent 的行为">对话体验</SectionTitle>
 
       <Row

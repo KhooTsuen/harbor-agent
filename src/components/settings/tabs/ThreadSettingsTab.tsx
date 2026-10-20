@@ -15,7 +15,7 @@ export function ThreadSettingsTab() {
     update(thread.id, { [key]: settings[key] === false })
 
   return (
-    <div className="py-1">
+    <div className="flex flex-col gap-2 py-1">
       <SectionTitle>本次会话</SectionTitle>
 
       <Row label="回答深度" hint="只影响当前会话，不修改全局默认">

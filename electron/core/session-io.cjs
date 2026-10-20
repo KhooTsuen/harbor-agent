@@ -24,8 +24,22 @@ const log = require('./log.cjs')
 const { redact, scrubStorage } = require('./redact.cjs')
 const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 const { sealLine, openLineDetailed } = require('./session-crypto.cjs')
+const slot = require('./session-meta-slot.cjs')
+/* 「改首行」的三条路径在那边（这里贴过 300 行红线） */
+const metaWrite = require('./session-meta-write.cjs')
 
 const MAX_TITLE = 60
+
+/**
+ * 会话首行的**唯一写法**：序列化（脱敏 + 封印）后补到定宽槽位。
+ *
+ * 补宽度是为了让「改 meta」能原地覆盖 4KB、不必碰整个文件 —— 见
+ * `session-meta-slot.cjs` 开头的实测数字。这里只负责把两件事串起来，
+ * 不另立第二套序列化口径。
+ */
+function metaLine(meta) {
+  return slot.padToSlot(serializeLine(meta))
+}
 
 /**
  * 会话 id 的白名单：`sess_` + 小写字母数字 —— `newId()` 就是照这个造的。
@@ -160,76 +174,23 @@ function serializeLine(line) {
  */
 function writeLines(id, lines) {
   fs.mkdirSync(DIRS.sessions, { recursive: true })
-  const text = `${lines.map(serializeLine).join('\n')}\n`
+  /* 首行是 meta 时补到定宽槽位：以后改模型只需原地覆盖那 4KB（见 session-meta-slot.cjs）。
+     其余行照旧 —— 只有首行需要这个性质。 */
+  const text = `${lines.map((line, index) => (index === 0 && line?.type === 'meta' ? metaLine(line) : serializeLine(line))).join('\n')}\n`
   const file = fileFor(id)
   writeAtomic(file, text)
   corruptKept.delete(file)
 }
 
 /**
- * 只改**第一行**（meta），其余字节原样保留。
+ * 只改第一行（meta）。实现在 `session-meta-write.cjs`（本文件贴过 300 行红线）。
  *
- * 为什么不是「整篇读出来再整篇写回去」（2026-10-04 改的）：
- *   · `readLines()` 为了容错会**跳过解不开的行**（换了 Windows 账户 / data 换机器就会遇到）——
- *     拿它的结果写回去，那些行就被永久删了，而用户只是在改标题；
- *   · 长会话（数 MB）整篇重写期间崩溃 / 断电会截断文件，截断点之后的内容全没；
- *     追加式写「崩了只丢最后一行」的保证在这里失效。
- *
- * 所以：第一行是 meta 就换掉它；不是 meta（或第一行本身就解不开）就把新 meta 插到最前面。
- * 两种情况都**不读也不写其余行**，并用原子写落盘。
- *
- * @returns {{ ok: boolean, replaced?: boolean, error?: string }}
+ * 这里只做「id → 路径」的校验与收尾标记清理，并把**唯一序列化入口**
+ * `serializeLine` 传进去 —— 脱敏 / 封印的口径不搬家，只搬落盘策略。
  */
 function writeMetaLine(id, meta) {
   const file = fileFor(id)
-  if (!fs.existsSync(file)) return { ok: false, error: '会话不存在' }
-  const raw = fs.readFileSync(file, 'utf8')
-  const cut = raw.indexOf('\n')
-  const firstRaw = cut >= 0 ? raw.slice(0, cut) : raw
-  const rest = cut >= 0 ? raw.slice(cut + 1) : ''
-  const head = openLineDetailed(firstRaw.trim())
-  let isMeta = false
-  if (head.ok) {
-    try {
-      isMeta = JSON.parse(head.text).type === 'meta'
-    } catch {
-      isMeta = false
-    }
-  }
-  /* 第一行是 meta 就换掉它，否则把新 meta 插到最前面 —— 两种情况其余内容都不参与重排 */
-  const keep = isMeta ? rest : raw
-  /*
-   * 例外（唯一一处会动其它行的地方）：**旧文件里还留着明文密钥**时顺手清一遍。
-   * 这条保证以前是「整篇重写」白送的（自检 `31-session-redact` 钉着），
-   * 改成只换第一行之后必须显式做，否则等于把脱敏能力悄悄丢了。
-   * 只在真检测到才扫（`redact()` 与原文不同），平时零开销。
-   */
-  const body = redact(keep) === keep ? keep : rescrubLines(keep)
-  writeAtomic(file, `${serializeLine(meta)}\n${body}`)
-  return { ok: true, replaced: isMeta }
-}
-
-/**
- * 逐行重新脱敏：能解析的行过一遍唯一序列化入口，**解不开的行原样保留**。
- *
- * 与「整篇读→整篇写」的区别：坏行不会被丢掉（问题 22 的另一半），
- * 且落盘走原子写 —— 清旧密钥的同时不引入「写一半截断」的风险。
- */
-function rescrubLines(text) {
-  return text
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim()
-      if (!trimmed) return line
-      const opened = openLineDetailed(trimmed)
-      if (!opened.ok) return line
-      try {
-        return serializeLine(JSON.parse(opened.text))
-      } catch {
-        return line
-      }
-    })
-    .join('\n')
+  return metaWrite.writeMetaLine(file, metaLine(meta), () => corruptKept.delete(file), serializeLine)
 }
 
 module.exports = {
@@ -237,6 +198,8 @@ module.exports = {
   isSessionId,
   newId,
   safeTitle,
+  /* 首行序列化入口：自检要钉「槽位宽度按字节算」，必须有处可取 */
+  metaLine,
   readLines,
   writeLines,
   writeMetaLine,

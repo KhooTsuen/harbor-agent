@@ -98,7 +98,7 @@ export function CodexMcpPanel() {
   const merged = { ...settings, ...state, needsRestart: state.needsRestart }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       <SectionTitle hint="让外部 Codex CLI 经本机命名管道调用 Harbor 的工具。默认全关；开着也仍需逐次审批。">
         Codex MCP 桥
       </SectionTitle>

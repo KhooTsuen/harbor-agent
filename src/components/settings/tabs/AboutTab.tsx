@@ -18,11 +18,13 @@ const DEPENDENCIES = [
 
 export function AboutTab() {
   return (
-    <div className="py-4 text-dense leading-relaxed text-fg-secondary">
-      <h3 className="text-body font-semibold text-fg-primary">{BRAND_NAME}</h3>
-      <p className="mt-1 text-2xs text-fg-tertiary">{`版本 ${APP_VERSION}`}</p>
+    <div className="flex flex-col gap-2 py-4 text-dense leading-relaxed text-fg-secondary">
+      <div>
+        <h3 className="text-body font-semibold text-fg-primary">{BRAND_NAME}</h3>
+        <p className="mt-1 text-2xs text-fg-tertiary">{`版本 ${APP_VERSION}`}</p>
+      </div>
 
-      <div className="mt-4 flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
         <p>
           本地优先的个人 AI Agent 工作台。Electron 主进程负责文件、命令和模型请求， 渲染层是
           React，两边通过 preload 的白名单桥通信。
@@ -34,7 +36,7 @@ export function AboutTab() {
       </div>
 
       <SectionTitle>数据放在哪</SectionTitle>
-      <p className="mt-2 text-2xs leading-relaxed text-fg-tertiary">
+      <p className="text-2xs leading-relaxed text-fg-tertiary">
         全部在软件目录的 <span className="font-mono">data/</span> 下：
         <span className="font-mono">config.json</span> 是设置，
         <span className="font-mono">sessions/</span> 是会话（每会话一个 jsonl），
@@ -51,7 +53,7 @@ export function AboutTab() {
       </p>
 
       <SectionTitle>开源许可</SectionTitle>
-      <ul className="mt-2 flex flex-col gap-1 font-mono text-2xs text-fg-tertiary">
+      <ul className="flex flex-col gap-1 font-mono text-2xs text-fg-tertiary">
         {DEPENDENCIES.map((item) => (
           <li key={item}>{item}</li>
         ))}

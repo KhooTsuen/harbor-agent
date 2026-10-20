@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react'
 import type { Toast, ToastKind } from '@/types'
 import { useUIStore } from '@/stores/useUIStore'
+import { useSettingsStore } from '@/stores/useSettingsStore'
 import { colorOf, statusOfToast } from '@/lib/statusLanguage'
 
 /* ══════════════════════════════════════════════════════════════
@@ -119,7 +120,31 @@ function ToastCard({ toast }: { toast: Toast }) {
 export function ToastViewport() {
   const toasts = useUIStore((s) => s.toasts)
   const history = useUIStore((s) => s.toastHistory)
+  const clearToastHistory = useUIStore((s) => s.clearToastHistory)
+  const noticeHistory = useSettingsStore((s) => s.settings.noticeHistory)
   const [showHistory, setShowHistory] = useState(false)
+
+  /*
+   * 第二道（显示处）：开关关掉时，右下角那块**整个不渲染**。
+   *
+   * 为什么显示处还要再判一次（记录处已经拦了新增）：开关可能在真跑的过程中被关掉，
+   * 那时数组里还留着关掉之前的记录；开关还有别的改法（恢复默认 / 导入配置），
+   * 在记录处逐个堵会漏 —— 这是一个必经过的出口。
+   *
+   * 顺带清空一次，保证「重开开关 = 从零开始」（用户明确要的行为）。
+   * ★ 只在**开 → 关那一刻**清，不在「当前是关的」时反复清：
+   *   后者会让「关着启动」也顺手清一遍，于是显示处那条判据失去独立性
+   *   （历史被清空 → 就算显示处没判断也看不到按钮 → 判据永真）。
+   *   反向验证逼出来的细节，别改回去。
+   */
+  const wasOn = useRef(noticeHistory !== false)
+  useEffect(() => {
+    const on = noticeHistory !== false
+    if (wasOn.current && !on) clearToastHistory()
+    wasOn.current = on
+  }, [noticeHistory, clearToastHistory])
+
+  const showNoticeHistory = noticeHistory !== false && history.length > 0
 
   return (
     <div
@@ -127,7 +152,7 @@ export function ToastViewport() {
       aria-live="polite"
       aria-atomic="false"
     >
-      {history.length > 0 ? (
+      {showNoticeHistory ? (
         <div className="pointer-events-auto self-end">
           <button
             type="button"

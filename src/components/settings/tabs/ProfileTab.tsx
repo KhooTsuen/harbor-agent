@@ -23,7 +23,7 @@ export function ProfileTab(): React.ReactElement {
   const showToast = useUIStore((s) => s.showToast)
 
   return (
-    <div className="flex flex-col gap-1 pb-6">
+    <div className="flex flex-col gap-2 pb-6">
       <SectionTitle hint="只影响显示，不参与对话">这是你自己</SectionTitle>
 
       <Row label="名字" hint="显示在侧栏左下角；留空就显示「我」">

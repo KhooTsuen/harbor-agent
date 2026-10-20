@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { PermissionRequest, RightTab, Toast, ToastKind } from '@/types'
 import type { TaskEndPayload, TaskOutcome } from '@/types/notify'
 import { uid } from '@/lib/utils'
+import { useSettingsStore } from './useSettingsStore'
 
 /* ══════════════════════════════════════════════════════════════
    界面状态
@@ -27,6 +28,11 @@ interface UIState {
   permission: PermissionRequest | null
   toasts: Toast[]
   toastHistory: Toast[]
+  /**
+   * 清空「重要通知记录」。开关关掉时调用 —— 这样重新打开开关看到的是空列表，
+   * 而不是关掉之前攒下的旧通知（用户明确要的是「重开从零开始积累」）。
+   */
+  clearToastHistory: () => void
   /**
    * AG-042 控制台要用：底部面板（日志 / 终端）的开合与当前视图。
    * 原来这是 App.tsx 里的局部 state —— 任务行里的「查看 Tool」够不着它。
@@ -204,8 +210,19 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
     set((s) => ({
       toasts: [...s.toasts, toast],
+      /*
+       * 记录处（第一道）：关掉「重要通知记录」就**不再累积**，不是只把按钮藏起来。
+       *
+       * 为什么在记录处判而不是只判显示：留着那份数组等于「界面说关了、后台还在记」——
+       * 开关打开的那一刻，之前攒下的通知会一次性冒出来，用户会以为开关没生效。
+       * 用户选的就是「完全不记录」。
+       *
+       * ★ 只影响**历史数组**：`toasts` 照旧进（上面的提示该弹还弹），
+       *   所以关掉它不等于把错误/警告静音。
+       */
       toastHistory:
-        kind === 'error' || kind === 'warning' || action
+        useSettingsStore.getState().settings.noticeHistory !== false &&
+        (kind === 'error' || kind === 'warning' || action)
           ? [...s.toastHistory, toast].slice(-100)
           : s.toastHistory,
     }))
@@ -213,6 +230,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   hideToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  clearToastHistory: () => set({ toastHistory: [] }),
 
   setBottomPanelOpen: (open) => set({ bottomPanelOpen: open }),
   openBottomPanel: (view) => set({ bottomPanelOpen: true, bottomPanelView: view }),

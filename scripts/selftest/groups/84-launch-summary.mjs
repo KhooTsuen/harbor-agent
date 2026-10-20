@@ -129,12 +129,23 @@ export async function run() {
   check('workspace:scan 注册了', typeof registered.get('workspace:scan') === 'function')
   check('task:testStatus 注册了', typeof registered.get('task:testStatus') === 'function')
 
-  const called = registered.get('workspace:scan')(null, app)
+  /*
+   * ★ 必须 await：2026-10-20 起 `workspace:scan` 走**异步版**
+   * （`scanWorkspaceAsync`）—— 原来的同步版用 spawnSync 跑两条 git 命令，
+   * 实测阻塞主进程 400ms，把同时发生的其他 IPC 从 2.5ms 拖到 455ms。
+   * 这里若忘了 await，拿到的是 Promise，判据会变成一句空话（实测就是这么红的）。
+   */
+  const pending = registered.get('workspace:scan')(null, app)
+  /* 先看它是不是 Promise（只调一次，避免多起一个 git 子进程） */
+  const isAsync = typeof pending?.then === 'function'
+  const called = await pending
   check(
     '★ 真调 workspace:scan：ok:true 且技术栈非空',
     called.ok === true && Array.isArray(called.stack) && called.stack.length > 0,
     JSON.stringify(called).slice(0, 200),
   )
+  /* 钉住「不会退回同步」：handler 必须返回 Promise，否则主进程又会被 git 卡住 */
+  check('★ workspace:scan 是异步的（同步版会把主进程卡住 400ms）', isAsync)
   const ts = registered.get('task:testStatus')(null, { workdir: '' })
   check(
     '真调 task:testStatus：形状对（只读台账，不触任务）',

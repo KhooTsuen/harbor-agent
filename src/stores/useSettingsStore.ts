@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS: Settings = {
   animations: true,
   /* 启动动画默认开（完整启动页）；关掉后跳过启动页直接进主界面 */
   bootAnimation: true,
+  /* 重要通知记录默认开 —— 与加上这个开关之前的行为逐字一致 */
+  noticeHistory: true,
   asciiQuality: 'high',
   asciiReducedMotion: false,
   sidebarWidth: LAYOUT.sidebar.default,
@@ -121,6 +123,8 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     glassmorphism: s.glassmorphism === true,
     animations: s.animations !== false,
     bootAnimation: s.bootAnimation !== false,
+    /* 同 bootAnimation 的口径：只有显式 false 才关，读不懂的值一律当开 */
+    noticeHistory: s.noticeHistory !== false,
     asciiQuality:
       s.asciiQuality === 'medium' || s.asciiQuality === 'low' || s.asciiQuality === 'static'
         ? s.asciiQuality

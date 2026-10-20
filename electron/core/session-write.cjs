@@ -10,6 +10,8 @@ const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const { fileFor, newId, safeTitle, readLines, writeLines, writeMetaLine, serializeLine } = require('./session-io.cjs')
+/* 只读首行的工具：「改 meta」现在不必整篇读（见下方 updateMeta 的说明） */
+const slot = require('./session-meta-slot.cjs')
 
 function normalizeCollabRole(input) {
   if (!input || typeof input !== 'object') return null
@@ -158,12 +160,22 @@ function appendCompact(id, summary, upTo) {
  *
  * 以前是「整篇读 → 整篇重写」：改个标题就可能把坏行永久删掉，
  * 并在写一半时把长会话截断成半个文件。
+ *
+ * ── 2026-10-20：连**取 meta 那一遍**也不整篇读了 ──────────────
+ * 上一版已经把「写」改成只覆盖首行，但这里仍然 `readLines(id)` 整篇解析
+ * 一次 —— 141 MB 的会话实测 2.2 秒，白读了 1100 条消息只为拿第一行。
+ * 现在先用 `slot.readMeta` 只读首行；读不到（老格式 / 坏首行 / 加密换账户）
+ * 才回退整篇，行为与以前一致。
  */
 function updateMeta(id, patch) {
   if (!fs.existsSync(fileFor(id))) return null
 
-  const lines = readLines(id)
-  let meta = lines.find((l) => l.type === 'meta')
+  let meta = slot.readMeta(fileFor(id))?.meta
+  if (!meta) {
+    /* 回退：首行不是可用 meta（老格式 / 坏行）→ 按老办法整篇找 */
+    const lines = readLines(id)
+    meta = lines.find((l) => l.type === 'meta')
+  }
   if (!meta) {
     meta = { type: 'meta', id, title: '新对话', mode: 'pair', model: '', createdAt: Date.now() }
   }
