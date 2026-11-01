@@ -1,18 +1,22 @@
 import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
 import { uid } from '@/lib/utils'
 import { useAppStore } from '../useAppStore'
-import { useTaskStore } from '../useTaskStore'
-import { useAuditStore } from '../useAuditStore'
 import { usePerfStore } from '../usePerfStore'
 import { summarizeArgs } from './parseToolOutput'
-import { handleNoticeEvent } from './noticeEvents'
 import { applyToolProgress } from './toolProgress'
 /* 子代理 v1：它内部的每一步落到那次 `spawn_subagent` 调用上 */
 import { applySubagentEvent } from './subagentEvents'
 import { citationsOf } from './toolCitations'
 import { handleAttachmentEvent } from './attachmentEvents'
-import { askPermissionFor, applyPauseAfterTurn, onCardTimeout } from './confirmEvents'
+import { reconcileFinalRounds } from './finalRounds'
+import { applyPauseAfterTurn } from './confirmEvents'
+import { handleCardEvent } from './cardEvents'
 import { logError } from '@/lib/actionLog'
+import { endedNow } from './turnTiming'
+import { refreshAfterTool } from './toolRefresh'
+/* 重试回滚 + 提示类事件（那边有来由；回滚规则见 retryRollback.ts） */
+import { dispatchLightEvent } from './streamLight'
+import { markRoundStart, type RetryMarks } from './retryRollback'
 
 /* 流式事件落到消息；跨层接线必须真跑，空占位事故见 docs/踩坑记录.md。 */
 
@@ -22,18 +26,20 @@ export interface StreamState {
   reasoning: string
   toolRuns: ToolRunRecord[]
   /**
-   * 一轮一轮的片段（思考 / 工具下标 / 正文）—— 顺序就是发生顺序，三个聚合字段拼不出先后。
-   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })`，否则整场流式会退回三段堆叠。
+   * 一轮一轮的片段（思考 / 工具下标 / 正文），顺序即发生顺序，聚合字段拼不出先后。
+   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })`，否则整场流式退回三段堆叠。
    */
   rounds: MessageRound[]
   citations: NonNullable<Message['citations']>
   /** 把字段写回那条流式消息 */
   patch: (fields: Partial<Message>) => void
-  /** 这一刻的消息对象（`done` 事件里要拿完整字段落盘） */
+  /** 这一刻的消息对象（`done` 里要拿完整字段落盘） */
   snapshot: () => Message
   /** 收尾（取消订阅、清计时器、把 sending 置回 false） */
   finish: () => void
   threadId: string
+  /** 本轮起点 —— `retry` 时退回它，否则「半截 + 整段重说」显示两遍（见 retryRollback.ts） */
+  retryMarks: RetryMarks
 }
 
 /** 当前轮；一片内容都没收到就先把第一轮开出来（不依赖 turn_start 一定到达） */
@@ -42,9 +48,13 @@ function currentRound(state: StreamState): MessageRound {
   if (last) return last
   const fresh: MessageRound = { reasoning: '', content: '', tools: [] }
   state.rounds.push(fresh)
+  /*
+   * 懒建出来的这一轮 = 本轮起点，顺手把重试标记对齐到「现在」（没有 turn_start 的
+   * 那一轮很常见；标记若还停在 0，一次重试会把前面所有的话都退掉）。
+   */
+  state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
   return fresh
 }
-
 /** 把分轮草稿同步到消息上（浅拷贝外层）；不复制的话引用没变 → 界面不重渲 */
 function syncRounds(state: StreamState): MessageRound[] {
   return [...state.rounds]
@@ -93,16 +103,19 @@ export function handleStreamEvent(
     case 'content': {
       /* AG-037：「首字上屏」—— 只在**第一个**字时记一次（这一轮的第一个字） */
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
+      /* 先取轮、再累加：懒建那一轮时标记要记「加这片之前」的长度（见 currentRound） */
+      const round = currentRound(state)
       state.content += String(event.text ?? '')
-      currentRound(state).content += String(event.text ?? '')
+      round.content += String(event.text ?? '')
       state.patch({ content: state.content, rounds: syncRounds(state) })
       return { handled: true }
     }
 
     case 'reasoning': {
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
+      const round = currentRound(state)
       state.reasoning += String(event.text ?? '')
-      currentRound(state).reasoning += String(event.text ?? '')
+      round.reasoning += String(event.text ?? '')
       state.patch({ reasoning: state.reasoning, rounds: syncRounds(state) })
       return { handled: true }
     }
@@ -159,13 +172,10 @@ export function handleStreamEvent(
       else state.toolRuns.push(updated)
 
       /*
-       * AG-005：进度时间线的「动作行」读的是任务台账的 steps，而任务快照只在
-       * 几个离散时机刷新 —— 工具执行期间 status 不变，时间线就永远看不到任何一步
-       * （真机抓到的，单测照不到这种接线）。走事件驱动，每个工具一次，量很小。
+       * 消息状态变了，别的面板得知道（任务台账的进度时间线 + 底栏运行日志）。
+       * 两条为什么必须走事件驱动、为什么是 `void` —— 见 `toolRefresh.ts` 的文件头。
        */
-      void useTaskStore.getState().refresh()
-      /* 底栏那个运行日志也得跟着走 —— 它以前只在打开时拉一次，工具跑完一条都不动 */
-      useAuditStore.getState().bump()
+      refreshAfterTool()
 
       /* 工具输出里能捞出引用（文件 / 网页）—— 见 toolCitations.ts */
       const cited = citationsOf(event, output)
@@ -179,25 +189,17 @@ export function handleStreamEvent(
       return { handled: true }
     }
 
-    /* ── 写操作确认：弹给用户，用户点完回主进程（实现见 confirmEvents.ts）── */
+    /* 交互卡（写操作确认 / 两类卡的超时作废）—— 实现在 confirmEvents.ts，这里只转发 */
     case 'confirm_request':
-      askPermissionFor(event)
-      return { handled: true }
-
-    /* 两类卡的「超时作废」都要收卡：澄清 clarify.timeout / 审批 confirm.timeout
-       （审批那条 2026-10-07 补 —— 不收会把后面所有澄清卡挡死，见 onCardTimeout） */
     case 'clarify.timeout':
     case 'confirm.timeout':
-      runSafely('card.timeout', () => onCardTimeout(event))
-      return { handled: true }
+      return { handled: handleCardEvent(event, type) }
 
-    /*
-     * 新一轮开始 —— 时间线在这里分段。
-     * 以前这个事件被 default 吞掉（那时的理由：「进度靠 phase 体现」），
-     * 于是「哪段思考属于哪一轮」在渲染层就丢了。
-     */
+    /* 新一轮开始 —— 时间线在这里分段（以前被 default 吞掉，「哪段思考属于哪轮」就丢了） */
     case 'turn_start': {
       state.rounds.push({ reasoning: '', content: '', tools: [] })
+      /* 新一轮 = 新的重试起点（重试只退本轮的半截，前面几轮一个字不动） */
+      state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
       /* 立刻挂到消息上 —— 否则新的一轮要等它出了第一个字才在界面上出现 */
       state.patch({ rounds: syncRounds(state) })
       return { handled: true }
@@ -208,14 +210,14 @@ export function handleStreamEvent(
       const finalContent = String(event.content ?? '') || state.content
       /* ★ 顺序：**先收尾，再写字段** —— patch 一抛，finish 就永远轮不到（2026-10-04 事故） */
       runSafely('done.finish', () => state.finish())
-      /* 后台汇总可能不同于逐轮流式正文；rounds 是实际渲染入口，不能只更新聚合字段。 */
-      if (finalContent !== state.content && state.rounds.at(-1)?.content !== finalContent) {
-        state.rounds.push({ reasoning: '', content: finalContent, tools: [] })
-      }
+      /* 后台汇总可能不同于逐轮流式正文；对齐规则在 finalRounds.ts（含「整段显示两遍」的事故） */
+      state.rounds = reconcileFinalRounds(state.rounds, finalContent)
       runSafely('done.patch', () =>
         state.patch({
           content: finalContent,
           reasoning: String(event.reasoning ?? '') || state.reasoning,
+          /* 用时：起点是这条消息的 timestamp（按下发送那一刻），终点是现在 */
+          durationMs: endedNow(state),
           usage: (event.usage ?? undefined) as Message['usage'],
           toolRuns: [...state.toolRuns],
           /* 时间线：逐轮复制一份 —— 别和 state 里的草稿共享引用 */
@@ -225,11 +227,7 @@ export function handleStreamEvent(
           kind: 'text',
         }),
       )
-      /*
-       * 批⑤：「先不做了」的收尾。必须**放在这里**（而不是点按钮那一刻）——
-       * done 是主进程那次收尾写（正常结束 → completed）**之后**才到的，
-       * 这时候才写得上 `paused`。理由与踩坑过程写在 `confirmEvents` 的 `pauseAfterTurn`。
-       */
+      /* 批⑤：「先不做了」的收尾必须等 done（主进程收尾写完才写得上 paused，见 confirmEvents） */
       runSafely('done.pauseAfterTurn', () => applyPauseAfterTurn(String(event.requestId ?? '')))
       return { handled: true, notifyDone: true }
     }
@@ -242,6 +240,8 @@ export function handleStreamEvent(
           status: 'sent',
           content: state.content,
           interrupted: true,
+          /* 被停掉的那条也有用时（停在哪一刻就是哪一刻）—— 别因为「没正常结束」就不记 */
+          durationMs: endedNow(state),
           /* 被停掉的那条也要留住时间线：落盘只认消息上的 rounds，不挂就存不下去 */
           rounds: syncRounds(state),
         }),
@@ -253,7 +253,14 @@ export function handleStreamEvent(
       const message = String(event.message ?? '未知错误')
       runSafely('error.finish', () => state.finish())
       runSafely('error.patch', () =>
-        state.patch({ status: 'error', kind: 'error', errorText: message, content: message }),
+        state.patch({
+          status: 'error',
+          kind: 'error',
+          errorText: message,
+          content: message,
+          /* 失败也算「用户等了多久」，照实记 */
+          durationMs: endedNow(state),
+        }),
       )
       return { handled: true }
     }
@@ -264,31 +271,23 @@ export function handleStreamEvent(
       return { handled: true }
     }
 
-    /* ── 提示类事件：不改消息，但要让用户看见（实现见 noticeEvents.ts）── */
+    /* 重试 / 提示类事件整块在 streamLight.ts（重试要先把半截退掉，否则同段话两遍） */
+    case 'retry':
     case 'boundary':
     case 'budget':
     case 'notice':
-    case 'retry':
     case 'fallback':
     case 'context_overflow':
-    case 'review': {
-      handleNoticeEvent(event)
-      return { handled: true }
-    }
+      return { handled: dispatchLightEvent(type, event, state) }
 
     /*
      * 这些不落到消息上，也不打扰用户：
-     *   turn_start / turn_end  —— 进度，界面靠线程状态体现（phase）
-     *   mode / route           —— 意图分类与模型选择，属于调试信息
-     *   task                   —— 任务台账走 IPC 读（见任务中心），不走事件流
+     *   turn_end —— 进度，界面靠线程状态体现（phase）；mode / route —— 属调试信息；
+     *   task —— 任务台账走 IPC 读（任务中心），不走事件流
      */
     case 'plan': {
-      /*
-       * AG-004：计划变了。事件里那份够画卡片，但任务的**版本历史**在台账里 ——
-       * 让 useTaskStore 重读一遍，不在事件流里维护第二份真相。
-       * 频率很低（只在计划真的变了才发），不值得再做个增量协议。
-       */
-      void useTaskStore.getState().refresh()
+      /* AG-004：计划变了 → 让 useTaskStore 重读（和工具跑完走同一条刷新，见 toolRefresh.ts） */
+      refreshAfterTool()
       return { handled: true }
     }
 

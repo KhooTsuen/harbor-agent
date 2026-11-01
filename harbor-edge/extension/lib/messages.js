@@ -31,7 +31,7 @@ export function createPanelRouter(h) {
   /** 异步应答：返回 Promise */
   const ASYNC = {
     'read-page': (m) => h.readActivePage(m),
-    'observe-page': () => h.observePage(),
+    'observe-page': (m) => h.observePage(m),
     /* M04-1：只要元素列表（可带 ref —— 失效由主进程判） */
     'get-elements': (m) => h.getElements(m.ref),
     'session-list': () => h.getSessionList(),
@@ -43,6 +43,11 @@ export function createPanelRouter(h) {
     'session-new': () => h.newSession(),
     /* M02-A2：**真正**停止这条会话正在跑的那一轮（回执来自主进程，不是本地假装） */
     'chat-abort': (m) => h.abortChat(m.sessionId),
+    'chat-regenerate': (m) => h.regenerateChat(m.sessionId),
+    'selection-draft': (m) => h.saveSelectionDraft(m.text, m.url),
+    'site-list': () => h.listSites(),
+    'site-block-temporary': (m) => h.setTemporaryBlock(m.url, m.minutes),
+    'site-unblock': (m) => h.unblockSite(m.url),
   }
 
   return (msg, _sender, sendResponse) => {
@@ -76,4 +81,9 @@ export const PANEL_MESSAGE_TYPES = [
   'session-select',
   'session-new',
   'chat-abort',
+  'chat-regenerate',
+  'selection-draft',
+  'site-list',
+  'site-block-temporary',
+  'site-unblock',
 ]

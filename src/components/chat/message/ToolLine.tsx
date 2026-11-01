@@ -56,8 +56,20 @@ export function describeRuns(runs: readonly ToolRunRecord[]): string {
   return head.join('、') + (rest > 0 ? ` 等 ${buckets.length} 类` : '')
 }
 
-export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
-  const [open, setOpen] = useState(false)
+export function ToolLine({
+  runs,
+  hideMeta = false,
+}: {
+  runs: ToolRunRecord[]
+  /**
+   * 运行中传 true：**不显示「· N 步」与耗时合计**。
+   * 这两个数每来一步就变一次，整行会一直跳 —— 用户明确要「跑的时候不要实时统计」。
+   * 展开的明细一条不少，只是不在摘要行上报数。
+   */
+  hideMeta?: boolean
+}) {
+  /** 用户点过之后就听用户的（`null` = 还没表态） */
+  const [manual, setManual] = useState<boolean | null>(null)
   /*
    * 展开/折叠 = 迁移规则 4（用户自己去动布局）→ FREE，别替他重新滚回去。
    * 和 ThinkBlock 一个规矩。
@@ -67,6 +79,12 @@ export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
 
   const running = runningOf(runs)
   const failedCount = runs.filter((run) => !run.ok && run.ms !== undefined).length
+  /*
+   * 有失败且没在跑 → **默认展开明细**：失败发生在哪一步、原因是什么，
+   * 不该再藏一层（用户验收表：失败要「显示失败发生在哪一步及真实错误」）。
+   * 跑的时候不默认展开 —— 每来一步就重排一次，界面会抖。
+   */
+  const open = manual ?? (failedCount > 0 && !running)
   const totalMs = runs.reduce((sum, run) => sum + (run.ms ?? 0), 0)
   /*
    * Phase 7 二期：这组工具映射到同一枚图标时才显示（「读取 4 个文件」配文件图标）；
@@ -82,7 +100,7 @@ export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
       <button
         type="button"
         onClick={() => {
-          setOpen((value) => !value)
+          setManual(!open)
           guard?.enterFree()
         }}
         aria-expanded={open}
@@ -100,19 +118,30 @@ export function ToolLine({ runs }: { runs: ToolRunRecord[] }) {
         {GroupIcon ? <GroupIcon size={11} className="shrink-0 text-fg-tertiary" /> : null}
         <span className="min-w-0 truncate">{describeRuns(runs)}</span>
         {/*
+          状态文字（图2 验收表）：成功 / 失败 / 进行中**三选一**，右侧固定位置。
+          以前只有颜色和图标 —— 色弱用户、以及「这条到底成了没有」这件事
+          全靠猜。★ 进行中是中性灰，**不提前标成功**（还在跑的那一步可能失败）；
+          ★ 成功用状态色，和失败的红色成对，不是「失败才显眼」。
+        */}
+        <span
+          className="shrink-0"
+          data-tool-status={running ? 'running' : failedCount > 0 ? 'failed' : 'completed'}
+          style={{
+            color: running ? undefined : failedCount > 0 ? colorOf('failed') : colorOf('completed'),
+          }}
+        >
+          {running ? '进行中' : failedCount > 0 ? `${failedCount} 项失败` : '成功'}
+        </span>
+        {/*
           几步、多久 —— VS Code 那行「Completed 58 steps in 8m 23s」就是这个意思。
           一步一步时没必要报数（那一句本身就点了名）。
+          ★ 「几个失败」已经并进上面那个状态字里了（写成「2 项失败」），
+            这里不再重复报一次 —— 一行里出现两个失败计数最容易看成两条不同的事。
         */}
-        {runs.length > 1 ? (
+        {runs.length > 1 && !hideMeta ? (
           <span className="shrink-0 font-mono text-fg-tertiary">· {runs.length} 步</span>
         ) : null}
-        {/* 失败要单独报个数 —— 只把图标变红，用户不知道错了几个 */}
-        {failedCount > 0 ? (
-          <span className="shrink-0 font-mono" style={{ color: colorOf('failed') }}>
-            · {failedCount} 个失败
-          </span>
-        ) : null}
-        {totalMs > 0 ? (
+        {totalMs > 0 && !hideMeta ? (
           <span className="shrink-0 font-mono text-fg-tertiary">· {formatMs(totalMs)}</span>
         ) : null}
       </button>

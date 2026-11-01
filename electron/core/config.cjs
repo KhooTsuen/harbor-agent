@@ -1,7 +1,7 @@
 /**
  * 配置：读写（字段校验在 config-normalize.cjs，默认值在 config-defaults.cjs）。
  * ★ apiKey **不落这个文件**：老配置的明文 key 首次加载时搬进凭证库（credentials.cjs）
- *   并从文件抹掉；界面看到的永远是掩码 + `hasKey`。
+ *   并从文件抹掉；界面看到的永远是掩码 + `hasKey`。落盘走原子写，先落盘再换内存。
  */
 
 const fs = require('node:fs')
@@ -11,6 +11,7 @@ const C = require('./config-defaults.cjs')
 const { normalize } = require('./config-normalize.cjs')
 const log = require('./log.cjs')
 const credentials = require('./credentials.cjs')
+const { writeAtomic } = require('./safe-write.cjs') /* 内核唯一那份文本原子写 */
 const redact = require('./redact.cjs')
 const providerCaps = require('./provider-capabilities.cjs')
 /* 后端种类（openai / codex-cli）与「需不需要 Key」—— 判据的**唯一一处**（硬约束 #9） */
@@ -119,15 +120,15 @@ function load() {
 
 function writeFile(cfg) {
   fs.mkdirSync(DIRS.data, { recursive: true })
-  fs.writeFileSync(configFile(), JSON.stringify(stripInternal(cfg), null, 2), 'utf8')
+  writeAtomic(configFile(), JSON.stringify(stripInternal(cfg), null, 2))
 }
 
 function save(next) {
   const merged = normalize(next ?? cache)
   merged.updatedAt = Date.now()
   migrateLegacySecrets(merged)
+  writeFile(merged) // ★ 先落盘，成功了才换内存：反了就是「内存新值 / 磁盘旧值」，下次保存别的字段会把脏值带进磁盘
   cache = merged
-  writeFile(merged)
   return merged
 }
 
@@ -257,10 +258,10 @@ function removeProviderSecrets(provider) {
 }
 
 function reset() {
-  cache = null
   const fresh = normalize(null)
-  cache = fresh
+  /* 同 save：写成功才生效；写不进去时缓存还是旧的那份（旧文件也没被动过） */
   writeFile(fresh)
+  cache = fresh
   return fresh
 }
 

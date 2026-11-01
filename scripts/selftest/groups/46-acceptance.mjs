@@ -36,11 +36,20 @@ export async function run() {
       existsSync(join(ROOT, 'src/components/chat/TaskConsole.tsx')),
   )
 
-  /* ③ Tool 默认不刷屏 */
+  /*
+   * ③ Tool 默认不刷屏（折叠）
+   *
+   * 判据钉的是**行为语义**，不是某一种 hook 写法：
+   *   · 有「用户没表态时按默认、点过之后听用户的」这层（`manual ??`）；
+   *   · 默认里带 `!run.ok` —— 成功的那一步收起，只有失败的才摊开。
+   * 以前扣的是 `useState(false)` 这个字符串：ToolRuns 改成 `useState<boolean|null>(null)`
+   * （2026-10-21 失败行默认摊开）之后它就误红了 —— 行为一直是对的，红的是判据。
+   */
   const toolRunsSrc = src('src/components/chat/ToolRuns.tsx')
+  const toolDefault = toolRunsSrc.match(/const open = manual \?\? ([^\n]+)/)?.[1] ?? ''
   check(
-    '③ Tool 默认不刷屏（折叠）',
-    toolRunsSrc.includes('useState(false)') || toolRunsSrc.includes('defaultOpen'),
+    '③ Tool 默认不刷屏（成功收起，失败才摊开）',
+    toolDefault.length > 0 && toolDefault.includes('!run.ok'),
   )
 
   /* ④ 长任务有明确进度：计划勾选 + 进度数字（行为） */

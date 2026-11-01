@@ -103,10 +103,15 @@ describe('AG-008 / activityLabel', () => {
 })
 
 describe('AG-008 / 接线守卫', () => {
-  it('消息占位用 activityLabel（断言完整表达式，不是关键词）', () => {
+  it('消息占位交给时间线的实时活动（不再在 MessageItem 里自己拼一行）', () => {
     const src = read('src/components/chat/MessageItem.tsx')
-    expect(src).toContain('activityLabel(message.toolRuns ?? [], message.phase)')
-    expect(src).not.toContain("phaseLabel(message.phase) || '正在处理…'")
+    /* 空时间线（刚发送、一轮未结束）也挂 MessageRounds —— 入口与活动句都在它那儿 */
+    expect(src).not.toContain('phaseLabel(message.phase)')
+    expect(src.match(/<MessageRounds/g)?.length).toBe(2)
+    /* 那个「现在在干什么」由 liveActivityLabel 说（带「正在等待模型回应…」口径） */
+    expect(read('src/components/chat/message/MessageRounds.tsx')).toContain(
+      'liveActivityLabel(toolRuns, message?.phase)',
+    )
   })
 
   it('顶栏显示活动，且取自最后一条助手消息（不是 at(-1)）', () => {

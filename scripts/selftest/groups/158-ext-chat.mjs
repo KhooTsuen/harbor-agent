@@ -97,6 +97,13 @@ export async function run() {
   const rOther = makeRelay({ busy: ['sess_other'] })
   check('★ 别的会话在跑不算忙（只比 sessionId）', rOther.relay.handleSend({ text: 'hi' }).ok === true)
 
+  group('扩展对话 · 重新生成转给真实渲染层')
+  const rRegen = makeRelay()
+  const regen = rRegen.relay.handleRegenerate({ sessionId: 'sess_a' })
+  check('重新生成只向目标会话下发事件', regen.ok === true && rRegen.pushed[0]?.payload?.type === CH.EXT_REGENERATE && rRegen.pushed[0]?.payload?.sessionId === 'sess_a')
+  check('目标忙时拒绝重新生成', makeRelay({ busy: ['sess_a'] }).relay.handleRegenerate({ sessionId: 'sess_a' }).error?.code === P.ERR.SESSION_BUSY)
+  check('主窗口缺席时不假称已重新生成', makeRelay({ win: null }).relay.handleRegenerate({ sessionId: 'sess_a' }).error?.code === P.ERR.NO_WINDOW)
+
   /* ── ②b Phase 3c：选一条 / 新建一条 ── */
   group('扩展对话 · 选会话 / 新建（Phase 3c）')
 
@@ -209,7 +216,20 @@ export async function run() {
   check('★ SW 有 chat-resume 入口', /'chat-resume'/.test(swSrc) && /resumeChat/.test(swSrc))
   check('★ SW 有 session-active 入口', /'session-active'/.test(swSrc))
   check('★ 侧边栏有输入框 + 发送（真的能发）', /消息输入框/.test(panelSrc) && /chat-send/.test(panelSrc))
-  check('★ 侧边栏只认更大 seq（防重排把旧片盖上来）', /seq <= prev\.seq/.test(panelSrc))
+  /*
+   * ★ 2026-10-20 修：这条判据原来只查 `ChatPanel.tsx`。M02-B 把「收事件 + 累加」
+   *   整块搬进了 `useChatStream.ts`（ChatPanel 已贴 300 红线），于是源码里还在，
+   *   只是换了文件 → 判据假红。现在两个文件都认：**行为只要还在，在哪实现都算过**。
+   */
+  const streamSrc = readFileSync(join(ROOT, 'harbor-edge/src/sidepanel/useChatStream.ts'), 'utf8')
+  check(
+    '★ 侧边栏只认更大 seq（防重排把旧片盖上来）',
+    /* 旧片丢弃的判据是「seq 不大于已有的就跳过」—— 两种写法都算：
+       ① `if (seq <= prev.seq) return` ② `if (!seq || seq > prev.seq) { ... }` */
+    /seq\s*<=\s*prev\.seq/.test(panelSrc) ||
+      /seq\s*<=\s*prev\.seq/.test(streamSrc) ||
+      /seq\s*>\s*prev\.seq/.test(streamSrc),
+  )
   check('★ 侧边栏显示的是主进程给的原话（不自己编错误文案）', /res\?\.error/.test(panelSrc))
   check('★ 3c：侧边栏**已做**切会话（点条目 → session-select）', /onSelectSession/.test(panelSrc))
   check('★ 3c：SW 有选会话 / 新建入口', /'session-select'/.test(swSrc) && /'session-new'/.test(swSrc))

@@ -200,6 +200,11 @@ async function main() {
   rec('⑤ 扩展连上 Harbor 的管道', conn > 0, `连接数=${conn}`)
   if (!conn) return false
 
+  const edgeText = await tools.execute('edge_read', {}, { ...ctx, origin: 'edge-sidepanel' })
+  rec('⑤a 侧边栏工具真读当前 Edge 页面', String(edgeText).includes('工具验收页') && String(edgeText).includes(`127.0.0.1:${PORT_PAGE}`), String(edgeText).slice(0, 120))
+  const wrongBrowser = await tools.execute('browse', { url: `http://127.0.0.1:${PORT_PAGE}/` }, { ...ctx, origin: 'edge-sidepanel' })
+  rec('⑤b 侧边栏来源不能暗中切到内置浏览器', String(wrongBrowser).includes('不要改用 Harbor 内置浏览器'), String(wrongBrowser).slice(0, 120))
+
   /* ══ ⑥ 工具能被调用：edge_page（读元素）══ */
   const r1 = await call('edge_page', {})
   const ver1 = (String(r1).match(/页面版本[：:]\s*([0-9a-f]+)/) ?? [])[1] ?? ''

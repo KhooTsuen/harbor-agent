@@ -129,9 +129,15 @@ describe('AG-005 / 接线守卫', () => {
      * activeStatus 变化时刷新，而工具执行期间 status 不变 →
      * 时间线只有阶段行、没有动作行。修法是工具事件里主动 refresh。
      */
+    /*
+     * 2026-10-21：刷新实现搬到了 `toolRefresh.ts`（streamEvents 贴 300 行红线）。
+     * 两处都要钉：事件分支里真的调了那个入口，入口里真的做了 refresh。
+     */
     const src = read('stores/thread/streamEvents.ts')
     const block = src.slice(src.indexOf("case 'agent.tool.completed'"))
-    expect(block.slice(0, 1400)).toContain('useTaskStore.getState().refresh()')
+    expect(block.slice(0, 1400)).toContain('refreshAfterTool()')
+    const refresh = read('stores/thread/toolRefresh.ts')
+    expect(refresh).toContain('useTaskStore.getState().refresh()')
   })
 
   it('★ 相位历史是事件驱动记的（setThreadPhase 里），不是渲染层自己推断', () => {

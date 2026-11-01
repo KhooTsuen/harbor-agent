@@ -18,6 +18,7 @@ import { ModelsPanel } from './panels/ModelsPanel'
 import { AppearanceTab } from './tabs/AppearanceTab'
 import { SettingsSearchBox } from './SettingsSearchBox'
 import { useConfigSaveStatus } from '@/stores/configSaveStatus'
+import { resetAllSettings } from '@/lib/resetAllSettings'
 
 /* ══════════════════════════════════════════════════════════════
    设置
@@ -38,7 +39,6 @@ export function SettingsModal() {
   const showToast = useUIStore((s) => s.showToast)
   const askPermission = useUIStore((s) => s.askPermission)
 
-  const resetSettings = useSettingsStore((s) => s.resetSettings)
   const configSaveState = useConfigSaveStatus((s) => s.state)
   const settingsView = useSettingsStore((s) => s.settings.settingsView)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
@@ -85,6 +85,12 @@ export function SettingsModal() {
       height="h-[min(880px,88vh)]"
       footer={
         <>
+          {/*
+            第二阶段：这是**唯一**的重置入口实现（lib/resetAllSettings.ts）。
+            它同时重置本地界面偏好**和**后端配置，并按真实结果给话 ——
+            后端失败时说「只重置了一部分」，不再报「设置已恢复默认」。
+            名称与「数据与用量 → 重置设置」一致，两处说的都是同一个范围。
+          */}
           <Button
             variant="ghost"
             size="sm"
@@ -92,18 +98,27 @@ export function SettingsModal() {
             onClick={() => {
               askPermission({
                 kind: 'clear-data',
-                title: '恢复所有默认设置？',
-                description: '主题、布局宽度、开关都会回到初始状态。对话数据不受影响。',
-                confirmText: '恢复默认',
+                title: '重置所有设置？',
+                description:
+                  '界面偏好（主题、布局宽度、开关）和后端配置（默认工作目录、权限、供应商）都会回到默认值。对话、记忆和任务记录不受影响。',
+                confirmText: '重置设置',
                 danger: true,
                 onConfirm: () => {
-                  resetSettings()
-                  showToast('success', '设置已恢复默认')
+                  void (async () => {
+                    const result = await resetAllSettings()
+                    const level =
+                      result.outcome === 'ok'
+                        ? 'success'
+                        : result.outcome === 'partial'
+                          ? 'info'
+                          : 'error'
+                    showToast(level, result.message, result.detail)
+                  })()
                 },
               })
             }}
           >
-            恢复默认
+            重置设置
           </Button>
           <Button variant="primary" size="sm" onClick={closeSettings}>
             完成
@@ -173,7 +188,8 @@ export function SettingsModal() {
           */}
           {hiddenTabs.length > 0 ? (
             <p className="mb-2 rounded-sm border border-line-hairline bg-bg-raised/30 px-2 py-1.5 text-2xs leading-relaxed text-fg-secondary">
-              另有 {hiddenTabs.map((item) => item.label).join('、')} 等专业设置**仍在生效**。
+              另有 {hiddenTabs.map((item) => item.label).join('、')} 等专业设置
+              <strong className="font-semibold">仍在生效</strong>。
               <button
                 type="button"
                 className="ml-1 underline hover:text-fg-primary"

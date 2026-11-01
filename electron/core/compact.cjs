@@ -9,15 +9,14 @@
  * 到阈值时前端会提示，用户也可以手动压。
  */
 
-const llm = require('./llm.cjs')
 const log = require('./log.cjs')
-
-/**
- * 摘要提示词。
- *
- * 关键是把「必须留住什么」写清楚 —— 编程对话里最容易在摘要中丢失的是
- * **文件路径、函数名、已经做过的决定**，这些丢了模型会重复问或者重复改。
+/*
+ * 分块实现整体在 compact-chunked.cjs（那份文件管「怎么切、怎么迭代」）。
+ * ★ 发请求、估算 token、块大小常量**都从那边来** —— 本文件不留第二份
+ *   （同一个公式写两遍，改一处忘另一处，压缩口径就会前后不一致）。
  */
+const chunked = require('./compact-chunked.cjs')
+
 const SUMMARY_SYSTEM = `你的任务是把一段编程对话压缩成简洁摘要，供后续对话当作背景使用。
 
 必须严格按下面结构输出：
@@ -51,17 +50,22 @@ const SUMMARY_SYSTEM = `你的任务是把一段编程对话压缩成简洁摘�
 /**
  * 给一段对话生成摘要。
  *
+ * ★ 2026-10-20 起支持**分块**（修「压缩请求本身超限」，见 compact-chunked.cjs）：
+ *   `maxInputTokens` 是这次可用的窗口。不给（或 0）就走老的单次路径 ——
+ *   保持向后兼容，老调用方不传它也照旧能用。
+ *
  * @param {object} options
  * @param {string} options.baseUrl
  * @param {string} options.apiKey
  * @param {string} [options.chatPath]
  * @param {string} options.model
  * @param {Array<{role: string, content: string}>} options.messages
+ * @param {number} [options.maxInputTokens] 窗口 token 数（不给 = 单次发，老行为）
  * @param {AbortSignal} [options.signal]
  * @returns {Promise<string>} 摘要文本
  */
 async function summarize(options) {
-  const { messages, signal } = options
+  const { messages } = options
 
   /* 只取 user / assistant 的文本，工具调用记录不进摘要 */
   const transcript = messages
@@ -71,25 +75,48 @@ async function summarize(options) {
 
   if (!transcript.trim()) throw new Error('这段对话没有可压缩的内容')
 
-  const result = await llm.chatStream({
-    baseUrl: options.baseUrl,
-    apiKey: options.apiKey,
-    chatPath: options.chatPath,
-    model: options.model,
-    messages: [
-      { role: 'system', content: SUMMARY_SYSTEM },
+  const windowTokens = Number(options.maxInputTokens) > 0 ? Number(options.maxInputTokens) : 0
+  const total = chunked.estimateTokens(transcript)
+  /* 放得下（或调用方没给窗口）就一次发 —— 老行为，也省掉分块开销 */
+  const fits = !windowTokens || total <= chunked.CHUNK_TOKENS
+
+  if (fits) {
+    const summary = await chunked.askModel(options, SUMMARY_SYSTEM, [
       { role: 'user', content: `请压缩下面这段对话：\n\n${transcript}` },
-    ],
-    temperature: 0.3,
-    maxTokens: 1200,
-    signal,
-  })
+    ])
+    log.info(`生成摘要 ${summary.length} 字（覆盖 ${messages.length} 条消息，单次 ${total} token）`)
+    return summary
+  }
 
-  const summary = result.content.trim()
-  if (!summary) throw new Error('模型没有返回摘要')
+  return chunked.summarizeChunked({ ...options, transcript, windowTokens })
+}
 
-  log.info(`生成摘要 ${summary.length} 字（覆盖 ${messages.length} 条消息）`)
-  return summary
+/**
+ * 这个模型能吃多少 token —— **窗口解析的唯一一处**。
+ *
+ * 为什么单独抽出来（2026-10-20 真机逮到）：压缩有**两条入口**，
+ *   · 用户手动压 → `handlers/compact.cjs`
+ *   · 上下文超限自动压 → `loop-model.cjs` 的 `compactMessages()`
+ * 修「压缩本身超限」时只改了前者，后者仍在整段发 —— 于是自动压缩照样 400。
+ * 现在两边都从这里取，口径不可能再漂（硬约束 #9）。
+ *
+ * 拿不到（模型不认识 / 能力表没有）就返回 0 —— 调用方据此退回「整段发」的老路径，
+ * 与之前行为一致，不因为查不到就把调用弄坏。
+ *
+ * @param {object} provider 供应商（要用它的 `modelCapabilities` 与后端种类）
+ * @param {string} model 模型名
+ * @returns {number} 窗口 token 数；0 = 查不到
+ */
+function windowOf(provider, model) {
+  try {
+    /* 延迟 require：本模块在压缩路径上被反复加载，顶层引入会拖慢启动 */
+    const capsOf = require('./provider-capabilities.cjs')
+    const caps = capsOf.resolve(String(model ?? ''), provider && provider.modelCapabilities, provider)
+    const n = Number(caps && caps.caps && caps.caps.context_window)
+    return n > 0 ? n : 0
+  } catch {
+    return 0
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -97,15 +124,13 @@ async function summarize(options) {
    ══════════════════════════════════════════════════════════════ */
 
 /**
- * 粗略估算 token 数。
+ * 粗略估算 token 数 —— **直接复用 chunked 那一份**（同一个系数不能写两遍）。
  *
  * 不引入 tokenizer：那要下载几 MB 的词表，而且不同模型的分词还不一样。
  * 经验值：中文约 1.5 字/token，英文约 4 字符/token，
  * 混着算取 chars / 3 偏保守（宁可早压，不要到上限才压）。
  */
-function estimateTokens(text) {
-  return Math.ceil(String(text).length / 3)
-}
+const estimateTokens = chunked.estimateTokens
 
 /** 一次请求大概会占多少 token（历史 + 系统提示的粗估） */
 function estimateHistoryTokens(messages) {
@@ -152,6 +177,7 @@ function shouldCompact(messages, maxTokens) {
 
 module.exports = {
   summarize,
+  windowOf,
   rebuild,
   estimateTokens,
   estimateHistoryTokens,

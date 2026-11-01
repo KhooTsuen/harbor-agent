@@ -37,7 +37,19 @@ async function bootstrap(): Promise<void> {
     useSettingsStore.getState().syncFromConfig(configToSettings(config, current))
   }
 
-  if (workdir) useAppStore.setState({ workdir })
+  if (workdir) {
+    useAppStore.setState({ workdir })
+    /*
+     * ★ 2026-10-31 第二阶段：**同时**写进 configStore。
+     *
+     * 它是设置页「当前生效：…」那行读的地方（`WorkdirRow`），而这里以前只写
+     * appStore（会话列表 / 文件树用的那份）。于是重启后主进程明明返回了正确目录，
+     * 设置页却还显示「data/chat（默认）」—— 显示值和实际生效值不一致，
+     * 第二阶段明确要求「重启后两者一致」（真机 T7 逮到的）。
+     * 两份存的是同一个值，启动时必须在**同一个地方**一起填。
+     */
+    useConfigStore.setState({ workdir })
+  }
   await useAppStore.getState().loadFromDisk()
 
   const saved = useSettingsStore.getState().settings.lastThreadId

@@ -40,6 +40,7 @@ const applyTestFix = require('./apply_test_fix.cjs')
 const restoreTestFix = require('./restore_test_fix.cjs')
 /* ── edge_*：操作**用户自己的 Edge**（与 browse_* 那族操作内嵌浏览器不是一回事）── */
 const edgePage = require('./edge-page.cjs')
+const edgeRead = require('./edge-read.cjs')
 const edgeClick = require('./edge-click.cjs')
 const edgeType = require('./edge-type.cjs')
 const edgeSelect = require('./edge-select.cjs')
@@ -83,6 +84,7 @@ const ALL = [
   restoreTestFix,
   /* edge_* —— 操作**用户自己的 Edge**（经扩展 ↔ host ↔ 主进程那条链） */
   edgePage,
+  edgeRead,
   edgeClick,
   edgeType,
   edgeSelect,

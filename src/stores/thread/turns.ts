@@ -21,6 +21,8 @@ import {
   type TurnSetter,
 } from './turnControl'
 import { createReplyPersistence } from './replyPersistence'
+/* 重试起点：`retry` 时要把这一轮已经流出去的半截退掉（见 retryRollback.ts） */
+import { markRoundStart } from './retryRollback'
 import { createTurnWatchdog } from './turnWatchdog'
 import { drainPendingRegen } from './regenQueue'
 import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
@@ -76,6 +78,7 @@ export async function runElectronTurn(
     regenerateIsLast?: boolean
     /** 兜底时钟的「静默阈值」覆盖值 —— **只给测试用**（默认 `TURN_TIMEOUT_MS`），真机不改 */
     turnSilenceMs?: number
+    origin?: 'edge-sidepanel'
   } = {},
 ): Promise<void> {
   const seedAnswers = opts.seedAnswers ?? []
@@ -228,6 +231,8 @@ export async function runElectronTurn(
     citations,
     patch,
     threadId,
+    /* 重试起点：按下发送那一刻（后面每个 turn_start 会重记，见 streamEvents） */
+    retryMarks: markRoundStart(content, reasoning, rounds),
     snapshot: () => ({ ...placeholder, content, reasoning, toolRuns, citations, rounds }),
     finish: () => {
       finish()
@@ -269,6 +274,7 @@ export async function runElectronTurn(
         ...(thread?.workdir ? { workdir: thread.workdir } : {}),
         ...(thread?.collab ? { collab: thread.collab } : {}),
         ...(opts.reason ? { reason: opts.reason } : {}),
+        ...(opts.origin ? { origin: opts.origin } : {}),
         ...(opts.regeneratedFrom
           ? {
               regeneratedFrom: opts.regeneratedFrom,

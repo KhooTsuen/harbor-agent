@@ -61,6 +61,25 @@ function createActions(deps) {
   const getElements = deps.getElements
   const landAction = deps.landAction
 
+  /**
+   * 业务性非成功（带 `reason`，如 `duplicate` / `site-blocked` / `no-result`）**原样落盘**，
+   * 不要包装成「浏览器没回可用的结果」。
+   *
+   * ★ 2026-10-20 真机逮到（`accept-ownership` ⑮e）：去重回 `{ok:false, reason:'duplicate'}`
+   *   （**没有** `error` 字段），旧兜底 `res && res.error ? res : fail(INTERNAL, '浏览器没回可用的结果')`
+   *   把它吞成了 INTERNAL —— 用户看到「浏览器没回可用的结果」，完全猜不到「这是重复、别重试」。
+   *   `click` 早就有 `!res.reason` 保护，其余四个动作没有（口径不一致，正是硬约束 #9 要防的）。
+   *
+   * @returns {object|null} 非 null = 已落盘，调用方直接返回它
+   */
+  function refusedOrNull(kind, res, meta) {
+    if (!res || typeof res !== 'object') return null
+    if (res.ok === true || !res.reason) return null
+    /* 这两种 staleOr 已翻成人话并落过盘，别再盖一层 */
+    if (res.reason === 'page-changed' || res.reason === 'not-found') return null
+    return landAction(kind, res, { ...meta, refused: true, reason: res.reason })
+  }
+
   const fail = (code, message) => ({ ok: false, error: { code, message } })
 
   /**
@@ -86,6 +105,13 @@ function createActions(deps) {
     return landAction(kind, res, meta)
   }
 
+  function finishAction(kind, res, meta) {
+    const refused = refusedOrNull(kind, res, meta)
+    if (refused) return refused
+    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+    return done(kind, res, meta)
+  }
+
   /**
    * `browser.type`：往输入框填文本。**敏感字段拒绝**（扩展侧先判、先拒）。
    */
@@ -99,6 +125,9 @@ function createActions(deps) {
       ref,
       text: String(payload.text ?? ''),
       clear: payload.clear !== false,
+      /* ★ 2026-10-20：把点之前那版一起下发 —— 扩展侧去重指纹要它。
+         不给的话「页面变了、要再填一次同样的字」会被误判成重复（见 command-run 的 NEEDS_PAGE_VERSION）。 */
+      pageVersion: String(pre.pageVersion ?? ''),
     })
     /* 敏感字段：**拒绝**，页面未被改动 —— 用专门的码，别混进「操作失败」 */
     if (res && res.reason === 'sensitive-field') {
@@ -106,8 +135,7 @@ function createActions(deps) {
     }
     const st = staleOr(res)
     if (st) return st
-    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
-    return done('type', res, { ref })
+    return finishAction('type', res, { ref })
   }
 
   /** `browser.select`：下拉框选值 */
@@ -117,13 +145,20 @@ function createActions(deps) {
     const pre = await checkRef(ref)
     if (pre.ok !== true) return pre
 
-    const res = await call('select', { ref, value: payload.value, label: payload.label, index: payload.index })
+    const res = await call('select', {
+      ref,
+      value: payload.value,
+      label: payload.label,
+      index: payload.index,
+      /* 同上：去重指纹要版本（页面变了就能再选一次同样的值） */
+      pageVersion: String(pre.pageVersion ?? ''),
+    })
     const st = staleOr(res)
     if (st) return st
     if (!res || res.ok !== true) {
       /* 「找不到这个选项」是正常业务分支（不是异常）—— 原样回，让调用方看见可选值 */
       if (res && res.reason === 'option-not-found') return landAction('select', res, { ref, notFound: true })
-      return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
+      return finishAction('select', res, { ref })
     }
     return done('select', res, { ref })
   }
@@ -139,8 +174,7 @@ function createActions(deps) {
     const res = await call('scroll', { ref, to: payload.to, dy: payload.dy })
     const st = staleOr(res)
     if (st) return st
-    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
-    return done('scroll', res, { ref })
+    return finishAction('scroll', res, { ref })
   }
 
   /** `browser.wait`：等条件满足（条件语义复用 `verify` —— 扩展侧轮询同一份实现） */
@@ -175,12 +209,11 @@ function createActions(deps) {
     if (!ref) return fail(P.ERR.STALE_REF, '没给元素引用 —— 先用 browser.getElements 拿一个')
     const pre = await checkRef(ref)
     if (pre.ok !== true) return pre
-    const res = await call('clear', { ref })
+    const res = await call('clear', { ref, pageVersion: String(pre.pageVersion ?? '') })
     const st = staleOr(res)
     if (st) return st
     if (res && res.reason === 'sensitive-field') return landAction('clear', res, { ref, denied: true, field: res.field })
-    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
-    return done('clear', res, { ref })
+    return finishAction('clear', res, { ref })
   }
 
   /**
@@ -195,8 +228,7 @@ function createActions(deps) {
     const res = await call('focus', { ref })
     const st = staleOr(res)
     if (st) return st
-    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
-    return done('focus', res, { ref })
+    return finishAction('focus', res, { ref })
   }
 
   /**
@@ -207,15 +239,16 @@ function createActions(deps) {
   async function key(payload = {}) {
     const ref = String(payload.ref ?? '')
     const k = String(payload.key ?? 'Enter')
+    /* ★ 版本提到外面：`ref` 为空时也要能拼指纹（那份空串是真值，不是漏传） */
+    let pre = { ok: true, pageVersion: '' }
     if (ref) {
-      const pre = await checkRef(ref)
+      pre = await checkRef(ref)
       if (pre.ok !== true) return pre
     }
-    const res = await call('key', { ref, key: k })
+    const res = await call('key', { ref, key: k, pageVersion: String(pre.pageVersion ?? '') })
     const st = staleOr(res)
     if (st) return st
-    if (!res || res.ok !== true) return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
-    return done('key', res, { ref })
+    return finishAction('key', res, { ref })
   }
 
   return { type, select, scroll, wait, navigate, clear, focus, key, checkRef }

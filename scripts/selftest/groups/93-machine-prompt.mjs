@@ -103,8 +103,8 @@ export async function run() {
    * 钉死是故意的 —— 一处文案改了版本没动，台账上就分不出「改前改后」。
    */
   check(
-    '提示词版本已升到 /12（CE-018：易变区独立成第二条 system message）',
-    promptStackCore.VERSION === 'prompt-stack/12',
+    '提示词版本已升到 /13（P0：协作口径层 speechGuide）',
+    promptStackCore.VERSION === 'prompt-stack/13',
   )
   /*
    * CE-013：钉住「内部思考用中文」这条规则**真的在 workRules 里**。

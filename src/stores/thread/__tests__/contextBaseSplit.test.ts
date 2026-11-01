@@ -102,8 +102,8 @@ describe('上下文基准 / 接线没接错（源码级）', () => {
   })
 
   it('★ 输出层读的还是 assistant.maxTokens（这条不能跟着改）', () => {
-    const src = read('electron/core/loop-model.cjs')
-    expect(src).toContain('config.assistant.maxTokens')
+    const src = read('electron/core/loop.cjs')
+    expect(src).toContain('maxTokens: config.assistant.maxTokens')
   })
 
   it('★ 渲染层的压缩提示线仍读 context.baseTokens（作为窗口未知时的兜底）', () => {

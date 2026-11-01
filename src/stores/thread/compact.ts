@@ -4,6 +4,7 @@ import { uid } from '@/lib/utils'
 import { CONTEXT_BASE_TOKENS } from '@/constants'
 import { infoOf } from '@/lib/modelCapabilityWarn'
 import { appendCompact, compactChat } from '@/lib/backend'
+import { effectiveCompactPoint } from './history'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 
@@ -44,13 +45,11 @@ export function usableOf(messages: readonly Message[]): Message[] {
   )
 }
 
-/** 最后一个压缩点覆盖到第几条（0 = 没压过） */
+/** 最后一个压缩点覆盖到第几条（0 = 没压过）。判据与发送路径**同一处**：history.ts */
 function lastCompactUpTo(messages: readonly Message[], usableCount: number): number {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const upTo = messages[i]?.compactUpTo ?? 0
-    if (upTo > 0) return Math.min(upTo, usableCount)
-  }
-  return 0
+  /* P0-2：不再自己扫一遍 —— 用发送路径那份（取「覆盖最靠后」的那次，不是「数组末条」） */
+  const point = effectiveCompactPoint(messages)
+  return point ? Math.min(point.upTo, usableCount) : 0
 }
 
 /**
@@ -198,8 +197,18 @@ export async function runCompact(threadId: string, silent = false): Promise<Comp
       throw new Error(result.error ?? '生成摘要失败')
     }
 
-    /* 记到会话文件（第 toCompact 条之前的内容被摘要覆盖了） */
-    await appendCompact(threadId, result.summary, toCompact.length)
+    /*
+     * 记到会话文件（第 toCompact 条之前的内容被摘要覆盖了）。
+     *
+     * ★ 2026-10-23（P0-2）：这一步的返回值**必须看**。
+     *   以前 `appendCompact` 返回 void、内部把桥的错误吞掉 —— 于是写盘失败时
+     *   界面照样插压缩点、弹「已压缩」，重启后磁盘上却没有摘要（假压缩成功）。
+     *   现在的顺序是：**先确认写进磁盘**，再动界面。
+     */
+    const saved = await appendCompact(threadId, result.summary, toCompact.length)
+    if (!saved.ok) {
+      throw new Error(`摘要没写进会话文件：${saved.error ?? '原因不明'}（界面没有改动）`)
+    }
 
     /* 界面：在消息流里插入压缩点，让用户知道上下文被收窄了 */
     const app2 = useAppStore.getState()
@@ -209,7 +218,7 @@ export async function runCompact(threadId: string, silent = false): Promise<Comp
     app2.addMessage(threadId, { ...marker, threadId })
 
     if (!silent) {
-      ui.showToast('success', '已压缩', `${toCompact.length} 条对话 → 一段摘要`)
+      ui.showToast('success', '已压缩', `${toCompact.length} 条对话 → 一段摘要（已写入会话文件）`)
     }
     return { ok: true, count: toCompact.length }
   } catch (error) {

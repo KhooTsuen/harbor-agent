@@ -69,6 +69,13 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.interrupted ? { interrupted: true } : {}),
     /* 被中止的回复（落盘时标了 aborted）也按 interrupted 显示 —— 操作条据此说「重试」 */
     ...(stored.aborted ? { interrupted: true } : {}),
+    /*
+     * 用时（2026-10-21）：老记录没有这个字段 → **什么都不加**，界面显示「N 步」。
+     * 不在这里拿别的东西推算 —— 推算出来的秒数比不显示更糟（用户会当真）。
+     */
+    ...(typeof stored.durationMs === 'number' && stored.durationMs > 0
+      ? { durationMs: stored.durationMs }
+      : {}),
     /* 重新生成出来的回答：记住它是从哪条重来的 */
     ...(stored.regeneratedFrom ? { regeneratedFrom: stored.regeneratedFrom } : {}),
     /*

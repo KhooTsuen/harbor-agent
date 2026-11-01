@@ -901,6 +901,71 @@
 }
 
 /* ══════════════════════════════════════════════════════════════
+   过程入口「实时任务」的流光（2026-10-21 用户给出的视觉口径）
+
+   做法：**整句一个文本节点**，让一层极窄的高光在文字背后横向滑过
+   （`background-clip: text`）。刻意不做的三件事：
+
+     · 不拆字做逐字动画 —— 拆了字会一颗一颗地蹦，读屏也会一个字一个字念；
+     · 不碰 `opacity` / `filter` —— 那是整行忽明忽暗，用户明确否掉；
+     · 不加发光/阴影 —— 入口只是一行辅助文字，光晕会盖过正文和工具列表。
+
+   基色用 `currentColor`：入口在 hover 时会变成 `--text-primary`，
+   渐变基色跟着变，不会出现「hover 了但字没反应」。高光只是窄带（43%–57%）
+   的柔和亮色，2.4s 一轮、线性匀速（两端不顿）。
+
+   ★ 只在运行中挂这个类（判断在 ProcessPanel，按 `running`）。
+     跑完 / 中断 / 失败 / 重开历史都没有这个类 → 静态文字，动画自然消失，
+     不需要额外收尾。
+   ══════════════════════════════════════════════════════════════ */
+.process-live {
+  background-image: linear-gradient(
+    95deg,
+    currentColor 0%,
+    currentColor 43%,
+    color-mix(in srgb, var(--text-primary) 55%, currentColor) 50%,
+    currentColor 57%,
+    currentColor 100%
+  );
+  background-size: 320% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  /* 只把「填充」变透明，`color` 保留给 currentColor 用（两处都设会全透明） */
+  -webkit-text-fill-color: transparent;
+  animation: process-live-sweep 2.4s linear infinite;
+}
+
+@keyframes process-live-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/*
+ * 关掉动效的两条路径：设置里关（data-animations="off"）、系统减少动态。
+ * 不只是 `animation: none` —— 渐变本身也得撤掉，否则文字会定格成
+ * 一半亮一半暗的样子，看着像渲染坏了。
+ */
+[data-animations='off'] .process-live {
+  animation: none;
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-live {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    Utilities
    ══════════════════════════════════════════════════════════════ */
 

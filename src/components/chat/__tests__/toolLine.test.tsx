@@ -115,7 +115,19 @@ describe('ToolLine（一行摘要 + 可展开的明细）', () => {
       run('run_shell', 'bad', { ok: false, ms: 5 }),
       run('run_shell', 'worse', { ok: false, ms: 5 }),
     ])
-    expect(el.textContent).toContain('2 个失败')
+    expect(el.textContent).toContain('2 项失败')
+  })
+
+  it('★★ 右侧状态词：全成功写「成功」、有失败写「N 项失败」、进行中写「进行中」', () => {
+    const ok = draw([run('read_file'), run('read_file')])
+    expect(ok.querySelector('[data-tool-status]')?.textContent).toBe('成功')
+
+    const bad = draw([run('read_file'), run('run_shell', 'x', { ok: false, ms: 5 })])
+    expect(bad.querySelector('[data-tool-status]')?.textContent).toBe('1 项失败')
+
+    /* 还在跑（没有 ms、没有 output）→ 中性词，**不提前标成功** */
+    const busy = draw([run('read_file', 'a.md', { ms: undefined, output: '' })])
+    expect(busy.querySelector('[data-tool-status]')?.textContent).toBe('进行中')
   })
 
   it('展开才有明细行；每行是具体那个工具', () => {

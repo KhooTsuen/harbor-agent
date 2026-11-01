@@ -93,8 +93,16 @@ export function makeDiskActions(set: Setter, get: Getter): DiskActions {
     hydrateThread: async (id) => {
       if (!useRealBackend) return
       const before = get().threads.find((t) => t.id === id)
-      /* 不在列表里 = 调用方得先 loadFromDisk 让它出现；已经有消息 = 不用重读 */
-      if (!before || before.messages.length > 0) return
+      /* 不在列表里 = 调用方得先 loadFromDisk 让它出现 */
+      if (!before) return
+      /*
+       * ★ 2026-10-21 修「点两次才能传进 Harbor」：这里以前是
+       *   `if (!before || before.messages.length > 0) return` —— **已经有消息就什么都不做**。
+       *   而扩展读到的内容由主进程直接写盘（渲染层不知情），那条会话本来就有消息，
+       *   于是第一次的刷新被这句吞掉，用户以为没成功、再点一次才看见
+       *   （实测会话文件里成对写入、间隔 1–3 秒，共 30 条）。
+       *   现在照常重读；只在**确实没有被改过**时才覆盖（与 openFromDisk 同一个守卫）。
+       */
       try {
         const messages = await fetchMessagesFromDisk(id)
         if (!messages) return

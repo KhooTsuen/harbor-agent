@@ -108,6 +108,7 @@ function createDispatcher(client) {
       type === 'chat:send' ||
       type === 'chat:resume' ||
       type === 'chat:abort' ||
+      type === 'chat:regenerate' ||
       type === 'session:select' ||
       type === 'session:new' ||
       type === 'observe-page'
@@ -119,10 +120,12 @@ function createDispatcher(client) {
         'chat:resume': [P.KIND.CHAT_RESUME, { sessionId: String(obj.sessionId ?? '') }],
         /* M02-A2：停止 —— 主进程把请求转给渲染层（执行者是它，见 ext-chat.handleAbort） */
         'chat:abort': [P.KIND.CHAT_ABORT, { sessionId: String(obj.sessionId ?? '') }],
+        'chat:regenerate': [P.KIND.CHAT_REGENERATE, { sessionId: String(obj.sessionId ?? '') }],
         'session:select': [P.KIND.SESSION_SELECT, { sessionId: String(obj.sessionId ?? '') }],
         'session:new': [P.KIND.SESSION_NEW, {}],
-        /* ★ 观察结果是**结构化对象**，原样转（不 String()）—— 形状的真相源是 observe.js */
-        'observe-page': [P.KIND.PAGE_OBSERVE, { observation: obj.observation ?? null }],
+        /* ★ 观察结果是**结构化对象**，原样转（不 String()）—— 形状的真相源是 observe.js。
+           sessionId 必须一起转：不带的话主进程只能按「主窗口开着哪条」落盘（串线）。 */
+        'observe-page': [P.KIND.PAGE_OBSERVE, { observation: obj.observation ?? null, sessionId: String(obj.sessionId ?? '') }],
       }
       const [kind, ask] = map[type]
       const res = await client.request(kind, ask)
@@ -135,11 +138,21 @@ function createDispatcher(client) {
      * 多带一个 `ref`（主进程按它解析失效）。host 仍只做转发。
      */
     if (type === 'get-elements') {
-      const ask = { observation: obj.observation ?? null }
+      const ask = { observation: obj.observation ?? null, sessionId: String(obj.sessionId ?? '') }
       if (obj.ref) ask.ref = String(obj.ref)
       const res = await client.request(P.KIND.PAGE_ELEMENTS, ask)
       if (res.ok) return { ...res.payload, type: 'get-elements.result', ok: true, id }
       return { type: 'get-elements.result', ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
+    /*
+     * 站点策略（2026-10-20）：扩展在采集 / 操作之前问一句「这个 url 能不能用」。
+     * 与上面几条同形状（host 只转发；判定在主进程 ext-sites.cjs）。
+     */
+    if (type === 'site-policy') {
+      const res = await client.request(P.KIND.SITE_POLICY, { url: String(obj.url ?? ''), action: String(obj.action ?? 'check'), minutes: obj.minutes })
+      if (res.ok) return { ...res.payload, type: 'site-policy.result', ok: true, id }
+      return { type: 'site-policy.result', ok: false, id, error: res.error.message, code: res.error.code }
     }
 
     /*
@@ -159,9 +172,33 @@ function createDispatcher(client) {
       return { type: 'page-result.result', ok: false, id, error: res.error.message, code: res.error.code }
     }
 
+    /*
+     * 页面上下文槽（2026-10-21）：扩展把当前页面正文送上来 → 主进程只更新槽，
+     * **不写会话文件**（所以对话流里不会多出一条网页正文）。下一轮构建提示词时注入。
+     * 自动（切页面）与手动（点「读当前页」）走同一条，只差 `source` 字段。
+     */
+    if (type === 'page-context') {
+      const res = await client.request(P.KIND.PAGE_CONTEXT, {
+        url: String(obj.url ?? ''),
+        title: String(obj.title ?? ''),
+        text: String(obj.text ?? ''),
+        truncated: obj.truncated === true,
+        source: String(obj.source ?? 'manual'),
+        sessionId: String(obj.sessionId ?? ''),
+        /* `scope:'global'` = 落全局槽（切页面自动上报用）；漏了这一行，
+           扩展那边传的 scope 会被这里悄悄丢掉，自动上报就退回「侧边栏选中的会话」 */
+        scope: String(obj.scope ?? ''),
+        /* 「观察页面」那条走的是结构化结果 —— 渲染成 markdown 是**主进程**的职责
+           （renderObservation 唯一一处实现），这里只原样转发 */
+        observation: obj.observation ?? null,
+      })
+      if (res.ok) return { type: 'page-context.result', ok: true, id, ...res.payload }
+      return { type: 'page-context.result', ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
     return {
       error:
-        '只认 {"ping":…} / ext:page / ext:sessionList / ext:sessionActive / chat:send / chat:resume / chat:abort / session:select / session:new / observe-page / get-elements / page-result',
+        '只认 {"ping":…} / ext:page / page-context / ext:sessionList / ext:sessionActive / chat:send / chat:resume / chat:abort / session:select / session:new / observe-page / get-elements / site-policy / page-result',
       echo: message ?? null,
     }
   }
@@ -192,27 +229,31 @@ function runInteractive(deps) {
    */
   void client.ensureConnected()
 
-  /* 主进程的主动推送（3b 流式分片 / M04 下发指令）→ 原样转给扩展 */
-  client.setPushHandler((msg) => {
+  /*
+   * ★ Host → Edge 的**唯一写出口**。三件事固定在这：
+   *   1. 1 MiB 上限在 `encodeFrame` 里按 UTF-8 字节严格执行（超限那里抛 `FRAME_TOO_LARGE`）
+   *   2. 超限换成**协议兼容的降级帧**（应答→失败帧 / 推送→通知帧）—— 不写违规帧、不截断 JSON
+   *   3. 降级要在日志里**说出来**（`note`），不静默
+   */
+  function writeToEdge(message, what) {
     try {
-      fs.writeSync(1, P.encodeFrame(msg))
+      const out = P.encodeFrameOrFallback(message, { max: P.MAX_FRAME })
+      if (out.degraded) note(`${what}超限，已换成降级帧：${out.reason}`)
+      fs.writeSync(1, out.frame)
     } catch (error) {
-      note(`推送转发失败：${error instanceof Error ? error.message : error}`)
+      note(`${what}写不出去：${error instanceof Error ? error.message : error}`)
     }
-  })
+  }
+
+  /* 主进程的主动推送（3b 流式分片 / M04 下发指令）→ 原样转给扩展 */
+  client.setPushHandler((msg) => writeToEdge(msg, '推送'))
 
   /** 串行处理链（见文件头「处理是串行的」） */
   let chain = Promise.resolve()
   function enqueue(message) {
     chain = chain
       .then(() => dispatch(message))
-      .then((reply) => {
-        try {
-          fs.writeSync(1, P.encodeFrame(reply))
-        } catch (error) {
-          note(`回帧失败：${error instanceof Error ? error.message : error}`)
-        }
-      })
+      .then((reply) => writeToEdge(reply, '回帧'))
       .catch((error) => note(`处理消息失败：${error instanceof Error ? error.message : error}`))
   }
 

@@ -73,9 +73,18 @@ export async function run() {
   )
 
   const streamSrc = readFileSync(join(ROOT, 'src/stores/thread/streamEvents.ts'), 'utf8')
+  /*
+   * ★ 2026-10-21：提示类事件整块搬到了 `streamLight.ts`（streamEvents 贴了 300 行红线，
+   *   而 retry 要就地回滚正文，跟这些一起走更顺）。断言跟着改，而且**两处都要对上**：
+   *   入口那一侧必须真的把这几个 type 转进 dispatchLightEvent，实现那一侧必须真的调
+   *   handleNoticeEvent —— 只看一边的话，改名 / 漏接都测不出来。
+   */
+  const lightSrc = readFileSync(join(ROOT, 'src/stores/thread/streamLight.ts'), 'utf8')
   check(
     "★ 界面转发 boundary 事件（提示类统一走 noticeEvents.ts）",
-    streamSrc.includes("case 'boundary'") && streamSrc.includes('handleNoticeEvent(event)'),
+    streamSrc.includes("case 'boundary'") &&
+      streamSrc.includes('dispatchLightEvent(type, event, state)') &&
+      lightSrc.includes('handleNoticeEvent(event)'),
   )
   const noticeSrc = readFileSync(join(ROOT, 'src/stores/thread/noticeEvents.ts'), 'utf8')
   check(

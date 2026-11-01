@@ -4,24 +4,16 @@ import { MessageList } from '../MessageList'
 import { useScrollStore } from '@/stores/useScrollStore'
 import type { Message } from '@/types'
 
-/* ══════════════════════════════════════════════════════════════
-   滚动测试的取景器
-
-   jsdom 没有布局：`scrollHeight / clientHeight / scrollTop` 恒为 0，测不出
-   任何位移。所以这里把三个维度**接管**成一台假尺子（`dims`），并给
-   scrollTop 的 setter 记账（`writes`）—— 「程序到底写没写视图」这件事必须
-   能数出来，它是本套测试的核心证据。
-
-   另外两个替身：
-     · ResizeObserver —— 回调抓在手里，由 `grow()` 手动触发
-     · requestAnimationFrame —— 排队，`flushRaf()` 手动跑
-   ══════════════════════════════════════════════════════════════ */
+/* ── 滚动测试的取景器 ──────────────────────────────────────────
+   jsdom 没有布局（三个维度恒为 0），所以把 scrollHeight / clientHeight /
+   scrollTop **接管**成一台假尺子（`dims`），并给 scrollTop 的 setter 记账
+   （`writes`）—— 「程序到底写没写视图」必须数得出来，那是这套测试的核心证据。
+   ResizeObserver 的回调抓在手里（`grow()` 触发）；rAF 排队（`flushRaf()` 跑）。 */
 
 type ROCallback = () => void
 
 export const dims = { contentHeight: 2000, clientHeight: 500, scrollTop: 0 }
-/** 程序一共写了几次 scrollTop（用户动作不走这里） */
-export const writes = { count: 0 }
+export const writes = { count: 0 } /* 程序写了几次 scrollTop（用户动作不走这里） */
 /** 假文档坐标：某个元素在滚动内容里的位置 + 它多高（没登记的元素高度算 0） */
 export const rects = new Map<Element, { offset: number; height: number }>()
 
@@ -180,14 +172,29 @@ export function pressKey(key: string): void {
 /**
  * 点按钮。`last: true` = 取最后一个（最新那条消息里的）。
  *
- * 思考块只能认位置不能认文案：按钮文字会在「正在思考…」和「思考过程」之间切
- * （正文一开始流就变），2026-09-30 三个滚动测试就是这么红的。
+ * 思考块只能认位置不能认文案：文字会在「正在思考…」和「思考过程」之间切。
+ * ★ 2026-10-21：过程区什么时候都默认收起，所以「点开思考块」在真实路径上是
+ *   两步 —— 找不到按钮时先展开过程入口再找（别把「结构变了」报成「按钮不存在」）。
  */
 export function clickButton(text: string, last = false): void {
-  const all = [...container.querySelectorAll('button')].filter((b) =>
-    (b.textContent ?? '').includes(text),
-  )
-  const btn = (last ? all[all.length - 1] : all[0]) as HTMLButtonElement | undefined
+  const pick = (): HTMLButtonElement | undefined => {
+    const all = [...container.querySelectorAll('button')].filter((b) =>
+      (b.textContent ?? '').includes(text),
+    )
+    return (last ? all[all.length - 1] : all[0]) as HTMLButtonElement | undefined
+  }
+
+  let btn = pick()
+  if (!btn) {
+    const entries = [
+      ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="查看过程"]'),
+    ]
+    const entry = last ? entries[entries.length - 1] : entries[0]
+    if (entry?.getAttribute('aria-expanded') === 'false') {
+      act(() => entry.click())
+      btn = pick()
+    }
+  }
   if (!btn) throw new Error(`找不到按钮：${text}`)
   act(() => btn.click())
 }
@@ -214,7 +221,7 @@ export function flushRaf(rounds = 2): void {
 
 /* ── 假布局：给消息区的子节点铺一套「文档坐标」 ──────────────── */
 
-/** 消息区的内容容器（判据 .max-w-3xl，与真机探针一致） */
+/** 消息区的内容容器（判据 .max-w-3xl，与真机探针一致）；子节点顺序 = 文档顺序 */
 export function contentEl(): HTMLElement {
   const el = container.querySelector('.max-w-3xl')
   if (!el) throw new Error('找不到内容容器（.max-w-3xl）')
@@ -244,10 +251,7 @@ export function layout(heights: number[]): void {
   act(() => roCallback?.())
 }
 
-/**
- * 视野**上方**长高 / 收回：从第 index 个子节点起整体下移 delta。
- * 等价于「在视野上方展开一个块」「上面图片加载完」「载入更早的消息」。
- */
+/** 视野**上方**长高 / 收回：从第 index 个子节点起整体下移 delta（= 上方展开一个块 / 载入更早的消息） */
 export function growAbove(index: number, delta: number): void {
   const kids = contentChildren()
   for (let i = index; i < kids.length; i += 1) {

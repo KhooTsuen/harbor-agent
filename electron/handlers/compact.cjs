@@ -26,12 +26,22 @@ function register({ ipcMain }) {
     if (!config.hasKey(provider)) return { ok: false, error: `${provider.name} 还没填 API Key` }
 
     try {
+      const model = payload?.model || picked.model
+      /*
+       * ★ 2026-10-20：必须把「这个模型能吃多少」传下去。
+       *   不给的话内核只会把**整段历史**一次发出去 —— 用户实测 150 万 token 的会话
+       *   压缩请求本身就超了上游 104 万上限，回 400「maximum context length」。
+       *   传了之后内核会按窗口分块摘要（map-reduce），调用次数有硬上限。
+       */
+      /* 窗口解析只有一处（compact.windowOf）—— 自动压缩那条入口也用同一个 */
+      const maxInputTokens = compact.windowOf(provider, model)
       const summary = await compact.summarize({
         baseUrl: provider.baseUrl,
         apiKey: config.providerKey(provider),
         chatPath: provider.chatPath,
-        model: payload?.model || picked.model,
+        model,
         messages: Array.isArray(payload?.messages) ? payload.messages : [],
+        maxInputTokens,
       })
       return { ok: true, summary }
     } catch (error) {

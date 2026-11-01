@@ -29,6 +29,61 @@ import { check, group } from '../harness.mjs'
 const changeset = require(join(ROOT, 'electron/core/changeset.cjs'))
 const changesetDiff = require(join(ROOT, 'electron/core/changeset-diff.cjs'))
 
+/**
+ * 把 `changesetDiff(...)` 的实参逐个抠出来（按括号配平，不是遇到第一个 `)` 就停）。
+ *
+ * 为什么不能偷懒用 `[^)]+?`：旧写法是 `changesetDiff(useAppStore.getState().activeThreadId)`，
+ * 里面自带两个 `)` —— 那个正则会把它截成 `useAppStore.getState(`，于是**旧写法也假红**。
+ * 这条判据的第一版就栽在这儿（2026-10-31，变异验证当场逮到）。
+ *
+ * @param {string} source
+ * @returns {string[]}
+ */
+function diffArgsOf(source) {
+  const out = []
+  const token = 'changesetDiff('
+  let from = 0
+  for (;;) {
+    const at = source.indexOf(token, from)
+    if (at < 0) break
+    let depth = 0
+    let i = at + token.length - 1
+    for (; i < source.length; i += 1) {
+      const ch = source[i]
+      if (ch === '(') depth += 1
+      else if (ch === ')') {
+        depth -= 1
+        if (depth === 0) break
+      }
+    }
+    const arg = source.slice(at + token.length, i).trim()
+    /* 空实参是注释里的 `changesetDiff()`（例如文件头那段说明）——不是真调用，剔掉 */
+    if (arg) out.push(arg)
+    from = i + 1
+  }
+  return out
+}
+
+/**
+ * 「store 里拉 diff 时用的是**当前对话**」—— 只按语义判，不钉实现写法。
+ *
+ * 单独导出是为了能被变异验证直接调用（`tmp/` 下那个一次性脚本 require 它），
+ * 免得检验逻辑在自检和验证脚本里各写一份、日后漂成两种说法。
+ *
+ * @param {string} source useTaskStore.ts 的全文
+ * @returns {{ ok: boolean, args: string[], activeVar: string }}
+ */
+export function storeReadsActiveThreadDiff(source) {
+  const activeVar =
+    /(?:const|let)\s+(\w+)\s*=\s*useAppStore\.getState\(\)\.activeThreadId/.exec(source)?.[1] ?? ''
+  const args = diffArgsOf(source)
+  const ok = args.some(
+    (arg) =>
+      arg === 'useAppStore.getState().activeThreadId' || (activeVar !== '' && arg === activeVar),
+  )
+  return { ok: args.length > 0 && ok, args, activeVar }
+}
+
 const SESSION = 'selftest-ag036b'
 
 export async function run() {
@@ -163,9 +218,11 @@ export async function run() {
     /* ── ⑥ 前端：右栏与顶栏读的是同一份 ─────────────────── */
     group('AG-036b / 前端接线')
     const store = readFileSync(join(ROOT, 'src/stores/useTaskStore.ts'), 'utf8')
+    const verdict = storeReadsActiveThreadDiff(store)
     check(
-      '★ store 里拉了 diff',
-      store.includes('changesetDiff(useAppStore.getState().activeThreadId)'),
+      '★ store 里拉了 diff（按当前对话）',
+      verdict.ok,
+      `实参=${JSON.stringify(verdict.args)} 局部变量=${verdict.activeVar || '(无)'}`,
     )
     const panel = readFileSync(join(ROOT, 'src/components/layout/RightPanel.tsx'), 'utf8')
     check('★ 右栏不再从消息里翻 message.diffs', !panel.includes('flatMap((m) => m.diffs'))

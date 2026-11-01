@@ -119,6 +119,39 @@ function sizeOf(content) {
   if (!Array.isArray(content)) return chars(content)
   return chars(textOf(content)) + countImages(content) * IMAGE_COST
 }
+
+/** 预算或历史条数可能从工具组中间截断；上游只接受完整的 assistant/tool 配对。 */
+function completeToolGroups(messages) {
+  const safe = []
+  let discarded = 0
+  for (let i = 0; i < messages.length; ) {
+    const message = messages[i]
+    if (message?.role === 'tool') {
+      discarded += 1
+      i += 1
+      continue
+    }
+    const calls = message?.role === 'assistant' ? message.tool_calls : null
+    if (!Array.isArray(calls) || calls.length === 0) {
+      safe.push(message)
+      i += 1
+      continue
+    }
+    let end = i + 1
+    while (messages[end]?.role === 'tool') end += 1
+    const tools = messages.slice(i + 1, end)
+    const ids = calls.map((call) => call?.id)
+    const complete =
+      ids.every((id) => typeof id === 'string' && id.length > 0) &&
+      new Set(ids).size === ids.length &&
+      tools.length === ids.length &&
+      tools.every((tool, index) => tool.tool_call_id === ids[index])
+    if (complete) safe.push(message, ...tools)
+    else discarded += end - i
+    i = end
+  }
+  return { messages: safe, discarded }
+}
 /**
  * `assistant.maxTokens = 0`（不限）时的上下文基准。
  *
@@ -192,14 +225,20 @@ function assemble(input = {}) {
    * 有消息被整条丢掉时，**一处**说明比 N 行残片有用：模型因此知道「上面还有内容」，
    * 却又不用为每个被丢的旧消息付一行预算。挂在会话状态那一层（系统侧）。
    */
+  const complete = completeToolGroups(selected)
+  dropped += complete.discarded
+  const removedChars = selected
+    .filter((message) => !complete.messages.includes(message))
+    .reduce((sum, message) => sum + sizeOf(message.content), 0)
   const droppedNote = dropped > 0 ? `\n（更早的 ${dropped} 条对话因预算没进上下文）` : ''
+  const incompleteNote = complete.discarded > 0 ? '\n（不完整的工具调用记录已从本轮上下文排除）' : ''
   return {
-    systemContext: { memory, project, task, conversationState: state + droppedNote },
-    messages: selected,
+    systemContext: { memory, project, task, conversationState: state + droppedNote + incompleteNote },
+    messages: complete.messages,
     estimates: {
       maxTokens,
-      chars: totalChars - remaining,
-      selectedMessages: selected.length,
+      chars: totalChars - remaining - removedChars,
+      selectedMessages: complete.messages.length,
       droppedMessages: dropped,
     },
   }

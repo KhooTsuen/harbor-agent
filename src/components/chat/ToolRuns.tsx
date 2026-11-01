@@ -6,6 +6,7 @@ import type { ToolRunRecord } from '@/types'
 import { cn } from '@/lib/utils'
 import { toolIconOf } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
+import { errorDigest } from '@/lib/toolError'
 import { useScrollGuard } from './scrollGuard'
 
 /* ══════════════════════════════════════════════════════════════
@@ -35,14 +36,25 @@ export function formatMs(ms: number): string {
 }
 
 export function ToolRunRow({ run }: { run: ToolRunRecord }) {
-  const [open, setOpen] = useState(false)
-  const guard = useScrollGuard()
   const running = run.output === '' && run.ms === undefined
   const hasOutput = run.output.trim().length > 0
+  /*
+   * 失败的那一步**默认把原因摊开**（2026-10-21，图2 再确认）：
+   * 用户验收表要求「显示失败发生在哪一步及真实错误」。
+   * 以前失败行只是变红，想看原因还要再点一次 —— 那时用户已经不知道错在哪儿了。
+   * `manual` = 用户自己点过之后的意愿，优先于默认值。
+   */
+  const [manual, setManual] = useState<boolean | null>(null)
+  const open = manual ?? (!run.ok && !running && hasOutput)
+  /* 「完整输出」是**次级区域**（图2）：默认只给一句真话，点开才铺原文 */
+  const [rawOpen, setRawOpen] = useState(false)
+  const guard = useScrollGuard()
   /* 工具输出里可能带图片（生图、下载图之类）—— 单独抠出来渲染 */
   const images = extractImageUrls(run.output)
   /* Phase 7 二期：图标表达**工具类型**（状态仍由上面的状态图标 + 颜色表达） */
   const ToolIcon = toolIconOf(run.name)
+  /* 失败时从输出里挑一句能当答案的话（理由见 lib/toolError 文件头） */
+  const digest = !run.ok && hasOutput ? errorDigest(run.output) : null
 
   return (
     <div className="rounded-sm border border-line-subtle bg-bg-base/40">
@@ -50,7 +62,7 @@ export function ToolRunRow({ run }: { run: ToolRunRecord }) {
         type="button"
         onClick={() => {
           if (!hasOutput) return
-          setOpen((v) => !v)
+          setManual(!open)
           guard?.enterFree()
         }}
         aria-expanded={hasOutput ? open : undefined}
@@ -110,6 +122,19 @@ export function ToolRunRow({ run }: { run: ToolRunRecord }) {
         {run.ms !== undefined ? (
           <span className="shrink-0 font-mono text-fg-tertiary">{run.ms}ms</span>
         ) : null}
+        {/*
+          每一步右侧的状态词（图2）：「成功 / 失败 / 进行中」三选一。
+          以前只有图标 + 颜色，成功与失败在**结构上不对称** —— 只有失败显眼。
+          现在两者同一个位置、同一套字，只换词和色；进行中用中性灰，
+          **不提前标成功**（还在跑的这一步完全可能失败）。
+        */}
+        <span
+          className="shrink-0"
+          data-run-status={running ? 'running' : run.ok ? 'completed' : 'failed'}
+          style={running ? undefined : { color: colorOf(run.ok ? 'completed' : 'failed') }}
+        >
+          {running ? '进行中' : run.ok ? '成功' : '失败'}
+        </span>
       </button>
 
       {/*
@@ -133,7 +158,39 @@ export function ToolRunRow({ run }: { run: ToolRunRecord }) {
         </div>
       ) : null}
 
-      {open && hasOutput ? (
+      {/*
+        失败时：先给**一句真话**（从输出里挑出来的错误），原文收进「完整输出」。
+        图2 的原话是「不要展示大段原始 JSON；原始信息可放在详情的次级区域」——
+        把一屏 JSON 铺在展开区里，用户还是要自己找那一行。
+      */}
+      {open && digest ? (
+        <div
+          className="border-t border-line-subtle px-2 py-1.5 text-2xs leading-[1.6]"
+          data-run-error="true"
+        >
+          <p style={{ color: colorOf('failed') }}>{digest.brief}</p>
+          {digest.full ? (
+            <button
+              type="button"
+              onClick={() => {
+                setRawOpen(!rawOpen)
+                guard?.enterFree()
+              }}
+              aria-expanded={rawOpen}
+              className="mt-1 text-fg-tertiary underline-offset-2 hover:underline"
+            >
+              {rawOpen ? '收起完整输出' : '查看完整输出'}
+            </button>
+          ) : null}
+          {rawOpen && digest.full ? (
+            <pre className="mt-1 max-h-64 overflow-auto font-mono text-fg-secondary whitespace-pre-wrap break-all">
+              {digest.full}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
+
+      {open && hasOutput && !digest ? (
         <pre className="max-h-64 overflow-auto border-t border-line-subtle px-2 py-1.5 font-mono text-2xs leading-[1.6] text-fg-secondary whitespace-pre-wrap break-all">
           {run.output}
         </pre>

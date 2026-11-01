@@ -95,6 +95,7 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   edge_key: ['向 Edge 按键', '次'],
   edge_focus: ['聚焦 Edge 元素', '次'],
   edge_tabs: ['操作 Edge 标签页', '次'],
+  edge_read: ['读取 Edge 当前标签', '次'],
 }
 
 /** 工具名的动作词；没收录的老实用原名（不编） */
@@ -148,6 +149,7 @@ export const TOOL_LABELS: Record<string, string> = {
   edge_key: 'Edge 按键',
   edge_focus: '聚焦 Edge 元素',
   edge_tabs: '操作 Edge 标签页',
+  edge_read: '读取 Edge 当前标签',
 }
 
 /** 工具名的人话；没收录的返回原名（不编） */
@@ -205,6 +207,7 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   edge_key: Globe,
   edge_focus: Globe,
   edge_tabs: Globe,
+  edge_read: Globe,
 }
 
 /** 工具名的图标；没收录的退回 `Terminal`（不空着、不抛） */
@@ -248,4 +251,34 @@ export function activityLabel(runs: readonly ToolRunRecord[], phase?: AgentPhase
     return what ? `正在${verb} ${what}` : `正在${verb}`
   }
   return phaseLabel(phase) || '正在处理…'
+}
+
+/* ══════════════════════════════════════════════════════════════
+   过程区展开后那一行「实时活动」（2026-10-21）
+
+   和 `activityLabel` 的区别：那几个「等上游」的相位（准备 / 思考 / 重试 /
+   整理回答）在用户看来是同一件事 —— **在等模型出字**，界面上说成
+   「正在等待模型回应…」比「正在分析任务」更贴实际（他看到的是一行在等）。
+   有工具在跑时仍然优先说工具（那才是最具体的）。
+
+   为什么不改 `activityLabel`：顶栏（AppTitleBar）用它做状态栏文案，
+   那里「正在分析任务」这个说法已经稳定，不该为了对话区的一行话跟着变。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 这几个相位对用户来说都是「在等模型出字」 */
+const WAITING_PHASES: readonly AgentPhase[] = ['preparing', 'thinking', 'retrying', 'responding']
+
+/** 等模型时的固定说法 —— 界面与测试共用这一份 */
+export const WAITING_MODEL_LABEL = '正在等待模型回应…'
+
+/** 过程区里「现在在干什么」那一行 */
+export function liveActivityLabel(runs: readonly ToolRunRecord[], phase?: AgentPhase): string {
+  const running = runningOf(runs)
+  if (running) {
+    const verb = verbOf(running.name)
+    const what = (running.summary ?? '').trim()
+    return what ? `正在${verb} ${what}` : `正在${verb}`
+  }
+  if (!phase || WAITING_PHASES.includes(phase)) return WAITING_MODEL_LABEL
+  return phaseLabel(phase) || WAITING_MODEL_LABEL
 }

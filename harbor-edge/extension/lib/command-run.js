@@ -19,7 +19,9 @@
 /* global chrome */
 
 import { requestHost } from './native.js'
-import { resolveActiveTab } from './active-tab.js'
+import { resolveActiveTab, stillActiveTab } from './active-tab.js'
+import { contextAllowed } from './context-gate.js'
+import { collectPageText, limitPageText, waitForStablePage } from './page-text.js'
 import { clickElement, verifyPage } from './act.js'
 /* M04 剩余：填表 / 滚动 / 等待 / 导航（拆到 act-run，见它的文件头） */
 import { runPageAction } from './act-run.js'
@@ -28,6 +30,13 @@ import { listTabs, searchTabs, activateTab, createTab, closeTab } from './tabs-r
 /* get-elements：**复用 M03 的采集器**（同一个注入函数 / 同一套版本号 / 同一套 ref 登记）——
    绝不新写第二个（那必然漂，硬约束 #9）。 */
 import { collectPageContext } from './observe.js'
+/* 站点黑名单：操作之前问主进程（判定只有 ext-sites.cjs 一处） */
+import { checkSite } from './site-policy.js'
+/* 去重：动作 + 目标 + 载荷 的稳定指纹（2026-10-20 重写，见 dedupe.js 文件头） */
+import { fingerprint, isMutating, seenRecently, markExecuted, reallyHappened, duplicateResult } from './dedupe.js'
+
+/** 标签页五件 —— 不依赖前台标签，所以放在 resolveActiveTab() 之前（M05 的理由） */
+const TABS_COMMANDS = new Set(['tabs-list', 'tabs-search', 'tabs-activate', 'tabs-create', 'tabs-close'])
 
 /** 往页面里注入一个**自包含**函数并取回它的返回值（自包含理由见 `lib/act.js` 文件头） */
 async function inject(tabId, fn, args) {
@@ -125,41 +134,65 @@ export async function runCommand(payload) {
     return result
   }
 
+  /* 去重前置：指纹只算一次（标签页分支与页面分支都要用） */
+  const mutating = isMutating(command)
+  const key = mutating ? fingerprint(command, args) : ''
+
   /*
-   * ★ M05：tabs 三件**不依赖前台标签**（它们碰的是标签页本身）—— 放在
+   * ★ M05：tabs 五件**不依赖前台标签**（它们碰的是标签页本身）—— 放在
    *   `resolveActiveTab()` **之前**。否则「侧边栏页在前台」时会被那句
    *   「该页面不支持读取」挡住，而 tabs.list 根本不需要看任何页面。
+   * ★ 2026-10-20 修：这一支以前**整段在去重判断之前 return**，于是
+   *   `tabs-create` / `tabs-close` 虽然写在 MUTATING 名单里，实际**从没被去重过**
+   *   ——连点两次真的会开出两个标签。现在去重与页面分支一致。
    */
-  if (
-    command === 'tabs-list' ||
-    command === 'tabs-search' ||
-    command === 'tabs-activate' ||
-    command === 'tabs-create' ||
-    command === 'tabs-close'
-  ) {
-    if (command === 'tabs-list') return reply(await listTabs())
-    if (command === 'tabs-search') return reply(await searchTabs(args.query))
-    if (command === 'tabs-create') return reply(await createTab(args))
-    if (command === 'tabs-close') return reply(await closeTab(args))
-    return reply(await activateTab(args))
+  if (TABS_COMMANDS.has(command)) {
+    if (mutating && seenRecently(key)) return reply(duplicateResult())
+    const out =
+      command === 'tabs-list'
+        ? await listTabs()
+        : command === 'tabs-search'
+          ? await searchTabs(args.query)
+          : command === 'tabs-create'
+            ? await createTab(args)
+            : command === 'tabs-close'
+              ? await closeTab(args)
+              : await activateTab(args)
+    if (mutating && reallyHappened(out)) markExecuted(key)
+    return reply(out)
   }
 
+  const context = await contextAllowed()
+  if (!context.allowed) return reply({ ok: false, error: context.error })
   let result = { ok: false, error: `不认识的指令：${command || '(空)'}` }
 
   try {
     const target = await resolveActiveTab()
+    /* 站点黑名单只查一次（判定在主进程 ext-sites.cjs） */
+    const policy = target.ok ? await checkSite(String(target.tab?.url ?? '')) : null
     if (!target.ok) {
       /* 「读不到当前标签」时**照样**要回执 —— 那边在等 */
       result = { ok: false, error: target.error }
+    } else if (policy && !policy.allowed) {
+      /* 被拉黑：**页面一个字节都没被碰过**（不注入、不点击）。reason 让模型知道
+         这不是「执行失败」，不要去重试 —— 重试还是被拒。 */
+      result = { ok: false, reason: 'site-blocked', error: policy.error }
+    } else if (mutating && seenRecently(key)) {
+      /* 同一动作 + 同一目标 + 同一载荷，2 秒内来过 —— 不执行（回执说清是重复） */
+      result = duplicateResult()
+    } else if (command === 'read-current') {
+      const settled = await injectBounded(target.tab.id, waitForStablePage, [], 2500)
+      const raw = settled?.url === target.url ? await injectBounded(target.tab.id, collectPageText, [], 8000) : null
+      if (raw?.ok === false) {
+        result = { ok: false, error: raw.error || '当前页面无法读取' }
+      } else if (!raw || raw.__timeout === true || String(raw.url || '') !== target.url || !(await stillActiveTab(target.tab.id, target.url))) {
+        result = { ok: false, error: '读取期间页面或活动标签已改变，或页面没有返回正文；没有发送旧页面内容' }
+      } else result = { ok: true, ...limitPageText(raw, 40 * 1024) }
     } else if (command === 'get-elements') {
-      /*
-       * ★ M04-1 当时只做了**上行**（侧边栏点按钮）—— 而下行（主进程来要）是 M04-2
-       *   的 click 第一步就依赖的（点之前先要当前版本号校验引用）。所以这里补上。
-       * 复用 `collectPageContext`（M03 那份），结果包一层 `ok:true` —— 下行回执
-       * 的形状是 `{ok:true, ...}`（主进程 `ext-command.getElements` 按它判）。
-       */
+      /* 复用 collectPageContext（M03 那份）—— 下行回执形状是 {ok:true, ...} */
       const maxItems = Number(args.maxItems) > 0 ? Math.min(Number(args.maxItems), 200) : 60
-      const raw = await injectBounded(target.tab.id, collectPageContext, [{ maxItems, maxSelection: 0 }], 8000)
+      const settled = await injectBounded(target.tab.id, waitForStablePage, [], 2500)
+      const raw = settled?.url === target.url ? await injectBounded(target.tab.id, collectPageContext, [{ maxItems, maxSelection: 0 }], 8000) : null
       result =
         raw && typeof raw === 'object' && raw.__timeout !== true
           ? { ok: true, ...raw }
@@ -231,5 +264,11 @@ export async function runCommand(payload) {
   } catch (error) {
     result = { ok: false, error: `执行不了这个操作：${(error && error.message) || error}` }
   }
+  /*
+   * ★ 只在「副作用真的发生了」之后才记（`reallyHappened` 判的就是这个，不是 `ok`）：
+   *   成功 / 导航型 / 注入超时 → 记（重试会再做一遍，必须拦）
+   *   明确报错（元素不存在 / 页面拒填）→ 不记（用户当然要能立刻重试）
+   */
+  if (mutating && reallyHappened(result)) markExecuted(key)
   return reply(result)
 }

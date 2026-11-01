@@ -40,7 +40,7 @@
 
 /* global chrome */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Menu, Plus, Settings } from 'lucide-react'
 import { IconButton } from '@/components/ui/IconButton'
 import type { StatusMessage } from './ReadPageButton'
@@ -83,6 +83,8 @@ export function App() {
   const [state, setState] = useState<HarborState>(INITIAL)
   /** 会话抽屉开没开（挂在对话区上方，覆盖它） */
   const [drawer, setDrawer] = useState(false)
+  /** M02-C：设置抽屉（与会话抽屉同款，从左侧滑出） */
+  const [settings, setSettings] = useState(false)
   /** 状态行（读页面结果 / 发送提示 / 占位按钮的说明，共用对话区那一条） */
   const [status, setStatus] = useState<StatusMessage | null>(null)
   /**
@@ -98,16 +100,18 @@ export function App() {
   const [title, setTitle] = useState('')
   /** 会话快照（抽屉刷新 / 顶栏查标题都用它） */
   const [sessions, setSessions] = useState<SessionBrief[]>([])
+  const selectionVersion = useRef(0)
 
   useEffect(() => {
     /* ① 先拿快照：SW 可能要几百毫秒才醒，不能让界面空着 */
     try {
+      const startedAt = selectionVersion.current
       chrome.storage.local.get(['harborState', 'harborSessions', 'harborSelected']).then((out) => {
         if (out && out.harborState) setState(out.harborState as HarborState)
         const snap = out && out.harborSessions
         if (snap && Array.isArray(snap.sessions)) setSessions(snap.sessions as SessionBrief[])
         const sel = out && out.harborSelected
-        if (sel && typeof sel.sessionId === 'string') setSessionId(sel.sessionId)
+        if (selectionVersion.current === startedAt && sel && typeof sel.sessionId === 'string') setSessionId(sel.sessionId)
       })
     } catch {
       /* 拿不到就用默认值 */
@@ -120,7 +124,9 @@ export function App() {
         return
       }
       if (msg && msg.type === 'harbor-push' && msg.push?.kind === 'session:selected') {
+        selectionVersion.current += 1
         const id = String(msg.push.payload?.sessionId ?? '')
+        setStatus(null)
         setSessionId(id)
         try {
           chrome.storage.local.set({ harborSelected: { sessionId: id } })
@@ -170,17 +176,14 @@ export function App() {
   /* Phase 3c：抽屉里点了一条 —— **只切侧边栏**（主窗口不动），顺手收起抽屉 */
   const selectSession = useCallback((id: string) => {
     setDrawer(false)
-    setSessionId(id)
-    try {
-      chrome.storage.local.set({ harborSelected: { sessionId: id } })
-    } catch {
-      /* 忽略 */
-    }
+    setStatus(null)
     try {
       const p = chrome.runtime.sendMessage({ type: 'session-select', sessionId: id })
-      if (p && typeof p.then === 'function') p.catch(() => {})
+      if (p && typeof p.then === 'function') p.then((res: { ok?: boolean; error?: string } | undefined) => {
+        if (!res?.ok) setStatus({ text: String(res?.error ?? '切换对话失败'), tone: 'danger' })
+      }).catch((e: unknown) => setStatus({ text: String((e as Error)?.message ?? e), tone: 'danger' }))
     } catch {
-      /* 忽略 */
+      setStatus({ text: '切换对话失败：扩展连接不可用', tone: 'danger' })
     }
   }, [])
 
@@ -253,10 +256,8 @@ export function App() {
         <IconButton label="新建对话" onClick={newSession}>
           <Plus size={16} aria-hidden="true" />
         </IconButton>
-        <IconButton
-          label="设置"
-          onClick={() => setStatus({ text: '扩展设置还没做（现在有：连接、选对话、新建、读当前页、发消息）', tone: 'info' })}
-        >
+        {/* M02-C：设置抽屉（以前是个**假按钮**，点了只弹一句「还没做」） */}
+        <IconButton label="设置" onClick={() => setSettings(true)}>
           <Settings size={16} aria-hidden="true" />
         </IconButton>
       </header>
@@ -270,6 +271,10 @@ export function App() {
         onSelectSession={selectSession}
         status={status}
         onStatus={setStatus}
+        lastError={state.lastError ?? null}
+        onRetry={retry}
+        settingsOpen={settings}
+        onCloseSettings={() => setSettings(false)}
       />
     </div>
   )

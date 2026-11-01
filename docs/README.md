@@ -15,7 +15,8 @@
 | 知道**这些规矩靠什么强制**、检查报红怎么办 | [`约束机制说明.md`](约束机制说明.md) |
 | 搞懂**一次对话在代码里怎么走** | [`架构.md`](架构.md) |
 | 知道**数据、密钥、权限的边界在哪** | [`安全模型.md`](安全模型.md) |
-| 接手这个项目 / 换机器 | [`交接清单.md`](交接清单.md) |
+| 接手这个项目 / 换机器 | [`交接清单.md`](交接清单.md)（第二节「现在到哪一步（2026-11-01 现状）」是最新的） |
+| 想知道**启动快不快、吃多少内存、常用操作卡不卡** | [`性能基准.md`](性能基准.md)（第五节是 v1.32.0 打包版实测；前面几节是 1.20.0-beta.22 的旧快照） |
 | 发一个版本 | [`发布检查.md`](发布检查.md) |
 | 查**还缺什么、别人做过什么别重复做** | [`improvement-checklist.md`](improvement-checklist.md) |
 | 想做**子代理** / 看它为什么先做「只读侦察兵」 | [`改造任务/子代理-v0任务书.md`](改造任务/子代理-v0任务书.md) · 验收：[`改造任务/子代理-v0验收步骤.md`](改造任务/子代理-v0验收步骤.md) · 看得见每一步：[`改造任务/子代理-v1卡片.md`](改造任务/子代理-v1卡片.md) |
@@ -32,6 +33,7 @@
 | 想让模型**一眼看出「有什么工具、何时该掏哪个」**（工具清单现状核对 / 分组地图 / 重复性分析 / token 实测） | [`research/toolbox-map-design.md`](research/toolbox-map-design.md)（方案 · 2026-10-13 · **已实施（B 方案）**：`core/tool-map.cjs` 分组地图，提示词 `/7→/8`） |
 | | 想让智能体**更主动**（主动查记忆 / 连续失败给替代方案 / 工具按需加载省 token） | [`research/agent-capability-upgrade-design.md`](research/agent-capability-upgrade-design.md)（只读调研 + 方案 · 2026-10-14 · **未实施，待拍板**；外部趋势已核实：Meta 官方博客 / OpenAI 两份官方文档 / Agent Arena 榜 / DeepSeek 官方） |
 | 想知道**当前架构的真实状态**（重复表达 / 多真相源 / 跨层耦合） | [`Architecture Reality Audit.md`](Architecture%20Reality%20Audit.md)（现状审计 · 2026-10-08 · **不是**设计稿） |
+| 从 Harbor 自举版终端运行统一测试、看 TUI 人话报告 | PowerShell 中打开仓库，运行 `npm run harbor-test -- all --target=source`；安装版隔离自检用 `--target=installed`。空参数进入 TUI 选择，非交互环境加 `--plain`（入口 `tools/harbor-test.mjs`） |
 | 查**同一个事实在几处被定义**（真相源 / 重复候选） | [`真相源地图.md`](真相源地图.md)（`npm run contracts` + `npm run dup`） |
 | 想知道**重复/多真相源要怎么收敛**（真相源地图怎么做、分几步） | [`research/truth-map-design.md`](research/truth-map-design.md)（设计稿 · 2026-10-13 · 目标态） |
 | 想知道**接下来还能往哪改**（改进候选 / 撞哪条红线 / 建议顺序） | [`改进清单.md`](改进清单.md)（内部自产 · 2026-10-13；**不是**外部核对账 —— 那份是 [`improvement-checklist.md`](improvement-checklist.md)） |
@@ -45,6 +47,8 @@
 | 要动**任务治理 / 模型路由 / 脑暴对齐 / 打卡制**（Phase 6 前置） | [`research/phase6-governance-routing-design.md`](research/phase6-governance-routing-design.md)（调研 · 参考 dsh-routing-suite · 2026-10-13 · ①②③ 已按批次 1-3 实施） |
 | 想知道 **Phase 6 批次 1-2 做到哪了**（persona 路由 / 北极星锚定 · 改了什么 / 验证 / 遗留） | [`research/phase6-batch1-2-summary.md`](research/phase6-batch1-2-summary.md)（阶段总结 · 2026-10-13 · 已实施并提交） |
 | 要**给 Phase 6 做真机验收 / 重新打包**（怎么点、看什么、没通过怎么反馈） | [`research/phase6-acceptance-checklist.md`](research/phase6-acceptance-checklist.md)（操作清单 + 归档待办 · 2026-10-13 · **真机验收通过，已进入日常观察期**） |
+| 想知道**浏览器扩展做到哪了、还剩什么**（12 个模块进度 + 每条依据） | [`research/edge-extension-roadmap.md`](research/edge-extension-roadmap.md)（进度表 · 2026-10-20 · M01/M04/M05 完成，M02 小批 B/C + M03 阅读模式未做） |
+| 想知道**扩展最近一批改了什么、踩了什么坑**（会话归属 / 站点黑名单 / 去重 / 真侧栏验收口径） | [`research/edge-extension-m06-m07-report.md`](research/edge-extension-m06-m07-report.md)（交付报告 · 2026-10-20 · 代码与自检已完成，**未提交**） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 想知道**凭证库损坏时怎么不丢 Key**（下一阶段设计） | [`credentials写入保护-设计.md`](credentials写入保护-设计.md)（设计稿 · 2026-10-13 · **未实施**，等批准） |

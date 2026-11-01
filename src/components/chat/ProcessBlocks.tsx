@@ -15,7 +15,16 @@ import { useScrollGuard } from './scrollGuard'
 
 /* ── 思考块 ───────────────────────────────────────────────── */
 
-export function ThinkBlock({ text, streaming = false }: { text: string; streaming?: boolean }) {
+export function ThinkBlock({
+  text,
+  streaming = false,
+  hideCount = false,
+}: {
+  text: string
+  streaming?: boolean
+  /** 运行中不显示字数（它每来一批就变一次，整行会一直跳 —— 用户点名不要） */
+  hideCount?: boolean
+}) {
   const [open, setOpen] = useState(false)
   /*
    * 迁移规则 4：用户点开/折叠思考块（= 他自己动了布局）→ 直接 FREE。
@@ -49,7 +58,7 @@ export function ThinkBlock({ text, streaming = false }: { text: string; streamin
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         {streaming ? '正在思考…' : '思考过程'}
         {/* 字数用平滑后的长度 —— 用原始 text.length 会跟着批次跳 */}
-        <span className="font-mono">{smooth.length} 字</span>
+        {hideCount ? null : <span className="font-mono">{smooth.length} 字</span>}
       </button>
 
       {open ? (

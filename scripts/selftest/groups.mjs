@@ -42,6 +42,28 @@ import { run as actGroup } from './groups/161-act.mjs'
 import { run as m04RestGroup } from './groups/162-m04-rest.mjs'
 import { run as edgeToolsGroup } from './groups/163-edge-tools.mjs'
 import { run as m02PanelGroup } from './groups/164-m02-panel.mjs'
+import { run as edgeOwnershipGroup } from './groups/174-edge-ownership.mjs'
+import { run as edgeSitesDedupeGroup } from './groups/175-edge-sites-dedupe.mjs'
+import { run as m02bCardsGroup } from './groups/176-m02b-cards.mjs'
+import { run as m02cSettingsGroup } from './groups/177-m02c-settings.mjs'
+import { run as compactChunkedGroup } from './groups/178-compact-chunked.mjs'
+import { run as edgeP0Group } from './groups/179-edge-p0.mjs'
+/* P0（2026-10-23）：历史轮次 + 压缩摘要 / 任务归属 + 记忆可见性 */
+import { run as p0WindowCompactGroup } from './groups/180-p0-window-compact.mjs'
+import { run as p0AttributionMemoryGroup } from './groups/181-p0-attribution-memory.mjs'
+/* P0-2（2026-10-23 第二轮）：压缩写盘结果 + 重启后读取（从 180 拆出来的） */
+import { run as p0CompactWriteGroup } from './groups/182-p0-compact-write.mjs'
+/* P0-1（2026-10-23 第三轮）：长原话里的约束 + 工具输出不是指令 */
+import { run as p0TrustWindowGroup } from './groups/183-p0-trust-window.mjs'
+/* P0-1（2026-10-23 第四轮）：折叠必须保住「不带关键词」的用户要求（真机漏了 [文件名]） */
+import { run as p0FoldKeepsRequirementsGroup } from './groups/184-p0-fold-keeps-requirements.mjs'
+import { run as p0FoldHardBlockGroup } from './groups/185-p0-fold-hard-block.mjs'
+/* P0-1（2026-10-23 第六轮）：「已提示」≠「已获确认」——有损阻断后的恢复条件 */
+import { run as p0FoldResumeConsentGroup } from './groups/186-p0-fold-resume-consent.mjs'
+/* P0（2026-11-01）：协作口径层 —— 先问再动 / 只在要点上开口 / 汇报 ≤300 字 */
+import { run as p0SpeechGroup } from './groups/187-p0-speech.mjs'
+/* 2026-11-01：让「先给计划」「开工前先问」两个开关真的会拦人（pre-write-gate） */
+import { run as preWriteGateGroup } from './groups/190-pre-write-gate.mjs'
 import { run as codexAdapterGroup } from './groups/165-codex-adapter.mjs'
 import { run as codexStabilityGroup } from './groups/166-codex-stability.mjs'
 import { run as probeIsolationGroup } from './groups/167-probe-isolation.mjs'
@@ -189,55 +211,52 @@ import { run as decisionEventNamesGroup } from './groups/141-decision-event-name
 
 /* ★ 顺序即运行顺序，保持既有次序不动 */
 export const GROUPS = [
-  basics, skillsMemory, fsSafety, reliability, agentLoop, promptState,
-  switchWiringGroup, roundTranscriptGroup, llmBody, limits, browser, plugins,
-  images, requires, imagesTool, taskContext, lifecycle, eventsBus, metrics, plan,
-  abortTrace, streamBatch, resume, recovery, approval, errorKinds, autoRecover,
-  continueAfterFail, continuity, fileCache, contextCache, taskName, sessionRedact,
-  notify, confirmNotify, browseNotify, trayGroup, taskOutcome, checkpoint, diagnose,
-  writeDiff, changesetDiff, perf, taskIndex, budgetGroup, loopGuard, consoleGroup,
-  steeringGroup, pauseGroup, acceptanceGroup, purgeGroup, profileGroup,
-  injectionGroup, pathEncoding, mcpPresets, interrupted, partialPersist, versionSync,
-  taskReuse, answers, logging, actionLog, selectorStability, answerPick, destructive,
-  redactFields, durableIntent, approvalCenter, tokenBadge, rollbackTo, artifactGroup,
-  skillPerms, providerCaps, memoryExplain, scheduleGroup, netPolicyGroup,
-  sessionCrypto, projectsGroup, taskPresets, consistencyGroup, boundsGroup, llmStream,
-  handlersGroup, regenGroup, taskIsolationGroup, branchPathGroup, launchSummaryGroup,
-  tokenOptGroup, visionGroup, modelChoiceGroup, browserWaitGroup, browseNavGroup,
+  basics, skillsMemory, fsSafety, reliability,
+  agentLoop, promptState, switchWiringGroup, roundTranscriptGroup,
+  llmBody, limits, browser, plugins,
+  images, requires, imagesTool, taskContext,
+  lifecycle, eventsBus, metrics, plan,
+  abortTrace, streamBatch, resume, recovery,
+  approval, errorKinds, autoRecover, continueAfterFail,
+  continuity, fileCache, contextCache, taskName,
+  sessionRedact, notify, confirmNotify, browseNotify,
+  trayGroup, taskOutcome, checkpoint, diagnose,
+  writeDiff, changesetDiff, perf, taskIndex,
+  budgetGroup, loopGuard, consoleGroup, steeringGroup,
+  pauseGroup, acceptanceGroup, purgeGroup, profileGroup,
+  injectionGroup, pathEncoding, mcpPresets, interrupted,
+  partialPersist, versionSync, taskReuse, answers,
+  logging, actionLog, selectorStability, answerPick,
+  destructive, redactFields, durableIntent, approvalCenter,
+  tokenBadge, rollbackTo, artifactGroup, skillPerms,
+  providerCaps, memoryExplain, scheduleGroup, netPolicyGroup,
+  sessionCrypto, projectsGroup, taskPresets, consistencyGroup,
+  boundsGroup, llmStream, handlersGroup, regenGroup,
+  taskIsolationGroup, branchPathGroup, launchSummaryGroup, tokenOptGroup,
+  visionGroup, modelChoiceGroup, browserWaitGroup, browseNavGroup,
   modelProbeGroup, errorObserverGroup, errorReaderGroup, machinePromptGroup,
   dataDoctorGroup, runStatsGroup, replayRiskGroup, projectRulesGroup,
   rollbackPreviewGroup, clarifyGroup, clarifyTimeoutGroup, confirmBridgeGroup,
   clarifyUnattendedGroup, clarifyWakeGroup, clarifyNoticeGroup, clarifyRuleGroup,
   acceptanceVerdictGroup, clarifyExitsGroup, scaleGateGroup, scaleConfigGroup,
-  scalePromptGroup, probeGroup, verifyHintGroup, projectFactsGroup, memoryReflectGroup,
-  memoryConflictGroup, projectCompleteGroup, urlPolicyGroup, safeWriteGroup,
-  downloadGroup, editRulesGroup, subagentGroup, cardTimeoutGroup, decisionShapeGroup,
-  eventTypesGroup, actionGroup, scaleTargetGroup, actionPermissionGroup,
-  cdpHelpersGroup, testPromptGroup, planGateGroup, personaRoutingGroup, northStarGroup,
-  strictModeGroup, markStepDoneGroup, memorySearchGroup, fsRootScopeGroup,
-  promptSplitGroup, providerBalanceGroup, usageReasoningGroup, pricingGroup,
-  browserIdentityGroup,
-  userConstraintsGroup,
-  nativeHostGroup,
-  nativeHostInstallGroup,
-  ipcChannelsGroup, cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup,
-  browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup,
-  extBridgeGroup,
-  extProtocolGroup,
-  extChatGroup,
-  observeGroup,
-  extCommandGroup,
-  actGroup,
-  m04RestGroup,
-  edgeToolsGroup,
-  m02PanelGroup,
-  codexAdapterGroup,
-  codexStabilityGroup,
-  probeIsolationGroup,
-  testFixGroup,
-  projectRootsGroup,
-  collabGroup,
-  collabStateGroup,
-  downloadProgressGroup,
-  sessionMetaSlotGroup,
+  scalePromptGroup, probeGroup, verifyHintGroup, projectFactsGroup,
+  memoryReflectGroup, memoryConflictGroup, projectCompleteGroup, urlPolicyGroup,
+  safeWriteGroup, downloadGroup, editRulesGroup, subagentGroup,
+  cardTimeoutGroup, decisionShapeGroup, eventTypesGroup, actionGroup,
+  scaleTargetGroup, actionPermissionGroup, cdpHelpersGroup, testPromptGroup,
+  planGateGroup, personaRoutingGroup, northStarGroup, strictModeGroup,
+  markStepDoneGroup, memorySearchGroup, fsRootScopeGroup, promptSplitGroup,
+  providerBalanceGroup, usageReasoningGroup, pricingGroup, browserIdentityGroup,
+  userConstraintsGroup, nativeHostGroup, nativeHostInstallGroup, ipcChannelsGroup,
+  cdpGroup, browseReadGroup, browseOpsGroup, browseHistoryGroup,
+  browseSettleGroup, shellHeartbeatGroup, decisionEventNamesGroup, extBridgeGroup,
+  extProtocolGroup, extChatGroup, observeGroup, extCommandGroup,
+  actGroup, m04RestGroup, edgeToolsGroup, m02PanelGroup,
+  codexAdapterGroup, codexStabilityGroup, probeIsolationGroup, testFixGroup,
+  projectRootsGroup, collabGroup, collabStateGroup, downloadProgressGroup,
+  sessionMetaSlotGroup, edgeOwnershipGroup, edgeSitesDedupeGroup, m02bCardsGroup,
+  m02cSettingsGroup, compactChunkedGroup, edgeP0Group, p0WindowCompactGroup,
+  p0AttributionMemoryGroup, p0CompactWriteGroup, p0TrustWindowGroup, p0FoldKeepsRequirementsGroup,
+  p0FoldHardBlockGroup, p0FoldResumeConsentGroup, p0SpeechGroup,
+  preWriteGateGroup,
 ]

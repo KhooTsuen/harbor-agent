@@ -1,31 +1,19 @@
 /**
  * 任务上下文
  *
- * 围着同一件事：**让模型知道任务进行到哪了**。三块：
+ * 围着同一件事：**让模型知道任务进行到哪了**。五块：
  *
- *   ① 注入文本 —— 把**本会话**未完成的任务组装成一段话，填进提示的 `taskState` 层。
- *      那个层一直空着（`loop-prompt.cjs` 里写着 `options.taskState ?? ''`，
- *      但全仓库没人传值），所以任务只活在界面上（侧栏黄点、横幅），
- *      模型自己压根不知道有未完成的活 —— 长对话里这就是「目标漂移」。
- *      ★ 严格按 sessionId 隔离：别的会话的任务**不进这条对话的提示**（曾经兜底注入过，
- *        导致「B 会继续执行 A 的任务」——见 buildTaskState 里的注释）。
- *
- *   ② 计划完整性 —— 计划正文算个指纹存在任务里。注入前重算，对不上就
- *      只报「对不上」不注入内容。防的是工具结果、并行会话或某个 bug 把
- *      计划悄悄改掉，而模型还照着旧计划干活。
- *
- *   ③ 完成门禁 —— 还有没勾完的计划时，模型想收工就把它顶回去继续。
- *      但**必须有刹车**：次数上限 + 停滞检测，否则计划一旦写错（比如列了
- *      一件根本做不到的事）就会把会话锁死在循环里出不来。PWF 的做法值得学。
- *
- *   ④ 项目现状 —— 「这个目录里现在有什么、测试怎么跑」（`project-facts.cjs`）。
- *      它不属于「任务」，但**只能搭这段车**：这一层（`taskState`）不裁剪、
- *      又在稳定区之后，是提示里唯一能安全容纳「每轮重算的易变文本」的位置。
- *      治的是长任务被裁剪后反复侦察同一件事，所以**两个分支都给**（不只第一轮）。
- *
- *   ⑤ 这类活以前踩过的坑 —— 把召回到的多条记忆**归并**成一句（`memory-reflect.cjs`）。
- *      和 ④ 相反，它**只在第一轮**给：它是「动手前的一句提醒」，不是常驻状态；
- *      而它归并的那些条目本来就每轮都被 `memory-recall` 注入过了。
+ *   ① 注入文本 —— 把**本会话**未完成的任务组装成一段话，填进提示的 `taskState` 层
+ *      （那个层原来一直空着，任务只活在界面上，模型压根不知道有未完成的活 → 目标漂移）。
+ *      ★ 严格按 sessionId 隔离（曾经兜底注入过，导致「B 去执行 A 的任务」）；
+ *      ★ P0-3 起还按**归属结论**决定「指不指当前任务」—— 见 buildTaskState 的 attribution。
+ *   ② 计划完整性 —— 计划正文算指纹。注入前重算，对不上就只报「对不上」不注入内容。
+ *   ③ 完成门禁 —— 计划没勾完就想收工 → 顶回去；必须带刹车（次数 + 停滞检测），
+ *      否则计划写错一件事就把会话锁死在循环里。
+ *   ④ 项目现状 —— 「这目录里现在有什么、测试怎么跑」（`project-facts.cjs`）。
+ *      它只能搭这趟车：这一层不裁剪、又在稳定区之后，是唯一能安全放易变文本的位置。
+ *   ⑤ 这类活踩过的坑 —— 把召回到的多条记忆归并成一句（`memory-reflect.cjs`），
+ *      只在第一轮给（动手前的一句提醒，不是常驻状态）。
  *
  * 计划条目的完成标记写进字符串本身（`[x] 读 package.json`），不是另建结构 ——
  * 老任务里没有标记的条目按「未完成」算，不需要迁移。
@@ -58,17 +46,9 @@ const MAX_BLOCKS = 3
  */
 const lastProgress = new Map()
 
-/**
- * 「这个项目的现状」那段（缺口 C）。
- *
- * 为什么在这儿：`taskState` 层**不裁剪**（`context-builder` 只管 memory / project /
- * conversation 三块的预算），而 prompt-stack 把它排在稳定区之后 —— 所以这段变来变去
- * 也不会把前面那片稳定区的前缀缓存冲掉。挂在项目上下文那层试过，实测会被长 AGENT.md
- * 挤掉（详见 `project-facts.cjs` 的文件头）。
- *
- * 每轮都要给：它要治的就是「对话被裁剪后反复侦察」——只在第一轮给等于没治。
- * 扫不动 / 目录不在时它是空串（宁可不给，也不给过期的）。
- */
+/* 「这个项目的现状」那段（缺口 C）：`taskState` 层不裁剪、又在稳定区之后，是唯一能
+ * 安全放「每轮重算的易变文本」的位置（挂项目上下文那层会被长 AGENT.md 挤掉）。
+ * 每轮都给 —— 它治的就是「对话被裁剪后反复侦察」；扫不动时是空串（宁可不给）。 */
 function factsSection(workdir) {
   try {
     return projectFacts.build({ workdir })
@@ -78,13 +58,8 @@ function factsSection(workdir) {
   }
 }
 
-/**
- * 「这类活你以前踩过什么坑」那段（缺口 D 的 Reflect 雏形）。
- *
- * 只在**新活第一轮**给：把召回到的多条记忆归并成一句「同一件事你记过不止一次」——
- * 每轮都念就是噪音，而且那些条目本身每轮已经被 `memory-recall` 注入了。
- * 没归并出成组的（或跟本次提问没词重合的）它自己返回空串。
- */
+/* 「这类活你以前踩过什么坑」那段（缺口 D 雏形）：只在**新活第一轮**给 —— 每轮都念
+ * 就是噪音（那些条目本身已被 memory-recall 每轮注入过）；没归并出成组就返回空串。 */
 function reflectSection(userText, projectId) {
   try {
     return memoryReflect.reflect({ query: String(userText ?? ''), projectId: String(projectId ?? '') })
@@ -99,7 +74,21 @@ function resetProgressMemory() {
   lastProgress.clear()
 }
 
-function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = '', projectId = '' } = {}) {
+function buildTaskState({
+  sessionId = '',
+  taskId = '',
+  userText = '',
+  workdir = '',
+  projectId = '',
+  /*
+   * ★ P0-3：这次运行**归谁**（`task-attribution.decide()` 的结论）。传了它，这一节
+   * 就只按它说话：`resume` 才把某条标成「当前在做」，`new` / `needs_clarification`
+   * **一条都不指**。以前这里总把最近更新的未完成任务标成 `▶ 当前` 并附「接着做」，
+   * 而台账那边可能刚新建了一条 → 提示说 A、台账是 B。
+   * 不传（老调用方 / 自检）→ 退回旧行为，与升级前一致。
+   */
+  attribution = null,
+} = {}) {
   let tasks = []
   try {
     /*
@@ -139,8 +128,17 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = 
       .join('\n\n')
   }
 
-  /* 哪条是「当前」：优先显式 taskId，否则最近更新的那条（unfinished 已按 updatedAt 降序） */
-  const currentId = taskId || ordered[0]?.id || ''
+  /*
+   * 哪条是「当前」：有归属结论 → **只有 resume 才指出当前**（其余一条都不指）；
+   * 没结论（老调用方）→ 显式 taskId，否则最近更新的那条（unfinished 已按 updatedAt 降序）。
+   * ★ P0-3 的关键：以前无论如何都标一条「▶ 当前」并附「接着做」，于是「这其实是新任务」
+   *   的时候，提示在让模型接着做一件它没被指派的事。
+   */
+  const currentId = attribution
+    ? attribution.kind === 'resume'
+      ? attribution.taskId
+      : ''
+    : taskId || ordered[0]?.id || ''
 
   /* 诊断用：确认「用户在说继续」这条真的被认出来了（taskState 不落盘） */
   if (steering.isContinueIntent(userText)) {
@@ -211,20 +209,34 @@ function buildTaskState({ sessionId = '', taskId = '', userText = '', workdir = 
     blocks.push(lines.join('\n'))
   }
 
+  /*
+   * 抬头这几句按归属结论说话（P0-3）：resume（或老调用方没给结论）→ 台账是「这次
+   * 要做什么」；new / needs_clarification → 台账只是**背景**，不能拿它当目标。
+   */
+  const asBackground = Boolean(attribution) && attribution.kind !== 'resume'
+  const waitingNote =
+    attribution?.kind === 'needs_clarification' && attribution.backgroundTaskId
+      ? '\n（上面有一条任务停在「等你回话」，但用户这句**看不出是不是在回答它** —— P0 阶段不猜：先按用户这句话办；真要它继续，等他明说，或直接问。）'
+      : ''
+  /*
+   * AG-018：用户说「继续」时把话说死（否则模型会把它当含糊的新要求，重新问一遍背景）。
+   * ★ 有归属结论时只听它的 —— 同一件事不能有两种说法。
+   */
+  const continueLine = `\n（用户这句「${String(userText).trim()}」是在说**接着做** —— 目标是上面那条任务，不是新任务。先看计划进度和最近一步，从停住的地方往下走；缺上下文就查最近工具结果，别从头再问一遍。）`
+  const saidContinue = attribution ? attribution.continueIntent : steering.isContinueIntent(userText)
   return [
-    '以下是**还没做完**的任务台账（来自磁盘，不是你说过的话）。',
-    '继续干活时以它为准：接着计划里**第一条没有 [x] 的**往下做，别重复已经完成的步骤。',
+    asBackground
+      ? '以下是**还没做完**的其他任务台账（来自磁盘，不是你说过的话）—— 这轮**不是**接着它们做，只作背景。'
+      : '以下是**还没做完**的任务台账（来自磁盘，不是你说过的话）。',
+    asBackground
+      ? '只在用户明确要接着做时才动它们；别把它们的计划当成这轮的目标。'
+      : '继续干活时以它为准：接着计划里**第一条没有 [x] 的**往下做，别重复已经完成的步骤。',
     taskHint.ledgerFormatLine(),
-    '如果某一步其实不需要做了，也在计划里说明理由，不要默默跳过。',
-    /*
-     * AG-018：用户在说「继续」时，把话说死。
-     *
-     * 不做这一步的话，模型有可能会把「继续」当成一个含糊的新要求 ——
-     * 重新问一遍背景，或者干脆重头讲一遍计划。
-     */
-    steering.isContinueIntent(userText)
-      ? `\n（用户这句「${String(userText).trim()}」是在说**接着做** —— 目标是上面那条任务，不是新任务。先看计划进度和最近一步，从停住的地方往下走；缺上下文就查最近工具结果，别从头再问一遍。）`
-      : '',
+    asBackground
+      ? '如果用户这轮明确要改某条任务的计划，就给出更新后的完整计划。'
+      : '如果某一步其实不需要做了，也在计划里说明理由，不要默默跳过。',
+    waitingNote,
+    saidContinue ? continueLine : '',
     '',
     blocks.join('\n\n'),
     /* 项目现状放最后：台账是「这次要做什么」，现状是「磁盘上现在有什么」 */

@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react'
-import { GitCompareArrows, FileCode2 } from 'lucide-react'
+import { FileCode2 } from 'lucide-react'
 import type { FileNode, Project } from '@/types'
 import { cn } from '@/lib/utils'
-import { colorOf } from '@/lib/statusLanguage'
 import { useAgentActive } from '@/hooks/useAgentActive'
 import { buildFileTree } from '@/lib/mock'
 import { fsTree, toFileNode } from '@/lib/fsApi'
-import { sumDiff } from '@/components/chat/DiffViewer'
-import { DiffViewer } from '@/components/chat/DiffViewer'
 import { FileTree } from './FileTree'
 import { FilePreview } from './FilePreview'
 import { BrowserTab } from './BrowserTab'
@@ -21,6 +18,8 @@ import { ErrorsPanel } from './ErrorsPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
 /* 标签栏单独一个文件：角标加上来之后本文件会破 300 行红线（硬约束 #2） */
 import { RightTabs } from './RightTabs'
+/* 「审查」内容区也搬出去了 —— 同上，一段完整说明住在一个文件里更好找 */
+import { DiffPanel } from './panels/DiffPanel'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -42,6 +41,42 @@ import { isElectron } from '@/lib/backend'
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 主组件 ─────────────────────────────────────────────────── */
+
+/**
+ * 读一次目录树并写回三个 state（模块级函数，不随渲染重建）。
+ *
+ * 为什么放模块级而不是组件里的 `useCallback`：那个 effect 的依赖必须**只写原始值**
+ * `effectiveProject?.path`（自检 `59-selector` 钉着 —— 拿整个对象当依赖会回到
+ * 「store 一动就重读磁盘」的老毛病）。函数在这里是稳定的，就不必塞进依赖数组。
+ *
+ * 第二个用途是「刷新文件树」按钮：同一目录里文件变了之后手动重读，
+ * 不靠猜「什么时候变了」。
+ */
+async function readTree(
+  dir: string | undefined,
+  setters: {
+    setRealTree: (node: FileNode | null) => void
+    setTreeRoot: (root: string) => void
+    setTreeError: (error: string) => void
+  },
+): Promise<void> {
+  const tree = await fsTree(dir)
+  if (tree && tree.ok) {
+    setters.setTreeError('')
+    setters.setTreeRoot(tree.root)
+    setters.setRealTree({
+      id: tree.root,
+      name: tree.name,
+      type: 'folder',
+      path: tree.root,
+      children: tree.children.map(toFileNode),
+    })
+    return
+  }
+  setters.setRealTree(null)
+  setters.setTreeRoot('')
+  if (isElectron) setters.setTreeError(tree?.error ?? '真实工作目录读取失败')
+}
 
 const EMPTY_PROJECT: Project = {
   id: '',
@@ -125,32 +160,27 @@ export function RightPanel() {
    * 于是这个标签一直显示「没有待审查的改动」，而 Agent 明明刚改过文件。
    */
   const changed = useTaskStore((s) => s.diff)
-  const diffs = changed?.files ?? []
-  const { additions, deletions } = sumDiff(diffs)
-  const skipped = changed?.skipped ?? []
+  const diffError = useTaskStore((s) => s.diffError)
 
   /* 桌面版读取真实工作目录；浏览器预览才使用静态文件树 */
   useEffect(() => {
-    void (async () => {
-      const tree = await fsTree(effectiveProject?.path)
-      if (tree && tree.ok) {
-        setTreeError('')
-        setTreeRoot(tree.root)
-        setRealTree({
-          id: tree.root,
-          name: tree.name,
-          type: 'folder',
-          path: tree.root,
-          children: tree.children.map(toFileNode),
-        })
-      } else {
-        setRealTree(null)
-        setTreeRoot('')
-        if (isElectron) setTreeError(tree?.error ?? '真实工作目录读取失败')
-      }
-    })()
+    void readTree(effectiveProject?.path, { setRealTree, setTreeRoot, setTreeError })
     /* 依赖写 path（原始值）：这个 effect 只用到路径，拿整个对象当依赖等于"随它变" */
   }, [effectiveProject?.path])
+
+  /*
+   * 切到另一条对话时，重拉**这条对话**的改动。
+   *
+   * 以前只有 `refresh()`（工具跑完 / 一轮结束 / 窗口重新可见时才调）会更新 diff ——
+   * 切对话不算那类事件，于是「审查」与顶栏 +N −M 一直停在上一条对话的数上
+   * （真机验收时看到的就是：明明刚改过文件，面板说「还没有改动」）。
+   * 依赖只写 id（原始值）：这条对话来一条消息不该触发一次 IPC。
+   */
+  const activeThreadId = thread?.id ?? ''
+  useEffect(() => {
+    if (!activeThreadId) return
+    void useTaskStore.getState().refreshDiff(activeThreadId)
+  }, [activeThreadId])
 
   /* 桌面版失败时不能悄悄退回假文件树；浏览器预览才允许静态树。 */
   const fileTree =
@@ -196,49 +226,7 @@ export function RightPanel() {
           <div className="flex min-h-0 flex-1 flex-col">
             {/* AG-052：刚刚撤过一次的话，顶上留一条记录（没撤过就什么都不占） */}
             <RollbackRecord />
-            {diffs.length > 0 ? (
-              <>
-                <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-3 py-2 text-2xs">
-                  <span className="text-fg-secondary">未提交的改动</span>
-                  {changed?.title ? (
-                    <span className="min-w-0 truncate text-fg-tertiary" title={changed.title}>
-                      {changed.title}
-                    </span>
-                  ) : null}
-                  {active ? (
-                    <span className="flex items-center gap-1 text-fg-tertiary">
-                      <span className="inline-block size-1.5 animate-pulse rounded-full bg-warning" />
-                      生成中…
-                    </span>
-                  ) : null}
-                  <span className="ml-auto flex items-center gap-2 font-mono">
-                    <span style={{ color: 'var(--diff-add)' }}>+{additions}</span>
-                    <span style={{ color: 'var(--diff-remove)' }}>−{deletions}</span>
-                  </span>
-                </div>
-                {/* Phase 2 · C：这一栏是**工作区改动**，正式产物不在这里 —— 一句静态说明，
-                    不做跳转也能懂（互指文案写在内容区，不塞进标签栏）。 */}
-                <p className="shrink-0 border-b border-line-subtle px-3 py-1 text-2xs text-fg-tertiary">
-                  这里列的是工作区里被改动的文件；Agent 的正式产出（artifact）在「成果」标签。
-                </p>
-                <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                  {skipped.length > 0 ? (
-                    <p className="mb-2 text-2xs" style={{ color: colorOf('warning') }}>
-                      ⚠ {skipped.join('；')}
-                    </p>
-                  ) : null}
-                  <DiffViewer files={diffs} />
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-1 items-center justify-center">
-                <EmptyState
-                  icon={<GitCompareArrows size={28} />}
-                  title="没有待审查的改动"
-                  description="让 Agent 改点东西，diff 会出现在这里。也可以用 /review 主动发起一次审查。Agent 的正式产出（artifact）在「成果」标签。"
-                />
-              </div>
-            )}
+            <DiffPanel changed={changed} active={active} diffError={diffError} />
           </div>
         ) : null}
 
@@ -246,14 +234,22 @@ export function RightPanel() {
           openFile ? (
             <FilePreview node={openFile} root={treeRoot} onClose={() => setOpenFile(null)} />
           ) : fileTree ? (
-            <FileTree root={fileTree} activeFileId={null} onOpenFile={setOpenFile} />
+            <FileTree
+              root={fileTree}
+              activeFileId={null}
+              onOpenFile={setOpenFile}
+              /* 刷新读的是**当前这棵树**的目录，不是全局工作目录 */
+              onRefresh={() =>
+                readTree(effectiveProject?.path, { setRealTree, setTreeRoot, setTreeError })
+              }
+            />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <EmptyState
                 icon={<FileCode2 size={28} />}
                 title={treeError ? '读取工作目录失败' : '工作目录为空'}
                 description={
-                  treeError || '当前工作目录没有可显示的文件。去「设置 → 工具」检查工作目录。'
+                  treeError || '当前工作目录没有可显示的文件。去「设置 → 对话」检查默认工作目录。'
                 }
               />
             </div>

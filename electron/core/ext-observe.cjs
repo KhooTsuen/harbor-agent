@@ -59,6 +59,7 @@ function renderObservation(obs) {
     lines.push('### 用户选中的内容', '')
     lines.push(`> ${String(sel.text).split('\n').join('\n> ')}`, '')
     lines.push(kv('所在元素', `${cell(sel.tag)}${sel.ref ? ` · 引用 ${cell(sel.ref)}` : ''}${sel.truncated ? '（选区过长，已截断）' : ''}`))
+    if (sel.context) lines.push(kv('周围内容', cell(String(sel.context).slice(0, 900))))
   } else {
     lines.push('### 用户选中的内容', '', '（没有选中任何内容）')
   }
@@ -68,7 +69,7 @@ function renderObservation(obs) {
   const elements = Array.isArray(o.elements) ? o.elements : []
   lines.push('### 可交互元素', '')
   if (!elements.length) {
-    lines.push('（这个页面上没有可见的可交互元素）', '')
+    lines.push(`（这个页面上没有可见的可交互元素 —— 选择器命中 ${Number(stats.candidates ?? 0)} 个，其中可见 ${Number(stats.visibleCandidates ?? 0)} 个）`, '')
   } else {
     lines.push(...elementsTable(elements))
     lines.push('')
@@ -139,7 +140,7 @@ function renderElements(obs, opts = {}) {
 
   lines.push('### 可交互元素', '')
   if (!elements.length) {
-    lines.push('（这个页面上没有可见的可交互元素）', '')
+    lines.push(`（这个页面上没有可见的可交互元素 —— 选择器命中 ${Number(o.stats?.candidates ?? 0)} 个，其中可见 ${Number(o.stats?.visibleCandidates ?? 0)} 个）`, '')
   } else {
     lines.push(...elementsTable(elements))
     lines.push('', '> 引用格式 `<页面版本>.<序号>` —— 页面一变，旧引用即失效。', '')

@@ -16,6 +16,7 @@ export function buildSendPayload(opts: {
   mode: string
   /** 这一轮是怎么起来的（只进日志）：用户发送 / 点继续 / 编辑后重答 / 重新生成 / 重试 */
   reason?: string
+  origin?: 'edge-sidepanel'
   /** 「重新生成」的关联：被替代那条的磁盘 key */
   regeneratedFrom?: string
   regenerateIsLast?: boolean
@@ -35,6 +36,7 @@ export function buildSendPayload(opts: {
     resumeTaskId: opts.resumeTaskId,
     requestTime: opts.requestTime,
     ...(opts.reason ? { reason: opts.reason } : {}),
+    ...(opts.origin ? { origin: opts.origin } : {}),
     ...(opts.regeneratedFrom
       ? { regenerateOf: opts.regeneratedFrom, regenerateIsLast: opts.regenerateIsLast === true }
       : {}),

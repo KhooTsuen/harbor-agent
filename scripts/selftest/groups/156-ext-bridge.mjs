@@ -204,8 +204,14 @@ export async function run() {
   const perms = manifest.permissions ?? []
   check('★ 有 activeTab（点一下才授权，安装时不吓人）', perms.includes('activeTab'))
   check('★ 有 scripting（executeScript 必须声明它）', perms.includes('scripting'))
-  check('★ 没有 host_permissions（本阶段绝不加 <all_urls>）', manifest.host_permissions === undefined)
-  check('★ 没有 optional_host_permissions（同样本阶段不加）', manifest.optional_host_permissions === undefined)
+  /*
+   * ★ M07（2026-10-21 修订）：默认那一处**仍然**一个都不许有（装完就全站可读不可接受）；
+   *   用户主动扩大的入口走 `optional_host_permissions`（安装时不弹窗，必须运行时申请）。
+   *   这条以前写的是「绝不加 <all_urls>」，现在改口径 —— 不是为了让测试变绿，
+   *   而是用户明确要了「可选整站读取」这个能力，见 177 组与 docs/安全模型.md。
+   */
+  check('★ 没有默认 host_permissions（M07：装完不许全站可读）', manifest.host_permissions === undefined)
+  check('★ 可选 host 权限只有 <all_urls>（唯一的扩大入口）', JSON.stringify(manifest.optional_host_permissions) === JSON.stringify(['<all_urls>']), JSON.stringify(manifest.optional_host_permissions))
 
   /*
    * M02-A：侧边栏消息的 if 链搬到了 `lib/messages.js`（SW 贴 300 红线）。

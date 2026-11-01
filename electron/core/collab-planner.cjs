@@ -103,6 +103,8 @@ async function runReadOnly(input) {
       config: withModel(config, model, input.providerId),
       workdir,
       sessionId: input.sessionId ?? '',
+      origin: input.origin === 'edge-sidepanel' ? 'edge-sidepanel' : '',
+      allowBuiltinBrowser: input.allowBuiltinBrowser === true,
       mode: 'pair',
       signal: signal ?? new AbortController().signal,
       confirm,
@@ -144,7 +146,7 @@ async function runReadOnly(input) {
  * openai 版计划阶段。
  * @param {{ goal: string, projectRoot: string, testCommand?: string, config: object,
  *           model?: string, providerId?: string, sessionId?: string, threadSettings?: object,
- *           images?: string[], imageAnalysis?: string,
+ *           images?: string[], imageAnalysis?: string, origin?: string, allowBuiltinBrowser?: boolean,
  *           signal?: AbortSignal, confirm?: Function, emit?: Function }} input
  */
 async function planProjects(input) {

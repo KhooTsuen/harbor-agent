@@ -21,6 +21,7 @@
 const clarify = require('../clarify.cjs')
 const scaleGate = require('./scale-gate.cjs')
 const gate = require('./ask-user-gate.cjs')
+const preWriteGate = require('./pre-write-gate.cjs')
 
 /**
  * 谁能把问题送到界面上？
@@ -172,6 +173,10 @@ module.exports = {
     } catch (error) {
       return `提问失败（${error instanceof Error ? error.message : String(error)}）。按你自己判断开工，并说明理由。`
     }
+
+    /* 真的问出去了（卡片送到了用户面前）→ 记一条通行证：写工具那两道闸不再拿它拦
+       （`pre-write-gate.cjs` 的 C 闸）。通道没接上/抛错的那几支都不会走到这里。 */
+    preWriteGate.noteAsked(ctx.taskId)
 
     /*
      * 这个任务**累计离场等待**超上限了（`clarifyMaxWaitMs`）——「本任务不再弹卡」就是这一支。

@@ -45,12 +45,13 @@ export interface ThreadState extends AttachmentSlice {
     resumeTaskId?: string,
     targetThreadId?: string,
     attachments?: MessageAttachments,
+    origin?: 'edge-sidepanel',
   ) => void
   stopGeneration: () => void
   sendImmediately: () => Promise<boolean>
   pauseGeneration: () => void
   resumeTask: (taskId: string) => void
-  regenerateMessage: (messageId: string) => void
+  regenerateMessage: (messageId: string, targetThreadId?: string, origin?: 'edge-sidepanel') => void
   editAndRerun: (threadId: string, messageId: string, text: string) => void
   /** 切到某一版重新回答（界面上 ‹ n / N ›） */
   activateUserVersion: (threadId: string, messageId: string, index: number) => void
@@ -111,7 +112,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   setInput: (value) => set({ input: value.slice(0, MAX_INPUT_LENGTH) }),
   clearInput: () => set({ input: '' }),
 
-  sendMessage: (override, resumeTaskId, targetThreadId, attachments) => {
+  sendMessage: (override, resumeTaskId, targetThreadId, attachments, origin) => {
     const outgoing = prepareOutgoing({
       text: override ?? get().input,
       attachments,
@@ -182,7 +183,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         )
         replaceDraftOwner(threadId, meta.id)
         useAppStore.getState().replaceThreadId(threadId, meta.id)
-        useThreadStore.getState().sendMessage(raw, resumeTaskId, meta.id, { images, files })
+        useThreadStore.getState().sendMessage(raw, resumeTaskId, meta.id, { images, files }, origin)
       })()
       return
     }
@@ -226,6 +227,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     if (useRealBackend) {
       void runElectronTurn(threadId, raw, set, resumeTaskId ?? '', {
         reason: resumeTaskId ? '点继续' : '用户发送',
+        origin,
       })
     } else {
       void runMockTurn(threadId, raw, set)

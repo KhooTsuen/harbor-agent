@@ -218,19 +218,24 @@ export function SessionDrawer({
                     type="button"
                     aria-label={`选择会话 ${s.title || s.id}`}
                     aria-current={s.id === selectedId ? 'true' : undefined}
+                    title={s.id}
                     onClick={() => onSelect(s.id)}
-                    className={`w-full rounded-base border px-2.5 py-2 text-left transition-colors duration-fast ${
+                    className={`w-full rounded-base border px-2.5 py-1.5 text-left transition-colors duration-fast ${
                       s.id === selectedId
                         ? 'border-line-subtle bg-bg-active'
                         : 'border-line-hairline bg-bg-raised hover:bg-bg-hover'
                     }`}
                   >
-                    <div className="truncate text-dense text-fg-primary">{s.title || '（无标题）'}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-2xs text-fg-tertiary">
-                      <span className="truncate">{s.id}</span>
+                    <div className="truncate text-dense leading-snug text-fg-primary">{s.title || '（无标题）'}</div>
+                    {/*
+                     * 副行只放「时间 · 条数」：会话 id（`sess_xxx`）对人没用，
+                     * 之前它占着副行一半宽度、把时间挤到后面（用户 2026-10-21 指出）。
+                     * 需要时鼠标悬停能看到（button 的 title 就是 id）。
+                     */}
+                    <div className="mt-0.5 flex items-center gap-1.5 text-2xs text-fg-tertiary">
                       <span className="shrink-0">{relativeTime(s.updatedAt)}</span>
                       {typeof s.messageCount === 'number' ? (
-                        <span className="shrink-0">{s.messageCount} 条消息</span>
+                        <span className="shrink-0">· {s.messageCount} 条消息</span>
                       ) : null}
                     </div>
                   </button>

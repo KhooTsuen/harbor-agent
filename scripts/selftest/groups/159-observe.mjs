@@ -152,5 +152,22 @@ export async function run() {
   check('★ ext:page 仍在分派表里', ops.kinds().includes(P.KIND.EXT_PAGE))
   check('★ SW 仍有 read-page 入口（Phase 2 那个按钮没坏）', /'read-page'/.test(swSrc) && /readActivePage/.test(swSrc))
   check('★ 「拿前台标签」抽成了一处（read 与 observe 共用，不各写一份）', /resolveActiveTab/.test(swSrc) && /resolveActiveTab/.test(runSrc))
-  check('★ 受限页的两句人话**原样保留**（accept-phase2 按它们断言）', /先点一下工具栏的 Harbor 图标再试/.test(readFileSync(join(ROOT, 'harbor-edge/extension/lib/active-tab.js'), 'utf8')))
+  /*
+   * 2026-10-21：文案改写过（用户反馈原句「先点一下工具栏的 Harbor 图标再试」太模糊，
+   * 不知道图标在哪）。所以这里从「钉完整原文」改成「钉核心短语 + 三个必须说清的点」——
+   * 契约本来是「有两句人话」，不是「字字不许动」；放宽之后补充说明不会误报，
+   * 但删掉核心短语、或把「在哪 / 快捷键」去掉，仍然会红。
+   */
+  check(
+    '★ 受限页的两句人话**还在**（accept-phase2 按核心短语断言；且必须说清图标在哪、有快捷键）',
+    (() => {
+      const src = readFileSync(join(ROOT, 'harbor-edge/extension/lib/active-tab.js'), 'utf8')
+      return (
+        /先点一下工具栏的 Harbor 图标/.test(src) &&
+        /Alt\+Shift\+H/.test(src) &&
+        /拼图/.test(src) &&
+        /该页面不支持读取/.test(src)
+      )
+    })(),
+  )
 }

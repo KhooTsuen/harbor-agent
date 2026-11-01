@@ -230,13 +230,17 @@ export async function run() {
    * ★ 真机逮到的坑：这个「是不是接回来的」判断必须在 openForRun **之前**做 ——
    *   openForRun 内部会把任务 reopen 成 running，之后再问「它是不是 running」永远是否，
    *   于是用户改了方向却一条都记不下来（真机上任务接回来了、steering 是空的）。
+   * ★ P0-3 之后这个顺序由结构保证：归属**只判一次**（`chat-run` 判好交下来，
+   *   `loop-run` 没收到就当场判），`openForRun` 只认那份结论、不再自己判。
    */
   check(
-    '★ 接回来的判断在 openForRun 之前（顺序不能反）',
-    runSrc.indexOf('activeForSession(sessionId, { continueIntent })') <
-      runSrc.indexOf('taskResume.openForRun('),
+    '★ 归属判定在 openForRun 之前（P0-3：只判一次，openForRun 只认结论）',
+    runSrc.indexOf('taskAttribution.decide(') < runSrc.indexOf('taskResume.openForRun('),
   )
-  check('★ 判断用接回的结果，不是用状态反推', runSrc.includes('Boolean(attached)'))
+  check(
+    '★ loop-run 把同一份结论交给 openForRun（不再自己拼 attached）',
+    runSrc.includes('attribution: decided') && !runSrc.includes('Boolean(attached)'),
+  )
 
   const ctxSrc = readFileSync(join(ROOT, 'electron/core/task-context.cjs'), 'utf8')
   check(
@@ -247,8 +251,12 @@ export async function run() {
 
   const resumeSrc = readFileSync(join(ROOT, 'electron/core/task-resume.cjs'), 'utf8')
   check(
-    '★ openForRun 会接回这条对话没干完的任务（但由 continueIntent 把关）',
-    resumeSrc.includes('activeForSession(sessionId, { continueIntent })'),
+    '★ openForRun 只认归属结论（不再自己判「是不是继续」）',
+    resumeSrc.includes('attribution: decided = null') && resumeSrc.includes('decision.kind === '),
+  )
+  check(
+    '★ 归属判定的规则只有一处（task-attribution），task-resume 不再手写 status 判断',
+    !resumeSrc.includes("task.status === 'waiting_user' ||"),
   )
   check(
     '★ 界面上看得见「你改过方向」（记录用户修改）',

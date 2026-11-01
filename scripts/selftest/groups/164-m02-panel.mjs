@@ -93,7 +93,13 @@ export async function run() {
   group('M02-A · 拆分没丢东西（快照 / 旁听的语义还在）')
   check('★ 快照与旁听搬到 ext-chat-streams.cjs', /function createStreamStore/.test(streamSrc) && /createStreamStore/.test(chatCs))
   check('★ 快照仍按 sessionId 找最近一条（chat:resume 的关键）', /function latestOf\(sessionId\)/.test(streamSrc) && /streamStore\.latestOf\(want\)/.test(chatCs))
-  check('★ `done` 那片仍推**全文**（分片丢了也能补齐）', /type === 'done' \? snap\.text/.test(streamSrc))
+  /*
+   * 判据本意：`done` 那片必须推**全文**（分片丢了也能补齐）。
+   * ★ 2026-10-21 放宽了一处文本形态（意图不变）：`retry` 也推全文 —— 重试时主进程会把
+   *   本轮正文回滚到重试前的位置，侧栏得拿到回滚后的全文来**覆盖**，否则同一段会显示两遍。
+   *   所以条件从 `type === 'done' ?` 变成了 `type === 'done' || type === 'retry' ?`。
+   */
+  check('★ `done` 那片仍推**全文**（分片丢了也能补齐）', /\btype === 'done'[^?]*\? snap\.text/.test(streamSrc))
   check('★ 旁听仍只认「有 requestId」的事件（没有就认不出是哪一轮）', /没有 requestId 的 chat:event/.test(streamSrc))
   check('★ KEEP_AFTER_DONE_MS 从 streams 再导出（老调用点不变）', C.KEEP_AFTER_DONE_MS === 60_000)
   check('★ 快照仍能从 relay 取到（自检用入口没断）', typeof relay.snapshotOf === 'function' && relay.snapshotOf('nope') === null)

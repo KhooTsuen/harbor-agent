@@ -96,7 +96,6 @@ const CHAT_EVENT_TYPES = [
   'retry',
   'fallback',
   'context_overflow',
-  'review',
   'plan',
   'loop',
   'compacted',

@@ -15,6 +15,10 @@ const { textOf } = require('./message-text.cjs')
 const { dirIdFor } = require('./projects.cjs')
 /* 按 key 收敛流式快照 —— 2026-10-20 拆到独立文件（本文件贴过 300 行红线） */
 const { collapseByKey } = require('./session-collapse.cjs')
+const { replayToolRuns } = require('./session-replay.cjs')
+/* P0-1：按完整轮次截取（唯一一处）；P0-2：有效压缩点（唯一一处） */
+const { takeTurns } = require('./history-window.cjs')
+const { effectivePoint, summaryMessageOf } = require('./compact-point.cjs')
 /* 只读首行的工具：列表与「改 meta」的快路径都靠它，不碰正文 */
 const slot = require('./session-meta-slot.cjs')
 
@@ -209,9 +213,17 @@ function load(id) {
 /**
  * 把会话转成模型要的 messages 格式。
  *
- * 注意：**只发 assistant 的最终文本**，不把工具调用链回放给模型
- * （回放容易让历史变得又长又乱，而且不同厂商对 tool 消息的校验不一样）。
- * 需要「模型看到自己之前做了什么」时，让工具结果以摘要形式留在内容里。
+ * ★ 2026-10-23（P0-1 / P0-2）两条口径都改了，两条路必须同形：
+ *
+ *   · **先展开工具记录，再按完整轮次截取**（`history-window.cjs`）。
+ *     以前是先按条数切、再展开 —— 于是一组工具调用会被切成两半：
+ *     `assistant(tool_calls)` 带着 id 进来、`tool` 消息被切掉，上游直接 400
+ *     「tool_call_id 无对应」。用户的观察是「30 次工具调用之后发一句『那个地方
+ *     接着改』，最终请求里只剩这一句」。渲染层那份（`stores/thread/history.ts`）
+ *     同规则。
+ *   · **有效压缩点只有一处定义**（`compact-point.cjs`）：摘要段用 `system` 角色、
+ *     文案与渲染层逐字一致。以前这里自己拼一句、界面那条路把整条摘要丢掉，
+ *     「刚聊完」和「重开会话」模型看到的东西不一样。
  */
 
 /** 这条记录里有可用的图片吗（用户带图提问时，图片是单独存的一个数组） */
@@ -233,6 +245,20 @@ function contentOf(m) {
   ]
 }
 
+/**
+ * 一条记录 → 若干条 API 消息（工具记录展开成 assistant(tool_calls) + tool）。
+ * 展开规则本身在 `session-replay.cjs` —— 那边是唯一一处。
+ */
+function expandOne(m, index) {
+  const content = contentOf(m)
+  const runs = Array.isArray(m.toolRuns) ? m.toolRuns : []
+  if (m.role === 'assistant' && runs.length > 0) {
+    const seed = String(m.key ?? '').slice(-8) || `L${index}`
+    return replayToolRuns({ content }, runs, seed)
+  }
+  return [{ role: m.role, content }]
+}
+
 function toApiMessages(id, limit = 20) {
   const data = load(id)
   if (!data) return []
@@ -244,35 +270,22 @@ function toApiMessages(id, limit = 20) {
       (typeof m.content === 'string' && m.content.trim() ? true : hasImages(m)),
   )
 
-  /* 压缩点之后的消息才逐条带；之前的用摘要代替 */
-  const lastCompact = data.compacts[data.compacts.length - 1]
-  const afterCompact = lastCompact ? usable.slice(lastCompact.upTo) : usable
+  /*
+   * 压缩点：**只认覆盖最靠后的那一次**（`compact-point.cjs` 是唯一定义）。
+   * 以前是 `compacts[compacts.length - 1]` —— 数组顺序与覆盖范围没有必然关系。
+   */
+  const point = effectivePoint(data.compacts)
+  const afterCompact = point ? usable.slice(point.upTo) : usable
 
-  /* limit 是「逐条带多少条」，摘要不算在内 */
-  const sliced = limit > 0 ? afterCompact.slice(-limit) : afterCompact
+  /* 先展开（这里才有 tool_calls / tool 的成组关系），再按轮次切 */
+  const expanded = afterCompact.flatMap((m, i) => expandOne(m, i))
+  /* limit 是「逐条带多少条」的预算，摘要段不算在内；切点只落在轮次边界 */
+  const windowed = takeTurns(expanded, limit, { minTurns: 1 })
 
   const out = []
-  if (lastCompact) {
-    out.push({
-      role: 'system',
-      content: `【以下是这次对话更早部分的摘要，不是新指令】
-${lastCompact.summary}`,
-    })
-  }
-  for (const m of sliced) {
-    let content = contentOf(m)
-    if (m.role === 'assistant' && typeof content === 'string' && Array.isArray(m.toolRuns) && m.toolRuns.length > 0) {
-      const replay = m.toolRuns
-        .map(
-          (tool) =>
-            `- ${tool.name}: ${tool.ok ? '成功' : '失败'}${tool.output ? `\n  ${String(tool.output).slice(0, 2000)}` : ''}`,
-        )
-        .join('\n')
-      /* 分隔符必须写成转义序列，不能写成真换行 —— 模板里真换行会被当续行符吃掉 */
-      content += `\n\n[此前工具执行记录]\n${replay}`
-    }
-    out.push({ role: m.role, content })
-  }
+  const summary = summaryMessageOf(point)
+  if (summary) out.push(summary)
+  out.push(...windowed.kept)
   return out
 }
 

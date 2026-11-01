@@ -57,6 +57,13 @@ export interface StoredMessage {
   interrupted?: boolean
   /** 收尾落盘时标上：这条是被用户中止的（读侧映射成 interrupted —— 按钮据此说「重试」） */
   aborted?: boolean
+  /**
+   * 这一轮实际花了多少毫秒（2026-10-21）。
+   *
+   * 起止点口径写在 `src/types/conversation.ts` 的 `Message.durationMs` 注释里。
+   * 老记录没有这个字段 → 界面显示「N 步」不显示秒数，不推算。
+   */
+  durationMs?: number
   /** 这条回答是「重新生成」来的：指向被替代的那条回答（磁盘 key）—— 台账对账 / 对比两次生成用 */
   regeneratedFrom?: string
   /** 读的一侧加上去的：这条提问的**全部**回答（含别的版本、含重生成过的） */

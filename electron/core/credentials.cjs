@@ -1,14 +1,12 @@
 /**
  * 凭证库 —— **API Key 不许出现在 config.json 里**：配置只留 `credentialRef`，密钥存这里。
- * 加密用 Electron 的 `safeStorage`（Windows 底层 DPAPI、绑当前用户账户），选它不选 keytar/原生
- * 模块是因为 Electron 自带、零新依赖。四点须知：
- *  ① safeStorage 只有 Electron 有；纯 Node 环境退化成明文 + `backend='plain'`，**不假装加密了**。
- *  ② 启动早期可能没就绪 → 全部懒加载 + 缓存，不在顶层 require。
- *  ③ 读出的密钥都在脱敏模块登记，之后日志/会话/导出里出现它一律被替换。
- *  ④ **状态不明时拒绝写**（2026-10-13，E2 凭证写入保护）：以前 `load()` 一个 catch 把「没建过/
- *     坏了/读不了」压成空表，下一次 `set()` 就写回去 → 用户 Key 无声消失。现在分 5 个健康态
- *     （见 `health`），只有 `ok`/`missing` 可写，其余拒写（留档 + 明确报错）；唯一出口是显式
- *     `reset({ confirm: true })`。设计见 docs/credentials写入保护-设计修订.md。
+ * 用 Electron 的 `safeStorage`（DPAPI、绑当前账户），不引 keytar 是零新依赖。
+ *  ① 纯 Node 环境退化成明文 + `backend='plain'`，**不假装加密了**；
+ *  ② 启动早期可能没就绪 → 懒加载 + 缓存，**ready 前的失败不判库坏**（见 encryptionAvailable）；
+ *  ③ 读出的密钥都登记进脱敏模块，日志/会话/导出里出现它一律被替换；
+ *  ④ **状态不明时拒绝写**（2026-10-13）：`load()` 曾把「没建过/坏了/读不了」压成空表，下一次
+ *     `set()` 就写回去 → Key 无声消失。现在分 5 个健康态，只有 `ok`/`missing` 可写；唯一出口
+ *     是 `reset({ confirm: true })`。设计见 docs/credentials写入保护-设计修订.md。
  */
 const fs = require('node:fs')
 const path = require('node:path')
@@ -19,10 +17,9 @@ const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs') /* 原子�
 const FILE_NAME = 'credentials.json'
 let cache = null /* ref -> { value(明文或 base64), updatedAt } */
 let backend = null /* 已加载文件的加密后端：'safeStorage' | 'plain' */
-let availability = null /* 后端可用性只探一次 */
-/* 健康态（**进程内**，不落盘、不改格式、无需迁移）。只有前两个可写：
-   ok 读到+解析成功+后端一致 | missing ENOENT 且**从未加载过**（首启） | corrupt 解析失败
-   unreadable 读失败(非ENOENT)/加载后消失或被外部改 | undecryptable 本机解不开 */
+let availability = null /* 后端可用性（false 只在 app ready 之后才采信，见 encryptionAvailable） */
+/* 健康态（进程内，不落盘）：ok 读到+解析+后端一致 | missing 首启 ENOENT | corrupt 解析失败
+   unreadable 读失败/加载后消失或被外部改 | undecryptable 本机解不开。只有前两个可写 */
 let health = 'missing'
 let healthError = '' /* 拒写原因；健康时为空串 */
 let loadedOnce = false /* 区分「首次 ENOENT」与「加载后文件消失」 */
@@ -32,7 +29,6 @@ let fp = null /* 文件指纹 { size, mtimeMs }；null = 认为不存在（写�
 function filePath() {
   return path.join(require('./paths.cjs').DIRS.data, FILE_NAME)
 }
-
 /** 文件的 { size, mtimeMs }；读不到返回 null */
 function statOf(file) {
   try {
@@ -42,17 +38,17 @@ function statOf(file) {
     return null
   }
 }
-
 /** 两指纹是否一致（都 null = 都认为没有文件） */
 function sameFp(a, b) {
   if (a === null && b === null) return true
   if (!a || !b) return false
   return a.size === b.size && a.mtimeMs === b.mtimeMs
 }
-
-/** 能不能加密。用 safeStorage.isEncryptionAvailable() 判断，失败一律当不能 */
+/** 能不能加密。失败一律当不能。★ `false` **不能永久缓存**（2026-10-27 真机定位）：`app ready`
+ *  之前 safeStorage 一律返回 false，缓存成 false 会让本进程之后每次 `set()` 都当没有加密能力。 */
 function encryptionAvailable() {
-  if (availability !== null) return availability
+  if (availability === true) return true
+  if (availability === false && !readyNow()) return false
   try {
     const { safeStorage } = require('electron')
     availability = Boolean(safeStorage?.isEncryptionAvailable?.())
@@ -61,17 +57,22 @@ function encryptionAvailable() {
   }
   return availability
 }
-
+/** app 是否已 ready —— safeStorage 在 ready 前不可用（纯 Node 环境恒 false） */
+function readyNow() {
+  try {
+    return Boolean(require('electron').app?.isReady?.())
+  } catch {
+    return false
+  }
+}
 /** 空库的缓存对象 */
 const emptyCache = () => ({ version: 1, backend: encryptionAvailable() ? 'safeStorage' : 'plain', entries: {} })
-
 /** 记一个「拒写」态并留下人话原因（读路径不抛，写路径见 assertWritable） */
 function markUnhealthy(state, why) {
   health = state
   healthError = why
   log.error(`[凭证库] ${why}`)
 }
-
 function load() {
   if (cache) return cache
   const file = filePath()
@@ -83,7 +84,7 @@ function load() {
     cache = emptyCache()
     backend = cache.backend
     if (error?.code === 'ENOENT') {
-      /* 不存在：首启（没建过）正常可写；但「曾读到过、现在没了」不能当首启——那会静默重建盖掉内容 */
+      /* 不存在：首启正常可写；但「曾读到过、现在没了」不能当首启——那会静默重建盖掉内容 */
       if (loadedOnce) markUnhealthy('unreadable', `凭证库在本次运行期间消失（${file}），已停止写入以免静默重建`)
       else health = 'missing'
     } else {
@@ -107,25 +108,30 @@ function load() {
   cache = { version: 1, backend: fileBackend, entries }
   backend = fileBackend
   loadedOnce = true
-  /* 后端是 safeStorage 却解不开（换账户/换机器/无密钥环）→ **绝不能再写**：一次无关 set() 会把
-     backend 重贴成 plain，之后读旧条目就把 base64 密文当明文 Key 返回（2026-10-07 事故形状） */
-  if (fileBackend === 'safeStorage' && !encryptionAvailable()) {
-    markUnhealthy('undecryptable', '凭证库用系统加密（safeStorage）存的，但当前环境解不开（换了 Windows 账户 / 换了机器），已停止写入')
-  } else {
-    health = 'ok'
-    healthError = ''
+  /* safeStorage 却解不开（换账户/换机器）→ **绝不能再写**：一次无关 set() 会把 backend 重贴成
+     plain，之后读旧条目就把 base64 密文当明文 Key 返回（2026-10-07 事故形状）。ready 之前的失败
+     **不算数**（safeStorage 还没就绪）。★ 只问 encryptionAvailable() 不够（2026-10-31）：能加密
+     却解不开旧密文的机器健康态仍是 ok，紧接着一次 set() 就把新值写进去 —— ready 之后逐条真解。 */
+  let why = ''
+  if (fileBackend === 'safeStorage' && readyNow()) {
+    for (const entry of Object.values(entries)) {
+      try { decrypt(entry, fileBackend) } catch (error) {
+        why = `有凭证解不开（${error instanceof Error ? error.message : error}），已停止写入`
+        break
+      }
+    }
   }
+  if (why) markUnhealthy('undecryptable', why)
+  else { health = 'ok'; healthError = '' }
   return cache
 }
-
 /** 拒写态 → 抛错（调用方必须看到，不许假报成功） */
 function assertWritable() {
   if (health === 'ok' || health === 'missing') return
   throw new Error(`凭证库当前不可写（${health}）：${healthError}。原文件未被改动。`)
 }
-
-/* 提交：**先落盘、成功才换内存**。① 写前指纹校验（外部动过就拒写，不引锁）② writeAtomic 失败即抛、
-   cache 一字不动 ③ 只有到这里才一起换 cache/backend/fp/health —— 写失败后读到的仍是旧内存，与磁盘一致 */
+/* 提交：**先落盘、成功才换内存**。写前指纹校验（外部动过就拒写）；写失败即抛、cache 一字不动，
+   只有全部成功才一起换 cache/backend/fp/health —— 写失败后读到的仍是旧内存，与磁盘一致 */
 function commit(nextData) {
   assertWritable()
   const file = filePath()
@@ -163,8 +169,7 @@ function decrypt(entry, fileBackend) {
     throw new Error(`凭证解密失败（${why}）。通常是换了 Windows 账户或把 data/ 拷到了别的机器，重新填一次 API Key 即可。`)
   }
 }
-
-/** 读一个密钥。读到的值会登记进脱敏模块 */
+/** 读一个密钥（读到的值会登记进脱敏模块） */
 function get(ref) {
   const data = load()
   const entry = data.entries[String(ref)]
@@ -173,8 +178,8 @@ function get(ref) {
   try {
     value = decrypt(entry, data.backend)
   } catch (error) {
-    /* 某条解不开 → 整库转「解不开」（拒写），但 get 的对外行为不变（继续抛） */
-    markUnhealthy('undecryptable', `有凭证解不开（${error instanceof Error ? error.message : error}），已停止写入`)
+    /* 某条解不开 → 整库转「解不开」（拒写），对外行为不变（继续抛）。ready 之前的失败**不算库坏** */
+    if (readyNow()) markUnhealthy('undecryptable', `有凭证解不开（${error instanceof Error ? error.message : error}），已停止写入`)
     throw error
   }
   if (value) redact.remember(value, '密钥')
@@ -196,8 +201,7 @@ function set(ref, plain) {
   }
   const packed = encrypt(value, next.backend)
   next.entries[key] = { value: packed.value, updatedAt: Date.now() }
-  /* 后端**沿用文件已有的**，不按当前环境重贴（重贴会让旧密文被当明文，见文件头 ④） */
-  next.backend = packed.backend
+  next.backend = packed.backend /* 沿用文件已有的后端，不按当前环境重贴 */
   commit(next)
   redact.remember(value, '密钥')
   return { ok: true, backend: next.backend }
@@ -238,17 +242,15 @@ function primeRedaction() {
         count += 1
       }
     } catch {
-      /* 不能因一个坏凭证让应用起不来 —— 但整库转「解不开」→ 拒写 */
-      markUnhealthy('undecryptable', '有凭证解不开（换过 Windows 账户 / 换过机器），已停止写入')
+      /* 不能因一个坏凭证让应用起不来；整库转「拒写」的判定在 load()，这里只兜底 */
+      if (readyNow()) markUnhealthy('undecryptable', '有凭证解不开（换过 Windows 账户 / 换过机器），已停止写入')
     }
   }
   return count
 }
-
-/* 显式重置 —— 坏库的**唯一出口**，**不是** `set(force:true)`：破坏性动作单列、好审计。
-   ⚠️ `confirm:true` 只是代码层门槛，不代表「用户真点过确认」（那是上层 UI 二次确认的责任）；
-   **本轮不接 UI / IPC**。先留档（失败即中止）→ 原子写空库 → 成功才 `health=ok`；任何一步失败，
-   原文件与健康态都**不动**，绝不留「半重置」 */
+/* 显式重置 —— 坏库的**唯一出口**（不是 `set(force:true)`）：破坏性动作单列、好审计。
+   ⚠️ `confirm:true` 只是代码层门槛，不代表「用户真点过确认」（那是上层 UI 的责任）。
+   先留档（失败即中止）→ 原子写空库 → 成功才 health=ok；任一步失败，原文件与健康态都不动 */
 function reset(options = {}) {
   if (options?.confirm !== true) {
     throw new Error('重置凭证库需要显式确认（reset({ confirm: true })）—— 它会把现有凭证全部清掉')
@@ -282,14 +284,12 @@ function status() {
     healthError,
   }
 }
-
 /** 仅供测试：丢掉进程内缓存，让下一次调用重新从磁盘加载 */
 function _resetCache() {
   cache = null; backend = null
   health = 'missing'; healthError = ''
   loadedOnce = false; fp = null
 }
-
 module.exports = {
   get, set, remove, has, list, status, reset, primeRedaction, encryptionAvailable, _resetCache,
   refForProvider: (providerId) => `provider:${providerId}`,

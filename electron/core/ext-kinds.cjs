@@ -34,11 +34,26 @@ const KIND = {
   SESSION_SELECT: 'session:select', // 侧边栏选了某条（3c）—— 只切它自己，主窗口不动
   SESSION_NEW: 'session:new', // 侧边栏点 ＋（3c）—— 新建一条并两侧切过去
   CHAT_ABORT: 'chat:abort', // M02-A2：侧边栏点「停止」→ 请**渲染层**停掉那条会话正在跑的一轮
+  CHAT_REGENERATE: 'chat:regenerate', // 侧边栏重新生成当前对话最近一条回答
   SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
+  /*
+   * 页面上下文槽（2026-10-21）：页面内容**不进对话流**，只更新一个槽，
+   * 每轮构建提示词时注入（见 core/page-context-slot.cjs 的文件头）。
+   * ★ 与 EXT_PAGE 的区别就是「落哪」：EXT_PAGE 写会话文件，这条只写槽。
+   */
+  PAGE_CONTEXT: 'page:context',
   PAGE_OBSERVE: 'page:observe', // 结构化页面观察（M03）：选区 / 元素列表 / iframe / 页面版本号
   PAGE_ELEMENTS: 'page:elements', // 元素列表视图（M04-1）：带 ref 解析 / 失效判定
   PAGE_COMMAND: 'page:command', // push：**下行指令**（M04）——主进程让扩展做一件事（command 区分做哪件）
   PAGE_RESULT: 'page:result', // 扩展执行完的**回执**（M04）—— 带 id，主进程按它配对
+  /*
+   * 站点策略（2026-10-20）：扩展在**采集 / 操作之前**问一句「这个 url 能不能用」。
+   *
+   * ★ 为什么必须问主进程而不是扩展自己存一份：用户拍板「策略与审计都在主进程、
+   *   和 risk/net-policy 同族」。扩展侧自己存会出现「工具侧与按钮侧判定不一致」，
+   *   那是这个功能最不该出的错。代价是每次多一次往返（实测 3~8ms）。
+   */
+  SITE_POLICY: 'site:policy',
 }
 
 /**

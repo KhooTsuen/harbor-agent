@@ -11,7 +11,7 @@ const longPaste = require('../core/long-paste.cjs')
 const { createEmitter } = require('../core/chat-emit.cjs')
 const config = require('../core/config.cjs')
 const log = require('../core/log.cjs')
-const { currentHistoryLimit, lastUserText } = require('./chat-parts.cjs')
+const { currentHistoryLimit, lastUserText, windowHistory } = require('./chat-parts.cjs')
 const { withRequestedModel } = require('../core/model-select.cjs')
 const userConstraints = require('../core/user-constraints.cjs')
 /* AG-053：两条「问一句等回话」的往返拆到 ./chat-confirm.cjs（这边贴着 300 行） */
@@ -29,8 +29,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId : ''
     /* 这一轮是**怎么起来的**（渲染层给）：用户发送 / 继续 / 编辑重答 / 重新生成 / 切版本。 */
     const reason = typeof payload?.reason === 'string' && payload.reason ? payload.reason : '未标注'
-    const historyLimit = currentHistoryLimit()
-    const history = historyLimit > 0 ? rawHistory.slice(-historyLimit) : []
+    /* P0-1：按完整轮次截取（见 chat-parts.windowHistory）—— 绝不把一组工具调用切两半 */
+    const { history, omitted, lossy } = windowHistory(rawHistory, currentHistoryLimit())
     const mode = typeof payload?.mode === 'string' ? payload.mode : 'pair'
 
     const current = config.get()
@@ -38,13 +38,12 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     const picked = withRequestedModel(current, payload?.model)
     const effective = picked.config
     /*
-     * 预检：「有没有可用的供应商」。**按这个模型挑**（会话里可能选的是别家的模型）；
-     * `activeProvider` 是 config **模块**上的函数，配置对象里没有这个字段 ——
-     * 把它当配置对象的方法调，真机直接 TypeError（消息发不出去，而自检全绿）。
+     * 预检：「有没有可用的供应商」—— **按这个模型挑**（会话里可能选的是别家的）。
+     * `activeProvider` 是 config **模块**上的函数，当配置对象的方法调会直接 TypeError。
      */
     const provider = config.providerForModel(effective.assistant.model) ?? config.activeProvider()
     /*
-     * 优先用这条会话自己的工作目录（侧栏里每条对话可以挂不同目录）。
+     * 优先用这条会话自己的工作目录（侧栏里每条对话可以挂不同目录）；
      * 没挂 / 目录已经不存在 → 回落到默认工作目录。
      */
     const workdir = resolveWorkdir
@@ -61,8 +60,10 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
      */
     const here = log.tagged(`sess…${log.shortId(sessionId)} · ${log.shortId(phaseKey)}`)
     here.info(
-      `新一轮：来源=${reason} 历史=${history.length} 条 模式=${mode} 工作目录=${workdir} 模型=${effective.assistant.model}${picked.scoped ? '（会话级）' : '（全局默认）'}`,
+      `新一轮：来源=${reason} 历史=${history.length}/${rawHistory.length} 条 模式=${mode} 工作目录=${workdir} 模型=${effective.assistant.model}${picked.scoped ? '（会话级）' : '（全局默认）'}`,
     )
+    /* 预算不够时把「省了哪轮、留了什么」记下来 —— 不能悄悄丢历史（P0-1 的验收要求） */
+    if (omitted) here.info(`历史窗口：${omitted}`)
 
     /*
      * AG-003：开始记这条任务的时间线。
@@ -200,6 +201,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           payload,
           history,
           rawHistory,
+          /* 用户原话有没有被折叠截掉（空数组 = 无损）—— 发送入口据此决定拦不拦 */
+          foldLossy: lossy,
           effective,
           workdir,
           mode,

@@ -19,6 +19,8 @@
 
 const fs = require('node:fs')
 const taskCore = require('./task.cjs')
+/* P0-3：归属判定只有一处（哪条接回 / 新建）—— 这里只借它，不再自己判一遍 */
+const attribution = require('./task-attribution.cjs')
 
 /** 这两种状态都算「停下来了，可以接着做」 */
 const RESUMABLE = new Set(['paused', 'waiting_user'])
@@ -85,42 +87,40 @@ function checkEnvironment(taskId) {
 }
 
 /**
- * 这条对话里有没有「还等着你」的任务（AG-043）。
+ * 这条对话里有没有「还等着你」的任务。
  *
- * 为什么要它：用户在执行中改方向时，渲染层**不会**带 resumeTaskId
- * （那是点「继续」才带的）。于是原来会**新建一条任务** —— 计划、进度、检查点
- * 全丢，而文档要的恰恰是「不重新执行无关步骤 / 保留原计划历史 / 从有效检查点继续」。
+ * ★ P0-3（2026-10-23）：判断**只有一处** —— 这里只是 `task-attribution.decide()`
+ *   的兼容壳（老调用方和自检还在用这个名字）。真正的规则、顺序与理由在那边；
+ *   别在这里再写一遍 `status === 'waiting_user' || ...`。
  *
- * ★ 但「这条对话还有没干完的活就接回去」这个判断**太宽了** —— 用户报过一个很坑的现象：
- *   「发了一个新问题，结果它没回答我，而是把之前那条没干完的任务接回去重跑了一遍，
- *     旧任务的记录还被覆盖了」。因为以前是**无条件**复用最早一条未完成任务，
- *   于是你在这条对话里发任何话都会被当成「接着那条任务做」。
- * 所以现在分情况 —— 而且**只列 `reopen` 真的肯接的状态**：它要求 status 在 RESUMABLE 里，
- * running 的任务本来就接不回来，把 running 写进来只会让「会不会接回」和实际决定不一致
- * （loop-run 里的 `attached` 就是照这个函数判断的，它必须和 openForRun 的结果一致）：
- *
- *   · waiting_user —— 那一轮正停着等你回话，你这句话就是**回答** → 接回去
- *   · paused       —— 停下过的，**只有你明确说「继续」才接回去**
- *                     （`isContinueIntent` 会认出「继续 / 接着做」这类；
- *                      发一个无关的新问题就该新建一条任务，而不是去覆盖旧的）
+ * 以前这个函数本身是一套规则、`loop-run` 又照它写了一遍 `attached`、
+ * 而 `chat-run` 生成提示时用的是第三个判断（payload.taskId）—— 三处不一致。
  */
 function activeForSession(sessionId, { continueIntent = false } = {}) {
   if (!sessionId) return null
-  return (
-    taskCore.list({ limit: 50, sessionId }).find(
-      (task) => task.status === 'waiting_user' || (continueIntent && task.status === 'paused'),
-    ) ?? null
-  )
+  const decision = attribution.decide({
+    sessionId,
+    /* 只在「明确说继续」时才把这句话当继续 —— decide 内部用同一个正则判 */
+    continueIntent,
+  })
+  return decision.kind === 'resume' ? taskCore.get(decision.taskId) : null
 }
 
 /**
  * 起一次运行：能恢复就**复用原任务**，否则新建一条。
  * 把这段放在这里（而不是 loop.cjs）是因为它长了点 —— 那边已经贴 300 行上限。
+ *
+ * ★ P0-3：复用哪条 / 新建，**由 `attribution` 决定**（调用方已经判过一次的话就传进来，
+ *   没传就当场判一次）。这里**不再自己判断**「是不是继续」「哪条在等回话」——
+ *   以前那样做，等于同一个问题决定两次（`chat-run` 生成提示时一次、这里一次）。
  */
 function openForRun({
   resumeTaskId = '',
   goal = '',
   sessionId = '',
+  /** 已经判好的归属（`task-attribution.decide()` 的返回值）；不传就当场判一次 */
+  attribution: decided = null,
+  /** 兼容老调用方：只说「这是继续」而不带 goal 时用它 */
   continueIntent = false,
   /** 重新生成：新任务挂上它（被替代的台账 id，`` = 不是重新生成） */
   regenerateFrom = '',
@@ -128,22 +128,25 @@ function openForRun({
   budgetCarry = null,
   ...options
 }) {
-  const resumed = resumeTaskId ? reopen(resumeTaskId) : null
-  if (resumed) return resumed
+  const decision =
+    decided ??
+    attribution.decide({
+      resumeTaskId,
+      sessionId,
+      goal,
+      /* 显式标志（老调用方）优先于从措辞里认 */
+      continueIntent: continueIntent === true ? true : null,
+    })
 
   /*
-   * AG-043：没带 resumeTaskId，但这条对话的活还没完 → 可能会接回它（不是新建）。
-   * ★ 要不要接回由 activeForSession 分情况判断 —— 见那里的注释：
-   *   随口发个新问题不能把旧任务拉起来重跑（真机上就是这么把旧任务覆盖掉的）。
-   * ★ 重新生成**必须新建**（regenerateFrom 非空时跳过接回）：它要独立成
-   *   一条台账（`regeneratedFrom` 指向被重做的那条）——接回旧任务就把
-   *   「两条记录」抹成一条了（验收 f 要的就是两条）。
+   * ★ 重新生成**必须新建**（regenerateFrom 非空时跳过接回）：它要独立成一条台账
+   *   （`regeneratedFrom` 指向被重做的那条）——接回旧任务就把「两条记录」抹成一条了。
    */
-  const live = regenerateFrom ? null : activeForSession(sessionId, { continueIntent })
-  if (live) {
-    const reopened = reopen(live.id)
+  if (decision.kind === 'resume' && !regenerateFrom) {
+    const reopened = reopen(decision.taskId)
     if (reopened) return reopened
   }
+
   /* AG-027：不传 title —— 让 create 从 goal 提炼（聊天句 ≠ 任务名） */
   /*
    * ★ 这里原来会按任务类型预填一份预算（查资料 60/120…）。已下线：

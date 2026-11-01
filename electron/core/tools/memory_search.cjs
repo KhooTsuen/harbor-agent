@@ -14,8 +14,10 @@
  *   ③ **类型标签只有一处**：直接引用 `memory-explain.cjs` 的 `TYPE_LABEL`，不在这里再抄
  *      一份（AGENT.md 硬约束 9：跨模块约定只有一处真相源）。
  *
- * 检索复用 `memory-store.cjs` 的 `search`（关键词**子串**匹配，非向量/非模糊），并按
- * `ctx.projectId` 过滤 —— project 作用域的记忆只在对应项目里搜得到（与注入口径一致）。
+ * 检索复用 `memory-store.cjs` 的 `search`（关键词**子串**匹配，非向量/非模糊），
+ * 并按 `ctx.projectId` + `ctx.sessionId` 过滤 —— 判据只有一处（`core/memory-scope.cjs`），
+ * 与每轮自动注入口径**完全相同**（P0-4：此前这里只认 projectId，于是 B 会话能搜到
+ * A 会话的私有记忆，注入路径却拦着 —— 两个入口说的不是同一件事）。
  * 设计见 `docs/research/memory-layered-recall-design.md`。
  */
 
@@ -57,15 +59,22 @@ module.exports = {
     const limit = Math.min(rawLimit, MAX_RESULTS)
 
     /*
-     * projectId 口径与注入一致：传空串 = 不含 project 作用域的记忆
-     * （它们只在对应项目里注入）。`store.search` 已按「非 project 全留 + project 需匹配」过滤。
+     * projectId / sessionId 口径与注入完全一致（P0-4，判据只有一处：
+     * `core/memory-scope.cjs`），别在这里另写一套过滤。
+     * 传空串 = 这个上下文没有该项目 / 会话 → 该域的私有条目不可见。
+     * 以前只传 projectId，于是从 B 会话能搜到 A 会话的私事 —— 而注入路径拦着。
      */
     const items = memory
-      .search(query, { projectId: String(ctx?.projectId ?? '') })
+      .search(query, {
+        projectId: String(ctx?.projectId ?? ''),
+        sessionId: String(ctx?.sessionId ?? ''),
+      })
       .filter((item) => item.status === 'active')
       .slice(0, limit)
 
-    if (items.length === 0) return `没搜到与「${query}」有关的记忆。`
+    if (items.length === 0) {
+      return `当前可见范围内没搜到与「${query}」有关的记忆（别的会话 / 别的项目的私有记忆不在这里）。`
+    }
 
     const lines = items.map((item) => {
       const tag = TYPE_LABEL[item.type] ?? '记忆'

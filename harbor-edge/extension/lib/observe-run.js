@@ -9,13 +9,19 @@
  *
  * ⚠️ 只读**前台当前标签**、**只由用户点那一下发起** —— 与 read-page 同规矩
  *   （拿标签那一段共用 `lib/active-tab.js`，判据只有一处）。
+ *
+ * ★ 2026-10-21：观察结果**不再落会话** → 走 `page:context` 那条（写「页面上下文槽」），
+ *   由主进程每轮注入提示词。用户原话：「不要占用对话流，相当于提示词那一类的植入进去」。
  */
 
 /* global chrome */
 
 import { requestHost } from './native.js'
-import { resolveActiveTab } from './active-tab.js'
+import { resolveActiveTab, stillActiveTab } from './active-tab.js'
 import { collectPageContext } from './observe.js'
+import { checkSite } from './site-policy.js'
+import { contextAllowed } from './context-gate.js'
+import { waitForStablePage } from './page-text.js'
 
 /**
  * 结构化观察当前页面（选区 / 元素列表 / iframe / 页面版本号）。
@@ -24,16 +30,30 @@ import { collectPageContext } from './observe.js'
  *   ① 采的是**结构**（元素引用 + 状态 + 选区 + 版本号），不是整页正文；
  *   ② 走 `page:observe` 这个 kind（主进程那边渲染成 markdown 再落会话）。
  *
- * @param {{ ref?: string }} [opts] `ref` 只有 `getElements` 那条走时才传（M04-1）
+ * @param {{ ref?: string, sessionId?: string }} [opts] `ref` 只有 `getElements` 那条走时才传（M04-1）；
+ *   `sessionId` = 侧边栏选中的那条 —— 不带的话观察结果会落进主窗口当前打开的那条
+ *   （2026-10-20 修的串线，与 `ext:page` 同一处根因）。
  * @returns {Promise<object>} 给侧边栏的**人话**结果（失败也在 `error` 里写好）
  */
-export async function observePage(opts = {}) {
+async function observeSessionPage(opts = {}) {
+  /* 页面结构也可能含用户内容，关掉上下文后所有采集入口都要停。 */
+  const ctx = await contextAllowed()
+  if (!ctx.allowed) return { ok: false, error: ctx.error }
   const target = await resolveActiveTab()
   if (!target.ok) return { ok: false, error: target.error }
   const { tab } = target
+  const sessionId = String(opts?.sessionId ?? '')
+
+  /* 站点黑名单：采集之前问主进程（判定只有 ext-sites.cjs 一处） */
+  const policy = await checkSite(String(target.url ?? ''))
+  if (!policy.allowed) return { ok: false, error: policy.error }
 
   let results
   try {
+    const settled = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: waitForStablePage })
+    if (String(settled?.[0]?.result?.url || '') !== String(target.url || '') || !(await stillActiveTab(tab.id, target.url))) {
+      return { ok: false, error: '等待页面加载时活动标签已改变；没有发送旧页面内容' }
+    }
     /*
      * `func: collectPageContext` —— Chrome 会把它 **toString() 序列化**后注入页面。
      * 所以它必须自包含（不能引用模块级东西）：规矩写在 `lib/observe.js` 文件头，
@@ -52,6 +72,9 @@ export async function observePage(opts = {}) {
   if (!observation || typeof observation !== 'object') {
     return { ok: false, error: '页面没有返回观察结果（可能是受限页面）' }
   }
+  if (String(observation.url || '') !== String(target.url || '') || !(await stillActiveTab(tab.id, target.url))) {
+    return { ok: false, error: '观察期间页面或活动标签已改变；没有发送旧页面内容，请在当前页重试' }
+  }
 
   /*
    * ★ M04-1：`browser.getElements` 复用**同一份采集**（同一个注入函数、同一套版本号
@@ -69,8 +92,21 @@ export async function observePage(opts = {}) {
    *   （而 host / 管道 / 主进程全都正常，最容易被误判成「桥坏了」）。
    */
   const ref = String(opts?.ref ?? '')
-  const type = opts?.elementsOnly === true ? 'get-elements' : 'observe-page'
-  const reply = await requestHost(type, ref ? { observation, ref } : { observation })
+  const elementsOnly = opts?.elementsOnly === true
+  /*
+   * ★ 2026-10-21：**面板上那个「观察页面」按钮**不再把结果落进会话，
+   *   改送 `page-context`（写上下文槽 → 每轮注入提示词）。
+   *   `getElements`（工具要 ref）仍走 `page:elements`：那是**工具调用**，
+   *   模型需要回执里的 ref / stale 字段，不能塞进提示词槽。
+   *
+   *   观察结果由**主进程**渲染成 markdown（`renderObservation`，唯一一处实现）——
+   *   所以这里只把 `observation` 原样送上去，不在扩展侧重画一份。
+   */
+  const type = elementsOnly ? 'get-elements' : 'page-context'
+  const payload = elementsOnly
+    ? (ref ? { observation, ref, sessionId } : { observation, sessionId })
+    : { observation, source: 'manual', sessionId }
+  const reply = await requestHost(type, payload)
   const result = {
     ok: reply && reply.ok === true,
     error: reply && reply.ok === true ? null : (reply && reply.error) || 'Harbor 没有收下这次观察',
@@ -95,7 +131,12 @@ export async function observePage(opts = {}) {
   return result
 }
 
-/** M04-1：只要元素列表（复用 `observePage` 的采集，换 kind + 带上 ref） */
+/** 面板入口（`messages.js` 把整条消息传进来）：取出 sessionId 再走主流程。 */
+export async function observePage(msg) {
+  return observeSessionPage({ sessionId: String((msg && msg.sessionId) || '') })
+}
+
+/** M04-1：只要元素列表（复用同一份采集，换 kind + 带上 ref） */
 export async function getElements(ref = '') {
-  return observePage({ elementsOnly: true, ref: String(ref ?? '') })
+  return observeSessionPage({ elementsOnly: true, ref: String(ref ?? '') })
 }

@@ -1,17 +1,31 @@
 import { useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Copy, Languages, RotateCcw } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FileText,
+  Languages,
+  RotateCcw,
+} from 'lucide-react'
 import type { Message } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { sceneTranslate } from '@/lib/sceneApi'
 import { colorOf } from '@/lib/statusLanguage'
+import { fullRecordText } from '@/lib/export'
 
 /* ══════════════════════════════════════════════════════════════
    助手消息的操作条（复制 / 重新生成 / 赞踩 / 分支）
 
    从 MessageItem.tsx 拆出来的 —— 那边加了 citation / artifact 渲染之后
    过了 300 行。这一段和「消息长什么样」没关系，纯操作，拆开很干净。
+
+   ── 两个复制（2026-10-21）─────────────────────────────────────
+   默认那颗只给**正文** —— 用户要贴出去的通常就是答案本身。
+   「复制完整记录」把过程（思考 / 工具 / 用时 / 状态）也带上，
+   排查问题和留档用它。两者内容是**分开的**，不是一个按钮两种格式。
    ══════════════════════════════════════════════════════════════ */
 
 export function AssistantActions({ message }: { message: Message }) {
@@ -20,6 +34,7 @@ export function AssistantActions({ message }: { message: Message }) {
   const regenerate = useThreadStore((s) => s.regenerateMessage)
   const showToast = useUIStore((s) => s.showToast)
   const [copied, setCopied] = useState(false)
+  const [copiedFull, setCopiedFull] = useState(false)
   const [translation, setTranslation] = useState('')
   const [translating, setTranslating] = useState(false)
   /*
@@ -28,6 +43,15 @@ export function AssistantActions({ message }: { message: Message }) {
    */
   const retry =
     message.interrupted === true || message.status === 'error' || message.kind === 'error'
+
+  /**
+   * 有没有「正文之外的东西」可复制。
+   *
+   * 判据与 `ProcessPanel` / `processSection` 同一套（思考或工具至少有一个），
+   * 而且**不把状态算进去**：一条没跑完但一步都没走的回复，完整记录和正文
+   * 只差一句「这条没写完」—— 那不值得多一颗按钮。
+   */
+  const hasRecord = Boolean(message.reasoning?.trim()) || (message.toolRuns?.length ?? 0) > 0
 
   /** 再点一次收起译文；没翻过就去翻 */
   async function translate(): Promise<void> {
@@ -44,11 +68,23 @@ export function AssistantActions({ message }: { message: Message }) {
 
   async function copy(): Promise<void> {
     try {
+      /* 默认只复制**正文**（用户 2026-10-21 拍板：过程不该混进要贴给别人的答案里） */
       await navigator.clipboard.writeText(message.content)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1400)
     } catch {
       /* 忽略剪贴板失败 */
+    }
+  }
+
+  /** 复制**完整记录**（过程 + 正文 + 状态）—— 排查问题、留档时用 */
+  async function copyFull(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(fullRecordText(message))
+      setCopiedFull(true)
+      window.setTimeout(() => setCopiedFull(false), 1400)
+    } catch {
+      showToast('error', '复制失败')
     }
   }
 
@@ -58,7 +94,7 @@ export function AssistantActions({ message }: { message: Message }) {
         <button
           type="button"
           aria-label={copied ? '已复制' : '复制回复'}
-          title="复制"
+          title="复制（只有正文）"
           onClick={() => void copy()}
           className="rounded p-1 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
         >
@@ -68,6 +104,25 @@ export function AssistantActions({ message }: { message: Message }) {
             <Copy size={13} />
           )}
         </button>
+        {/*
+          复制完整记录：只在**确实有过程**时出现。
+          纯问答也挂一个按钮，点了得到和「复制」一模一样的内容 —— 那是骗人的第二颗按钮。
+        */}
+        {hasRecord ? (
+          <button
+            type="button"
+            aria-label={copiedFull ? '已复制完整记录' : '复制完整记录'}
+            title="复制完整记录（含过程、工具与状态）"
+            onClick={() => void copyFull()}
+            className="rounded p-1 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
+          >
+            {copiedFull ? (
+              <Check size={13} style={{ color: colorOf('completed') }} />
+            ) : (
+              <FileText size={13} />
+            )}
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label={translation ? '收起译文' : '翻译'}

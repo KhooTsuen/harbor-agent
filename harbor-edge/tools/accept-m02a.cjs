@@ -179,12 +179,23 @@ async function main() {
   const pageTab = await D.openTab(PORT_EDGE, `http://127.0.0.1:${PORT_PAGE}/`)
   await sleep(1500)
 
-  /* ── ⑥ 开侧边栏面板（真面板，不是自己开的 index.html）──
-     ★ 这里「打开面板」用的是 CDP 开标签 —— 与 M04 系列一致（那条路验的是产物本身）。
-       真「点工具栏图标」那条路走不通（原生 UI 无 CDP target，见调研报告）。 */
+  /* ── ⑥ 打开面板 ──
+     ⚠️ **这里仍是「新开扩展页标签」，不是真侧栏** —— 已知不合格，待改。
+     2026-10-20 用户指出正确做法：「先打开一个页面，再在『插件』里点侧栏插件」。
+     真侧栏的正确做法已做出来了（`lib/ext-panel.cjs` 用 Input.dispatchMouseEvent
+     派真实鼠标事件触发 sidePanel.open()），`accept-ownership.cjs` 已改用并 19/19 通过。
+     本脚本还没改：它的判据涉及流式 / 停止生成，需单独复核改路径后是否仍成立。
+     ★ 原注释「点工具栏图标走不通（原生 UI 无 CDP target）」是**错的** —— 把一个
+        **局部事实**（CDP 的 Input 域确实点不到浏览器 UI）错误推广成了整体结论。
+        2026-10-20 实测完整结果：
+          · CDP Input.dispatchMouseEvent 只作用于页面内容 → 点不到工具栏 ✔（这半句对）
+          · UIA 能枚举工具栏按钮；鼠标注入（SetCursorPos + SendInput）**能**点它
+          · 真障碍是另一个：--load-extension 装的扩展**默认不在工具栏**，
+            且 edge://extensions 的 DOM 在 CDP 里读不到 → 没法自动固定图标
+        所以「点图标」只能人点、脚本判 → tools/accept-toolbar-entry.cjs */
   const panel = await D.openTab(PORT_EDGE, `chrome-extension://${extId}/index.html`)
   await sleep(2500)
-  rec('⑥ 侧边栏面板打开了（构建产物）', Boolean(panel), 'index.html')
+  rec('⑥ 面板打开了（⚠️ 扩展页标签，非真侧栏）', Boolean(panel), 'index.html')
 
   /* 等扩展连上 Harbor */
   let conn = 0

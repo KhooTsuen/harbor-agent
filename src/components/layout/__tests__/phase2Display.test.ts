@@ -125,10 +125,18 @@ describe('Phase 2 · 角标数据同源、无轮询', () => {
 describe('Phase 2 · 顶栏兜底（右栏折叠也不丢工作状态）', () => {
   const bar = read('src/components/layout/AppTitleBar.tsx')
 
-  it('★ 运行中任务数 + 未提交改动数都透传到顶栏', () => {
+  it('★ 运行中任务数 + 当前对话改动数都透传到顶栏', () => {
     expect(bar).toContain('runningTasks')
     expect(bar).toContain('个后台任务在运行')
-    expect(bar).toContain('个文件未提交改动')
+    /*
+     * 第二阶段：这里原来写的是「N 个文件未提交改动」。
+     * 数据来自 Harbor 改动事务（快照 vs 磁盘），**不是** git 的 index ——
+     * 「未提交」是个错的说法，改成「最近一批改动涉及 N 个文件」，
+     * 与右栏「审查」用同一个口径、同一批数（都是 useTaskStore.diff）。
+     */
+    expect(bar).toContain('最近一批改动涉及')
+    /* 负向判据要看**代码**：注释里还写着「以前叫未提交改动」这句解释 */
+    expect(strip(bar)).not.toContain('未提交')
   })
 
   it('★ 兜底提示与错误点区分：运行中用「运行」状态色，不是错误色', () => {
@@ -136,13 +144,28 @@ describe('Phase 2 · 顶栏兜底（右栏折叠也不丢工作状态）', () =>
     expect(bar).toContain("colorOf('running')")
     expect(bar).toContain("colorOf(errorWorst === 'P0' ? 'failed' : 'warning')")
   })
+
+  it('★ 顶栏不再有「继续 / 停止」（那个「继续」只是发一条消息）', () => {
+    /* 第二轮要求的核心：不能把「发一条『继续』」当成「恢复暂停任务」 */
+    const code = strip(bar)
+    expect(code).not.toContain("sendMessage('继续')")
+    expect(code).not.toContain('label="继续"')
+    expect(code).not.toContain('label="停止生成"')
+    /* 也不再引用发送 / 停止那对动作 */
+    expect(code).not.toContain('useThreadStore')
+  })
 })
 
 describe('Phase 2 · 互指文案写在内容区，不塞标签栏', () => {
   it('★ 「审查」内容区说清它是工作区改动、正式产出去「成果」', () => {
-    const panel = read('src/components/layout/RightPanel.tsx')
-    expect(panel).toContain('工作区里被改动的文件')
+    /* 第二阶段：审查的内容区拆到 panels/DiffPanel.tsx（RightPanel 贴 300 行红线） */
+    const panel = read('src/components/layout/panels/DiffPanel.tsx')
+    expect(panel).toContain('被改动的文件')
     expect(panel).toContain('正式产出（artifact）在「成果」')
+    /* 而且不能**自称**「未提交的改动」—— 它不是 git 的暂存区
+       （正文里那句「不是 Git 的未提交状态」是解释，允许存在） */
+    expect(strip(panel)).not.toContain('未提交的改动')
+    expect(panel).toContain('最近一批 Harbor 改动')
   })
 
   it('★ 标签栏里不出现互指长文案（它只该有标签名）', () => {

@@ -73,6 +73,7 @@ const optsArg = () =>
         reason?: string
         regeneratedFrom?: string
         regenerateIsLast?: boolean
+        origin?: string
       }
     | undefined
 
@@ -89,6 +90,27 @@ beforeEach(() => {
 })
 
 describe('重新生成（验收 a / 复用编辑的分支机制）', () => {
+  it('Edge 侧边栏按指定会话重新生成，并把来源交给真实回合', () => {
+    seed(
+      [
+        thread('t1', [
+          msg({ id: 'q1', role: 'user', content: '主窗口', timestamp: 1 }),
+          msg({ id: 'a1', content: '主窗口回答', timestamp: 2 }),
+        ]),
+        thread('t2', [
+          msg({ id: 'q2', threadId: 't2', role: 'user', content: '侧边栏', timestamp: 3 }),
+          msg({ id: 'a2', threadId: 't2', content: '旧回答', timestamp: 4 }),
+        ]),
+      ],
+      't1',
+    )
+    useThreadStore.getState().regenerateMessage('a2', 't2', 'edge-sidepanel')
+    expect(calls()).toHaveLength(1)
+    expect(calls()[0]?.[0]).toBe('t2')
+    expect(optsArg()?.origin).toBe('edge-sidepanel')
+    expect(useAppStore.getState().activeThreadId).toBe('t1')
+  })
+
   it('a · 复用同一通道重跑：旧回答留作历史版本、提问不被复制', () => {
     seed([
       thread('t1', [

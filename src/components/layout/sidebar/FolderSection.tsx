@@ -72,10 +72,17 @@ export function FolderSection({
     askPermission({
       kind: 'delete-project',
       title: '删除这个对话文件夹？',
+      /*
+       * ★ 第二阶段：把「含已归档的」写进正文。
+       *   `owned` 数的是**全部**（含归档），而屏幕上只显示未归档的那几条 ——
+       *   不点明的话，用户会按看得见的条数理解这段文案，确认完却发现少了几条。
+       *   `deleteFolder` 的删除范围与 `owned` 完全同源（都按 projectId 取全部），
+       *   所以这里说的数字就是真会删掉的数字。
+       */
       description:
         owned > 0
-          ? `「${project.name}」里的 ${owned} 条对话和它们的任务记录会一起删掉，不能撤销。磁盘上那个目录里的文件一个都不动。`
-          : `「${project.name}」会从侧栏消失（它现在没有对话）。磁盘上那个目录一个都不动。`,
+          ? `「${project.name}」里共 ${owned} 条对话（含已归档的），它们的会话记录和任务记录会一起删掉，不能撤销。磁盘上那个目录里的文件一个都不动。`
+          : `「${project.name}」会从侧栏消失（它现在没有对话，也没有归档的对话）。磁盘上那个目录一个都不动。`,
       confirmText: '删除',
       danger: true,
       onConfirm: () => {

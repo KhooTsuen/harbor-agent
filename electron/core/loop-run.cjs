@@ -13,7 +13,8 @@ const taskResume = require('./task-resume.cjs')
 const taskRegen = require('./task-regen.cjs')
 const changeset = require('./changeset.cjs')
 const budget = require('./budget.cjs')
-const taskContext = require('./task-context.cjs')
+/* P0-3：归属判定只有一处（哪条接回 / 新建）—— 见文件头 */
+const taskAttribution = require('./task-attribution.cjs')
 const taskNotes = require('./task-notes.cjs')
 const gateDenied = require('./gate-denied.cjs')
 
@@ -33,24 +34,23 @@ async function run(options) {
   /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，否则
      「不重复已完成步骤」无从谈起）；其余情况新建一条。 */
   /*
-   * ★「这句是不是让我继续」只算一次，两个用途共用：
-   *   ① 决定要不要把这条对话里停下的旧任务接回来 —— 见 task-resume.cjs：
-   *      以前是无条件接回，于是随口发个新问题会把旧任务拉起来重跑、覆盖掉；
-   *   ② 接回来了而且在说新东西 → 记一次「用户改方向」。
-   * ★ 必须在 openForRun **之前**算：它内部会把接回的任务 reopen 成 running，
-   *   之后再判断就永远不成立（真机上踩过：任务接回来了，steering 却是空的）。
+   * ★ P0-3（2026-10-23）：归属判定**一次就做完**。
+   *
+   * 以前这里自己算 `continueIntent`、再照 `activeForSession` 写一遍 `attached`，
+   * 而 `chat-run` 生成任务提示时用的是**第三个**判断（`payload.taskId`）——
+   * 同一个问题被决定了三次，于是提示里说「你在做 A」、台账里落的却是 B。
+   *
+   * 现在：`attribution` 由调用方判好传进来（`chat-run` 判一次，提示与台账共用同一份）；
+   * 没传就当场判一次（`loop.run` 还有别的调用方：自检、定时任务）。
+   * `openForRun` 只认这份结论，不再自己判。
    */
-  const continueIntent = taskContext.isContinueIntent(goal)
-  /*
-   * `attached` = 「openForRun 将会复用的是哪条」（没有就是 null）。
-   * ★ 必须用**和 openForRun 完全一样的判据**，否则两边会不一致：
-   *   刚开始我把它也拿 continueIntent 卡住，结果「任务正在跑、用户打字改方向」
-   *   那条路（AG-043 的正牌用法）就再也记不下 steering 了。
-   */
-  const attached = options.resumeTaskId
-    ? null
-    : taskResume.activeForSession(sessionId, { continueIntent })
-
+  const decided =
+    options.attribution ??
+    taskAttribution.decide({
+      resumeTaskId: options.resumeTaskId,
+      sessionId,
+      goal,
+    })
   /*
    * 重新生成（新功能）：渲染层带了 `regenerateOf`（被替代那条回答的磁盘 key）。
    * 只有「重做的是最后一轮」才认（regenerateLast）—— 只有那时「本会话最近
@@ -64,7 +64,7 @@ async function run(options) {
     ...options,
     goal,
     sessionId,
-    continueIntent,
+    attribution: decided,
     regenerateFrom: prevTask?.id ?? '',
     budgetCarry: carry,
   })
@@ -85,9 +85,11 @@ async function run(options) {
    *
    * 判据放在这里而不是提示层：只有在这一刻才能确定「是接着做、而且说了新东西」。
    * 记下来有两个用处：提示里要提醒模型别重做已完成步骤；复盘时看得见用户改过什么。
+   * ★ P0-3：`resumed` 直接取归属判定的结论（`decided.kind === 'resume'`）——
+   *   以前这里再拼一个「有没有接回」的布尔量，那是同一件事的第二种写法。
    */
-  const resumed = Boolean(options.resumeTaskId) || Boolean(attached)
-  if (resumed && !continueIntent) {
+  const resumed = decided.kind === 'resume'
+  if (resumed && !decided.continueIntent) {
     try {
       taskNotes.addSteering(task.id, goal)
     } catch (error) {

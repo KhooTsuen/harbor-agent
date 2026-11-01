@@ -134,7 +134,6 @@ export interface AppConfig {
     maxTokens: number
     historyLimit: number
     responseDepth: 'concise' | 'standard' | 'detailed' | 'deep'
-    selfReview: boolean
     streamOutput: boolean
     /**
      * 三个 2026-09-30 才真正接上的开关（以前：有配置、没界面、也没行为）。
@@ -262,10 +261,9 @@ export interface ChatSendPayload {
   resumeTaskId?: string
   /** 这一轮是**怎么起来的**（只进日志）：用户发送 / 点继续 / 编辑后重答 / 重新生成 / 重试 / 补一版回答 */
   reason?: string
-  /**
-   * 「重新生成」的关联：被重新生成的那条回答的磁盘 key。
-   * 主进程据此把新任务挂上 `regeneratedFrom`、给旧改动事务盖「被替代」标记。
-   */
+  /** 'edge-sidepanel'：这条消息来自浏览器侧边栏（不是主窗口手打） */
+  origin?: 'edge-sidepanel'
+  /** 「重新生成」的关联：被重新生成的那条回答的磁盘 key。主进程据此把新任务挂上 `regeneratedFrom`、给旧改动事务盖「被替代」标记。 */
   regenerateOf?: string
   regenerateIsLast?: boolean
   projectId?: string

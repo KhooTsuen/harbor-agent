@@ -229,9 +229,9 @@ function createCommand(deps) {
       }
     }
 
-    /* ③ 发指令（第一次真机用下行通道） */
+    /* ③ 发指令。pageVersion 供页面引用校验；去重按动作、引用与载荷判定。 */
     const t0 = Date.now()
-    const res = await call('click', { ref, settleMs })
+    const res = await call('click', { ref, settleMs, pageVersion: cur.pageVersion })
     const durationMs = Date.now() - t0
     if (!res) return fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
     /* 「根本没送出去」= 链路问题（浏览器没开 / 超时）：没什么可落的，直接回错 */
@@ -267,6 +267,7 @@ function createCommand(deps) {
   const tabs = createTabs({ call, landAction })
 
   return {
+    readCurrent: () => call('read-current'),
     getElements,
     click,
     verify,

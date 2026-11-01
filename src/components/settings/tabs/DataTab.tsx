@@ -1,13 +1,11 @@
 import { useState } from 'react'
 import { Download, FileDown, FileJson, Stethoscope, Upload } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
-import { useSettingsStore } from '@/stores/useSettingsStore'
-import { useConfigStore } from '@/stores/useConfigStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { useConfigSaveStatus } from '@/stores/configSaveStatus'
 import { saveText, copyDiagnostics, saveDiagnostics, pickJsonFile } from '@/lib/backend'
 import { migrateImport } from '@/lib/migrations'
 import { threadToMarkdown } from '@/lib/export'
+import { resetAllSettings } from '@/lib/resetAllSettings'
 import { Button } from '@/components/ui/Button'
 import { Row, SectionTitle } from '../parts'
 import { BackupPanel } from './BackupPanel'
@@ -25,8 +23,6 @@ export function DataTab() {
   const activeThreadId = useAppStore((s) => s.activeThreadId)
 
   const applyImport = useAppStore((s) => s.applyImport)
-  const resetSettings = useSettingsStore((s) => s.resetSettings)
-  const resetToDefaults = useConfigStore((s) => s.resetToDefaults)
   const askPermission = useUIStore((s) => s.askPermission)
   const showToast = useUIStore((s) => s.showToast)
 
@@ -159,7 +155,7 @@ export function DataTab() {
 
       <SectionTitle>危险操作</SectionTitle>
 
-      <Row label="重置设置" hint="主题、布局宽度、开关都回到默认值（对话不受影响）">
+      <Row label="重置设置" hint="界面偏好和后端配置都回到默认值（对话、记忆、任务记录不受影响）">
         <Button
           variant="danger"
           size="sm"
@@ -167,18 +163,22 @@ export function DataTab() {
             askPermission({
               kind: 'clear-data',
               title: '重置所有设置？',
-              description: '主题、玻璃拟态、动效、布局宽度都会回到默认值。对话数据不受影响。',
+              description:
+                '界面偏好（主题、布局宽度、开关）和后端配置（默认工作目录、权限、供应商）都会回到默认值。对话、记忆和任务记录不受影响。',
               confirmText: '重置设置',
               danger: true,
               onConfirm: () => {
-                resetSettings()
-                void resetToDefaults().then(() => {
-                  const status = useConfigSaveStatus.getState().state
-                  showToast(
-                    status === 'failed' ? 'error' : 'success',
-                    status === 'failed' ? '设置重置失败' : '设置已重置',
-                  )
-                })
+                void (async () => {
+                  /* 第二阶段：和设置弹窗底部同一个实现、同一句结果 —— 不再各写一套 */
+                  const result = await resetAllSettings()
+                  const level =
+                    result.outcome === 'ok'
+                      ? 'success'
+                      : result.outcome === 'partial'
+                        ? 'info'
+                        : 'error'
+                  showToast(level, result.message, result.detail)
+                })()
               },
             })
           }

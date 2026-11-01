@@ -55,16 +55,21 @@ export function useRightTabBadges(): RightTabBadges {
   )
 
   /*
-   * 「成果」的「有内容」提示取自**当前会话内存里的正式产物**（消息上的 artifacts）——
+   * 「成果」的「有内容」提示取自**当前对话**内存里的正式产物（消息上的 artifacts）——
    * 纯 selector、零 IPC、零轮询。
    *
+   * ★ 范围必须和面板**默认显示范围**一致（面板默认「当前对话」）：
+   *   以前这里扫的是 `s.threads.some(...)`（任何对话里有过产物就亮），
+   *   于是切到一条什么都没产出的对话，成果标签上仍然亮着点 —— 点开一看是空的。
+   *   两个口径对齐之后，「有点」就意味着「这一栏里确实有东西」。
+   *
    * 内核那份 `artifact:list`（有版本历史、关掉会话还在）由面板自己去拉：
-   * **面板才是成果的真相源**。这个点只表达「里面可能有东西」，不作计数依据，
-   * 所以内存里查一次就够；宁可少提示，也不编一个和面板对不上的数字。
+   * **面板才是成果的真相源**。这个点只表达「里面可能有东西」，不作计数依据。
    */
-  const artifactPresent = useAppStore((s) =>
-    s.threads.some((t) => t.messages.some((m) => (m.artifacts?.length ?? 0) > 0)),
-  )
+  const artifactPresent = useAppStore((s) => {
+    const active = s.threads.find((t) => t.id === s.activeThreadId)
+    return (active?.messages ?? []).some((m) => (m.artifacts?.length ?? 0) > 0)
+  })
 
   return {
     diffCount,

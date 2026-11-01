@@ -4,13 +4,11 @@
  * 以前是一个 `memory.md` 纯文本，每轮整篇塞进系统提示。简单，但长期用会烂：
  * 所有记忆混在一起、没有来源、没有时间、没有作用范围、冲突了也没法处理，
  * 而且模型写错一条会持续影响之后**所有**对话。
- *
  * 词汇表与记录形状在 memory-schema.cjs，检索与注入在 memory-recall.cjs。
  *
  * 四个刻意的决定：
- *
  * ① **旧的 / 过期的不是删掉，是标 superseded / expired** —— 用户要能看见「以前记过
- *    什么、什么时候改的、什么时候失效的」（§56 Forget ≠ Delete）。
+ *    什么、什么时候改的」（§56 Forget ≠ Delete）。
  * ② **用户明说的 vs 模型猜的，分开记 source**；前者 confidence=1 直接生效，后者待确认。
  * ③ **密钥、令牌一律不记** —— 记忆每轮都进上下文，混进一个 key 就是每轮都在泄露。
  * ④ **类型由模型自己说清**（`append` 的 type）：它决定检索权重与会不会取代旧的。
@@ -21,6 +19,8 @@ const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
 const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 const { findConflicts } = require('./memory-similarity.cjs')
+/* 可见性判据只有一处（P0-4）：注入路径与这里的检索必须同一条规则，别各写一套 */
+const { filterVisible } = require('./memory-scope.cjs')
 const {
   TYPES,
   SCOPES,
@@ -169,10 +169,7 @@ function update(id, patch) {
   return { ok: true, item }
 }
 
-/**
- * 只记「这条被用上了」，不算修改 —— 以前调 `update(id, {})` 会把 updatedAt 顶到现在，
- * 界面的「最近更新」显示的实际是「最近被注入」，而且每轮都要重写一遍 memory.json。
- */
+/** 只记「这条被用上了」，不算修改 —— 以前调 `update(id, {})` 会把 updatedAt 顶到现在。 */
 function touch(ids) {
   const list = Array.isArray(ids) ? ids : [ids]
   if (list.length === 0) return { ok: true, touched: 0 }
@@ -213,7 +210,13 @@ function clear() {
 
 /* ── 读 ──────────────────────────────────────────────────── */
 
-/** 列出记忆（options：status / scope / type / projectId / includeSuperseded） */
+/**
+ * 列出记忆（status / scope / type / projectId / sessionId / includeSuperseded）。
+ *
+ * ★ P0-4：可见性判定**不再手写**，统一交给 `memory-scope.cjs`（与自动注入同一条规则）。
+ *   `projectId` / `sessionId` 的键在不在是有含义的：传 `''` = 这个上下文没有该项目 /
+ *   会话（排除其私有条目）；不传 = 管理视图（设置页要看得见全部）。
+ */
 function list(options = {}) {
   const data = load()
   let items = data.items
@@ -222,16 +225,15 @@ function list(options = {}) {
   if (options.status) items = items.filter((i) => i.status === options.status)
   if (options.scope) items = items.filter((i) => i.scope === options.scope)
   if (options.type) items = items.filter((i) => i.type === options.type)
-  if (options.projectId !== undefined) {
-    items = items.filter(
-      (i) => i.scope !== 'project' || (options.projectId && i.projectId === options.projectId),
-    )
-  }
+  items = filterVisible(items, {
+    ...(options.projectId !== undefined ? { projectId: String(options.projectId) } : {}),
+    ...(options.sessionId !== undefined ? { sessionId: String(options.sessionId) } : {}),
+  })
 
   return items.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-/** 关键词搜索（标题、内容、类型都搜） */
+/** 关键词搜索（内容 / 类型 / 范围）。可见性口径与 `list` 完全一致（P0-4）。 */
 function search(query, options = {}) {
   const text = String(query ?? '')
     .toLowerCase()
@@ -242,11 +244,8 @@ function search(query, options = {}) {
   )
 }
 
-/*
- * 过期清扫：标记成 expired，**不删除**（§56 Forget ≠ Delete；理由见 docs/Memory设计.md）。
- * 标记后 retrieve 只取 active，注入行为不变；不动 updatedAt，否则过期条目在条数
- * 上限淘汰里会显得「很新」，反而最后才被清。
- */
+/* 过期清扫：标记成 expired，**不删除**（§56 Forget ≠ Delete；见 docs/Memory设计.md）。
+ * retrieve 只取 active，注入行为不变；不动 updatedAt，否则过期条目会显得「很新」。 */
 function pruneExpired() {
   const data = load()
   const now = Date.now()

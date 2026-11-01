@@ -45,7 +45,6 @@ export const PREVIEW_CONFIG: AppConfig = {
     maxTokens: 0,
     historyLimit: 20,
     responseDepth: 'standard',
-    selfReview: false,
     streamOutput: true,
     planFirst: true,
     verifyAfterEdit: true,

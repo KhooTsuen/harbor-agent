@@ -1,8 +1,7 @@
 import { useRef } from 'react'
-import { Loader2, PanelBottom, PanelLeft, PanelRight, Play, Square } from 'lucide-react'
+import { Loader2, PanelBottom, PanelLeft, PanelRight } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
-import { useThreadStore } from '@/stores/useThreadStore'
 import { useEggStore } from '@/stores/useEggStore'
 import { BRAND_NAME } from '@/constants'
 import { createBrandClickState, registerBrandClick } from '@/lib/nightVoyage'
@@ -33,9 +32,18 @@ import { activityLabel } from '@/lib/agentActivity'
      ③ **不做卡片、不加圆角**，背景直接用 --bg-canvas、只留底部一条发丝线。
         它是一条「边」，不是一块「板」
 
-   注意它取代了原来的 TopBar（那条只横跨中间列）。右栏那排
-   「审查 / 终端 / 文件…」是**第二级**标签栏，留在右栏内部，不往上提 ——
-   让窗口按钮和标签栏挤在同一行反而更乱。
+   ── 2026-10-31 第二阶段：布局与语义 ──────────────────────────
+   **左**：侧栏开关 + 品牌标 + 当前对话标题（位置类的东西）
+   **中**：这条对话正在干什么 + 它的改动行数（会变的东西）
+   **右**：底部面板开关 / 后台任务 / 右栏开关 + 让位给窗口按钮
+
+   ★ 移除「继续 / 停止」：那个「继续」做的只是 `sendMessage('继续')` ——
+     发出去一条内容是「继续」的消息，**不是**恢复暂停的任务。同一个动作在
+     对话框里已经有了（Composer 的发送 / 停止），顶栏再放一份既重复又误导。
+     恢复暂停任务在右栏「任务」里（那里才是真的 resume）。
+
+   ★ 「+N −M」和右栏「审查」是**同一批数**（都读 `useTaskStore.diff`），
+     文案也统一说「改动」而不是「未提交改动」—— 它跟 git 的 index 没关系。
    ══════════════════════════════════════════════════════════════ */
 
 export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () => void }) {
@@ -45,13 +53,14 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
 
   const rightPanelVisible = useUIStore((s) => s.rightPanelVisible)
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel)
+  const setActiveRightTab = useUIStore((s) => s.setActiveRightTab)
+  const setRightPanelVisible = useUIStore((s) => s.setRightPanelVisible)
 
   /*
    * Phase 1 · A2 / Phase 2 · C：右栏折叠或窄窗口时，标签栏可能被裁掉甚至整个收起，
    * 所以把「需要留意的工作状态」挂到这个**始终可见**的顶栏按钮上：
    *   · 未读的严重错误（Phase 1）
    *   · 正在运行的后台任务数（Phase 2）
-   *   · 未提交的改动文件数（Phase 2）
    * 数据与右栏角标**同源**（useRightTabBadges），不是第二份。
    */
   const badges = useRightTabBadges()
@@ -59,13 +68,14 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
 
   /* 当前这条对话在不在跑（别的对话跑着是别的事） */
   const sending = useAgentActive(thread?.id)
-  const sendMessage = useThreadStore((s) => s.sendMessage)
-  const stopGeneration = useThreadStore((s) => s.stopGeneration)
 
   /*
     AG-008：顶栏顺带说一句「现在到底在干什么」。
     toolRuns 挂在 assistant 消息上，所以要找**最后一条助手消息**，
     不能直接拿 messages.at(-1) —— 那可能是用户刚发出去的那条。
+
+    ★ 只在 `sending` 为真时显示：这条是**当前请求**的活动，
+      不是上一轮留下的记录（第二阶段明确要求）。
   */
   const lastAssistant = [...(thread?.messages ?? [])].reverse().find((m) => m.role === 'assistant')
   const activity = activityLabel(lastAssistant?.toolRuns ?? [], thread?.phase)
@@ -100,11 +110,12 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
   /*
    * Phase 2 · C：右栏折叠 / 窄窗时，把「需要留意的工作状态」并进右栏按钮的
    * 悬停提示 —— 这样不占地方，却不会「折叠了就什么都不知道」。
+   * 文案与右栏一致：说的是**改动**（Harbor 记下的一批），不是 git 未提交。
    */
   const rightPanelNotes: string[] = []
   if (errorUnread > 0) rightPanelNotes.push(`${errorUnread} 条未读的严重错误`)
   if (runningTasks > 0) rightPanelNotes.push(`${runningTasks} 个后台任务在运行`)
-  if (diffs.length > 0) rightPanelNotes.push(`${diffs.length} 个文件未提交改动`)
+  if (diffs.length > 0) rightPanelNotes.push(`当前对话最近一批改动涉及 ${diffs.length} 个文件`)
   const rightPanelLabel =
     rightPanelNotes.length > 0 ? `切换右侧面板（${rightPanelNotes.join(' · ')}）` : '切换右侧面板'
 
@@ -113,6 +124,7 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
       className="titlebar-drag glass-panel flex shrink-0 items-center gap-1.5 border-b border-line-subtle px-3"
       style={{ height: 40, paddingRight: 'calc(var(--titlebar-right) + 16px)' }}
     >
+      {/* ── 左：位置 ── */}
       <Tooltip content={sidebarCollapsed ? '展开侧边栏（Ctrl+B）' : '折叠侧边栏（Ctrl+B）'}>
         <IconButton
           label="切换侧边栏"
@@ -142,68 +154,68 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
       </button>
 
       {/* 当前对话标题。它是状态不是标题，所以用次级色、不上大字号 */}
-      <h1 className="min-w-0 flex-1 truncate px-2 text-dense text-fg-secondary">
+      <h1 className="min-w-0 max-w-[30%] truncate px-2 text-dense text-fg-secondary">
         {thread?.title ?? '没有打开的对话'}
       </h1>
 
-      {/*
-        只在跑的时候出现，空着不动 —— 顶栏不该有恒定的装饰。
-        以前这里是 `hidden md:flex`（窄窗口就看不到活动），改成**总是显示**：
-        宽度不够时有 `min-w-0` + `truncate` + `max-w-[38vw]` 兜底，压到 0 也不会挤坏布局。
-      */}
-      {sending ? (
-        <span className="flex min-w-0 max-w-[38vw] shrink items-center gap-1.5 truncate text-2xs text-fg-tertiary">
-          <Loader2 size={11} className="shrink-0 animate-spin" />
-          <span className="truncate">{activity}</span>
-        </span>
-      ) : null}
-
-      {diffs.length > 0 ? (
-        <span
-          className="hidden shrink-0 items-center gap-2 font-mono text-2xs sm:flex"
-          title={`${additions} 行新增，${deletions} 行删除`}
-        >
-          <span style={{ color: 'var(--diff-add)' }}>+{additions}</span>
-          <span style={{ color: 'var(--diff-remove)' }}>−{deletions}</span>
-        </span>
-      ) : null}
-
-      {/*
-        右边这四个**故意不挂提示**：`hint=""` 就是「不要提示」（提示实现里空文案
-        直接不渲染）。
-
-        为什么不挂：它们紧贴原生窗口按钮，提示往下弹会正好落在右栏那排标签
-        （审查 / 终端 / 文件…）上，两块字叠在一起，比没提示难看得多。
-        图标本身够清楚，无障碍靠 aria-label（IconButton 的 label），不受影响。
-
-        （前身写的是 title="" —— 那时 IconButton 自己会设原生 title，靠空 title 压掉它；
-       现在提示由 IconButton 自己渲染，得用 hint 表达同一个意思。）
-      */}
-      <div className="flex shrink-0 items-center gap-0.5">
+      {/* ── 中：这条对话的活动与改动（只在真有时出现，不做恒定装饰） ── */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-2xs text-fg-tertiary">
         {sending ? (
-          <IconButton label="停止生成" hint="" size={28} onClick={stopGeneration}>
-            <Square size={13} fill="currentColor" />
-          </IconButton>
-        ) : (
-          <IconButton label="继续" hint="" size={28} onClick={() => sendMessage('继续')}>
-            <Play size={13} />
-          </IconButton>
-        )}
+          <span className="flex min-w-0 max-w-[34vw] items-center gap-1.5 truncate">
+            <Loader2 size={11} className="shrink-0 animate-spin" />
+            <span className="truncate">{activity}</span>
+          </span>
+        ) : null}
 
+        {/*
+          改动行数点一下直接去「审查」—— 两处说的是同一批文件，
+          让「点一下就看见是什么」比单纯显示一个数字有用。
+        */}
+        {diffs.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveRightTab('diff')
+              setRightPanelVisible(true)
+            }}
+            className="flex shrink-0 items-center gap-2 rounded-sm px-1 font-mono hover:bg-bg-hover"
+            title={`当前对话最近一批改动：${diffs.length} 个文件，${additions} 行新增，${deletions} 行删除`}
+            aria-label={`查看当前对话最近一批改动（${diffs.length} 个文件）`}
+          >
+            <span style={{ color: 'var(--diff-add)' }}>+{additions}</span>
+            <span style={{ color: 'var(--diff-remove)' }}>−{deletions}</span>
+            <span className="text-fg-tertiary">{diffs.length} 个文件</span>
+          </button>
+        ) : null}
+      </div>
+
+      {/* ── 右：面板开关 + 窗口按钮让位 ── */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {/*
+          右边这几个**故意不挂提示**：`hint=""` 就是「不要提示」（提示实现里空文案
+          直接不渲染）。它们紧贴原生窗口按钮，提示往下弹会正好落在右栏那排标签
+          （审查 / 终端 / 文件…）上，两块字叠在一起，比没提示难看得多。
+          图标本身够清楚，无障碍靠 aria-label（IconButton 的 label），不受影响。
+        */}
         <IconButton label="切换底部面板" hint="" size={28} onClick={onToggleBottomPanel}>
           <PanelBottom size={15} />
         </IconButton>
 
         {/*
-          Phase 2 · C：在「未读错误提示」**旁边**复用同一机制，把另外两项
-          「关键工作状态」也透传出来 —— 右栏折叠时它们不会跟着消失。
-          颜色 / 形状刻意与错误区分：「运行中」是状态色圆点，改动数是等宽数字，
-          都不是那个红/橙的错误点。
+          后台任务数是**跨对话**的（任务中心是全局的），所以它必须说清楚
+          「有 N 个任务在跑」，而不是混进上面那条「当前请求」里。
+          点它去「任务」标签 —— 恢复暂停任务在那儿。
         */}
         {runningTasks > 0 ? (
-          <span
-            className="hidden shrink-0 items-center gap-1 text-2xs text-fg-tertiary sm:flex"
-            title={`${runningTasks} 个后台任务在运行`}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveRightTab('tasks')
+              setRightPanelVisible(true)
+            }}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-fg-tertiary hover:bg-bg-hover"
+            title={`后台有 ${runningTasks} 个任务在运行（可能是别的对话的）—— 点开任务中心`}
+            aria-label={`后台有 ${runningTasks} 个任务在运行，打开任务中心`}
           >
             <span
               className="size-1.5 shrink-0 rounded-full"
@@ -211,17 +223,7 @@ export function AppTitleBar({ onToggleBottomPanel }: { onToggleBottomPanel: () =
               aria-hidden
             />
             <span className="font-mono">{runningTasks}</span>
-          </span>
-        ) : null}
-
-        {/* 窄窗下上面的「+N −M」会隐藏，用紧凑的改动计数兜底 */}
-        {diffs.length > 0 ? (
-          <span
-            className="shrink-0 font-mono text-2xs text-fg-tertiary sm:hidden"
-            title={`${diffs.length} 个文件未提交改动`}
-          >
-            ±{diffs.length}
-          </span>
+          </button>
         ) : null}
 
         <IconButton

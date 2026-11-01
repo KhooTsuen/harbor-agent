@@ -48,6 +48,8 @@ const state = (): StreamState => ({
     timestamp: 0,
   }),
   finish: () => {},
+  /* 重试回滚起点（本组只测确认卡，给个 0 起点即可） */
+  retryMarks: { text: 0, think: 0, round: -1, roundText: 0, roundThink: 0 },
 })
 
 beforeEach(() => {

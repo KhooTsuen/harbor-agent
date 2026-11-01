@@ -62,7 +62,7 @@ export async function run() {
   const tail = createTranscript()
   feeder(tail).say('原稿')
   check(
-    '★ 传终稿就用终稿（自检复核会改写最后一轮）',
+    '★ 传终稿就用终稿（收尾可以把最后一轮改写成终稿）',
     tail.soFar('复核后的稿').content === '复核后的稿',
   )
   check('传空 → 退回这一轮攒的原文（别把最后一轮弄丢）', tail.soFar('').content === '原稿')
@@ -88,7 +88,7 @@ export async function run() {
   check('★ 每一轮结束都并进总账', loopSrc.includes('transcript.mergeRound()'))
   check(
     '★ 正常收尾回的是**全量**，不是最后一轮',
-    loopSrc.includes('...transcript.soFar(finalContent)'),
+    loopSrc.includes('...transcript.soFar(result.content)'),
   )
   check(
     '★ 四条提前结束的路都带上了（暂停 / 撞预算 / 转圈交人 / 轮数到顶）',

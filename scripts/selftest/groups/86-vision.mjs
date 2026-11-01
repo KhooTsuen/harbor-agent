@@ -34,6 +34,20 @@ const withImage = (text) => [
 export async function run() {
   const created = []
 
+  group('工具历史 / 截断后仍符合上游消息协议')
+  const call = { id: 'replay_case_0', type: 'function', function: { name: 'read_file', arguments: '{}' } }
+  const assistant = { role: 'assistant', content: '正在读取', tool_calls: [call] }
+  const tool = { role: 'tool', tool_call_id: call.id, content: '文件内容' }
+  const user = { role: 'user', content: '继续' }
+  const valid = contextBuilder.assemble({ messages: [assistant, tool, user] })
+  check('完整工具组保留原样', valid.messages.length === 3 && valid.messages[0].tool_calls?.[0].id === valid.messages[1].tool_call_id)
+  const orphan = contextBuilder.assemble({ messages: [tool, user] })
+  check('历史条数从工具组中间截断时排除孤立 tool', orphan.messages.length === 1 && orphan.messages[0].role === 'user')
+  const partial = contextBuilder.assemble({ messages: [assistant, user] })
+  check('缺少工具结果时不发送悬空 tool_calls', partial.messages.length === 1 && partial.messages[0].role === 'user')
+  const wrongId = contextBuilder.assemble({ messages: [assistant, { ...tool, tool_call_id: 'wrong' }, user] })
+  check('工具 id 不匹配时整组排除', wrongId.messages.length === 1 && wrongId.messages[0].role === 'user')
+
   /* ── ① 图片不被切 ────────────────────────────────── */
   group('看图 / 预算不切图片')
   const one = contextBuilder.assemble({

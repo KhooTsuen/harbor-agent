@@ -6,13 +6,12 @@
  *
  * ── ★ 两条硬规矩（用户定的边界）────────────────────────────
  *   · `chrome.tabs.query({active:true, currentWindow:true})` —— 只可能拿到**前台当前
- *     标签**，不遍历后台；读页面**只能由侧边栏按钮发起**（消息 `read-page`），
- *     没有任何定时器 / 监听器会自己去读页面。
+ *     标签**；读页面只由用户点击发起（`read-page`）或由 `lib/page-watch.js` 在切页面时
+ *     自动发起（受上下文开关 + 站点黑名单 + 权限三道闸门）。
  *
  * ── ★ activeTab 的授予时机（浏览器行为：实测 + 官方文档）─────
  * 官方列的只有四种：**执行操作（点扩展图标）/ 右键菜单 / 快捷键 / 多功能框**。
- * **点侧边栏里的按钮不算 invoke** —— 正确流程是：点图标（= invoke，同时打开侧边栏）
- * → 再点「读当前页」。用户换标签后新标签没有 activeTab，读会失败（转人话提示）。
+ * **点侧边栏里的按钮不算 invoke** —— 所以点图标 = invoke，同时打开侧边栏。
  * ⚠️ `setPanelBehavior({openPanelOnActionClick:true})` **行不通**：它把图标点击接管成
  *   「切换侧边栏条目显示」，不算 action 执行，activeTab 于是从不授予（2026-10-15 真机
  *   踩到）。改法见 bindAction()：用 action.onClicked 自己开面板，这一下才是真 invoke。
@@ -21,22 +20,30 @@
 /* global chrome */
 
 import { connect, getState, ping, requestHost, setCommandHandler } from './lib/native.js'
-import { resolveActiveTab } from './lib/active-tab.js'
+import { checkSite, listSites, setTemporaryBlock, unblockSite } from './lib/site-policy.js'
+import { contextAllowed } from './lib/context-gate.js'
+import { resolveActiveTab, stillActiveTab } from './lib/active-tab.js'
 /* M03：观察页面（拆到单独文件，SW 贴 300 红线）· M04：指令执行 */
 import { observePage, getElements } from './lib/observe-run.js'
 import { runCommand } from './lib/command-run.js'
 /* M02-A：侧边栏消息的那些 if 分支搬到 `lib/messages.js`（SW 贴 300 红线，整块搬走） */
 import { createPanelRouter } from './lib/messages.js'
+import { collectPageText, limitPageText, waitForStablePage } from './lib/page-text.js'
+import { bindQuickEntry, saveSelectionDraft, showSelectionToolbar } from './lib/quick-entry.js'
+/* 2026-10-21：切页面时自动更新「页面上下文槽」（不占对话流，见 lib/page-watch.js） */
+import { bindPageWatch } from './lib/page-watch.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
    可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
 const MAX_TEXT = 512 * 1024
-
+let actionBound = false
 /* ★ 点图标 = 真正的「执行操作」（activeTab 由此授予）→ 打开侧边栏。必须走
    action.onClicked：`setPanelBehavior({openPanelOnActionClick})` 把图标点击接管成
    「切换侧边栏显示」，不算 action 执行，activeTab 于是从不授予（真机踩过，见文件头）。
    顺带把这次 invoke 记进 storage（`harborInvoke`）—— 诊断用：能看出 tab.url 可不可见。 */
 function bindAction() {
+  if (actionBound) return
+  actionBound = true
   try {
     chrome.action.onClicked.addListener((tab) => {
       const info = {
@@ -60,7 +67,7 @@ function bindAction() {
         const opened = chrome.sidePanel.open({ windowId: tab.windowId })
         if (opened && typeof opened.then === 'function') {
           opened
-            .then(() => done({ opened: true }))
+            .then(() => { done({ opened: true }); void showSelectionToolbar(tab) })
             .catch((error) => done({ openErr: String((error && error.message) || error) }))
         } else {
           done({ opened: true })
@@ -78,40 +85,58 @@ function bindAction() {
    读当前页
    ══════════════════════════════════════════════════════════════ */
 
-/** 读当前活动标签的标题 + 正文（只读前台那一个） */
-async function readActivePage() {
+/** 读当前活动标签的标题 + 正文（只读前台那一个）。
+ *
+ * `sessionId`（2026-10-20）：侧边栏选中的那条 —— **必须透传给主进程**，否则落哪条
+ * 全凭主窗口当时开着哪条（用户报的串线）。
+ */
+async function readActivePage(msg) {
+  const sessionId = String((msg && msg.sessionId) || '')
+  /* 上下文开关（M02-B）：用户关掉「带上」时**不读也不送** —— 这道门在发请求这一层，
+     不在按钮上（别处调同一能力也不会绕过去） */
+  const ctx = await contextAllowed()
+  if (!ctx.allowed) return { ok: false, error: ctx.error }
   /* 「拿前台标签 + 判受限页」共用一处（M03 与 observe 一起用；文案不许改，见 lib/active-tab.js） */
   const target = await resolveActiveTab()
   if (!target.ok) return { ok: false, error: target.error }
   const { tab, url } = target
 
+  /* 站点黑名单：采集**之前**问主进程（判定只有 ext-sites.cjs 一处） */
+  const policy = await checkSite(url)
+  if (!policy.allowed) return { ok: false, error: policy.error }
+
   let results
   try {
+    const settled = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: waitForStablePage })
+    if (String(settled?.[0]?.result?.url || '') !== url || !(await stillActiveTab(tab.id, url))) {
+      return { ok: false, error: '等待页面加载时活动标签已改变；没有发送旧页面内容' }
+    }
     results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => ({
-        title: document.title || '',
-        text: document.body ? document.body.innerText || '' : '',
-      }),
+      func: collectPageText,
     })
   } catch (error) {
     return { ok: false, error: `读不到这个页面：${(error && error.message) || error}` }
   }
 
   const first = results && results[0] && results[0].result
-  const title = String((first && first.title) || tab.title || '')
-  let text = String((first && first.text) || '')
-  const truncated = text.length > MAX_TEXT
-  if (truncated) text = text.slice(0, MAX_TEXT)
+  if (String(first?.url || '') !== url || !(await stillActiveTab(tab.id, url))) {
+    return { ok: false, error: '读取期间页面或活动标签已改变；没有发送旧页面内容，请在当前页重试' }
+  }
+  const page = limitPageText(first, MAX_TEXT)
+  const title = page.title || String(tab.title || '')
+  const { text, truncated } = page
 
-  const reply = await requestHost('ext:page', { url, title, text, truncated })
+  /* 2026-10-21：不再落会话，改送「页面上下文槽」（主进程每轮注入提示词，不占对话流） */
+  const reply = await requestHost('page-context', { url, title, text, truncated, source: 'manual', sessionId })
 
   const result = {
     ok: reply && reply.ok === true,
     error: reply && reply.ok === true ? null : (reply && reply.error) || 'Harbor 没有收下这条内容',
     url,
     title,
-    chars: text.length,
+    /* 槽里只留前 3000 字符（预算见 core/page-context-slot.cjs），这里报实际进去的长度 */
+    chars: reply && reply.ok === true ? Number(reply.chars ?? text.length) : text.length,
     truncated,
     at: Date.now(),
   }
@@ -221,6 +246,11 @@ async function abortChat(sessionId) {
   return reply && typeof reply === 'object' ? reply : { ok: false, error: '停不了（Harbor 没回话）' }
 }
 
+async function regenerateChat(sessionId) {
+  const reply = await requestHost('chat:regenerate', { sessionId: String(sessionId ?? '') })
+  return reply && typeof reply === 'object' ? reply : { ok: false, error: '重新生成请求没有得到回应' }
+}
+
 /* ── 侧边栏来的消息（M02-A：路由表搬到 `lib/messages.js`）────── */
 chrome.runtime.onMessage.addListener(
   createPanelRouter({
@@ -236,12 +266,19 @@ chrome.runtime.onMessage.addListener(
     selectSession,
     newSession,
     abortChat,
+    regenerateChat,
+    saveSelectionDraft,
+    listSites,
+    setTemporaryBlock,
+    unblockSite,
   }),
 )
 
 chrome.runtime.onInstalled.addListener(() => {
   bindAction()
+  bindQuickEntry()
   bindCommandHandler()
+  bindPageWatch()
   connect()
 })
 chrome.runtime.onStartup.addListener(connect)
@@ -258,5 +295,7 @@ function bindCommandHandler() {
 }
 
 bindAction()
+bindQuickEntry()
 bindCommandHandler()
+bindPageWatch()
 connect()

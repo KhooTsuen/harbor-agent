@@ -12,7 +12,6 @@ import { ClarifyCard } from './ClarifyCard'
 import { MessageRounds } from './message/MessageRounds'
 import { hasAnything, roundsOf, roundsOfError } from './message/roundsOf'
 import { TerminalOutput } from './TerminalOutput'
-import { activityLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
 import { isSafeHref } from '@/lib/linkPolicy'
 import { SystemMessage } from './SystemMessage'
@@ -33,10 +32,15 @@ export interface MessageItemProps {
   showActions?: boolean
   /** 这条消息在路径上的分叉点（有分叉才会传）—— 用户消息/回答旁边显示 L 标 */
   fork?: ForkPoint
+  /**
+   * 它在整个对话里的下标（不是窗口里的下标）。
+   * 只用于「切回对话时原来的那条被删了 → 落到同位置的邻居」，见 lib/scrollAnchor。
+   */
+  index?: number
 }
 
 /** 助手那条的操作条在 `message/AssistantActions`（复制 / 重新生成 / 赞戴 / 翻译）；用户这条是编辑 / 分支 */
-export function MessageItem({ message, showActions = true, fork }: MessageItemProps) {
+export function MessageItem({ message, showActions = true, fork, index }: MessageItemProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isStreaming = message.status === 'streaming'
@@ -67,6 +71,8 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
     <article
       /* AG-038：给基准测试一个能数的锚点（「渲染出来几条」比「节点总数」更直观） */
       data-message-id={message.id}
+      /* 切回对话时锚点那条若被删了，按这个下标就近降级（见 lib/scrollAnchor） */
+      data-message-index={index}
       className={cn('group flex w-full flex-col', isUser ? 'items-end' : 'items-start')}
     >
       {isUser ? (
@@ -137,17 +143,24 @@ export function MessageItem({ message, showActions = true, fork }: MessageItemPr
                 hideStreamingContent={!streamOutput}
                 /* 有澄清卡 → 不跨轮聚合（Phase 3，理由见 groupRounds.ts） */
                 clarify={Boolean(message.clarify)}
+                /* 折叠区的入口要读 durationMs（用时）/ interrupted / status / phase */
+                message={message}
               />
             ) : isStreaming ? (
               /*
-                  AG-003：按下发送就要有反馈，而且要说清现在在干什么。
-                  阶段文字来自主进程的状态机（AG-001 的 phase），
-                  还没收到第一个 phase 事件时退回一句通用的。
-                */
-              <p className="flex items-center gap-2 text-sm text-fg-secondary">
-                <span className="inline-block size-2 animate-pulse rounded-full bg-fg-tertiary" />
-                {activityLabel(message.toolRuns ?? [], message.phase)}
-              </p>
+                 一轮都还没结束（刚发出、等第一个事件）→ 空时间线也要有入口：
+                 入口恒为「实时任务」，展开句才是「正在等待模型回应…」
+                 （验收表第一行）。活动行由 MessageRounds 负责 ——
+                 时间线本来就归它。
+              */
+              <MessageRounds
+                rounds={rounds}
+                toolRuns={message.toolRuns ?? []}
+                streaming
+                hideStreamingContent={!streamOutput}
+                clarify={Boolean(message.clarify)}
+                message={message}
+              />
             ) : null}
 
             {/*

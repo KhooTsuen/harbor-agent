@@ -75,6 +75,7 @@ const SAFETY_GUIDE = [
  * 那几层（模式 / 权限 / 边界 / 浏览器）。下面转出去，老引用照旧。
  */
 const { workRules, WORK_RULES, BROWSER_GUIDE } = require('./prompt-rules.cjs')
+const { SPEECH_GUIDE } = require('./prompt-speech.cjs')
 
 /* REST_RULES 搬去了 `prompt-rules.cjs` —— 见本文件上方那段说明。 */
 
@@ -112,8 +113,10 @@ const { workRules, WORK_RULES, BROWSER_GUIDE } = require('./prompt-rules.cjs')
  *   /11 → /12 —— 易变区独立成第二条 system message（CE-018）：层内容与角色一字未改，
  *              只把易变区从「同一条 system message 的尾部」挪到**消息末尾** ——
  *              历史因此能吃到前缀缓存（实测未命中 45,887 → 192 token）。
+ *   /12 → /13 —— 加 `speechGuide` 层（P0）：何时开口（只拍板或结果可用）、汇报 ≤300 字、
+ *              动文件前先 `ask_user(gate)` 等他点一次（纯读取不拦）。
  */
-const VERSION = 'prompt-stack/12'
+const VERSION = 'prompt-stack/13'
 
 /*
  * 层的顺序 = 模型看到的顺序。
@@ -151,6 +154,8 @@ const ORDER = [
   'toolPolicy',
   'browserGuide',
   'workRules',
+  /* P0：协作口径层（何时开口 / 说多少 / 动手前等不等），恒定文本属稳定区 */
+  'speechGuide',
   /*
    * safety 从「压轴」提到稳定区末尾：它每轮都一样，放着不命中太亏。
    * 「越靠后越容易被遵守」这条对规则有效，但放在易变区之前仍属于提示的前段，
@@ -207,6 +212,8 @@ ${input.responseDepth ? `- 回答深度：${input.responseDepth}。不要靠截�
     layer('toolPolicy', 'Tool Policy', input.toolPolicy),
     layer('browserGuide', 'Browser', input.browserGuide),
     layer('workRules', 'How To Work', input.workRules),
+    /* P0：恒定文本、不跟开关 —— 自己兜默认值，免得每个调用点传一遍 */
+    layer('speechGuide', 'How To Talk To You', input.speechGuide ?? SPEECH_GUIDE),
     layer('safety', 'Boundaries', input.safety),
     /* ↓ 易变区（每轮可能变，放后面） */
     layer('relevantMemory', 'Relevant Memory', input.relevantMemory),
@@ -281,6 +288,7 @@ module.exports = {
   PERSONA_GUIDE,
   personaGuide,
   SAFETY_GUIDE,
+  SPEECH_GUIDE,
   WORK_RULES,
   workRules,
   BROWSER_GUIDE,

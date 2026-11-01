@@ -100,14 +100,23 @@ export function RightPanelHost({ visible, width, min, max, onToggle, onResize }:
       </div>
 
       {visible ? null : (
+        /*
+         * 收起后的「展开」长条：贴在窗口右缘、**整条**都能点（全高 + 全宽的按钮，
+         * 不是一个小图标）。展开后它自己消失（`visible` 为真时整块不渲染）。
+         *
+         * 为什么值得单独说一句：这块以前只有一个 `‹` 文字，看着像装饰，
+         * 用户不知道能点。「整条可点」意味着鼠标落在条上任何高度都行。
+         */
         <button
           type="button"
           onClick={onToggle}
-          className="shrink-0 border-l border-line-subtle px-1 text-2xs text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
+          className="group flex w-2.5 shrink-0 cursor-e-resize items-center justify-center border-l border-line-subtle bg-transparent transition-colors duration-fast hover:bg-bg-hover"
           aria-label="展开右侧面板"
           title="展开右侧面板"
         >
-          ‹
+          <span className="text-2xs text-fg-tertiary transition-colors group-hover:text-fg-primary">
+            ‹
+          </span>
         </button>
       )}
     </>

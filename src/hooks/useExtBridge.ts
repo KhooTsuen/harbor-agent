@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
 import { useThreadStore } from '@/stores/useThreadStore'
+import { useUIStore } from '@/stores/useUIStore'
 import { stopActiveRequest } from '@/stores/thread/turnControl'
 
 /* ══════════════════════════════════════════════════════════════
@@ -65,13 +66,17 @@ export function useExtBridge(activeThreadId: string): void {
       /*
        * 顺序不能反：先刷新列表（兜底新建的会话才会出现在侧栏里），再重读那条会话。
        *
-       * 用事件里的 `sessionId`（不用「当前 activeThreadId」）：内容落进的是**主进程
-       * 认定的**那条会话 —— 没报过 / 报的那条被删时它会新建一条兜底会话，
-       * 这时只有跟着 sessionId 切过去，用户才看得到内容。
+       * 用事件里的 `sessionId`（不用「当前 activeThreadId」）刷新目标；
+       * 侧边栏与主窗口可以看不同会话，后台刷新不能把主窗口切走。
        * `openFromDisk` 有「读盘期间没人动过 messages 才允许覆盖」的守卫
        * （见 stores/app/diskActions.ts），`loadFromDisk` 恰好保住引用，所以它过得去。
        */
-      void store.loadFromDisk().then(() => store.openFromDisk(event.sessionId))
+      void store.loadFromDisk().then(() => {
+        const latest = useAppStore.getState()
+        return latest.activeThreadId === event.sessionId
+          ? latest.openFromDisk(event.sessionId)
+          : latest.hydrateThread(event.sessionId)
+      })
     })
     return off
   }, [])
@@ -121,6 +126,30 @@ export function useExtBridge(activeThreadId: string): void {
         return
       }
 
+      if (event.type === 'ext:regenerate') {
+        const sessionId = String(event.sessionId ?? '')
+        if (!sessionId) return
+        const regenerate = async (): Promise<void> => {
+          if (!useAppStore.getState().threads.some((t) => t.id === sessionId))
+            await useAppStore.getState().loadFromDisk()
+          await useAppStore.getState().hydrateThread(sessionId)
+          const thread = useAppStore.getState().threads.find((t) => t.id === sessionId)
+          const latest = [...(thread?.messages ?? [])]
+            .reverse()
+            .find((m) => m.role === 'assistant' || m.role === 'user')
+          const answer = latest?.role === 'assistant' ? latest : undefined
+          if (answer)
+            useThreadStore.getState().regenerateMessage(answer.id, sessionId, 'edge-sidepanel')
+          else useUIStore.getState().showToast('warning', '最新一轮还没有可重新生成的回答')
+        }
+        void regenerate().catch((error: unknown) => {
+          useUIStore
+            .getState()
+            .showToast('error', '重新生成失败', String((error as Error)?.message ?? error))
+        })
+        return
+      }
+
       if (event.type !== 'ext:send') return
       const text = String(event.text ?? '')
       if (!text) return
@@ -129,13 +158,17 @@ export function useExtBridge(activeThreadId: string): void {
         /* 侧边栏一条都没选中 → 新建一条再发（用户拍板：两侧都要出现这条） */
         const id = useAppStore.getState().createThread()
         useAppStore.getState().setActiveThread(id)
-        useThreadStore.getState().sendMessage(text)
+        useThreadStore
+          .getState()
+          .sendMessage(text, undefined, undefined, undefined, 'edge-sidepanel')
         return
       }
 
       const sessionId = String(event.sessionId ?? '')
       if (!sessionId || sessionId === useAppStore.getState().activeThreadId) {
-        useThreadStore.getState().sendMessage(text)
+        useThreadStore
+          .getState()
+          .sendMessage(text, undefined, undefined, undefined, 'edge-sidepanel')
         return
       }
 
@@ -148,7 +181,9 @@ export function useExtBridge(activeThreadId: string): void {
         await useAppStore.getState().hydrateThread(sessionId)
       }
       void ensureLoaded().then(() => {
-        useThreadStore.getState().sendMessage(text, undefined, sessionId)
+        useThreadStore
+          .getState()
+          .sendMessage(text, undefined, sessionId, undefined, 'edge-sidepanel')
       })
     })
     return off

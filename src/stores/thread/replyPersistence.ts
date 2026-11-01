@@ -172,6 +172,17 @@ export function createReplyPersistence(opts: {
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
         /* 时间线（思考 → 工具 → 正文 的真实顺序）—— 不存的话重开会话会塌回三段堆叠 */
         ...(final.rounds?.length ? { rounds: final.rounds } : {}),
+        /*
+         * 用时（2026-10-21）：**只有真拿到终点才写**。
+         *
+         * `final.durationMs` 由 `streamEvents.ts` 在 done / aborted / error 里算出来，
+         * 起止点口径写在 `types/conversation.ts` 的字段注释里。这里不做兜底推算 ——
+         * 拿 `Date.now() - timestamp` 现算会把「落盘延迟」也算进去（收尾到落盘之间
+         * 还有几步），而且进程重启后根本没有终点。没有就不写，界面显示「N 步」。
+         */
+        ...(typeof final.durationMs === 'number' && final.durationMs > 0
+          ? { durationMs: final.durationMs }
+          : {}),
         /* 开工前问过什么（AG-053 批③）—— 只读卡靠它，不存的话重开会话就只剩「模型自己改的」 */
         ...(final.clarify ? { clarify: final.clarify } : {}),
         ...(final.citations?.length ? { citations: final.citations } : {}),

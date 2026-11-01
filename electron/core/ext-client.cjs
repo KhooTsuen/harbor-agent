@@ -251,7 +251,17 @@ function createClient(options = {}) {
     }
 
     const id = `h-${++seq}`
-    const frame = P.encodeFrame(P.request({ id, kind, payload, token: P.readToken(dataDir) }))
+    let frame
+    try {
+      /* 管道上限 2 MB（与上面 `writeOnceSync` 同一口径）—— 超限**不发**，回一条能认出来的失败 */
+      frame = P.encodeFrame(P.request({ id, kind, payload, token: P.readToken(dataDir) }), {
+        max: P.MAX_PIPE_FRAME,
+      })
+    } catch (error) {
+      if (!error || error.code !== P.FRAME_TOO_LARGE) throw error
+      const tooBig = `这次请求序列化后 ${error.bytes} 字节，超过 Harbor 单条消息上限 ${P.MAX_PIPE_FRAME} —— 没有发出去。请减少一次发送的内容量。`
+      return { ok: false, error: { code: P.ERR.INTERNAL, message: tooBig } }
+    }
 
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

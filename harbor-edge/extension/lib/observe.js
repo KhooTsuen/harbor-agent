@@ -136,12 +136,67 @@ export function collectPageContext(opts) {
   }
 
   /* ── ① 扫描可交互元素（不可见的不上列表，但要能解释「为什么没列」）── */
-  let candidates = []
-  try {
-    candidates = Array.from(document.querySelectorAll(SELECTOR))
-  } catch {
-    candidates = []
+  /*
+   * ★ 穿透 open shadowRoot 与同源 iframe（2026-10-21 真机）：
+   *   只 `document.querySelectorAll` 时，把界面装进 shadow DOM 的站点
+   *   （Web Components 站点、用户自己装的 UI 插件改造过的页面）**一个都找不到**，
+   *   而 `innerText` 又能拿到文字 —— 用户看到的正是「正文有、可交互元素 0 个」
+   *   （bilibili + UI 插件对照 note.youdao.com 实测）。
+   *   closed shadow root 浏览器不暴露（`shadowRoot` 为 null），无法进入 —— 如实计入 note。
+   *   嵌套深度封顶 4 层、候选封顶 SCAN_CAP，避免病态页面拖死注入脚本。
+   */
+  const SCAN_CAP = 3000
+  let openShadow = 0
+  let scannedForShadow = true
+  const candidates = []
+  /** 递归一个 root（Document / ShadowRoot / iframe 的 contentDocument） */
+  const scanRoot = (root, depth) => {
+    if (!root || depth > 4) return
+    if (candidates.length >= SCAN_CAP) {
+      scannedForShadow = false
+      return
+    }
+    /* ①-a 本 root 的候选（原生选择器，比逐个 matches 快） */
+    try {
+      const hit = root.querySelectorAll(SELECTOR)
+      for (let i = 0; i < hit.length; i += 1) {
+        if (candidates.length >= SCAN_CAP) {
+          scannedForShadow = false
+          return
+        }
+        candidates.push(hit[i])
+      }
+    } catch {
+      /* 这个 root 读不了（跨域 / 已卸载）—— 不影响其他 root */
+    }
+    /* ①-b 找能钻进去的 shadow host 与同源 iframe */
+    let nodes = []
+    try {
+      nodes = Array.from(root.querySelectorAll('*'))
+    } catch {
+      return
+    }
+    if (nodes.length > SCAN_CAP) scannedForShadow = false
+    const cap = Math.min(nodes.length, SCAN_CAP)
+    for (let i = 0; i < cap; i += 1) {
+      const node = nodes[i]
+      if (node.shadowRoot) {
+        openShadow += 1
+        scanRoot(node.shadowRoot, depth + 1)
+      } else if (String(node.tagName || '').toUpperCase() === 'IFRAME') {
+        let doc = null
+        try {
+          doc = node.contentDocument
+        } catch {
+          doc = null
+        }
+        /* 跨域的 contentDocument 是 null（或抛错）—— 跳过，不猜内容 */
+        if (doc) scanRoot(doc, depth + 1)
+      }
+      if (!scannedForShadow && candidates.length >= SCAN_CAP) return
+    }
   }
+  scanRoot(document, 0)
   const seen = new Set()
   const picked = []
   let visibleTotal = 0
@@ -233,7 +288,10 @@ export function collectPageContext(opts) {
           register(ref, el)
         }
       }
-      selection = { text: clip(raw, maxSelection), ref, tag: el ? String(el.tagName || '') : '', truncated: raw.length > maxSelection }
+      const block = el?.closest?.('p,li,blockquote,section,article,main') || el
+      const around = [block?.previousElementSibling, block, block?.nextElementSibling]
+        .filter(Boolean).map((node) => cut(node.innerText || node.textContent, 300)).filter(Boolean)
+      selection = { text: clip(raw, maxSelection), ref, tag: el ? String(el.tagName || '') : '', context: clip(around.join('\n'), 900), truncated: raw.length > maxSelection }
     }
   } catch {
     selection = null
@@ -261,17 +319,7 @@ export function collectPageContext(opts) {
     /* 拿不到 iframe 列表不算致命 */
   }
 
-  /* ── ⑥ open shadow root 计数（closed 的**浏览器不暴露**，不猜数量）── */
-  let openShadow = 0
-  let scannedForShadow = false
-  try {
-    const all = document.body ? document.body.querySelectorAll('*') : []
-    const cap = Math.min(all.length, 3000)
-    for (let i = 0; i < cap; i += 1) if (all[i].shadowRoot) openShadow += 1
-    scannedForShadow = all.length <= 3000
-  } catch {
-    scannedForShadow = false
-  }
+  /* ── ⑥ open shadow root 计数 —— 已在 ① 的同一趟遍历里数完（不重复扫全页）── */
 
   /* ── ⑦ 登记命名空间（M04 按 ref 取回元素；只留最近一次观察）── */
   try {
@@ -302,6 +350,20 @@ export function collectPageContext(opts) {
       /* ⚠️ closed shadow root 的 shadowRoot 是 null —— 检测不到，所以**不报数量**，只说明 */
       note: scannedForShadow ? 'closed shadow root 无法枚举（浏览器不暴露）' : '元素过多，open shadow root 计数是下界；closed 的无法枚举',
     },
-    stats: { elements: elements.length, maxItems, truncated, textLen: bodyLen },
+    stats: {
+      elements: elements.length,
+      maxItems,
+      truncated,
+      textLen: bodyLen,
+      /*
+       * ★ 诊断两件（2026-10-21 加）：用户看到「可交互元素 0 个」时，界面必须能说清
+       *   卡在哪一步 —— 是选择器一个都没命中，还是命中了但全被判成不可见。
+       *   这两句「为什么」此前完全缺失，用户只看到一句「没有可见的可交互元素」，
+       *   无法区分「页面是空的」和「采集器坏了」。
+       *   `visibleCandidates` 是**下界**：命中够 maxItems 就提前 break，不再数完。
+       */
+      candidates: candidates.length,
+      visibleCandidates: visibleTotal,
+    },
   }
 }

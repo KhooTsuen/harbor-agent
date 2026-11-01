@@ -167,9 +167,9 @@ export function askPermissionFor(event: Record<string, unknown>): void {
       : `Agent 准备${KIND_TEXT[kind] ?? `执行 ${toolName}`}`,
     description: [
       String(event.summary ?? ''),
-      remembered ? '同意后，**本轮**内同类操作不再询问。' : '',
+      remembered ? '同意后，「本轮」内同类操作不再询问。' : '',
       alwaysAsk
-        ? '这是外部 Codex 经 MCP 发起的写入，**每一次都会单独询问**（不会记住本次同意）。'
+        ? '这是外部 Codex 经 MCP 发起的写入，「每一次都会单独询问」（不会记住本次同意）。'
         : '',
     ]
       .filter(Boolean)

@@ -94,6 +94,31 @@ export function Sidebar({ loading = false }: SidebarProps) {
     confirmDeleteThread(thread.id)
   }
 
+  /*
+   * 第二阶段：多选删除的**可见范围**。
+   *
+   * 以前这里传的是 `threads`（全部对话）—— 于是在搜索框里搜出 3 条、
+   * 点「全选」，实际选中的是 30 条，确认框还说「删除 30 条」。
+   * 现在范围 = **屏幕上真显示的那些**：文件夹里的（已过滤）+ 单独对话（已过滤）。
+   * 归档只在「已归档」视图里出现，不混进来。
+   */
+  const selectableThreads = useMemo(
+    () => [...grouped.flatMap((g) => g.threads), ...looseThreads],
+    [grouped, looseThreads],
+  )
+
+  /*
+   * 可见范围一变（改搜索词 / 新建 / 删除），就把选择裁到范围内 ——
+   * 不允许「看不见的还在被选中、还会被删掉」。
+   * 依赖只写 active / restrictTo / 范围本身：restrictTo 是 store 上稳定的动作，
+   * 不会因为选中项变了就把这个 effect 再跑一遍。
+   */
+  const { active: bulkActive, restrictTo } = bulk
+  useEffect(() => {
+    if (!bulkActive) return
+    restrictTo(selectableThreads.map((t) => t.id))
+  }, [bulkActive, restrictTo, selectableThreads])
+
   if (collapsed) return <CollapsedSidebar onCreateThread={() => createThread()} />
 
   return (
@@ -110,7 +135,7 @@ export function Sidebar({ loading = false }: SidebarProps) {
       {bulk.active ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <BulkSelectList
-            threads={threads}
+            threads={selectableThreads}
             selected={bulk.selected}
             onToggle={bulk.toggle}
             onSelectAll={bulk.selectAll}

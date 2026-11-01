@@ -7,10 +7,12 @@ import {
   FileJson,
   FileText,
   Folder,
+  RefreshCw,
   Search,
 } from 'lucide-react'
 import type { FileNode } from '@/types'
 import { cn } from '@/lib/utils'
+import { IconButton } from '@/components/ui/IconButton'
 
 /* ══════════════════════════════════════════════════════════════
    FileTree
@@ -24,6 +26,15 @@ export interface FileTreeProps {
   /** 当前预览的文件 id */
   activeFileId: string | null
   onOpenFile: (node: FileNode) => void
+  /**
+   * 重新读一遍这棵树（第二阶段新增）。
+   *
+   * 为什么要手动刷新：树是在**目录变化时**（`effectiveProject.path` 变了）拉的，
+   * Agent 在同一目录里新建 / 删除文件不会触发它 —— 用户只能切走再切回来。
+   * 给一个明说的按钮，比让界面自己猜「什么时候变了」可靠。
+   * 不给就不渲染按钮（测试与预览里不强制接）。
+   */
+  onRefresh?: () => void | Promise<void>
 }
 
 function iconFor(node: FileNode) {
@@ -129,25 +140,50 @@ function TreeNode({
   )
 }
 
-export function FileTree({ root, activeFileId, onOpenFile }: FileTreeProps) {
+export function FileTree({ root, activeFileId, onOpenFile, onRefresh }: FileTreeProps) {
   const [filter, setFilter] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function refresh(): Promise<void> {
+    if (!onRefresh) return
+    setRefreshing(true)
+    try {
+      await onRefresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-2 pb-2">
-        <div className="relative">
-          <Search
-            size={12}
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-fg-tertiary"
-          />
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="按文件名过滤"
-            aria-label="过滤文件"
-            className="w-full rounded-sm border border-transparent bg-bg-raised/60 py-1.5 pl-6.5 pr-2 text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
-            style={{ paddingLeft: 26 }}
-          />
+        <div className="flex items-center gap-1">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              size={12}
+              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-fg-tertiary"
+            />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="按文件名过滤"
+              aria-label="过滤文件"
+              className="w-full rounded-sm border border-transparent bg-bg-raised/60 py-1.5 pl-6.5 pr-2 text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
+              style={{ paddingLeft: 26 }}
+            />
+          </div>
+          {onRefresh ? (
+            /* 提示交给 IconButton 自己渲染（hint），别再套一层 Tooltip —— 那正是双框叠一起的老毛病 */
+            <IconButton
+              label="刷新文件树"
+              hint="重新读取目录（同一目录里文件变了之后用）"
+              size={28}
+              disabled={refreshing}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={13} className={cn(refreshing && 'animate-spin')} />
+            </IconButton>
+          ) : null}
         </div>
       </div>
 

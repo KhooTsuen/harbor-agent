@@ -46,7 +46,20 @@ interface PageResult {
   truncated?: boolean
 }
 
-export function ReadPageButton({ onStatus }: { onStatus: (s: StatusMessage | null) => void }) {
+/**
+ * @param {object} props
+ * @param {(s: StatusMessage | null) => void} props.onStatus
+ * @param {string} [props.sessionId] 侧边栏自己选中的那条 —— **必须带**（2026-10-20）：
+ *   以前不带，落哪条全看主窗口开着哪条，于是「侧边栏选 A、主窗口开 B」时读到的
+ *   页面进了 B（用户报的串线）。
+ */
+export function ReadPageButton({
+  onStatus,
+  sessionId = '',
+}: {
+  onStatus: (s: StatusMessage | null) => void
+  sessionId?: string
+}) {
   const [reading, setReading] = useState(false)
 
   const read = useCallback(() => {
@@ -54,7 +67,7 @@ export function ReadPageButton({ onStatus }: { onStatus: (s: StatusMessage | nul
     setReading(true)
     onStatus({ text: '读取中…', tone: 'info' })
     try {
-      const p = chrome.runtime.sendMessage({ type: 'read-page' })
+      const p = chrome.runtime.sendMessage({ type: 'read-page', sessionId })
       if (!p || typeof p.then !== 'function') {
         onStatus({ text: '扩展上下文不可用', tone: 'danger' })
         setReading(false)
@@ -63,10 +76,12 @@ export function ReadPageButton({ onStatus }: { onStatus: (s: StatusMessage | nul
       p.then((res: PageResult | undefined) => {
         setReading(false)
         if (res && res.ok === true) {
-          const name = String(res.title || res.url || '')
-          const cut = res.truncated ? '（正文过长，已截断）' : ''
+          const name = String(res.url || '')
+          const cut = res.truncated ? `（只带入了开头 ${res.chars ?? 0} 字）` : ''
+          /* 2026-10-21：不再「发进当前对话」—— 内容进的是页面上下文槽，
+             下一轮提问时自动带上，对话流里不会多出一条网页正文。 */
           onStatus({
-            text: `已读取 ${res.chars ?? 0} 字${name ? ` · ${name}` : ''}${cut}，已发进 Harbor 当前对话`,
+            text: `来源：Edge 当前标签 · 已带上 ${res.chars ?? 0} 字${name ? ` · ${name}` : ''}${cut}，下一句会用它`,
             tone: 'info',
           })
           return
@@ -81,7 +96,7 @@ export function ReadPageButton({ onStatus }: { onStatus: (s: StatusMessage | nul
       setReading(false)
       onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
     }
-  }, [reading, onStatus])
+  }, [reading, onStatus, sessionId])
 
   return (
     <IconButton

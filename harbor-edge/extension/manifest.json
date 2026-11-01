@@ -3,7 +3,14 @@
   "name": "Harbor Browser Companion",
   "version": "0.4.0",
   "description": "Harbor side panel (Phase 3a: session list via bidirectional channel)",
-  "permissions": ["nativeMessaging", "sidePanel", "storage", "activeTab", "scripting"],
+  "permissions": ["nativeMessaging", "sidePanel", "storage", "activeTab", "scripting", "contextMenus"],
+  "optional_host_permissions": ["<all_urls>"],
+  "commands": {
+    "open-panel": {
+      "suggested_key": { "default": "Alt+Shift+H" },
+      "description": "打开 Harbor 侧边栏"
+    }
+  },
   "background": {
     "service_worker": "service-worker.js",
     "type": "module"

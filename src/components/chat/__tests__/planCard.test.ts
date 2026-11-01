@@ -62,9 +62,15 @@ describe('PlanCard / 取正文', () => {
 
 describe('PlanCard / 接线守卫', () => {
   it('★ plan 事件会让任务台账重读（不自己维护第二份真相）', () => {
+    /*
+     * 2026-10-21：刷新动作搬到了 `toolRefresh.ts`（streamEvents 贴 300 行红线），
+     * 所以两处都要钉 —— 只钉 streamEvents 会变假绿（那边只剩一句调用）。
+     */
     const src = readFileSync(join(SRC, 'stores/thread/streamEvents.ts'), 'utf8')
-    expect(src).toContain("case 'plan'")
-    expect(src).toContain('useTaskStore.getState().refresh()')
+    const refresh = readFileSync(join(SRC, 'stores/thread/toolRefresh.ts'), 'utf8')
+    const planBlock = src.slice(src.indexOf("case 'plan'"))
+    expect(planBlock.slice(0, 600)).toContain('refreshAfterTool()')
+    expect(refresh).toContain('useTaskStore.getState().refresh()')
   })
 
   it('★ 任务中心用 PlanCard 展示计划（不再只给一个「N 步」的数字）', () => {

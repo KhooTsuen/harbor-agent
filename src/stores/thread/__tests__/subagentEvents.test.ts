@@ -192,7 +192,8 @@ describe('子代理事件 / 接线守卫（跨层形状）', () => {
   })
 
   it('★ 类型里**不存子代理读到的原文**（只留 tool + args）', () => {
-    const src = readFileSync(join(SRC, 'src/types/conversation.ts'), 'utf8')
+    /* 2026-10-21：这三个类型搬到了 types/rounds.ts（conversation.ts 贴 300 行） */
+    const src = readFileSync(join(SRC, 'src/types/rounds.ts'), 'utf8')
     const block = src.slice(src.indexOf('export interface SubagentStep'))
     expect(block).toContain('args: Record<string, unknown>')
     expect(block).not.toContain('output')
@@ -207,7 +208,6 @@ describe('子代理事件 / 接线守卫（跨层形状）', () => {
    `streamEvents.ts` 收尾重建了新记录 → 抹掉 `subagent`；
    `schemas.ts` 的 toolRuns 没声明它 → zod 读回来**静静剥掉**。
    ══════════════════════════════════════════════════════════════ */
-
 function makeStreamState(): StreamState {
   return {
     content: '',
@@ -220,6 +220,7 @@ function makeStreamState(): StreamState {
     snapshot: () => ({ id: 'msg_1' }) as Message,
     finish: () => {},
     threadId: 't1',
+    retryMarks: { text: 0, think: 0, round: -1, roundText: 0, roundThink: 0 }, // 本组不走 retry
   }
 }
 

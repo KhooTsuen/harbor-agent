@@ -21,6 +21,7 @@ import {
   tools,
   writeFileSync,
 } from '../env.mjs'
+import registerReplay from '../lib/replay-asserts.mjs'
 
 export async function run() {
   group('路径')
@@ -102,33 +103,13 @@ export async function run() {
 
   const apiMessages = session.toApiMessages(created.id, 10)
   check(
-    'toApiMessages 只给 user/assistant',
+    'toApiMessages 只给 user/assistant（没有工具记录时）',
     apiMessages.every((m) => m.role === 'user' || m.role === 'assistant'),
   )
   check('toApiMessages 带上了内容', apiMessages[0]?.content === '第一句')
 
-  session.append(created.id, { role: 'tool', content: '工具输出不该进 messages' })
-  const afterTool = session.toApiMessages(created.id, 10)
-  check('tool 消息被过滤掉', afterTool.length === 2, String(afterTool.length))
-
-  /*
-   * 工具记录重放时，分隔符必须是**真换行**。
-   *
-   * 踩过：源码里写成 `\\n`（两个反斜杠）或真换行（模板里当续行符），
-   * 两边都会把换行吃掉，而 `node --check` / tsc 都看不出问题，
-   * 模型收到的是 `好了\n\n[此前工具执行记录]` 这种一行字面量。
-   */
-  const replayThread = session.create({ title: '重放', mode: 'pair' })
-  session.append(replayThread.id, { role: 'user', content: '跑命令' })
-  session.append(replayThread.id, {
-    role: 'assistant',
-    content: '好了',
-    toolRuns: [{ name: 'run_shell', ok: true, output: 'l1\nl2' }],
-  })
-  const replay = session.toApiMessages(replayThread.id, 10).at(-1)?.content ?? ''
-  check('工具记录重放用的是真换行', replay.includes('[此前工具执行记录]\n'), JSON.stringify(replay))
-  check('工具记录里没有字面量反斜杠 n', !replay.includes('\\n'))
-  session.remove(replayThread.id)
+  /* 历史回放的协议形状（工具记录走结构化 tool 消息）—— 断言在 01b-replay.mjs */
+  registerReplay({ check, session })
 
   /* 超长标题会被截断 */
   const longTitle = session.create({ title: 'x'.repeat(200) })

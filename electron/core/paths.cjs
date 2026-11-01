@@ -125,6 +125,14 @@ function isolationDirName() {
  * 打包版永远走真目录（这几个分支对生产无效），只有自检 / 单测那两条命令会命中。
  */
 function dataDir() {
+  if (!packaged && isUnitTestRun() && process.env.HARBOR_UNIT_TEST_DATA_DIR) {
+    const custom = path.resolve(process.env.HARBOR_UNIT_TEST_DATA_DIR)
+    const allowedRoot = path.resolve(realDataDir(), 'harbor-test', 'runs')
+    if (!custom.toLowerCase().startsWith(`${allowedRoot.toLowerCase()}${path.sep}`)) {
+      throw new Error('HARBOR_UNIT_TEST_DATA_DIR 必须位于 data/harbor-test/runs 内')
+    }
+    return custom
+  }
   const iso = isolationDirName()
   return iso ? path.join(realDataDir(), iso) : realDataDir()
 }

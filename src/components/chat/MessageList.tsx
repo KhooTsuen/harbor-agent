@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { getForkPoints, type ForkPoint } from '@/lib/branchPath'
+import type { MessageAnchor } from '@/lib/scrollAnchor'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import { useAppStore } from '@/stores/useAppStore'
+import { useScrollStore } from '@/stores/useScrollStore'
 import { MessageItem } from './MessageItem'
 import { LaunchScreen } from './launch/LaunchScreen'
 import { MessageSkeleton } from './MessageSkeleton'
@@ -43,70 +45,143 @@ const TAIL_STEP = 24
  * 历史仍然是能看的：上面的「载入更早」一次给 TAIL_STEP 条，可以一页页往前翻。
  */
 const AUTO_TAIL_LIMIT = 24
+/*
+ * 恢复阅读位置时，渲染窗口**最多**能扩到多少条。一条消息≈700 节点，200 条 =
+ * 14.3 万节点时流式会把主线程压死；96 条 ≈ 6.7 万，是已知卡死量的一半以下。
+ * 目标比这还远时（几千条的老对话）：锚点落到**窗口内最早那条**，仍是他当时那一带。
+ */
+const RESTORE_TAIL_LIMIT = AUTO_TAIL_LIMIT * 4
 /* 分帧渲染：每片的目标耗时（含浏览器的 layout/paint）与每片条数上下限 */
 const SLICE_BUDGET_MS = 12
 const SLICE_MIN = 1
 const SLICE_MAX = 4
 
-export function MessageList({ messages, conversationId = '' }: MessageListProps) {
-  /* 滚动意图（mode）+ 容器 refs + 两条迁移入口，全在 hook 里；guard 只往下传 enterFree */
-  const { mode, attachScroller, attachContent, enterFollow, enterFree } =
-    useAutoScroll(conversationId)
-  const guard = useMemo(() => ({ enterFree }), [enterFree])
+interface WindowPlan {
+  /** 首帧就渲染这么多条（从末尾数） */
+  tail: number
+  /** 之后的自动补片上限 */
+  want: number
+  /** 需要改落点时（目标被删 / 超出上限）填这里，交给 useAutoScroll */
+  retarget: MessageAnchor | null
+  /** true = 必须等窗口真的盖住目标才放行落位（在阅读历史）；false = 立即放行 */
+  pending: boolean
+}
 
+/*
+ * 切回一条对话时要摆多大的渲染窗口 —— 纯函数，输入只有「全部消息 + 离开时的锚点」。
+ *
+ * · **在阅读历史**（有锚点）：一次摆到「盖住目标」的条数（上限 RESTORE_TAIL_LIMIT）。
+ *   为什么不能分片补：每补一片目标上方就多一段内容、落点跟着变一次，屏幕一段段往上跳
+ *   （用户原话「每次都从下往上滑」），最后停在哪还要看补到第几片时恰好对上。
+ *   上限 96 条 ≈ 6.7 万节点（已知卡死量 14.3 万的一半以下），不是「摊开整段历史」。
+ * · **在跟最新 / 没有锚点**：回到「一小口 + 自动补到上限」——否则上一条补到 40 条，
+ *   切下一条又会一口气建完。这条路的补片只影响尾部，与落点无关。
+ */
+function planWindow(messages: readonly Message[], anchor: MessageAnchor | null): WindowPlan {
+  const count = messages.length
+  if (!anchor) {
+    return { tail: INITIAL_TAIL, want: AUTO_TAIL_LIMIT, retarget: null, pending: false }
+  }
+  /* 目标**确实不在 messages 里**（离开期间被删 / 老会话没有这条）才退到
+     「离开时同下标」那条仍然存在的邻居 —— 仍是附近那段历史，界面稳定 */
+  let at = messages.findIndex((m) => m.id === anchor.messageId)
+  let retarget: MessageAnchor | null = null
+  if (at < 0) {
+    at = Math.max(0, Math.min(anchor.index >= 0 ? anchor.index : count - 1, count - 1))
+    retarget = { messageId: messages[at].id, offset: anchor.offset, index: at }
+  }
+  /* 目标比上限还远：落到窗口内最早那条（偏移归零），不为到位摊开整段长历史 */
+  if (count - at > RESTORE_TAIL_LIMIT) {
+    const edge = count - RESTORE_TAIL_LIMIT
+    return {
+      tail: RESTORE_TAIL_LIMIT,
+      want: RESTORE_TAIL_LIMIT,
+      retarget: { messageId: messages[edge].id, offset: 0, index: edge },
+      pending: true,
+    }
+  }
+  const n = Math.max(count - at, INITIAL_TAIL)
+  return { tail: n, want: n, retarget, pending: true }
+}
+
+export function MessageList({ messages, conversationId = '' }: MessageListProps) {
   const count = messages.length
   /*
    * ── AG-038：渐增渲染 ──
    *
-   * 基准测试量出来的：**1000 条消息全渲染 = 3 秒、3 万个 DOM 节点**。
-   * 真机更狠：性能夹具（代码块密集）里 200 条 = 14.3 万节点、建完要 **3.8 秒**，
-   * 而那 3.8 秒是一次性的主线程阻塞（切换对话就是这么卡的）。
-   *
-   * 为什么不用虚拟滚动：它要靠**估算**每条的高度来摆占位块，而消息高度能差
-   * 几十倍（一行回答 vs 一个代码块），估错一滚就飘 —— 那套代码因此被关掉过
-   * （阈值提到不可能达到，见 git 历史）。渐增渲染没有假高度。
-   *
-   * 为什么是「最近 N 条」而不是「前 N 条」：聊天默认看的是最新的，
-   * 而且流式追加的永远是末尾 —— 截前 N 条会让新消息根本进不了视野。
-   *
-   * 为什么首屏是 6 不是 12（2026-09-27 真机改的）：**首屏这一次是唯一改不了大小的一坨**
-   * （后面的片都能按实测代价自适应），真机量过：性能夹具里 12 条 ≈ 9.9k 节点，
-   * 一次提交带出 **70–107ms 长任务**（切千条会话那次卡顿就是它）。降到 6 条 = 一半节点。
+   * 真机量过：性能夹具（代码块密集）里 200 条 = 14.3 万节点、建完 **3.8 秒**，
+   * 那是一次性主线程阻塞（切换对话就是这么卡的）。不用虚拟滚动：它要靠**估算**
+   * 高度摆占位块，而消息高度差几十倍（一行回答 vs 代码块），估错一滚就飘。
+   * 首屏为什么是 6 不是 12：首屏是唯一改不了大小的一坨，12 条 ≈ 9.9k 节点，
+   * 一次提交带出 70–107ms 长任务。
    */
   const [tailCount, setTailCount] = useState(INITIAL_TAIL)
-  /*
-   * ── 分帧补上剩下的（真机数据驱动）──
-   *
-   * 真机量过：1000 条会话一次画 200 条 = 14.3 万个 DOM 节点、建完要 **3.8 秒**，
-   * 而那 3.8 秒是一次性的主线程阻塞（长任务红线 50ms，切换对话就是这么卡的）。
-   * 解析并不慢，贵在建节点与随之而来的 layout/paint（同一个会话里解析 5000 字
-   * 只 14ms，渲染要 1574ms）。
-   *
-   * 所以不再一口气建完：先画最近 6 条，剩下的**一片一片**补，每片的目标耗时
-   * 是 SLICE_BUDGET_MS。片大小按**上一片的真实间隔**自适应 —— 注意不能只量
-   * React 的 commit：真机第一次改的时候就是这么量的，结果量到 4ms 却触发了
-   * 600ms 长任务（浏览器在 commit 之后才做 layout/paint）。所以这里量的是
-   * 「上一片开始 → 这一片开始」的整段时间，减去自己等的 16ms。
-   */
   /* 想画到多少条（自动补的上限，或用户点「载入更早」之后的目标） */
   const [want, setWant] = useState(AUTO_TAIL_LIMIT)
+  /* 滚动意图（mode）+ 容器 refs + 迁移入口，全在 hook 里；guard 只往下传 enterFree */
+  const { mode, attachScroller, attachContent, enterFollow, enterFree, retarget, settleWindow } =
+    useAutoScroll(conversationId)
+  const guard = useMemo(() => ({ enterFree }), [enterFree])
   /* 起始片大小也压小：第一片不参与自适应（还没量过代价），起始就是 6 会把第一片变成第二个大提交 */
   const sliceRef = useRef({ size: 3, at: 0 })
+  /* 窗口已按哪条对话重置过（放行判据不能拿上一条对话的窗口大小来算「补完了」） */
+  const windowThreadRef = useRef<string | null>(null)
+  /*
+   * 切回某条对话时窗口要摆多大 —— 由 `planWindow` 一次算好，**等它真的摆出来了才放行落位**。
+   *
+   * 三条都是真机上踩出来的：
+   *  1. **不能切完立刻放行**：这一提交才 `setTailCount(n)`，立刻放行的话 useAutoScroll
+   *     拿的是**旧窗口**（目标还没进 DOM）算一刀 —— 白写，或者落在没长够高度的位置上。
+   *     所以先摆窗口，等 `tailCount` 到位再 settleWindow。
+   *  2. **别在 render 期改 state**（试过）：分片器的 `setTailCount(value + slice)` 会把
+   *     它覆盖掉，窗口卡在一半、scrollTop 被 clamp，回来落在别处
+   *     （真机抓到「还有 47 条」却只渲染 13 条）。
+   *  3. **还没落位时要跟着 count 重算**：切回来那一刻 messages 是**分批到**的
+   *     （先从磁盘读出一部分，再补齐），按 count=48 算出的窗口，等涨到 60 条就短了 12 条 ——
+   *     目标虽然还在窗口里，但上方少了一段，落点自然差一截（真机：scrollTop 77、目标在 1472px 处）。
+   *     落位完成（planRef 清空）之后就不再动窗口。
+   */
+  const planRef = useRef<WindowPlan | null>(null)
+  useLayoutEffect(() => {
+    if (count === 0) return
+    const switching = windowThreadRef.current !== conversationId
+    if (switching) {
+      windowThreadRef.current = conversationId
+      sliceRef.current = { size: 3, at: 0 }
+    } else if (!planRef.current) return /* 已经落过位（或本来就不需要）：窗口不动 */
+    const saved = conversationId ? useScrollStore.getState().byThread[conversationId] : undefined
+    const plan = planWindow(messages, saved?.mode === 'free' ? saved.anchor : null)
+    /* 在跟最新 / 没有锚点：这条路的补片只影响尾部、与落点无关，不必等窗口补满 */
+    if (!plan.pending) {
+      planRef.current = null
+      setTailCount(plan.tail)
+      setWant(plan.want)
+      settleWindow()
+      return
+    }
+    planRef.current = plan
+    if (switching) {
+      setTailCount(plan.tail)
+      setWant(plan.want)
+      return /* 这一提交只是把窗口摆出来，落位留给下一次（窗口真的画出来之后） */
+    }
+    /* 窗口没盖到目标之前一个字节都不写 —— 逐片补齐它也逐片重算 */
+    if (tailCount < Math.min(plan.want, count)) {
+      setWant(plan.want)
+      return
+    }
+    planRef.current = null
+    if (plan.retarget) retarget(plan.retarget)
+    settleWindow()
+  }, [conversationId, count, messages, tailCount, settleWindow, retarget])
+
   const hiddenCount = Math.max(0, count - tailCount)
+  /* 渲染窗口在整个列表里的起始下标（给每条消息带上绝对下标：目标被删时按下标降级） */
+  const windowStart = hiddenCount > 0 ? count - tailCount : 0
   const visibleMessages = useMemo(
     () => (hiddenCount > 0 ? messages.slice(-tailCount) : messages),
     [messages, tailCount, hiddenCount],
   )
-
-  /*
-   * 切对话 / 重开：回到「一小口 + 自动补到上限」。
-   * 不重置的话，上一条会话已经补到 40 条，切下一条又会一口气建完。
-   */
-  useEffect(() => {
-    setWant(AUTO_TAIL_LIMIT)
-    sliceRef.current = { size: 3, at: 0 }
-    setTailCount(INITIAL_TAIL)
-  }, [conversationId])
 
   useEffect(() => {
     const target = Math.min(want, count)
@@ -174,9 +249,14 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
               </button>
             ) : null}
             <ScrollGuardContext.Provider value={guard}>
-              {visibleMessages.map((message) => (
-                <MessageItem key={message.id} message={message} fork={forkMap.get(message.id)} />
-              ))}
+              {visibleMessages.map((message, i) => (
+                <MessageItem
+                  key={message.id}
+                  message={message}
+                  index={windowStart + i}
+                  fork={forkMap.get(message.id)}
+                />
+              ))}{' '}
             </ScrollGuardContext.Provider>
             {/*
               AG-052：对话结束后下方那个「撤销检查点之后的改动」。

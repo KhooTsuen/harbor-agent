@@ -142,12 +142,26 @@ function append(id, message) {
 function appendCompact(id, summary, upTo) {
   const file = fileFor(id)
   if (!fs.existsSync(file)) return { ok: false, error: '会话不存在' }
-  appendEvent(file, {
-    type: 'compact',
-    summary: String(summary),
-    upTo: Number(upTo) || 0,
-    ts: Date.now(),
-  })
+  /*
+   * ★ 2026-10-23（P0-2）：「假压缩成功」的根子有两层，这里修第一层。
+   *
+   * 以前这里直接 `appendEvent`，写失败会**抛**出去；而渲染层 `backend.ts` 的
+   * `appendCompact` 把所有异常吞掉、返回 `void` —— 于是 `runCompact` 以为写成了，
+   * 照样插压缩点、弹「已压缩」，而磁盘上根本没有那条摘要。
+   * 现在写盘结果**如实返回**（`{ ok, error }`），供调用方决定要不要改界面。
+   */
+  try {
+    appendEvent(file, {
+      type: 'compact',
+      summary: String(summary),
+      upTo: Number(upTo) || 0,
+      ts: Date.now(),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log.warn(`记压缩点失败 ${id}（覆盖前 ${upTo} 条）：${message}`)
+    return { ok: false, error: message }
+  }
   log.info(`压缩会话 ${id}（覆盖前 ${upTo} 条）`)
   return { ok: true }
 }

@@ -1,12 +1,12 @@
 /** 工具执行。**所有工具调用的唯一咽喉**：① 参数校验（registry）② 风险分级 ③ 路径授权
- *  （permission）④ 审计落盘（permission）—— 四件事都在这里串起来，不让每个工具自己记得。
- *  工具可返回 `{ text, toolOk }` 结构化回报成败；返回字符串仍是老契约（见 ③ 段）。 */
+ *  ④ 审计落盘（后两项在 permission.cjs）—— 四件事都在这里串起来，不让每个工具自己记得。 */
 
 const mcp = require('../mcp.cjs')
 const approvals = require('./approval.cjs')
 const riskGate = require('./risk-gate.cjs')
 const scaleGate = require('./scale-gate.cjs')
 const writeDiff = require('../write-diff.cjs')
+const preWriteGate = require('./pre-write-gate.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
 const registry = require('./registry.cjs')
@@ -104,8 +104,10 @@ async function execute(name, args, ctx = {}) {
 
   const tool = byName(name)
   if (!tool) return `错误：没有名为 ${name} 的工具`
-
-  /* ── ① 参数校验 ── */
+  if (ctx.origin === 'edge-sidepanel' && name.startsWith('browse') && ctx.allowBuiltinBrowser !== true) {
+    auditCall(ctx, { tool: name, args, startedAt, ok: false, error: 'Edge 侧边栏未授权改用内置浏览器' })
+    return '错误：这条请求来自 Edge 侧边栏。请用 edge_read 读当前标签；读不到就如实告知用户，不要改用 Harbor 内置浏览器。若要使用内置浏览器，请用户在 Harbor 主窗口发起。'
+  }
   const problems = validateArgs(tool, args ?? {})
   if (problems.length > 0) {
     const text = `错误：参数不合法 —— ${problems.join('；')}。请按 schema 重新调用。`
@@ -130,8 +132,7 @@ async function execute(name, args, ctx = {}) {
   /* ── ② 风险分级（只有 run_shell 有）── */
   const verdict = name === 'run_shell' ? risk.classify(args?.command) : null
   let summary = tool.summarize ? tool.summarize(args) : `${name}(${JSON.stringify(args).slice(0, 120)})`
-  /* ★ 必须在 risk-gate **之前**声明：那边问过之后要把批准结果回填进来
-     （放在下面「写操作」那一段会 TDZ —— chat.cjs 的 phaseKey 踩过同样一次） */
+  /* ★ 必须在 risk-gate **之前**声明：那边问过之后要把批准结果回填进来（放下面会 TDZ） */
   let approval = null
 
   if (verdict) {
@@ -166,7 +167,6 @@ async function execute(name, args, ctx = {}) {
 
   /* ── 权限三档 + 本轮用户约束 ── */
   const isWrite = WRITE_TOOLS.has(name)
-
   if (ctx.allowTools === false) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本次对话关闭工具' })
     return `错误：本次对话已关闭工具调用，${name} 被拒绝。`
@@ -175,6 +175,9 @@ async function execute(name, args, ctx = {}) {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
     return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
   }
+  /* B / C 两道硬化闸（判据/话术/刹车都在 pre-write-gate.cjs，那里自己记审计） */
+  const preWrite = preWriteGate.check({ name, args, ctx })
+  if (preWrite) return preWrite
   if (ctx.temporary && name === 'remember') {
     auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '临时对话禁止写长期记忆' })
     return '错误：这是临时对话，禁止写入长期记忆。'

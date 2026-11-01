@@ -69,8 +69,9 @@ const TOOL_GROUPS = [
     ],
   },
   {
-    title: '操作用户的 Edge（要动**他自己正开着的**浏览器时才用；只读网页用 browse）',
+    title: '用户自己的 Edge：侧边栏询问当前页时先用 edge_read；一般公开网页检索才用 browse',
     tools: [
+      'edge_read',
       'edge_page',
       'edge_wait',
       'edge_click',
@@ -109,6 +110,7 @@ const TOOL_HINTS = {
   browse_ax: '读菜单 / 表单 / 表格的语义结构',
   /* ── edge_*：动的是**用户自己的 Edge**（与 browse_* 操作内嵌浏览器不是一回事）── */
   edge_page: '在他自己的 Edge 里打开地址并读回元素引用；不传 url 就只读当前页',
+  edge_read: '只读用户 Edge 当前标签的正文，不导航；失败要如实说明，不能假称内置浏览器的结果来自 Edge',
   edge_wait: '等条件满足（timeoutMs 0 = 立刻验一次）；不改成页面',
   edge_click: '按 edge_page 的引用点；提交/删除类会**先问用户**，引用失效则不点',
   edge_type: '往输入框填；密码与信用卡字段会被拒（让他自己输）',

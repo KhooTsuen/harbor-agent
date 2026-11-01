@@ -84,6 +84,7 @@ function executorPrompt(input) {
  *
  * @param {{ goal: string, plan: object, projectRoot: string, config: object, sessionId?: string,
  *           phaseKey?: string, provider?: object, imageAnalysis?: string,
+ *           origin?: string, allowBuiltinBrowser?: boolean,
  *           signal?: AbortSignal, confirm?: Function, emit?: Function }} input
  * @returns {Promise<{ content: string, toolRuns: Array }>}
  */

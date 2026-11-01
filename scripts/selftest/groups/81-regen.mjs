@@ -93,14 +93,18 @@ export async function run() {
   const reread = taskCore.get(newTask.id)
   check('重读台账：regeneratedFrom 真的写进了文件', reread?.regeneratedFrom === taskA.id)
 
-  /* 接回守卫：同一会话里有「等回话」的任务，普通发送会被接回；
+  /* 接回守卫：同一会话里有「等回话」的任务：说「继续」才接回，无关的话新建；
      重新生成**必须新建**（否则两条记录被抹成一条） */
   const S2 = 'sess_regen_selftest2'
   const waiting = taskCore.create({ goal: '等你确认', sessionId: S2 })
   created.push(waiting.id)
   taskCore.update(waiting.id, { status: 'waiting_user' })
   const attached = taskResume.openForRun({ goal: '随便说点什么', sessionId: S2 })
-  check('对照组：waiting_user 的活会被接回（既有行为）', attached.id === waiting.id)
+  created.push(attached.id)
+  /* ★ P0-3：无关新话**不再**接管 waiting_user（不凭猜测覆盖旧台账）；说「继续」才接回 */
+  check('★ 对照组：无关新话不再接管 waiting_user（P0-3）', attached.id !== waiting.id)
+  const resumed = taskResume.openForRun({ goal: '继续', sessionId: S2 })
+  check('★ 说「继续」才接回（既有能力）', resumed.id === waiting.id)
   const regenTask = taskResume.openForRun({ goal: '同一句话', sessionId: S2, regenerateFrom: waiting.id })
   created.push(regenTask.id)
   check('★ 重新生成必须新建（不接回旧任务）', regenTask.id !== waiting.id && regenTask.regeneratedFrom === waiting.id)

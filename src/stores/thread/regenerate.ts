@@ -26,6 +26,7 @@ import { bumpRegenStreak, queueRegen, REGEN_STREAK_LIMIT } from './regenQueue'
 export interface RegenExtra {
   regeneratedFrom: string
   regenerateIsLast: boolean
+  origin?: 'edge-sidepanel'
 }
 
 type Getter = () => { sendingThreads: string[] }
@@ -42,17 +43,19 @@ export function makeRegenerate(
   get: Getter,
   rerun: Rerun,
 ): {
-  regenerateMessage: (messageId: string) => void
+  regenerateMessage: (messageId: string, targetThreadId?: string, origin?: 'edge-sidepanel') => void
 } {
   /** 这条回答后面还有没有别的对话轮（只有没有，「旧台账属于它」才一定成立） */
   const isLastTurn = (messages: Message[], index: number): boolean =>
     !messages.slice(index + 1).some((m) => m.role === 'assistant' || m.role === 'user')
 
   return {
-    regenerateMessage: (messageId: string) => {
+    regenerateMessage: (messageId: string, targetThreadId?: string, origin?: 'edge-sidepanel') => {
       const app = useAppStore.getState()
       const ui = useUIStore.getState()
-      const thread = getActiveThread(app)
+      const thread = targetThreadId
+        ? app.threads.find((item) => item.id === targetThreadId)
+        : getActiveThread(app)
       if (!thread) return
       const index = thread.messages.findIndex((m) => m.id === messageId)
       if (index < 0) return
@@ -74,6 +77,10 @@ export function makeRegenerate(
 
       /* ── ① 旧生成还在跑：先中止，排到它真正收尾后再开跑 ── */
       if (get().sendingThreads.includes(thread.id)) {
+        if (targetThreadId) {
+          ui.showToast('warning', '这条对话正在运行', '等当前任务结束后再重新生成')
+          return
+        }
         stopActiveRequest(thread.id)
         queueRegen(thread.id, messageId)
         ui.showToast('info', '先停掉当前这轮', '它收尾之后马上重新生成这一条（旧内容会保留）')
@@ -97,6 +104,7 @@ export function makeRegenerate(
         /* ★ 用磁盘 key（重读会给内存 id 换新 uid，写盘/对账都要稳定的那个） */
         regeneratedFrom: answer.diskKey ?? answer.id,
         regenerateIsLast: isLastTurn(thread.messages, index),
+        ...(origin ? { origin } : {}),
       })
     },
   }

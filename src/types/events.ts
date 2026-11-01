@@ -76,7 +76,6 @@ export const EVENT_TYPES = [
   'retry',
   'fallback',
   'context_overflow',
-  'review',
   'plan',
   'loop',
   'compacted',

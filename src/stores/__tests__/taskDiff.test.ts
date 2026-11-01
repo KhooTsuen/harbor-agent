@@ -8,7 +8,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
      · **按当前对话拉**（别的对话的改动不该出现在这条对话的审查里）
    ══════════════════════════════════════════════════════════════ */
 
-const h = vi.hoisted(() => ({ asked: [] as string[] }))
+const h = vi.hoisted(() => ({
+  asked: [] as string[],
+  delayed: new Set<string>(),
+  release: {} as Record<string, () => void>,
+}))
 
 vi.mock('@/lib/safetyApi', () => ({
   taskList: async () => [],
@@ -16,6 +20,10 @@ vi.mock('@/lib/safetyApi', () => ({
   changesetList: async () => [],
   changesetDiff: async (sessionId: string) => {
     h.asked.push(sessionId)
+    if (h.delayed.has(sessionId))
+      await new Promise<void>((resolve) => {
+        h.release[sessionId] = resolve
+      })
     return {
       id: 'cs_1',
       title: '改 README',
@@ -43,6 +51,8 @@ import { useTaskStore } from '@/stores/useTaskStore'
 
 beforeEach(() => {
   h.asked = []
+  h.delayed.clear()
+  h.release = {}
   useAppStore.getState().resetAll()
   useTaskStore.setState({ diff: null, tasks: [], changesets: [], unfinished: [] })
 })
@@ -71,5 +81,16 @@ describe('AG-036b / 未提交的改动跟着快照刷', () => {
     await useTaskStore.getState().refresh()
     expect(useTaskStore.getState().loaded).toBe(true)
     expect(useTaskStore.getState().diff).not.toBeNull()
+  })
+
+  it('快速切换对话时，晚到的旧审查结果不能覆盖当前对话', async () => {
+    const first = useAppStore.getState().activeThreadId
+    h.delayed.add(first)
+    const oldRead = useTaskStore.getState().refreshDiff(first)
+    const second = useAppStore.getState().createThread()
+    await useTaskStore.getState().refreshDiff(second)
+    h.release[first]?.()
+    await oldRead
+    expect(useTaskStore.getState().diff?.sessionId).toBe(second)
   })
 })

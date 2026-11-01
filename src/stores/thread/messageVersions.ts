@@ -46,7 +46,7 @@ type Getter = () => {
     index: number,
   ) => void
   /** 「先停掉、收尾后再跑」的排队重新生成会回调它（同上，定义在本文件的返回对象里） */
-  regenerateMessage: (messageId: string) => void
+  regenerateMessage: (messageId: string, targetThreadId?: string, origin?: 'edge-sidepanel') => void
 }
 
 /** 记一版新文字：第一次编辑时把原文也补进版本表，之后每次往后追 */
@@ -81,7 +81,7 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     /** 只给日志用：这一轮是编辑 / 重新生成 / 重试 / 补一版回答触发的 */
     reason = '用户发送',
     /** 重新生成的附加信息：旧回答的磁盘 key + 是不是最后一轮（见 regenerate.ts） */
-    extra: { regeneratedFrom?: string; regenerateIsLast?: boolean } = {},
+    extra: { regeneratedFrom?: string; regenerateIsLast?: boolean; origin?: 'edge-sidepanel' } = {},
   ): void {
     if (get().sendingThreads.includes(threadId)) {
       useUIStore.getState().showToast('info', '正在生成', '等这一轮结束再改，不然会跟它抢上下文')
@@ -114,6 +114,7 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
         reason,
         ...(extra.regeneratedFrom ? { regeneratedFrom: extra.regeneratedFrom } : {}),
         ...(extra.regenerateIsLast ? { regenerateIsLast: true } : {}),
+        ...(extra.origin ? { origin: extra.origin } : {}),
       })
     } else void runMockTurn(threadId, text, set)
   }
@@ -281,17 +282,18 @@ export function makeVersionActions(set: TurnSetter, get: Getter) {
     /**
      * 重新生成 / 重试 —— 实现搬去 `thread/regenerate.ts`；流式中止、排队收尾、
      * 连续重试提示、台账关联（regeneratedFrom）都在那边。
-     *
      * ★ 实现**不在模块初始化时取**（不用 `...spread`）：messageVersions 在
      *   useThreadStore ↔ turns 的循环里，初始化期取 regenerate / regenQueue 的
      *   导出会 TDZ（真踩过：直接 import 本文件的测试报 '__vite_ssr_import_6__
      *   before initialization'）。放到调用期取，两个绑定都已初始化。
      */
-    regenerateMessage: (messageId: string) => {
+    regenerateMessage: (messageId: string, targetThreadId?: string, origin?: 'edge-sidepanel') => {
       /* 排队的重新生成由 turns.finish 放行；注入回去的就是本文件的 regenerateMessage */
       setRegenRunner((id) => get().regenerateMessage(id))
       makeRegenerate(get, (t, q, x, v, r, e) => rerunFrom(t, q, x, v, r, e)).regenerateMessage(
         messageId,
+        targetThreadId,
+        origin,
       )
     },
   }

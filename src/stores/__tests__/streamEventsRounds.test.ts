@@ -29,6 +29,8 @@ function harness(): { state: StreamState; patches: Partial<Message>[] } {
     snapshot: () => ({}) as Message,
     finish: () => {},
     threadId: 't1',
+    /* 重试回滚起点（本组测 rounds 同步，不走 retry） */
+    retryMarks: { text: 0, think: 0, round: -1, roundText: 0, roundThink: 0 },
   }
   return { state, patches }
 }

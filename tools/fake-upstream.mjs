@@ -1,8 +1,6 @@
 /**
  * 假上游：喂各种坏响应（破坏性测试用）。比「拔网线」可控 —— 每种坏法能精确指定、可复现。
- *
  *   node tools/fake-upstream.mjs          # 监听 127.0.0.1:9977
- *
  * 坏法写在 **baseUrl 的路径前缀**里（不能用 query —— 客户端会把 `/chat/completions`
  * 直接拼在 baseUrl 后面，query 会被拼坏）：
  *   html     返回 HTML 错误页（不是 JSON）—— 中转站挂掉时的典型样子
@@ -14,10 +12,12 @@
  *   confirm  第 1 轮调一次 run_shell（medium → 弹**确认卡**）—— 冒烟用
  *   ask      第 1 轮调一次 ask_user（→ 弹**澄清卡**）—— 自动化测试「脚本会自己点卡」用
  *   fail     连着读**不同的**不存在文件 → 连续失败（CE-011）
+ *   retry    第一次发半截正文后报 429（可重试）、第二次正常 —— 验证「重试不显示两遍」
  *   （无后缀）正常返回（对照组）
  */
 
 import { createServer } from 'node:http'
+import { handleRetryMode } from './fake-retry-mode.mjs' /* retry 模式整套住在那边 */
 
 const PORT = Number(process.env.FAKE_PORT ?? 9977)
 
@@ -31,9 +31,8 @@ let loopRounds = 0
 /* 「第 1 轮发一次工具调用、之后收尾」的模式计数：confirm（确认卡）/ ask（澄清卡） */
 const onceRounds = { confirm: 0, ask: 0 }
 /*
- * fail 模式的轮次计数（CE-011 真机验证用）：每轮读一个**不同**的不存在文件。
- * 为什么每次换文件名：loop-guard 只认「一模一样的调用（工具+参数）」，
- * 换参数就绕开它 —— 这样才能单独验证 failure-streak（「不同尝试也在失败」）。
+ * fail 模式的轮次计数（CE-011）：每轮读一个**不同**的不存在文件 —— loop-guard 只认一模一样的调用，
+ * 换参数才绕得开它，这样单独验 failure-streak（「不同尝试也在失败」）。
  */
 let failRounds = 0
 /*
@@ -92,6 +91,11 @@ const server = createServer((req, res) => {
       res.write('data: {"choices":[{"delta":{"content":"这里被截')
       setTimeout(() => res.destroy(), 200)
     }, 800)
+    return
+  }
+
+  if (mode === 'retry') {
+    handleRetryMode(res, sseChunk) /* 「为什么报 429 而不是撕连接」见 fake-retry-mode.mjs 文件头 */
     return
   }
 

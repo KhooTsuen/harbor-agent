@@ -19,6 +19,8 @@ function buildToolContext({
     workdir,
     vision: { config, provider: useProvider, model: useModel },
     sessionId: options.sessionId ?? '',
+    origin: options.origin === 'edge-sidepanel' ? 'edge-sidepanel' : '',
+    allowBuiltinBrowser: options.allowBuiltinBrowser === true,
     taskId: options.taskId ?? '',
     changeSetId: options.changeSetId ?? '',
     permission: config.tools.permission,

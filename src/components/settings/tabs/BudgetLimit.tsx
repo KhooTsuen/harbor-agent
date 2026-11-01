@@ -155,8 +155,9 @@ export function BudgetLimit(): React.ReactElement | null {
           <p className="flex items-start gap-1.5 text-2xs leading-relaxed text-fg-tertiary">
             <ShieldAlert size={12} className="mt-0.5 shrink-0" />
             <span>
-              上限是按**上游返回的** token 数算的（就是上面那些数字），不是本地估算。
-              统计不到用量的站点，这里也就拦不住 —— 那种情况要靠你自己盯。
+              上限是按<strong className="font-semibold">上游返回的</strong> token
+              数算的（就是上面那些数字），不是本地估算。 统计不到用量的站点，这里也就拦不住 ——
+              那种情况要靠你自己盯。
               {limits.dailyTokens > 0 || limits.monthlyTokens > 0 ? (
                 <>
                   <br />

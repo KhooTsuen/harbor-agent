@@ -259,15 +259,8 @@ export async function compactChat(payload: {
   }
 }
 
-/** 把压缩点写进会话文件 */
-export async function appendCompact(id: string, summary: string, upTo: number): Promise<void> {
-  if (!bridge) return
-  try {
-    await bridge.appendCompact(id, summary, upTo)
-  } catch {
-    /* 落盘失败不影响当前对话 */
-  }
-}
+/** 把压缩点写进会话文件 —— **如实返回写盘结果**（P0-2；实现与来由见 lib/compactApi.ts） */
+export { appendCompact } from './compactApi'
 
 /** 批量导入线程；浏览器预览没有磁盘时原样返回。 */
 export async function importSessions(threads: Thread[]): Promise<Thread[]> {

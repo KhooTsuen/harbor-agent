@@ -114,8 +114,13 @@ describe('界面上的两处（源码守卫）', () => {
     const src = readFileSync(join(SRC, 'components', 'layout', 'AppTitleBar.tsx'), 'utf8')
     /* 以前是 `hidden … md:flex` —— 窄窗口直接看不到「正在干什么」 */
     expect(src).not.toContain('text-fg-tertiary md:flex')
-    /* 改成长度兜底：靠截断而不是靠藏 */
-    expect(src).toContain('max-w-[38vw]')
+    /*
+     * 改成长度兜底：靠截断而不是靠藏。
+     * 第二阶段之后具体是 34vw（顶栏左中右重排、给标题让了位置）——
+     * 判据钉「有 max-w 上限 + truncate」，不钉那个数字（数字会随布局再调）。
+     */
+    expect(src).toMatch(/max-w-\[3\dvw\]/)
+    expect(src).toContain('truncate')
   })
 
   it('跑着的时候写了新消息，可以排队发送（不再要求先停掉）', () => {

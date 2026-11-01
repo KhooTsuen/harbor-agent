@@ -69,6 +69,40 @@ export function isFoldableRound(round: MessageRound, runs: readonly ToolRunRecor
   return true
 }
 
+/* ══════════════════════════════════════════════════════════════
+   「这段正文到底算正文，还是过程里说的话」（2026-10-21）
+
+   模型很常见的写法是：**说一句「我先核对现状」→ 调工具 → 说一句「核完了」→ 再调工具**。
+   这些话走的是 `content` 通道（它不是 reasoning），于是被当成正文摆在最外面，
+   把真正的结论挤到下面去 —— 用户的原话是「工作流程对话也写到正文去了」。
+
+   判据**只看结构，不看措辞**（不认「我会先」「接下来」这类关键词，也不改写原文）：
+
+     · 这一轮**有工具**       ← 有动手的轮，说的话是在铺垫动手
+     · 这一轮**有正文**
+     · 它**不是最后一个有正文的轮**  ← 最后一个有正文的轮 = 这条消息的结论，永远是正文
+
+   三条同时成立才算「过程话」：收进折叠区（展开可见，一个字不删）；
+   只要有一条不成立就照旧当正文。老记录（合成的一轮）只有一条正文轮，
+   于是天然走不到这里 —— 旧对话的排版一个字不动。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 最后一个有正文的轮的下标（= 结论所在那一轮）；一条正文都没有时返回 -1 */
+export function lastBodyIndex(rounds: readonly MessageRound[]): number {
+  for (let i = rounds.length - 1; i >= 0; i -= 1) {
+    if (rounds[i].content.trim()) return i
+  }
+  return -1
+}
+
+/** 这一轮的正文是不是「过程里说的话」（判据见上面的注释，三条缺一不可） */
+export function isProcessSpeech(rounds: readonly MessageRound[], index: number): boolean {
+  const round = rounds[index]
+  if (!round || !round.content.trim()) return false
+  if (round.tools.length === 0) return false
+  return index !== lastBodyIndex(rounds)
+}
+
 /** 单轮 → 渲染项（不聚合时的原样包装） */
 function asRound(round: MessageRound, index: number): RoundItem {
   return { kind: 'round', index, round }

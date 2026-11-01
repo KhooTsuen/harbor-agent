@@ -88,7 +88,6 @@ export async function run() {
   check('场景调用自己标出来', sceneSrc.includes('label: `场景 ${sceneId}`'))
   const modelSrc = readFileSync(join(ROOT, 'electron/core/loop-model.cjs'), 'utf8')
   check('对话轮次标成「对话 <短码>」', modelSrc.includes('label: `对话 ${log.shortId('))
-  check('复核单独标', modelSrc.includes("label: '复核'"))
 
   /* ── ⑤ 渲染层真的把来源传下去了 ────────────────────────── */
   group('日志 / 渲染层带来源')

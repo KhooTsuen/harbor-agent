@@ -22,8 +22,43 @@
 /** `done` 之后快照留多久（给「刚跑完就重连」留窗口） */
 const KEEP_AFTER_DONE_MS = 60_000
 
-/** 结构性事件推到侧边栏：让「正在跑」这类状态也看得见（content/reasoning 是增量） */
-const PUSH_TYPES = new Set(['content', 'reasoning', 'done', 'aborted', 'error', 'tool_start', 'tool_end'])
+/**
+ * 结构性事件推到侧边栏：让「正在跑」这类状态也看得见（content/reasoning 是增量）。
+ *
+ * ★ 2026-10-20 修了一个**静默失效**：原来写的是 `tool_start` / `tool_end`，但渲染层
+ *   真实发出的事件名是 `agent.tool.started` / `agent.tool.completed`（见
+ *   `src/types/chat-events.ts`）—— 那两个名字**永远命中不了**，于是「当前在跑哪个工具」
+ *   从来没推到过侧边栏，而**没有任何报错**。这类跨模块名字对不上只能靠真跑或对源码看出来。
+ *
+ * M02-B 起任务卡还要两样：相位（`turn_start` / `plan`）与「等待确认」（`confirm_request`）。
+ */
+const PUSH_TYPES = new Set([
+  'content',
+  'reasoning',
+  'done',
+  'aborted',
+  'error',
+  /* 工具调用（真名；保留旧名防止外部调用方仍按旧名发） */
+  'agent.tool.started',
+  'agent.tool.completed',
+  'agent.tool.failed',
+  'agent.tool.progress',
+  'tool_start',
+  'tool_end',
+  /* M02-B 任务卡：相位 */
+  'turn_start',
+  'plan',
+  'turn_end',
+  /* M02-B 任务卡：等待确认（侧边栏要能显示「在等你确认」，否则用户不知道卡在哪） */
+  'confirm_request',
+  /*
+   * ★ 2026-10-21：重试必须让侧边栏知道（见下面 `retry` 分支）。
+   *   不加这一项时，一次 timeout / 限流触发的重试会让同一段正文在侧边栏里出现**两遍**：
+   *   上一次尝试已经流出去的字不会因为重试而消失，而重试后模型会把同样的话再说一遍。
+   *   主窗口那边由 `reconcileFinalRounds` 在收尾时合并，侧边栏没有那一步，所以只有它看得出来。
+   */
+  'retry',
+])
 
 /**
  * @param {{
@@ -38,7 +73,13 @@ function createStreamStore(deps) {
   const push = deps.push
   const log = deps.log
 
-  /** @type {Map<string, { sessionId: string, seq: number, text: string, reasoning: string, done: boolean, at: number }>} */
+  /**
+   * @type {Map<string, {
+   *   sessionId: string, seq: number, text: string, reasoning: string,
+   *   done: boolean, at: number,
+   *   roundText: number, roundThink: number,
+   * }>}
+   */
   const snapshots = new Map()
   /** 只报一次「旁听到某一轮」（诊断用；不记每条 content，否则日志会被刷爆） */
   const seen = new Set()
@@ -69,15 +110,33 @@ function createStreamStore(deps) {
 
     let snap = snapshots.get(requestId)
     if (!snap) {
-      snap = { sessionId, seq: 0, text: '', reasoning: '', done: false, at: 0 }
+      snap = { sessionId, seq: 0, text: '', reasoning: '', done: false, at: 0, roundText: 0, roundThink: 0 }
       snapshots.set(requestId, snap)
     }
     snap.at = Date.now()
+    /*
+     * ★ 2026-10-21：「本轮从第几个字符开始」——重试要回滚到这儿。
+     *   一轮 agent 循环里会调多次模型，每次 `turn_start` 就是新的一段。
+     *   正文和思考各记一个长度（两者的累积量不同，不能共用一个数）。
+     *   回滚到本轮起点而不是清空，才能保住前面几轮已经说过的内容。
+     */
+    if (type === 'turn_start') {
+      snap.roundText = snap.text.length
+      snap.roundThink = snap.reasoning.length
+    }
     /* done 带完整正文 —— 用它兜底（分段快照可能因为合批还没到齐） */
     if (type === 'done') {
       snap.text = String(event.content ?? snap.text)
       snap.reasoning = String(event.reasoning ?? snap.reasoning)
       snap.done = true
+    } else if (type === 'retry') {
+      /*
+       * ★ 重试 = 上一次尝试作废（`loop-model.cjs:151` 之后会重新从头请求）。
+       *   已经流出去的字必须退回去，否则重试后模型再说一遍，这一轮就是两遍。
+       *   只退回本轮起点：前面几轮的内容是有效的。
+       */
+      snap.text = snap.text.slice(0, snap.roundText)
+      snap.reasoning = snap.reasoning.slice(0, snap.roundThink)
     } else if (type === 'aborted' || type === 'error') {
       snap.done = true
     } else if (type === 'content' && typeof event.text === 'string') {
@@ -88,7 +147,9 @@ function createStreamStore(deps) {
 
     if (!PUSH_TYPES.has(type)) return
     snap.seq += 1
-    pushDelta(requestId, snap.sessionId, snap.seq, type, type === 'done' ? snap.text : (event.text ?? ''), snap.done)
+    /* `done` / `retry` 推**全文**（前者兜底，后者是回滚后的正文，侧边栏据此覆盖） */
+    const outText = type === 'done' || type === 'retry' ? snap.text : (event.text ?? '')
+    pushDelta(requestId, snap.sessionId, snap.seq, type, outText, snap.done)
 
     if (snap.done) {
       /* 延迟清：立刻清的话，「刚跑完就重连」会问不到（用户看到空内容） */
@@ -106,9 +167,9 @@ function createStreamStore(deps) {
     const want = String(sessionId ?? '')
     if (!want) return null
     let best = null
-    for (const snap of snapshots.values()) {
+    for (const [requestId, snap] of snapshots) {
       if (snap.sessionId !== want) continue
-      if (!best || snap.at > best.at) best = snap
+      if (!best || snap.at > best.at) best = { ...snap, requestId }
     }
     return best
   }

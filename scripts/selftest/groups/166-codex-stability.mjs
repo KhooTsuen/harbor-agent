@@ -70,7 +70,6 @@ export async function run() {
     /auxModel\.resolveAux\(config, \{ scene: 'compact' \}\)/.test(R('electron/core/loop-model.cjs')) &&
       !/compactMessages\(\{ \.\.\.options, provider: target \}\)/.test(R('electron/core/loop-model.cjs')),
   )
-  check('★ 接线：reviewWithEvents 把 aux.provider 交给 selfReview', /provider: aux\.provider/.test(R('electron/core/loop-model.cjs')))
   check('★ 辅助判据只有一处（aux-model 不自己判 kind —— 硬约束 #9）', !/isCodexCli|kind === 'codex-cli'/.test(R('electron/core/aux-model.cjs')))
 
   /* ── ⑩ 可选代理（默认不改行为）── */

@@ -107,7 +107,6 @@ function normalize(raw) {
       maxTokens: clampNumber(assistant.maxTokens === 4096 ? 0 : assistant.maxTokens, 0, 128000, 0),
       historyLimit: clampNumber(assistant.historyLimit, 0, 200, 20),
       responseDepth: pick(str(assistant.responseDepth, 'standard'), ['concise', 'standard', 'detailed', 'deep'], 'standard'),
-      selfReview: assistant.selfReview === true,
       streamOutput: assistant.streamOutput !== false,
       planFirst: assistant.planFirst !== false,
       /* AG-053 / A2：开工前澄清与规模确认（默认值与夹取规则在各自那个 config 里） */

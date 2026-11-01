@@ -9,7 +9,6 @@ import { ProviderCard } from './providers/ProviderCard'
 import { CodexCliCard } from './providers/CodexCliCard'
 import { ModelField } from './providers/ModelField'
 import { AssistantSwitches } from './providers/AssistantSwitches'
-import { WorkdirRow } from './providers/WorkdirRow'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 模型 / 工具
@@ -273,8 +272,6 @@ export function ToolsPanel() {
           ))}
         </div>
       </div>
-
-      <WorkdirRow />
 
       <label className="acrylic-card block">
         <span className="mb-1 block text-2xs text-fg-tertiary">命令超时（秒）</span>

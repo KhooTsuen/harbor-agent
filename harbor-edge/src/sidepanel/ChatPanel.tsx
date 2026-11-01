@@ -1,11 +1,13 @@
 /**
- * 侧边栏的「对话」区块（发消息 + 看流式回复）
+ * 侧边栏的「对话」区块（任务卡 + 当前网页卡 + 发消息 + 看流式回复）
  *
  * 做：把用户打的字交给 SW（→ host → 主进程 → **渲染层**去跑），并把主进程推来的
  *     流式分片显示出来；点顶栏 **☰** 时把会话抽屉滑出来**覆盖**这一块。
  * 不做：**不落盘、不判忙**。落盘在渲染层（`replyPersistence.ts`）；「忙不忙」
  *     由主进程判（`electron/core/ext-chat.cjs`）—— 判据只有一处，扩展侧不自己猜。
- * 一轮的显示（含 Markdown）在 `TurnBubble.tsx`（本文件贴 300 红线，拆出去）。
+ * 一轮的显示（含 Markdown）在 `TurnBubble.tsx`；任务卡在 `TaskCard.tsx`；
+ * 当前网页卡在 `PageCard.tsx`；**流式订阅**在 `useChatStream.ts`
+ * —— 本文件 2026-10-20 已贴 300 红线，能搬的都搬走了。
  *
  * ── 流事件 / 冷启动 ─────────────────────────────────────────
  * SW 广播 `chat:event`，字段：`sessionId` / `seq` / `type` / `text` / `done`。
@@ -23,23 +25,20 @@
 
 /* global chrome */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ReadPageButton, type StatusMessage } from './ReadPageButton'
 import { ObserveButton } from './ObserveButton'
 import { SessionDrawer } from './SessionDrawer'
+import { SettingsDrawer } from './SettingsDrawer'
+import { TaskCard } from './TaskCard'
+import { PageCard } from './PageCard'
 /* M02-A：一轮的显示 + Markdown 搬到 TurnBubble（本文件贴 300 红线） */
-import { TurnBubble, type TurnView } from './TurnBubble'
-
-/** 主进程推来的分片（形状见 `electron/core/ext-protocol.cjs` 的 push） */
-interface PushPayload {
-  sessionId?: string
-  seq?: number
-  type?: string
-  text?: string
-  done?: boolean
-}
+import { TurnBubble } from './TurnBubble'
+/* M02-B：流式订阅 + 任务卡状态累加搬到这里（本文件贴 300 红线） */
+import { useChatStream } from './useChatStream'
+import { useSelectionDraft } from './useSelectionDraft'
 
 export function ChatPanel({
   connected,
@@ -49,6 +48,10 @@ export function ChatPanel({
   onSelectSession,
   status,
   onStatus,
+  settingsOpen,
+  onCloseSettings,
+  lastError,
+  onRetry,
 }: {
   connected: boolean
   /**
@@ -63,88 +66,42 @@ export function ChatPanel({
   /** 状态行**由 App 持有**：顶栏那两个占位按钮也要往同一行写话（单一元素，见文件头） */
   status: StatusMessage | null
   onStatus: (s: StatusMessage | null) => void
+  /** M02-C：设置抽屉 —— 连接信息 / 能力清单 / 站点权限指路 */
+  settingsOpen: boolean
+  onCloseSettings: () => void
+  /** 设置抽屉里显示人话错误 + 重试（沿用顶栏那条，不另编一套） */
+  lastError: string | null
+  onRetry: () => void
 }) {
-  const [input, setInput] = useState('')
-  const [turn, setTurn] = useState<TurnView | null>(null)
-  const [sending, setSending] = useState(false)
-  /** M02-A2：正在等「停止」的回执（防连点） */
-  const [stopping, setStopping] = useState(false)
-  /** 当前在看的会话 —— 存 ref，避免闭包里拿到过期的值 */
-  const sidRef = useRef(sessionId)
-  sidRef.current = sessionId
-
-  /* 订阅流式推送（只认 chat:event；session:selected 归 App 处理） */
-  useEffect(() => {
-    const onMsg = (msg: { type?: string; push?: { kind?: string; payload?: PushPayload } }) => {
-      if (!msg || msg.type !== 'harbor-push') return
-      if (msg.push?.kind !== 'chat:event') return
-      const payload = msg.push?.payload
-      if (!payload) return
-      const incoming = String(payload.sessionId ?? '')
-      /*
-       * ★ 只认「我正在看的那条会话」—— 但**要能跟着换 id**（真机踩过）：
-       * 刚新建的会话在渲染层那边先是**临时 id**（`pending_…`），主进程推来的是
-       * 落盘后的真 id —— 严格匹配会把每一片都丢掉（现象：侧边栏只有一个光标，
-       * 主窗口却有完整回复）。所以本地还是 `pending_`／空时，以推送为准学过来。
-       */
-      if (incoming && incoming !== sidRef.current) {
-        const temp = !sidRef.current || sidRef.current.startsWith('pending_')
-        if (!temp) return
-        sidRef.current = incoming
-      }
-      const seq = Number(payload.seq ?? 0)
-      const type = String(payload.type ?? '')
-      setTurn((prev) => {
-        if (!prev) return prev
-        if (seq && seq <= prev.seq) return prev /* 旧片 / 重排 —— 丢掉 */
-        const next: TurnView = { ...prev, seq: seq || prev.seq }
-        if (type === 'content' && typeof payload.text === 'string') next.text += payload.text
-        if (type === 'done' || type === 'aborted') {
-          next.done = true
-          /* done 那片带**全文** —— 用它覆盖，把可能丢掉的片补回来 */
-          if (typeof payload.text === 'string' && payload.text) next.text = payload.text
-        }
-        if (type === 'error') {
-          next.done = true
-          next.error = String(payload.text ?? '出错了')
-        }
-        return next
-      })
-    }
-    try {
-      chrome.runtime.onMessage.addListener(onMsg)
-    } catch {
-      /* 不在扩展上下文（纯浏览器预览）时忽略 */
-    }
-    return () => {
-      try {
-        chrome.runtime.onMessage.removeListener(onMsg)
-      } catch {
-        /* 同上 */
-      }
-    }
-  }, [])
-
-  /*
-   * 打开 / 换会话时问一次快照：SW 可能刚醒、或者回复在我们没看时就开始跑了。
-   * 拿到就用它初始化（**不覆盖**已经在显示的那条 —— 快照只在没有本地内容时用）。
-   */
-  useEffect(() => {
-    if (!sessionId) return
-    try {
-      const p = chrome.runtime.sendMessage({ type: 'chat-resume', sessionId })
-      if (!p || typeof p.then !== 'function') return
-      p.then((res: { ok?: boolean; seq?: number; text?: string; done?: boolean } | undefined) => {
-        if (!res || res.ok !== true) return
-        setTurn((prev) => {
-          if (prev) return prev
-          return { ask: '', text: String(res.text ?? ''), seq: Number(res.seq ?? 0), done: res.done === true }
-        })
-      }).catch(() => {})
-    } catch {
-      /* 忽略 */
-    }
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const input = drafts[sessionId] ?? ''
+  const setInput = useCallback((text: string) => {
+    setDrafts((prev) => ({ ...prev, [sessionId]: text }))
   }, [sessionId])
+  const appendSelection = useCallback((owner: string, text: string) => {
+    setDrafts((prev) => ({ ...prev, [owner]: [prev[owner], text].filter(Boolean).join('\n\n') }))
+  }, [])
+  useSelectionDraft(sessionId, appendSelection)
+  const currentSession = useRef(sessionId)
+  currentSession.current = sessionId
+  const scopedStatus = useCallback((next: StatusMessage | null) => {
+    if (currentSession.current === sessionId) onStatus(next)
+  }, [onStatus, sessionId])
+  const [sendingIds, setSendingIds] = useState<string[]>([])
+  const sending = sendingIds.includes(sessionId)
+  const setSending = useCallback((next: boolean) => {
+    setSendingIds((ids) => next ? [...new Set([...ids, sessionId])] : ids.filter((id) => id !== sessionId))
+  }, [sessionId])
+  /** M02-A2：正在等「停止」的回执（防连点） */
+  const [stoppingIds, setStoppingIds] = useState<string[]>([])
+  const stopping = stoppingIds.includes(sessionId)
+  const setStopping = useCallback((next: boolean) => {
+    setStoppingIds((ids) => next ? [...new Set([...ids, sessionId])] : ids.filter((id) => id !== sessionId))
+  }, [sessionId])
+  /* 正文 + 任务卡状态 + 此刻的会话 ref：全在 hook 里（收事件那一摊） */
+  const { turn, setTurn, task, sidRef } = useChatStream(sessionId)
+  const [regeneratingIds, setRegeneratingIds] = useState<string[]>([])
+  const regenerating = regeneratingIds.includes(sessionId)
 
   /* 有回复正在流吗（组件作用域：发送 / 停止按钮 / 停止本身三处共用）。
      ⚠️ 原先它是 `send` 里的局部 const 却被 JSX 用了 → 真机**整页白屏**
@@ -155,13 +112,13 @@ export function ChatPanel({
     const text = input.trim()
     if (!text || sending) return
     setSending(true)
-    onStatus(null)
+    scopedStatus(null)
     /* ★ 正在流时**不要**换掉显示：否则「忙时又发一条」会把正在看的流清空（真机逮到） */
     if (!streaming) setTurn({ ask: text, text: '', seq: 0, done: false })
     try {
       const p = chrome.runtime.sendMessage({ type: 'chat-send', text, sessionId })
       if (!p || typeof p.then !== 'function') {
-        onStatus({ text: '扩展上下文不可用', tone: 'danger' })
+        scopedStatus({ text: '扩展上下文不可用', tone: 'danger' })
         setSending(false)
         return
       }
@@ -173,18 +130,19 @@ export function ChatPanel({
           return
         }
         /* 被拒（忙 / 没窗口）—— 显示**主进程给的原话**，不自己编 */
-        onStatus({ text: String(res?.error ?? '发不出去'), tone: 'danger' })
+        scopedStatus({ text: String(res?.error ?? '发不出去'), tone: 'danger' })
         if (!streaming) setTurn(null)
       }).catch((error: unknown) => {
         setSending(false)
-        onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+        scopedStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
         if (!streaming) setTurn(null)
       })
     } catch (error) {
       setSending(false)
-      onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+      scopedStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+      if (!streaming) setTurn(null)
     }
-  }, [input, sending, turn, sessionId, onStatus])
+  }, [input, sending, streaming, sessionId, scopedStatus, setTurn, setInput, setSending])
 
   /* M02-A2：**停止**正在跑的这一轮。
      ★ 不做「本地把显示停掉」—— 那是放弃接收、主进程照跑（规格要的是**真正取消**）。
@@ -200,41 +158,74 @@ export function ChatPanel({
       }
       p.then((res: { ok?: boolean; error?: string } | undefined) => {
         setStopping(false)
-        onStatus({
+        scopedStatus({
           text: res && res.ok === true ? '已请求停止 —— 这条对话正在收尾' : String(res?.error ?? '停不了'),
           tone: res && res.ok === true ? 'info' : 'danger',
         })
       }).catch((error: unknown) => {
         setStopping(false)
-        onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+        scopedStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
       })
     } catch (error) {
       setStopping(false)
-      onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
+      scopedStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
     }
-  }, [onStatus])
+  }, [scopedStatus, sidRef, setStopping])
+
+  const regenerate = useCallback(() => {
+    if (!sessionId || regenerating) return
+    const owner = sessionId
+    setRegeneratingIds((ids) => [...new Set([...ids, owner])])
+    chrome.runtime.sendMessage({ type: 'chat-regenerate', sessionId: owner })
+      .then((result: { ok?: boolean; error?: string }) => {
+        scopedStatus(result?.ok ? { text: '已请求重新生成，旧回答会保留为历史版本', tone: 'info' } : { text: String(result?.error || '无法重新生成'), tone: 'danger' })
+        if (!result?.ok) setRegeneratingIds((ids) => ids.filter((id) => id !== owner))
+        else setTimeout(() => setRegeneratingIds((ids) => ids.filter((id) => id !== owner)), 10000)
+      })
+      .catch((error: unknown) => {
+        scopedStatus({ text: String((error as Error)?.message || error), tone: 'danger' })
+        setRegeneratingIds((ids) => ids.filter((id) => id !== owner))
+      })
+  }, [sessionId, regenerating, scopedStatus])
 
   return (
     <section aria-label="对话" className="flex min-h-0 flex-1 flex-col">
+      {/* M02-B：当前网页卡（扩展自己读，不经主进程）+ 任务卡（有任务时才出现） */}
+      <PageCard onStatus={scopedStatus} />
+      <TaskCard state={task} />
+
       {/* 消息区 + 抽屉：抽屉是 absolute 覆盖，**不是**并排（400px 宽容不下并排）*/}
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div aria-label="消息流" className="h-full overflow-y-auto px-3 py-2 text-dense">
           {!turn ? (
-            <div className="text-2xs text-fg-tertiary">
-              {!connected
-                ? '还没连上 Harbor'
-                : sessionId
-                  ? '在下面输入，发给这条对话'
-                  : '在下面输入 —— 会新建一条对话'}
+            /*
+             * 空状态垂直居中：原来 `py-2` 直接顶在最上面，下面一大片空黑，
+             * 看着像「内容没加载出来」（用户 2026-10-21 指出）。
+             */
+            <div className="flex h-full items-center justify-center px-2">
+              <p className="text-center text-2xs leading-relaxed text-fg-tertiary">
+                {/*
+                 * ⚠️ 这里**不再重复**「会新建一条对话」——输入框的 placeholder 已经说了。
+                 *   同一屏两处说同一件事，是 2026-10-21 截图复查时逮到的（两轮识图都指出）。
+                 *   分工：空状态说明「现在能不能发」，placeholder 说明「发了会怎样」。
+                 */}
+                {!connected ? '还没连上 Harbor' : sessionId ? '在下面输入，发给这条对话' : '在下面输入'}
+              </p>
             </div>
           ) : (
-            <TurnBubble turn={turn} />
+            <>
+              <TurnBubble turn={turn} />
+              {turn.done && sessionId && connected ? <Button size="sm" variant="ghost" disabled={regenerating} onClick={regenerate}>重新生成</Button> : null}
+            </>
           )}
         </div>
 
         {drawerOpen ? (
           <SessionDrawer onClose={onCloseDrawer} selectedId={sessionId} onSelect={onSelectSession} />
         ) : null}
+
+        {/* M02-C：设置抽屉（同一个覆盖层，从左侧滑出；与会话抽屉互不并排） */}
+        {settingsOpen ? <SettingsDrawer onClose={onCloseSettings} connected={connected} lastError={lastError} onRetry={onRetry} /> : null}
       </div>
 
       {/* 状态行：读页面结果 / 发送提示共用一个元素（见文件头） */}
@@ -252,9 +243,9 @@ export function ChatPanel({
       {/* 输入区（读当前页压成左端一个图标按钮）*/}
       <div className="shrink-0 p-3 pt-1.5">
         <div className="flex items-end gap-1.5 rounded-base border border-line-hairline bg-bg-raised p-2">
-          <ReadPageButton onStatus={onStatus} />
+          <ReadPageButton onStatus={scopedStatus} sessionId={sessionId} />
           {/* M03：观察页面（结构 / 选区 / 版本号）—— 与「读当前页」是两个动作 */}
-          <ObserveButton onStatus={onStatus} />
+          <ObserveButton onStatus={scopedStatus} sessionId={sessionId} />
           <textarea
             rows={1}
             value={input}
@@ -263,7 +254,7 @@ export function ChatPanel({
               if (drawerOpen) onCloseDrawer()
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
                 e.preventDefault()
                 send()
               }
@@ -289,8 +280,8 @@ export function ChatPanel({
             发送
           </Button>
         </div>
-        <p className="mt-2 text-2xs text-fg-tertiary">
-          回复由 Harbor 跑，两处看到的是**同一条**会话。
+        <p className="mt-1.5 text-2xs text-fg-tertiary">
+          回复在 Harbor 里跑 · 两端同一条会话
         </p>
       </div>
     </section>

@@ -91,12 +91,21 @@ export async function run() {
    *   waiting_user = 那一轮正停着等你说话，你这句话既是「回答」也可能「改方向」，
    *   所以本来就该接回（reopen 也只肯接 paused / waiting_user）。
    */
-  group('AG-043 / 等你回话时改方向（waiting_user 接回 + 记 steering）')
-  const waitingTask = taskCore.create({
-    goal: '等你回话的任务',
-    sessionId: 'selftest-ag043-wait',
-    workdir: ROOT,
-  })
+  /*
+   * ── P0-3（2026-10-23）：这一条的行为**按需求改了** ────────────────
+   *
+   * 以前（AG-043）：waiting_user 时说的任何新话都接回原任务，并记成「用户改方向」。
+   * 现在的规则（`core/task-attribution.cjs`，用户 P0 第 3 条点名的口径）：
+   *   「对 waiting_user 也要核对答复是否对应那次提问；无关新问题不应自动成为旧任务的回答」
+   *   「其他说法在 P0 阶段保持保守，不凭猜测覆盖旧台账」
+   *
+   * 所以：waiting_user + 不是「继续」→ `needs_clarification` —— **新建**一条，
+   * 旧任务原样留着当背景，**不**记 steering（没接回就不该往旧台账上写东西）。
+   * 明确说「继续」时仍然接回（下面那条断言钉着）。
+   */
+  group('AG-043 / 等你回话时说的新话（P0-3 后：不凭猜测接回）')
+  const waitingSid = 'selftest-ag043-wait'
+  const waitingTask = taskCore.create({ goal: '等你回话的任务', sessionId: waitingSid, workdir: ROOT })
   created.push(waitingTask.id)
   taskCore.setPlan(waitingTask.id, ['[x] 一', '[ ] 二'])
   taskCore.update(waitingTask.id, { status: 'waiting_user' })
@@ -114,18 +123,43 @@ export async function run() {
       workdir: SANDBOX,
       mode: 'pair',
       goal: '换个思路，先做第二步',
-      sessionId: 'selftest-ag043-wait',
+      sessionId: waitingSid,
       signal: new AbortController().signal,
       emit: () => {},
       confirm: async () => true,
     })
-    check('★ 等你回话时说的新话 → 接回原任务', r2.taskId === waitingTask.id, r2.taskId)
+    check('★ 无关新问题不再自动接管旧任务（新建一条）', r2.taskId !== waitingTask.id, r2.taskId)
     const afterWaiting = taskCore.get(waitingTask.id)
     check(
-      '★ 而且记下了「用户改方向」',
-      afterWaiting.steering?.at(-1)?.text === '换个思路，先做第二步',
-      JSON.stringify(afterWaiting.steering),
+      '★ 旧台账没被覆盖（状态 / 计划都不动）',
+      afterWaiting.status === 'waiting_user' && (afterWaiting.plan ?? []).length === 2,
+      JSON.stringify({ status: afterWaiting.status, plan: afterWaiting.plan }),
     )
+    check('★ 也没往旧台账记「用户改方向」', (afterWaiting.steering ?? []).length === 0)
+  } finally {
+    llmModule.chatStream = originalChatStream
+  }
+
+  /* 明确说「继续」→ 仍然接回（这条是 P0-3 保留的既有能力） */
+  try {
+    llmModule.chatStream = async () => ({
+      content: '接着做。',
+      reasoning: '',
+      toolCalls: [],
+      usage: null,
+    })
+    const r3 = await loopCore.run({
+      history: [{ role: 'user', content: '继续' }],
+      config,
+      workdir: SANDBOX,
+      mode: 'pair',
+      goal: '继续',
+      sessionId: waitingSid,
+      signal: new AbortController().signal,
+      emit: () => {},
+      confirm: async () => true,
+    })
+    check('★ 明确说「继续」→ 接回原任务', r3.taskId === waitingTask.id, r3.taskId)
   } finally {
     llmModule.chatStream = originalChatStream
     credentialsCore.remove('provider:selftest-ag043')

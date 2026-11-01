@@ -218,7 +218,7 @@ export async function run() {
   )
   check(
     '★ 输出那条路没被跟着改（还是 assistant.maxTokens）',
-    read('electron/core/loop-model.cjs').includes('config.assistant.maxTokens'),
+    read('electron/core/loop.cjs').includes('maxTokens: config.assistant.maxTokens'),
   )
   const ctxWin = require(join(ROOT, 'electron/core/context-window.cjs'))
   const capsCore = require(join(ROOT, 'electron/core/provider-capabilities.cjs'))

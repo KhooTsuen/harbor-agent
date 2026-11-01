@@ -31,6 +31,8 @@ const state = (): StreamState => ({
     timestamp: 0,
   }),
   finish: () => {},
+  /* 重试回滚的起点（本组不走 retry，给个最小壳：0 = 没有半截可退） */
+  retryMarks: { text: 0, think: 0, round: -1, roundText: 0, roundThink: 0 },
 })
 
 const QUESTIONS = [{ question: '用哪个？', options: [{ label: 'a', effect: '多花 1 秒' }] }]

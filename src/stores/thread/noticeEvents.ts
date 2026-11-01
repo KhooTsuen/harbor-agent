@@ -70,9 +70,5 @@ export function handleNoticeEvent(event: NoticeEvent): void {
       toast('info', '上下文太长', '用 /compact 压一下再继续，会比现在稳')
       return
     }
-    case 'review': {
-      if (event.status === 'started') toast('info', '正在复核这次回答', '复核完会给出结论')
-      return
-    }
   }
 }

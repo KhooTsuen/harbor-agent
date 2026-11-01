@@ -1,57 +1,32 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { anchorShift, readAnchor, type ScrollAnchor } from '@/lib/scrollAnchor'
+import {
+  anchorShift,
+  readAnchor,
+  readMessageAnchor,
+  type MessageAnchor,
+  type ScrollAnchor,
+} from '@/lib/scrollAnchor'
+import { WRITE_EPSILON } from '@/lib/scrollRestore'
+import { useRestorePosition } from './useRestorePosition'
 import { useScrollStore, type ScrollMode } from '@/stores/useScrollStore'
 
 /* ══════════════════════════════════════════════════════════════
    自动滚动 —— 显式状态机，不做任何推断
 
-   滚动**意图**只有两种，只由用户显式表达：
-     FOLLOW 我在看最新内容，有新内容自动跟上 / FREE 我在看历史，别动我的视图
+   FOLLOW 看最新 / FREE 看历史，只由用户动作迁移（向上滚 / 没到底 → FREE，离底 ≤ 4px
+   → FOLLOW）。FREE 的内容变化补「视野顶被推下去多少」；程序落点记进 writesRef 供
+   scroll 认领；容器关掉 overflow-anchor。锚点见 lib/scrollAnchor / lib/scrollRestore。
 
-   ── 状态迁移（只有这五条，严格 FREE 优先）─────────────────────
-     1. 向上滚（滚轮 deltaY<0 / PageUp / Home / 拖滚动条向上）→ FREE
-     2. 向下滚但没到真正的底 → FREE
-     3. 向下滚到「离底 ≤ 4px」 → FOLLOW
-     4. 点开/折叠可展开元素（guard.enterFree）→ FREE
-     5. 点「回到底部」（enterFollow）→ FOLLOW
-   **程序行为**（流式新内容 / 布局变化 / 消息增删 / 切换对话）→ 状态不变。
-
-   ── 内容变化时的行为（只有两条）──────────────────────────────
-     FOLLOW → scrollTop = scrollHeight（贴底）
-     FREE   → scrollTop += （视野顶那条内容被推下去多少）
-
-   补偿量**不能**用 `newScrollHeight - oldScrollHeight`：那个差值把「末尾长高」
-   也算进去了，而末尾长高时视野顶的内容一步没动 —— 照它补就是每来一段流式
-   内容就把用户往下推一段（原始投诉的回头路）。要补的是锚点位移：末尾长高 → 0
-   （不写），视野上方长高（展开上面的块 / 载入更早 / 上面的图片加载完）→ 正好
-   等于长高量。两种情形都满足「视觉位置不动」。
-
-   ── 程序滚动怎么和用户滚动区分 ──────────────────────────────
-   程序写的落点记进 `writesRef`，scroll 事件落在其中一个上就认领、直接跳过
-   （不按位置裁决）。认领表在「出现一次对不上的滚动」或「用户一动滚轮/键盘」
-   时作废：既不能把用户的滚动算成程序的（那样用户滚到底也回不到 FOLLOW），
-   也不能把程序的补偿算成用户的（那样 FREE 会被翻回 FOLLOW，真机复现过）。
-   容器上还关了原生 `overflow-anchor`（它会偷偷改 scrollTop 且不带标记，
-   那个 scroll 事件与用户滚动长得一模一样）。
-
-   ── 锚点 ────────────────────────────────────────────────────
-   锚点 = 浏览器命中测试得到的「视野顶那个元素」（`elementFromPoint`，取内容列
-   水平中心；不支持时按 children 二分下钻）。折叠一个**跨在视野顶端**的块时，
-   它和近处的兄弟一起被删 —— 所以锚点带的是一列备胎（往上取每层祖先的兄弟，
-   永远兜到内容容器自己），位移照样等于「上面少了多少」（实现在 `lib/scrollAnchor`）。
-   锚点只在 FREE 里有用：FOLLOW 不采集（`elementFromPoint` 会强制同步布局，
-   而流式期间这个回调很密），进 FREE 那一刻（用户动手 / `enterFree`）再采。
-
-   ── 剩下的实现规矩 ───────────────────────────────────────────
-   全文件只有一个数字：BOTTOM_EPSILON = 4（规则 3 的「到真正的底」）。没有滞回、
-   没有锁、没有 rAF 延迟清锁、没有「用户可能想干嘛」的猜测。切对话回来时位置
-   先落到「当前能到的最大」，等真装得下再落到准确值（否则会被 clamp 成 0）。
+   ★ 切回对话的落位必须**等窗口补完再写**（settleWindow）：窗口是一片片补的，
+   目标一进窗口就落位的话，每补一片它上方就多一段内容，落点跟着变一次 ——
+   连续写入看着就是「从下往上反复滑」，永远对不上。
    ══════════════════════════════════════════════════════════════ */
 
 /** 判定「到真正的底」的容差（迁移规则 3）—— 全文件唯一的数字 */
 export const BOTTOM_EPSILON = 4
-/** 程序落点 / 锚点位移的比对容差（浏览器会把坐标抹成小数） */
-const WRITE_EPSILON = 0.5
+
+/** 自己那条对话的记忆（切走时落盘用） */
+type OwnMemory = { threadId: string; top: number; anchor: MessageAnchor | null }
 
 export interface AutoScroll {
   mode: ScrollMode
@@ -63,6 +38,11 @@ export interface AutoScroll {
   enterFollow: () => void
   /** 迁移 4：用户动了布局 */
   enterFree: () => void
+  /** 把这次恢复改落到哪条消息（MessageList 扩窗到上限时用：落到窗口内最早那条，
+   *  不为到位摊开整段历史，也不跳回最新处） */
+  retarget: (anchor: MessageAnchor | null) => void
+  /** 窗口补完了（MessageList 报）：此刻才允许写第一刀落点 */
+  settleWindow: () => void
 }
 
 export function useAutoScroll(conversationId: string): AutoScroll {
@@ -76,11 +56,13 @@ export function useAutoScroll(conversationId: string): AutoScroll {
   const writesRef = useRef<number[]>([])
   /* 锚点：视野顶那条内容、它的位置、以及「它被删了就用谁」的一列备胎 */
   const anchorRef = useRef<ScrollAnchor | null>(null)
-  /* 最近一次已知的 scrollTop。切对话时**不能**去读 DOM：那一刻列表可能已经
-     卸载（空对话先渲染开屏）—— ref 是 null，存下去的 0 会把位置抹掉（真机踩过）。 */
+  /* 消息级锚点（切换对话用）：每次滚动 / 布局变化顺手记 —— 切走那一刻列表已卸载。
+     ★ 必须带 threadId：新容器先挂上来，不带标就把 A 的记忆写成 B 的位置。 */
+  const memRef = useRef<OwnMemory | null>(null)
+  /* 最近一次已知的 scrollTop：切对话那一刻列表可能已卸载，读 DOM 会读到 0 把位置抹掉 */
   const lastTopRef = useRef(0)
-  /* 切对话时想恢复的位置（列表还没渲染完就先记着） */
-  const pendingTopRef = useRef<number | null>(null)
+  /* 「再试一次」要跑 onResize，而 onResize 又依赖 restore：用 ref 打断这个环 */
+  const onResizeRef = useRef<() => void>(() => {})
   const conversationRef = useRef('')
 
   const applyMode = useCallback((next: ScrollMode): void => {
@@ -91,6 +73,9 @@ export function useAutoScroll(conversationId: string): AutoScroll {
 
   /** 唯一的程序性写入口：记下落点，scroll 事件据此认领并跳过 */
   const writeTop = useCallback((el: HTMLDivElement, top: number): void => {
+    /* 非有限值一个字节都不写：NaN 写进 scrollTop 之后所有几何读数都成 NaN，
+       补偿就再也算不出来（真机表现为「卡在某个位置不动」） */
+    if (!Number.isFinite(top)) return
     const max = Math.max(0, el.scrollHeight - el.clientHeight)
     const next = Math.max(0, Math.min(top, max))
     writesRef.current = [next, ...writesRef.current].slice(0, 3)
@@ -98,43 +83,55 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     el.scrollTop = next
   }, [])
 
-  /* ── 锚点：视野顶那条内容（FREE 的补偿量靠它算，实现在 lib/scrollAnchor）── */
+  /* ── 锚点 ── */
   const captureAnchor = useCallback((): void => {
     const sc = scrollerRef.current
     const content = contentRef.current
-    anchorRef.current = sc && content ? readAnchor(sc, content) : null
-  }, [])
+    if (!sc || !content) return
+    /* ★ 切对话的那次提交里**绝不**采集：conversationRef 还是旧的、DOM 已是新对话的，
+       采下去就是把 B 的位置写成 A 的（真机表现「回来不是原来那里」）。 */
+    if (conversationRef.current !== conversationId) return
+    anchorRef.current = readAnchor(sc, content)
+    /* 消息级锚点顺手更新（切走时 DOM 已经没了，只剩这份）。读不到就留上一次的。 */
+    const anchor = readMessageAnchor(sc, content)
+    const prev = memRef.current
+    memRef.current = {
+      threadId: conversationRef.current,
+      top: sc.scrollTop,
+      anchor: anchor ?? (prev?.threadId === conversationRef.current ? prev.anchor : null),
+    }
+  }, [conversationId])
 
-  const measureShift = useCallback((): number | null => {
-    const sc = scrollerRef.current
-    return sc ? anchorShift(sc, anchorRef.current) : null
-  }, [])
+  /* 落位判据与自重试都在 useRestorePosition；这里只把它接进状态机 */
+  const restore = useRestorePosition({
+    scroller: scrollerRef,
+    content: contentRef,
+    threadId: conversationId,
+    write: writeTop,
+    retry: () => onResizeRef.current(),
+  })
 
-  /* ── 内容变化：FOLLOW 贴底 / FREE 按锚点位移补偿 ── */
+  /* ── 内容变化：FOLLOW 贴底 / FREE 先补恢复，再按锚点位移补偿 ── */
   const onResize = useCallback((): void => {
     const el = scrollerRef.current
     if (!el) return
     if (modeRef.current === 'follow') {
-      /* 贴底不需要锚点 —— 那里不采集（`elementFromPoint` 会强制同步布局，
-         而流式期间这个回调很密；锚点只在 FREE 里用，进 FREE 那一刻再采）。 */
       writeTop(el, el.scrollHeight)
       return
     }
-    const pending = pendingTopRef.current
-    if (pending !== null) {
-      /* 切对话刚回来：先落到「当前能到的最大」，装得下就落准确值并结账 */
-      writeTop(el, pending)
-      if (pending <= el.scrollHeight - el.clientHeight + WRITE_EPSILON) pendingTopRef.current = null
-      captureAnchor()
+    if (restore.pending.current) {
+      restore.apply(el)
+      /* 真的落定了才重贴锚点：没落定就采会把「还没回到位」当成新基准 */
+      if (!restore.pending.current) captureAnchor()
       return
     }
-    const shift = measureShift()
+    const shift = anchorShift(el, anchorRef.current)
     if (shift !== null && Math.abs(shift) > WRITE_EPSILON) writeTop(el, el.scrollTop + shift)
-    /* 写完重新贴到（新的）视野顶 —— 锚点要一直是「视野里那一条」。
-       锚点连同备胎全被这一刀删掉时（折叠跨视野顶端的块）也要重贴：
-       否则基准一直无效，剩下的位移就没人补了（真机欠补 975px）。 */
+    /* 写完重贴到（新的）视野顶；锚点连备胎全被删掉时（折叠跨视野顶端的块）也要重贴，
+       否则基准一直无效、剩下的位移没人补（真机欠补 975px） */
     captureAnchor()
-  }, [writeTop, captureAnchor, measureShift])
+  }, [writeTop, captureAnchor, restore])
+  onResizeRef.current = onResize
 
   const enterFollow = useCallback((): void => {
     const el = scrollerRef.current
@@ -148,18 +145,23 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     applyMode('free')
   }, [applyMode, captureAnchor])
 
+  /** 恢复目标被窗口上限截断时改落点（只影响本次恢复，不动 store 里的真实记忆） */
+  const retarget = restore.retarget
+
+  /** 窗口补完了：现在写的第一刀才是真落点（早写会跟着每片长高往上滑） */
+  const settleWindow = useCallback((): void => {
+    restore.settle()
+    if (restore.pending.current) onResize()
+  }, [onResize, restore])
+
   /* ── 迁移 1/2/3：滚动落点裁决（滚轮、拖动条、PageDown、End 都走这儿）── */
   const onScroll = useCallback((): void => {
     const el = scrollerRef.current
     if (!el) return
     const max = Math.max(0, el.scrollHeight - el.clientHeight)
-    /*
-     * 浏览器把 scrollTop 钳回内容里（折叠、内容变矮）时**也会发一个 scroll 事件**，
-     * 它和「用户滚到底」长得一模一样 —— 真机就是这么被翻回 FOLLOW 的：在底部点开
-     * 一个块折叠它 → 钳到底 → 状态机以为用户滚到底 → 接下来一路贴底跟流（gap 恒 0）。
-     * 分开它们只要一条算术事实：**上一个位置已经在新内容之外**，说明这一下是钳
-     * 出来的（程序行为，迁移规则 3 只认用户；状态不变）。
-     */
+    /* 浏览器把 scrollTop 钳回内容里也会发 scroll 事件，它和「用户滚到底」长得一样
+       （真机就这么被翻回 FOLLOW 过）。分开它们只要一条算术事实：上一个位置已经在
+       新内容之外 —— 这一下是钳出来的（程序行为）。 */
     const clamped = lastTopRef.current > max + WRITE_EPSILON
     lastTopRef.current = el.scrollTop
     const claimed = writesRef.current.some((v) => Math.abs(el.scrollTop - v) < WRITE_EPSILON)
@@ -167,17 +169,20 @@ export function useAutoScroll(conversationId: string): AutoScroll {
       if (modeRef.current === 'free') captureAnchor() /* 程序写的落点：状态不变 */
       return
     }
-    /* 出现一次对不上的滚动 —— 程序那笔账作废，免得它一直吞用户的滚动 */
+    /* 出现一次对不上的滚动 —— 程序那笔账作废，免得它一直吞用户的滚动。
+       这也算用户接管了视图：未完成的恢复立刻作废（不许再把他拉回旧位置）。 */
     writesRef.current = []
+    restore.cancel()
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     if (!clamped) applyMode(distance <= BOTTOM_EPSILON ? 'follow' : 'free')
     captureAnchor()
-  }, [applyMode, captureAnchor])
+  }, [applyMode, captureAnchor, restore])
 
   /* ── 迁移 1/2/3：滚轮最灵的那条（往上=立刻 FREE，不等 scroll 事件）── */
   const onWheel = useCallback(
     (event: WheelEvent): void => {
       writesRef.current = [] /* 用户一动手，程序那笔账立即作废 */
+      restore.cancel() /* 同上：未完成的恢复也不许再拽他 */
       const el = scrollerRef.current
       if (!el) return
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_EPSILON
@@ -186,21 +191,21 @@ export function useAutoScroll(conversationId: string): AutoScroll {
       if (next === 'free') captureAnchor()
       applyMode(next)
     },
-    [applyMode, captureAnchor],
+    [applyMode, captureAnchor, restore],
   )
 
   /* 键盘：向上键位直接 FREE；End 直接 FOLLOW；PageDown 交给随后的 scroll 事件裁决 */
   const onKeyDown = useCallback(
     (event: KeyboardEvent): void => {
       writesRef.current = []
+      restore.cancel() /* 键盘也是用户接管视图 */
       if (event.key === 'PageUp' || event.key === 'Home') {
         captureAnchor()
         applyMode('free')
       } else if (event.key === 'End') applyMode('follow')
     },
-    [applyMode, captureAnchor],
+    [applyMode, captureAnchor, restore],
   )
-
   const attachScroller = useCallback(
     (node: HTMLDivElement | null): void => {
       const prev = scrollerRef.current
@@ -211,16 +216,21 @@ export function useAutoScroll(conversationId: string): AutoScroll {
       }
       scrollerRef.current = node
       if (!node) return
-      lastTopRef.current = node.scrollTop
       node.addEventListener('scroll', onScroll, { passive: true })
       node.addEventListener('wheel', onWheel, { passive: true })
       node.addEventListener('keydown', onKeyDown)
-      /* 挂上即就位：FOLLOW 贴底；FREE 把切走前的位置落回去（装不下就先落到最大） */
-      if (modeRef.current === 'follow') writeTop(node, node.scrollHeight)
+      /* ★ 正在切对话（ref 阶段早于 layout effect）：这一刻的容器已经是**新对话**的，
+         在上面写位置 / 采锚点会把旧对话的记忆写成新对话的 —— 交给 layout effect 接管 */
+      if (conversationRef.current !== conversationId) return
+      lastTopRef.current = node.scrollTop
+      /* 挂上即就位：FOLLOW 贴底；FREE 把切走前的位置落回去（装不下就先落到最大）。
+         ★ 恢复还在挂起时**不许**贴底：那会先跳到底再往上找，正是「从下往上滑」 */
+      if (modeRef.current === 'follow' && !restore.pending.current)
+        writeTop(node, node.scrollHeight)
       else onResize()
       captureAnchor()
     },
-    [onScroll, onWheel, onKeyDown, writeTop, captureAnchor, onResize],
+    [onScroll, onWheel, onKeyDown, writeTop, captureAnchor, onResize, conversationId],
   )
 
   const attachContent = useCallback(
@@ -232,45 +242,49 @@ export function useAutoScroll(conversationId: string): AutoScroll {
       const ro = new ResizeObserver(() => onResize())
       ro.observe(node)
       observerRef.current = ro
-      captureAnchor()
+      /* 同 attachScroller：切换中的新内容容器不采集（那是另一条对话的 DOM） */
+      if (conversationRef.current === conversationId) captureAnchor()
     },
-    [onResize, captureAnchor],
+    [onResize, captureAnchor, conversationId],
   )
 
-  /*
-   * ── 切换对话（程序行为，不改状态；只做存/取）──
-   * 存的是「用户显式选的意图」+ 那一刻的位置；切回来原样恢复。
-   */
+  /* ── 切换对话：存「意图 + 消息锚点 + 像素」，取自己那份等窗口盖住目标才落位。
+     ★ 只认带 prevId 标签的记忆：新容器的 ref 早于本 effect，没标签可能把 B 当 A 存。 */
   useLayoutEffect(() => {
     const prevId = conversationRef.current
     if (prevId === conversationId) return
     conversationRef.current = conversationId
     const store = useScrollStore.getState()
-    if (prevId) store.remember(prevId, { mode: modeRef.current, top: lastTopRef.current })
+    const own = memRef.current?.threadId === prevId ? memRef.current : null
+    /* 拿不到自己那份就不写 —— 保留 store 里上一次离开时的记忆，比写错强 */
+    if (prevId && own)
+      store.remember(prevId, { mode: modeRef.current, top: own.top, anchor: own.anchor })
+    /* 旧对话的恢复任务、锚点、定时器全扔 —— 串到新对话上就是「把 A 的位置用到 B」。
+       reset 会同时把 ready 关掉：等 MessageList 把窗口盖住目标才允许写 */
+    restore.reset()
+    memRef.current = null
+    lastTopRef.current = 0
     const saved = conversationId ? store.byThread[conversationId] : undefined
-    if (!saved || saved.mode === 'follow') {
-      pendingTopRef.current = null
+    if (!saved || saved.mode !== 'free') {
+      /* 离开时在跟最新：回来继续跟最新（不把所有对话都拽到历史位置） */
       enterFollow()
       return
     }
     applyMode('free')
-    /* 位置先挂上：列表还没渲染出来（高度不够）时 onResize 会接着落 */
-    pendingTopRef.current = saved.top
+    /* 落点先挂上：窗口还没盖住目标时 onResize 不写，等 settleWindow 放行 */
+    restore.arm({ threadId: conversationId, anchor: saved.anchor, top: saved.top })
     onResize()
-  }, [conversationId, applyMode, enterFollow, onResize])
+  }, [conversationId, applyMode, enterFollow, onResize, restore])
 
   useEffect(() => {
     return () => observerRef.current?.disconnect()
   }, [])
 
-  /*
-   * 切对话回来时列表是分几拍渲染出来的（会话从磁盘读、渐增渲染），而
-   * ResizeObserver 只在**尺寸变化**时报信。所以每次提交后再补一次落位尝试：
-   * 装得下就落准确值，装不下就落到当前能到的最大 —— 位置不会丢成 0。
-   */
+  /* 切对话回来时列表是分几拍渲染的（会话从磁盘读 + 渐增渲染），而 ResizeObserver
+     只在尺寸变化时报信。所以每次提交后再补一次落位尝试：目标没进窗口就等。 */
   useLayoutEffect(() => {
-    if (pendingTopRef.current !== null) onResize()
+    if (restore.pending.current) onResize()
   })
 
-  return { mode, attachScroller, attachContent, enterFollow, enterFree }
+  return { mode, attachScroller, attachContent, enterFollow, enterFree, retarget, settleWindow }
 }

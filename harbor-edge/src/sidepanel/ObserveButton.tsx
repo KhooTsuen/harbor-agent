@@ -27,12 +27,25 @@ interface ObserveResult {
   ok: boolean
   error?: string | null
   title?: string
+  url?: string
   pageVersion?: string
   elements?: number
   hasSelection?: boolean
 }
 
-export function ObserveButton({ onStatus }: { onStatus: (s: StatusMessage | null) => void }) {
+/**
+ * @param {object} props
+ * @param {(s: StatusMessage | null) => void} props.onStatus
+ * @param {string} [props.sessionId] 侧边栏选中的那条 —— 必须带，否则观察结果会落进
+ *   主窗口当前打开的那条（2026-10-20 修的串线，与「读当前页」同一处根因）。
+ */
+export function ObserveButton({
+  onStatus,
+  sessionId = '',
+}: {
+  onStatus: (s: StatusMessage | null) => void
+  sessionId?: string
+}) {
   const [busy, setBusy] = useState(false)
 
   const run = useCallback(() => {
@@ -40,7 +53,7 @@ export function ObserveButton({ onStatus }: { onStatus: (s: StatusMessage | null
     setBusy(true)
     onStatus({ text: '观察中…', tone: 'info' })
     try {
-      const p = chrome.runtime.sendMessage({ type: 'observe-page' })
+      const p = chrome.runtime.sendMessage({ type: 'observe-page', sessionId })
       if (!p || typeof p.then !== 'function') {
         onStatus({ text: '扩展上下文不可用', tone: 'danger' })
         setBusy(false)
@@ -49,10 +62,10 @@ export function ObserveButton({ onStatus }: { onStatus: (s: StatusMessage | null
       p.then((res: ObserveResult | undefined) => {
         setBusy(false)
         if (res && res.ok === true) {
-          const name = String(res.title || '')
+          const name = String(res.url || '')
           const sel = res.hasSelection ? ' · 含选区' : ''
           onStatus({
-            text: `已观察 ${res.elements ?? 0} 个可交互元素${sel}${name ? ` · ${name}` : ''} · 版本 ${res.pageVersion ?? ''}，已发进 Harbor 当前对话`,
+            text: `来源：Edge 当前标签 · 已观察 ${res.elements ?? 0} 个可交互元素${sel}${name ? ` · ${name}` : ''} · 版本 ${res.pageVersion ?? ''}，已发进 Harbor 当前对话`,
             tone: 'info',
           })
           return
@@ -67,7 +80,7 @@ export function ObserveButton({ onStatus }: { onStatus: (s: StatusMessage | null
       setBusy(false)
       onStatus({ text: String((error as Error)?.message ?? error), tone: 'danger' })
     }
-  }, [busy, onStatus])
+  }, [busy, onStatus, sessionId])
 
   return (
     <IconButton label="观察页面" disabled={busy} onClick={run}>

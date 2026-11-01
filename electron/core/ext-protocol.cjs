@@ -44,17 +44,47 @@ const HOST_TIMEOUT_MS = 8000
    帧编解码 —— 纯函数，不碰流（自检能在纯 Node 里直接跑）
    ══════════════════════════════════════════════════════════════ */
 
+/* 帧体超限。上层按 `error.code` 认（不用 instanceof —— 跨模块更稳） */
+const FRAME_TOO_LARGE = 'FRAME_TOO_LARGE'
+
 /**
- * 把一条消息编成一帧：**4 字节小端长度 + UTF-8 JSON 体**。
- *
+ * 把一条消息编成一帧：**4 字节小端长度 + UTF-8 JSON 体**（长度按**字节**算，不是字符数）。
+ * 超限**抛** `code:'FRAME_TOO_LARGE'`（带 `bytes`），**不返回半截帧** —— 降级归调用方。
+ * ★ **不传 `max` 就不设上限**：老调用点（`ext-bridge` / `codex-mcp-*` 那些管道）本来就没上限，
+ *   默认值改成 1 MB 会把它们变成"突然抛错"的回归。要上限必须显式传。
  * @param {unknown} message
+ * @param {{ max?: number }} [opts] Edge 方向传 `MAX_FRAME`；管道方向传 `MAX_PIPE_FRAME`
  * @returns {Buffer}
  */
-function encodeFrame(message) {
+function encodeFrame(message, opts = {}) {
+  const max = Number(opts.max) > 0 ? Number(opts.max) : Infinity
   const body = Buffer.from(JSON.stringify(message) ?? 'null', 'utf8')
+  if (body.length > max) {
+    const error = Object.assign(new Error(`消息序列化后 ${body.length} 字节，超过 ${max} 字节上限 —— 没有发送`), { code: FRAME_TOO_LARGE, bytes: body.length })
+    throw error
+  }
   const head = Buffer.alloc(4)
   head.writeUInt32LE(body.length, 0)
   return Buffer.concat([head, body])
+}
+
+/** 超限换成协议兼容的降级帧：有 `id`→失败帧（对面不干等）；无 `id`→通知帧（连接不断）。
+ * 不截断 JSON、不假装成功。`max` 必须给（不给等于没这道闸）。
+ * @param {unknown} message @param {{ max?: number }} [opts]
+ * @returns {{ frame: Buffer, degraded: boolean, bytes: number, max: number, reason: string }} */
+function encodeFrameOrFallback(message, opts = {}) {
+  const max = Number(opts.max) > 0 ? Number(opts.max) : MAX_FRAME
+  try {
+    return { frame: encodeFrame(message, { max }), degraded: false, bytes: 0, max, reason: '' }
+  } catch (error) {
+    if (!error || error.code !== FRAME_TOO_LARGE) throw error
+    const kind = String(message && typeof message === 'object' && 'kind' in message ? message.kind : '')
+    const reason = `${kind || '一条'}消息 ${error.bytes} 字节，超过 ${max} 字节上限`
+    const fb = isProtocolFrame(message)
+      ? failure({ id: /** @type {{ id: string }} */ (message).id, kind, code: FRAME_TOO_LARGE, message: `${reason} —— 结果没有发出去` })
+      : push({ kind: 'frame-too-large', payload: { kind, bytes: error.bytes, max } })
+    return { frame: encodeFrame(fb, { max }), degraded: true, bytes: error.bytes, max, reason }
+  }
 }
 
 /**
@@ -246,7 +276,9 @@ module.exports = {
   HOST_TIMEOUT_MS,
   KIND,
   ERR,
+  FRAME_TOO_LARGE,
   encodeFrame,
+  encodeFrameOrFallback,
   decodeFrames,
   request,
   reply,

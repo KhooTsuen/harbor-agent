@@ -57,7 +57,9 @@ export function ScenesTab() {
     <div className="flex flex-col gap-2 py-1">
       <SectionTitle>默认模型与提示词</SectionTitle>
       <p className="py-2 text-dense leading-relaxed text-fg-secondary">
-        每个场景可以单独指定模型。**留空就用默认聊天模型** —— 所以这一页不管也能用，只是没得省。
+        每个场景可以单独指定模型。
+        <strong className="font-semibold">留空就用默认聊天模型</strong>
+        —— 所以这一页不管也能用，只是没得省。
       </p>
 
       <div className="grid grid-cols-1 gap-3 pt-1 xl:grid-cols-2">

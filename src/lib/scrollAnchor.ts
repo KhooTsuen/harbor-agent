@@ -48,6 +48,93 @@ export function docOffset(sc: HTMLElement, el: Element): number {
   return el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop
 }
 
+/* ══════════════════════════════════════════════════════════════
+   消息级锚点（切换对话回来时用）
+
+   上面那套锚点只活在一次持续的滚动里：它握着 Element 引用，切对话那一刻
+   列表已经卸载（空对话先画开屏），引用断开、rect 也读不到，所以**切走时
+   再采已经来不及** —— 必须像 `lastTopRef` 那样，在每次 scroll / 布局变化时
+   顺手把「视野顶是哪条消息、它离视口顶多少」记下来。
+
+   为什么不用 scrollTop 当位置：切回来时 MessageList 只渲染最近若干条
+   （`tailCount` 从 6 起、最多自动补到 24），用户原来看到的那条**可能还没
+   渲染**；同一个像素此时对应的是另一段内容。只有 messageId 才是跨「窗口
+   大小变化 / 内容高度变化」都成立的身份。
+
+   `index` 是降级用的：离开期间那条消息被删了，就退到「离开时同下标附近」
+   那条仍然存在的消息 —— 附近还是原来那段历史，视图不会跳到别处。
+   ══════════════════════════════════════════════════════════════ */
+
+export interface MessageAnchor {
+  messageId: string
+  /** 消息顶部相对滚动容器视口顶的像素；负数 = 消息顶已滚到视口上方 */
+  offset: number
+  /** 采集那一刻它在列表里的下标；-1 = 读不到（老 DOM 结构） */
+  index: number
+}
+
+const MESSAGE_ATTR = 'data-message-id'
+const INDEX_ATTR = 'data-message-index'
+
+/** 视野顶那条消息 + 它此刻的位置（常态只走 closest，不扫全表） */
+export function readMessageAnchor(sc: HTMLElement, content: HTMLElement): MessageAnchor | null {
+  const node = pickAnchor(sc, content)
+  const el = node?.closest(`[${MESSAGE_ATTR}]`) ?? firstMessageOver(sc, content)
+  const messageId = el?.getAttribute(MESSAGE_ATTR)
+  if (!el || !messageId) return null
+  const raw = el.getAttribute(INDEX_ATTR)
+  const index = raw === null ? -1 : Number(raw)
+  return {
+    messageId,
+    offset: el.getBoundingClientRect().top - sc.getBoundingClientRect().top,
+    index: Number.isFinite(index) ? index : -1,
+  }
+}
+
+/** pickAnchor 落到内容容器自己（视野顶压在按钮 / 空隙上）时，取第一条越过视野顶的消息 */
+function firstMessageOver(sc: HTMLElement, content: HTMLElement): Element | null {
+  const line = sc.getBoundingClientRect().top
+  const kids = content.children
+  for (let i = 0; i < kids.length; i += 1) {
+    if (kids[i].getBoundingClientRect().bottom <= line) continue
+    /* 那个子节点可能不是消息本身（「载入更早」按钮、末尾那条检查点栏）——
+       在它内部找消息；找不到就继续往下看，别把一次采锚点丢成 null */
+    const hit = kids[i].matches(`[${MESSAGE_ATTR}]`)
+      ? kids[i]
+      : (kids[i].querySelector(`[${MESSAGE_ATTR}]`) ?? kids[i].closest(`[${MESSAGE_ATTR}]`))
+    if (hit) return hit
+  }
+  return null
+}
+
+/**
+ * 恢复时找目标消息：只按 id。
+ * ★ 这里**不做**「找不到就按下标就近」的降级：扩窗是一点一点补的，目标还没进
+ *   窗口时「最近的那条」是窗口末端的邻居 —— 对着它落位会算出恰好对齐的结果，
+ *   于是提前宣告成功，等目标真渲染出来用户已经在别处（真机就是这么假成功的）。
+ *   目标到底还在不在，由 `MessageList` 用完整的 messages 判（它知道全量顺序），
+ *   确实被删了由它显式 `retarget`，落点仍按「离开时的下标」取邻居。
+ */
+export function findAnchorEl(content: HTMLElement, anchor: MessageAnchor): Element | null {
+  return content.querySelector(`[${MESSAGE_ATTR}="${cssEscape(anchor.messageId)}"]`)
+}
+
+/** 消息 id 是外部数据（可能带引号 / 冒号），进选择器前先转义 */
+function cssEscape(value: string): string {
+  return value.replace(/["\\]/g, '\\$&')
+}
+
+/** 要把目标消息放回离开时那一行，scrollTop 该是多少 */
+export function anchorTop(sc: HTMLElement, el: Element, anchor: MessageAnchor): number {
+  return docOffset(sc, el) - anchor.offset
+}
+
+/** 落位真的对上了吗（±1px）—— 没对上就不许宣告恢复完成 */
+export function anchorAligned(sc: HTMLElement, el: Element, anchor: MessageAnchor): boolean {
+  const delta = el.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchor.offset
+  return Math.abs(delta) <= 1
+}
+
 /** 视野顶那个元素（尽量深，尽量贴住那段文字）—— 二分下钻，不碰命中测试 */
 export function pickAnchor(sc: HTMLElement, content: HTMLElement): Element | null {
   const line = sc.getBoundingClientRect().top + 1

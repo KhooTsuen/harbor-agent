@@ -14,6 +14,8 @@
  */
 
 const store = require('./memory-store.cjs')
+/* 可见性判据只有一处（P0-4）：注入与检索必须同一条规则 */
+const { filterVisible } = require('./memory-scope.cjs')
 const { explain, scoreOf, summarize, WEIGHTS, TYPE_LABEL } = require('./memory-explain.cjs')
 /* 「这句话像在回忆吗」——纯函数（词表/正则，不调 LLM）；只影响**易变区**尾部多不多一句话 */
 const { shouldPromptRecall } = require('./memory-trigger.cjs')
@@ -61,20 +63,16 @@ function retrieve({ query = '', projectId = '', sessionId = '', limit, scope = '
   store.pruneExpired()
 
   let items = store.list({ status: 'active' })
-  if (projectId) {
-    /* 项目范围的记忆只在该项目里生效；别的项目看不到 */
-    items = items.filter((i) => i.scope !== 'project' || i.projectId === projectId)
-  } else {
-    /* 单独对话没有项目上下文，不能意外带入某个项目的私有记忆 */
-    items = items.filter((i) => i.scope !== 'project')
-  }
   /*
-   * SEC-065：**会话私有**记忆只在**当前会话**里注入。没有会话上下文（或这条没绑
-   * 会话）就一律不注入 —— fail-closed，绝不让某个会话的私事漏到别的会话里。
-   * 会话绑定落在 `memory-store.cjs`：写入时记 `sessionId`（工具/界面传当前会话 id），
-   * 这里按它匹配；老记录没有该字段 → 读时补空串 → 不会被注入。
+   * P0-4（2026-10-23）：project / session 两个维度的可见性**只有一处判据**
+   * （`memory-scope.cjs`）—— 模型侧的 `memory_search` 走同一份，别在这里手写第二套。
+   *
+   * 传进去的口径（`''` = 这个上下文没有该项目 / 会话）：
+   *   · 没有项目上下文 → 不带入任何项目的私有记忆
+   *   · SEC-065 会话私有 → 没有 sessionId 就一律不注入（fail-closed），
+   *     绝不让某个会话的私事漏到别的会话里
    */
-  items = items.filter((i) => i.scope !== 'session' || (sessionId !== '' && i.sessionId === sessionId))
+  items = filterVisible(items, { projectId: String(projectId ?? ''), sessionId: String(sessionId ?? '') })
   if (scope) items = items.filter((i) => i.scope === scope)
 
   const budget = limit ?? injectLimit()

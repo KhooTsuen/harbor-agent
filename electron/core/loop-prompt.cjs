@@ -7,10 +7,8 @@
  * 相关记忆、项目说明、会话状态、历史消息，最后按分层拼成系统提示。
  * ⚠️ 前两层的**正文**在 prompt-env.cjs（那边写了为什么搬 + 两个坑）。
  *
- * ⚠️ 出过一次事故：改成分层时漏了「环境 / 工具清单 / 模式说明 / 做事的规矩 /
- * 安全边界」五块 —— 模型于是不知道今天几号，也失去了注入边界。
- * 现在 `scripts/selftest.mjs` 里有「系统提示 / 内容回归」盯着，
- * 少一块就会红。别再靠「看着没问题」。
+ * ⚠️ 出过一次事故：改成分层时漏了「环境 / 工具清单 / 模式说明 / 做事的规矩 / 安全边界」
+ * 五块 —— 模型于是不知道今天几号，也失去了注入边界。`scripts/selftest.mjs` 有一组盯着，少一块就红。
  */
 
 const log = require('./log.cjs')
@@ -37,6 +35,8 @@ const contextDiag = require('./context-diag.cjs')
 const templates = require('./templates.cjs')
 const taskNotes = require('./task-notes.cjs')
 const taskHint = require('./task-hint.cjs')
+/* 2026-10-21：用户当前在看的网页 —— 只读一个槽，不进对话流 */
+const pageCtx = require('./page-context-slot.cjs')
 
 /* ══════════════════════════════════════════════════════════
    系统提示词
@@ -215,7 +215,7 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
        钉住的那个技能把**正文**也放进来（见 skill-pin.cjs），否则「钉」等于没钉 */
     skills: [skillSection, skillPin.promptSection(threadSettings)].filter(Boolean).join('\n\n'),
     tools: toolMap.toolsSection({ pluginList: plugins.pluginList(), remote: mcpHint.live() }),
-    toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}`,
+    toolPolicy: `${MODE_GUIDE[mode] ?? MODE_GUIDE.pair}\n${PERMISSION_GUIDE[config.tools.permission] ?? PERMISSION_GUIDE.ask}${options.origin === 'edge-sidepanel' ? '\n这轮来自用户的 Edge 侧边栏。提到“当前页/这个网页”时先用 edge_read；不可读取时如实说明，不得改用 browse。若用户要使用 Harbor 内置浏览器，请说明需在主窗口发起。回答需标明实际读取来源与 URL。' : ''}`,
     /* 浏览器怎么用（顺序 / 先看再动 / 动完重看）—— 让模型跟着人用网页的方式走 */
     browserGuide: BROWSER_GUIDE,
     /* CE-005：persona 层 —— 由**第一条真实用户消息**锁定。输入优先用 options.fullHistory
@@ -226,7 +226,9 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     taskState: [options.taskState ?? '', templateHint].filter(Boolean).join('\n\n'),
     conversationState: assembled.systemContext.conversationState,
     userPreferences: '',
-    retrievedContext: '',
+    /* 用户当前在看的网页（2026-10-21）：来自 page-context-slot 那个槽，**不是会话消息** ——
+       所以不占对话预算、也不会越点越长。放易变区，页面一换这一节就换。 */
+    retrievedContext: pageCtx.promptSection(options.sessionId),
     /* 最后两层：越靠后越容易被遵守 */
     /*
      * `assistant.planFirst` / `clarifyFirst`（AG-053）的控制点；

@@ -163,10 +163,10 @@ function createBridge() {
      *   send: (name: string, payload: object) => void,
      *   session: object,
      *   audit: object,
-     *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean }) => string,
+     *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean, source?: string }) => string,
      *   log: object,
      *   chat?: { handleSend: Function, handleResume: Function, handleSelect: Function,
-     *     handleNew: Function, handleAbort: Function, noteActiveSession: Function },
+     *     handleNew: Function, handleAbort: Function, handleRegenerate: Function, noteActiveSession: Function },
      *   command?: { handleResult: Function },
      * }} options
      */
@@ -186,6 +186,9 @@ function createBridge() {
         wrap: options.wrap,
         send: options.send,
         getActiveSession: () => activeSessionId,
+        /* 2026-10-20：侧边栏自己选中的那条 —— 「读当前页 / 观察」落进它，而不是主窗口那条。
+           闭包里读 deps.chat，所以 ext-chat 装着之后一直取到最新值。 */
+        getSelectedSession: () => String(deps.chat?.selectedOf?.() ?? ''),
         chat: options.chat ?? null, /* 3b：侧边栏发消息那条路（装配处注入） */
         command: options.command ?? null, /* M04：下行指令的回执配对 */
       })

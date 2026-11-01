@@ -1,6 +1,4 @@
-/**
- * 双模型协作：A 规划/验收，B 按用户批准的计划执行；写入经 Harbor 审批与路径校验。
- */
+/** 双模型协作：A 规划/验收，B 按批准的计划执行；写入经审批与路径校验。 */
 const collabConfig = require('./collab-config.cjs')
 const codex = require('./collab-codex.cjs')
 const plannerMod = require('./collab-planner.cjs')
@@ -15,12 +13,7 @@ function failed(code, message, extra = {}) {
   }
 }
 const { resolveRoles, providerForRole, testCommandOf, buildTask } = require('./collab-task.cjs')
-
-/**
- * @param {{ goal?: string, images?: string[], selected?: boolean, projectRoot?: string, config?: object, sessionId?: string,
- *           phaseKey?: string, signal?: AbortSignal, confirm?: Function, emit?: Function,
- *           threadSettings?: object, planner?: object, executor?: object }} input
- */
+/** @param {{ goal?: string, images?: string[], selected?: boolean, projectRoot?: string, config?: object, sessionId?: string, phaseKey?: string, origin?: string, allowBuiltinBrowser?: boolean, signal?: AbortSignal, confirm?: Function, emit?: Function, threadSettings?: object, planner?: object, executor?: object }} input */
 async function runCollaboration(input = {}) {
   const {
     goal,
@@ -29,11 +22,14 @@ async function runCollaboration(input = {}) {
     config,
     sessionId = '',
     phaseKey = '',
+    origin = '',
+    allowBuiltinBrowser = false,
     signal,
     confirm,
     emit,
     threadSettings,
   } = input
+  const pass = { origin, allowBuiltinBrowser } /* 透传给 planner/executor/loop；拦截在 tools/index.cjs */
   const say = typeof emit === 'function' ? emit : () => {}
   const phases = []
   /* A/B 由当前对话明确选择。 */
@@ -104,6 +100,7 @@ async function runCollaboration(input = {}) {
             testCommand: testCommandOf(rootAbs),
             config,
             sessionId,
+            ...pass,
             threadSettings,
             model: roles.planner.model,
             providerId: roles.planner.providerId,
@@ -175,6 +172,7 @@ async function runCollaboration(input = {}) {
         projectRoot: rootAbs,
         config,
         sessionId,
+        ...pass,
         phaseKey,
         provider: executorProvider,
         signal,
@@ -192,6 +190,7 @@ async function runCollaboration(input = {}) {
         workdir: rootAbs,
         mode: 'pair',
         sessionId,
+        ...pass,
         /* ★ runLoop 会直接读 `signal.aborted`；外面没给（脚本 / 自检）时也得有一个
            —— 与 `subagent.cjs:197` 同一个口径，别让这里成为唯一的空指针入口。 */
         signal: signal ?? new AbortController().signal,

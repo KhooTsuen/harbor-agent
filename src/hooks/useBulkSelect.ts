@@ -28,6 +28,15 @@ export interface BulkSelect {
   selectAll: (ids: readonly string[]) => void
   /** P3 #11：取消全选（只清选择，不退出多选模式） */
   clearAll: () => void
+  /**
+   * 第二阶段：把选择**裁到当前可见范围**里。
+   *
+   * 为什么必须有它：用户先「全选」12 条，再把搜索词一改，列表只剩 3 条 ——
+   * 那 9 条看不见的选择**如果留在 selected 里**，确认框会说「删除 12 条」，
+   * 而屏幕上只有 3 条。看不见的东西被删掉，是批量删除最危险的一种状态。
+   * 调用方在「可见范围变了」时调它，选中的自然就只剩看得见的那些。
+   */
+  restrictTo: (ids: readonly string[]) => void
   removeSelected: () => void
 }
 
@@ -39,6 +48,7 @@ interface BulkSelectState {
   toggle: (id: string) => void
   selectAll: (ids: readonly string[]) => void
   clearAll: () => void
+  restrictTo: (ids: readonly string[]) => void
 }
 
 /** 导出 store 本身：非组件的地方（快捷键、测试）也要能驱动它 */
@@ -63,6 +73,23 @@ export const bulkSelectStore = create<BulkSelectState>()((set) => ({
    */
   selectAll: (ids) => set({ selected: new Set(ids) }),
   clearAll: () => set({ selected: new Set<string>() }),
+  /*
+   * 第二阶段：裁到可见范围。
+   * 只在**真的裁掉了东西**时才 set —— 否则每次渲染（ids 是每次新建的数组、
+   * 内容却一样）都会产生一个新 Set，订阅它的组件跟着重渲染，纯浪费。
+   */
+  restrictTo: (ids) =>
+    set((state) => {
+      if (state.selected.size === 0) return state
+      const visible = new Set(ids)
+      let dropped = false
+      const next = new Set<string>()
+      for (const id of state.selected) {
+        if (visible.has(id)) next.add(id)
+        else dropped = true
+      }
+      return dropped ? { selected: next } : state
+    }),
 }))
 
 /** 删掉选中的那些（二次确认后再动） */
@@ -72,10 +99,21 @@ function removeSelected(): void {
   if (ids.length === 0) return
 
   const idSet = new Set(ids)
+  /*
+   * 第二阶段：确认框里的条数**就是**要删的条数。
+   * 选择在 Sidebar 那边已经被裁到「当前可见范围」了（搜索改了也不留看不见的），
+   * 所以这里照 `ids.length` 说就够；顺手把前几个标题列出来，让他确认删的是不是那几条。
+   */
+  const titles = ids
+    .map((id) => useAppStore.getState().threads.find((t) => t.id === id)?.title)
+    .filter((title): title is string => Boolean(title))
+  const preview = titles.slice(0, 3).join('、')
   useUIStore.getState().askPermission({
     kind: 'delete-thread',
     title: `删除选中的 ${ids.length} 条对话？`,
-    description: '这些对话里的消息会一起删掉，不能撤销。',
+    description:
+      `${preview}${titles.length > 3 ? ` 等 ${ids.length} 条` : ''}。` +
+      '这些对话的消息和它们的任务记录会一起删掉，不能撤销。磁盘上的工作目录不受影响。',
     confirmText: '删除',
     danger: true,
     onConfirm: () => {
@@ -127,10 +165,21 @@ export function useBulkSelect(): BulkSelect {
   const toggle = bulkSelectStore((s) => s.toggle)
   const selectAll = bulkSelectStore((s) => s.selectAll)
   const clearAll = bulkSelectStore((s) => s.clearAll)
+  const restrictTo = bulkSelectStore((s) => s.restrictTo)
 
   /* 保持返回对象的引用稳定 —— 叫 useBulkSelect 的地方可能会把它塞进依赖数组 */
   return useMemo(
-    () => ({ active, selected, start, exit, toggle, selectAll, clearAll, removeSelected }),
-    [active, selected, start, exit, toggle, selectAll, clearAll],
+    () => ({
+      active,
+      selected,
+      start,
+      exit,
+      toggle,
+      selectAll,
+      clearAll,
+      restrictTo,
+      removeSelected,
+    }),
+    [active, selected, start, exit, toggle, selectAll, clearAll, restrictTo],
   )
 }

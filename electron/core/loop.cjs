@@ -16,7 +16,6 @@ const configCore = require('./config.cjs')
 const router = require('./router.cjs')
 const {
   callModel,
-  reviewWithEvents,
   mergeUsage,
   pausedResult,
   exhaustedResult,
@@ -236,20 +235,9 @@ async function runLoop(options) {
       }
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
       life.mark('responding', traceKey(options))
-      /* 自检复核（开关、事件、失败保留原回答都在里面） */
-      const finalContent = await reviewWithEvents({
-        config,
-        provider: useProvider,
-        model: useModel,
-        content: result.content,
-        userText,
-        signal,
-        mode,
-        emit,
-      })
       life.mark('completed', traceKey(options))
       /* 整轮的正文与思考一起回给渲染层（只有最后一轮的话，复制/导出/下一轮历史都缺内容） */
-      return { ...transcript.soFar(finalContent), usage: totalUsage, turns: turn + 1, toolRuns }
+      return { ...transcript.soFar(result.content), usage: totalUsage, turns: turn + 1, toolRuns }
     }
 
     /* AG-010：读流结束到开始执行工具之间也要查中断（真机：停止后 2.7 秒仍发起新工具） */

@@ -104,7 +104,7 @@ const SAFE_MODULES = [
    ══════════════════════════════════════════════════════════════ */
 
 /* 这里只转出来给自己与调用方用；行为一字未改 */
-const { encodeFrame, decodeFrames } = P
+const { encodeFrame, encodeFrameOrFallback, decodeFrames, MAX_FRAME } = P
 
 /**
  * 这一轮启动是不是「被浏览器拉起的 native host」。
@@ -230,7 +230,10 @@ function run() {
 
     for (const message of messages) {
       try {
-        fs.writeSync(1, encodeFrame(handleMessage(message)))
+        /* 与事件驱动那个出口同一规格：1 MiB 在 `encodeFrame` 里执行，超限换**降级帧**（不写违规帧） */
+        const out = encodeFrameOrFallback(handleMessage(message), { max: MAX_FRAME })
+        if (out.degraded) note(`回帧超限，已换成降级帧：${out.reason}`)
+        fs.writeSync(1, out.frame)
       } catch (error) {
         note(`回帧失败：${error instanceof Error ? error.message : error}`)
       }
@@ -260,6 +263,7 @@ module.exports = {
   MAX_FRAME: P.MAX_FRAME,
   SAFE_MODULES,
   encodeFrame,
+  encodeFrameOrFallback,
   decodeFrames,
   isHostArgv,
   handleMessage,

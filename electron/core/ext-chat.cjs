@@ -40,6 +40,7 @@ const EXT_NEW = 'ext:new'
  *   真相在渲染层：只有它手里有 AbortController（见 handleAbort 的注释）。
  */
 const EXT_ABORT = 'ext:abort'
+const EXT_REGENERATE = 'ext:regenerate'
 
 /**
  * @param {{
@@ -207,6 +208,7 @@ function createChatRelay(deps) {
     return {
       ok: true,
       sessionId: best.sessionId,
+      requestId: best.requestId,
       seq: best.seq,
       text: best.text,
       reasoning: best.reasoning,
@@ -240,6 +242,15 @@ function createChatRelay(deps) {
     return { ok: true, sessionId }
   }
 
+  function handleRegenerate(payload) {
+    const sessionId = String(payload?.sessionId ?? '') || selectedSessionId
+    if (!sessionId) return fail(P.ERR.NO_SESSION, '请先选择一条对话')
+    if (!getMainWindow?.()) return fail(P.ERR.NO_WINDOW, 'Harbor 主窗口不在，不能重新生成')
+    if (busyRequestOf(sessionId)) return fail(P.ERR.SESSION_BUSY, '这条对话仍在运行，请先停止或等它结束')
+    send('chat:event', { type: EXT_REGENERATE, sessionId })
+    return { ok: true, sessionId }
+  }
+
   return {
     handleSend,
     handleResume,
@@ -250,6 +261,7 @@ function createChatRelay(deps) {
     onChatEvent,
     /* M02-A2：停止这条会话正在跑的一轮（回执如实 —— 没在跑就说没停） */
     handleAbort,
+    handleRegenerate,
     /** 装配时绑上管道那头的桥（`push` 与 `getActiveSession` 都从它取） */
     setBridge(b) {
       bridge = b ?? null
@@ -265,4 +277,4 @@ function createChatRelay(deps) {
   }
 }
 
-module.exports = { createChatRelay, EXT_SEND, EXT_NEW, EXT_ABORT, KEEP_AFTER_DONE_MS }
+module.exports = { createChatRelay, EXT_SEND, EXT_NEW, EXT_ABORT, EXT_REGENERATE, KEEP_AFTER_DONE_MS }

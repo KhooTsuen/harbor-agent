@@ -89,7 +89,6 @@ const DEFAULTS = {
     historyLimit: 20,
     /** 回答深度：与推理 effort、输出上限解耦 */
     responseDepth: 'standard',
-    selfReview: false,
     streamOutput: true,
     /** 计划 → 执行 → 验证：先让模型出计划再动手 */
     planFirst: true,

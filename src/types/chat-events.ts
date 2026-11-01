@@ -108,7 +108,6 @@ export type ChatEvent =
       exhausted: boolean
     }
   | { requestId: string; type: 'aborted' }
-  | { requestId: string; type: 'review'; status: 'started' | 'completed' }
   | {
       requestId: string
       type: 'budget'

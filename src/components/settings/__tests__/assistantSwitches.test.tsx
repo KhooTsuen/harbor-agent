@@ -24,7 +24,6 @@ const h = vi.hoisted(() => ({
     verifyAfterEdit: true,
     strictMode: false,
     streamOutput: true,
-    selfReview: false,
   },
 }))
 
@@ -78,7 +77,6 @@ describe('助手开关', () => {
       verifyAfterEdit: true,
       strictMode: false,
       streamOutput: true,
-      selfReview: false,
     }
     useConfigStore.setState({ config: { assistant: { ...h.assistant } } as never })
     container = document.createElement('div')
@@ -134,6 +132,23 @@ describe('助手开关', () => {
     expect((h.pushed.at(-1) as { assistant: Record<string, unknown> }).assistant).toEqual({
       strictMode: true,
     })
+  })
+
+  it('★ 每个开关下面都写明按下去会发生什么（不许有「按了没反应」的开关）', () => {
+    /* 2026-11-01 用户原话：「我以为像真正的开关一样，按一下会改变状态」——
+       几个开关长得一模一样，不写清哪一层生效就只能靠猜。
+       这里钉两件事：① 每个带 checkbox 的 label 都有一行小字；
+       ② 小字里必须说清是「真的会拦」还是「真的生效」，
+       ——不能写回「只影响给模型的说明」这种软话（那正是这次要消掉的情况）。 */
+    const boxes = [...container.querySelectorAll('label')].filter((one) =>
+      one.querySelector('input[type="checkbox"]'),
+    )
+    expect(boxes.length).toBeGreaterThanOrEqual(6)
+    for (const box of boxes) {
+      const hint = box.querySelector('span.text-2xs')?.textContent ?? ''
+      expect(hint.length).toBeGreaterThan(8)
+      expect(hint).toMatch(/真的会拦|真的生效/)
+    }
   })
 
   it('没有配置（浏览器预览）时整块不渲染，不显示一堆假开关', async () => {

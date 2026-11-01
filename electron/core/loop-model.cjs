@@ -9,7 +9,7 @@ const codexCli = require('./codex-cli.cjs')
 const kinds = require('./provider-kinds.cjs')
 const log = require('./log.cjs')
 const configCore = require('./config.cjs')
-/* ★ 辅助任务（压缩 / 复核）**不复用主任务的 provider** —— 主模型可能是 CLI 后端
+/* ★ 辅助任务（上下文压缩）**不复用主任务的 provider** —— 主模型可能是 CLI 后端
    （没有 baseUrl），拿它走 llm.chatStream 必失败。判据见 aux-model.cjs。 */
 const auxModel = require('./aux-model.cjs')
 const errors = require('./errors.cjs')
@@ -167,85 +167,15 @@ async function callModelInner(options, emit) {
   throw lastError ?? new Error('模型调用失败')
 }
 
-async function selfReview({ config, provider, model, content, userText, signal }) {
-  const review = await llm.chatStream({
-    label: '复核',
-    provider,
-    baseUrl: provider.baseUrl,
-    apiKey: configCore.providerKey(provider),
-    chatPath: provider.chatPath,
-    model,
-    messages: [
-      {
-        role: 'system',
-        content:
-          '你是回答复核器。检查回答是否回答了用户问题、是否遗漏要求、是否有矛盾或无依据断言。直接输出修订后的最终答案，不要谈论复核过程。若原回答已经足够，原样返回。',
-      },
-      { role: 'user', content: `用户问题：\n${userText}\n\n待复核回答：\n${content}` },
-    ],
-    temperature: 0.2,
-    maxTokens: config.assistant.maxTokens,
-    signal,
-  })
-  return review.content?.trim() || content
-}
-
-/**
- * 自检复核（带事件 + 开关判断）。从 loop.cjs 搬来的（那边贴 300 行）：
- * 判断开关和模式、发 started/completed 事件、吞掉失败保留原回答。
- */
-async function reviewWithEvents({
-  config,
-  provider,
-  model,
-  content,
-  userText,
-  signal,
-  mode,
-  emit,
-}) {
-  if (config.assistant.selfReview !== true) return content
-  if (mode !== 'execute' && mode !== 'goal' && mode !== 'plan') return content
-
-  /* ★ 复核是**辅助任务** → `resolveAux` 挑一个能走 HTTP 的后端，**不复用主任务那个**
-     （主模型可能是 codex-cli，baseUrl 空串 → 必失败）；一个候选都没有就跳过复核、
-     保留原回答。`provider`/`model` 只用于日志对照。 */
-  const aux = auxModel.resolveAux(config)
-  if (!aux) {
-    log.warn(`自检复核跳过：没有可用的 HTTP 后端（主任务 ${provider?.id ?? '?'}/${model ?? '?'}）`)
-    return content
-  }
-
-  try {
-    emit({ type: 'review', status: 'started' })
-    const reviewed = await selfReview({
-      config,
-      provider: aux.provider,
-      model: aux.model,
-      content,
-      userText,
-      signal,
-    })
-    emit({ type: 'review', status: 'completed' })
-    return reviewed
-  } catch (error) {
-    log.warn(`自检复核失败，保留原回答：${error instanceof Error ? error.message : error}`)
-    return content
-  }
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * AG-016：把历史压成一段摘要，**就地**换掉 `messages`（就地改是为了让调用方
- * 看得见：`loop.cjs` 的 `messages` 是同一个数组引用，下一轮直接用短的）。
- * 压缩失败**不掩盖原来的错**：记一条日志，让调用方照旧抛 context_overflow。
- *
- * ★ 用**辅助后端**（`resolveAux`）而非主任务那个：主模型可能是 codex-cli
- *   （baseUrl 空串）→ `llm.chatStream` 必失败。拿不到辅助后端就如实记一条跳过。
- */
+ * AG-016：把历史压成一段摘要，**就地**换掉 `messages`（`loop.cjs` 用的是同一个数组引用，
+ * 下一轮直接用短的）。压缩失败**不掩盖原来的错**：记日志，调用方照旧抛 context_overflow。
+ * ★ 用**辅助后端**（`resolveAux`）而非主任务那个：主模型可能是 codex-cli（baseUrl 空串）
+ *   → `llm.chatStream` 必失败。拿不到辅助后端就如实记一条跳过。 */
 async function compactMessages({ messages, config, emit }) {
   try {
     const aux = auxModel.resolveAux(config, { scene: 'compact' })
@@ -260,6 +190,8 @@ async function compactMessages({ messages, config, emit }) {
       chatPath: aux.provider.chatPath,
       model: aux.model,
       messages,
+      /* 2026-10-20：以前没传窗口 → 自动压缩整段发，超长会话必 400 */
+      maxInputTokens: compact.windowOf(aux.provider, aux.model),
     })
     const rebuilt = compact.rebuild(messages, summary)
     messages.length = 0
@@ -291,8 +223,6 @@ function mergeUsage(a, b) {
 
 module.exports = {
   callModel,
-  selfReview,
-  reviewWithEvents,
   mergeUsage,
   /* 保留 loop-result 的旧导出接口。 */
   ...require('./loop-result.cjs'),
