@@ -101,9 +101,15 @@ export async function run() {
    * 用 12 秒的命令而不是 30 秒：正常路径 1 秒内就返回了（远低于断言的 5 秒），
    * 而**变异成「中断不结算」时要等命令自然跑完** —— 12 秒能跑完并判红，
    * 不至于让测试挂死大半分钟。
+   *
+   * ★ 命令必须分平台（2026-11-02 修）。以前写死 `ping -n 12 127.0.0.1`，而 Linux 的
+   *   `ping` 没有这个用法（`-n` 是无参开关，`12` 被当成主机名）—— 在 ubuntu runner 上
+   *   进程几十毫秒就报错退出，abort 发生在「命令已经跑完」之后，于是下面那条
+   *   「返回里说清楚了是被中断」在 CI 上红（日志实测 603ms 返回、输出里没有中断标记）。
    */
+  const SLOW_CMD = process.platform === 'win32' ? 'ping -n 12 127.0.0.1' : 'sleep 12'
   const p = runShell.run(
-    { command: 'ping -n 12 127.0.0.1' },
+    { command: SLOW_CMD },
     { workdir: ROOT, signal: c5.signal, shellTimeout: 60 },
   )
   await new Promise((r) => setTimeout(r, 600))

@@ -150,7 +150,14 @@ if (mode === 'setup') {
   const rr = fs.renameSync
   const real = process.env.CFG_FAIL === 'real'
   let hits = 0
-  if (real) fs.chmodSync(target, 0o444)
+  /* ★ 「真写不进去」的造法必须分平台（2026-11-02 修，CI ubuntu 上红的就是这条）：
+       · Windows：把目标文件设成只读 —— rename 盖上去会被挡成 EPERM。这是当年事故的原样。
+       · POSIX：目标文件只读**挡不住** rename（rename 只要求目录可写），
+         所以改设**所在目录**只读 —— 写临时文件那一步就 EACCES。
+       只 chmod 文件的话，Linux 上写入会成功，后面几条断言就跟着空转。 */
+  const chmodTarget = process.platform === 'win32' ? target : path.dirname(target)
+  const restoreMode = real ? fs.statSync(chmodTarget).mode & 0o777 : 0
+  if (real) fs.chmodSync(chmodTarget, process.platform === 'win32' ? 0o444 : 0o555)
   else {
     const boom = () => { hits += 1; const e = new Error('EPERM：假装配置写不进去'); e.code = 'EPERM'; throw e }
     fs.writeFileSync = (t, ...rest) => (path.resolve(String(t)) === target ? boom() : rw(t, ...rest))
@@ -161,7 +168,7 @@ if (mode === 'setup') {
   finally {
     fs.writeFileSync = rw
     fs.renameSync = rr
-    if (real) fs.chmodSync(target, 0o666)
+    if (real) fs.chmodSync(chmodTarget, restoreMode)
   }
   const after = fs.readFileSync(target)
   out({ err, hits, bytesSame: before.equals(after), disk: JSON.parse(after.toString('utf8')).general, mem: config.get().general })
@@ -234,11 +241,11 @@ async function configSaveSection() {
       `重启=${readBack.mem?.theme}/${readBack.mem?.fontScale} 失败后内存=${failMock.mem?.theme}/${failMock.mem?.fontScale}`,
     )
 
-    /* 不用 mock，把 config.json 设成只读让写盘**真的**失败 —— 判据不依赖「我拦对了地方」 */
+    /* 不用 mock，让写盘**真的**失败（Windows 只读文件 / POSIX 只读目录）—— 判据不依赖「我拦对了地方」 */
     const failReal = childStep(dir, 'fail', 'real')
     check(
-      '★ 真实只读位：同样抛错、字节不变、内存不变',
-      String(failReal.err ?? '').startsWith('EPERM') &&
+      '★ 真实写不进去：同样抛错、字节不变、内存不变',
+      /^E(PERM|ACCES)$/.test(String(failReal.err ?? '')) &&
         failReal.bytesSame === true &&
         failReal.mem?.theme === 'spec' &&
         failReal.mem?.fontScale === 110,
