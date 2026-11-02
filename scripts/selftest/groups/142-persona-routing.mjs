@@ -42,7 +42,11 @@ export async function run() {
   check('★ persona 算稳定层（首轮锁定 → 吃缓存命中）', contextDiagCore.tierOf('personaGuide') === 'stable')
   check('强/快两档都有文案', promptStackCore.PERSONA_GUIDE.strong.length > 0 && promptStackCore.PERSONA_GUIDE.fast.length > 0)
   check('认不出的 persona → 空串（别注入空层）', promptStackCore.personaGuide('nope') === '')
-  check('★ 提示词版本已升到 /13（P0：协作口径层 speechGuide）', promptStackCore.VERSION === 'prompt-stack/13')
+  check(
+    '★ 提示词版本至少到过 /13（协作口径层 speechGuide）',
+    promptStackCore.versionAtLeast(13),
+    promptStackCore.VERSION,
+  )
 
   const text = promptStackCore.build({
     personaGuide: promptStackCore.personaGuide('strong'),

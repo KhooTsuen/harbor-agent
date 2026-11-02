@@ -119,7 +119,10 @@ function markIntent(taskId, stepId, intent = {}) {
  *
  * @param {string} taskId
  * @param {string} stepId
- * @param {{ ok?: boolean, summary?: string, ms?: number }} result 不传 ok 视为成功
+ * @param {{ ok?: boolean, summary?: string, ms?: number,
+ *           reasonCode?: string|null, exitCode?: number|null }} result
+ *   不传 ok 视为成功。`reasonCode` / `exitCode` 是失败事实的两个标量
+ *   （形状见 `core/tool-failure.cjs`）—— 不传就不写这两个键，老台账形状一字不变。
  * @returns {object|null} 更新后的 step
  */
 function markCompleted(taskId, stepId, result = {}) {
@@ -136,6 +139,15 @@ function markCompleted(taskId, stepId, result = {}) {
   step.summary = redact.redact(String(result.summary ?? '')).slice(0, 300)
   step.ms = Number(result.ms) || 0
   step.finishedAt = Date.now()
+  /*
+   * 失败事实的两个标量（2026-11-02，蓝图阶段 A）。`run_shell` 的台账行由这里落，
+   * 不走 `task-notes.addStep` —— 所以两处都得带，否则「台账里查得到退出码」
+   * 就只对一半工具有效。成功时不写这两个键（老台账形状一字不变）。
+   */
+  if (!ok) {
+    if (result.reasonCode) step.reasonCode = String(result.reasonCode).slice(0, 40)
+    if (Number.isInteger(result.exitCode)) step.exitCode = result.exitCode
+  }
 
   task.updatedAt = io.monotonicNow()
   io.write(task)
@@ -231,13 +243,23 @@ function beginShell(taskId, name, args, startedAt = Date.now()) {
 /**
  * 收尾：把结果落到那条意图上（成功失败都调）。`ms` 由意图里的 `startedAt` 算出来，
  * 免得调用方再记一次时间（也免得两个时间戳对不上）。
+ *
+ * @param {string} taskId
+ * @param {string} stepId
+ * @param {{ ok?: boolean, summary?: string, error?: { reasonCode?: string, exitCode?: number|null }|null }} result
  */
-function endShell(taskId, stepId, { ok, summary } = {}) {
+function endShell(taskId, stepId, { ok, summary, error } = {}) {
   if (!stepId) return null
   const task = io.get(String(taskId ?? ''))
   const step = task ? findStep(task, stepId) : null
   const ms = step?.intent?.startedAt ? Date.now() - step.intent.startedAt : 0
-  return markCompleted(taskId, stepId, { ok, summary, ms })
+  return markCompleted(taskId, stepId, {
+    ok,
+    summary,
+    ms,
+    reasonCode: error?.reasonCode,
+    exitCode: error?.exitCode,
+  })
 }
 
 module.exports = {

@@ -75,15 +75,16 @@ export async function run() {
   check('list_dir 显示中文文件名', String(listed).includes('中文'), String(listed).slice(0, 80))
 
   const shellOut = await runShellTool.run({ command: 'echo hello-from-cn' }, ctx)
-  check('run_shell 在中文+空格 cwd 下能跑', String(shellOut).includes('hello-from-cn'), String(shellOut))
+  /* ★ 2026-11-02：run_shell 返回结构化 `{ text, … }`（蓝图阶段 A），正文在 .text 里 */
+  check('run_shell 在中文+空格 cwd 下能跑', shellOut.text.includes('hello-from-cn'), shellOut.text)
 
   /* ── ③ ★ 真正的回归点：shell 输出的中文 ───────────────── */
   group('中文环境 / shell 输出的中文')
   const cnEcho = await runShellTool.run({ command: 'echo 中文输出测试' }, ctx)
   check(
     '★ echo 中文不乱码',
-    String(cnEcho).includes('中文输出测试'),
-    JSON.stringify(String(cnEcho).slice(0, 60)),
+    cnEcho.text.includes('中文输出测试'),
+    JSON.stringify(cnEcho.text.slice(0, 60)),
   )
 
   /* `type` 是 cmd 内建；POSIX 上是另一个意思（打印命令类型），必须分开 */
@@ -91,8 +92,8 @@ export async function run() {
   const cnType = await runShellTool.run({ command: readCmd }, ctx)
   check(
     '★ 读 UTF-8 文件的内容不乱码（两个方向都得对）',
-    String(cnType).includes('中文内容'),
-    JSON.stringify(String(cnType).slice(0, 60)),
+    cnType.text.includes('中文内容'),
+    JSON.stringify(cnType.text.slice(0, 60)),
   )
 
   /* ── ④ 边界在中文路径下仍然生效 ───────────────────────── */

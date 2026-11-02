@@ -117,7 +117,13 @@ export async function run() {
   const out = await p
   const ms = Date.now() - t0
   check(`被中断的命令立刻返回（实测 ${ms}ms，改造前是 29650ms）`, ms < 5000)
-  check('返回里说清楚了是被中断', out.includes('已被用户中断'))
+  /*
+   * ★ 2026-11-02：`run_shell` 现在返回结构化结果 `{ text, toolOk, aborted }`
+   *   （蓝图阶段 A：退出码/超时/中断都成了独立字段）。断言同时看两处 ——
+   *   正文里的那句话没变，而且 `aborted` 这个字段也要真的置上。
+   */
+  check('返回里说清楚了是被中断', String(out?.text ?? out).includes('已被用户中断'))
+  check('★ 中断是结构化字段（界面/台账不用再从正文里认）', out?.aborted === true && out?.toolOk === false)
 
   /* ── 接线守卫 ─────────────────────────────────────────── */
   const shellSrc = readCore('electron/core/tools/run_shell.cjs')

@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { connect, sleep, findPageTarget, evaluate } from '../shot/cdp.mjs'
+import { NEW_CHAT, SEND } from '../shot/ui-selectors.mjs'
 
 export { sleep }
 
@@ -114,10 +115,8 @@ export async function waitHttp(url, timeoutMs) {
 }
 
 /* ── UI 原语：选择器抄自 acceptance.mjs（aria-label / title / 文本三处任一命中）── */
-const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 const fillExpr = (text) =>
   `(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(text)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`
-const SEND = `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 /*
  * 权限卡（`PermissionBar.tsx` 的 `section[aria-label="等待确认"]`，按钮「取消 / 允许本次」）
  * 的检测与点击：选择器**只有一份真相源** —— `shot/cards.mjs`。

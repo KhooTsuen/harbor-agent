@@ -1,9 +1,9 @@
 const { exec } = require('node:child_process')
 const encoding = require('../shell-encoding.cjs')
-const netPolicy = require('../net-policy.cjs')
-const risk = require('../risk.cjs')
-const { resolvePath, truncateWithLog, decideNetAsk } = require('./_shared.cjs')
+const { truncateWithLog } = require('./_shared.cjs')
 const { createSettler, killTree, onAbort } = require('../abort.cjs')
+/* 网络策略 / 执行目录两个关卡 —— 搬到 run-shell-guard.cjs（理由见那边文件头） */
+const { networkGuard, resolveShellCwd } = require('./run-shell-guard.cjs')
 
 /**
  * 明显会毁掉人的命令，**直接拒掉、没有「确认后放行」这一档**。
@@ -59,65 +59,6 @@ function heartbeatMs() {
   return override > 0 ? override : 15 * 1000
 }
 
-/**
- * 网络策略这一关：**只会把 allow 变严，永远不会把 ask 变松**。
- *
- * 为什么不在这里弹确认：确认界面不在这个文件（在 `tools/index.cjs` 的 approval 流程），
- * 这里弹不出来。所以 `ask` 只有两种安全落地 —— 见 `_shared.decideNetAsk`：
- *   · 上层这一档会问（risk.decide → 'ask'）→ 交给它，用户照样看到确认框
- *   · 上层这一档不问（完全访问档 / 静默放行）→ **这里拦掉**，
- *     否则就成了「网络策略说每次先问，结果没人被问就把请求发出去了」
- *
- * @returns {string} 空串 = 放行；非空 = 给用户看的拒绝理由
- */
-function networkGuard(command, ctx) {
-  const decided = netPolicy.decide({ kind: 'shell', target: command, ctx })
-  if (decided.action === 'allow') return ''
-  if (decided.action === 'deny') {
-    return `这条命令要联网，被网络策略拦下了。\n原因：${decided.reason}\n命令：${command}`
-  }
-
-  /* 只剩「先问」这一档：上层到底会不会问 */
-  let upperAsk = false
-  let upperNote = ''
-  try {
-    const verdict = risk.classify(command)
-    const policy = ctx.shellPolicy ?? require('../config.cjs').get().tools.shellPolicy
-    const decidedUpper = risk.decide(verdict, policy)
-    upperAsk = risk.rank(verdict.level) >= risk.rank('medium') && decidedUpper.action === 'ask'
-    upperNote = `上层风险分级这一档（${verdict.level}）不会问你（${decidedUpper.action}）`
-  } catch (error) {
-    upperNote = `读不到上层的风险策略（${error instanceof Error ? error.message : error}）`
-  }
-  if (decideNetAsk(decided, upperAsk).pass) return ''
-
-  return (
-    `这条命令要联网，网络策略要求「每次先问」，但这一层没有确认界面，${upperNote} ——\n` +
-    '为了不出现「没人被问就把请求发出去」，按拒绝处理。\n' +
-    `原因：${decided.reason}\n命令：${command}`
-  )
-}
-
-/**
- * 执行目录也要过权限边界（审计问题 17）。
- *
- * 文件工具（`read_file` / `write_file`…）都走 `resolvePath`，所以越过工作目录会被
- * 拦下来问用户；但 shell 这条路以前是**裸的** —— `run_shell({ command: 'type C:\\Users\\x\\.ssh\\id_rsa' })`
- * 或直接 `cd /d C:\\` 就绕开了整套边界。这里把 cwd 交给同一个 `resolvePath`：
- *   · 在工作目录内 → 正常放行
- *   · 在外面但拿过授权 → 放行（授权表就在那边）
- *   · 没授权 → 抛 PermissionRequiredError，由 `tools/index.cjs` 转成向用户要授权
- *
- * 没传 cwd 时退到 `ctx.workdir`（和以前一样）—— 没有工作目录可用时只好不管，
- * 交给上层反正会拦（这是现有行为，不在这里改）。
- */
-function resolveShellCwd(rawCwd, ctx) {
-  const asked = rawCwd === undefined || rawCwd === null || rawCwd === ''
-  const wanted = String(asked ? (ctx.workdir ?? '') : rawCwd)
-  if (!wanted) return ctx.workdir ?? ''
-  return resolvePath(wanted, ctx.workdir ?? '', ctx)
-}
-
 module.exports = {
   name: 'run_shell',
   /* 自检直接调它（不必真发请求），见 scripts/selftest/groups/73-net-policy.mjs */
@@ -156,7 +97,12 @@ module.exports = {
        拿到的是同一个对象，所以就地把实际值回填进去（只在不一样时写一笔）。 */
     if (args.cwd !== cwd) args.cwd = cwd
     const timeoutSec = Math.min(600, Math.max(5, Number(args.timeout) || ctx.shellTimeout || 60))
-    if (ctx.signal?.aborted) return '[用户已停止：命令没有启动]'
+    /*
+     * 所有 return / finish 都返回结构化结果 `{ text, toolOk, … }`：`text` 一字不差，
+     * 多的只是几个字段。为什么要带退出码回去 —— 见 `core/tool-failure.cjs` 文件头。
+     */
+    const stopped = { text: '[用户已停止：命令没有启动]', toolOk: false, aborted: true }
+    if (ctx.signal?.aborted) return stopped
 
     return await new Promise((resolve) => {
       const finish = createSettler(resolve)
@@ -183,7 +129,7 @@ module.exports = {
       off = onAbort(ctx.signal, () => {
         if (!child) {
           done()
-          finish('[用户已停止：命令没有启动]')
+          finish(stopped)
           return
         }
         const settleKill = createSettler(({ status, reason }) => {
@@ -204,14 +150,14 @@ module.exports = {
             title: '命令停止结果',
             text: message,
           })
-          finish(`[已被用户中断；停止结果：${message}]`)
+          finish({ text: `[已被用户中断；停止结果：${message}]`, toolOk: false, aborted: true })
         })
         killTimer = setTimeout(() => settleKill({ status: 'unknown' }), 3000)
         killTree(child, settleKill)
       })
       if (ctx.signal?.aborted && !child) {
         done()
-        finish('[用户已停止：命令没有启动]')
+        finish(stopped)
         return
       }
 
@@ -229,7 +175,11 @@ module.exports = {
         killTree(child)
         stopHeartbeat()
         /* 和中断同一套：不等 callback（管道要等子进程全退才关），立刻结算 */
-        finish(`[进程被超时杀掉（${timeoutSec}s）：已连同子进程一起终止]`)
+        finish({
+          text: `[进程被超时杀掉（${timeoutSec}s）：已连同子进程一起终止]`,
+          toolOk: false,
+          timedOut: true,
+        })
       }, timeoutSec * 1000)
 
       /*
@@ -280,9 +230,31 @@ module.exports = {
             parts.push('[退出码 0]')
           }
 
-          finish(
-            truncateWithLog(parts.join('\n\n') || '（没有输出）', MAX_OUTPUT, '命令输出超出上限'),
+          const text = truncateWithLog(
+            parts.join('\n\n') || '（没有输出）',
+            MAX_OUTPUT,
+            '命令输出超出上限',
           )
+          /*
+           * 退出码结构化回报：`exec` 的 `error.code` 数字是进程退出码（1 / 2 / 8…），
+           * 字符串是系统错误码（'ENOENT' 命令没找到 / 'EACCES' 没权限）—— 后者说明
+           * 进程根本没起来，`exitCode` 必须是 null，不能拿 -1 冒充退出码。
+           */
+          const rawCode = error?.code
+          const exitCode = typeof rawCode === 'number' ? rawCode : error ? null : 0
+          finish({
+            text,
+            toolOk: !error,
+            exitCode,
+            /*
+             * `error.code` 是字符串时就是系统错误码（ENOENT / EACCES…）——
+             * 那说明进程根本没起来，与「跑了但退出码非零」是两件事。
+             * 以前这个事实被直接丢掉（`systemCode` 恒为 null），
+             * 上层只能靠中文文案猜；现在原样往上递，由 `tool-failure.systemCodeOf` 校验形状。
+             */
+            ...(typeof rawCode === 'string' ? { systemCode: rawCode } : {}),
+            ...(error?.killed === true ? { timedOut: true } : {}),
+          })
         },
       )
       /* 可选钩子用于确认项目测试取消后进程确实退出（project-test-run.cjs B3）。 */

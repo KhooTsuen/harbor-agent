@@ -9,11 +9,14 @@ const writeDiff = require('../write-diff.cjs')
 const preWriteGate = require('./pre-write-gate.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
+const toolFailure = require('../tool-failure.cjs')
 const registry = require('./registry.cjs')
 const taskIntent = require('../task-intent.cjs') /* 意图/结果两段落盘，见它的文件头 */
 const { byName, isMcpTool, validateArgs, WRITE_TOOLS, MUTATING_TOOLS } = registry
 const { runWithPathPermission, auditCall, affectedFiles } = require('./permission.cjs')
 const gateDenied = require('../gate-denied.cjs')
+/* 原始事实（exitCode / timedOut / aborted）只搬不判 —— 见 tool-failure.cjs */
+const { factsOf } = require('../tool-failure.cjs')
 
 function impactFor(name, args, ctx, summary, verdict) {
   const workdir = String(ctx.workdir ?? '')
@@ -37,7 +40,7 @@ function impactFor(name, args, ctx, summary, verdict) {
 }
 
 /**
- * @param {string} name
+ * @param {string} name  工具名
  * @param {Record<string, unknown>} args
  * @param {object} ctx  { workdir, permission, confirm, log, sessionId, taskId, shellPolicy }
  */
@@ -196,10 +199,7 @@ async function execute(name, args, ctx = {}) {
     /* ask 档：确认；full 档：只读+低风险的 shell 不打扰，写文件也不打扰 */
     const needAsk = ctx.permission === 'ask' && !riskApproved
     if (needAsk) {
-      /*
-       * AG-036：把「这次会改成什么」一起送进确认框 —— 只有 `write_file` /
-       * `edit_file` 算得出 diff，算不出就返回空、弹窗照旧只显示摘要。
-       */
+      /* AG-036：把「这次会改成什么」送进确认框 —— 只有 write_file / edit_file 算得出 diff */
       const view = writeDiff.preview({ tool: name, args, workdir: ctx.workdir })
       approval = await approvals.ask(ctx, {
         kind: 'write',
@@ -264,11 +264,12 @@ async function execute(name, args, ctx = {}) {
       extras: verdict ? { risk: verdict } : undefined,
     })
 
-    if (shellStep) taskIntent.endShell(ctx.taskId, shellStep, { ok, summary: limited })
-
-    /* ★ `ctx.wantMeta` 的调用方（tool-runner）要拿到「成败」，否则活动记录只能猜文本前缀。
-       其余调用方（MCP 桥、自检）保持老契约：拿到的一直是字符串。 */
-    return ctx.wantMeta === true ? { text: limited, toolOk: ok } : limited
+    /* 失败事实（组装点只有一处：tool-failure.outcomeOf）；systemCode 也必须递进去 —— factsOf 是白名单 */
+    const outcome = toolFailure.outcomeOf({ toolName: name, ok, text: limited, facts: toolFailure.factsOf(result) })
+    if (shellStep) taskIntent.endShell(ctx.taskId, shellStep, { ok, summary: limited, error: outcome.error })
+    if (ctx.wantMeta !== true) return limited
+    /* wantMeta 的调用方（tool-runner）要成败；其余调用方保持字符串老契约 */
+    return { text: limited, toolOk: ok, ...factsOf(result) }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     ctx.log?.warn(`工具 ${name} 失败：${message}`)
@@ -284,8 +285,7 @@ function limitOutput(text, ctx) {
   const limit = ctx.outputLimit ?? 2 * 1024 * 1024
   if (text.length <= limit) return text
   const head = Math.floor(limit * 0.7)
-  const tail = limit - head
-  return `${text.slice(0, head)}\n\n…（输出过长，中间省略 ${text.length - limit} 字符）…\n\n${text.slice(-tail)}`
+  return `${text.slice(0, head)}\n\n…（输出过长，中间省略 ${text.length - limit} 字符）…\n\n${text.slice(-(limit - head))}`
 }
 
 module.exports = {

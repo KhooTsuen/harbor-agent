@@ -73,6 +73,10 @@ const EXPECTED_CHANNELS = [
   'diagnostics:copy',
   'diagnostics:openDir',
   'errors:list',
+  /* 经验（自我纠错闭环）的审批档位：设置页看全库 + 人批准/驳回/恢复，见 handlers/experience.cjs */
+  'experience:list',
+  'experience:review',
+  'experience:stats',
   /* 浏览器扩展桥：渲染层上报「当前打开的会话」—— 扩展送来的页面内容落进它（Phase 2） */
   'ext:activeSession',
   /* 兜底日志：渲染层主动报上来的（界面动作 / 未捕获异常）—— 走 ipcMain.on 注册 */

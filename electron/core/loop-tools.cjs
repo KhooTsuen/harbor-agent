@@ -16,14 +16,13 @@ const log = require('./log.cjs')
 const tools = require('./tools/index.cjs')
 const taskCore = require('./task.cjs')
 const errors = require('./errors.cjs')
+const toolFailure = require('./tool-failure.cjs')
+const experience = require('./experience-loop.cjs')
 const { buildFailureNote } = require('./loop-prompt.cjs')
 const { isAborted } = require('./abort.cjs')
 
-/** 工具返回算不算成功 —— 全项目只有这一处判定 */
-function isToolOk(output) {
-  const text = String(output ?? '')
-  return !text.startsWith('错误：') && !text.startsWith('用户拒绝了')
-}
+/* 成败判定与失败事实都只定义在 `tool-failure.cjs`；这里只接线（两份执行器共用） */
+const { isToolOk, outTextOf } = toolFailure
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -105,16 +104,38 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
     }
 
     const ok = isToolOk(output)
+    const outText = outTextOf(output)
     if (ok) doneNames.push(call.name)
+    /* 失败事实：形状只定义在 tool-failure.cjs，事件 / 台账 / 记录读同一份 */
+    const { info, error: failure } = toolFailure.outcomeOf({
+      toolName: call.name,
+      ok,
+      text: outText,
+      facts: toolFailure.factsOf(output),
+    })
     const run = {
       id: call.id,
       name: call.name,
       args,
       ok,
-      output,
+      output: outText,
       ms: Date.now() - startedAt,
+      ...(failure ? { error: failure } : {}),
     }
     toolRuns.push(run)
+
+    /*
+     * 自我纠错：**与 `tool-runner` 同一个入口、同一份判据**（`experience.afterRun`）。
+     *
+     * 这里以前没接，理由是「它没有调用方」—— 但这正是硬约束 9 说的那种病：
+     * 同一职责的第二份实现摆在那儿，哪天谁切回串行，经验层就在那条路上静默失效
+     * （不报错、不记日志、只是什么都学不到）。既然它导出了，就得和并行那份同语义。
+     */
+    const learned = experience.afterRun(run, {
+      projectId: ctx?.projectId,
+      sessionId: ctx?.sessionId,
+      workdir: ctx?.workdir,
+    })
 
     /* ── 任务台账：这一步干了什么 ── */
     if (options.taskId) {
@@ -122,12 +143,13 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
         taskCore.addStep(options.taskId, {
           tool: call.name,
           ok,
-          summary: output,
+          summary: outText,
           ms: run.ms,
           args,
+          error: failure,
         })
         if (call.name === 'run_shell' && typeof args.command === 'string') {
-          taskCore.addCommand(options.taskId, args.command, output)
+          taskCore.addCommand(options.taskId, args.command, outText)
         }
         if (
           typeof args.path === 'string' &&
@@ -142,29 +164,18 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
     }
 
     /*
-     * AG-002：成败写在事件名里（agent.tool.completed / agent.tool.failed）——
-     * 前端不用再去读 ok 字段判成败，也方便日志和诊断直接按名字筛。
+     * AG-002：成败写在事件名里；AG-015：失败时带分类（界面据此说人话）。
+     * 分类来自 `toolFailure.outcomeOf`（上面已经算好），这里不再算第二遍。
      */
-    /*
-     * AG-015：失败时给一句**分类判断**。
-     *
-     * 文档的「失败体验标准」里写着应该出现这种句子：
-     *   Agent 判断：这是测试失败，不是执行环境错误。
-     *
-     * 不做这一步的话，模型看到一个「错误：…」只会原样重试 ——
-     * 同一个坑里反复掉（这也正是 AG-017「失败后继续」要治的）。
-     */
-    const info = ok ? null : errors.classifyToolOutput(output, { name: call.name })
-
     emit({
       type: ok ? 'agent.tool.completed' : 'agent.tool.failed',
       toolCallId: call.id,
       name: call.name,
       ok,
-      result: output,
+      result: outText,
       ms: run.ms,
-      /* 失败分类：界面据此说人话，模型也看得到 */
       ...(info ? { errorKind: info.kind, errorHint: info.hint } : {}),
+      ...(failure ? { error: failure } : {}),
     })
 
     /* 工具结果喂回模型（失败时附上分类与建议，它才知道该换个做法） */
@@ -172,10 +183,14 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
       role: 'tool',
       tool_call_id: call.id,
       content: info
-        ? `${output}\n\n[错误分类] ${info.kind} —— ${info.hint}。建议：${
-            errors.STRATEGY_TEXT[info.strategy] ?? info.strategy
-          }`
-        : output,
+        ? [
+            `${outText}\n\n[错误分类] ${info.kind} —— ${info.hint}。建议：${
+              errors.STRATEGY_TEXT[info.strategy] ?? info.strategy
+            }`,
+            /* 验过的经验才在这里出现（候选不进提示）—— 与 tool-runner 同一句口径 */
+            ...(learned.note ? [learned.note] : []),
+          ].join('\n')
+        : outText,
     })
     if (info) failures.push({ name: call.name, hint: info.hint })
   }

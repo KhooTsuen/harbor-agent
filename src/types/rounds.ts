@@ -40,6 +40,74 @@ export interface ToolRunRecord {
    * 只有 `spawn_subagent` 那条记录会带上它；形状见 `SubagentTrace`。
    */
   subagent?: SubagentTrace
+  /**
+   * 失败事实（2026-11-02，蓝图阶段 A）。成功时**没有这个键**。
+   * 有了它，界面不用再从 `output` 里找 `[退出码 N]` —— 那正是这次要根治的猜法。
+   */
+  error?: ToolFailure
+}
+
+/**
+ * 一次工具调用的**失败事实**（errorFeature 的最小可落盘形态）。
+ *
+ * ★ 形状的唯一真相源是 `electron/core/tool-failure.cjs` 的 `SHAPE_KEYS`，
+ *   这里的字段名与那边逐字一致（自检 `191-tool-failure-fact` 做集合比对）。
+ *   为什么不再各写一套：以前内核发了 `errorKind` / `errorHint`，而
+ *   `chat-events.ts` 里两个字段都没声明 —— 事件从 `unknown` 进来，tsc 不报错，
+ *   于是「界面能不能用上」全靠人记得去读内核代码。
+ *
+ * ── 三个容易搞错的点 ──
+ *
+ * 1. **`exitCode: 0` 与 `null` 不是一回事**：0 = 进程正常结束；
+ *    null = 这次根本没有退出码（超时 / 中断 / 命令没起来）。
+ * 2. **`reasonCode` 才是「为什么失败」**，别再从正文里找 `[退出码 N]`。
+ * 3. 成功时**没有 `error` 这个键**（不是 `null`），老会话记录里也没有。
+ */
+export interface ToolFailure {
+  /** 形状版本 —— 读的人按它判断认不认得 */
+  schemaVersion: number
+  reasonCode: FailureReason
+  /** 进程退出码；`null` = 这次没有退出码（不是 0） */
+  exitCode: number | null
+  /** 系统错误码（ENOENT / EACCES…）；现在还取不到，如实为 null */
+  systemCode: string | null
+  /** `errors.cjs` 的分类名 */
+  kind: string
+  /** 一句话说明（来自分类表，不是模型编的） */
+  hint: string
+  /** 检索用的粗标签（蓝图 §4） */
+  category: string
+  /** 这次操作碰的是什么：code / web / file / research / other */
+  domain: string
+  retryable: boolean
+  needsUser: boolean
+}
+
+/** 原因码 —— 与 `tool-failure.cjs` 的 `REASON` 一一对应（自检钉着） */
+export type FailureReason =
+  | 'EXIT_CODE'
+  | 'TIMEOUT'
+  | 'ABORTED'
+  | 'DENIED'
+  | 'FILE_NOT_FOUND'
+  | 'PERMISSION'
+  | 'NETWORK'
+  | 'ASSERTION_FAILED'
+  | 'TOOL_ERROR'
+  | 'UNKNOWN'
+
+/**
+ * 这个值是不是一条失败事实？
+ *
+ * 事件从主进程是 `Record<string, unknown>` 进来的，不守卫就没法安全地挂到
+ * `ToolRunRecord.error` 上（硬约束：外部数据进来先过校验，禁 any / ts-ignore）。
+ * 判据只认**必需的那个字段**：`reasonCode` 是字符串。其余字段都有一处默认值，
+ * 缺了不影响「这是不是失败」这个判断。
+ */
+export function isToolFailure(value: unknown): value is ToolFailure {
+  if (value === null || typeof value !== 'object') return false
+  const reason = (value as { reasonCode?: unknown }).reasonCode
+  return typeof reason === 'string' && reason.length > 0
 }
 
 /**

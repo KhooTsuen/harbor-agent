@@ -5,6 +5,441 @@
 
 ## [未发布]
 
+### 补：经验闭环的 9 条已知遗留收账（2026-11-02）
+
+上一轮把「自我纠错 + ID 关联 + 审批档位」接通之后，`[未发布]` 里一共记了 13 条
+「已知遗留（不许当成做完）」。这一笔清掉其中 **9 条不碰数据形状的**，
+剩下 4 条按用户当轮的决定留到以后（见文末）。
+
+**内核 / 脚本侧（200 自检，28 项）**
+
+- **串行执行器接上了经验入口**（遗留 7）：`loop-tools.executeToolCallsSerial` 以前
+  一句 `experience` 都没有，理由是「它没有调用方」—— 但它导出了，谁切回串行，
+  经验层就在那条路上**静默失效**（不报错、不记日志、什么都学不到）。现在它和
+  `tool-runner` 调**同一个** `experience.afterRun`，传的上下文（projectId /
+  sessionId / workdir）一字不差，`learned.note` 也拼进模型看得到的那段。
+- **`systemCode` 不再是常数 `null`**（遗留 9）：`run_shell` 以前把 `error.code`
+  的字符串分支直接丢掉（`ENOENT` / `EACCES` 就是「进程根本没起来」那一类），
+  上层只能靠中文文案猜。现在原样递上来，由 `tool-failure.systemCodeOf` 校验形状
+  （全大写 + 下划线、≤40 字，别的一律当没有 —— 白名单式，不让内部结构漏到前台）。
+  `factsOf` 也补了这一个键，否则它到不了事件与台账。
+  顺带把 `tool-failure.cjs` 拆成两份：**「这次失败算哪一种」**（原因码 / 分类映射 /
+  领域规则）搬去 `tool-failure-reason.cjs`，主文件只管「失败事实长什么样」——
+  加形状校验时贴了 300 行红线，拆的边界是职责不是行数。
+- **不再每次工具调用都读一次盘**（遗留 11）：`experience-store-file.load()` 加了
+  `mtimeMs:size` 缓存。**缓存的是原始文本、不是解析后的对象** —— `load()` 的返回值
+  会被调用方就地改（`recordMove` 改 status / history），缓存对象会把上一次调用的
+  临时修改泄漏进下一次读，那是只有崩溃之后才看得见的 bug。`persist` 写完顺手
+  把新文本塞进缓存。自检钉两件事：连续两次 load **一次盘都不读**，且盘上被外部
+  改过之后**立刻看得见**。
+- **「停止」不再用包含匹配**（遗留 1 / 13）：发送区里那个按钮的 `aria-label` 是
+  「立即发送（先停止当前任务）」—— **含「停止」两个字**。`/停止/` 一旦先撞上它，
+  「按停止」变成「立刻发出去」，而「还在跑吗」永远为真（那个按钮本来就在）。
+  现在 `tools/shot/ui-selectors.mjs` 里三份精确名单（`NEW_CHAT_LABELS` /
+  `STOP_LABELS` / `SEND_LABELS`）+ 一个 `pickExactLabel`，`STOP` / `RUNNING` /
+  `SEND` / `NEW_CHAT` 四个表达式全从这一处生成。顺手把 9 个脚本各自抄的
+  `/发送消息/` 全收进来（`ab-tool-choice`、7 个 `e2e-*`、`smoke/kit`、`live-probe`
+  改为转出）。`acceptance.mjs` 的「按停止 / 还在跑 / 点发送」也换成了这三条。
+
+**界面侧（201 自检，32 项）**
+
+- **批准之后能改做法**（遗留 3）：新动作 `amend` —— 只换「注入时说的那句话」，
+  **不碰状态机**。三条口径写在 `experience-approve.cjs` 里：只有人能改；
+  状态一动不动（停用的改了仍停用，不许借改措辞复活）；字面没变就拒（`no_change`），
+  否则「每点一次都留一笔」会把 history 灌满，而 history 是排查「为什么不注入」
+  时唯一的凭据。`approval.actionText` **保留批准那一刻的值**（历史），当前注入的是
+  `recommendedAction` —— 同一件事不留两份「当前值」。
+- **类别/领域不再只写不读**（遗留 10）：经验页加了类别筛选（工具失败 / 断言失败 /
+  用户纠正 / 权限挡住 / 外部阻塞），行上带 `data-experience-category`。
+  显示口径（状态文案 / 语义色 / 一行摘要 / 「要不要画输入框」）搬进
+  `src/lib/experienceDisplay.ts`，组件不再继续膨胀。
+- **简洁视图里点名「有 N 条等你处理」**（遗留 8）：设置默认是简洁视图，
+  「经验与规则」在详细视图里 —— 审批入口默认**收着**，一条候选攒着等人拍板，
+  用户根本不知道。现在顶部多一行「有 N 条经验在等你处理（现在不会进提示）」+
+  一个直达按钮（切详细视图并落到经验页）。0 条时一个字都不显示。
+  条数取自主进程算好的 `stats.byStatus`，前端不自己数 candidate。
+
+**验证**
+
+- 新自检 `200-experience-leftovers`（28 项）/ `201-experience-leftovers-ui`（32 项），
+  每条都**先把旧洞复刻出来**再钉新行为（`/停止/` 确实先撞上「立即发送」、
+  `systemCode` 以前恒为 null、连续 load 以前每次读盘…）。
+- `npm test`：**6323 通过 / 0 失败**（上一轮基线 6224）。
+- `npm run verify` 全链通过：typecheck 0、lint 0 error、内核 lint 405 个 `.cjs`
+  无未定义标识符、内核类型基线 **168 条不变**、`check:lines` 1461 个文件 0 超线、
+  `check:rules` 通过（本条即为此而写）。
+
+**真机收尾：第一次跑出来的是脚本自己的两处毛病（不是产品问题）**
+
+`node tools/e2e-experience-approve.mjs` 第一次跑 **1/17** —— 但两条红都不是功能坏了：
+
+- **同一个脚本只能跑一次**：点「去处理」会把 `settingsView=detailed` **持久化**进
+  localStorage，第二趟一打开就是详细视图，而「有 N 条经验在等你处理」那行按设计
+  只在经验页被**收起**时出现（0 条时也不出现）。现在脚本开头先把视图**归零到简洁**
+  （下拉挂在「对话」页，`aria-label="设置页视图"`）。改完**连续两趟 17/17**。
+- **一条判据被日志标签骗绿**：那条「点名了有 N 条」原本查的是 `/在等你处理/`，
+  而日志标签本身就写着「在等你处理」—— 值明明是「（没找到）」，判据照样打勾。
+  现在标签里不再出现被查的原话，判据改成查**值**（`⓪ 点名行 →` 后面不是「（」）。
+
+这两条都补进自检 199（21 → **26 项**）：视图下拉必须真的**挂在**「对话」页里、
+脚本必须**先归零**、日志标签不许含被查原话、判据必须查值。改文案或删挂载 → 当场红，
+而不是让 e2e 白跑一趟还报绿。
+
+**这一轮没做（按当轮决定留到以后）**
+
+- **`run_shell` 的 target 不含 cwd**（遗留 4）：同一条命令在两个工作目录下跑，
+  target 是一样的，靠「同项目 + 同命令」兜住但不够精确。要精确得回传 cwd 并并进
+  target，那会改已有经验的匹配口径（要迁移）。
+- **库满 200 会先清 rejected / deprecated 最旧的**（遗留 5）：也就是说「我驳回过什么」
+  不会永久留着。要长期留档得另存一份。
+- **网页类经验（`browse` / `edge_*`）仍然没有独立验证器**（遗留 6）：它们现在只能靠
+  人批准才进提示。要接就得有「浏览器侧独立核对」（重新取一次页面标题 / DOM 与当时
+  断言比对）。
+- **审批没有二次确认卡**：点「批准」直接生效。判据是「它只是训练你自己的提示，
+  不动文件」；如果觉得该弹一张，那是个真实的分岔点。
+
+
+### 补：审批档位的**界面**第一次被真机走过（2026-11-02）
+
+上一笔把审批档位写完了：内核 `review()`、三个 IPC 通道、设置页 `ExperienceTab.tsx`，
+自检 197 有 30 项、`npm test` 6224 项全过。但**界面从来没被真机点过** ——
+而「按钮点了有没有反应」tsc / lint / 单测一律看不出来，项目里为此栽过两次
+（`config.hasKey is not a function`、拆函数留空占位）。这一笔只补这件事。
+
+**真机才看得见的两件事（都是产品现状，这一版不改行为）**
+
+- 设置**默认是简洁视图**，「经验与规则」根本不在导航里 —— 得先点「切到详细视图」。
+  也就是说审批入口默认是收着的。要不要把它提到简洁视图里，是产品判断，留给用户定。
+- 那一页默认筛「待处理」，已生效 / 已驳回的条目不在里面 —— 不切「全部」就找不到。
+  真机脚本第一次跑就栽在这儿（`三条状态 → missing/missing/missing`）。
+
+**新脚本 `tools/e2e-experience-approve.mjs`**（12 项，真窗口 + 真点击）
+
+自己铺数据（走内核 `store.addCandidate`，不手写 JSON）、自己起源码树 Electron，
+然后**点真按钮、去磁盘上读 `experiences.json` 核对**：
+
+- 没写做法就点「批准」→ 被拒（`needs_action`），状态仍是 candidate（空壳不许批）
+- 手写一句做法再点「批准」→ verified，且 `recommendedAction` **一字不差**就是人写的那句
+- 已生效的点「驳回」→ rejected，`schema.injectable()` 立刻为假
+- 被打停的点「恢复」→ verified，**`contradictions` 仍有 1 条**（恢复的是状态，不是历史）
+
+判据读盘、不读 DOM：DOM 里那句「生效中」是界面自己画的，磁盘上的 `status` 才是内核的意思。
+沿用了内核的 `schema.injectable` 与 `store.addCandidate`，不另写一套。
+
+**顺带补出的真实缺口**：自检 199 第一版就红了 —— 「恢复」这个按钮**真机从没走过**，
+e2e 脚本里没有这个字面量。补上之后才验到「恢复不清零反例」这条：
+它是这一页最容易写错的地方（把 `contradictions` 一起清了就等于「人批一次就免疫」）。
+
+**新自检 `199-experience-approval-ui`**（21 项）：把真机脚本依赖的每根绳子
+回到渲染层源码里逐个找一遍 —— 三个按钮的 `aria-label`、做法输入框的名字、
+`data-experience-id` / `data-experience-status` 两个钩子、「切到详细视图」那句话。
+改文案 → 这里立刻红，而不是让脚本**静默失效**（`tools/shot/cards.mjs` 吃过一次同款）。
+另外钉住：e2e 必须读盘、必须用内核判据、必须住在 `tools/`（`tmp/` 里会被清掉）。
+
+**验证**：`node tools/e2e-experience-approve.mjs` → 17/17（连续两趟）；自检 199 → 26/26；
+`node tools/line-limit.mjs --all` → 1457 个文件 0 超线。
+
+**已知遗留**：审批没有「二次确认卡」（点「批准」直接生效）。判据是「它只是训练你自己的提示，不动文件」，
+所以没加；如果觉得该弹一张，那是个真实的分岔点。另外没有「编辑做法」——批完想改只能先驳回（驳回是终点）。
+
+### 新：审批档位 —— 人决定哪条经验能变成规则（2026-11-02）
+
+上一笔修完四个反例之后，规则的来源只剩一条：**系统自己独立验证达标**。于是三类经验
+永远升不上去，只能烂在库里 —— 而它们恰恰是最值得记的：
+
+- `user_correction`：用户说「不对」是最高权威的输入，但「该怎么做才对」只有人能定；
+- `permission` / `external_blocked`：边界挡住、验证码登录墙，修法不在系统手里；
+- 任何被标成 high risk 的条目（`DENIED` / `PERMISSION`）。
+
+这一笔加的是那道门：**人看一条，判它能不能变成建议**。
+
+**内核（判据各自只有一处）**
+
+- 新文件 `electron/core/experience-approve.cjs`：`review(id, { action })` ——
+  `approve`（candidate → verified）/ `restore`（suspended → verified）/ `reject`（→ rejected，终点）。
+  三条硬规矩写在文件头：只有人能跨这道门且只跨一步；**批准必须有可注入的做法**
+  （系统记下的那次成功，或人现场写一句），两样都没有就拒（`needs_action`），不偷偷批一条空壳；
+  每次动作都留痕（`history` + 审计）。
+- `experience-schema.cjs`：
+  · `verified → rejected` 现在是允许的 —— 给了人「批准」的权力就必须给「反悔」的，
+    否则批错一条之后只能等它自己踩反例，或者手动删库；
+  · `suspended → verified` 只允许人走（系统侧的 `suspended` 仍不会被成功计数顶回来）；
+  · 新增 `injectable(item)` —— **「能不能进提示」的唯一判据**：状态必须是 `verified`，
+    且（系统自动升的看验证器版本 / 人批的**不看**验证器版本）。
+    人批的为什么不吃「验证器版本失效」：验证器变的是**系统怎么观察工具结果**，
+    而人批的是**这条建议本身对不对** —— 让前者作废后者，等于改一行验证器代码就静默废掉人的决定。
+- `experience-match.cjs`：召回过滤从 `checkValidator` 换成 `injectable`（判据只留一处）。
+- `experience-store.cjs`：门面新增 `review` / `listForReview` / `describeForReview` ——
+  `injectable` / `pending` / `blockedReason` 由主进程算好送前端，**前端不重算**
+  （重算必然漂，2026-10 栽过四次）。恢复**不清零**反例记录，再出同类反例立刻再停。
+
+**接线（4 处）**
+
+- `electron/handlers/experience.cjs`（新）：`experience:list` / `experience:stats` / `experience:review`
+  三个通道；handler 里不出现任何 `status === 'verified'` 类判断。
+- `electron/ipc-channels.cjs` 与 `register-handlers.cjs` 同步登记（漏一个就是「点按钮没反应」）。
+- `electron/preload.cjs` 白名单加三个方法；`src/types/experience.ts` 声明形状，
+  `backend.ts` 用 `extends ExperienceBridge` 合回 `window.workbench`。
+- `src/lib/experienceApi.ts`：失败不抛、返回空值；`needs_action` 等原因原样带回给界面。
+
+**界面（设置 → 经验与规则，高级 / 详细视图）**
+
+`src/components/settings/tabs/ExperienceTab.tsx`：列表 + 四个筛（待处理 / 生效中 / 已停止 / 全部），
+每条显示触发文本、做法、原因假设、复现 / 验证 / 反例次数、目标，以及「会不会进提示」。
+没有系统做法时**必须先填一句**才能批准（输入框就在那一条下面）。状态色走
+`statusLanguage.colorOf`（语义色只有那一份）。`settingsIndex.ts` 加两条搜索项。
+
+**验证（都是真跑）**
+
+- 新自检 `197-experience-approval`（44 项）：先**复刻旧洞**（用户纠正不在白名单、四次独立成功
+  仍停在 candidate、因此永远不进提示），再钉新行为 —— 批准后真被 `match.pick` 召回、
+  `sectionFor` 装配出那句话、空壳批准被拒、批准不带同类的其他条目、反例打停 → 人工恢复 →
+  再出同类反例立刻再停、驳回是终点、`history` 与审计都有痕、**审计里没有经验原文与备注里的密钥**、
+  `injectable` 三种口径（人批 / 系统升 / candidate）。
+- 顺带逮到一条真缺口：`verified` 原本**不能**被驳回（状态机里没这条路），
+  人看到一条正在注入的错建议时没有撤销路径 —— 已在 schema 里补上并写进注释。
+- `npm test`：**6224 通过 / 0 失败**（上一轮基线 6180）。`npm run verify` 全链通过：
+  typecheck 0、lint 0 error、内核 lint 404 个 `.cjs` 无未定义标识符、内核类型基线 168 条不变、
+  `check:lines` 1453 个文件 0 超线、`check:rules` 通过（本条 CHANGELOG 即为此而写）。
+
+**已知遗留（不许当成做完）**
+
+- **没有「编辑做法」**：批准之后想让那条建议改个说法，只能驳回再重建 —— 而驳回是终点。
+  要做得改条目内容并重新留痕，属下一刀。
+- **审批没有二次确认卡**：点「批准」直接生效。判据是「它只是训练你自己的提示，不动文件」，
+  但你要是觉得该弹一张卡，这是个真实的分歧点。
+- **库容量满了会先清 rejected / deprecated 最旧的**（`MAX_ITEMS` 200）——
+  也就是说「我驳回过什么」不会永久留着。要长期留档得另存一份。
+- 网页类经验（`browse` / `edge_*`）仍然没有独立验证器 ⇒ 它们现在**只能靠人批准**才进提示，
+  这正好补上了上一轮那条「永远升不到 verified」的窟窿，但批准的依据只有人自己的判断。
+
+### 修：自我纠错闭环的四个反例 —— 成功不再自动算「修法已验证」（2026-11-02）
+
+上一笔把生命周期接通了，但**判据本身有四个洞**（用户逐条点出来的）。这一笔只修判据，不加新功能。
+
+**① 同工具同目标的成功不能直接算「修法已验证」**
+
+旧实现：库里有同工具同目标的 candidate 时，任何一次 `ok === true` 就记一次验证。于是
+「环境自己好了」「模型自述」「别处的成功」三件事都能把它顶成规则。现在两条缺一不可：
+
+- **证明采用了该修法**（`experience-text.recipeOf` 签名 + `guard.recipeState`）：第一次成功只能
+  **探明**修法（`adopted`），换了做法直接拒（`different_recipe`）——「同工具同目标、但换了走法」
+  不是这条经验的验证。
+- **结果由独立观察确认**（新文件 `experience-verify.cjs`）：验证器拿参数去现场看 ——
+  `file_present`（`read_file` / `list_dir` / `read_image`：目标真在不在、是不是空文件）、
+  `file_change_applied`（`write_file` / `edit_file`：落盘了没有）、
+  `shell_exit_zero`（`run_shell`：只认结构化 `exitCode`，**正文一个字不看**）。
+  它**不读 `run.ok`**，也不读模型说的话。
+- **没有验证器的工具一律 `no_verifier`**：`browse` / `edge_*` / `search_web` / `download` /
+  `memory_*` 成功后**不推动任何升级**，那条经验永远留在 candidate、永不注入。这是刻意留白
+  （宁可让一条真经验多等，也不许一条假经验进提示），不是漏做。
+
+编排放在新文件 `experience-certify.cjs`（`certifySuccess`），`experience-loop` 不再自己判。
+
+**② 去重与验证关联必须含适用范围与目标**
+
+`candidateKey` 现在是 `scopeKey|tool|category|reasonCode|target|text`；`recordVerification` 与
+`recordContradiction` 都要过 `guard.scopeAllows`，升级阈值按**同一项目内**的验证数
+（`schema.verificationsIn`）。甲项目 `a/x.txt` 读不到与乙项目 `b/x.txt` 读不到是两条，
+乙项目的成功也不给甲项目补一格 —— 否则「两个项目各踩一半、合起来够三次」就成真了。
+
+**③ 脱敏失败不许存原文**
+
+旧实现是 `catch { safe = raw }`：脱敏一抛异常，原文原样进库（而经验会被注入提示）。
+现在 `feature.textSafe === false` ⇒ **整条放弃**（`store.addCandidate` 返回 `dropped`），
+日志里只留「工具 + 原文长度」，**不含原文**；落盘前再兜一层 `guard.splitSafe`
+（`redact.looksSecret` 认为还像密钥的条目整条不写，其余照常）。
+
+**④ 用户纠正按对话 + 具体消息去重**
+
+旧实现是一个进程级「上一句文本」去重 —— 另一条对话里的同一句「不对」会被压掉。
+现在键是 `sessionId|messageId`（`loop-prompt.cjs` 把 `lastUserMsg.id` 传进
+`experience-loop.sectionFor`）；**没有 `messageId` 时不去重**：宁可同一句话多记一次，
+也不许因为拿不到 id 就漏记。
+
+**验证**（写法本身就是判据的一部分）：新增自检 `195`（①②）与 `196`（③④），每组都
+**先把旧实现的错误复刻出来**（同一份输入钉住「以前会错在哪」），再用现在的入口跑同一份输入
+（钉住「现在对了」）—— 只钉后者分不清「修好了」和「恰好绕开了」。
+`193` / `194` 里被新语义推翻的断言已按新语义改写（网页场景现在钉的是「三次成功仍停在
+candidate」，从前钉的是「三次成功 → verified」）。`npm test` / `npm run verify` 全链通过
+（计数见命令输出），`typecheck` 0 错，`check:lines` 0 超线。
+
+**顺带（同一个坑）**：`tools/fake-upstream.mjs` 加完 `experience` / `fail` 两种模式后 369 行，
+超 300 红线 —— 拆出 `fake-upstream-experience.mjs` 与 `fake-upstream-fail.mjs`。
+`sseChunk` 的格式仍只有 `fake-upstream.mjs` 一份（当参数传进去），不在新文件里再写一遍。
+
+**真机 e2e 顺手逮到一条假红（记下来免得下次再踩）**：`tools/e2e-experience-loop.mjs` 一直 8/14，
+不是内核的问题 —— 假上游发的命令是相对路径 `type harbor-e2e-flag.txt`，而 `run_shell` 在
+**会话的工作目录**里跑（新建对话会继承上一次的目录，实测是 `E:\CodexWorkbench\tmp\p2-demo\beta0`），
+脚本却把标志文件写在隔离区的 `workspace/` 下 → 命令永远找不到它、永远失败，于是「失败之后
+怎么都等不到成功」。改成把绝对路径经 `FAKE_EXPERIENCE_FLAG` 传进去，14/14 全过。
+教训：**真机脚本里凡是「让工具去找某个文件」的，路径都要显式给绝对路径**，别赌 cwd。
+
+**另一条遗留（这一轮看清了）**：`run_shell` 的「目标」取的是**命令文本前 3 段**，
+所以同一条命令在两个工作目录下跑，`target` 是一样的 —— 两条其实不是同一个对象。
+现在靠「同一个项目作用域 + 同一句命令」兜住，够用但不够精确；要精确就得让 `run_shell`
+回传 `cwd` 并把它并进 target，那会改已有经验的匹配口径（要迁移），留给下一切片。
+
+**已知遗留**：`browse` / `edge_*` 现在没有验证器 ⇒ 网页类经验**永远升不到 verified**。
+要接就得有「浏览器侧独立核对」（重新取一次页面标题 / DOM 与当时断言比对），那是下一切片；
+在此之前它们停在 candidate 是**正确行为**，不是没做完。
+
+
+### 新：自我纠错闭环 —— 失败只产候选，独立验证才生效，反例立刻停用（2026-11-02）
+
+**为什么要有这一层**：项目里已经有「失败事实（`tool-failure.cjs`）」「错误观察（`error-observer`）」
+「记忆（`memory-*`）」，但三者之间没有连接 —— 一次失败只是被记下来看一眼，下一次同类情形
+模型**照旧重犯**；而如果直接把「这样失败了」塞进提示，就会变成「模型自己踩过的坑升格成规则」，
+越错越自信。这一笔补的是中间那层：**观察 → 候选 → 独立验证 → 升级 → 反例暂停 → 按需注入**。
+
+**四个新内核模块（判据各自只有一处）：**
+
+- `experience-schema.cjs`：状态机（`candidate / verified / suspended / rejected / deprecated`）、
+  允许的迁移、阈值（3 次独立成功、48 小时窗口、注入 3 条 / 600 字）、验证器版本、
+  高风险类别、用户纠正词表、`targetOf`（「同一个目标」怎么取）、`normalizeText`（先脱敏再抹噪声再截断）。
+  **`INJECTABLE` 只含 `verified`** —— 这就是「失败不会直接变成规则」的唯一判据。
+- `experience-store.cjs`：落盘 `data/experiences.json`（原子写 + 坏文件另存），
+  可见性**复用** `memory-scope.filterVisible`（不自己再写一套 scope 判断），每次迁移留痕。
+- `experience-match.cjs`：跨领域混合打分（tool / reasonCode / category / domain / 文本），
+  **domain 只加权 0.06、不做硬过滤** —— 硬过滤的后果不是筛得干净，而是永远学不到跨领域经验；
+  每次命中都带 `reasons`（「凭什么觉得这条相关」要能回答）。
+- `experience-loop.cjs`：四个入口 —— `afterRun`（工具调用后唯一入口，**绝不抛异常**）、
+  `sectionFor`（每轮提示，先观察用户是不是在纠正、再取要注入的经验）、`observeRun`、`noteForFailure`。
+
+**接进真实路径（两处，都是一行）：**
+
+- `tool-runner.cjs`：每次工具调用结束调 `experience.afterRun(run, …)`；失败时把
+  `learned.note` 拼进模型能看到的那段正文。候选**一个都不进**。
+- `loop-prompt.cjs`：提示装配新增 `relevantExperience` 层，**排在 `relevantMemory` 之后**
+  （先看用户说过什么，再看系统验证过什么），空则不出现标题。
+
+**几条刻意的取舍（都是「宁可不学，也不要学错」）：**
+
+- **验证必须同工具同目标**：`npm test` 挂了之后随便跑个 `dir` 成功，不算一次验证。
+  同一次调用的自动重试也不算（`opportunityId` 去重）。
+- **高风险类别不自动升级**（权限 / 外部阻塞 / 被拒）：这一轮没有审批档位，
+  它们停在 candidate，不会被注入。审批档位留作下一切片。
+- **用户纠正停在 candidate，永远不自动升级**：用户说「不对」是最高权威的输入，
+  但「该怎么做才对」只有人能定 —— 不让「之后碰巧成功几次」把它顶成建议。
+- **反例只对 verified 生效，且要求同一目标**。换个目标再失败，不算反例（否则
+  「换个文件读不到」会打掉一条本来对的经验），但**仍然算召回条件**：那是「上次这么绕开的」。
+- **观察原文先过 `redact`**：经验会被注入提示，密钥绝不能先进库。
+
+**验证（都是真跑，不是桩）：**
+
+- `npm test`：新增自检 193（状态机 / 计数 / 高风险 / 验证器版本 / 项目隔离 / 脱敏落盘）
+  与 194（三场景端到端），全组通过（计数见命令输出）。
+- 194 的**文件场景**是完整的真链路：真 `read_file` 失败 → 候选（domain=file）→ 建出文件后
+  真读三次 → `verified` → 换个文件再失败时正文出现「以前遇到过同类情况」→ 同文件再失败
+  → `suspended` 且正文不再出现 → 调查记录仍在。
+- 194 的**用户纠正场景**走 `loop-prompt` 的真实入口：纠正当轮不注入任何经验、
+  被记成 high 风险候选、三次「之后碰巧成功」也升不了级，`buildPromptContext` 真跑通。
+- **真机**（源码树 Electron + 假上游，`node tools/e2e-tool-failure-visible.mjs`）：
+  `run_shell` 真跑 `exit /b 7` → 界面那条是 `failed`、退出码 7 看得见（6/6），
+  同时主进程把一条 `candidate`（`run_shell` / `EXIT_CODE` / `domain=code`）真落到了
+  `experiences.json` —— 这条链路在**真进程**里也接通了，不只是自检里通。
+
+**已知遗留（不许当成做完）：**
+
+- 194 的**网页场景**只能用真失败 + 真召回 + 真反例，那「三次独立成功」是喂给生产入口
+  （`experience.afterRun`）的 —— 自检跑在纯 Node、没有浏览器面板，真机浏览器路径
+  **这一轮没有被自动测试覆盖**。
+- 经验库**没有设置页**（看不到有哪些经验、不能手动停用）。只落盘 + 留痕，管理留给后续切片。
+- 每次工具调用会读一次 `data/experiences.json`（库上限 200 条）；成功且无候选时不写盘。
+- **`loop-tools.cjs` 的 `executeToolCallsSerial` 没有接经验观察入口**。它当前没有调用方
+  （`loop.cjs` 取的是 `tool-runner` 的并行版），所以不影响行为；但它是一份**同职责的第二执行器**，
+  将来谁切回去，经验层就在那条路上静默失效。要么接线、要么删掉 —— 留给下一个切片。
+- **真机 e2e 一度给出假阳性**（2026-11-02 这一轮逮到）：`tools/e2e-tool-failure-visible.mjs`
+  只覆盖了 `baseUrl`，没把权限档位设成 `full`，`run_shell` 先弹确认卡、命令根本没跑，
+  脚本读回的是**上一段历史会话的 DOM** —— 判据照样 6/6 全绿，截图上是「暂不能发送：所选模型没有可用连接」。
+  已补：写隔离配置时同时设 `tools.permission=full` 与 `security.network.mode=allow`，
+  注释里写清「这条 e2e 验的是失败那一行，不是权限卡」。同一轮还发现 `data/config.json` 不存在时
+  这个脚本会直接崩（现已手写一份默认配置；`data/` 在 .gitignore 里，不算产物）。
+
+### 改：项目级记忆「记得住、找得回」—— 归属闭环（复用评估 §7，2026-11-02）
+
+**背景（真错，不是体验优化）**：模型用 `scope: 'project'` 记下的记忆**永远注入不到、也搜不到**。
+因果链四处：工具上下文（`loop-tool-context.cjs`）里**没有 `projectId`** → `remember` 只传
+`sessionId` → `memory-store` 把缺的归属落成 `''` → `memory-scope.visible()` 对空串 fail-closed。
+生产库 `data/memory.json` 里 11 条 `scope=project` 的条目全部是空归属（2026-11-02 实测快照），
+全是死条目 —— 用户从来没见它们生效过。
+
+**改法（两处内核 + 一组自检）：**
+
+- `loop-tool-context.cjs`：工具上下文新增 `projectId`，取自 `options.projectId` —— 与提示词注入
+  记忆读的是**同一个字段**（`loop-prompt.cjs` 第 130 行），所以「写进哪」和「从哪读」不会各说各话。
+  缺省 `''` 是故意的 fail-closed，不按 workdir / 会话去猜项目。
+- `tools/remember.cjs`：写入时带上 `ctx.projectId`（只有 `scope=project` 才落归属）。
+  `scope=project` 但上下文没有项目 ID 时**明说「没记」、不落库** —— 旧行为是照写，然后那条
+  记忆永远找不回来；工具结果同时标为失败，避免「没记」却显示绿勾。
+  与其制造死条目，不如让模型改用 `global` 或先确认项目已绑定。
+- 新增自检组 192（`scripts/selftest/groups/192-project-memory-attribution.mjs`）：甲 / 乙两个项目 +
+  一条无项目上下文，真跑「写入 → 落盘 → 自动注入 → 模型侧检索」四条路，钉住同项目可见、
+  别项目不可见、无项目 fail-closed，以及**旧空归属条目仍不可见**（不猜归属、不救活）。
+
+**观感变化（必须写明）**：生产库那 11 条 `projectId=""` 的旧条目**仍然不可见**。它们的项目归属
+未知，不按内容 / `sessionId` / 当前工作目录猜，也不升级成全局记忆。这一笔修好的是
+「以后记得对」+「以后能搜到」，**不包含**救活旧数据。
+
+**明确没做（本切片）**：不迁移旧条目、不改 `memory-schema` 的 scope 集合、不改打分权重；
+也不代表「工作目录切换后的会话 / 任务 / 项目 ID 已经全部一致」—— 只修了记忆这一条链路。
+
+### 改：工具真失败时不再显示绿勾 —— 失败事实（exitCode / reasonCode）成为独立字段（2026-11-02）
+
+**背景（这是个真错，不是体验优化）**：`run_shell` 跑一条退出码非 0 的命令（`npm test` 挂了、
+`findstr` 没匹配到）时，正文里只有一行 `[退出码 1]`、没有 `错误：` 前缀 —— 而当时
+「这次调用成不成功」**全靠文本前缀判**（`text.startsWith('错误：')`）。于是失败被画成绿勾，
+用户只能自己去正文里翻那行退出码。蓝图把它列为阶段 A 的第一个验收项。
+
+**改法：失败事实只定义一处，事件 / 界面记录 / 台账读同一份。**
+
+- 新增 `electron/core/tool-failure.cjs`：失败事实的唯一形状（`reasonCode` / `exitCode` /
+  `kind` / `category` / `domain` / `retryable` / `needsUser`），以及全项目**唯一**的成败判定
+  `isToolOk`。此前 `tool-runner.cjs` 与 `loop-tools.cjs` 各写了一份 `isToolOk`，而且两份行为
+  不同（串行那份根本不认结构化返回）—— 这正是硬约束 9 要治的「两边各写一套」。
+- `run_shell` 回传真实退出码（`exitCode`）与 `timedOut` / `aborted` 标记。**正文一个字没动**：
+  `[退出码 N]` 那行还在（`task-outcome.cjs` 与两条自检按文本认状态，动它等于把它们一起改了）。
+  `0` 与 `null` 严格分开：`0` = 进程正常结束，`null` = 这次根本没有退出码（超时 / 中断 /
+  命令没起来，比如 `npm` 不在 PATH 上时 `error.code` 是字符串 `ENOENT`）。
+- `run_shell.cjs` 给退出码字段腾位置时贴到 300 行红线，把「网络策略 + 执行目录」两个关卡搬
+  到新文件 `tools/run-shell-guard.cjs`（`DANGEROUS` 那张表故意留在原地 —— 最后一道闸藏进
+  另一个文件更不容易被看见）。对外契约没变：`networkGuard` 仍挂在 `run_shell.cjs` 的 exports 上。
+- `tools/index.cjs` 只**搬**原始事实（`factsOf` 白名单，不整体 spread），不判「退出码意味着
+  失败」；组装点只有 `tool-failure.outcomeOf` 一处。
+- 台账多两个标量（`reasonCode` / `exitCode`），成功时**不写这两个键** —— 老台账形状一字不变，
+  不迁移、不批量回写。`run_shell` 的台账行走 `task-intent.markCompleted`、其它工具走
+  `task-notes.addStep`，两处都带上了（否则「台账里查得到退出码」只对一半工具有效）。
+- 前端：`rounds.ts` 新增 `ToolFailure` 接口 + `isToolFailure` 守卫，`chat-events.ts` 补上
+  `error` 字段（顺带补了服务端一直在发、前端一直没声明的 `errorKind` / `errorHint`），
+  `streamEvents.ts` 只在失败时挂 `error`，`schemas.ts` 声明同一形状 —— **不声明就会被 zod
+  静静剥掉**，重开会话退出码就没了（2026-10-07 子代理卡片消失是同一个坑）。
+
+**验证**（改前 → 改后）：
+
+- `npm test`：改动中途自检 191 是半成品（`const missing` 重复声明 + 未 require 的 `errorsCore`），
+  整组一 require 就语法错 → **6024 通过 / 2 失败**；修完 **6027 通过 / 0 失败**。
+- 新增自检 `191-tool-failure-fact`：**真跑** `exit /b 7`（不是塞假对象），钉住 ① `run_shell`
+  自己报 `toolOk=false` ② 事件 `agent.tool.failed` 的 `error.exitCode === 7` ③ `toolRuns[].error`
+  与事件是同一份 ④ 台账落盘 `reasonCode=EXIT_CODE` + `exitCode=7` ⑤ 三处 `exitCode` 完全相等
+  ⑥ 成功那次**没有** `error` 键 ⑦ 内核 `SHAPE_KEYS` 与前端 `ToolFailure` 字段一一对应、zod 里
+  每个字段都声明了。
+- `npm run typecheck`：0 错误。`npm run check:lines`：1426 个文件 0 超线。
+- `npm run typecheck:kernel`（内核 checkJs 棘轮）：新代码带进来 8 条类型错（`DOMAIN_RULES` 缺
+  元组标注、`markCompleted` 的 JSDoc 没跟上新字段）→ 修完顺带把 `task-intent.cjs` 原有的 2 条
+  欠账一起修掉，**基线 170 → 168**（按规矩同步下调，不往基线里加）。
+- 三条**旧判据**因真相源搬家而过期，已按新语义改写（不是放宽）：`25-autorecover` 原来钉
+  「loop-tools 里 `isToolOk(` 出现 ≥3 次」，现在钉「真相源只有一处、它是解构使用、且自己没有
+  `function isToolOk`」；`140/50/73/19` 四组原先按字符串读 `run_shell` 的返回值，改成读 `.text`
+  （并**加了一条**：中断时 `aborted === true` 要真的置上）。
+- `npm run verify`：全链通过（`check:rules` 的 CHANGELOG 检查本条即为此而写）。
+
+**已知遗留**：
+
+- `systemCode`（ENOENT / EACCES 这类系统错误码）字段已留好但**还没有工具往回传**，现在恒为
+  `null`。填它要在 `run_shell` 里把 `error.code` 的字符串分支搬上来，属于同一类事的下一步。
+- 只做了「失败事实」这一层：`category` / `domain` 目前只**写入**，界面上还没有按它筛选或聚合
+  的地方。重试 / 提示 / 中止的**行为**完全没动（仍归 `errors.cjs` 的 `strategy`）。
+
 ### 修：两条自检判据只在 Windows 成立，把 main 的 CI 弄红了（2026-11-02）
 
 v1.33.0 发布后 main 上 CI（run 41339122461）挂在 `verify 全链`，自检 `通过 5983 / 失败 2`。
@@ -21,6 +456,46 @@ v1.33.0 发布后 main 上 CI（run 41339122461）挂在 `verify 全链`，自�
 
 改的是自检判据本身，**没有放宽任何一个行为**：Windows 上的判据与改动前完全一致，
 POSIX 上是同一条语义换了个能真造出失败的造法。
+
+### 修：真机脚本点「新建对话」会点到「新建对话并指定目录」（2026-11-02）
+
+用户原话：「你每次测试的时候都会打开选择对话文件夹」。
+
+根因不是某个脚本写错，而是 **12 个脚本各自抄了一份 `/^新建对话/`**。那是**前缀**匹配，
+而侧栏里排在前面的按钮叫「新建对话并指定目录」—— 点它必走 `workdir:choose` 弹原生目录框；
+窗口被模态框挡住之后脚本照跑不误，只是**后面每一步都没落地**（截图上是历史会话），
+于是「全绿但什么都没验」。
+
+**做法**
+
+- 新 `tools/shot/ui-selectors.mjs`：文案（`NEW_CHAT_LABELS`）、挑选规则（`pickNewChatLabel`）、
+  页面里那段表达式（`NEW_CHAT`）**各只有一处**。匹配必须**完全相等**，不许前缀 ——
+  「新建对话」和「新建对话并指定目录」共享前四个字，前缀分不开它们。
+  「新建对话并指定目录」故意不在白名单：它要开原生框，脚本不该点。
+- 13 个脚本改成 import 它：8 个 `e2e-*.mjs`、`ab-tool-choice`、`smoke/kit`；
+  `live-probe.mjs` 改为**转出**（它原来自己写了一份前缀匹配）；
+  `acceptance.mjs`（自己拼的 `/^新建对话/`）与 `shot/scenarios.mjs`（`textContent.includes`）
+  也一起收敛进来 —— 这两处是「12 个」之外漏掉的。
+- 新自检 `198-ui-selectors`（18 项）：先**复刻旧洞**（同一份按钮清单，旧的 `/^新建对话/`
+  确实先撞上「并指定目录」），再用 `node:vm` 在**假页面上真跑那段表达式** ——
+  点中的是哪个名字、只给「并指定目录」时返回 `false` 且**一次都不点**；再静态扫 `tools/**`
+  （跳过注释行）不许再有前缀/包含匹配、`NEW_CHAT` 只许有一处定义；最后核对渲染层
+  三个源码文件里文案真的存在（`aria-label` 改了这里会红，不再静默失效）。
+
+**验证（都是真跑）**
+
+- `npm run verify` 全链绿：内核自检 **通过 6242 项 / 失败 0**，typecheck / lint / lint:kernel /
+  typecheck:kernel / 格式 / 行数红线 / rules / 单测 / security / build 全过。
+- 真机（源码树 `--dev`，独立数据根，不碰你在跑的那份）：侧栏里含「新建对话」的按钮只有
+  `["新建对话并指定目录"]` —— 旧写法**必点它**；`NEW_CHAT` 实际点中的是「新建单独对话」，
+  点完 `textarea=1 / bubbles=0`（确实是空对话），原生目录框没出来。
+
+**已知遗留**
+
+- `tools/acceptance.mjs` 里点「停止」还是 `/停止/` 前缀匹配。同类风险，但目前「停止」只有
+  那一个按钮、没撞名；要收进同一处得再给 `ui-selectors.mjs` 加一条（没在这笔里顺手做）。
+- 自检 198 只钉住「新建对话」这一组；「发送 / 设置 / 终端」那些选择器仍是各脚本各写一份。
+
 
 ## [1.33.0] — 2026-11-02 · 设置开关真的会拦人 + P0 协作口径 + 第二阶段联合重构 + Edge 扩展第二批
 

@@ -1,6 +1,6 @@
 {
   "note": "内核 .cjs 的 checkJs 基线：只许下调（修一条改一条），不许上涨。重拍：npm run typecheck:kernel -- --write-baseline",
-  "total": 170,
+  "total": 168,
   "entries": {
     "electron/boot-cleanup.cjs": {
       "TS2339": 1
@@ -147,9 +147,6 @@
     "electron/core/task-create.cjs": {
       "TS2741": 1,
       "TS2339": 3
-    },
-    "electron/core/task-intent.cjs": {
-      "TS2339": 2
     },
     "electron/core/task-notes.cjs": {
       "TS2339": 1

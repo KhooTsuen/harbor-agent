@@ -62,7 +62,7 @@ function storedAction(action) {
  * **只加字段**：老台账里的 step 没有它，读的时候按「没有判断记录」处理即可 ——
  * 不迁移、不批量回写（硬约束 5）。不传 `action` 时**根本不写这个键**（老形状一字不变）。
  */
-function addStep(id, { tool, ok, summary, ms = 0, args, action }) {
+function addStep(id, { tool, ok, summary, ms = 0, args, action, error }) {
   const task = io.get(id)
   if (!task) return null
 
@@ -75,6 +75,14 @@ function addStep(id, { tool, ok, summary, ms = 0, args, action }) {
     summary: String(summary ?? '').slice(0, 300),
     args: args ? redact.scrubLight(args) : undefined,
     ...(stored ? { action: stored } : {}),
+    /*
+     * 失败事实（2026-11-02，蓝图阶段 A）：**只存两个标量**，不整份塞进去。
+     * 落盘的是「这条命令非零退出，退出码 1」这种可查的事实；原因码让台账
+     * 不必再回头解析 summary 里的 `[退出码 N]`（那正是这次要根治的猜法）。
+     * 成功时**不写这两个键** —— 老台账形状一字不变，读的人按「没有就是没失败」处理。
+     */
+    ...(error?.reasonCode ? { reasonCode: String(error.reasonCode).slice(0, 40) } : {}),
+    ...(Number.isInteger(error?.exitCode) ? { exitCode: error.exitCode } : {}),
   })
 
   /* 只留最近 200 步 —— 这个文件是给自己看的，不是流水账 */

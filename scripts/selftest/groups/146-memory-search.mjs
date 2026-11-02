@@ -138,8 +138,8 @@ export async function run() {
       !read('electron/core/prompt-stack.cjs').includes('像是在回忆之前的事'),
   )
   check(
-    '★ 提示词版本已升到 /13（P0：协作口径层 speechGuide）',
-    promptStackCore.VERSION === 'prompt-stack/13',
+    '★ 提示词版本至少到过 /13（协作口径层 speechGuide）',
+    promptStackCore.versionAtLeast(13),
     promptStackCore.VERSION,
   )
 

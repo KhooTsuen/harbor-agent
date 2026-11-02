@@ -24,6 +24,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { connect, sleep, findPageTarget, evaluate } from './shot/cdp.mjs'
+import { NEW_CHAT, SEND } from './shot/ui-selectors.mjs'
 /* 判据文案直接吃假上游那一份常量 —— 手抄一份就等于给自己留个「改一边忘一边」（AGENT.md 第 9 条） */
 import { RETRY_FULL as FULL, RETRY_PARTIAL as PARTIAL } from './fake-retry-mode.mjs'
 
@@ -107,10 +108,8 @@ app.stderr.on('data', (b) => {
 })
 const killApp = () => spawn('taskkill', ['/pid', String(app.pid), '/T', '/F'], { stdio: 'ignore' })
 
-const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 const fillExpr = (text) =>
   `(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(text)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`
-const SEND = `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 
 /** 数屏幕上那段话出现了几次（去掉空白再比，免得被换行干扰） */
 const COUNT = (text) =>

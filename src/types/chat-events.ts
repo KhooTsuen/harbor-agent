@@ -12,6 +12,7 @@
 import type { SubagentStep } from './conversation'
 import type { DiffFile } from './index'
 import type { UsageBucket } from './models-extra'
+import type { ToolFailure } from './rounds'
 
 export type ChatEvent =
   | { requestId: string; type: 'mode'; mode: string; confidence: number; reason: string }
@@ -45,6 +46,17 @@ export type ChatEvent =
       ok: boolean
       result: string
       ms?: number
+      /* 失败分类（AG-015）：界面据此说人话。以前服务端发了、这里没声明 */
+      errorKind?: string
+      errorHint?: string
+      /*
+       * 失败事实（2026-11-02，蓝图阶段 A）：**退出码 / 原因码是独立字段**，
+       * 界面不再从正文里找 `[退出码 N]`。
+       * 形状的唯一真相源是 `electron/core/tool-failure.cjs` 的 `SHAPE_KEYS`
+       * （自检 `191` 逐字比对，改一处要同步另一处）。
+       * 只在失败时出现；成功时**没有这个键**（不是 null）。
+       */
+      error?: ToolFailure
     }
   | {
       requestId: string

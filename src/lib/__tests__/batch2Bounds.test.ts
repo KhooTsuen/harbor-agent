@@ -44,7 +44,15 @@ const backup = require_(join(ROOT, 'electron/core/backup.cjs')) as {
   remove: (name: string) => { ok: boolean; error?: string }
 }
 const runShell = require_(join(ROOT, 'electron/core/tools/run_shell.cjs')) as {
-  run: (args: Record<string, unknown>, ctx: unknown) => Promise<string>
+  /*
+   * ★ 2026-11-02：`run_shell` 现在返回**结构化**结果（蓝图阶段 A：退出码 / 超时 / 中断
+   *   都是独立字段，不再只写进文本）。正文仍在 `text` 里，一字未变 —— 所以下面那几条
+   *   断言只是换个地方读字符串，不是放宽。
+   */
+  run: (
+    args: Record<string, unknown>,
+    ctx: unknown,
+  ) => Promise<{ text: string; toolOk: boolean; exitCode?: number | null; timedOut?: boolean }>
 }
 const taskOutcome = require_(join(ROOT, 'electron/core/task-outcome.cjs')) as {
   exitOf: (raw: string) => boolean
@@ -146,7 +154,10 @@ describe('问题 16：超时/中断连子树一起杀', () => {
         { command: `node "${script}" "${pidFile}"`, timeout: 5 },
         { workdir: SANDBOX, sessionId: 'batch2', permission: 'full' },
       )
-      expect(String(result)).toContain('进程被超时杀掉')
+      /* 正文仍在 .text 里（一字未变）；★ 另加一条：超时是**结构化**标记，不再靠认文本 */
+      expect(result.text).toContain('进程被超时杀掉')
+      expect(result.timedOut).toBe(true)
+      expect(result.toolOk).toBe(false)
       expect(existsSync(pidFile)).toBe(true)
 
       const pid = readFileSync(pidFile, 'utf8').trim()
@@ -172,9 +183,10 @@ describe('问题 17：run_shell 的执行目录也过权限边界', () => {
 
   it('工作目录内照常执行，并把**实际** cwd 回填给审计', async () => {
     const args: Record<string, unknown> = { command: 'echo batch2-ok' }
-    const out = await runShell.run(args, { workdir: SANDBOX, sessionId: 'batch2' })
+    const result = await runShell.run(args, { workdir: SANDBOX, sessionId: 'batch2' })
 
-    expect(String(out)).toContain('batch2-ok')
+    expect(result.text).toContain('batch2-ok')
+    expect(result.toolOk).toBe(true)
     expect(typeof args.cwd).toBe('string')
     expect(String(args.cwd).length).toBeGreaterThan(0)
   })

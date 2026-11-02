@@ -13,11 +13,15 @@
  *   ask      第 1 轮调一次 ask_user（→ 弹**澄清卡**）—— 自动化测试「脚本会自己点卡」用
  *   fail     连着读**不同的**不存在文件 → 连续失败（CE-011）
  *   retry    第一次发半截正文后报 429（可重试）、第二次正常 —— 验证「重试不显示两遍」
+ *   shellfail 工具真失败冒烟
+ *   experience 每轮都发同一条 `run_shell` 命令（自我纠错闭环真机验收用）
  *   （无后缀）正常返回（对照组）
  */
 
 import { createServer } from 'node:http'
 import { handleRetryMode } from './fake-retry-mode.mjs' /* retry 模式整套住在那边 */
+import { streamExperienceRound } from './fake-upstream-experience.mjs' /* experience 模式整套住在那边 */
+import { handleFailMode } from './fake-upstream-fail.mjs' /* fail 模式整套住在那边 */
 
 const PORT = Number(process.env.FAKE_PORT ?? 9977)
 
@@ -28,28 +32,15 @@ const SLOW_MS = Number(process.env.FAKE_SLOW_MS ?? 5000)
 let planRounds = 0
 /* loop 模式的轮次计数（AG-041）：偶数轮 A、奇数轮 B */
 let loopRounds = 0
-/* 「第 1 轮发一次工具调用、之后收尾」的模式计数：confirm（确认卡）/ ask（澄清卡） */
-const onceRounds = { confirm: 0, ask: 0 }
-/*
- * fail 模式的轮次计数（CE-011）：每轮读一个**不同**的不存在文件 —— loop-guard 只认一模一样的调用，
- * 换参数才绕得开它，这样单独验 failure-streak（「不同尝试也在失败」）。
- */
-let failRounds = 0
-/*
- * fail 模式的关键证据：**收到的请求体里有没有那句话**。
- * 这条链（界面 → chat handler → loop → HTTP）全是真的，只有模型是假的，
- * 所以「请求里有 / 没有」就是 failure-streak 生效与否的硬证据。
- */
-function streakInBody(body) {
-  const hits = String(body).match(/已经连续失败/g)
-  return hits ? hits.length : 0
-}
+/* 「第 1 轮发一次工具调用、之后收尾」的模式计数：confirm（确认卡）/ ask（澄清卡）/ shellfail（工具真失败） */
+const onceRounds = { confirm: 0, ask: 0, shellfail: 0 }
 
 function sseChunk(delta) {
   return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
 }
 
-const server = createServer((req, res) => {
+/** 假上游主路由 */
+const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   /* 路径第一段就是坏法：/v1-truncate/chat/completions → truncate */
   const seg = url.pathname.split('/').filter(Boolean)[0] ?? 'v1'
@@ -125,48 +116,7 @@ const server = createServer((req, res) => {
   }
 
   if (mode === 'fail') {
-    /*
-     * CE-011 真机验证：**连续失败**，但每次调用签名都不同。
-     *
-     * 为什么不用现成的 loop 模式：那个是「同一个调用转圈」，会先被 loop-guard 抓走。
-     * 这里要单独验证 failure-streak（判据是「不同的尝试在失败」），所以每轮换文件名。
-     * 每轮先把请求体里那句话数一遍打印出来 —— 这就是「界面链路真的注入了它」的证据。
-     */
-    failRounds += 1
-    req.on('end', () => {
-      const body = Buffer.concat(bodyChunks).toString('utf8')
-      const hits = streakInBody(body)
-      console.log(
-        `[fake-upstream] fail 第 ${failRounds} 轮 | 请求体含「已经连续失败」=${hits > 0}（${hits} 处）`,
-      )
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      })
-      /*
-       * 那句话已经在请求里了 = 提示生效了。这一轮**收尾**（回一段文字、不再要工具），
-       * 让任务能干净结束 —— 否则假上游永远要工具，循环会一直转到预算耗尽。
-       */
-      if (hits > 0) {
-        res.write(sseChunk({ content: '好，换个办法：先用 list_dir 看看这个目录里到底有什么。' }))
-        res.write('data: [DONE]\n\n')
-        res.end()
-        return
-      }
-      const call = {
-        index: 0,
-        id: `call_fail_${failRounds}`,
-        type: 'function',
-        function: {
-          name: 'read_file',
-          arguments: JSON.stringify({ path: `no-such-file-${failRounds}.txt` }),
-        },
-      }
-      res.write(sseChunk({ tool_calls: [call] }))
-      res.write('data: [DONE]\n\n')
-      res.end()
-    })
+    handleFailMode(req, res, bodyChunks, sseChunk)
     return
   }
 
@@ -200,47 +150,51 @@ const server = createServer((req, res) => {
   }
 
   /*
-   * 「第 1 轮发一次工具调用、之后收尾」的两种模式：
-   *   · confirm → `run_shell` 写文件（medium → 弹**确认卡**）· 冒烟用（事故 ③）
-   *   · ask     → `ask_user`（→ 弹**澄清卡**）· 自动化测试「脚本自己点卡」用
-   * 第 2 轮起发普通文本收尾，别再无限调工具。
+   * 「第 1 轮发一次工具调用、之后收尾」的三种模式（第 2 轮起发文本收尾，别无限调工具）：
+   *   · confirm  → `run_shell` 写文件（medium → 弹**确认卡**）· 冒烟用（事故 ③）
+   *   · ask      → `ask_user`（→ 弹**澄清卡**）· 自动化测试「脚本自己点卡」用
+   *   · shellfail→ `run_shell` 跑 `exit /b 7`（退出码 7）· 「工具真失败」冒烟的入口
    */
-  if (mode === 'confirm' || mode === 'ask') {
+  if (mode === 'confirm' || mode === 'ask' || mode === 'shellfail') {
     onceRounds[mode] += 1
+    const askCall = {
+      name: 'ask_user',
+      arguments: JSON.stringify({
+        questions: [
+          {
+            question: '这个改动按哪种范围来做？',
+            options: [
+              { label: '只改这一处', effect: '动 1 个文件，多花 2 分钟' },
+              { label: '连相关的地方一起改', effect: '要动 5 个文件' },
+            ],
+            defaultValue: '只改这一处',
+          },
+        ],
+      }),
+    }
+    /* shellfail = 「工具真失败」冒烟：`exit /b 7`。正文只会多一行 `[退出码 7]`、没有
+       `错误：` 前缀 —— 改动前界面是绿勾，改动后必须显示失败（见 tool-failure.cjs 文件头） */
     const once =
       mode === 'confirm'
-        ? {
-            name: 'run_shell',
-            arguments: JSON.stringify({ command: 'echo smoke-ok > smoke-shell-ok.txt' }),
-          }
-        : {
-            name: 'ask_user',
-            arguments: JSON.stringify({
-              questions: [
-                {
-                  question: '这个改动按哪种范围来做？',
-                  options: [
-                    { label: '只改这一处', effect: '动 1 个文件，多花 2 分钟' },
-                    { label: '连相关的地方一起改', effect: '要动 5 个文件' },
-                  ],
-                  defaultValue: '只改这一处',
-                },
-              ],
-            }),
-          }
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    })
+        ? { name: 'run_shell', arguments: JSON.stringify({ command: 'echo smoke-ok > smoke-shell-ok.txt' }) }
+        : mode === 'shellfail'
+          ? { name: 'run_shell', arguments: JSON.stringify({ command: 'exit /b 7' }) }
+          : askCall
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
     if (onceRounds[mode] === 1) {
       const call = { index: 0, id: `call_${mode}_1`, type: 'function', function: once }
       res.write(sseChunk({ tool_calls: [call] }))
     } else {
-      res.write(sseChunk({ content: `${mode === 'confirm' ? '确认' : '澄清'}卡冒烟：这一步已经处理完了。` }))
+      const done = { confirm: '确认卡冒烟：这一步已经处理完了。', shellfail: '接住了这次失败，换一条命令再试。' }
+      res.write(sseChunk({ content: done[mode] ?? '澄清卡冒烟：这一步已经处理完了。' }))
     }
     res.write('data: [DONE]' + String.fromCharCode(10, 10))
     res.end()
+    return
+  }
+
+  if (mode === 'experience') {
+    await streamExperienceRound(res, sseChunk)
     return
   }
 

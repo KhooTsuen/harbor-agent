@@ -1,15 +1,8 @@
 /**
- * Prompt Stack（CE-001）
+ * Prompt Stack（CE-001）—— 每层独立生成，组合成模型消息；任何一层缺失都不阻塞对话。
  *
- * 每层独立生成，运行时权限不在这里决定；这里仅负责把可解释的上下文
- * 组合成模型消息。任何一层缺失都不会阻塞对话。
- */
-/*
- * 提示文案住在这里，不住在 loop.cjs。
- *
- * 理由：loop 负责「这一轮是计划模式、权限是 ask」这种**决定**，
- * 至于「计划模式该说什么」是提示词内容 —— 内容和决定分开放，
- * 改文案时不用去翻 500 行的循环，测文案也不用把它跑起来。
+ * 提示文案住在这里，不住在 loop.cjs：loop 负责「这轮什么模式 / 什么权限」这种**决定**，
+ * 「该怎么措辞」是内容 —— 分开放，改文案不必翻循环、测文案不必把它跑起来。
  */
 
 const MODE_GUIDE = {
@@ -27,16 +20,9 @@ const PERMISSION_GUIDE = {
 }
 
 /*
- * CE-005：persona 的**内容**（分类在 mode-router.cjs，这里只管「说什么」）。
- *
- * 两档各一段，方向不同：
- *   strong —— 先想清楚再动手（规划 / 细读 / 多确认）
- *   fast   —— 直接做到位（少铺垫 / 别为简单事写计划）
- *
- * ★ fast 不是「让你沉默」：该说的结论、改了什么、为什么，照样要说清 ——
- *   否则会从「话多」滑到「不说」，那正是 NO_FILLER_RULE 反复强调的另一半。
- * ★ 这两段不跟任何开关：persona 由首轮锁定，整个会话只注入其中**一段**、
- *   逐轮不变 —— 稳定前缀缓存的命中就靠它不变。
+ * CE-005：persona 的**内容**（分类在 mode-router.cjs / loop-route.cjs，这里只管「说什么」）。
+ * strong 先想清楚再动手；fast 直接做到位。★ fast 不是「让你沉默」：结论、改了啥、
+ * 为什么仍要说清。★ 两段都不跟开关：persona 由首轮锁定、逐轮不变 —— 前缀缓存靠它不改。
  */
 const PERSONA_GUIDE = {
   strong: [
@@ -113,22 +99,25 @@ const { SPEECH_GUIDE } = require('./prompt-speech.cjs')
  *   /11 → /12 —— 易变区独立成第二条 system message（CE-018）：层内容与角色一字未改，
  *              只把易变区从「同一条 system message 的尾部」挪到**消息末尾** ——
  *              历史因此能吃到前缀缓存（实测未命中 45,887 → 192 token）。
- *   /12 → /13 —— 加 `speechGuide` 层（P0）：何时开口（只拍板或结果可用）、汇报 ≤300 字、
- *              动文件前先 `ask_user(gate)` 等他点一次（纯读取不拦）。
+ *   /12 → /13 —— 加 `speechGuide` 层（P0）：何时开口、汇报 ≤300 字、动文件前先等一次（纯读不拦）。
+ *   /13 → /14 —— 加 `relevantExperience` 层（自我纠错）：只放**已验证**的经验，命中才出现。
  */
-const VERSION = 'prompt-stack/13'
+const VERSION = 'prompt-stack/14'
+
+/**
+ * 版本号至少到过 n —— 自检用它，不钉死某个字面量版本号。
+ * 「当前是第几版」是会涨的数字（AGENT.md 硬约束 8）：钉死之后每加一层要改三处自检，
+ * 而那三处不是判据，只是「别忘了升版」。
+ */
+function versionAtLeast(n) {
+  const hit = /^prompt-stack\/(\d+)$/.exec(VERSION)
+  return Boolean(hit) && Number(hit[1]) >= Number(n)
+}
 
 /*
- * 层的顺序 = 模型看到的顺序。
- *
- * 两条讲究：
- *   ① **环境在前**：模型一上来就得知道现在几点、在哪个目录、能碰哪些文件。
- *      少了时间，它会把「最新」理解成训练数据里的时间（实测过）。
- *   ② **规矩和边界在最后**：越靠后的内容对模型越"近"、越容易被遵守。
- *      所以工作规矩和安全边界不放在开头，放在倒数第一、第二。
- *
- * ⚠️ 改这个列表时注意 `scripts/selftest.mjs` 里的「系统提示内容回归」那组：
- * 它会断言下面每一项都真的进了系统提示。删层会让测试红。
+ * 层的顺序 = 模型看到的顺序：**环境在前**（不然它会把「最新」理解成训练数据里的时间）、
+ * **规矩与边界在最后**（越靠后越容易被遵守）。
+ * ⚠️ 改它注意自检「系统提示内容回归」那组：它断言每一项都真的进了提示。
  */
 const ORDER = [
   /*
@@ -169,6 +158,12 @@ const ORDER = [
    * 等于把整个提示的缓存全废了）。
    */
   'relevantMemory',
+  /*
+   * 已验证的经验（自我纠错）：**只在命中时才出现**，最多几条、总字数封顶。
+   * 放在记忆之后 —— 先看「用户说过什么」，再看「系统验证过什么」。
+   * 候选（candidate）永远进不来，这是「失败不会直接变成规则」的那道闸。
+   */
+  'relevantExperience',
   'taskState',
   'conversationState',
   'retrievedContext',
@@ -217,6 +212,7 @@ ${input.responseDepth ? `- 回答深度：${input.responseDepth}。不要靠截�
     layer('safety', 'Boundaries', input.safety),
     /* ↓ 易变区（每轮可能变，放后面） */
     layer('relevantMemory', 'Relevant Memory', input.relevantMemory),
+    layer('relevantExperience', 'Learned From Experience', input.relevantExperience),
     layer('taskState', 'Task State', input.taskState),
     layer('conversationState', 'Conversation State', input.conversationState),
     layer('retrievedContext', 'Retrieved Context', input.retrievedContext),
@@ -281,6 +277,7 @@ function build(input = {}) {
 
 module.exports = {
   VERSION,
+  versionAtLeast,
   ORDER,
   STABLE_IDS,
   MODE_GUIDE,

@@ -52,7 +52,8 @@ export async function run() {
     notes.every((n) => n.includes('还在跑')),
     JSON.stringify(notes.slice(0, 3)),
   )
-  check('命令本身正常跑完（心跳没有干扰它）', String(out).includes('[退出码 0]'), String(out))
+  /* ★ 结构化返回（蓝图阶段 A）：正文在 .text 里 */
+  check('命令本身正常跑完（心跳没有干扰它）', out.text.includes('[退出码 0]'), out.text)
 
   /* 命令结束后心跳必须停 —— 不然白醒、拖住进程退出 */
   const after = calls

@@ -2,12 +2,9 @@
  * IPC 处理器注册清单
  *
  * 从 `main.cjs` 拆出来的 —— 加一条通道就撞 300 行上限（AG-029 加系统通知时
- * 已经拆无可拆，只能把整块清单搬出来）。
- *
- * 搬出来还有个好处：**「谁注册了哪些通道」一眼看得全**。
+ * 已经拆无可拆，只能把整块清单搬出来）。搬出来还有个好处：**「谁注册了哪些通道」一眼看得全**。
  * 这里少注册一个不会报错、只会「点那个按钮没反应」，所以
- * `electron/ipc-channels.cjs` 那份写死的通道清单在自检里挨个点名
- * （`channelsMissing`），漏一个就会红。
+ * `electron/ipc-channels.cjs` 那份写死的通道清单在自检里挨个点名（`channelsMissing`），漏一个就会红。
  *
  * 不在这个清单里的两个（它们有各自的时机）：
  *   · `handlers/workdir.cjs` —— 自己在模块加载时注册（main.cjs 顶部就 require 了）
@@ -116,6 +113,8 @@ function registerHandlers(deps) {
 
   /* 错误清单（右栏「错误」标签，只读；见 handlers/errors.cjs） */
   require('./handlers/errors.cjs').register({ ipcMain })
+  /* 自我纠错闭环的审批档位（设置页「经验与规则」）：看全库 / 人批准 · 驳回 · 恢复 */
+  require('./handlers/experience.cjs').register({ ipcMain })
 
   /* 窗口外观 + 显示/退出（见 handlers/window.cjs） */
   require('./handlers/window.cjs').register({

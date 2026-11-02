@@ -17,6 +17,8 @@ const plugins = require('./plugins.cjs')
 const skills = require('./skills.cjs')
 const skillPin = require('./skill-pin.cjs')
 const memory = require('./memory.cjs')
+/* 自我纠错：已验证的经验按需注入（候选不进提示）—— 入口只有 sectionFor 一处 */
+const experience = require('./experience-loop.cjs')
 const project = require('./project.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const promptStack = require('./prompt-stack.cjs')
@@ -45,10 +47,9 @@ const pageCtx = require('./page-context-slot.cjs')
 /**
  * AG-017：失败后的「进度对照」。
  *
- * 为什么模型明明能看到历史还要写这段：**历史会被压缩**（AG-016），压完之后早期
- * 步骤只剩摘要一句话，模型可能「保险起见从头再来」。而台账在磁盘上、不受压缩影响，
- * 所以这里把「哪些成了、哪个败了」再说一遍，并直说「成功的别重做」
- * （文档要求：Step 3 ✗ → 只调整 Step 3 继续，**禁止从 Step 1 重来**）。
+ * 为什么模型看得到历史还要写这段：**历史会被压缩**（AG-016），压完早期步骤只剩一句话，
+ * 模型可能「保险起见从头再来」。台账在磁盘上、不受压缩影响 —— 所以再说一遍
+ * 「哪些成了、哪个败了」，并直说「成功的别重做」（Step 3 ✗ → 只调 Step 3）。
  */
 function buildFailureNote({ done = [], failed = [] } = {}) {
   const lines = []
@@ -92,20 +93,14 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   const startedAt = Date.now()
   const traceId = String(options?.traceId || options?.taskId || '')
   /* 这轮用户说了什么 —— 模板匹配 / 记忆召回的查询词共用 */
-  const lastUserText = (() => {
-    const list = options?.history ?? history ?? []
-    for (let i = list.length - 1; i >= 0; i -= 1) {
-      const m = list[i]
-      if (m?.role === 'user' && typeof m.content === 'string' && m.content.trim()) return m.content
-    }
-    return ''
-  })()
-  /*
-   * 他这轮明确说「你问我几个问题」→ 当场解除静音（AG-053 批④）：界面那个「先问我想清楚」
-   * 按钮做的就是**把这句话填进输入框**（他还能再补两句），所以这里认出来就够了 —— 不必为它
-   * 开一条新 IPC 通道。静音只是一次性的「别老问了」，不是偏好，所以解除也不写盘。
-   * 判断只能有一处（要和工具侧 ask_user 的 muted 读同一份状态）—— 所以单独一个 clarify-turn.cjs。
-   */
+  /* 这轮用户说了什么 —— 模板匹配 / 记忆召回共用；`id` 只给纠正去重（反例 4） */
+  const historyList = options?.history ?? history ?? []
+  const lastUserMsg =
+    [...historyList].reverse().find((m) => m?.role === 'user' && typeof m.content === 'string' && m.content.trim()) ?? null
+  const lastUserText = String(lastUserMsg?.content ?? '')
+  const lastUserMsgId = typeof lastUserMsg?.id === 'string' ? lastUserMsg.id : ''
+  /* 他这轮说「你问我几个问题」→ 当场解除静音（AG-053 批④）：界面那个按钮就是把这句填进输入框。
+     静音是一次性的、不写盘；判断只能一处（与工具侧 ask_user 读同一份）→ clarify-turn.cjs。 */
   /* 技能清单：只给名字 + 用途 + 路径，正文让模型自己按需读 */
   let skillSection = ''
   try {
@@ -134,6 +129,17 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   } catch (error) {
     log.warn(`读记忆失败：${error instanceof Error ? error.message : error}`)
   }
+
+  /*
+   * 已验证的经验（自我纠错）：命中才出现，最多几条。**候选不进提示** ——
+   * 这就是「失败不会直接变成规则」。用户这句如果是在纠正我，也在这一步被观察到。
+   */
+  const experienceSection = experience.sectionFor({
+    userText: lastUserText,
+    messageId: lastUserMsgId, /* 纠正去重只认「哪条对话的哪一句」（反例 4） */
+    projectId: options.projectId ?? '',
+    sessionId: options.sessionId ?? '',
+  })
 
   /* 项目说明：AGENT.md 之类，项目维护者写的规矩 */
   let projectSection = ''
@@ -210,6 +216,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
        所以这里只读缓存，不 spawn 进程。 */
     machineEnv: machineEnv.section(),
     relevantMemory: assembled.systemContext.memory,
+    /* 已验证的经验：命中才出现（空串时这一层不进提示） */
+    relevantExperience: experienceSection,
     projectInstructions: assembled.systemContext.project,
     /* 技能与工具清单：模型得看得到「手边有什么」；
        钉住的那个技能把**正文**也放进来（见 skill-pin.cjs），否则「钉」等于没钉 */
@@ -230,14 +238,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
        所以不占对话预算、也不会越点越长。放易变区，页面一换这一节就换。 */
     retrievedContext: pageCtx.promptSection(options.sessionId),
     /* 最后两层：越靠后越容易被遵守 */
-    /*
-     * `assistant.planFirst` / `clarifyFirst`（AG-053）的控制点；
-     * 两条规则的原文与理由见 prompt-stack.cjs。
-     *
-     * ★ 「现在还能不能问他」一次算清（批④ 接的），判断在 clarify-turn.cjs ——
-     * 以前这里读的是 `options.clarifyMuted`，而**那个字段根本没人赋值**：
-     * 静音之后提示词里照旧写着「先问」，模型就去问了，工具却拒答（两边说法不一致）。
-     */
+    /* planFirst / clarifyFirst 的控制点（规则原文见 prompt-stack）。「还能不能问他」一次算清：
+       以前读的 options.clarifyMuted 没人赋值 → 提示里照旧写「先问」，工具却拒答。 */
     workRules: workRules({
       planFirst: config.assistant?.planFirst,
       clarifyFirst: config.assistant?.clarifyFirst,
@@ -267,12 +269,8 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
     }
   }
 
-  /*
-   * CE-018：系统提示拆成**两条 system message** —— 稳定区在前（历史紧跟在它后面，
-   * 吃前缀缓存）、易变区追加到**消息末尾**（它一变只影响它自己）。
-   * ★ 层内容与角色一字未改，只挪位置（**绝不降级成 user**）；拆出的两条拼回来
-   * 与 `stack.message.content` 逐字节相同（自检 `06-prompt-state.mjs` 钉着）。
-   */
+  /* CE-018：拆成两条 system message（稳定区在前吃缓存、易变区挪到末尾）。
+     层内容与角色一字未改（绝不降级成 user）；拼回来与 stack.message 逐字节相同（自检 06 钉着）。 */
   const parts = promptStack.splitMessages(stack.layers)
   const custom = config.assistant.systemPrompt?.trim()
   const stable = parts[0] ?? null

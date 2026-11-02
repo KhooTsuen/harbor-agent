@@ -3,8 +3,8 @@
  *
  * 与旧版的差别：**并行**（连续/只读/目标不同才并发，见 tool-scheduler.cjs）·
  * **部分成功检测**（写失败时比前后 hash，先提醒看现场）· **结构化失败摘要**
- * （error_kind / 目标 / retry_count 进「失败后继续」提示）· **调用统计**进台账。
- *
+ * （error_kind / 目标 / retry_count 进「失败后继续」提示）· **调用统计**进台账 ·
+ * **自我纠错**（每次调用的成败喂给 `experience-loop`，候选绝不进提示）。
  * 事件与消息顺序纪律：事件带 toolCallId；tool 消息按**原始调用顺序**入队。
  */
 
@@ -15,37 +15,17 @@ const taskNotes = require('./task-notes.cjs')
 const taskStrict = require('./task-strict.cjs')
 const errors = require('./errors.cjs')
 const observer = require('./error-observer.cjs')
+const toolFailure = require('./tool-failure.cjs')
 const scheduler = require('./tool-scheduler.cjs')
 const shared = require('./tools/_shared.cjs')
 const { buildFailureNote } = require('./loop-prompt.cjs')
 const { isAborted } = require('./abort.cjs')
 const { buildRunCtx } = require('./tool-run-ctx.cjs')
 const actionCore = require('./action.cjs')
+const experience = require('./experience-loop.cjs')
 const { lastUserText } = require('./loop-route.cjs')
-
-/**
- * 工具返回算不算成功 —— 全项目只有这一处判定。
- *
- * ★ 两种输入形态：
- *   · **字符串**（老契约，绝大多数工具）：看开头是不是拒绝/错误文案
- *   · **`{ text, toolOk }`**（结构化）：`toolOk` 说了算，但**拒绝文案永远优先**
- *     （fail-closed：工具不能靠自己声明 true 把一个拒绝说成成功）
- *
- * 为什么需要结构化（3B-1 / B12）：项目测试「跑了但断言挂了」的正文完全正常，
- * 只看前缀会判成功 —— 活动记录里 FAIL 显示成绿勾。测试的状态与「这次调用
- * 成不成功」是两个概念，只能由工具自己结构化回报，不能靠文本前缀伪装。
- */
-function isToolOk(output) {
-  const text = String(output !== null && typeof output === 'object' ? output.text : output ?? '')
-  if (text.startsWith('错误：') || text.startsWith('用户拒绝了')) return false
-  if (output !== null && typeof output === 'object' && typeof output.toolOk === 'boolean') return output.toolOk
-  return true
-}
-
-/** 工具返回 → 正文文本（结构化 `{ text, ok }` 取 text；字符串原样） */
-function outTextOf(output) {
-  return String(output !== null && typeof output === 'object' ? output.text ?? '' : output ?? '')
-}
+/* 成败判定 + 失败事实：形状与判据都只定义在 tool-failure.cjs */
+const { isToolOk, outTextOf } = toolFailure
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -173,13 +153,31 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     const outText = outTextOf(output)
     const ok = isToolOk(output)
     if (ok) doneNames.push(call.name)
-    const run = { id: call.id, name: call.name, args, ok, output: outText, ms: Date.now() - startedAt, parallel: parallel === true }
+    /* 失败事实（形状只定义在 tool-failure.cjs）—— 事件 / 记录 / 台账读同一份 */
+    const { info, error: failure } = toolFailure.outcomeOf({
+      toolName: call.name,
+      ok,
+      text: outText,
+      facts: toolFailure.factsOf(output),
+    })
+    const run = {
+      id: call.id,
+      name: call.name,
+      args,
+      ok,
+      output: outText,
+      ms: Date.now() - startedAt,
+      parallel: parallel === true,
+      /* 结构化事实（退出码 / 超时 / 中断）：独立验证器读它，不读正文 */
+      facts: toolFailure.factsOf(output),
+      ...(failure ? { error: failure } : {}),
+    }
     toolRuns.push(run)
 
     /* ── 任务台账：这一步干了什么 ── */
     if (options.taskId) {
       try {
-        taskCore.addStep(options.taskId, { tool: call.name, ok, summary: outText, ms: run.ms, args, action })
+        taskCore.addStep(options.taskId, { tool: call.name, ok, summary: outText, ms: run.ms, args, action, error: failure })
         if (call.name === 'run_shell' && typeof args.command === 'string') {
           taskCore.addCommand(options.taskId, args.command, outText)
         }
@@ -193,10 +191,9 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     }
     bumpStats({ calls: 1, invalid: duplicateInvalid ? 1 : 0, duplicates: duplicate ? 1 : 0 })
 
-    const info = ok ? null : errors.classifyToolOutput(outText, { name: call.name })
     /*
-     * 工具失败：记一笔。分类结果直接带给观察哨（它就不再分一次类了）。
-     * 只记录，不动 `info` —— 重试 / 提示 / 中止等行为与以前完全一致。
+     * 失败记一笔给观察哨（分类结果直接递过去，它不再分一次）。
+     * 只记录、不动 `info` —— 重试 / 提示 / 中止等行为与以前完全一致。
      */
     if (info) {
       observer.record(info.message || outText, {
@@ -212,6 +209,9 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       })
     }
 
+    /* 自我纠错：判据全在 experience-loop（候选不进提示、只有验过的才被提、绝不抛）；workdir 给独立验证器用 */
+    const learned = experience.afterRun(run, { projectId: ctx?.projectId, sessionId: ctx?.sessionId, workdir: ctx?.workdir })
+
     emit({
       type: ok ? 'agent.tool.completed' : 'agent.tool.failed',
       toolCallId: call.id,
@@ -221,6 +221,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
       ms: run.ms,
       parallel: parallel === true,
       ...(info ? { errorKind: info.kind, errorHint: info.hint } : {}),
+      ...(failure ? { error: failure } : {}),
     })
 
     /* 失败时附分类与建议；写操作再附「部分成功检测」 */
@@ -235,6 +236,8 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
           `[部分成功检测] 目标文件${check.created ? '已被创建' : '可能已被部分修改'}（${check.path}）—— 重试前先 read_file 确认现场，不要盲目重来。`,
         )
       }
+      /* 验证过的经验才在这里出现（候选不进提示）—— 见 experience-loop.afterRun */
+      if (learned.note) bits.push(learned.note)
       content = bits.join('\n')
       failures.push({
         name: call.name,
@@ -271,10 +274,7 @@ async function executeToolCalls({ toolCalls, ctx, options, messages, toolRuns, e
     }
   }
 
-  /*
-   * AG-017：本轮有失败 → 给模型一句「什么成了、什么败了」。
-   * 历史会被压缩（AG-016）：压完之后早期步骤只剩摘要 —— 台账不受影响，在这再说一遍。
-   */
+  /* AG-017：本轮有失败 → 给模型一句「什么成了、什么败了」（历史会被压缩，台账不受影响） */
   if (failures.length > 0) {
     const note = buildFailureNote({ done: doneNames, failed: failures })
     messages.push({ role: 'user', content: note })

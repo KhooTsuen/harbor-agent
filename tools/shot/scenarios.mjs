@@ -7,6 +7,8 @@
  * 否则先在页面里执行那段 JS 再截。加场景就往这个数组里加一条。
  */
 
+import { NEW_CHAT } from '../shot/ui-selectors.mjs'
+
 const SHOTS = [
   { name: '01-主界面', script: null },
   /* 切到 Markdown 自检会话并滚到顶部：验标题/粗体/任务列表 */
@@ -21,12 +23,8 @@ const SHOTS = [
   },
   {
     name: '02-空对话',
-    script: `(function () {
-      const btns = [...document.querySelectorAll('button')];
-      const b = btns.find((x) => x.textContent.includes('新建对话'));
-      if (b) b.click();
-      return '新建对话';
-    })()`,
+    /* 挑选规则只有一处：`ui-selectors.mjs`（前缀匹配会先点中「新建对话并指定目录」） */
+    script: NEW_CHAT,
   },
   {
     name: '03-设置-外观',

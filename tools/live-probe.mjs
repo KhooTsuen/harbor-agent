@@ -6,15 +6,15 @@
  * 单独成一处定义，改了样子（比如把 `.process-live` 从 span 挪到 button）只需要改这里。
  */
 
-/** 新建对话（按可访问文案找，不认 DOM 层级） */
-export const NEW_CHAT = `(function(){
-  const re = /^新建对话/
-  const hit = (x) => re.test(x.getAttribute('aria-label') || '') || re.test(x.title || '') || re.test((x.textContent || '').trim())
-  const b = [...document.querySelectorAll('button')].find(hit)
-  if (!b) return false
-  b.click()
-  return true
-})()`
+/**
+ * 新建对话 / 发送 / 停止 —— **转出** `shot/ui-selectors.mjs` 那一份。
+ *
+ * 以前这里是 `/^新建对话/` 前缀匹配，会点中侧栏的「新建对话并指定目录」
+ * （弹原生目录框、挡住后面每一步）。`SEND` 也自己写了一份 `/发送消息/`，
+ * 和停止那一组是同一个坑（包含匹配会撞上「立即发送（先停止当前任务）」）。
+ * 挑选规则现在只有一处，本文件只做转发。
+ */
+export { NEW_CHAT, SEND, STOP, RUNNING } from './shot/ui-selectors.mjs'
 
 /** 往输入框写一句话（走 React 的 value setter + input 事件，不然状态不更新） */
 export const fillExpr = (text) =>
@@ -26,16 +26,6 @@ export const fillExpr = (text) =>
     ta.dispatchEvent(new Event('input', { bubbles: true }))
     return ta.value.length
   })()`
-
-/** 点发送 */
-export const SEND = `(function(){
-  const re = /发送消息/
-  const hit = (x) => re.test(x.getAttribute('aria-label') || '') || re.test(x.title || '') || re.test((x.textContent || '').trim())
-  const b = [...document.querySelectorAll('button')].find(hit)
-  if (!b) return false
-  b.click()
-  return true
-})()`
 
 /** 点一下过程入口（展开 / 收起）—— 有多条消息时点**最后一条**（最新那轮） */
 export const TOGGLE = `(function(){
@@ -84,13 +74,7 @@ export const PROBE = `(function(){
   }
 })()`
 
-/** 点停止（「停止生成」是 SendControls 里的按钮文案） */
-export const STOP = `(function(){
-  const b = document.querySelector('button[aria-label="停止生成"]')
-  if (!b) return false
-  b.click()
-  return true
-})()`
+/** 点停止 —— **转出**（`STOP` 已从 `shot/ui-selectors.mjs` 那一份导出，别在这里再定义一遍） */
 
 /**
  * 点侧边栏里**另一条**对话（除当前这条之外的第一条 = 最近的一条历史）。

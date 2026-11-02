@@ -19,6 +19,7 @@ import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { connect, sleep, findPageTarget, evaluate } from './shot/cdp.mjs'
+import { NEW_CHAT, SEND } from './shot/ui-selectors.mjs'
 import { autoAnswerCards } from './shot/cards.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -46,10 +47,8 @@ const SCENARIOS = [
  */
 const DEFAULT_MARKER = '没收到回答就按它来'
 
-const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 const fill = (t) =>
   `(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(t)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`
-const SEND = `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 
 /** 读一个会话文件里**第一条带工具调用**的 assistant 的工具名（没有就按纯文字/无 assistant 判） */
 function firstToolOf(file) {

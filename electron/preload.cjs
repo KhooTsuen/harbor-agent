@@ -109,6 +109,10 @@ const api = {
   memoryEnable: (id) => call('memory:enable', id),
   memoryRemove: (id) => call('memory:remove', id),
   memoryExplain: (options) => call('memory:explain', options),
+  /* 经验（自我纠错闭环）：设置页看全库 + 人批准/驳回/恢复；判据全在 core/experience-*（preload 只搬运） */
+  experienceList: (options) => call('experience:list', options),
+  experienceStats: () => call('experience:stats'),
+  experienceReview: (payload) => call('experience:review', payload),
   searchProviders: () => call('search:providers'),
   testSearch: (override) => call('search:test', override),
   diagnosticsCopy: () => call('diagnostics:copy'),
@@ -264,17 +268,15 @@ const api = {
   },
 
   onPluginsChanged: (callback) => subscribe('plugins:changed', callback), /* 插件热插拔 */
-  /** 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
+  /* 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
   onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
-  /* 订阅生图完成/失败：生图异步（提交即返回，出图可能几分钟后），靠推事件把图插进对话 */
   onImageDone: (callback) => subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
   /* 浏览：主进程发来的操作请求（见 useBrowseBridge.ts）+ 网页弹窗转过来的新标签地址 */
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
   onBrowserOpenTab: (callback) => subscribe('browser:openTab', callback),
   /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准） */
   onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
-
-  /** 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
+  /* 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
   onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
   /** 把「当前标签的 webContents id / 就绪」推给主进程（B5：主进程据此直连，不必每次往返） */
   browserActive: (payload) => call('browser:active', payload),
@@ -286,7 +288,6 @@ const api = {
   logAction: (entry) => report(entry),
 
   probeProvider: (providerId, model) => call('provider:probe', { providerId, model }),
-
   /** 渲染层没被捕获的异常（window.onerror / unhandledrejection / ErrorBoundary） */
   logError: (entry) => {
     try {

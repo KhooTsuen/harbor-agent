@@ -268,7 +268,8 @@ export async function run() {
   check('★★ 上层会静默放行时 → 这一层必须拦（否则没人被问就把请求发出去了）', upperSilent.includes('没人被问'), upperSilent.slice(0, 80))
   /* workdir 显式给 ROOT：这一组不建沙箱（沙箱目录和别的组抢） */
   const echoed = await runShell.run({ command: 'echo net-policy-ok' }, { ...ctx, workdir: ROOT, netPolicy: { mode: 'deny' } })
-  check('不涉及网络的命令照旧能跑（别误伤）', echoed.includes('net-policy-ok'), echoed.slice(0, 60))
+  /* ★ 结构化返回（蓝图阶段 A）：正文在 .text 里 */
+  check('不涉及网络的命令照旧能跑（别误伤）', echoed.text.includes('net-policy-ok'), echoed.text.slice(0, 60))
 
   group('网络策略 / 读配置失败不能变成放行')
 

@@ -22,6 +22,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { connect, sleep, findPageTarget, evaluate } from './shot/cdp.mjs'
+import { NEW_CHAT, SEND } from './shot/ui-selectors.mjs'
 import { autoAnswerCards, CARDS } from './shot/cards.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -90,10 +91,8 @@ const app = spawn(BIN, ['.', `--remote-debugging-port=${PORT}`], {
 })
 const killApp = () => spawn('taskkill', ['/pid', String(app.pid), '/T', '/F'], { stdio: 'ignore' })
 
-const NEW_CHAT = `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 const fillExpr = (text) =>
   `(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(text)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`
-const SEND = `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`
 
 const waitFor = async (fn, timeoutMs, intervalMs = 600) => {
   const deadline = Date.now() + timeoutMs

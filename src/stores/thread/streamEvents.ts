@@ -1,4 +1,5 @@
 import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
+import { isToolFailure } from '@/types/rounds'
 import { uid } from '@/lib/utils'
 import { useAppStore } from '../useAppStore'
 import { usePerfStore } from '../usePerfStore'
@@ -48,10 +49,7 @@ function currentRound(state: StreamState): MessageRound {
   if (last) return last
   const fresh: MessageRound = { reasoning: '', content: '', tools: [] }
   state.rounds.push(fresh)
-  /*
-   * 懒建出来的这一轮 = 本轮起点，顺手把重试标记对齐到「现在」（没有 turn_start 的
-   * 那一轮很常见；标记若还停在 0，一次重试会把前面所有的话都退掉）。
-   */
+  /* 懒建出来的这一轮 = 本轮起点；标记若停在 0，一次重试会把前面所有的话都退掉 */
   state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
   return fresh
 }
@@ -159,6 +157,8 @@ export function handleStreamEvent(
       const index = state.toolRuns.findIndex((run) => run.id === id)
       const output = String(event.result ?? '')
 
+      /* 失败事实（蓝图阶段 A）：只在失败时挂上去，成功时不留 error 键 */
+      const failure = isToolFailure(event.error) ? { error: event.error } : {}
       const updated: ToolRunRecord = {
         ...state.toolRuns[index] /* 保住 subagent trace（重建新对象会把它抹掉） */,
         id,
@@ -166,8 +166,8 @@ export function handleStreamEvent(
         ok: event.ok !== false,
         output,
         ms: typeof event.ms === 'number' ? event.ms : undefined,
+        ...failure,
       }
-
       if (index >= 0) state.toolRuns[index] = updated
       else state.toolRuns.push(updated)
 

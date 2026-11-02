@@ -37,6 +37,7 @@ import { prepareSandbox } from './acceptance-sandbox.mjs'
 import { normalize, observeRound } from './acceptance-verdict.mjs'
 import { preflightBad, summarize } from './acceptance-report.mjs'
 import { Cdp } from './acceptance-cdp.mjs'
+import { NEW_CHAT, RUNNING, SEND, STOP } from './shot/ui-selectors.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1] ?? fallback
@@ -153,11 +154,13 @@ try {
       /*
        * 上一轮如果还没收尾（超时了），先把「停止」按掉再开下一轮 ——
        * 否则此刻的「发送消息」键是「停止」，驱动点不到它，两边互等（2026-10-02 就这么僵住的）。
+       *
+       * 「停止」**只认精确名字**（`shot/ui-selectors.mjs` 的 STOP）：发送区里那个
+       * 「立即发送（先停止当前任务）」也含「停止」两个字，`/停止/` 正则有可能先撞上它 ——
+       * 那一下不是「停下」，而是「立刻把这条发出去」。
        */
       for (let i = 0; i < 20; i += 1) {
-        const stopped = await ev(
-          `(function(){const re=/停止/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`,
-        )
+        const stopped = await ev(STOP)
         if (stopped !== true) break
         await sleep(1500)
       }
@@ -165,20 +168,16 @@ try {
       const logBefore = logText().length
       const t0 = now()
       /*
-       * 点「新建对话」：**三处任一命中**（aria-label / title / 文本）。
-       * 以前只看 aria-label，而侧栏那个按钮没有它 → 一直静静点不到，
-       * 于是每轮都落在**上一条会话**里（历史越攼越长、工作目录也不是沙箱）。
+       * 点「新建对话」：**只认精确名字**（`shot/ui-selectors.mjs` 的 NEW_CHAT）。
+       * 以前是三处任一命中 + `/^新建对话/` 前缀，于是会先撞上侧栏的
+       * 「新建对话并指定目录」→ 弹原生目录框，把后面每一步都挡掉（2026-11-02 用户报的）。
        */
-      const created = await ev(
-        `(function(){const re=/^新建对话/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`,
-      )
+      const created = await ev(NEW_CHAT)
       if (created !== true) console.log('  ⚠️ 没点到「新建对话」—— 本轮可能落在旧会话里')
       await sleep(1300)
       await ev(`(function(){const ta=document.querySelector('textarea');if(!ta)return 0;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;s.call(ta, ${JSON.stringify(task.prompt)});ta.dispatchEvent(new Event('input',{bubbles:true}));return ta.value.length})()`)
       await sleep(600)
-      const sent = await ev(
-        `(function(){const re=/发送消息/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());const b=[...document.querySelectorAll('button')].find(hit);if(!b)return false;b.click();return true})()`,
-      )
+      const sent = await ev(SEND)
       if (sent !== true) console.log('  ⚠️ 没点到「发送消息」（可能被原生对话框挡住 / 上一轮没收尾）')
 
       /* 结束判定：见到运行态 → 它消失 + 会话文件 8 秒不再变大 */
@@ -209,9 +208,8 @@ try {
           )
           await sleep(900)
         }
-        const running = await ev(
-          `(function(){const re=/停止/;const hit=x=>re.test(x.getAttribute('aria-label')||'')||re.test(x.title||'')||re.test((x.textContent||'').trim());return !!([...document.querySelectorAll('button')].find(hit))})()`,
-        )
+        /* 还在跑？看的是「停止生成」那个按钮在不在（精确名字，不是 /停止/） */
+        const running = await ev(RUNNING)
         if (running === true) sawRunning = true
         const sess = newest(join(DATA, 'sessions'), '.jsonl')
         const size = sess ? statSync(join(DATA, 'sessions', sess)).size : 0

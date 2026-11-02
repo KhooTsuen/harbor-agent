@@ -139,6 +139,7 @@ npm run test:app # 应用自检：看 channelsExpected / channelsMissing
   npm run shot:electron -- --js="..."          # 先执行一段 JS（点按钮/填输入框）再截图
   node tools/e2e-fail-streak.mjs               # 真机端到端：假上游 + 真界面跑一轮，拿真实请求体下判据
   node tools/e2e-clarify-card.mjs              # 真机：弹澄清卡时**脚本自己点**（提问卡/确认卡不再卡死脚本）
+  node tools/e2e-tool-failure-visible.mjs      # 真机：跑一条真会失败的命令，读回界面上那行是「失败」还是绿勾
   ```
 
   它用 CDP 连**打包后的真应用**，能点标签、填输入框、读回 DOM 文本。

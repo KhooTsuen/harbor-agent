@@ -64,6 +64,22 @@ import { run as p0FoldResumeConsentGroup } from './groups/186-p0-fold-resume-con
 import { run as p0SpeechGroup } from './groups/187-p0-speech.mjs'
 /* 2026-11-01：让「先给计划」「开工前先问」两个开关真的会拦人（pre-write-gate） */
 import { run as preWriteGateGroup } from './groups/190-pre-write-gate.mjs'
+/* 2026-11-02：工具失败事实（蓝图阶段 A 第一切片）—— 退出码不再只留在文本里 */
+import { run as toolFailureFactGroup } from './groups/191-tool-failure-fact.mjs'
+/* 2026-11-02：项目记忆归属闭环（复用评估 §7）—— scope=project 记得住也找得回，别项目看不见 */
+import { run as projectMemoryAttributionGroup } from './groups/192-project-memory-attribution.mjs'
+/* 2026-11-02：经验生命周期（自我纠错）—— 失败只建候选、验证达标才注入、反例即暂停 */
+import { run as experienceLifecycleGroup } from './groups/193-experience-lifecycle.mjs'
+import { run as experienceE2EGroup } from './groups/194-experience-e2e.mjs'
+/* 2026-11-02：四个反例回归（成功≠已验证 / 作用域+目标去重 / 脱敏失败放弃 / 纠正按消息去重） */
+import { run as experienceCounterexampleGroup } from './groups/195-experience-counterexamples.mjs'
+import { run as experienceCounterexampleBGroup } from './groups/196-experience-counterexamples-b.mjs'
+import { run as experienceApprovalGroup } from './groups/197-experience-approval.mjs'
+import { run as experienceLeftoversGroup } from './groups/200-experience-leftovers.mjs'
+import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
+/* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
+import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
+import { run as experienceApprovalUiGroup } from './groups/199-experience-approval-ui.mjs'
 import { run as codexAdapterGroup } from './groups/165-codex-adapter.mjs'
 import { run as codexStabilityGroup } from './groups/166-codex-stability.mjs'
 import { run as probeIsolationGroup } from './groups/167-probe-isolation.mjs'
@@ -258,5 +274,8 @@ export const GROUPS = [
   m02cSettingsGroup, compactChunkedGroup, edgeP0Group, p0WindowCompactGroup,
   p0AttributionMemoryGroup, p0CompactWriteGroup, p0TrustWindowGroup, p0FoldKeepsRequirementsGroup,
   p0FoldHardBlockGroup, p0FoldResumeConsentGroup, p0SpeechGroup,
-  preWriteGateGroup,
+  preWriteGateGroup, toolFailureFactGroup, projectMemoryAttributionGroup,
+  experienceLifecycleGroup, experienceE2EGroup, experienceCounterexampleGroup, experienceCounterexampleBGroup,
+  experienceApprovalGroup, uiSelectorsGroup, experienceApprovalUiGroup,
+  experienceLeftoversGroup, experienceLeftoversUiGroup,
 ]

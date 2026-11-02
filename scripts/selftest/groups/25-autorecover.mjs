@@ -93,7 +93,24 @@ export async function run() {
     loopTools.includes("type: 'agent.retrying'"),
   )
   check('重试带退避', loopTools.includes('errors.backoffMs'))
-  check('★ 成败判定只有一处（isToolOk）', (loopTools.match(/isToolOk\(/g) ?? []).length >= 3)
+  /*
+   * ★ 判据更新（2026-11-02）：真相源搬到了 `core/tool-failure.cjs` ——
+   *   `isToolOk` 的定义只剩那一处，这个文件（loop-tools）只解构使用。
+   *   所以这里要钉的变成三件事，比原来更严：
+   *     ① 真的是从 tool-failure 取的（不是自己又写一份）
+   *     ② 真的在用它判成败（不是取来摆着）
+   *     ③ 自己**没有**再定义一份 `function isToolOk` —— 这才是「只有一处」
+   */
+  check(
+    '★ 成败判定的真相源只有一处（tool-failure.cjs）',
+    readCore('electron/core/tool-failure.cjs').includes('function isToolOk') &&
+      !/function isToolOk\s*\(/.test(loopTools),
+  )
+  check(
+    '★ 工具循环从 tool-failure 取 isToolOk（不是自己写一份判据）',
+    loopTools.includes("const { isToolOk, outTextOf } = toolFailure") &&
+      loopTools.includes('isToolOk('),
+  )
 
   const loopModel = readCore('electron/core/loop-model.cjs')
   check('★ 上下文超限会自动压缩一次再试', loopModel.includes('compactMessages('))

@@ -25,6 +25,28 @@ export const StoredMessageSchema = z.object({
         output: z.string().default(''),
         ms: z.number().optional(),
         /*
+         * 失败事实（蓝图阶段 A）。★ **必须在 schema 里声明** —— zod 会把没声明
+         * 的字段静静剥掉：不写这一块，落盘的退出码读回来就没了，界面又只能去
+         * 正文里找 `[退出码 N]`（2026-10-07 子代理卡片消失就是同一个坑）。
+         * 字段名与 `electron/core/tool-failure.cjs` 的 `SHAPE_KEYS` 一致；
+         * 老会话记录里没有它 —— 所以整块 `.optional()`。
+         */
+        error: z
+          .object({
+            schemaVersion: z.number().default(1),
+            reasonCode: z.string(),
+            /* ★ `null` 是「没有退出码」，不能 default 成 0 —— 那会把超时说成成功 */
+            exitCode: z.number().nullable().default(null),
+            systemCode: z.string().nullable().default(null),
+            kind: z.string().default('unknown'),
+            hint: z.string().default(''),
+            category: z.string().default('tool_failure'),
+            domain: z.string().default('other'),
+            retryable: z.boolean().default(false),
+            needsUser: z.boolean().default(false),
+          })
+          .optional(),
+        /*
          * 子代理 v1 的 trace（那次 `spawn_subagent` 调用**内部**干了什么）。
          * ★ 同样必须在 schema 里声明 —— zod 会把没声明的字段**静静剥掉**：
          *   不写这一块，落盘的子代理步骤读回来就没了，界面整张卡片消失

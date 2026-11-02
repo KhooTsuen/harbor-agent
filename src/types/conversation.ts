@@ -153,6 +153,8 @@ export interface Message {
 
 import type { MessageRound, ToolRunRecord } from './rounds'
 export type { MessageRound, ToolRunRecord, SubagentStep, SubagentTrace } from './rounds'
+/* 失败事实（蓝图阶段 A）：形状镜像 `electron/core/tool-failure.cjs` */
+export type { ToolFailure, FailureReason } from './rounds'
 
 export interface ThreadSettings {
   responseDepth?: 'concise' | 'standard' | 'detailed' | 'deep'

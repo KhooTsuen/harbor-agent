@@ -11,6 +11,7 @@ import {
   Settings2,
   Shield,
   SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react'
 
 /* ══════════════════════════════════════════════════════════════
@@ -30,6 +31,7 @@ export type SettingsTabId =
   | 'datausage'
   | 'extension'
   | 'memory'
+  | 'experience'
   | 'about'
 
 /* ══════════════════════════════════════════════════════════════
@@ -80,6 +82,12 @@ export const SETTINGS_TABS: readonly {
   { id: 'datausage', label: '数据与用量', icon: Database, group: '高级' },
   { id: 'extension', label: '扩展', icon: Puzzle, group: '高级' },
   { id: 'memory', label: '记忆', icon: BrainCircuit, group: '高级', detailedOnly: true },
+  /*
+   * 经验与规则：自我纠错闭环的**审批档位**。
+   * 放进「高级」并 detailedOnly —— 普通用户不需要进来，但改错会出事
+   * （批错一条建议，它以后每轮都会进提示）。判据同 access / memory。
+   */
+  { id: 'experience', label: '经验与规则', icon: Sparkles, group: '高级', detailedOnly: true },
 
   { id: 'about', label: '关于', icon: Info, group: null },
 ] as const

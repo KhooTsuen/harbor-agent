@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { SETTINGS_TABS, hiddenTabsOf, visibleTabsOf, type SettingsTabId } from './parts'
 import { AboutTab } from './tabs/AboutTab'
 import { MemoryTab } from './tabs/MemoryTab'
+import { ExperienceTab } from './tabs/ExperienceTab'
 import { ProfileTab } from './tabs/ProfileTab'
 import { GeneralPanel } from './panels/GeneralPanel'
 import { ConversationPanel } from './panels/ConversationPanel'
@@ -19,6 +20,7 @@ import { AppearanceTab } from './tabs/AppearanceTab'
 import { SettingsSearchBox } from './SettingsSearchBox'
 import { useConfigSaveStatus } from '@/stores/configSaveStatus'
 import { resetAllSettings } from '@/lib/resetAllSettings'
+import { experienceStats } from '@/lib/experienceApi'
 
 /* ══════════════════════════════════════════════════════════════
    设置
@@ -61,6 +63,31 @@ export function SettingsModal() {
   )
   /* 简洁视图下被收起来的那些页 —— 顶部点名，别让它们悄悄生效 */
   const hiddenTabs = useMemo(() => hiddenTabsOf(SETTINGS_TABS, settingsView), [settingsView])
+
+  /*
+   * 经验页被收起时，**点名「有 N 条等你处理」**。
+   *
+   * 为什么必须有（真机走出来的）：设置默认是简洁视图，「经验与规则」在详细视图里，
+   * 于是审批入口默认是**收着**的 —— 一条候选攒在那儿等人拍板，用户根本不知道。
+   * 这一行只说「有几条」并给直达按钮，**不复制那一页的内容**（同 P2 #1 的口径）。
+   *
+   * 数据走 `stats.byStatus`（主进程算好的分布），前端不自己数状态 ——
+   * 「什么算待处理」只有 `schema` 一处口径。
+   */
+  const [pendingExperience, setPendingExperience] = useState(0)
+  const needsExperience =
+    settingsView !== 'detailed' || hiddenTabs.some((item) => item.id === 'experience')
+  useEffect(() => {
+    if (!open || !needsExperience) return
+    let alive = true
+    void (async () => {
+      const stats = await experienceStats()
+      if (alive) setPendingExperience(stats.byStatus.candidate ?? 0)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [open, needsExperience, tab])
 
   /*
    * P3 #20：设置搜索。
@@ -200,6 +227,28 @@ export function SettingsModal() {
               查看或调整。
             </p>
           ) : null}
+          {/*
+            待审批的经验**必须点名**（真机走出来的缺口）：「经验与规则」在详细视图里，
+            而设置默认是简洁视图 —— 一条候选攒在那儿等人拍板，用户根本不知道。
+            只在真的有东西等的时候出现（0 条时一个字都不显示，避免噪音）。
+          */}
+          {needsExperience && pendingExperience > 0 ? (
+            <p className="mb-2 rounded-sm border border-line-hairline bg-bg-raised/30 px-2 py-1.5 text-2xs leading-relaxed text-fg-secondary">
+              有 <strong className="font-semibold">{pendingExperience}</strong> 条经验在等你处理
+              （系统学到了、但还没被确认，现在**不会**进提示）。
+              <button
+                type="button"
+                className="ml-1 underline hover:text-fg-primary"
+                aria-label="去处理待审批的经验"
+                onClick={() => {
+                  updateSettings({ settingsView: 'detailed' })
+                  setTab('experience')
+                }}
+              >
+                去处理
+              </button>
+            </p>
+          ) : null}
           <p
             role="status"
             className={`mb-2 text-xs ${configSaveState === 'failed' ? 'text-danger' : 'text-fg-tertiary'}`}
@@ -221,6 +270,7 @@ export function SettingsModal() {
           {tab === 'datausage' ? <DataUsagePanel /> : null}
           {tab === 'extension' ? <ExtensionPanel /> : null}
           {tab === 'memory' ? <MemoryTab /> : null}
+          {tab === 'experience' ? <ExperienceTab /> : null}
           {tab === 'about' ? <AboutTab /> : null}
         </div>
       </div>

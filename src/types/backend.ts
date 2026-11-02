@@ -25,6 +25,7 @@ import type { CollabState, CollabRunResult } from './collab'
 import type { MemoryStats, SafetyBridge } from './safety'
 import type { ImageDonePayload } from './image'
 import type { ErrorsBridge } from './errors'
+import type { ExperienceBridge } from './experience'
 import type { NotifyBridge } from './notify'
 import type { WorkspaceBridge } from './workspace'
 import type { BrowserBridge } from './browser'
@@ -71,6 +72,7 @@ export interface WorkbenchBridge
     NotifyBridge,
     WorkspaceBridge,
     ErrorsBridge,
+    ExperienceBridge,
     BrowserBridge,
     ExtBridge,
     IoBridge {

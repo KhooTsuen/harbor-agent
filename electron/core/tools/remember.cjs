@@ -49,12 +49,28 @@ module.exports = {
     /*
      * `scope` 由模型指定；填 `session` 时绑**当前会话**（ctx.sessionId）——
      * 会话私有记忆只在本会话注入（SEC-065）。没有 sessionId 就落空串 = 不注入。
+     *
+     * ★ `project` 作用域必须带项目 ID（`ctx.projectId`，来自 `options.projectId`）。
+     *   没有 ID 却照写，条目就是**死条目**：`memory-scope.visible()` 对空串
+     *   fail-closed，既注入不到也搜不到（2026-11-02 生产库那 11 条就是这么来的）。
+     *   所以这里宁可**明说没记**，也不再往库里塞一条找不回来的记忆。
+     *   归属只认 ctx —— 不按内容 / workdir / 会话猜（猜错了比没有更难收拾）。
      */
+    const projectId = String(ctx?.projectId ?? '')
+    if (args.scope === 'project' && !projectId) {
+      throw new Error(
+        '没记：当前上下文没有项目 ID。项目级记忆在这种情况写下去会永远找不到，' +
+          '所以这次不落库。要么改用 scope=global，要么先确认这次对话已经绑定项目。',
+      )
+    }
+
     const result = memory.append({
       content: text,
       type: args.type,
       scope: args.scope,
       sessionId: ctx?.sessionId,
+      /* 只有项目作用域才落项目 ID —— global / session 不该带一个用不上的归属 */
+      projectId: args.scope === 'project' ? projectId : undefined,
     })
     if (!result.ok) throw new Error(result.error ?? '写入失败')
 
