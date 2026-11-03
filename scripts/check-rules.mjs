@@ -16,6 +16,7 @@
  * 不引新依赖（只用 node 内置）—— 检查「不许新增依赖」的脚本自己先不引。
  */
 
+import fs from 'node:fs'
 import path from 'node:path'
 import {
   checkAgentMd,
@@ -49,6 +50,42 @@ export {
 
 export const ROOT = path.resolve(import.meta.dirname, '..')
 
+/* 检查：脚本里不许按**映像名**杀进程。
+   2026-11-04 真机事故：build-portable.mjs 用映像名杀进程，把机器上所有同名 exe
+   一起收了 —— 包括用户正在用的另一份副本（也是我自己跑的宿主），窗口连会话一起消失。
+   两个字面量在运行时拼出来，免得这份检查把**自己**扫红（同 test-kit 的 marker）。 */
+const KILL = 'task' + 'kill'
+const BY_NAME = '/I' + 'M'
+
+export function checkNoKillByImageName(root = ROOT) {
+  const errors = []
+  /* 判定收在**同一行**：真调用会把映像名开关和命令写在一行；
+     而「断言这个开关不该出现」的测试行里没有命令名，自然不命中（自检 165 就这样写的）。 */
+  const scan = (file) => {
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+    const at = lines.findIndex((line) => line.includes(KILL) && line.includes(BY_NAME))
+    if (at === -1) return
+    errors.push(
+      `${path.relative(root, file)}:${at + 1} 按映像名杀进程 —— 会误伤同名的其它副本，改成按 pid/路径，或只检测不杀`,
+    )
+  }
+  const walk = (dir) => {
+    let list = []
+    try {
+      list = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of list) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (/\.(mjs|cjs|js)$/.test(entry.name)) scan(full)
+    }
+  }
+  walk(path.join(root, 'scripts'))
+  return { errors, summary: errors.length === 0 ? '脚本侧没有按映像名杀进程' : undefined }
+}
+
 /** 检查清单（顺序就是输出顺序）；主流程和测试共用这一份 */
 export const CHECKS = [
   ['行数 ≤ 300', checkLineLimits],
@@ -65,6 +102,7 @@ export const CHECKS = [
   ['约束机制在位（警告）', checkHooksInstalled],
   ['仓库卫生（警告）', checkHygiene],
   ['易漂数字（警告）', checkDriftingNumbers],
+  ['脚本不按映像名杀进程', checkNoKillByImageName],
 ]
 
 /** 跑全部检查；**不改退出码**，只返回汇总（测试直接断言这个） */

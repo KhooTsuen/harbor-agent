@@ -5,14 +5,16 @@
  * 三个必须记住的点（都是真踩过的）：
  *   ① resources/app/package.json **必须有**，缺了会静默退出、没有任何报错
  *   ② data 目录要**整体保留**，不能备份名单里的子目录（会漏东西）
- *   ③ 正在运行的实例要先关掉，否则文件被占用
+ *   ③ 目标目录的实例要先关掉（脚本只**检测不杀**，见下面 assertNotRunning）
  */
 
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import {
+  closeSync,
   cpSync,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -34,18 +36,19 @@ const APP_NAME = 'Harbor.exe'
 
 const step = (msg) => console.log(`  ${msg}`)
 
-/* ── 0. 关掉正在运行的实例 ─────────────────────────────── */
-
-async function killRunning() {
-  if (process.platform !== 'win32') return
+/* ── 0. 确认目标 exe 没在跑（**绝不杀进程**）─────────────
+   2026-11-04 真机事故：这里原来是按**映像名**杀进程，把机器上所有叫 Harbor.exe
+   的一起杀了 —— 包括用户正在用的另一份副本（E:\Harbor-Dev），宿主窗口连会话
+   一起消失，只剩台账停在半路。现在**只检测**：占用就报错，让用户自己关。
+   判断方式：'r+' 试开，Windows 上运行中的 exe 返回 EBUSY，没在跑的正常打开。 */
+function assertNotRunning() {
+  const exe = join(OUT, APP_NAME)
+  if (!existsSync(exe)) return
   try {
-    await new Promise((ok) => {
-      const child = spawn('taskkill', ['/F', '/IM', APP_NAME], { stdio: 'ignore' })
-      child.on('exit', ok)
-      child.on('error', ok)
-    })
-  } catch {
-    /* 没在跑就算了 */
+    closeSync(openSync(exe, 'r+'))
+  } catch (error) {
+    if (error?.code !== 'EBUSY' && error?.code !== 'EACCES') throw error
+    throw new Error(`${exe} 正在运行 —— 先关掉那个窗口再打包（脚本不再替你杀进程）`)
   }
 }
 
@@ -266,7 +269,7 @@ function copyEdgeExt() {
 async function main() {
   console.log('\n打包便携版...\n')
 
-  await killRunning()
+  assertNotRunning()
   prepareOut()
   copyRuntime()
   copyApp()

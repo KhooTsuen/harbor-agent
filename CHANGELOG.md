@@ -1,3 +1,16 @@
+## [未发布]
+
+### 打包脚本不再按映像名杀进程（2026-11-04 真机：把我自己连同用户的窗口一起杀了）
+
+**事故**：`scripts/build-portable.mjs` 的 `killRunning()` 用 `taskkill /F /IM Harbor.exe` —— 按**映像名**杀，机器上所有同名 exe 一视同仁。当时用户正开着 `E:\Harbor-Dev\dist-portable\Harbor`（也是本会话的宿主），打包一跑，窗口连会话一起消失，发布台账停在「打包 + 打 zip」，`harbor-1.35.0-win-x64.zip` 直到下次打包才产出。
+
+**改了什么**
+
+- `scripts/build-portable.mjs`：`killRunning()` → `assertNotRunning()`，**只检测不杀**。用 `r+` 试开目标 exe，Windows 上运行中的返回 `EBUSY`/`EACCES` 就报错退出，并打印要关的完整路径。脚本里已无任何 `taskkill`。
+- `scripts/check-rules.mjs`：新增检查「脚本不按映像名杀进程」，扫 `scripts/**` 下的 `.mjs/.cjs/.js`，同一行里既有命令名又有映像名开关就红。判定收在同一行 —— 「断言这个开关不该出现」的自检行里没有命令名，不会误报。
+
+**验证**：`node scripts/check-rules.mjs` 11 项全 ✓（新检查 0 违规）；`node scripts/test-rules.mjs` 56 通过 / 0 失败；`npm run package` 跑通，期间 `E:\Harbor-Dev` 的 5 个进程 PID 全程未变（没再被杀）。
+
 ## [1.35.0] — 2026-11-04 · 折叠治本（原话不再被截断）+ Edge 侧边栏对话流对齐主窗口 + 通知中心 + 发版提速
 
 ### 用户原话不再被折叠截断（治本：程序握着全文，就不该让用户手打一遍）
