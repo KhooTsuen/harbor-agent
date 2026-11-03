@@ -1,5 +1,43 @@
 ## [未发布]
 
+### 三条 CI 判据改成跨平台 / 不脆弱（本地全绿而 CI 连红的三个真凶）
+
+**起因**：1.35.0 推上去之后 CI #287 / #288 连红，而本地 `npm run verify` 全绿。
+拿 `actions/jobs/<id>/logs` 的原始日志逐条对，三个失败点**都不是产品坏了**，
+而是判据写成了「只有某台机器才成立的形状」—— 与 `d928b31` 修过的那两条同类，
+这次漏了它们。
+
+#### 改了什么
+
+- `scripts/selftest/groups/191-tool-failure-fact.mjs`：造失败的命令原来是写死的
+  `exit /b 7` —— 那是 **cmd.exe 的语法**。Linux runner 的 `/bin/sh` 会把 `/b` 当
+  非法参数（`Illegal number: /b`），退出码成 **2**，于是四条断言一起红。
+  改成 `FAIL_CMD = process.platform === 'win32' ? 'exit /b 7' : 'exit 7'`
+  （与 `19-abort` 的 `SLOW_CMD` 同一个口径）。要钉的是「退出码 7 这个事实」，
+  不是「某个 shell 的写法」。
+- `scripts/selftest/groups/202-edge-install.mjs`：「真装一遍」那一段需要三样前置，
+  CI 一样都没有 —— 扩展产物没构建、Electron 二进制刻意不下载
+  （`ELECTRON_SKIP_BINARY_DOWNLOAD=1`）、Linux 上没有 HKCU 注册表。以前无条件 `check`，
+  于是 10 条断言一起红。现在**先收集缺哪样**，缺就整组降级成两条 `warn` 并点名，
+  本机（Windows + 前置齐全）仍真跑同样的断言。
+- `src/components/chat/__tests__/collabPicker.test.tsx`：`openPicker()` 原来只
+  `await Promise.resolve()` 一次，菜单内容走 portal 挂到 body，慢一点的 runner 上
+  「切换条还不存在」就被判成产品坏了。改成**最多等 20 × 5ms**，等到切换条出现为止。
+
+#### 怎么验的
+
+- `node --check`：两个自检组文件语法通过。
+- `node scripts/selftest.mjs`：**通过 6459 项 / 失败 0 项**（改前基线 6459 / 0）——
+  本机 202 组仍走真跑分支，没有被 warn 兜掉。
+- `npx vitest run src/components/chat/__tests__/collabPicker.test.tsx`：5 passed。
+- **CI 是否真绿要看推上去那次运行的结论**，本地复现不了 Linux runner 的形状。
+
+#### 已知遗留
+
+- 202 组降级成 warn 之后，**CI 上那 10 条断言再也不会被执行**。也就是说：如果有人
+  哪天把 `edge-install.cjs` 改坏，CI 不会红，只有本机 Windows 跑自检才发现。
+  要补回来得让 CI 有 Windows runner（或至少能造出扩展产物 + 假注册表），单独立项。
+
 ### 打包脚本不再按映像名杀进程（2026-11-04 真机：把我自己连同用户的窗口一起杀了）
 
 **事故**：`scripts/build-portable.mjs` 的 `killRunning()` 用 `taskkill /F /IM Harbor.exe` —— 按**映像名**杀，机器上所有同名 exe 一视同仁。当时用户正开着 `E:\Harbor-Dev\dist-portable\Harbor`（也是本会话的宿主），打包一跑，窗口连会话一起消失，发布台账停在「打包 + 打 zip」，`harbor-1.35.0-win-x64.zip` 直到下次打包才产出。

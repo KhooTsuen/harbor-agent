@@ -14,7 +14,9 @@ import { ROOT, join, readFileSync, require } from '../env.mjs'
    再把三处的字段对一遍**。这里就是补这一条。
 
    ── 四条不能松的 ──
-   ① 真跑：`run_shell` 真的执行 `exit /b 7`，不是塞一个假对象
+   ① 真跑：`run_shell` 真的执行一条退出码 7 的命令，不是塞一个假对象
+      （`exit /b 7` 只是 cmd.exe 的语法；POSIX 上 `/bin/sh` 会把 `/b` 当非法参数、
+       退出码成 2 —— 2026-11-04 CI 连红就是这条，见下面 FAIL_CMD）
    ② 三处一致：事件里的 error、toolRuns 记录里的 error、台账落盘的 step 三份对得上
    ③ `0` 与 `null` 不能混：成功是 exitCode 0，超时/中断是 null
    ④ 形状只有一处：前端 `rounds.ts` 的字段名与 `SHAPE_KEYS` 集合相同
@@ -31,7 +33,10 @@ export async function run() {
   /* ── ① 真跑一条会失败的命令，看原始事实 ── */
   const shell = require(join(ROOT, 'electron/core/tools/run_shell.cjs'))
   const shellCtx = { workdir: ROOT, permission: 'full', log: { info() {}, warn() {} } }
-  const failed = await shell.run({ command: 'exit /b 7' }, shellCtx)
+  /* 退出码 7 的写法**按平台**：cmd 要 `/b`，sh 给了 `/b` 会变成 "Illegal number"、退出码 2。
+     与 19-abort 组同一个口径 —— 判据要求的是「退出码 7」，不是「某个 shell 的语法」。 */
+  const FAIL_CMD = process.platform === 'win32' ? 'exit /b 7' : 'exit 7'
+  const failed = await shell.run({ command: FAIL_CMD }, shellCtx)
   check(
     '★ 非零退出：run_shell 自己就报 toolOk=false（不再靠文本前缀）',
     failed && failed.toolOk === false,
@@ -126,7 +131,7 @@ export async function run() {
       {
         id: 'call_fail_191',
         name: 'run_shell',
-        arguments: JSON.stringify({ command: 'exit /b 7' }),
+        arguments: JSON.stringify({ command: FAIL_CMD }),
       },
     ],
     ctx: { ...shellCtx, taskId: task.id, signal: undefined },

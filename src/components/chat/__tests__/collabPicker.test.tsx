@@ -69,6 +69,14 @@ async function openPicker(): Promise<void> {
     button?.click()
     await Promise.resolve()
   })
+  /* 菜单内容是用 portal 挂到 body 的，**不是点了就立刻有**：慢一点的机器（CI runner）
+     上要等下一轮微任务 + 一次渲染才出来。以前这里只 await 一次 Promise.resolve()，
+     结果 CI 上「切换条还不存在」被判成产品坏了（2026-11-04 CI 连红的第三条）。 */
+  for (let i = 0; i < 20 && !switchButton(); i += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    })
+  }
 }
 
 /** 底部那条切换按钮（文案 / aria-label 都认） */

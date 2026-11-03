@@ -24,7 +24,7 @@
  */
 
 import { existsSync, join, mkdirSync, readFileSync, rmSync, require, ROOT, writeFileSync } from '../env.mjs'
-import { check, group } from '../harness.mjs'
+import { check, group, warn } from '../harness.mjs'
 
 const R = (p) => readFileSync(join(ROOT, p), 'utf8')
 
@@ -82,45 +82,66 @@ export async function run() {
    */
   const dataDir = join(tmp, 'data')
   const runtime = E.hostRuntime(ROOT)
-  check('★ 源码树里认得出跑 native host 的可执行文件', existsSync(runtime.exe) && existsSync(runtime.script), `${runtime.kind}`)
 
-  const before = E.readRegistryPath()
-  let applied = null
-  try {
-    applied = E.apply({ dataDir, root: ROOT })
+  /*
+   * ── 这一段只能在 Windows + 装齐前置的机器上真跑 ──────────────────
+   * 三样前置缺一样就整组降级成 warn（不算过也不算不过），并把缺的东西点名打出来：
+   *   ① `harbor-edge/dist/sidepanel/manifest.json` —— 扩展产物，要先构建 harbor-edge
+   *   ② Electron 二进制 —— CI 刻意不下载（ELECTRON_SKIP_BINARY_DOWNLOAD=1）
+   *   ③ Windows 注册表 —— Linux runner 上没有 HKCU，写不了 native host 清单
+   * 以前这里是无条件 check，于是 2026-11-04 的 CI 上 10 条断言一起红，而**产品其实是好的**
+   * —— 判据写成了「只有我这台机器才成立的形状」。缺前置时改用 warn：让「这里没验过」
+   * 在输出里看得见，而不是拿一个假红把真红埋掉（同 19-abort / 118 那两处的口径）。
+   */
+  const missing = []
+  if (!existsSync(join(E.sourceDir(ROOT), 'manifest.json'))) missing.push('扩展产物 harbor-edge/dist/sidepanel')
+  if (!existsSync(runtime.exe) || !existsSync(runtime.script)) missing.push('Electron 二进制（node_modules/electron/dist）')
+  if (process.platform !== 'win32') missing.push('Windows 注册表（HKCU）')
 
-    check('★★ 装成功（没报错）', applied.ok === true, applied.error ?? '')
-    check('★★ 产物被拷到 data 下（Edge 要加载的就是它）', applied.staged === true, applied.targetDir)
-    check('★★ 拷过去的 manifest 带同一个 ID', E.idFromKey(E.readManifest(applied.targetDir)?.key ?? '') === id)
-    check('★★ 宿主清单写好了', existsSync(applied.hostManifest))
-    check('★★ 清单的 allowed_origins 就是算出来的 ID', applied.hostOk === true)
-    check('★★ 包装器是纯 ASCII', /^[\x00-\x7F]*$/.test(readFileSync(applied.wrapper, 'ascii')))
-    check('★★ 包装器里指向的是**真**可执行文件', readFileSync(applied.wrapper, 'ascii').includes(runtime.exe))
-    check('★★ 注册表指到了这份清单', applied.registered === true, E.readRegistryPath())
+  if (missing.length > 0) {
+    warn('本组跳过：这台机器缺前置条件', missing.join(' / '))
+    warn('装一遍 / 幂等 / 拒绝空产物 / 注册表还原**都没有在本机真跑**（别把这里当成已验）')
+  } else {
+    check('★ 源码树里认得出跑 native host 的可执行文件', existsSync(runtime.exe) && existsSync(runtime.script), `${runtime.kind}`)
 
-    /* 幂等：再装一遍不该造第二份，也不该报错 */
-    const again = E.apply({ dataDir, root: ROOT })
-    check('★★★ 重复安装是幂等的（不报错、结果一样）', again.ok === true && again.targetDir === applied.targetDir)
-    check('★★ 状态里 connected 默认是 false（还没连上就不能说装好了）', applied.connected === false)
+    const before = E.readRegistryPath()
+    try {
+      const applied = E.apply({ dataDir, root: ROOT })
 
-    /* 产物不存在时必须拒绝，而不是算一个空 ID 写进注册表 */
-    const emptyRoot = join(tmp, 'empty-root')
-    mkdirSync(emptyRoot, { recursive: true })
-    const noSrc = E.apply({ dataDir, root: emptyRoot })
-    check('★★★ 找不到产物时明确拒绝（不写空 ID 进注册表）', noSrc.ok === false && /manifest/.test(noSrc.error ?? ''), noSrc.error ?? '')
-  } finally {
-    /* 恢复注册表：装之前有值就写回它，没有就删掉这个键 */
-    if (before) {
-      require('node:child_process').spawnSync('reg', ['ADD', REG_KEY, '/ve', '/t', 'REG_SZ', '/d', before, '/f'], {
-        windowsHide: true,
-      })
-    } else {
-      require('node:child_process').spawnSync('reg', ['DELETE', REG_KEY, '/f'], { windowsHide: true })
+      check('★★ 装成功（没报错）', applied.ok === true, applied.error ?? '')
+      check('★★ 产物被拷到 data 下（Edge 要加载的就是它）', applied.staged === true, applied.targetDir)
+      check('★★ 拷过去的 manifest 带同一个 ID', E.idFromKey(E.readManifest(applied.targetDir)?.key ?? '') === id)
+      check('★★ 宿主清单写好了', existsSync(applied.hostManifest))
+      check('★★ 清单的 allowed_origins 就是算出来的 ID', applied.hostOk === true)
+      check('★★ 包装器是纯 ASCII', /^[\x00-\x7F]*$/.test(readFileSync(applied.wrapper, 'ascii')))
+      check('★★ 包装器里指向的是**真**可执行文件', readFileSync(applied.wrapper, 'ascii').includes(runtime.exe))
+      check('★★ 注册表指到了这份清单', applied.registered === true, E.readRegistryPath())
+
+      /* 幂等：再装一遍不该造第二份，也不该报错 */
+      const again = E.apply({ dataDir, root: ROOT })
+      check('★★★ 重复安装是幂等的（不报错、结果一样）', again.ok === true && again.targetDir === applied.targetDir)
+      check('★★ 状态里 connected 默认是 false（还没连上就不能说装好了）', applied.connected === false)
+
+      /* 产物不存在时必须拒绝，而不是算一个空 ID 写进注册表 */
+      const emptyRoot = join(tmp, 'empty-root')
+      mkdirSync(emptyRoot, { recursive: true })
+      const noSrc = E.apply({ dataDir, root: emptyRoot })
+      check('★★★ 找不到产物时明确拒绝（不写空 ID 进注册表）', noSrc.ok === false && /manifest/.test(noSrc.error ?? ''), noSrc.error ?? '')
+    } finally {
+      /* 恢复注册表：装之前有值就写回它，没有就删掉这个键 */
+      if (before) {
+        require('node:child_process').spawnSync('reg', ['ADD', REG_KEY, '/ve', '/t', 'REG_SZ', '/d', before, '/f'], {
+          windowsHide: true,
+        })
+      } else {
+        require('node:child_process').spawnSync('reg', ['DELETE', REG_KEY, '/f'], { windowsHide: true })
+      }
     }
-    rmSync(tmp, { recursive: true, force: true })
+
+    check('★★ 自检跑完注册表被还原（不把测试的清单留在用户机器上）', E.readRegistryPath() === before, E.readRegistryPath())
   }
 
-  check('★★ 自检跑完注册表被还原（不把测试的清单留在用户机器上）', E.readRegistryPath() === before, E.readRegistryPath())
+  rmSync(tmp, { recursive: true, force: true })
 
   /* ══════════════════════════════════════════════════════════════
      ⑤ 接线：五处齐全 + 渲染层不许传路径
