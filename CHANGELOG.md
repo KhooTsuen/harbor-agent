@@ -20,6 +20,9 @@
   （`ELECTRON_SKIP_BINARY_DOWNLOAD=1`）、Linux 上没有 HKCU 注册表。以前无条件 `check`，
   于是 10 条断言一起红。现在**先收集缺哪样**，缺就整组降级成两条 `warn` 并点名，
   本机（Windows + 前置齐全）仍真跑同样的断言。
+- 同一组的 `sourceDir` 那条**漏了同一个前提**：`readManifest` 读不到产物时返回 null，
+  算出的 ID 是空串 —— 判据必然假红。现在先读一次，读不到就 `warn`（同一类问题只修一半
+  还是会红，第 288 次运行就是这么暴露的）。
 - `src/components/chat/__tests__/collabPicker.test.tsx`：`openPicker()` 原来只
   `await Promise.resolve()` 一次，菜单内容走 portal 挂到 body，慢一点的 runner 上
   「切换条还不存在」就被判成产品坏了。改成**最多等 20 × 5ms**，等到切换条出现为止。

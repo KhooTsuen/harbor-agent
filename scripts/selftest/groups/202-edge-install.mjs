@@ -51,8 +51,16 @@ export async function run() {
   /* 真值钉死：改了 key 就等于换了扩展 ID，Edge 里已装的扩展会失配 —— 必须是有意的 */
   check('★★★ 当前 key 算出的 ID 与 Edge 里要加载的那个一致', id === 'kmennhjfojbmadlmfndlljlgpljbdabm', id)
 
-  /* ② 换目录 ⇒ ID 不变（key 的全部意义）：sourceDir 只影响读哪份 manifest，不影响 ID */
-  check('★★ sourceDir 只决定读哪份产物，与 ID 无关', E.idFromKey(E.readManifest(E.sourceDir(ROOT))?.key ?? '') === id)
+  /* ② 换目录 ⇒ ID 不变（key 的全部意义）：sourceDir 只影响读哪份 manifest，不影响 ID
+     ★ 这条**要有产物**才算得出来：sourceDir 指的那份 manifest 不存在时，readManifest 返回
+       null → 算出的 ID 是空串，判据必然假红（2026-11-04 CI 就是败在这一条上，
+       同一类问题只修了一半）。所以先读一次，读不到就 warn，别拿假红盖住真红。 */
+  const shipped = E.readManifest(E.sourceDir(ROOT))
+  if (shipped) {
+    check('★★ sourceDir 只决定读哪份产物，与 ID 无关', E.idFromKey(shipped.key) === id)
+  } else {
+    warn('sourceDir 与 ID 无关 —— 没验（缺扩展产物 harbor-edge/dist/sidepanel）')
+  }
 
   /* ══════════════════════════════════════════════════════════════
      ③ 包装器字节纪律（cmd.exe 按 OEM 代码页读 .cmd）
