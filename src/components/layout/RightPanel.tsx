@@ -15,6 +15,7 @@ import { TaskCenter } from '@/components/chat/TaskCenter'
 import { DownloadsPanel } from './DownloadsPanel'
 import { RollbackRecord } from '@/components/chat/rollback/RollbackRecord'
 import { ErrorsPanel } from './ErrorsPanel'
+import { NotifyPanel } from './NotifyPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
 /* 标签栏单独一个文件：角标加上来之后本文件会破 300 行红线（硬约束 #2） */
 import { RightTabs } from './RightTabs'
@@ -27,6 +28,7 @@ import { useTaskStore } from '@/stores/useTaskStore'
 import { useBrowserStore } from '@/stores/useBrowserStore'
 /* 只用它的 ack 动作（数据走 useRightTabBadges）—— 打开「错误」时把未读清零 */
 import { useErrorsStore } from '@/stores/useErrorsStore'
+import { useNotifyCenter } from '@/stores/useNotifyCenter'
 import { useRightTabBadges } from '@/hooks/useRightTabBadges'
 import { isElectron } from '@/lib/backend'
 
@@ -197,6 +199,7 @@ export function RightPanel() {
         agentUsedBrowser={agentUsedBrowser}
         errorUnread={badges.errorUnread}
         errorWorst={badges.errorWorst}
+        notifyUnread={badges.notifyUnread}
         taskPending={badges.taskPending}
         downloadsActive={badges.downloadsActive}
         artifactPresent={badges.artifactPresent}
@@ -211,6 +214,11 @@ export function RightPanel() {
            * 不声称问题已处理：错误照旧在清单里（面板只读，不删不改）。
            */
           if (tab === 'errors') useErrorsStore.getState().acknowledge()
+          /*
+           * 点开「通知」= 看过了 → 全部标为已读（**不清空**）。
+           * 与「错误」同一条口径：看过 ≠ 处理过，条目仍留在列表里，用户能回去翻。
+           */
+          if (tab === 'notifications') useNotifyCenter.getState().markAllRead()
         }}
         onClose={() => setRightPanelVisible(false)}
       />
@@ -261,21 +269,14 @@ export function RightPanel() {
         {activeRightTab === 'downloads' ? <DownloadsPanel /> : null}
         {activeRightTab === 'state' ? <StatePanel /> : null}
         {activeRightTab === 'errors' ? <ErrorsPanel /> : null}
+        {activeRightTab === 'notifications' ? <NotifyPanel /> : null}
 
         {/*
-          浏览器**不随标签卸载** —— 和终端同一个道理，但理由不一样：
-          <webview> 一从 DOM 里摘掉，底下的 webContents 就被销毁，
-          切回来等于重新打开网页 —— 滚动位置、填了一半的表单、SPA 的前端状态全没。
-          （用户报的就是这个。）
-
-          absolute 铺在内容区上，未激活时 invisible（不画、不接事件）。
-          用 invisible 而不是 display:none 是取语义 ——「还在这儿，只是没在画」。
-          手测过：两种写法下网页的 window.innerWidth 都是 369，不会塔成 0
-          （Electron 不会把隐藏的 guest 缩到 0），所以这里不是靠它保尺寸，
-          真正保尺寸的是 absolute inset-0。
-
-          代价：浏览器开着就直一直占着一个渲染进程（这是「不丢状态」的必然开销）。
-          没开过标签时只是个空状态，不费什么。
+          浏览器**不随标签卸载**：<webview> 一从 DOM 摘掉，底下 webContents 就被销毁，
+          切回来等于重开网页（滚动位置、填了一半的表单、SPA 状态全没 —— 用户报的就是这个）。
+          absolute 铺在内容区上、未激活时 invisible（不画不接事件），不是 display:none：
+          「还在这儿，只是没在画」。保尺寸靠 absolute inset-0，不靠隐藏方式。
+          代价：开着就占一个渲染进程（「不丢状态」的必然开销）；没开过只是空状态。
         */}
         <div
           className={cn(

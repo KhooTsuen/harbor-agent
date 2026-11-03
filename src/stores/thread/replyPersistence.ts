@@ -160,7 +160,33 @@ export function createReplyPersistence(opts: {
         .getState()
         .threads.find((t) => t.id === threadId)
         ?.messages.find((m) => m.id === messageId)
-      if (!final) return
+      /*
+       * ★ 2026-11-04：找不到那条消息时**不能直接放弃**。
+       *
+       * 这一轮还在跑的时候，界面那条会被重读盘顶掉过（扩展注入走的就是这条路，
+       * 见 `stores/app/diskActions.ts` 的 mergeLiveMessages）。原来的守卫在这里
+       * `return` —— 于是这一轮的完整正文一个字都不写，磁盘上只剩几秒前那份分段
+       * 快照，重开会话显示「这条回复没写完」。用户看到的就是「回复没了」。
+       *
+       * 兜底只能用闭包里那两份（正文 / 思考）：rounds 与 toolRuns 只在 store 里，
+       * 找不到消息就等于拿不到 —— 所以兜底这条**没有工作痕迹**，但正文保住了。
+       * 取舍写在这儿，免得以后有人以为可以随手补。
+       */
+      if (!final) {
+        const text = getContent()
+        if (!text.trim()) return
+        const reasoning = getReasoning()
+        useAppStore.getState().persistMessage(threadId, {
+          role: 'assistant',
+          key: messageId,
+          content: text,
+          ...(reasoning ? { reasoning } : {}),
+          ...(type === 'aborted' ? { aborted: true } : {}),
+          ...answer,
+          ts: timestamp,
+        })
+        return
+      }
       const text = final.content ?? ''
       /* 空回复（比如刚发出去就被停掉）不写 —— 免得会话里多一条空消息 */
       if (!text.trim() && (final.toolRuns ?? []).length === 0) return

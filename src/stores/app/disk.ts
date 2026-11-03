@@ -35,6 +35,12 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     role: stored.role === 'tool' ? 'system' : stored.role,
     content: stored.content,
     /*
+     * 扩展送进来的记录（网页正文 / 页面操作回执）：**必须带上**。
+     * 它是 `role: 'user'` 但**不是用户说的话** —— 丢了这个字段，界面只能按角色画，
+     * 于是那些记录变成一串用户气泡（2026-11-04 真机：侧边栏四张原文卡糊满一屏）。
+     */
+    ...(stored.source ? { source: stored.source } : {}),
+    /*
      * 思考过程：**必须还原**。
      *
      * 少了这一行，重开会话后**所有历史消息的思考块都不见了** —— 数据里存得好好的

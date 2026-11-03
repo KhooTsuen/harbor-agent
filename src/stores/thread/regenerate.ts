@@ -94,6 +94,9 @@ export function makeRegenerate(
           'warning',
           `已经连续重新生成 ${times} 次`,
           '要不要换个方向，或者把 prompt 调整得更具体一点？',
+          /* 用户正盯着这一屏点按钮 —— 劝一句得当场看见，不能只进收件箱 */
+          undefined,
+          'needYou',
         )
       }
 

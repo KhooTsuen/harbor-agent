@@ -36,6 +36,7 @@ vi.mock('@/lib/subscriptions', async (importOriginal) => {
 import { useDownloadNotifications } from '@/hooks/useDownloadNotifications'
 import { useDownloadsStore } from '@/stores/useDownloadsStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useNotifyCenter } from '@/stores/useNotifyCenter'
 import { ToastViewport } from '@/components/ui/Toast'
 
 let container: HTMLDivElement
@@ -86,6 +87,7 @@ beforeEach(() => {
   h.events = []
   useDownloadsStore.setState({ items: [], running: [], error: '', loaded: false })
   useUIStore.setState({ toasts: [], activeRightTab: 'diff' })
+  useNotifyCenter.setState({ items: [] })
   draw()
 })
 
@@ -96,37 +98,44 @@ afterEach(() => {
 })
 
 describe('下载提示 / 全局订阅', () => {
-  it('★ 开始下载 → 弹「开始下载」并带上文件名', () => {
+  it('★ 开始下载 → 进「通知」标签并带上文件名（不弹右下角）', () => {
     act(() => h.events[0]({ type: 'started', id: 'dl_1', name: 'a.bin' }))
-    const toasts = useUIStore.getState().toasts
-    expect(toasts.length).toBe(1)
-    expect(toasts[0].kind).toBe('info')
-    expect(toasts[0].title).toBe('开始下载')
-    expect(toasts[0].description).toBe('a.bin')
+    /*
+     * 2026-11 改口：下载这三件事归「通知」标签，不弹卡片。
+     * 原意图没变 —— 你点下载必须有回应，只是回应落在收件箱而不是右下角。
+     */
+    expect(useUIStore.getState().toasts).toHaveLength(0)
+    const items = useNotifyCenter.getState().items
+    expect(items.length).toBe(1)
+    expect(items[0].category).toBe('download')
+    expect(items[0].kind).toBe('info')
+    expect(items[0].title).toBe('开始下载')
+    expect(items[0].description).toBe('a.bin')
   })
 
-  it('★ 下载完成 → 弹「下载完成」', () => {
+  it('★ 下载完成 → 进「通知」标签', () => {
     act(() => h.events[0]({ type: 'done', id: 'dl_1', name: 'a.bin', bytes: 100 }))
-    const toasts = useUIStore.getState().toasts
-    expect(toasts.length).toBe(1)
-    expect(toasts[0].kind).toBe('success')
-    expect(toasts[0].title).toBe('下载完成')
+    const items = useNotifyCenter.getState().items
+    expect(items.length).toBe(1)
+    expect(items[0].kind).toBe('success')
+    expect(items[0].title).toBe('下载完成')
   })
 
-  it('★ 下载失败 → 弹 error，文案是失败原因（不是文件名）', () => {
+  it('★ 下载失败 → error 样式，文案是失败原因（不是文件名）', () => {
     act(() =>
       h.events[0]({ type: 'failed', id: 'dl_1', name: 'a.bin', error: 'HTTP 404 Not Found' }),
     )
-    const toasts = useUIStore.getState().toasts
-    expect(toasts.length).toBe(1)
-    expect(toasts[0].kind).toBe('error')
-    expect(toasts[0].title).toBe('下载失败')
-    expect(toasts[0].description).toBe('HTTP 404 Not Found')
+    const items = useNotifyCenter.getState().items
+    expect(items.length).toBe(1)
+    expect(items[0].kind).toBe('error')
+    expect(items[0].title).toBe('下载失败')
+    expect(items[0].description).toBe('HTTP 404 Not Found')
   })
 
-  it('进度事件不弹（每 200ms 一条，弹它等于刷屏）', () => {
+  it('进度事件什么都不留（每 200ms 一条，记它等于刷屏）', () => {
     act(() => h.events[0]({ type: 'progress', id: 'dl_1', received: 50, total: 100 }))
     expect(useUIStore.getState().toasts.length).toBe(0)
+    expect(useNotifyCenter.getState().items.length).toBe(0)
   })
 
   it('★ 事件同时喂给 store —— 面板没开，数据也保持最新', () => {
@@ -137,15 +146,11 @@ describe('下载提示 / 全局订阅', () => {
     expect(got.status).toBe('running')
   })
 
-  it('★ 点提示上的「查看」→ 右栏落到「下载」标签', () => {
+  it('★ 点通知上的「查看」→ 右栏落到「下载」标签', () => {
     act(() => h.events[0]({ type: 'done', id: 'dl_1', name: 'a.bin' }))
-    const button = [...container.querySelectorAll('button')].find(
-      (b) => b.textContent?.trim() === '查看',
-    )
-    expect(button).toBeTruthy()
-    act(() => button?.click())
+    const action = useNotifyCenter.getState().items[0].action
+    expect(action?.label).toBe('查看')
+    act(() => action?.run())
     expect(useUIStore.getState().activeRightTab).toBe('downloads')
-    /* 点完这条提示就收掉 */
-    expect(useUIStore.getState().toasts.length).toBe(0)
   })
 })

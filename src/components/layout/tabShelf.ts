@@ -33,11 +33,12 @@ export const PRIMARY_TABS = ['diff', 'files', 'tasks'] as const
  * 宽度门槛（px）。
  *
  * 依据：右栏最小宽度 320、默认 380、拖宽可以到 720（见 `LAYOUT.rightPanel`）。
- * 三个主入口带文字约各需 62px，五个次级带文字约各需 58px，加上分隔线与
- * 关闭按钮 ≈ 8 × 60 + 40 ≈ 520。取 520 作为「全部带文字」的门槛；
- * 低于它就把次级那五个收进菜单，避免出现「挤成竖排单字」。
+ * 三个主入口带文字约各需 62px，六个次级带文字约各需 58px，加上分隔线与
+ * 关闭按钮 ≈ 3 × 62 + 6 × 58 + 40 ≈ 574。取 580 作为「全部带文字」的门槛；
+ * 低于它就把次级那几个（成果 / 浏览器 / 下载 / 状态 / 错误 / 通知）收进菜单，
+ * 避免出现「挤成竖排单字」。
  */
-export const WIDE_THRESHOLD = 520
+export const WIDE_THRESHOLD = 580
 
 export interface TabShelf<T> {
   /** 直接摆在标签栏上的 */
@@ -96,6 +97,8 @@ export interface TabSignals {
   errorUnread: number
   /** 错误面板：最严重一级（决定点的颜色） */
   errorWorst: 'P0' | 'P1' | null
+  /** 通知面板：未读条数（新进来、还没点开看过的通知） */
+  notifyUnread: number
   /** 只是一般「有内容」的几类 */
   taskPending: boolean
   downloadsActive: boolean
@@ -113,6 +116,14 @@ export interface TabSignals {
  */
 export function activityOf(tab: string, signals: TabSignals): TabActivity {
   if (tab === 'errors') return signals.errorUnread > 0 ? 'waiting' : 'none'
+  /*
+   * 通知：有未读 = `waiting`（「有东西等你去看一眼」，但不闪）。
+   * 与错误区别在**严重性**：错误只可能出 waiting，通知也只是 waiting + content
+   * 两档，永远不会是 running（收件箱里没有「正在跑」这种东西）。
+   */
+  if (tab === 'notifications') {
+    return signals.notifyUnread > 0 ? 'waiting' : 'none'
+  }
   if (tab === 'tasks') {
     if (signals.taskRunning) return 'running'
     return signals.taskPending ? 'content' : 'none'

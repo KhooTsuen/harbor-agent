@@ -117,18 +117,35 @@ function waitCard(events, ms = 1000) {
 }
 
 /**
+ * 造一条「有损」条目（第七轮起折叠不再自然产生它，夹具改为**显式注入**）。
+ *
+ * 为什么还留着闸门：`fold-gate` 防的是「用户原话没完整进请求」这件事，不只折叠一条路
+ * （整轮被省略也算）。折叠那条路已经堵死，但闸门本身仍是防线，得继续被真实链路测。
+ *
+ * @param {string} text 原文（必须真的在 rawHistory 里 —— `originOf` 按指纹找回它）
+ * @param {{ turnsBack?: number, missing?: number }} [opts]
+ */
+export function lossyOf(text, { turnsBack = 1, missing = 600 } = {}) {
+  return [{ fp: foldCore.fingerprint(String(text)), total: String(text).length, missing, turnsBack }]
+}
+
+/**
  * 走**真实入口**发一次。
  *
  * @param {string} sessionId
  * @param {Array<object>} rawHistory
  * @param {string} phaseKey
  * @param {string|null} choice 用户在确认卡上点的出口（`null` = 关掉卡 / 没确认）
+ * @param {Array<object>|null} injectLossy 显式注入的有损条目（`null` = 用真实链路的；
+ *        第七轮起真实链路恒无损，测闸门的组靠它造样本）
  * @returns {Promise<{ value?: object, error?: Error, card: object|null, events: Array<object>,
  *                     calls: number, history: Array<object>, lossy: Array<object>, omitted: string }>}
  *          `error` 有值 = 这一轮被拦下（**不抛**，交给断言读；抛了就分不出「失败」和「拦住」）
  */
-export async function send(sessionId, rawHistory, phaseKey, choice = null) {
+export async function send(sessionId, rawHistory, phaseKey, choice = null, injectLossy = null) {
   const { history, omitted, lossy } = chatParts.windowHistory(rawHistory, 20)
+  /* 夹具注入优先：闸门拿到的就是这一份，和真实链路给它的东西同形状 */
+  const effective = Array.isArray(injectLossy) ? injectLossy : lossy
   const events = []
   stubLoop()
   const running = chatRun
@@ -145,7 +162,7 @@ export async function send(sessionId, rawHistory, phaseKey, choice = null) {
       phaseKey,
       history,
       rawHistory,
-      foldLossy: lossy,
+      foldLossy: effective,
     })
     .then((value) => ({ value }))
     .catch((error) => ({ error }))
@@ -164,7 +181,7 @@ export async function send(sessionId, rawHistory, phaseKey, choice = null) {
     running,
     new Promise((resolve) => setTimeout(() => resolve({ error: new Error('超时：这一轮没有结束') }), 4000)),
   ])
-  const out = { ...settled, card, events, calls: providerCalls, history: lastHistory, lossy, omitted }
+  const out = { ...settled, card, events, calls: providerCalls, history: lastHistory, lossy: effective, omitted }
   restoreLoop()
   return out
 }

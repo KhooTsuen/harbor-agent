@@ -163,6 +163,67 @@ Edge 里「加载已解压的扩展」直接选这个目录。
 
 > ⚠️ SW 是 **ESM**（`manifest.background.type = "module"`）—— 删了那句，`import` 会直接失败。
 
+## 新用户怎么装（从零到能用）
+
+**这个扩展不在 Edge 应用商店里**（没上架、没有签名包），所以只能按「未打包扩展」装；
+而且**光在 Edge 里加载扩展是不够的** —— 还差一步把 native host 注册进注册表，
+否则侧边栏能打开、但会一直显示连不上 Harbor。
+
+以下路径都从**仓库根**算起。
+
+**① 构建产物**（拿到的是发布包、且里面已带 `dist/sidepanel/` 的话跳过这步）
+
+```cmd
+npx vite build --config harbor-edge/vite.config.ext.ts
+```
+
+产物落 `harbor-edge/dist/sidepanel/` —— **这个目录本身就是可加载的扩展**。
+
+**② 在 Edge 里加载它**
+
+1. 地址栏打开 `edge://extensions`
+2. 打开「开发人员模式」
+3. 点「加载解压缩的扩展」，选 `harbor-edge\dist\sidepanel`
+4. 记下它显示的那串 32 位**扩展 ID**
+
+> 选的必须是**构建产物** `dist\sidepanel`，**不是**源目录 `harbor-edge\extension\` ——
+> 后者只有 `manifest.json` + `service-worker.js`，没有 `index.html` 和打包好的 `assets/`。
+
+**③ 注册 native host**
+
+```cmd
+harbor-edge\install-host.cmd <扩展ID> <Harbor 程序目录>
+```
+
+例：`harbor-edge\install-host.cmd aaecjplphabhnagpmbbgipgnheaapjhc E:\Harbor-Dev\dist-portable\Harbor`
+
+它做四件事（可重复跑，幂等）：把 `harbor-host.cmd` 拷进 Harbor 目录 → 写
+`<Harbor>\data\edge-host\com.harbor.agent.json` → 写注册表
+`HKCU\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\com.harbor.agent` →
+把扩展 ID 写进 `allowed_origins`。
+
+`<Harbor 程序目录>` 省略时的解析顺序：`%HARBOR_INSTALL_DIR%` → 仓库内 `dist-portable\Harbor`。
+扩展 ID 省略时它会自己起一次隔离 Edge 去读 —— 但**手动复制最稳**，读不到会直接报错退出。
+
+**④ 生效**：回 `edge://extensions` 点一次该扩展的「重新加载」，然后点工具栏 Harbor 图标，
+或按 `Alt+Shift+H` 打开侧边栏。
+
+### 两个会反复踩的点
+
+- **扩展 ID 由加载路径推导，不是固定的。** 把 `dist\sidepanel` 挪到别的目录（例如搬进
+  Harbor 安装目录），ID 就会变，`allowed_origins` 立刻失配 —— 症状还是「连不上」，
+  要重跑一次 ③。只重建产物、路径不变时 ID 不变，host 不用重装。
+- **`install-host.cmd` 里的 `EXT_DIR` 写死为 `harbor-edge\dist\sidepanel`**（自动读 ID 时用它），
+  所以 ② 必须选这个目录，两边指向同一份产物，否则读到的 ID 和你实际加载的不是同一个。
+
+### 打包发布时还没做的部分
+
+`scripts/build-portable.mjs` 目前**不含任何 edge 相关步骤**：发布产物里只有
+`harbor-host.cmd` 和 `data\edge-host\com.harbor.agent.json`（跑过 ③ 留下的），
+**没有**扩展产物目录、也**没有** `install-host.cmd`。
+所以「新用户自助安装」目前只有从源码仓库才走得通 —— 要让发布包直接可装，
+需要把这两样打进产物（未做）。
+
 ## 验收脚本
 
 | 脚本 | 验什么 | 跑法 |

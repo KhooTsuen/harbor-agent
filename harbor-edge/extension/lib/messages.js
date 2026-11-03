@@ -35,6 +35,8 @@ export function createPanelRouter(h) {
     /* M04-1：只要元素列表（可带 ref —— 失效由主进程判） */
     'get-elements': (m) => h.getElements(m.ref),
     'session-list': () => h.getSessionList(),
+    /* 2026-11-03：这条会话说过什么（侧边栏显示整条会话） */
+    'session-messages': (m) => h.getSessionMessages(m.sessionId),
     'chat-send': (m) => h.sendChatMessage(m.text, m.sessionId),
     'chat-resume': (m) => h.resumeChat(m.sessionId),
     'session-active': () => h.getActiveSession(),
@@ -75,6 +77,8 @@ export const PANEL_MESSAGE_TYPES = [
   'observe-page',
   'get-elements',
   'session-list',
+  /* 2026-11-03：这条会话说过什么（与主窗口显示的整条会话一致） */
+  'session-messages',
   'chat-send',
   'chat-resume',
   'session-active',

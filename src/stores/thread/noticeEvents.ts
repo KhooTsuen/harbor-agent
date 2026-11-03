@@ -35,6 +35,14 @@ export function handleNoticeEvent(event: NoticeEvent): void {
         event.level === 'warning' ? 'warning' : 'info',
         String(event.title ?? '提示'),
         String(event.text ?? ''),
+        /*
+         * ★ 显式点名 `needYou`（弹卡片），不跟着 kind 走。
+         * 「按你的设置没问，但你该知道」是**安全类**信息（完全访问档下动了
+         * .env / 工作目录外的文件）—— 它必须是弹出来的，不能只在收件箱里躺着。
+         * 收件箱的信号是「有空翻翻」，而这条要的是「当场看见」。
+         */
+        undefined,
+        'needYou',
       )
       return
     }
@@ -48,6 +56,9 @@ export function handleNoticeEvent(event: NoticeEvent): void {
         event.level === 'never' ? 'warning' : 'info',
         event.level === 'never' ? `这件事不做：${event.label}` : `这件事是实验性的：${event.label}`,
         `${String(event.note ?? '')}（从「${String(event.matched ?? '')}」看出来的）`,
+        /* 同 notice：能力边界是「你该马上知道」的事，弹卡片（见上面那段注释） */
+        undefined,
+        'needYou',
       )
       return
     }

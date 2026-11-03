@@ -1,9 +1,6 @@
-/* M03 / M04：把「观察 / 元素列表 / 点击验证 / 填表 / 标签页」的结果渲染成给人看、给模型读的
-   markdown（纯函数，自检直接喂假数据跑）。硬约束 #9：结果 → 文本只有这一份实现。
-   ★ 两条规矩：① **不捏造**（跨域 iframe 只说读不到 + 为什么，不填内容字段）；
-   ② **敏感字段永不出现在文本里**（采集器已置 null，这里再兜一次）。
-   形状见 docs/research/edge-extension-m03-design.md。
-   ⚠️ 不 require electron（自检要能裸跑）。 */
+/* M03 / M04：把「观察 / 元素列表 / 点击验证 / 填表 / 标签页」的结果渲染成 markdown（纯函数）。
+   硬约束 #9：结果 → 文本只有这一份实现。两条规矩：① **不捏造**（跨域 iframe 只说读不到 + 为什么）；
+   ② **敏感字段永不出现在文本里**（采集器已置 null，这里再兜一次）。⚠️ 不 require electron（自检要能裸跑）。 */
 
 /** 渲染结果的字符预算（文档 §6：输出必须有预算） */
 const MAX_CHARS = 20_000
@@ -30,10 +27,7 @@ function elementsTable(elements) {
   return lines
 }
 
-/**
- * @param {object} obs 采集器返回值
- * @returns {{ markdown: string, truncated: boolean, chars: number }}
- */
+/** @param {object} obs 采集器返回值 → `{ markdown, truncated, chars }` */
 function renderObservation(obs) {
   const o = obs && typeof obs === 'object' ? obs : {}
   const stats = o.stats && typeof o.stats === 'object' ? o.stats : {}
@@ -72,8 +66,7 @@ function renderObservation(obs) {
     lines.push(`（这个页面上没有可见的可交互元素 —— 选择器命中 ${Number(stats.candidates ?? 0)} 个，其中可见 ${Number(stats.visibleCandidates ?? 0)} 个）`, '')
   } else {
     lines.push(...elementsTable(elements))
-    lines.push('')
-    lines.push('> 想让 Agent 点某个元素或往某个输入框填字，就用上表「引用」列的值 —— 页面变了引用会失效，需要重新观察。', '')
+    lines.push('', '> 想让 Agent 点某个元素或往某个输入框填字，就用上表「引用」列的值 —— 页面变了引用会失效，需要重新观察。', '')
   }
 
   /* ── iframe（读不到就说清为什么，**不捏造内容**）── */
@@ -101,14 +94,18 @@ function renderObservation(obs) {
   return finish(lines)
 }
 
-/* 「元素列表」视图（M04-1 browser.getElements）：**只要元素**（不渲染选区 / iframe / shadow）。
-   传了 `ref` 就把**引用解析结果**写在最前：失效要说清为什么 + 要求重新观察。
-   @param {object} obs 采集器返回值   @param {{ ref?: string, parsed?: object }} [opts] */
+/* 「元素列表」视图（M04-1）：**只要元素**。传了 `ref` 就把**引用解析结果**写在最前 ——
+   失效要说清为什么 + 要求重新观察。@param {object} obs  @param {{ ref?, parsed? }} [opts] */
 function renderElements(obs, opts = {}) {
   const o = obs && typeof obs === 'object' ? obs : {}
   const ref = String(opts.ref ?? '')
   const parsed = opts.parsed && typeof opts.parsed === 'object' ? opts.parsed : null
   const elements = Array.isArray(o.elements) ? o.elements : []
+  const stats = o.stats && typeof o.stats === 'object' ? o.stats : {}
+  /* ★ query 过滤只缩**显示窗口**（命中项 + 前后各 2 个）；ref 与版本号仍是整页那一套 */
+  const query = String(stats.query ?? '')
+  const windowRefs = Array.isArray(stats.matchedRefs) ? new Set(stats.matchedRefs.map(String)) : null
+  const shown = windowRefs ? elements.filter((e) => windowRefs.has(String((e && e.ref) ?? ''))) : elements
   const lines = ['## 页面元素', '']
   lines.push(kv('来源 URL', String(o.url ?? '')))
   lines.push(kv('标题', String(o.title ?? '')))
@@ -129,8 +126,7 @@ function renderElements(obs, opts = {}) {
       if (e.disabled === true) state.push('disabled')
       if (e.checked === true) state.push('已选中')
       if (e.masked === true) state.push('敏感')
-      lines.push(kv('引用', cell(e.ref)))
-      lines.push(kv('角色 / 标签', `${cell(e.role)} / ${cell(e.tag)}`))
+      lines.push(kv('引用', cell(e.ref)), kv('角色 / 标签', `${cell(e.role)} / ${cell(e.tag)}`))
       lines.push(kv('文本', e.masked === true ? '（敏感字段，不读取）' : cell(e.text) || '（无文本）'))
       lines.push(kv('状态', state.join(' ') || '可用'), '')
     } else {
@@ -139,35 +135,42 @@ function renderElements(obs, opts = {}) {
   }
 
   lines.push('### 可交互元素', '')
-  if (!elements.length) {
-    lines.push(`（这个页面上没有可见的可交互元素 —— 选择器命中 ${Number(o.stats?.candidates ?? 0)} 个，其中可见 ${Number(o.stats?.visibleCandidates ?? 0)} 个）`, '')
+  if (query) {
+    const hit =
+      windowRefs && windowRefs.size
+        ? `命中项 + 前后各 2 个，共 ${shown.length} 个（整页 ${elements.length} 个）`
+        : `这 ${elements.length} 个可见元素里没有一条匹配 —— 换个词，或调大 maxItems`
+    lines.push(`按「${cell(query)}」过滤：${hit}。引用照样能用 —— 过滤不改版本号。`, '')
+  }
+  /* ★ 命中 0 个 ≠「页面上没有元素」—— 混了会让模型以为页面是空的、直接放弃 */
+  if (!shown.length) {
+    lines.push(
+      query
+        ? '（上面那个词没有任何匹配 —— 页面元素本身是有的，换个词或调大 maxItems 再试）'
+        : `（这个页面上没有可见的可交互元素 —— 选择器命中 ${Number(o.stats?.candidates ?? 0)} 个，其中可见 ${Number(o.stats?.visibleCandidates ?? 0)} 个）`,
+      '',
+    )
   } else {
-    lines.push(...elementsTable(elements))
+    lines.push(...elementsTable(shown))
     lines.push('', '> 引用格式 `<页面版本>.<序号>` —— 页面一变，旧引用即失效。', '')
   }
 
   return finish(lines)
 }
 
-/**
- * 收尾：拼 markdown + 超预算截断（**三个渲染器共用这一份**，硬约束 #9）。
- */
+/** 收尾：拼 markdown + 超预算截断（**三个渲染器共用这一份**，硬约束 #9）。 */
 function finish(lines) {
   let markdown = lines.join('\n')
-  let truncated = false
-  if (markdown.length > MAX_CHARS) {
-    markdown = `${markdown.slice(0, MAX_CHARS)}\n\n（结果过长，已截断）`
-    truncated = true
-  }
+  const truncated = markdown.length > MAX_CHARS
+  if (truncated) markdown = `${markdown.slice(0, MAX_CHARS)}\n\n（结果过长，已截断）`
   return { markdown, truncated, chars: markdown.length }
 }
 
 /* 「点击 / 验证 / 填表…」的结果 → markdown。
    ★ 用户定的硬要求：**「点了」≠「生效」** —— 不写「点击成功」，而是把前后值并排摆出来
-   （URL / 标题 / DOM / 目标元素），让模型自己判断这一下有没有产生效果。
-   失效（page-changed / not-found）不是「操作失败」，是「你拿着过期引用，我没敢动」——
-   必须让模型知道要重新观察。
-   @param {string} kind   @param {object} result   @param {{ durationMs?: number, query?: string }} [meta] */
+   （URL / 标题 / DOM / 目标元素），让模型自己判断。失效（page-changed / not-found）不是「操作失败」，
+   是「你拿着过期引用，我没敢动」—— 必须让模型知道要重新观察。
+   @param {string} kind  @param {object} result  @param {{ durationMs?, sessionTitleHint? }} [meta] */
 function renderAction(kind, result, meta = {}) {
   const r = result && typeof result === 'object' ? result : {}
 
@@ -227,11 +230,10 @@ function renderAction(kind, result, meta = {}) {
     return finish(lines)
   }
   /*
-   * ★★ 「点了但证据没回来」—— 真机逮到的**真实情形**（M04-2 / M04-3）：
-   *   点完页面就跳转了，注入的上下文被销毁，结果回不来。必须说清「**不代表没点上**」+
-   *   下一步做什么，否则模型会以为失败而重试 —— 那一下可能已经点出去了，重试就点两次。
-   *   ⚠️ `navigating`（M04-3 的双信号 race 先拿到导航）与 `no-result` **同族** ——
-   *     漏了它就会渲染成「执行失败」，那正是这条注释要防的误导（真机逮到过）。
+   * ★★ 「点了但证据没回来」（M04-2 / M04-3）：点完页面就跳转了，注入的上下文被销毁，
+   *   结果回不来。必须说清「**不代表没点上**」+ 下一步做什么，否则模型会以为失败而重试
+   *   —— 那一下可能已经点出去了，重试就点两次。⚠️ `navigating` 与 `no-result` **同族**，
+   *   漏了它就会渲染成「执行失败」，那正是这条注释要防的误导（真机逮到过）。
    */
   if (r.reason === 'no-result' || r.reason === 'navigating') {
     lines.push(kv('结果', '**点击发出去了，但状态证据没采到**'), '')
@@ -289,9 +291,7 @@ function renderAction(kind, result, meta = {}) {
   lines.push('| 期望 | 实际 | 命中 |', '|---|---|---|')
   checks.forEach((c) => {
     const ch = c && typeof c === 'object' ? c : {}
-    lines.push(
-      `| ${cell(ch.name)}：${cell(ch.expected)} | ${cell(ch.actual)} | ${ch.pass === true ? '是' : '**否**'} |`,
-    )
+    lines.push(`| ${cell(ch.name)}：${cell(ch.expected)} | ${cell(ch.actual)} | ${ch.pass === true ? '是' : '**否**'} |`)
   })
   lines.push('')
   return finish(lines)

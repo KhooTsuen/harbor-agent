@@ -31,13 +31,18 @@ module.exports = {
         type: 'number',
         description: '最多列多少个元素（默认 60，上限 200）',
       },
+      query: {
+        type: 'string',
+        description: '只列跟这个词相关的元素（按角色 / 文本 / 占位符匹配），命中项前后各带 2 个。元素太多的页面用它缩小范围 —— 引用不受影响。',
+      },
     },
     required: [],
   },
 
   summarize(args) {
     const url = String(args?.url ?? '')
-    return url ? `在用户的 Edge 里打开 ${url}` : '读用户 Edge 当前页的元素'
+    const q = String(args?.query ?? '')
+    return url ? `在用户的 Edge 里打开 ${url}` : `读用户 Edge 当前页的元素${q ? `（过滤：${q}）` : ''}`
   },
 
   async run(args) {
@@ -54,7 +59,7 @@ module.exports = {
 
     let els
     try {
-      els = await cmd.getElements({ maxItems: Number(args?.maxItems) || 0 })
+      els = await cmd.getElements({ maxItems: Number(args?.maxItems) || 0, query: String(args?.query ?? '') })
     } catch (error) {
       return `错误：读页面元素失败 —— ${(error && error.message) || error}`
     }
@@ -63,7 +68,7 @@ module.exports = {
     }
     const { renderElements } = require('../ext-observe.cjs')
     const view = renderElements(
-      { url: els.url, title: els.title, pageVersion: els.pageVersion, elements: els.elements ?? [] },
+      { url: els.url, title: els.title, pageVersion: els.pageVersion, elements: els.elements ?? [], stats: els.stats ?? null },
       {},
     )
     parts.push(view.markdown)

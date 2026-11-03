@@ -10,11 +10,11 @@
  *     自动发起（受上下文开关 + 站点黑名单 + 权限三道闸门）。
  *
  * ── ★ activeTab 的授予时机（浏览器行为：实测 + 官方文档）─────
- * 官方列的只有四种：**执行操作（点扩展图标）/ 右键菜单 / 快捷键 / 多功能框**。
+ * 官方列四种：**执行操作（点扩展图标）/ 右键菜单 / 快捷键 / 多功能框**。
  * **点侧边栏里的按钮不算 invoke** —— 所以点图标 = invoke，同时打开侧边栏。
- * ⚠️ `setPanelBehavior({openPanelOnActionClick:true})` **行不通**：它把图标点击接管成
- *   「切换侧边栏条目显示」，不算 action 执行，activeTab 于是从不授予（2026-10-15 真机
- *   踩到）。改法见 bindAction()：用 action.onClicked 自己开面板，这一下才是真 invoke。
+ * ⚠️ `setPanelBehavior({openPanelOnActionClick:true})` **行不通**（它把点击接管成
+ *   「切换侧边栏显示」，不算 action 执行，activeTab 从不授予；2026-10-15 真机踩到）。
+ *   改法见 bindAction()：用 action.onClicked 自己开面板，这一下才是真 invoke。
  */
 
 /* global chrome */
@@ -32,15 +32,16 @@ import { collectPageText, limitPageText, waitForStablePage } from './lib/page-te
 import { bindQuickEntry, saveSelectionDraft, showSelectionToolbar } from './lib/quick-entry.js'
 /* 2026-10-21：切页面时自动更新「页面上下文槽」（不占对话流，见 lib/page-watch.js） */
 import { bindPageWatch } from './lib/page-watch.js'
+/* 2026-11-03：侧边栏要这条会话说过什么（拆出去，SW 贴 300 红线） */
+import { createSessionMessages } from './lib/session-messages.js'
 
 /* 正文上限 512 KB：native messaging 单条 host→Edge 官方上限 1 MB，而页面正文
    可能是几十 MB。这里先截断，host 侧还有 2 MB 兜底（core/ext-protocol.cjs）。 */
 const MAX_TEXT = 512 * 1024
 let actionBound = false
 /* ★ 点图标 = 真正的「执行操作」（activeTab 由此授予）→ 打开侧边栏。必须走
-   action.onClicked：`setPanelBehavior({openPanelOnActionClick})` 把图标点击接管成
-   「切换侧边栏显示」，不算 action 执行，activeTab 于是从不授予（真机踩过，见文件头）。
-   顺带把这次 invoke 记进 storage（`harborInvoke`）—— 诊断用：能看出 tab.url 可不可见。 */
+   action.onClicked：setPanelBehavior 那把点击接管成「切换侧边栏显示」，不算 invoke
+   （真机踩过，见文件头）。顺带记进 storage（harborInvoke）—— 诊断 tab.url 可不可见。 */
 function bindAction() {
   if (actionBound) return
   actionBound = true
@@ -63,17 +64,16 @@ function bindAction() {
           /* 存不下不影响开面板 */
         }
       }
+      const fail = (error) => done({ openErr: String((error && error.message) || error) })
       try {
         const opened = chrome.sidePanel.open({ windowId: tab.windowId })
         if (opened && typeof opened.then === 'function') {
-          opened
-            .then(() => { done({ opened: true }); void showSelectionToolbar(tab) })
-            .catch((error) => done({ openErr: String((error && error.message) || error) }))
+          opened.then(() => { done({ opened: true }); void showSelectionToolbar(tab) }).catch(fail)
         } else {
           done({ opened: true })
         }
       } catch (error) {
-        done({ openErr: String((error && error.message) || error) })
+        fail(error)
       }
     })
   } catch {
@@ -92,8 +92,8 @@ function bindAction() {
  */
 async function readActivePage(msg) {
   const sessionId = String((msg && msg.sessionId) || '')
-  /* 上下文开关（M02-B）：用户关掉「带上」时**不读也不送** —— 这道门在发请求这一层，
-     不在按钮上（别处调同一能力也不会绕过去） */
+  /* 上下文开关（M02-B）：关掉「带上」时**不读也不送** —— 这道门在发请求这一层，
+     不在按钮上（别处调同一能力也绕不过去）。 */
   const ctx = await contextAllowed()
   if (!ctx.allowed) return { ok: false, error: ctx.error }
   /* 「拿前台标签 + 判受限页」共用一处（M03 与 observe 一起用；文案不许改，见 lib/active-tab.js） */
@@ -140,11 +140,11 @@ async function readActivePage(msg) {
     truncated,
     at: Date.now(),
   }
-  /* 落一份快照：侧边栏冷启动时还能看到「上次读了什么」 */
+  /* 落一份快照：侧边栏冷启动时还能看到「上次读了什么」（存不下不影响这次结果） */
   try {
     chrome.storage.local.set({ harborLastPage: result })
   } catch {
-    /* 存不下不影响这次结果 */
+    /* 忽略 */
   }
   return result
 }
@@ -195,21 +195,15 @@ async function sendChatMessage(text, sessionId = '') {
 
 /**
  * 重连 / 重开后要「上次流到哪」。
- *
  * ★ 按 **sessionId** 问（不是 requestId）：真实那一轮的 id 是渲染层生成的，
- *   扩展侧从没听过它 —— 它只知道「我在看哪条会话」（见 ext-chat.cjs 的 handleResume）。
+ *   扩展侧从没听过它（见 ext-chat.cjs 的 handleResume）。
  */
 async function resumeChat(sessionId) {
   const reply = await requestHost('chat:resume', { sessionId: String(sessionId ?? '') })
   return reply && typeof reply === 'object' ? reply : { ok: false, error: '拿不到流快照' }
 }
 
-/**
- * 问「Harbor 界面当前打开的是哪条会话」。
- *
- * 为什么要问：侧边栏要发的那条消息，落点由**主进程认定的当前会话**决定
- * （`handler ext:activeSession` 报的）—— 扩展侧不该自己猜一条。
- */
+/** 问「Harbor 界面当前打开的是哪条会话」—— 侧边栏要发的那条落哪儿由主进程定，扩展侧别自己猜。 */
 async function getActiveSession() {
   const reply = await requestHost('ext:sessionActive', {})
   if (reply && reply.ok === true) return { ok: true, sessionId: String(reply.sessionId ?? '') }
@@ -227,6 +221,11 @@ async function selectSession(sessionId) {
   return reply && typeof reply === 'object' ? reply : { ok: false, error: '切会话失败' }
 }
 
+/**
+ * 2026-11-03：这条会话**说过什么** —— 整块搬到 `lib/session-messages.js`（SW 贴 300 行红线），这里只装配。
+ */
+const getSessionMessages = createSessionMessages(requestHost)
+
 /** Phase 3c：侧边栏顶栏那个 ＋ —— 新建一条（渲染层会切过去，两侧同步） */
 async function newSession() {
   const reply = await requestHost('session:new', {})
@@ -235,11 +234,9 @@ async function newSession() {
 
 /**
  * M02-A2：**真正**停止这条会话正在跑的那一轮。
- *
- * ★ 为什么不在这里「自己停」：扩展侧点一下只能「不再显示后续分片」，
- *   主进程那边照跑不误 —— 而规格要求的是「停止按钮**真正取消相关请求**」。
- *   所以必须走主进程（`ext-chat.handleAbort` → 渲染层 `stopActiveRequest`），
- *   连回执都来自它。★ 没在跑时它**如实回 ok:false**（不许假装停掉了）。
+ * ★ 扩展侧自己停只能「不再显示后续分片」，主进程照跑 —— 规格要的是真正取消。
+ *   所以走主进程（`ext-chat.handleAbort` → 渲染层 `stopActiveRequest`），回执也来自它。
+ * ★ 没在跑时它**如实回 ok:false**（不许假装停掉了）。
  */
 async function abortChat(sessionId) {
   const reply = await requestHost('chat:abort', { sessionId: String(sessionId ?? '') })
@@ -260,6 +257,7 @@ chrome.runtime.onMessage.addListener(
     observePage,
     getElements,
     getSessionList,
+    getSessionMessages,
     sendChatMessage,
     resumeChat,
     getActiveSession,

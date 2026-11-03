@@ -271,6 +271,27 @@ export function collectPageContext(opts) {
     }
   })
 
+  /*
+   * ── ③-b 按 query 圈出「要看的那一段」（2026-11-03）──
+   *   ★ 只影响**输出窗口**，不影响 ref 分配、不影响版本号：先照原样分配完 ref 再算窗口。
+   *     反过来（先过滤再取前 N 个）会让 signature 跟着变 → version 变 → 用户手里刚拿的
+   *     ref 全部失效，而页面其实一个字都没动。
+   *   命中项前后各带 2 个（窗口），这样模型看得到「按钮在哪个上下文里」而不是孤零零一行。
+   *   敏感字段的 text 在采集时已被置空 —— 这里只做 substring，不额外取值。
+   */
+  const query = String(opts && opts.query ? opts.query : '').trim().slice(0, 100)
+  let matchedRefs = null
+  if (query) {
+    const needle = query.toLowerCase()
+    const keep = new Set()
+    elements.forEach((e, i) => {
+      const hay = `${e.role} ${e.tag} ${e.text} ${e.placeholder} ${e.href}`.toLowerCase()
+      if (!hay.includes(needle)) return
+      for (let k = Math.max(0, i - 2); k <= Math.min(elements.length - 1, i + 2); k += 1) keep.add(k)
+    })
+    matchedRefs = Array.from(keep).sort((a, b) => a - b).map((i) => elements[i].ref)
+  }
+
   /* ── ④ 选区（文本 + 所在元素 ref）── */
   let selection = null
   try {
@@ -364,6 +385,10 @@ export function collectPageContext(opts) {
        */
       candidates: candidates.length,
       visibleCandidates: visibleTotal,
+      /* 过滤口径：`query` 是用户给的词，`matchedRefs` 是「命中项 + 前后各 2 个」的窗口；
+         null = 没过滤（别把它和「命中 0 个」混成一回事） */
+      query,
+      matchedRefs,
     },
   }
 }

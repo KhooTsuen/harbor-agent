@@ -40,11 +40,11 @@ export function useDownloadNotifications(): void {
       const view = { label: '查看', onClick: openDownloads }
 
       if (event.type === 'started') {
-        showToast('info', '开始下载', name || '已加入队列', view)
+        showToast('info', '开始下载', name || '已加入队列', view, 'download')
       } else if (event.type === 'done') {
-        showToast('success', '下载完成', name, view)
+        showToast('success', '下载完成', name, view, 'download')
       } else if (event.type === 'failed') {
-        showToast('error', '下载失败', String(event.error ?? '').trim() || name, view)
+        showToast('error', '下载失败', String(event.error ?? '').trim() || name, view, 'download')
       }
     })
   }, [])

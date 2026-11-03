@@ -215,8 +215,19 @@ function createChatRelay(deps) {
       done: best.done,
     }
   }
-  /* 快照与旁听整块在 `ext-chat-streams.cjs` —— 上面那个 streamStore。 */
-  const onChatEvent = (event) => streamStore.onChatEvent(event)
+  /* 快照与旁听整块在 `ext-chat-streams.cjs` —— 上面那个 streamStore。
+   *
+   * ★ 2026-11-03：旁听是**只读旁路**，但它原来直接裸调。它一抛异常，就会冒到
+   *   `register-handlers.cjs` 那个 send 包装，把紧随其后的 `send(channel, payload)`
+   *   一起带走 —— 渲染层收不到这条 `chat:event`。抛在 `done` 上时，界面永远等不到
+   *   收尾（正文停在半句），而主进程这一轮其实已经正常跑完。所以在这里兜住。 */
+  const onChatEvent = (event) => {
+    try {
+      streamStore.onChatEvent(event)
+    } catch (error) {
+      log?.warn?.(`扩展通道：旁听失败（${error instanceof Error ? error.message : error}）—— 主链路照常`)
+    }
+  }
 
   /**
    * M02-A2：**停止**这条会话正在跑的那一轮（规格：「停止按钮真正取消相关请求」）。

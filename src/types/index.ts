@@ -13,7 +13,15 @@ export type ThemePreference = ThemeName | 'system'
 export type ToggleState = 'on' | 'off'
 /* 终端只在底栏（Ctrl+J）—— 右栏不再有终端标签，免得同一个东西两处入口 */
 export type RightTab =
-  'diff' | 'files' | 'browser' | 'artifacts' | 'tasks' | 'downloads' | 'state' | 'errors'
+  | 'diff'
+  | 'files'
+  | 'browser'
+  | 'artifacts'
+  | 'tasks'
+  | 'downloads'
+  | 'state'
+  | 'errors'
+  | 'notifications'
 /**
  * Agent 生命周期阶段（AG-001）。
  *
@@ -140,96 +148,10 @@ export interface Project {
 }
 
 /* ── 设置 ──────────────────────────────────────────────────── */
-
-export type FontFamilyId = 'system' | 'yahei' | 'pingfang' | 'sfpro' | 'noto' | 'harmony' | 'custom'
-export type ASCIIQuality = 'high' | 'medium' | 'low' | 'static'
-
-export interface Settings {
-  theme: ThemePreference
-  fontScale: number
-  /** 界面字体（见 constants/fonts.ts 的字体栈表） */
-  fontFamily: FontFamilyId
-  /** fontFamily 选 custom 时用这个，只填字体名 */
-  customFontFamily: string
-  glassmorphism: boolean
-  animations: boolean
-  /** ASCII 海岛场景质量：只影响启动页，不影响 Agent */
-  asciiQuality: ASCIIQuality
-  /** 强制停掉 ASCII 场景的后台动画 */
-  asciiReducedMotion: boolean
-  sidebarWidth: number
-  /** 输入框高度（px）：面板上沿可拖，拖完就固定在那个高度；纯界面状态，只进 localStorage */
-  composerHeight: number
-  rightPanelWidth: number
-  sidebarCollapsed: boolean
-  /** 侧栏上下分栏：上半（对话文件夹）占的百分比 */
-  sidebarFolderPercent: number
-  rightPanelVisible: boolean
-  defaultMode: ThreadMode
-  defaultModel: string
-  defaultReasoning: ReasoningLevel
-  /** 新建对话时落在哪个项目 */
-  defaultProjectId: string
-  /** 发送方式：Enter 还是 Ctrl/Cmd+Enter */
-  sendOnEnter: boolean
-  /** 打字机速度倍率，0 = 立即显示 */
-  typewriterSpeed: number
-  language: 'zh' | 'en'
-  /** 最近搜索历史（全局搜索用） */
-  searchHistory: string[]
-  /** 用户自定义快捷键，缺失项使用默认值 */
-  shortcutKeys: Record<string, string>
-
-  /* ── 上次的状态（重启后接着用）── */
-  /** 上次打开的对话 */
-  lastThreadId: string
-  /** 上次在右栏哪个标签 */
-  lastRightTab: RightTab
-  /** 底部面板上次是开着的吗 */
-  lastBottomPanelOpen: boolean
-  /**
-   * 任务中心看哪些任务：**只看当前项目**（默认，跟已有行为一致）还是**全部项目**。
-   * 任务本身带 workdir，过滤在主进程做 —— 这里只决定要不要传。
-   */
-  taskScope: 'project' | 'all'
-  /**
-   * 设置页的详细程度（P2 #1）：`simple` = 只列常用项，`detailed` = 全量。
-   *
-   * ★ 只改变**展示层次** —— 两种视图共用同一份配置，切换不重置、不另存。
-   *   简洁视图里仍在生效的专业项会在顶部点名提示，不让它悄悄生效。
-   */
-  settingsView: 'simple' | 'detailed'
-  /**
-   * 每轮结束后显示任务结果摘要卡（P2 #30）。**默认关闭**。
-   *
-   * 关着的时候完全不生成摘要卡；开着时按真实任务台账显示完成/失败/取消、
-   * 改动文件数和检查结论 —— 不按模型自述判断成败。
-   */
-  taskSummary: boolean
-  /* ── 提示 ── */
-  /** 保留「重要通知记录」（右下角历史按钮，最多 100 条，仅本次打开期间）。
-   *  默认开 = 与加这个开关之前一致；关掉后不再累积、按钮不出现，重开从零积累。
-   *  只管「记录」：error / warning 的即时提示照常弹（那是另一件事）。 */
-  noticeHistory: boolean
-  /* ── 启动 ── */
-  /**
-   * 启动动画（启动页）开关：关掉后跳过整段动画直接进主界面。
-   * 播放中点任意处可跳过，与这个开关是两回事。
-   */
-  bootAnimation: boolean
-  /* ── 开屏的「性格层」与彩蛋（设计文档 §23）── */
-  /**
-   * 性格层（欢迎语/吐槽句）开关。关掉后开屏只保留状态层与动作层 ——
-   * 重要的话不靠随机文案说，见 docs/Agent开屏与彩蛋设计方案.md §23.8。
-   */
-  persona: boolean
-  /** 夜航主题解锁过（连点品牌标 5 次）。解锁后外观里会多出这个主题选项 */
-  nightUnlocked: boolean
-  /** 「航道畅通」触发过几次（只记次数，不记内容） */
-  greenRuns: number
-}
-
-export type SettingsPatch = Partial<Settings>
+/* 类型本体在 `settings.ts`：这里正好 300 行顶格。整体搬 + 再导出 ——
+   外面 import { Settings } from '@/types' 一处都不用改。 */
+export type { ASCIIQuality, FontFamilyId, NotifyCategory, NotifyRoute } from './settings'
+export type { NotifyRoutes, Settings, SettingsPatch } from './settings'
 
 /* ── 模型目录 ───────────────────────────────────────────────── */
 

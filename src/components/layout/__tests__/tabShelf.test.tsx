@@ -26,6 +26,7 @@ const noSignals: TabSignals = {
   agentUsedBrowser: false,
   errorUnread: 0,
   errorWorst: null,
+  notifyUnread: 0,
   taskPending: false,
   downloadsActive: false,
   artifactPresent: false,
@@ -41,13 +42,13 @@ describe('P3 #18 · 右侧入口易识别', () => {
       </div>,
     )
     for (const tab of TABS) expect(html).toContain(tab.label)
-    /* 八个入口一个不少 */
-    expect(TABS).toHaveLength(8)
+    /* 九个入口一个不少（2026-11 加「通知」：右下角只剩要你处理的事，其余收在这里） */
+    expect(TABS).toHaveLength(9)
   })
 
-  it('★ 宽栏（≥门槛）→ 八个全摆在栏上，一个都不进菜单', () => {
+  it('★ 宽栏（≥门槛）→ 九个全摆在栏上，一个都不进菜单', () => {
     const { inline, overflow } = shelfTabs(TABS, WIDE_THRESHOLD, 'diff')
-    expect(inline).toHaveLength(8)
+    expect(inline).toHaveLength(9)
     expect(overflow).toHaveLength(0)
   })
 
@@ -60,9 +61,10 @@ describe('P3 #18 · 右侧入口易识别', () => {
       'downloads',
       'state',
       'errors',
+      'notifications',
     ])
     /* 两组合起来 = 全部（一个都没丢） */
-    expect([...inline, ...overflow]).toHaveLength(8)
+    expect([...inline, ...overflow]).toHaveLength(9)
   })
 
   it('★ 当前标签落在菜单里时，栏上仍要显示它的名字（否则看不出在哪）', () => {
@@ -163,5 +165,12 @@ describe('P3 #9 · 右侧入口活动提示', () => {
     const both = { ...noSignals, taskRunning: true, errorUnread: 1, errorWorst: 'P1' as const }
     expect(activityOf('errors', both)).toBe('waiting')
     expect(activityOf('tasks', both)).toBe('running')
+  })
+
+  it('★ 通知：有未读 → waiting；没未读 → 不亮（收件箱里没有「正在跑」）', () => {
+    expect(activityOf('notifications', { ...noSignals, notifyUnread: 2 })).toBe('waiting')
+    expect(activityOf('notifications', noSignals)).toBe('none')
+    /* 通知永远不会变成 running —— 它只表示「有东西等你去看」 */
+    expect(activityOf('notifications', { ...noSignals, notifyUnread: 9 })).not.toBe('running')
   })
 })

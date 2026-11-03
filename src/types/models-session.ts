@@ -49,6 +49,15 @@ export interface StoredMessage {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   ts?: number
+  /**
+   * 这条不是用户手打的，是谁送进来的（2026-11-04）。
+   *
+   * 目前只有 `'extension'`：浏览器扩展读到的网页 / 页面操作回执，由
+   * `electron/core/ext-ops.cjs` 的 `ingest()` 落成 `role: 'user'`。
+   * 它**必须**带着这个字段走出磁盘 —— 界面靠它把「已读取网页」折成一行，
+   * 而不是画成用户气泡（以前读侧不带它，主窗口和侧边栏都画成一串用户消息）。
+   */
+  source?: string
   /** 同一段回复的身份（渲染层那条占位消息的 id）。分段快照与收尾那条共用它，读侧按它收敛成一条 */
   key?: string
   /** 这是流式过程中的快照，不是最终结果（进程被中断时它就是你最后看到的内容） */

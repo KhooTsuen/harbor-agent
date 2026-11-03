@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { PermissionRequest, RightTab, Toast, ToastKind } from '@/types'
+import type { NotifyCategory, PermissionRequest, RightTab, Toast, ToastKind } from '@/types'
 import type { TaskEndPayload, TaskOutcome } from '@/types/notify'
 import { uid } from '@/lib/utils'
+import { dispatchNotify } from '@/lib/notifyDispatch'
 import { useSettingsStore } from './useSettingsStore'
 
 /* ══════════════════════════════════════════════════════════════
@@ -67,11 +68,24 @@ interface UIState {
   setCommandPaletteOpen: (open: boolean) => void
   setSearchQuery: (q: string) => void
 
+  /**
+   * 弹一条提示。
+   *
+   * ★ 现在**先按类别分流**（见 `lib/notifyCenter.ts`），不是每条都弹右下角：
+   *   · `toast` —— 弹右下角那张卡（几秒后自己消失）
+   *   · `center` —— 不弹，只进右栏「通知」标签
+   *   · `off` —— 两边都不要
+   *   每类去哪儿由用户在「通知」标签顶部或设置里自己选（`Settings.notifyRoutes`）。
+   *
+   * @param category 直接点名类别（比 kind 更准）。不传就按 kind + 有没有按钮推断。
+   * @returns 弹了卡片时是它的 id；进了收件箱或按用户设置丢掉时是空串。
+   */
   showToast: (
     kind: ToastKind,
     title: string,
     description?: string,
     action?: Toast['action'],
+    category?: NotifyCategory,
   ) => string
   hideToast: (id: string) => void
 
@@ -188,7 +202,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setSearchQuery: (q) => set({ searchQuery: q }),
 
-  showToast: (kind, title, description, action) => {
+  showToast: (kind, title, description, action, category) => {
+    /* 分流在 `lib/notifyDispatch.ts` 一处做：进了收件箱或用户选了「都不要」就直接结束 */
+    if (dispatchNotify({ kind, title, description, action, category })) return ''
+
     const existing =
       (kind === 'error' || kind === 'warning') && !action
         ? get().toasts.find(

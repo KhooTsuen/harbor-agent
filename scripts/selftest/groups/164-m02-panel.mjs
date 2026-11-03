@@ -37,8 +37,23 @@ export async function run() {
   check('★★ 懒加载主应用的 Markdown 组件（不是自己写一个渲染器）', /import\('@\/components\/chat\/Markdown'\)/.test(bubbleSrc))
   check('★ 用 lazy + Suspense（katex / CodeBlock 不进首屏）', /lazy\(/.test(bubbleSrc) && /Suspense/.test(bubbleSrc))
   check('★★ 加载中/失败退回**纯文本**（不空白 —— 回复看不见比没有排版糟得多）', /fallback=\{<div className="whitespace-pre-wrap/.test(bubbleSrc))
-  check('★★ `回复正文` 这个验收锚点还在（换渲染组件也必须在同一处）', /aria-label="回复正文"/.test(bubbleSrc))
-  check('★ 一轮的显示从 ChatPanel 拆到 TurnBubble（那个文件贴 300 红线）', /from '\.\/TurnBubble'/.test(chatSrc) && /<TurnBubble turn=\{turn\}/.test(chatSrc))
+  /*
+   * 2026-11-03：锚点从写死的属性变成 `anchor` 参数控制的属性（详见该文件里那段注释）。
+   * 判据改成「代码行里仍然出现这个 label」——**不能**只测整篇出现，因为注释里
+   * 也会写到它，那样一条注释就能让判据变绿（这次真踩了：改成条件属性之后，
+   * 旧判据匹配到的是注释，看着还绿）。
+   */
+  const bubbleCode = bubbleSrc.split('\n').filter((l) => !/^\s*(\*|\/\*)/.test(l)).join('\n')
+  check('★★ `回复正文` 这个验收锚点还在（换渲染组件也必须在同一处）', /'aria-label': '回复正文'/.test(bubbleCode))
+  /*
+   * 2026-11-03：这条判据原本钉「ChatPanel 用 TurnBubble」。现在显示层又往下挪了一层 ——
+   * ChatPanel → MessageStream（它要同时画历史与正在流的那一轮）→ TurnBubble 的 MessageBody。
+   * 判据仍钉同一个本意（**显示逻辑不在 ChatPanel 里**），只是指向新的真相源，
+   * 并且要求 MessageStream 真的复用 TurnBubble 那份（不是自己再写一套正文渲染）。
+   */
+  check('★ 显示层已从 ChatPanel 拆出（现在经 MessageStream → TurnBubble.MessageBody）',
+    /from '\.\/MessageStream'/.test(chatSrc) && /<MessageStream/.test(chatSrc) &&
+    /from '\.\/TurnBubble'/.test(R('harbor-edge/src/sidepanel/MessageStream.tsx')) && /<MessageBody/.test(R('harbor-edge/src/sidepanel/MessageStream.tsx')))
   check('★ ChatPanel 里不再有第二处 `回复正文`（锚点只能一处）', (chatSrc.match(/aria-label="回复正文"/g) ?? []).length === 0)
 
   /* ── ② 停止生成：全链路 ── */

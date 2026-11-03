@@ -16,6 +16,7 @@ import { colorOf } from '@/lib/statusLanguage'
 import { isSafeHref } from '@/lib/linkPolicy'
 import { SystemMessage } from './SystemMessage'
 import { UserMessage } from './message/UserMessage'
+import { IngestedNote } from './message/IngestedNote'
 
 /* ══════════════════════════════════════════════════════════════
    MessageItem
@@ -41,7 +42,8 @@ export interface MessageItemProps {
 
 /** 助手那条的操作条在 `message/AssistantActions`（复制 / 重新生成 / 赞戴 / 翻译）；用户这条是编辑 / 分支 */
 export function MessageItem({ message, showActions = true, fork, index }: MessageItemProps) {
-  const isUser = message.role === 'user'
+  /* 扩展读到的网页 / 操作回执不是用户说的话 */
+  const isUser = message.role === 'user' && message.source !== 'extension'
   const isSystem = message.role === 'system'
   const isStreaming = message.status === 'streaming'
   const isError = message.status === 'error'
@@ -77,6 +79,8 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
     >
       {isUser ? (
         <UserMessage message={message} fork={fork} />
+      ) : message.source === 'extension' ? (
+        <IngestedNote content={message.content} timestamp={message.timestamp} />
       ) : (
         <div className="flex w-full flex-col">
           {isError ? (

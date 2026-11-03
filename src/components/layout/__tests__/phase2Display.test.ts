@@ -19,7 +19,11 @@ const strip = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
 
 describe('Phase 2 · C 标签分组（高频前置，一个不少）', () => {
-  it('★ 八个标签全在，且高频（审查·文件·任务·成果）排在前', () => {
+  it('★ 九个标签全在，且高频（审查·文件·任务·成果）排在前', () => {
+    /*
+     * 2026-11 加第 9 个「通知」：右下角只留要你处理的事，其余收进这个标签。
+     * 它排在最后 —— 低频入口，且窄栏时会自动收进「更多」菜单（见 tabShelf）。
+     */
     expect(TABS.map((t) => t.id)).toEqual([
       'diff',
       'files',
@@ -29,6 +33,7 @@ describe('Phase 2 · C 标签分组（高频前置，一个不少）', () => {
       'downloads',
       'state',
       'errors',
+      'notifications',
     ])
     /* 分组本身也就是顺序 —— 第一组必须整体在前 */
     expect(TABS.filter((t) => t.group === 1).map((t) => t.id)).toEqual([
@@ -42,6 +47,7 @@ describe('Phase 2 · C 标签分组（高频前置，一个不少）', () => {
       'downloads',
       'state',
       'errors',
+      'notifications',
     ])
   })
 
@@ -115,7 +121,7 @@ describe('Phase 2 · 角标数据同源、无轮询', () => {
   it('hook 导出的形状与 TABS 的 id 一致（键名对得上）', () => {
     /* 类型层面已经保证；这里防「hook 返回值改名、调用方忘了跟着改」的漂移 */
     const src = read('src/hooks/useRightTabBadges.ts')
-    for (const key of ['diffCount', 'errorUnread', 'errorWorst', 'runningTasks']) {
+    for (const key of ['diffCount', 'errorUnread', 'errorWorst', 'runningTasks', 'notifyUnread']) {
       expect(src, key).toContain(key)
     }
     expect(typeof useRightTabBadges).toBe('function')

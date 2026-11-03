@@ -36,6 +36,11 @@ export interface Message {
   threadId: string
   role: MessageRole
   content: string
+  /**
+   * 这条不是用户手打的（目前只有 `'extension'`：浏览器扩展读到的网页 / 操作回执）。
+   * 界面据此画成一行折叠卡而不是用户气泡 —— 见 `chat/message/IngestedNote.tsx`。
+   */
+  source?: string
   kind: MessageKind
   status: MessageStatus
   timestamp: number

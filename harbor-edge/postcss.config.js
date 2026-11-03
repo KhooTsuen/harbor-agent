@@ -46,6 +46,19 @@ export default {
            * 全部类名都编进扩展的 CSS（那是白涨体积）。
            */
           './src/components/ui/Button.tsx',
+          /*
+           * ★ 2026-11-04：侧边栏显示「扩展读到的网页」时直接 import 主应用的
+           * `chat/message/IngestedNote.tsx`（与主窗口同一个组件，硬约束 #9）。
+           * 理由同上一条：扫不到它，折叠卡的类名就编不出来。
+           */
+          './src/components/chat/message/IngestedNote.tsx',
+          /*
+           * ★ 2026-11-04：思考块直接复用主应用的 `chat/ProcessBlocks.tsx` 的
+           * `ThinkBlock`（与主窗口同一个组件）。它的类名（`text-2xs` /
+           * `border-line-subtle` / `bg-bg-raised/40` …）散在那个文件里 ——
+           * 扫不到就是「组件在、样式全丢」，而 tsc 与构建都不报错。
+           */
+          './src/components/chat/ProcessBlocks.tsx',
         ],
         theme: base.theme,
         plugins: base.plugins ?? [],

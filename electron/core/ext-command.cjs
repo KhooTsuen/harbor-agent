@@ -17,20 +17,13 @@ const { inspectRef } = require('./ext-ref.cjs')
 /** 等回执的期限（浏览器没开 / 扩展被回收 → 给带 code 的人话，不干等） */
 const COMMAND_TIMEOUT_MS = 15000
 
-
-/**
- * @param {{ getBridge: () => object, log?: object, land?: Function, confirm?: Function }} deps
- *   `land` / `confirm` 由装配处注入（渲染+落盘 / 弹既有确认卡），免得内核互相 require。
- */
+/** @param {{ getBridge, log?, land?, confirm? }} deps —— `land` / `confirm` 由装配处注入，免得内核互相 require */
 function createCommand(deps) {
   const bridgeOf = deps.getBridge ?? (() => null)
   const log = deps.log
   const land = typeof deps.land === 'function' ? deps.land : null
-  /*
-   * ★ M04-3 敏感操作确认：**由装配处注入**（与 `land` 同一路子）——
-   *   确认卡要 `emit`，而 emit 只有 `electron/handlers/` 有（见 chat.cjs:143）。
-   *   没注入时 `click` 会**保守拒绝**（fail-closed），绝不放行。
-   */
+  /* ★ M04-3 敏感操作确认：由装配处注入（与 `land` 同一路子）—— 确认卡要 `emit`，
+     而 emit 只有 `electron/handlers/` 有（见 chat.cjs:143）。没注入时 `click` 会**保守拒绝**。 */
   const confirm = typeof deps.confirm === 'function' ? deps.confirm : null
 
   /** 发出去、还没等到回执的指令：id → { resolve, timer }（并发安全） */
@@ -128,12 +121,14 @@ function createCommand(deps) {
    * 复用 M03 的采集器（同一个注入函数、同一套版本号算法、同一套 ref 登记）——
    * 扩展侧只裁掉 selection / frames / shadow 再发回来。
    *
-   * @param {{ ref?: string, maxItems?: number }} [payload]
+   * @param {{ ref?: string, maxItems?: number, query?: string }} [payload]
    */
   async function getElements(payload = {}) {
     const ref = String(payload.ref ?? '')
     const maxItems = Number(payload.maxItems) > 0 ? Math.min(Number(payload.maxItems), 200) : 0
-    const res = await call('get-elements', { ref, maxItems })
+    /* query 只让扩展侧圈输出窗口，不改 ref 规则（详见 observe.js 的 ③-b） */
+    const query = String(payload.query ?? '').trim().slice(0, 100)
+    const res = await call('get-elements', { ref, maxItems, query })
     if (!res || res.ok !== true) {
       return res && res.error ? res : fail(P.ERR.INTERNAL, '浏览器没回可用的结果')
     }
@@ -267,7 +262,8 @@ function createCommand(deps) {
   const tabs = createTabs({ call, landAction })
 
   return {
-    readCurrent: () => call('read-current'),
+    /* offset：正文分段读取的起点（扩展侧 limitPageText 按它取一段回来） */
+    readCurrent: (payload = {}) => call('read-current', { offset: Number(payload.offset) > 0 ? Number(payload.offset) : 0 }),
     getElements,
     click,
     verify,

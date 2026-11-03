@@ -1,23 +1,29 @@
+import { BrowserExtCard } from '../tabs/BrowserExtCard'
 import { SkillsTab } from '../tabs/SkillsTab'
 import { McpTab } from '../tabs/McpTab'
 import { SchedulesPanel } from './SchedulesPanel'
 
 /* ══════════════════════════════════════════════════════════════
-   扩展 = 技能 + MCP + 定时任务
+   扩展 = 浏览器插件 + 技能 + MCP + 定时任务
 
-   三者都是「让 Agent 多会点东西」，只是来源不同：
+   四者都是「让 Agent 多会点东西」，只是来源不同：
+     浏览器插件 Edge 侧边栏（读你正在看的网页）
      技能     本地文件（我教它怎么做这类事）
      MCP      外部进程（接别的工具/服务）
      定时任务  不靠人开口（到点自己跑一次）
    原来分成「技能」和「扩展」两个标签，名字还容易混。
 
+   浏览器插件排最前：它是唯一「装完立刻有个看得见的新入口」的一块，
+   也是新用户最常找不到的（不在应用商店里，只能手动加载）。
+
    定时任务排在最后：它的授权上限是个要认真读的东西，
-   前面两块是「多会点技能」，它是「我不在场时它还能干什么」。
+   前面几块是「多会点技能」，它是「我不在场时它还能干什么」。
    ══════════════════════════════════════════════════════════════ */
 
 export function ExtensionPanel(): React.ReactElement {
   return (
     <>
+      <BrowserExtCard />
       <SkillsTab />
       <div>
         <McpTab />

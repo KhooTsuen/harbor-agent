@@ -3,6 +3,7 @@
   "name": "Harbor Browser Companion",
   "version": "0.4.0",
   "description": "Harbor side panel (Phase 3a: session list via bidirectional channel)",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsTCbpLpNRxIbCI184X0hjoMd+4Xa2n+76inb+7rF3hUCGWntK+8fIB2DsWe8Hdx8RpU0p8zEieTy7YqglrYgUen9t/lw2Z6PAuUpNKz7lmchK3keWYkoRYTZ26tryQUHLGCUrVeTTz58cM7TTGvsZRbsIsmOd8QCILcEcaWq6wR1dXKKDmSjiVlygACr+op9HAwAtCPgVHvjGcRycEDu8SVR2qMuXZw/R7VNXnj016hmpK6t7eUh2DcNmHo+y1eCPAhVbsPnVe3NZMp72J1G0PfnDria8cC+4FM8TQ2iKHO9JTbItNfYKk8KcyTQnB4DjAtF2fzZrK2oHrVTyZ/ZiwIDAQAB",
   "permissions": ["nativeMessaging", "sidePanel", "storage", "activeTab", "scripting", "contextMenus"],
   "optional_host_permissions": ["<all_urls>"],
   "commands": {

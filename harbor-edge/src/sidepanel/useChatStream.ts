@@ -39,7 +39,11 @@ interface PushPayload {
   [k: string]: unknown
 }
 
-interface SessionView { turn: TurnView | null; task: TaskState; requestId: string }
+interface SessionView {
+  turn: TurnView | null
+  task: TaskState
+  requestId: string
+}
 
 /**
  * @param {string} sessionId 侧边栏**自己**在看的那条（空串 = 还没选）
@@ -51,14 +55,17 @@ export function useChatStream(sessionId: string) {
   sidRef.current = sessionId
   const turn = views[sessionId]?.turn ?? null
   const task = views[sessionId]?.task ?? emptyTask()
-  const setTurn = useCallback((change: TurnView | null | ((prev: TurnView | null) => TurnView | null)) => {
-    const owner = sessionId
-    setViews((all) => {
-      const current = all[owner] ?? { turn: null, task: emptyTask(), requestId: '' }
-      const next = typeof change === 'function' ? change(current.turn) : change
-      return { ...all, [owner]: { ...current, turn: next } }
-    })
-  }, [sessionId])
+  const setTurn = useCallback(
+    (change: TurnView | null | ((prev: TurnView | null) => TurnView | null)) => {
+      const owner = sessionId
+      setViews((all) => {
+        const current = all[owner] ?? { turn: null, task: emptyTask(), requestId: '' }
+        const next = typeof change === 'function' ? change(current.turn) : change
+        return { ...all, [owner]: { ...current, turn: next } }
+      })
+    },
+    [sessionId],
+  )
 
   /** 当前在看的会话 —— 存 ref，避免闭包里拿到过期的值 */
 
@@ -86,19 +93,45 @@ export function useChatStream(sessionId: string) {
         const requestId = String(payload.requestId ?? '')
         const fresh = Boolean(requestId && current.requestId && current.requestId !== requestId)
         const base = fresh ? null : current.turn
-        const prev = base ?? (['content', 'done', 'aborted', 'error'].includes(type)
-          ? { ask: '', text: '', seq: 0, done: false }
-          : null)
+        const prev =
+          base ??
+          (['content', 'reasoning', 'done', 'aborted', 'error'].includes(type)
+            ? { ask: '', text: '', seq: 0, done: false }
+            : null)
         let next = prev
         if (prev && (!seq || seq > prev.seq)) {
           next = { ...prev, seq: seq || prev.seq }
           if (type === 'content' && typeof payload.text === 'string') next.text += payload.text
           /*
+           * ★ 2026-11-04 思考链：`reasoning` 分片一直是**推到侧边栏的**
+           *   （`electron/core/ext-chat-streams.cjs` 的 `PUSH_TYPES` 里有它），
+           *   但这里以前只认 `content` —— 于是思考被**静默丢掉**，
+           *   界面上「正在思考…」永远不可能出现，而没有任何报错。
+           *
+           *   所以 `reasoning` 也必须进上面那个「首片就能建 turn」的列表：
+           *   一轮的第一条推送往往正是思考分片，那时 `prev` 还是 null，
+           *   不在列表里就等于整段丢。
+           */
+          if (type === 'reasoning' && typeof payload.text === 'string') {
+            next.reasoning = (prev.reasoning ?? '') + payload.text
+          }
+          /*
            * ★ 2026-10-21 重试：主进程已经把本轮正文退回到重试前的位置，并推来**全文**。
            *   这里必须**覆盖**，不能追加 —— 追加就等于「上一次尝试 + 这一次尝试」两遍。
            *   （为什么只有侧栏需要这一步：主窗口收尾时有 `reconcileFinalRounds` 合并。）
            */
-          if (type === 'retry') next.text = String(payload.text ?? '')
+          if (type === 'retry') {
+            next.text = String(payload.text ?? '')
+            /*
+             * ★ 思考也要退回去：主进程重试时已经把 `snap.reasoning` 回滚到本轮起点
+             *   （`ext-chat-streams.cjs`），但它推来的 payload 里只有正文全文，
+             *   **没有回滚后的思考** —— 本地若照旧累加，重试后这一段会重复两遍。
+             *
+             *   所以这里清空、让历史重读把它补回来（磁盘那份是准的）。
+             *   与正文「用推来的全文覆盖」是同一个意图：以主进程那份为准。
+             */
+            next.reasoning = ''
+          }
           if (type === 'done' || type === 'aborted') {
             next.done = true
             if (typeof payload.text === 'string' && payload.text) next.text = payload.text
@@ -108,7 +141,14 @@ export function useChatStream(sessionId: string) {
             next.error = String(payload.text ?? '出错了')
           }
         }
-        return { ...all, [incoming]: { turn: next, task: nextTaskState(fresh ? emptyTask() : current.task, payload), requestId: requestId || current.requestId } }
+        return {
+          ...all,
+          [incoming]: {
+            turn: next,
+            task: nextTaskState(fresh ? emptyTask() : current.task, payload),
+            requestId: requestId || current.requestId,
+          },
+        }
       })
     }
     try {
@@ -134,20 +174,35 @@ export function useChatStream(sessionId: string) {
     try {
       const p = chrome.runtime.sendMessage({ type: 'chat-resume', sessionId })
       if (!p || typeof p.then !== 'function') return
-      p.then((res: { ok?: boolean; requestId?: string; seq?: number; text?: string; done?: boolean } | undefined) => {
-        if (!res || res.ok !== true) return
-        setViews((all) => {
-          const current = all[sessionId] ?? { turn: null, task: emptyTask(), requestId: '' }
-          const seq = Number(res.seq ?? 0)
-          const requestId = String(res.requestId ?? '')
-          if (current.requestId === requestId && current.turn && current.turn.seq >= seq) return all
-          return { ...all, [sessionId]: {
-            ...current,
-            requestId: requestId || current.requestId,
-            turn: { ask: current.turn?.ask ?? '', text: String(res.text ?? ''), seq, done: res.done === true },
-          } }
-        })
-      }).catch(() => {})
+      p.then(
+        (
+          res:
+            | { ok?: boolean; requestId?: string; seq?: number; text?: string; done?: boolean }
+            | undefined,
+        ) => {
+          if (!res || res.ok !== true) return
+          setViews((all) => {
+            const current = all[sessionId] ?? { turn: null, task: emptyTask(), requestId: '' }
+            const seq = Number(res.seq ?? 0)
+            const requestId = String(res.requestId ?? '')
+            if (current.requestId === requestId && current.turn && current.turn.seq >= seq)
+              return all
+            return {
+              ...all,
+              [sessionId]: {
+                ...current,
+                requestId: requestId || current.requestId,
+                turn: {
+                  ask: current.turn?.ask ?? '',
+                  text: String(res.text ?? ''),
+                  seq,
+                  done: res.done === true,
+                },
+              },
+            }
+          })
+        },
+      ).catch(() => {})
     } catch {
       /* 忽略 */
     }

@@ -138,19 +138,19 @@ export async function run() {
   check('★ 重开会话：没有孤立 tool / 悬空 tool_calls', apiOrphan.orphans === 0 && apiOrphan.dangling === 0, JSON.stringify(apiOrphan))
   session.remove(thread.id)
 
-  /* ③ 超长输入：超上限 → 有损，但必须明说 + 要求先问用户 */
-  group('P0-1（第 4 轮）/ ③ 原话超过上限时：不许装作掌握全部，必须请用户确认')
+  /* ③ 超长输入：第七轮起用户原话不再设上限 —— 整段进，不再有损 */
+  group('P0-1（第 7 轮）/ ③ 原话再长也整段进（上限已取消）')
   const huge = `${PAD.repeat(60)}${REQUIRE}。${PAD.repeat(160)}${TAIL}。`
-  check('★ 夹具成立：这条原话超过 USER_FOLD_CAP', huge.length > foldCore.USER_FOLD_CAP, `${huge.length} 字`)
+  check('★ 夹具成立：这条原话远超老的 USER_FOLD_CAP', huge.length > foldCore.USER_FOLD_CAP, `${huge.length} 字`)
   const hugeSqueezed = windowCore.takeTurns([...turnOf(huge, 30, '结论：读了一半'), { role: 'user', content: '接着做' }], 20, {
     minTurns: 1,
   })
-  check('★ 超长时 lostChars > 0（有损是**报出来**的，不是悄悄发生）', hugeSqueezed.lostChars > 0, String(hugeSqueezed.lostChars))
+  check('★★ 超长原话：lostChars = 0（不再有损）', hugeSqueezed.lostChars === 0, String(hugeSqueezed.lostChars))
   const hugeText = String(foldedUser(hugeSqueezed.kept)?.content ?? '')
-  check('★★ 有损时明说「没有完整进入本次请求」并**要求先向用户确认**', hugeText.includes('没有完整进入本次请求') && hugeText.includes('请他补充或确认'))
-  check('★ 有损时缺的字数写实（和 lostChars 对得上）', hugeText.includes(`中间 ${hugeSqueezed.lostChars} 字没有进入本次请求`))
-  check('★ 有损时开头与结尾都在（不是只留开头）', hugeText.includes(PAD.repeat(3).slice(0, 10)) && hugeText.includes(TAIL))
-  check('★ 日志口径也说清了缺多少（describeWindow）', windowCore.describeWindow(hugeSqueezed).includes(`⚠ 其中 ${hugeSqueezed.lostChars} 字用户原话没进请求`))
+  check('★★ 那句要求逐字还在（落在旧上限会砍掉的中段）', hugeText.includes(REQUIRE))
+  check('★★ 末尾约束也在，且整段原话逐字都在', hugeText.includes(TAIL) && hugeText.includes(huge))
+  check('★ 不再出现「没有完整进入本次请求」的声明（没缺就不许喊）', !hugeText.includes('没有完整进入本次请求'))
+  check('★ 日志口径也不再报缺字（describeWindow 不再说「没进请求」）', !windowCore.describeWindow(hugeSqueezed).includes('没进请求'))
 
   /* ④ 多个工具调用 + 末尾约束 + 折叠块里没有 tool 消息 */
   group('P0-1（第 4 轮）/ ④ 多次工具调用：要求还在、工具正文不搬、协议合法')

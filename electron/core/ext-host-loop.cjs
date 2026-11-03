@@ -98,6 +98,16 @@ function createDispatcher(client) {
       return { type: 'ext:sessionActive.result', ok: false, id, error: res.error.message, code: res.error.code }
     }
 
+    /* 2026-11-03：侧边栏要这条会话说过什么（显示整条会话）。host 只转发 ——
+       切片 / 瘦身 / 字节预算全在主进程 `ext-session-messages.cjs`；
+       `sessionId` 不带时由主进程退回「选中 / 当前」那条。 */
+    if (type === 'session-messages') {
+      const ask = obj.sessionId ? { sessionId: String(obj.sessionId) } : {}
+      const res = await client.request(P.KIND.SESSION_MESSAGES, ask)
+      if (res.ok) return { ...res.payload, type: 'session-messages.result', ok: true, id }
+      return { type: 'session-messages.result', ok: false, id, error: res.error.message, code: res.error.code }
+    }
+
     /*
      * Phase 3b：侧边栏发消息 / 重连要流快照 —— 都是「转给主进程拿结果」，
      * 与上面两条同一种形状（host 只做转发，业务判断全在主进程）。
@@ -198,7 +208,7 @@ function createDispatcher(client) {
 
     return {
       error:
-        '只认 {"ping":…} / ext:page / page-context / ext:sessionList / ext:sessionActive / chat:send / chat:resume / chat:abort / session:select / session:new / observe-page / get-elements / site-policy / page-result',
+        '只认 {"ping":…} / ext:page / page-context / ext:sessionList / ext:sessionActive / session-messages / chat:send / chat:resume / chat:abort / session:select / session:new / observe-page / get-elements / site-policy / page-result',
       echo: message ?? null,
     }
   }

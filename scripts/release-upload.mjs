@@ -5,6 +5,7 @@
  *   npm run release:upload -- --beta  # Pre-release（prerelease: true）
  *   npm run release:upload -- --dry   # 只打印打算做什么，不发请求
  *   npm run release:upload -- --tag   # 本地缺 tag 时，代建 + 推到 origin（默认缺 tag 就停）
+ *   npm run release:upload -- --no-proxy  # 上传时不经本地代理（直连 uploads.github.com）
  *
  * ── 为什么放在 `scripts/` 而不是 `tmp/`（2026-10-06）──
  * 这套流程原来靠 `tmp/gh-release-beta3.cjs` 这类**一次性脚本**，而 `tmp/` 有自己的
@@ -26,6 +27,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 /* 认仓库 / 拿凭据 / 发请求只有一份实现（清理脚本用的是同一份） */
 import { ghApi, readToken, repoOf } from './lib/github-release.mjs'
+/* 上传资产（流式 + 实时进度）单独一份 —— 它只管把大文件发出去 */
+import { uploadAssetWithCurl } from './lib/release/upload-asset.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -33,6 +36,10 @@ const IS_BETA = argv.includes('--beta')
 const DRY = argv.includes('--dry')
 /* `--tag`：本地缺 tag 时由本工具代建并推（git tag + git push 是写 + 外发，默认不动手） */
 const MAKE_TAG = argv.includes('--tag')
+/* `--no-proxy`：上传时不走本地代理（curl 会继承本文件顶层翻出来的 HTTPS_PROXY）。
+ * 236MB 过一遍代理常常只有一两百 KB/s，而 uploads.github.com 直连是通的 ——
+ * 实测这台机器直连 0.64 秒握手成功（2026-11-03）。默认不动，慢的时候才加这个开关。 */
+const NO_PROXY = argv.includes('--no-proxy')
 
 function fail(message) {
   console.error(`发布失败：${message}`)
@@ -164,17 +171,39 @@ const already = Array.isArray(assets.json) ? assets.json.find((item) => item.nam
 if (already) {
   console.log(`② 资产已存在（${Math.round(already.size / 1048576)}MB），跳过上传`)
 } else {
-  console.log('② 正在上传 zip（一百多 MB，要几分钟）……')
-  const uploaded = await api(
-    `UPLOAD/repos/${owner}/${repo}/releases/${release.json.id}/assets?name=${encodeURIComponent(zipName)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/zip', 'Content-Length': String(statSync(zipPath).size) },
-      body: readFileSync(zipPath),
-    },
-  )
-  if (!uploaded.ok) fail(`上传失败（${uploaded.status}）：${uploaded.text.slice(0, 400)}`)
-  console.log(`② 上传完成：${uploaded.json.browser_download_url}`)
+  const totalBytes = statSync(zipPath).size
+  console.log(`② 正在上传 zip（${sizeMb}MB）→ 每 10 秒一行真实进度（不是"还在传"的安慰话）`)
+  if (NO_PROXY) console.log('   （--no-proxy：不经过本地代理，直连 uploads.github.com）')
+  else if (process.env.HTTPS_PROXY) console.log(`   （经代理 ${process.env.HTTPS_PROXY}；传大文件慢就加 --no-proxy）`)
+  const started = Date.now()
+  /* 优先 curl（流式 + 有进度）；没有 curl 才回落到一次性 fetch（无进度，但能传） */
+  let uploaded = await uploadAssetWithCurl({
+    token: key,
+    owner,
+    repo,
+    releaseId: release.json.id,
+    name: zipName,
+    filePath: zipPath,
+    totalBytes,
+    noProxy: NO_PROXY,
+  })
+  if (uploaded === null) {
+    console.log('  （没找到 curl.exe，回落到 fetch —— 过程中不会有进度输出，慢是正常的）')
+    uploaded = await api(
+      `UPLOAD/repos/${owner}/${repo}/releases/${release.json.id}/assets?name=${encodeURIComponent(zipName)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/zip', 'Content-Length': String(statSync(zipPath).size) },
+        body: readFileSync(zipPath),
+      },
+    )
+  }
+  const secs = uploaded.elapsedSec || Math.round((Date.now() - started) / 1000)
+  const kbps = secs > 0 ? Math.round((statSync(zipPath).size / 1024 / secs) * 10) / 10 : 0
+  if (!uploaded.ok) {
+    fail(`上传失败（${uploaded.status || '无状态码'}，用了 ${secs} 秒）：${uploaded.text.slice(0, 400)}`)
+  }
+  console.log(`② 上传完成（${secs} 秒，平均 ${kbps} KB/s）：${uploaded.json.browser_download_url}`)
 }
 
 console.log(`完成：${release.json.html_url}`)

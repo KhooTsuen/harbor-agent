@@ -120,12 +120,31 @@ export function waitForStablePage() {
   })
 }
 
-export function limitPageText(page, maxChars) {
+/**
+ * 取正文的**一段**（2026-11-03 加分批）。
+ *
+ * 为什么切成段而不是「一次给 40 KB」：长文（文档、issue 长讨论）40 KB 只够开头，
+ * 之前唯一的办法是把上限调大 —— 那会把整篇塞进一次回执，超时又把结果丢掉。
+ * 现在整篇只采一次，按 `offset` 取段，调用方顺着 `nextOffset` 往下读。
+ *
+ * `truncated` 保留原义（**后面还有内容没给你**），`nextOffset === null` 才是读完了。
+ */
+export function limitPageText(page, maxChars, offset) {
   const raw = String(page?.text || '')
+  const size = Math.max(1, Number(maxChars) || 1)
+  const from = Math.max(0, Math.min(Math.floor(Number(offset) || 0), raw.length))
+  const end = Math.min(raw.length, from + size)
+  const segments = Math.max(1, Math.ceil(raw.length / size))
   return {
     url: String(page?.url || ''),
     title: String(page?.title || ''),
-    text: raw.slice(0, maxChars),
-    truncated: raw.length > maxChars,
+    text: raw.slice(from, end),
+    offset: from,
+    chars: raw.length,
+    segment: Math.min(segments, Math.floor(from / size) + 1),
+    segments,
+    /* 没有下一段就是 null —— 调用方据此判断「读完了」，不必比长度 */
+    nextOffset: end < raw.length ? end : null,
+    truncated: end < raw.length,
   }
 }

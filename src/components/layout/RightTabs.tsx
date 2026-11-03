@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import {
   Activity,
+  Bell,
   Download,
   FileCode2,
   GitCompareArrows,
@@ -59,6 +60,8 @@ export const TABS: readonly {
   { id: 'state', label: '状态', icon: Activity, group: 2 },
   /* 内核记的错误（只读）—— 排查「刚才那个按钮为什么没反应」时的第一站 */
   { id: 'errors', label: '错误', icon: ShieldAlert, group: 2 },
+  /* 事后看就行的通知（任务跑完 / 下载 / Agent 在干嘛）—— 右下角只留要你处理的 */
+  { id: 'notifications', label: '通知', icon: Bell, group: 2 },
 ] as const
 
 /** 窄栏情况下，「正在跑」的呼吸光晕（减少动效时降级为静态描边） */
@@ -75,6 +78,8 @@ interface RightTabsProps {
   errorUnread: number
   /** 未读里最严重的一级 —— 角标颜色据此选（仍走 statusLanguage） */
   errorWorst: 'P0' | 'P1' | null
+  /** 未读通知条数（0 就不显示点） */
+  notifyUnread: number
   /** 有未完成 / 在跑的任务 */
   taskPending: boolean
   /** 下载列表里有条目 */
@@ -100,6 +105,7 @@ export function RightTabs(props: RightTabsProps) {
     agentUsedBrowser: props.agentUsedBrowser,
     errorUnread: props.errorUnread,
     errorWorst: props.errorWorst,
+    notifyUnread: props.notifyUnread,
     taskPending: props.taskPending,
     downloadsActive: props.downloadsActive,
     artifactPresent: props.artifactPresent,
@@ -130,9 +136,11 @@ export function RightTabs(props: RightTabsProps) {
           const label =
             tab.id === 'errors' && props.errorUnread > 0
               ? `${tab.label}（${props.errorUnread} 条未读的严重错误）`
-              : activity === 'running'
-                ? `${tab.label}（进行中）`
-                : tab.label
+              : tab.id === 'notifications' && props.notifyUnread > 0
+                ? `${tab.label}（${props.notifyUnread} 条未读）`
+                : activity === 'running'
+                  ? `${tab.label}（进行中）`
+                  : tab.label
           return (
             <Fragment key={tab.id}>
               {index > 0 && tab.group === 2 && inline[index - 1].group === 1 ? (

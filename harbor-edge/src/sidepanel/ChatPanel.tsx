@@ -5,27 +5,23 @@
  *     流式分片显示出来；点顶栏 **☰** 时把会话抽屉滑出来**覆盖**这一块。
  * 不做：**不落盘、不判忙**。落盘在渲染层（`replyPersistence.ts`）；「忙不忙」
  *     由主进程判（`electron/core/ext-chat.cjs`）—— 判据只有一处，扩展侧不自己猜。
- * 一轮的显示（含 Markdown）在 `TurnBubble.tsx`；任务卡在 `TaskCard.tsx`；
- * 当前网页卡在 `PageCard.tsx`；**流式订阅**在 `useChatStream.ts`
- * —— 本文件 2026-10-20 已贴 300 红线，能搬的都搬走了。
+ * 一轮的显示在 `TurnBubble.tsx` / 任务卡 `TaskCard.tsx` / 网页卡 `PageCard.tsx` /
+ * 流式订阅 `useChatStream.ts` / 消息区滚动 `AutoscrollBox.tsx` —— 贴 300 红线后搬走的。
  *
  * ── 流事件 / 冷启动 ─────────────────────────────────────────
- * SW 广播 `chat:event`，字段：`sessionId` / `seq` / `type` / `text` / `done`。
- * `seq` 单调 —— 只认更大的（广播重排不会把旧片盖上去）。打开面板时问一次
- * `chat-resume` 拿**快照**（全文 + seq），而不是补发历史分片（见 3b 设计 §3.2）。
+ * SW 广播 `chat:event`（`sessionId` / `seq` / `type` / `text` / `done`），`seq` 单调 ——
+ * 只认更大的。打开面板时问一次 `chat-resume` 拿**快照**（见 3b 设计 §3.2）。
  *
  * ── ★ 两个 aria-label 是验收脚本的锚点（改了就静默失效）──────
  *   · `回复正文`（在 TurnBubble）→ accept-phase3b 的 `REPLY_TEXT`
  *   · `发送提示` → `NOTICE_TEXT`，同时是 ext-probe 的 `STATUS_TEXT_EXPR` 锚点
  *     （取文档里**第一个** role=status + aria-live）→ **只能有一个**。
- *
- * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往同一行写话，而「只有一行」
- * 是硬要求（同上是锚点）。
+ * 状态行为什么由 App 持有：顶栏那两个占位按钮也要往同一行写话，而「只有一行」是硬要求。
  */
 
 /* global chrome */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ReadPageButton, type StatusMessage } from './ReadPageButton'
@@ -34,9 +30,11 @@ import { SessionDrawer } from './SessionDrawer'
 import { SettingsDrawer } from './SettingsDrawer'
 import { TaskCard } from './TaskCard'
 import { PageCard } from './PageCard'
-/* M02-A：一轮的显示 + Markdown 搬到 TurnBubble（本文件贴 300 红线） */
-import { TurnBubble } from './TurnBubble'
-/* M02-B：流式订阅 + 任务卡状态累加搬到这里（本文件贴 300 红线） */
+/* M02-A / M02-B：一轮的显示 + Markdown 在 TurnBubble，整条会话由 MessageStream 画；
+   流式订阅与任务卡状态在 useChatStream（都是本文件贴 300 红线后搬走的） */
+import { MessageStream } from './MessageStream'
+/* 2026-11-03 真机：打开面板停在最上面 —— 滚动盒子换成会贴底的（本文件贴 300 红线，逻辑在那边） */
+import { AutoscrollBox } from './AutoscrollBox'
 import { useChatStream } from './useChatStream'
 import { useSelectionDraft } from './useSelectionDraft'
 
@@ -102,6 +100,20 @@ export function ChatPanel({
   const { turn, setTurn, task, sidRef } = useChatStream(sessionId)
   const [regeneratingIds, setRegeneratingIds] = useState<string[]>([])
   const regenerating = regeneratingIds.includes(sessionId)
+  /*
+   * 2026-11-03：两个「重读历史」的计数 —— 侧边栏现在显示整条会话，
+   * 历史什么时候要重读由这里数，hook 那边不猜事件形状（见 useSessionHistory）：
+   *   · `roundTick`：一轮跑完（turn.done 由 false → true）→ 磁盘上多了一条
+   *   · `sentTick`：发送被接受 → 刚那一问/那一答要出现在列表里
+   */
+  const [roundTick, setRoundTick] = useState(0)
+  const [sentTick, setSentTick] = useState(0)
+  const doneRef = useRef(false)
+  useEffect(() => {
+    const done = Boolean(turn?.done)
+    if (done && !doneRef.current) setRoundTick((n) => n + 1)
+    doneRef.current = done
+  }, [turn?.done])
 
   /* 有回复正在流吗（组件作用域：发送 / 停止按钮 / 停止本身三处共用）。
      ⚠️ 原先它是 `send` 里的局部 const 却被 JSX 用了 → 真机**整页白屏**
@@ -126,6 +138,8 @@ export function ChatPanel({
         setSending(false)
         if (res && res.ok === true) {
           setInput('')
+          /* 2026-11-03：让消息列表重读历史（刚这一问/这一答要出现在整条会话里） */
+          setSentTick((n) => n + 1)
           /* 空会话时主进程请渲染层**新建一条**；新 id 由 `session:selected` 推回来，这里不等 */
           return
         }
@@ -196,29 +210,23 @@ export function ChatPanel({
 
       {/* 消息区 + 抽屉：抽屉是 absolute 覆盖，**不是**并排（400px 宽容不下并排）*/}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div aria-label="消息流" className="h-full overflow-y-auto px-3 py-2 text-dense">
-          {!turn ? (
-            /*
-             * 空状态垂直居中：原来 `py-2` 直接顶在最上面，下面一大片空黑，
-             * 看着像「内容没加载出来」（用户 2026-10-21 指出）。
-             */
-            <div className="flex h-full items-center justify-center px-2">
-              <p className="text-center text-2xs leading-relaxed text-fg-tertiary">
-                {/*
-                 * ⚠️ 这里**不再重复**「会新建一条对话」——输入框的 placeholder 已经说了。
-                 *   同一屏两处说同一件事，是 2026-10-21 截图复查时逮到的（两轮识图都指出）。
-                 *   分工：空状态说明「现在能不能发」，placeholder 说明「发了会怎样」。
-                 */}
-                {!connected ? '还没连上 Harbor' : sessionId ? '在下面输入，发给这条对话' : '在下面输入'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <TurnBubble turn={turn} />
-              {turn.done && sessionId && connected ? <Button size="sm" variant="ghost" disabled={regenerating} onClick={regenerate}>重新生成</Button> : null}
-            </>
-          )}
-        </div>
+        {/* 2026-11-03：滚动盒子换成 AutoscrollBox（打开贴底 / 在底部时跟流 / 上滑翻历史不打扰）；
+            消息区交给 MessageStream —— 历史与正在流的那一轮合成一条时间线，规则在 mergeMessages.ts */}
+        <AutoscrollBox
+          sessionKey={sessionId}
+          label="消息流"
+          className="h-full overflow-y-auto px-3 py-2 text-dense"
+        >
+          <MessageStream
+            sessionId={sessionId}
+            connected={connected}
+            turn={turn}
+            tick={roundTick}
+            sentTick={sentTick}
+            onRegenerate={sessionId && connected ? regenerate : undefined}
+            regenerating={regenerating}
+          />
+        </AutoscrollBox>
 
         {drawerOpen ? (
           <SessionDrawer onClose={onCloseDrawer} selectedId={sessionId} onSelect={onSelectSession} />

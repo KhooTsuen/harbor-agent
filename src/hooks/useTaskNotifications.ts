@@ -111,10 +111,17 @@ export function useTaskNotifications(): void {
       if (payload.sessionId !== useAppStore.getState().activeThreadId) {
         useUIStore.getState().markUnread(payload.sessionId)
       }
-      useUIStore.getState().showToast(payload.kind, payload.title, payload.description, {
-        label: '查看结果',
-        onClick: () => openTaskResult(payload.sessionId),
-      })
+      useUIStore.getState().showToast(
+        payload.kind,
+        payload.title,
+        payload.description,
+        {
+          label: '查看结果',
+          onClick: () => openTaskResult(payload.sessionId),
+        },
+        /* 类别显式点名：任务结果默认只进「通知」标签，不弹右下角（见 Settings.notifyRoutes） */
+        'task',
+      )
     })
   }, [])
 }

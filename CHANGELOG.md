@@ -1,7 +1,659 @@
-# 更新日志
+## [1.35.0] — 2026-11-04 · 折叠治本（原话不再被截断）+ Edge 侧边栏对话流对齐主窗口 + 通知中心 + 发版提速
 
-> 更早的版本（1.28.1 及以前）已归档到 [docs/CHANGELOG-归档.md](docs/CHANGELOG-归档.md)。
-> 这里只留 `[未发布]` 和当前发布周期；打包脚本（`scripts/release-upload.mjs`）两份都会翻。
+### 用户原话不再被折叠截断（治本：程序握着全文，就不该让用户手打一遍）
+
+**病根**：`electron/core/history-fold.cjs` 给用户原话设了 `USER_FOLD_CAP = 2000` 字上限，
+超了就只留「开头一半 + 结尾一半」，中段丢掉并让 `fold-gate` 拦下来问用户。
+真机代价：一条 **2449** 字的原话只超了 449 字，用户就得**自己把中段手打一遍**。
+而原文一直躺在会话记录里 —— `fold-gate.originOf` 按指纹就能捞回全文。
+**程序握着全文却让用户补，这就是病根。**
+
+#### 改了什么
+
+- `electron/core/history-fold.cjs`：`wholeOf` **不再按字数截断**，整段原样进；
+  `missing` 恒为 0，折叠不再产生有损项。`USER_FOLD_CAP` 保留导出**只因为**自检夹具
+  还拿它当口径造样本，内核里已没有一处据它截断（常量注释已写明，别再照名字猜用途）。
+- `scripts/selftest/lib/fold-kit.mjs`：`send()` 加第 5 个参数 `injectLossy` —— 折叠不再
+  自然产生有损，测闸门的组改为**显式注入**同形状的 lossy 条目；新增 `lossyOf()` 造样本。
+- `scripts/selftest/groups/185-p0-fold-hard-block.mjs`：口径改成「**永不截断** + 闸门仍咬得住」。
+  - 新增：2449 字（真机那次）、5 万字都**整段逐字**进请求载荷；
+  - 新增反向断言：折叠里不许再出现 `full.slice(0, half)` 这种截断分支（以后谁加回来当场红）；
+  - 闸门的行为测试保留（注入样本），放行文案改为直接测 `acknowledge`（注入样本的折叠块
+    里没有那句可替换，硬从链路读文案只会测出一个假绿）。
+- `scripts/selftest/groups/186-p0-fold-resume-consent.mjs`：同上，全链路改用注入样本。
+- `scripts/selftest/groups/184-p0-fold-keeps-requirements.mjs`：③ 从「超上限必须有损」
+  改成「超长也整段进」；① ② ④ ⑤ 原样保留（它们钉的是「要求必须逐字进请求」）。
+
+#### 怎么验的
+
+- `npm test`：**6459 项通过 / 0 失败**（改前基线 6454 / 0，净增 5 条断言）。
+- `npm run lint:kernel`：407 个 `.cjs` 无未定义标识符。
+- `node tools/line-limit.mjs --all`：1482 个文件无一超过 300 行。
+- 实测请求载荷（`takeTurns → context-builder.assemble`）：
+  - **2449 字** → 折叠块 2475 字，载荷 `includes(全文) = true`；
+  - 15000 / 50000 字 → 载荷里 `includes(全文) = false`，被上下文层裁到约 1.49 万字
+    **且带一行说明**「这条消息原有 20026 字符，只有开头进得来」。裁剪不是静默的。
+
+#### 已知遗留
+
+- **对话层预算仍是硬顶**（默认 14745 字符 = `DEFAULT_CONTEXT_TOKENS 16384 × 3 × 30%`）。
+  单条原话超过约 1.4 万字时，会在 `context-builder.trim` 那里被裁 —— **不带 lossy、不弹卡**
+  （只留一行裁剪说明给模型）。要连这一层也做到「永不截断」，得让那一层回传损失并接进
+  `fold-gate`，那是另一个改动（会动 `context-builder` 的返回形状与所有调用方）。
+- 更早轮次（被折叠的第 2 轮及之前）的原话若超过 8000 字符，**不会**走 `long-paste` 落盘
+  （那个机制只处理最新一条消息）；超长时会是「全文进 + 上下文层裁剪」，不是「落盘 + 指路」。
+
+### 侧边栏流式思考：`reasoning` 分片不再被静默丢掉
+
+**查出来的缺口**：`electron/core/ext-chat-streams.cjs` 的 `PUSH_TYPES` 里**有**
+`reasoning` —— 思考分片一直是推到侧边栏的；但 `useChatStream` 只处理
+`content` / `retry` / `done` / `aborted` / `error`。于是思考被**静默丢掉**：
+界面上不会报错，`ThinkBlock` 的 `streaming` 分支（「正在思考…」）**永远不可能出现**。
+这是「名字/形状对不上只能靠真跑才现形」的又一例（同类事故见 `PUSH_TYPES` 那段注释里
+`tool_start` vs `agent.tool.started`）。
+
+#### 改了什么
+
+- `harbor-edge/src/sidepanel/useChatStream.ts`
+  - `reasoning` 分片累加到 `turn.reasoning`；
+  - 把它加进「首片就能建 turn」的类型列表 —— 一轮的头几条推送**往往全是思考**，
+    正文一个字还没出，不在那个列表里就整段丢；
+  - `retry` 时**清空**思考：主进程重试时已把 `snap.reasoning` 回滚到本轮起点，
+    但它推来的 payload 只有正文全文、没有回滚后的思考 —— 本地照旧累加会重复两遍。
+- `harbor-edge/src/sidepanel/mergeMessages.ts`：`LiveTurn` 加 `reasoning`；
+  合并时**思考也「谁长用谁」**（同一条判据，不另立一套：磁盘那份可能还没收尾，
+  内存里是全文；反过来 live 被清时不许冲掉历史那份）。
+  另外「只剩思考也算有一条」—— 否则一轮的头几片会让这条消息整个不出现。
+- `harbor-edge/src/sidepanel/TurnBubble.tsx`：`TurnView` 加 `reasoning` 并渲染 `ThinkBlock`。
+- `harbor-edge/src/sidepanel/MessageStream.tsx`：「正在思考…」的判据改成
+  **还在流 且 正文还没出**（正文到了就不该再说「正在思考」，否则和下面的答案打架）。
+
+#### 怎么验的
+
+`tmp/reasoning-probe/`（临时探针，不提交）：真 `useChatStream` + 真 `MessageStream`，
+只把 service worker 换成能主动推的假实现，**按真实顺序**推 4 片
+（思考 → 思考 → 正文 → done），每一步读回 DOM：
+
+| 时刻 | 读到的 |
+|---|---|
+| 第 1 片思考（3 字） | `正在思考…3 字`，正文 null，光标无 |
+| 第 2 片思考（累计 10 字） | `正在思考…10 字` ← 累加生效 |
+| 首片正文 | `思考过程10 字` ← 文案不再说「正在思考」；正文出来了；光标在 |
+| done | 同上，光标消失 |
+
+8 条判据全过（含「展开后两段思考原文都在」）。
+★ 第一版判据写错过一次：按钮上只有「N 字」，原文要展开才看得到，
+我去 `includes('先看看')` 必然匹配不到 —— 看着像功能坏了，其实是判据不对。
+判据已改成比字数，错误也记在探针里，免得下次再写错。
+
+另用 `tmp/panel-probe/reasoning-merge.mjs` 把 `mergeMessages` 的 6 条合并判据
+（只有思考也接得上 / 历史有回答时谁长用谁 / 空壳 live 不多出一条 / 跑完只剩思考也留着…）
+单独跑了一遍：6/6 通过。
+
+`npm run verify` 全链通过：内核自检 **6454 项 / 0 失败**、行数红线 1482 文件全过、主应用构建成功。
+
+### 侧边栏对话流补齐「思考 / 复制 / 悬停条」，视觉与主窗口对齐
+
+**用户要求**：A① 思考内容没渲染 → 补折叠块；A③ 没有「复制正文 / 复制完整记录」；
+D①②③④⑤ 列表间距、`group`、悬停时间戳、错误块换主窗口那套、流式光标换 `.caret`。
+
+#### 改了什么
+
+- `harbor-edge/src/sidepanel/SideActions.tsx`（新）：悬停操作条（复制正文 / 复制完整记录）
+  + 时间戳。**复用** `@/lib/export` 的 `fullRecordText`（拼法只有那一份）、
+  `@/lib/statusLanguage` 的 `colorOf`、`@/lib/utils` 的 `clockTime`；
+  **不能复用** `AssistantActions` 组件本身（它吃整条 `Message`，还要三个 store
+  做分支 / 继续 / 重生成 / toast —— 侧边栏没有那些动作，改 IPC 通道是硬禁区）。
+  侧边栏那条经 `asRecordMessage()` **只补齐必填项、不改名**。
+- `harbor-edge/src/sidepanel/MessageStream.tsx`：思考块直接 `import` 主窗口的
+  `ThinkBlock`（同一个组件，不是「看起来一样」）；`AssistantLine` / `UserLine` 补 `group`
+  （漏了它 = 操作条永远看不见）；错误块换成 `MessageItem` 那一套
+  `flex items-start gap-2 rounded border px-3 py-2` + `role="alert"` + `text-xs`；
+  容器 `gap-3` → `gap-4 py-1`（**内边距不在这层加**：外层 `AutoscrollBox` 已有 `px-3 py-2`，
+  两处都写就是双重留白，400px 面板会被挤掉一圈）。
+- `harbor-edge/src/sidepanel/TurnBubble.tsx`：流式光标 `▍`（死字、正文色、占一个字宽）
+  → `<span className="caret" aria-hidden="true" />`（`src/index.css` 的 `::after`，随主题变色）。
+- `harbor-edge/src/sidepanel/ToolGroup.tsx`：`asRunRecords` 导出（`SideActions` 要用同一个
+  形状翻译，不另写一份）；入口补「用时」两个字（用户拍板「两样都放」）。
+- `harbor-edge/postcss.config.js`：content 加 `chat/ProcessBlocks.tsx` ——
+  Tailwind 是文本扫描，扫不到就是「组件在、样式全丢」，且 tsc / 构建都不报错。
+
+#### 怎么验的
+
+`tmp/panel-probe/`（临时探针，不提交）：同一份 PostCSS + 同一个 `MessageStream`，
+400px 视口、真 Edge 加载**真构建产物**，喂 8 条假消息（含思考 / 3 条工具含 1 失败 /
+错误块 / 系统条）。读回**计算后的像素值**：
+
+| 项 | 读数 |
+|---|---|
+| 思考块入口 | 「思考过程 58 字」`rgb(107,107,107)` 12px，`aria-expanded=false` |
+| 操作条 | 默认 `opacity 0`，悬停后 `1`；助手条两颗（复制回复 / 复制完整记录），用户条只有时间 |
+| 用户气泡 | `borderTopLeftRadius 10px` + `borderBottomRightRadius 6px` |
+| 错误块 | 边框 `rgba(229,83,75,0.4)`、底 `rgba(229,83,75,0.08)`、padding `8px 12px`、字 `rgb(255,59,48)` |
+| 工具入口 | 「读取 2 个文件、运行 1 条命令 · 1 项失败 · 3 步 · 用时 990ms」 |
+| `.caret` 规则 | 出现在产物 CSS 样式表里 |
+
+产物 CSS 检查（样式丢不丢的唯一检查点）：
+`group-hover` / `focus-within:opacity-100` / `.caret:after` / `bg-bg-raised\/40` 全部命中。
+`npm test` 6454 项 / 0 失败（与改前同数 —— 这次没加判据：侧边栏渲染不在自检覆盖范围，
+改成真机探针验）。`typecheck` 0 错误；`lint` 只有 2 条既有 warning；
+`node tools/line-limit.mjs --all` 无超限文件。
+
+#### 已知遗留
+
+- 类名与「摘要怎么拼」在侧边栏与主窗口各有一份（要抽公共件得改 `src/components/chat/**`，
+  不在本次范围）。
+- 流式期间侧边栏手里那一轮（`useChatStream`）**不带 `reasoning`**，所以「正在思考…」
+  这句只在历史重读把 reasoning 带回来之后才出现；真交替要动内核（本任务 C 项，单独立项）。
+- 侧边栏渲染没有自检判据，这次靠 `tmp/panel-probe` 一次真机探针；探针没进仓库。
+
+### 侧边栏工具改成「整组一行」，与主窗口同一个颗粒度
+
+**用户口径**：「工具颗粒度，整组一行，与 Harbor agent 一致」。
+
+以前侧边栏是**每条工具一行**（跑 20 步就是 20 行小字，把 400px 面板挤满），
+主窗口是**整组一行**（「读取 4 个文件、运行 2 条命令 · 6 步 · 3.1s」，点开才摊明细）——
+同一段对话在两处看起来是两回事。
+
+#### 改了什么
+
+- `harbor-edge/src/sidepanel/ToolGroup.tsx`（新）：整组一行 + 可展开明细。
+  **复用**主窗口那份 `@/lib/agentActivity`（动作词/量词/`verbOf`/`toolLabel`/
+  `homogeneousIconOf`）、`@/lib/statusLanguage` 的 `colorOf`、`@/components/chat/ToolRuns`
+  的 `formatMs`。**不能复用**的是组件本身（`ToolLine` / `ToolRuns` / `ToolRunRow`
+  都要 `ToolRunRecord` 的 `progress` / `subagent`，侧边栏只有内核瘦身后那份）——
+  所以「摘要怎么拼」照同一口径重写了一段，吃的是侧边栏的形状（`asRunRecords` 只补
+  `id` / `output` 两个中性值，不改名）。
+- `harbor-edge/src/sidepanel/MessageStream.tsx`：删掉原来那个逐条 `ToolLine`，改用它；
+  顺手修掉错误块里 `var(--text-danger)`（**这个变量不存在**，见下）。
+- `electron/core/ext-session-messages.cjs`：工具记录**补带 `summary`**。
+  磁盘上本来就有（`src/lib/schemas.ts` 声明的），侧边栏这条路径以前漏带 ——
+  于是一模一样的工具，主窗口说「读取 README.md」，侧边栏只说「读取文件」。
+  同时补上 `toolBytesOf`：字节预算以前只算正文 + 思考，**工具记录整个不算**，
+  而一条消息最多带 30 条工具、每条现在还有 120 字摘要 —— 帧可能顶到 1 MiB。
+- `harbor-edge/src/sidepanel/mergeMessages.ts`：`toolRuns` 换成 `SideToolRun`
+  （字段名沿用磁盘那份）+ `normalizeToolRuns`（外部数据过一遍：缺 `ok` 不能把失败画成成功）。
+- `scripts/selftest/groups/201-edge-sidepanel-history.mjs`：+3 条判据（摘要带出去 /
+  摘要有上限 / 工具记录计入预算）。
+
+#### 顺手查出的真 bug（不是这次改出来的）
+
+`var(--text-danger)` 在主题里**根本不存在**（是 `--danger` / `--danger-fg`）。
+侧边栏的错误块和工具失败原因写的就是它 —— 浏览器退回继承色，**字一点不红**，
+而且不报错。`ToolGroup` 用 `colorOf('failed')`，`MessageStream` 的错误块一并改掉。
+
+#### 怎么验的
+
+`tmp/probe-toolgroup.cjs`：起隔离 profile 的 Edge 加载**真构建产物**，400px 下
+喂一条带 5 次工具（含 1 次失败）的历史，读回真实 DOM + **计算后的像素色**。10 条判据全过。
+★ 其中「失败原因那行是红的」第一次是我写错判据（`/rgb\(/` 谁都匹配，退回白字也算过），
+改成「不等于正文色 `rgb(240,246,252)` 且等于 `rgb(248,81,73)`」才逮到真问题。
+
+`npm test` 6454 项 / 0 失败（改前 6451，多了这次加的 3 条）；`lint:kernel` 407 个 `.cjs` 干净；
+侧边栏四个文件 `tsc` 零错误（该目录不在主 `tsconfig` 的 include 里，用临时 tsconfig 单独查）。
+
+
+### 注入网页内容不再打断正在流式的回复
+
+**起因**（用户原话）：「有消息注入时候还是会打断流式对话，但是后台依旧进行着任务」——
+2026-11-04 真机：一条回复正在流式，扩展读了一个页面，界面停在那一刻不动了，
+而主进程那一轮照旧跑到底。
+
+**根因是两条链在同一个空档撞上，不涉及任何 abort**：
+
+1. 扩展读到的内容由主进程**直接写会话文件**（`electron/core/ext-ops.cjs` 的
+   `ingest()`），写完推 `ext:page`；渲染层收到就重读盘（`useExtBridge.ts`）。
+2. 重读那条路原有两个守卫：`messages` 引用没变才允许覆盖；而
+   `storedToUi` **每次都生成新 id**（`disk.ts` 的 `id: uid('msg')`）。
+
+流式期间每来一个分片都会换数组引用，守卫挡得住；但**恰好落在没有事件的空档**
+（等首字 / 长工具 / 模型思考）时引用没变 —— 整份覆盖发生，占位消息连同 id 一起
+被换掉。之后每个分片调的 `updateMessage(placeholder.id)` 全都找不到目标：界面停住，
+主进程那一轮根本没被取消。
+
+**另一半更贵**：收尾落盘按 id 找那条消息（`replyPersistence.persistReply`），
+找不到就整轮 `return` —— 完整回复一个字都不写，磁盘上只剩 3 秒一次的分段快照
+（带 `partial`），重开会话显示「这条回复没写完」。
+
+#### 这次做的
+
+- `src/stores/app/diskActions.ts`：新增 `mergeLiveMessages()` —— 重读盘回来时把
+  **内存里 `status === 'streaming'` 的那条保住**（连同它后面磁盘上还没有的消息），
+  其余听磁盘。没有在跑的一轮时原样返回磁盘那份（老行为零变化）。
+  磁盘上同 key 的分段快照会被丢掉 —— 否则同一轮出现两条、其中一条还是半截。
+  `openFromDisk` / `hydrateThread` 两个入口都改走它：以前「有人在动就整份放弃」，
+  于是注入的内容一直不显示，等到空档又一次性覆盖把流式那条顶掉。
+- `src/stores/thread/replyPersistence.ts`：收尾找不到那条消息时，用闭包里那份
+  正文兜底写盘（以前直接放弃 = 整轮丢失）。兜底这条**没有工作痕迹**
+  （`rounds` / `toolRuns` 只在 store 里，找不到消息就拿不到），有正文、没痕迹，
+  取舍写在代码注释里。
+- `src/stores/app/__tests__/liveMessageMerge.test.ts`（新，9 项）：两边各钉住。
+
+#### 真机验收脚本（`tools/e2e-ingest-keeps-stream.mjs`，重写过）
+
+第一版验的是**错的一幕**（用户指出）：「应该是发出问题，然后任务正在进行，然后再注入」。
+它用假上游 `slow` 模式 —— 只发文本 token、零次工具调用，且在第一个字上屏 1.6 秒后
+就注入。那既不是「任务在进行」，也不是用户遇到的场景，所以修复前后都全绿。
+
+现在的时序每步都是**等出来的**：发问题 → 等「停止生成」出现 → 等盘上跑完 ≥2 轮工具
+→ **这时**才注入 → 再等 ≥2 轮工具 + 界面仍在跑 → 查会话文件是否完整。
+
+- `tools/fake-upstream-busy.mjs`（新）：假上游 `busy` 模式，每 1.2 秒一条 `run_shell`
+  （`dir /b`，low 风险、不弹确认卡），共 14 轮 —— 让内核**真的执行**、界面真的在推进。
+  每轮命令末尾多一个空格：`loop-guard` 按原文比对，否则第 3 轮就被判成转圈。
+- `tools/e2e-ingest-kit.mjs`（新）：零件（改隔离数据、读盘数轮次、走真管道发 `ext:page`），
+  主脚本因此从 316 行压回 247 行。
+- 判据为什么读盘：跑的时候界面**只给「实时任务」四个字**（`processSummary.ts` 四档口径），
+  工具明细要等收尾才渲染 —— 按 `data-run-status` 判「在干活」永远读不到。
+- 数轮次必须按 **mtime 过滤**：隔离区留着上次的会话文件（已有 `call_busy_14`），
+  不按时间筛基线就是 14，本次的 1~14 减完永远 ≤0，判据会一直等。
+
+实测（同一台机器、同一条脚本）：
+
+| | 注入后 id | 界面还在跑 | 又推进 ≥2 轮 | 收尾落盘 |
+|---|---|---|---|---|
+| 修复前 | **被换掉** | **否**（`.process-live` 消失） | **否**（20 秒没动） | **否**（整轮没写盘） |
+| 修复后 | 同一条 | 是（仍是「实时任务」） | 是（第 4 → 7 轮） | 是（含「任务结束」全文） |
+
+修复前 5 项红 / 修复后 12 项全绿 —— 这条判据在修复前会红，不是摆设。
+
+### 扩展读到的网页不再冒充「你说的话」
+
+**起因**（用户原话）：「你是否把工具的原始返回文本当成普通消息贴了出来」——
+2026-11-04 真机截图：侧边栏整屏都是灰底原文卡（`edge_read` / `edge_scroll` /
+`edge_click` 的返回），主窗口里同样有。
+
+**根因不在侧边栏，在内核 → 界面这条链断了一节**：扩展读到的网页由
+`electron/core/ext-ops.cjs` 的 `ingest()` 落成 `role: 'user'` + `source: 'extension'`
+（那里的注释就写着「界面可以据此区别显示」，但没人用）。而 `StoredMessage`
+类型里**没有** `source` 字段、`storedToUi` 读回时不带它、渲染只按 `role` 分 ——
+于是「谁送进来的」这个信息在磁盘上是对的，一路丢到屏幕前。
+
+#### 这次做的
+
+- `src/types/models-session.ts` + `conversation.ts`：补 `source?: string`。
+- `src/stores/app/disk.ts`：`storedToUi` 带上 `source`（不带的记录行为一字不变）。
+- `src/components/chat/message/IngestedNote.tsx`（新）：**一行折叠卡** ——
+  标题（`已读取网页` / `页面操作：点击 · 已经点了`）+ 出处 + 时间，点开看全文。
+  折的是**显示**，磁盘上那条记录一个字都不改。
+- `src/components/chat/message/ingestSummary.ts`（新，纯函数）：从正文里抠摘要。
+  ⚠️ **先认小节标题，再退回「已读取网页」** —— 页面操作回执同样带网页包装，
+  顺序反了会把它们全说成「已读取网页」（等于没说）。摘要是从生产方那段格式里
+  抠的，不另存字段（硬约束 #9）。
+- `src/components/chat/MessageItem.tsx`：`isUser` 加 `&& source !== 'extension'`，
+  分流到折叠卡。
+- `electron/core/ext-session-messages.cjs`：侧边栏那条路把 `source` 透传出去。
+- `harbor-edge/src/sidepanel/MessageStream.tsx`：画**同一个** `IngestedNote`。
+- `harbor-edge/src/sidepanel/mergeMessages.ts`：`source === 'extension'` 的记录
+  **不算「用户这一问」**。不修的话，历史末尾是扩展记录时，用户刚发的那句话
+  会被判成「已经在历史里」而**根本不显示**。
+- `harbor-edge/postcss.config.js`：Tailwind content 加上 `IngestedNote.tsx`
+  （文本扫描扫不到 = 组件在、样式全丢，Button 那次踩过同样的坑）。
+- `scripts/selftest/groups/203-edge-ingest-note.mjs`（新，20 项）+ `groups.mjs` 注册。
+
+### 设置 → 扩展：一键安装 Edge 侧边栏插件
+
+**起因**（用户原话）：「我的意思是 在Harbor的『扩展』设置内弄一个插件安装，点击即装好的不行吗？」
+
+结论先说：**做不到「点一下就彻底装好」**，而且是微软限的，不是实现难度。
+Edge 官方策略文档（`ExtensionInstallForcelist`）原话：
+「Windows 未加入 AD 域时，强制安装只能装 Edge 加载项商店里列出的扩展。」
+我们的扩展是本地未打包目录，不在商店里 → 静默安装这条被 Edge 封死。
+另外，Edge 也没给扩展「自动加载本地目录」的接口，「加载解压缩的扩展」必须人点。
+所以做的是**把五步压到两次点击**，而不是假装能全自动。
+
+#### 这次做的
+
+- `harbor-edge/extension/manifest.json`：加 `key`（2048 位 RSA 公钥的 SPKI base64）。
+  以前 unpacked 扩展的 ID 由**加载路径**推导 —— 目录一挪 ID 就变、`allowed_origins`
+  立刻失配，症状是「连不上」。有了 key，ID 恒为 `kmennhjfojbmadlmfndlljlgpljbdabm`，
+  **再也不用抄那串 32 位 ID**。
+- `electron/core/edge-install.cjs`（新，283 行）：算 ID / apply / status 全在这里。
+  按 `<数据目录>\edge-ext\sidepanel` 装（跟着数据走 —— 便携版替换程序目录时不会被覆盖），
+  生成纯 ASCII 的 `harbor-host.cmd`、写宿主清单、写 HKCU 注册表（不需要管理员）。
+  包装器里的可执行文件按机器现算：打包版用 `Harbor.exe`，源码树用 `electron.exe`
+  （以前的 `install-host.cmd` 在源码树里跑不起来）。
+- `electron/handlers/ext.cjs`：新增 `ext:status`（只读）与 `ext:install`。
+  ★ **两条都不收任何参数** —— 路径全在主进程算，否则等于给界面开一个
+  「往任意位置写注册表 + 任意路径当可执行文件」的口子。
+- `src/components/settings/tabs/BrowserExtCard.tsx`（新，146 行）+ 挂进 `ExtensionPanel`：
+  「安装插件」按钮 → 装完自动打开 `edge://extensions`，把要选的目录显示出来，
+  并写清「为什么不能全自动」。
+- `scripts/build-portable.mjs`：`copyEdgeExt()` 把扩展产物打进
+  `resources/app/harbor-edge/dist/sidepanel`。**不拷这份，新用户点下去只会看到「没带产物」**。
+- `scripts/selftest/groups/202-edge-install.mjs`（新，39 项）+ `groups.mjs` 注册。
+
+#### 界面上「装好了」的判据
+
+只有一条：**扩展真的经命名管道连上主进程了**（`connected`）。文件齐、注册表对但
+Edge 里还没加载扩展时，显示的是「已写好配置，等你在 Edge 里加载扩展」——
+不能拿「文件都在」当已安装。
+
+#### 验证
+
+- `npm test` → **6432 项通过 / 0 失败**（含新增 39 项）。其中「真装一遍」那组在临时目录里
+  **真写了一次注册表**，`finally` 里恢复原值，跑完复查注册表与
+  `E:\Harbor-Dev\...\com.harbor.agent.json` 均未改变。
+- `npm run typecheck` / `npm run lint` / `npm run lint:kernel` → 均 0 错误。
+- `node tools/line-limit.mjs --all` → 1471 个文件，无一个超 300 行。
+- 扩展产物已重建，`dist/sidepanel/manifest.json` 里带 key，算出的 ID 与源码那份一致。
+
+#### 已知遗留（如实写）
+
+- **真机那两次点击我没有观察过**：本机注册表里还是旧 ID
+  `aaecjplphabhnagpmbbgipgnheaapjhc`，要用新 ID 得在 `edge://extensions` 里把它移除、
+  再「加载解压缩的扩展」指向 `<数据目录>\edge-ext\sidepanel`。这一步只能人做
+  （正是开头那条限制），所以「已连接」状态没有真机截图为证。
+- 上架 Edge 加载项商店才能做到真一键；未做（要开发者账号 + 审核）。
+
+
+### 侧边栏三个真机问题：消息重复 / 回复半路截断 / 打开不贴底
+
+**起因**（用户真机截图 + 原话）：「1，我在侧边栏发出的消息会显示两遍 2，侧边栏的对话总是会半路被截断，
+但是我切回Harbor里的对话却是完整的 3，对话加载时应默认到对话最底部。」
+
+三条**根因各不相同**，改之前逐一落到代码/磁盘上确认过：
+
+1. **消息两遍**：用户那条消息在按下发送的瞬间就落了盘（`role: 'user'` 立刻写），
+   而 `mergeMessages` 的去重只在 `live.done` 才跑 → 流式那几秒里历史已有这句提问、
+   `live.ask` 又被接了一遍。
+2. **半路截断**：一轮正文是**分段追加**落盘的（`partial: true`），收尾那条异步写。
+   侧边栏在 `done` 那一刻重读，磁盘上常还是半截快照（`collapseByKey` 给它标 `interrupted`），
+   于是说「这条回复没写完」；主窗口用的是内存全文，所以完整。
+   实测 `sess_mvyym3dc3nx7n.jsonl` 第 285 行 532 字（半截）+ 第 286 行 791 字（完整）就是这个形态。
+3. **不贴底**：消息区那个 `overflow-y-auto` 的 div 完全没有滚动管理，打开就是 `scrollTop = 0`。
+
+#### 这次做的
+
+- `harbor-edge/src/sidepanel/mergeMessages.ts`：去重判据改成「按正文比历史最后一条用户消息」，
+  **不再看 `done`**；历史里已有那条回答时「谁完整用谁」（磁盘半截 vs 内存全文），
+  覆盖成全量后把 `truncated` / `interrupted` 两条降级提示撤掉；反过来 live 是空壳时
+  不许冲掉历史里的正文（`done` 后流缓存 60 秒会清空）。
+- `harbor-edge/src/sidepanel/useSessionHistory.ts`：一轮跑完 / 发送成功时**立刻读 + 晚 900ms 补读一次**
+  （收尾那条异步落盘的宽限）。顺手把「换会话」只归给 ①，②③ 不再因换会话多跑一次。
+- `harbor-edge/src/sidepanel/AutoscrollBox.tsx`（新，117 行）：消息区滚动盒子。打开/换会话**强制贴底**；
+  之后靠 `MutationObserver` + `ResizeObserver` 跟随，但**只有你本来就在底部才跟**（离底 < 48px）——
+  上滑翻历史时新内容不会把你拽回去。单独一个文件的理由：`ChatPanel.tsx` 已贴 300 行红线。
+- `harbor-edge/src/sidepanel/ChatPanel.tsx`：消息区容器换成 `AutoscrollBox`（压注释守住 300 行，298）。
+- `scripts/selftest/groups/201-edge-sidepanel-history.mjs`：原来钉的正是旧行为（只在 done 去重 →
+  历史里只有提问时要多出一条），改为钉这三条真机现象：流式期间提问不重复、半截被全文补上、
+  降级提示撤掉、live 空壳不冲掉历史。
+- `scripts/selftest/groups/176-m02b-cards.mjs`：容器换了名字，「卡在消息区上方」的判据跟着走（钉的还是同一件事）。
+
+#### 验证
+
+- `node scripts/selftest.mjs 201 176` → **6393 项通过 / 0 失败**。
+- `npm run verify` 全链通过（typecheck / lint / lint:kernel / format / 行数 1471 文件全 ≤300 / 单测 / 内核自检 / 构建）。
+- 单独 `tsc` 扫 `harbor-edge/src/sidepanel`：改动文件 0 错误（只剩全程原有的 `chrome` 缺类型）。
+- `npx vite build --config harbor-edge/vite.config.ext.ts` 重建扩展产物，产物内确认含新滚动逻辑。
+- 开发版 `E:\Harbor-Dev\dist-portable\Harbor\resources\app\dist` 已整份替换（旧版备份在
+  `dist.bak-202611022317`），192 个文件，`index.html` 哈希一致。
+
+#### 已知遗留
+
+- **真机那一眼归用户**：数据链路与构建已验，侧边栏实际观感未由我观察。
+- Edge 加载的是**未打包扩展目录** `E:\CodexWorkbench\harbor-edge\dist\sidepanel`
+  （从 Edge `Secure Preferences` 读出的真实路径）—— 扩展侧改动只需重建该目录 +
+  在 `edge://extensions` 点一次「重新加载」，**不需要重装扩展**。
+
+
+
+### 侧边栏显示**整条会话**（与主窗口一致）
+
+**起因**（用户原话）：「侧边栏对话流内的已有功能应于 Harbor agent 保持一致，尽量减少分裂感」。
+背景：**以前侧边栏只画当前这一轮**（`chat:event` 推流累加），打开面板、切到另一条会话时，
+之前说过什么**完全看不到** —— 主窗口是整条会话。这是「分裂感」里最实的一条。
+
+#### 这次做的
+
+侧边栏的消息区从「只画当前一轮」改成「历史 + 正在流的那一轮合成一条时间线」：
+
+- `electron/core/ext-session-messages.cjs`（新）：**尾部切片 + 逐条瘦身 + 字节预算**。
+  判据是**字节数不是条数** —— 单帧上限 1 MiB 是硬约束，开发版有一条 141 MB 的会话，
+  原样塞必然超限（然后被换成降级失败帧，用户只看到「拿不到历史」）。
+  同一文件里也放 `createSessionMessages`（会话退路：显式指定 → 侧边栏选中的 → 主窗口开着的）。
+- `electron/core/ext-kinds.cjs`：新增 `SESSION_MESSAGES: 'session:messages'`。
+- `electron/core/ext-ops.cjs`：分派表接上；顺带压掉几行注释守住 300 行。
+- `electron/core/ext-host-loop.cjs`：host 转发 `session-messages`（照旧只转发，业务在主进程）。
+- `harbor-edge/extension/lib/session-messages.js`（新）+ `service-worker.js`：SW 侧转发，
+  形状与内核 payload 同名字段（`messages` / `total` / `dropped` / `truncated`），不自己切第二遍。
+- `harbor-edge/src/sidepanel/mergeMessages.ts`（新，纯函数）：合并规则。两处极易静默错的地方各钉了自检 ——
+  ① 已落盘的那一轮**不能再接一遍**（否则同一问一答显示两遍）；
+  ② 历史里只有提问、还没回答时**仍要接上**（否则刚发出的那句看不到回答）。
+- `harbor-edge/src/sidepanel/useSessionHistory.ts`（新）：什么时候重读（换会话 / 连上 / 一轮跑完 / 发送成功）；
+  失败**不清空**已有内容（读成功过一次之后，刷新失败不该让界面突然变空）。
+- `harbor-edge/src/sidepanel/MessageStream.tsx`（新）：画整条会话。视觉与主窗口同一套 ——
+  用户右对齐气泡（同 `UserMessage`）、助手左对齐无气泡（同 `MessageItem`）、
+  工具行「图标 + 名字 + 用时」（同 `ToolLine`）、出错红底块（同 `MessageItem`）。
+- `harbor-edge/src/sidepanel/ChatPanel.tsx`：消息区交给 `MessageStream`；加了两个「重读历史」计数。
+- `harbor-edge/src/sidepanel/TurnBubble.tsx`：`MessageBody` 新增 `anchor` 参数 ——
+  **只有正在流的那一条**带 `回复正文` 这个验收锚点，历史条不带。
+
+#### 为什么锚点要单独处理（改的时候真踩到）
+
+`accept-phase3b` 用 `document.querySelector('[aria-label="回复正文"]')` 取**第一个**。
+历史里若也带这个 label，脚本读到的是**最早那条旧回复** —— 脚本照跑、判据看着还绿。
+更隐蔽的一次：改成条件属性之后，`164-m02-panel` 那条旧判据**匹配到的是注释**（注释里写着这个词），
+所以那条判据也一度假绿。现在它先剔掉注释行再匹配。
+
+#### 验证
+
+- `npm run verify` 全链通过 —— `node scripts/selftest.mjs` **6386 通过 / 0 失败**
+  （新增 `201-edge-sidepanel-history` 40 项全过；该组单独跑也是同一份输出）
+- `npm run test:unit` **227 文件全过** ／ `npm run security` **PASS 83 · FAIL 0** ／ `build` 成功
+- `npm run typecheck` 0 错 ／ `npm run lint` 0 错（2 条既有 warning 与本次无关）
+- `npm run lint:kernel` 406 个 .cjs 无未定义标识符 ／ `npm run typecheck:kernel` 与基线一致
+- `node tools/line-limit.mjs --all` 1470 个文件 **0 超线**
+- `npm run check:rules` 通过
+
+#### 已知遗留
+
+- **切到另一条会话时不会自动滚到最底**：现在只渲染、不管滚动位置。会话很长时打开面板
+  可能停在顶部（下次一起做，或者用户先滚一下）。
+
+### 修「打开侧边栏 / 切标签时，主窗口正文被切断」
+
+**起因**（用户原话）：「在点开 edge 侧边插件的时候，注入给 Harbor agent 的消息会直接切断，
+且不会停止运行」；补充「换别的标签页面也会触发」。
+
+#### 先查实的两件事（避免修错地方）
+
+① **页面内容已经不进对话流了**：`harbor-edge` 的「读当前页 / 观察页面 / 切页面自动上报」
+三条都发 `page-context`，只写 `data/page-context/*.json` 那个槽（每轮拼进提示词），
+**不写会话文件**。所以「注入消息切断对话」这个方向不成立，不必去动数据形状。
+② 用户机器上的 `deepseek · aborted` 是**真中断**（4 次，见 `data/logs/2026-11-03.log`），
+不是「只是不显示」。
+
+#### 修的是什么：旁路抛异常，把主链路那条事件带走了
+
+`register-handlers.cjs` 给 `chat.cjs` 的 `send` 包了一层旁听（喂侧边栏流式）。它原来是**裸调**：
+
+```js
+if (channel === 'chat:event') chatRelay.onChatEvent(payload)
+send(channel, payload)                  // ← 上一行一抛，这一行就不执行
+```
+
+`onChatEvent` 里任何一处抛异常（`encodeFrame` 遇到 BigInt / 循环引用就抛），渲染层就收不到
+那条 `chat:event` —— 抛在 `done` 上就是「正文停在半句、后台照跑完」，正是用户报的形状。
+
+- `electron/core/ext-chat.cjs`：旁听入口整体兜住，失败只记一行 warn，**不影响主链路**。
+
+#### 验证
+
+- `node scripts/selftest.mjs` **6346 通过 / 0 失败**
+- `node tools/line-limit.mjs` 1469 个文件 **0 超线**
+- `node data/repro-listen-guard.cjs` 定向验证 **4 条全过**，含**反证**：
+  去掉兜住时那条事件确实丢了（复刻故障形状）
+
+#### 已知遗留（不许当成做完）
+
+- **因果链未闭合**：「打开面板 → 触发 abort」这条没找到证据。日志里每次 abort 都能对上
+  一次真实的中断，但没抓到「打开面板」直接导致它的那一行。真机复现时看 `data/logs` 里
+  那句 `对话中止（用户按了停止 / 切走了）` 前后 5 秒有没有面板相关动作。
+- `ext-bridge.push` 的 `encodeFrame` 仍在 `try` 外（同形状风险，路径不同）。
+- 侧边栏 UI 与主对话一致化（用户要求的第二件事）**本轮没动**。
+
+
+
+### 长网页能读全了：正文分段 + 元素按词过滤
+
+**起因**（用户原话）：「我的页面 34000 字符只看到开头 3000」。
+
+#### 病根：限制在四处，只抬一处没用
+
+① 元素条数（`picked.length < maxItems`，默认 60）；② 元素扫描 3000 个上限；
+③ 渲染输入 20000 字符截断（`ext-observe.cjs` 的 `MAX_CHARS`）；
+④ 正文 `raw.slice(0, maxChars)`，调用处给 40 KB（`page-text.js` / `command-run.js`）。
+光把 maxItems 抬上去，表格会先被 ③ 截、正文仍被 ④ 截 —— **与 maxItems 无关**。
+
+#### 做了什么
+
+- **正文按段取**：`limitPageText(page, maxChars, offset)` 现在返回
+  `offset / chars / segment / segments / nextOffset`，`nextOffset === null` 才是读完了。
+  `edge_read` 新增 `offset` 参数，回执明写「第几段 / 共几段、下一段传 offset=N」——
+  不说这句，模型会以为整篇就到那儿为止（`_web-note.cjs` 统一附在正文后面）。
+- **元素按词过滤**：`get-elements` / `edge_page` 新增 `query`，命中项**前后各带 2 个**
+  （让模型看得到上下文），并说明「整页 N 个 / 只显示 M 个」。
+- **过滤不动 ref、不动版本号**：窗口在扩展侧**分配完 ref、算完 version 之后**才算
+  （`observe.js` 的 ③-b）—— 反过来会让 signature 变 → 版本号变 → 用户刚拿到的 ref
+  全部失效，而页面一个字都没动。
+- **命中 0 个不冒充「页面上没有元素」**：那是两件事，混了会让模型放弃这个页面。
+
+#### 这次**没有**做（如实记账）
+
+元素**分页**（按 offset 取第二批）没做。它要先改 `observe.js` 里
+`window.__harborObs = { version, refs }` 的登记方式（现在 refs 只保留最近一次观察，
+读第二批时第一批 ref 会全失效），属于 ref 规则的改动 —— 这轮用户明确说不动 ref 规则。
+`query` 能把「元素太多」压到可读，但**滤不到你要的那批**时仍只能调大 `maxItems`。
+
+
+### 通知有了专门的地方：右下角只留「要你处理的事」
+
+**起因**（用户原话）：「我认为现在的agent右侧弹出的通知有点碍眼，你有什么想法呢」
+「我的想法是给它一个地方放通知」「能让用户自行设置能把哪些类别的通知放进通知标签更好」
+
+#### 病根：一块地方混装了三类东西
+
+右下角那块（`Toast.tsx`）以前什么都在弹 ——
+**①要现在处理的**（出错、要拍板）、**②事后看就行的**（任务跑完、下载完成）、
+**③过程播报**（正在重试、换了供应商、Agent 在动网页）。
+②③ 把 ① 挤没了，这才是「碍眼」的真正来源 —— 不是卡片太大、也不是消失太慢。
+（顺带查到两个放大问题：没有条数上限，能一直堆到糊住半屏；错误和警告
+在 `resume()` 里直接 return，**永不自动消失**，只能一个个关。）
+
+所以做法不是把提示调小调快，而是**给 ②③ 一个收件箱**，让 ① 独占右下角。
+
+#### 做了什么
+
+- **右栏新增「通知」标签**（第 9 个，`NotifyPanel`）：列表 + 未读点；
+  点开 = 全部已读但**不清空**（与「错误」标签同一条口径：看过 ≠ 处理过）；
+  单条可去掉、整体可清空、带「查看结果 / 查看下载」按钮的条目直接可点。
+- **每类通知由用户自己选去向**：`弹卡片 / 进这里 / 都不要`。
+  设置项就在面板顶上（就地改，不用翻三个标签页），**改的是同一份设置**
+  （`Settings.notifyRoutes`），不另存一份。
+- **默认值 = 右下角只弹要紧的**：`error / needYou / info` 弹卡片；
+  `task / download / agent` 只进通知标签。
+- **分流只有一处**：`lib/notifyDispatch.ts`（`showToast` 调它一次就够），
+  分类规则与设置项共用 `lib/notifyCenter.ts` 的 `NOTIFY_CATEGORIES`。
+- **安全类提示显式点名 `needYou`，不受设置影响**：`notice`（完全访问档下动了
+  `.env` / 工作目录外文件）与 `boundary`（能力边界）继续弹卡片 ——
+  它们要的是「当场看见」，不是「有空翻翻」。
+
+#### 顺手必须做的两件搬家（不是重构，是被红线逼的）
+
+- `src/types/index.ts` 正好 **300 行顶格**，加一个字段就超 →
+  设置类型整体搬到 `src/types/settings.ts`，`index.ts` 再导出，
+  外面 `import { Settings } from '@/types'` 一处都没改。
+- 分流逻辑塞进 `useUIStore` 会到 318 行 → 抽成 `lib/notifyDispatch.ts`
+  （同批还压了 `RightPanel.tsx` 里一段注释，它当时已到 298 行）。
+
+#### 验证
+
+- `npm run typecheck` / `lint`（0 error）/ `check:format` / `check:lines` 全过；
+  `test:unit` **227 文件 / 2096 条全绿**；内核自检 **6328 项 0 失败**；
+  `check:rules` 通过；`test:rules` 56/56。
+- 新增 20 条单测（`lib/__tests__/notifyCenter.test.ts`）钉的是**分流这件事本身**：
+  分类可预测、三档互斥、默认值就是「只留要紧的」、进收件箱的不再进右下角历史、
+  老配置缺字段时逐类补默认。
+- 改了 11 条既有断言（任务完成 / 下载不再弹卡片）—— 每条都在注释里写明
+  「行为按用户要求改了，原意图不变」，**没有为了让测试变绿去削弱判据**。
+
+#### 已知遗留
+
+- 只跑了离线判据，**没做真机截图**（`npm run shot:electron -- --dev`）。
+  界面宽度、标签栏在 380px 下的收纳、通知面板的实际观感都需要真机看一眼。
+
+### 发版不再干等：打包砍掉 220MB 白拷的依赖 + 上传进度改成真进度
+
+**起因**（用户原话）：「我还是跑了那个脚本，为什么还是卡了这么久？」「我想要优化，不至于让我在干等很久」
+
+上一轮只做了「让它别静默」，这一轮把两头真正的开销找出来了。
+
+#### ① 打包拷贝：52.1 秒 / 175 个包 / 333MB → 8~10 秒 / 31 个包 / 83MB
+
+根因：`prod-deps.mjs` 用 `npm ls --omit=dev --all` 列出什么就**全拷**。
+但 `package.json` 的 `dependencies` 里混着一堆**只有渲染层用**的包
+（mermaid / lucide-react / react-dom / katex …）—— 它们由 vite 打进 `dist/` 那个 bundle，
+主进程一个都不 require。实测**220MB 主进程根本碰不到**，压进 zip 仍占 **54.8MB**
+（mermaid 一个就 26.4MB）。
+
+新增 `scripts/prod-deps-closure.mjs`（唯一真相源）：
+- 从 `electron/` 下所有 `.cjs/.mjs/.js` 出发，沿**字面量** `require` / `from` / `import()` 递归；
+- 每个包再按它自己的 `package.json` 展开传递依赖，得到闭包（55 个）；
+- 与 `npm ls` 取交集 —— 只拷「闭包里 **且** 生产依赖」的；
+- `ALWAYS_KEEP` 兜底（node-pty / @napi-rs/canvas）；
+- **主进程里出现「拼出来的 require」就直接让打包失败**（不是警告）——
+  那是闭包算法唯一的洞，漏了会是「打包版某功能运行时报 Cannot find module」，
+  源码树里一切正常，最坏的一类 bug。允许清单 `DYNAMIC_OK` 每条都写了为什么不用进包。
+
+进度也一起改了：原来「每 20 个包一行」，但前 20 个包里就有 mermaid（120MB），
+头一行字要等 **25 秒** —— 外面看还是卡住。现在按**时间**报（最多每 2 秒一行），
+带「已拷 X/Y 个包 · A/B MB（Z%）」，分母在拷之前就算好。
+
+#### ② 上传：从「30 秒一句还在传」改成真进度
+
+根因有两个，都是实测出来的：
+1. 旧写法只挂了个 30 秒心跳写「…已上传 N 分 M 秒，还在传」—— 那不是进度，是安慰话。
+2. 更要命的是：`--progress-bar` 在 stderr 被重定向到日志时**不刷**，
+   而自己解析时第一版按 `/(\d+)%/` 抠 —— **一个都抠不到**。
+   把 curl 的 stderr 原样打出来才看清：stderr 是**管道**（不是终端）时，
+   curl 输出的是**旧式表格**、百分比**不带 % 号**：
+
+   ```
+   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+   89 4096k    0     0   89 3648k      0   399k  0:00:10  0:00:09  0:00:01  400k
+   ```
+
+   现在按**列结构**认（12 个字段 + 第 9 个是 `时:分:秒`），首字段即百分比，
+   末字段是 curl 平滑过的瞬时速度（自己算会来回跳：自检里 410→205→451→300）。
+   输出形如：`…已传 87.3/236.4MB（37%），5 分 12 秒，151 KB/s`，**每 10 秒一行**。
+
+3. 顺带发现：本文件顶层会把 git 的 `http.proxy` 翻成 `HTTPS_PROXY` 给 fetch 用，
+   **curl 会继承它** —— 于是 236MB 全程过一遍本地代理。而 `uploads.github.com`
+   直连实测 0.64 秒握手成功。所以新增 `--no-proxy` 开关（给 curl 传 `--noproxy '*'`），
+   默认不动行为，慢的时候才加。
+
+#### 拆分
+
+`scripts/lib/github-release.mjs` 加完进度解析到 322 行，破了 300 行红线。
+拆的边界是**职责**：那个文件管「认仓库 / 拿凭据 / 发普通请求」，
+新增 `scripts/lib/release/upload-asset.mjs` 管「把 236MB 流式发出去，并让人看得见它在动」。
+
+#### 验证（都是真跑的，不是估的）
+
+| 判据 | 命令 | 结果 |
+|---|---|---|
+| 拷贝耗时/体积 | 改前旧实现 52.1 秒 / 175 个包 / 333.2MB；改后 `copyProdDeps` 实测 | **8.0~10.5 秒 / 31 个包 / 82.9MB**（省 42~44 秒、250MB） |
+| zip 体积 | 读已发布的 `harbor-1.34.0-win-x64.zip` 条目表，按本次要跳过的包名求和 | 236.4MB → 预计 **181.6MB**（省 54.8MB，23.2%） |
+| **闭包没漏包** | 把裁剪后的 node_modules + `file-extract-docs.cjs` 放到同一目录，**真造 4 个文档再真抽回来** | xlsx / docx / pptx / pdf **四类全通过** |
+| 上传进度真的在动 | 本地 HTTP 服务器 + curl `--limit-rate 512k`，节拍调到 500ms | 31 条进度行，2%→96% 递增，8.0MB 服务端收全，**✅ 通过** |
+| 内核自检 | `npm test` | **通过 6328 项，失败 0 项**（与上一版基线一致） |
+| 规则检查 | `node scripts/check-rules.mjs` | 全绿（含行数 ≤300、密钥扫描、依赖两侧一致） |
+| 静态 | `npm run typecheck` / `npm run lint` | 0 错误（lint 2 个 warning 是既有的 hooks 依赖提示） |
+
+**没做什么（说清楚）**：没跑完整 `npm run package` —— 它第一件事是
+`taskkill /F /IM Harbor.exe`，会把用户正在用的窗口一起杀掉。所以改成单独跑
+`copyProdDeps` + 在同一目录里真抽文档，验的是同一段代码、同一个 require 解析路径。
 
 ## [1.34.0] — 2026-11-02 · 经验闭环收口：串行入口接上经验层 + 审批可改做法 + 经验页可筛选
 

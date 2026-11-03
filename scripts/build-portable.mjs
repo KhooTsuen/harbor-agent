@@ -244,6 +244,23 @@ function copyDocs() {
   step('README.md 已带上')
 }
 
+/* ── 6b. 浏览器插件产物 ───────────────────────────────────
+   不带这份，新用户在「设置 → 扩展 → 安装插件」里点下去只会得到
+   「这个版本没带扩展产物」。放 resources/app 下（随程序走，不进 data）。 */
+
+function copyEdgeExt() {
+  const from = join(ROOT, 'harbor-edge', 'dist', 'sidepanel')
+  const to = join(APP_OUT, 'harbor-edge', 'dist', 'sidepanel')
+  if (!existsSync(join(from, 'manifest.json'))) {
+    /* 不算失败：扩展是可选功能，主程序照常能用。但要说清怎么补上 */
+    step('⚠️ 没找到 harbor-edge/dist/sidepanel —— 跳过（先跑 vite build --config harbor-edge/vite.config.ext.ts）')
+    return
+  }
+  rmSync(to, { recursive: true, force: true })
+  cpSync(from, to, { recursive: true })
+  step('浏览器插件产物已放入 resources/app/harbor-edge/dist/sidepanel')
+}
+
 /* ── 主流程 ───────────────────────────────────────────── */
 
 async function main() {
@@ -256,6 +273,7 @@ async function main() {
   copyNativeDeps(ROOT, APP_OUT, step)
   copyProdDeps(ROOT, APP_OUT, step)
   copyDocs()
+  copyEdgeExt()
   writeBuildInfo()
   verify()
 

@@ -1,6 +1,7 @@
 import type { FontFamilyId, ThemePreference } from '@/types'
 import { FONT_OPTIONS, LAYOUT } from '@/constants'
 import { useSettingsStore } from '@/stores/useSettingsStore'
+import { useUIStore } from '@/stores/useUIStore'
 import { Field, Select, Switch } from '@/components/ui/Field'
 import { clamp } from '@/lib/utils'
 import { useWindowWidth } from '@/hooks/useWindowWidth'
@@ -142,6 +143,24 @@ export function AppearanceTab() {
           onChange={(v) => updateSettings({ noticeHistory: v })}
           label="重要通知记录"
         />
+      </Row>
+
+      {/*
+        通知的去向：**每一类自己选**。放在这里而不是只放在右栏「通知」标签里，
+        是因为「哪类通知烦人」这件事，很多人会在设置里一次性找。
+        两个入口改的是同一份设置（右栏那个面板就地改，不另存一份）。
+      */}
+      <Row
+        label="通知收件箱"
+        hint="每一类通知去哪儿：弹卡片（右下角几秒后消失）／进这里（只出现在右栏「通知」标签，不打断你）／都不要。默认右下角只弹「出错、要你拍板、日常确认」，任务结果、下载和过程播报只进通知标签"
+      >
+        <button
+          type="button"
+          onClick={() => useUIStore.getState().setActiveRightTab('notifications')}
+          className="rounded-sm border border-line-subtle bg-bg-raised px-2 py-0.5 text-2xs text-fg-primary transition-colors duration-fast hover:bg-bg-active"
+        >
+          逐类设置
+        </button>
       </Row>
 
       <SectionTitle>材质</SectionTitle>

@@ -1,6 +1,7 @@
 import { useAppStore } from '@/stores/useAppStore'
 import { useDownloadsStore } from '@/stores/useDownloadsStore'
 import { useErrorsStore } from '@/stores/useErrorsStore'
+import { unreadNotifyCount, useNotifyCenter } from '@/stores/useNotifyCenter'
 import { useTaskStore } from '@/stores/useTaskStore'
 
 /* ══════════════════════════════════════════════════════════════
@@ -34,12 +35,20 @@ export interface RightTabBadges {
   runningTasks: number
   /** P3 #9：「下载」标签是否真有传输在跑（区分「有列表」与「正在传」） */
   downloadRunning: boolean
+  /** 「通知」：未读通知条数（0 就不显示点） */
+  notifyUnread: number
 }
 
 export function useRightTabBadges(): RightTabBadges {
   const diffCount = useTaskStore((s) => s.diff?.files.length ?? 0)
   const errorUnread = useErrorsStore((s) => s.unreadSevere)
   const errorWorst = useErrorsStore((s) => s.worstUnread)
+  /*
+   * 「通知」的未读：纯 selector，数一次数组（上限 200 条，代价可忽略）。
+   * ★ 用 `unreadNotifyCount` 而不是 `s.items.filter(...).length`：
+   *   后者每次状态变化都新建一个数组，`useStore` 会认为值变了而重渲染。
+   */
+  const notifyUnread = useNotifyCenter((s) => unreadNotifyCount(s.items))
 
   const taskPending = useTaskStore(
     (s) => s.unfinished.length > 0 || s.tasks.some((t) => t.status === 'running'),
@@ -80,5 +89,6 @@ export function useRightTabBadges(): RightTabBadges {
     artifactPresent,
     runningTasks,
     downloadRunning,
+    notifyUnread,
   }
 }

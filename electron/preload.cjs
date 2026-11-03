@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
-/* onEvent 只转发这个通道。终端数据走 onShellData —— 混在一起形状对不上。 */
+/* onEvent 只转发这个通道（终端数据走 onShellData —— 混在一起形状对不上）。 */
 const EVENTS = ['chat:event']
 
 /* ══════════════════════════════════════════════════════════════
@@ -266,7 +266,6 @@ const api = {
       ipcRenderer.removeListener('pty:exit', onExit)
     }
   },
-
   onPluginsChanged: (callback) => subscribe('plugins:changed', callback), /* 插件热插拔 */
   /* 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
   onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
@@ -280,9 +279,10 @@ const api = {
   onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
   /** 把「当前标签的 webContents id / 就绪」推给主进程（B5：主进程据此直连，不必每次往返） */
   browserActive: (payload) => call('browser:active', payload),
-  /* 扩展桥（Phase 2）：把「界面当前打开的会话」报给主进程 + 订阅「扩展刚读了一个页面」 */
+  /* 扩展桥（Phase 2）+ 安装浏览器插件：两者都不收路径（路径全在主进程按数据根算） */
   extActiveSession: (id) => call('ext:activeSession', id),
   onExtPage: (callback) => subscribe('ext:page', callback),
+  extStatus: () => call('ext:status'), extInstall: () => call('ext:install'),
 
   /* 界面动作（点击了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
   logAction: (entry) => report(entry),

@@ -1,9 +1,7 @@
 /**
- * 主进程侧：扩展通道的**分派表**（kind → 处理函数）
- * 从 `ext-bridge.cjs` 拆出来的（那边要超 300 红线）。这块逻辑自洽（「拿 payload →
- * 干活 → 给结果」）且**依赖注入** —— 自检能喂假 session / 假 audit 直接跑。
- * ★ 处理函数一律**同步**：bridge 的管道回调里能同步处理、同步回写（不引时序问题），
- *   自检也能直接调。真正的异步只在 `ext-client.cjs` 那一侧（网络 I/O）。
+ * 主进程侧：扩展通道的**分派表**（kind → 处理函数），从 `ext-bridge.cjs` 拆出。
+ * **依赖注入** —— 自检能喂假 session / 假 audit 直接跑。
+ * ★ 处理函数一律**同步**（bridge 的回调里同步处理、同步回写，不引时序问题）。
  * ⚠️ 本模块**不 require electron**（bridge 与 host 侧都要能加载它）。
  */
 
@@ -18,10 +16,12 @@ const sites = require('./ext-sites.cjs')
 /* 2026-10-21：页面上下文槽（页面内容不进对话流，改装进提示词） */
 const pageCtx = require('./page-context-slot.cjs')
 const { ingestPageContext } = require('./page-context-ingest.cjs')
+/* 2026-11-03：侧边栏要历史消息 —— 尾部切片 + 逐条瘦身 + 字节预算（那边是纯函数） */
+const { createSessionMessages } = require('./ext-session-messages.cjs')
 
 /**
  * @param {{
- *   session: { list: Function, load: Function, create: Function, append: Function },
+ *   session: { list: Function, load: (id: string) => any, create: Function, append: Function },
  *   audit: { record: Function },
  *   wrap: (input: { url?: string, title?: string, text?: string, truncated?: boolean, source?: string }) => string,
  *   send: (name: string, payload: object) => void,
@@ -46,14 +46,12 @@ function createOps(deps) {
 
   /** 把渲染好的文本落进会话 + 审计 + 推渲染层（`ext:page` / `page:observe` / `page:elements` 共用，硬约束 #9） */
   function ingest(sessionTitleHint, content, auditTool, extras, explicitSessionId) {
-    /* 落哪条会话：判定只有一处（ext-route.cjs）。2026-10-20 修两处串线：
-       以前只认 getActiveSession()；现在明确指定但已失效也会拒绝（不回退）。 */
+    /* 落哪条会话：判定只有一处（ext-route.cjs）。明确指定但已失效也会拒绝（不回退 —— 回退就是换个条件再串一次线）。 */
     const decided = decideSessionId({
       explicit: explicitSessionId,
       selected: getSelectedSession(),
       active: getActiveSession(),
-      /* 容错：session.load 对非法 id 会抛（session-io 校验 sess_ 前缀），
-         不兜住的话异常冒到 socket 层会被当成「消息不是合法 JSON」。 */
+      /* 容错：session.load 对非法 id 会抛（session-io 校验 sess_ 前缀），不兜住会冒到 socket 层被当成「消息不是合法 JSON」 */
       alive: (id) => {
         try {
           return Boolean(session.load(id).meta)
@@ -158,6 +156,10 @@ function createOps(deps) {
     return { ok: false, error: { code, message } }
   }
 
+  /* `session:messages`（2026-11-03，侧边栏显示整条会话）：判据全在
+     `ext-session-messages.cjs`（纯函数 + 工厂），本文件只接线。 */
+  const sessionMessages = createSessionMessages({ session, getSelected: getSelectedSession, getActive: getActiveSession, fail, ERR: P.ERR })
+
   /** `session:list`：会话摘要。字段直接用 `session.list()` 的，不另造形状（硬约束 #9） */
   function listSessions() {
     const list = session.list() ?? []
@@ -170,10 +172,7 @@ function createOps(deps) {
     }
   }
 
-  /**
-   * `page:elements`：元素列表视图（M04-1 `browser.getElements`）。与 `page:observe`
-   * **同一份采集**，只是渲染成「只要元素」的视图并解析调用方给的 ref。
-   */
+  /** `page:elements`：元素列表视图（M04-1）。与 `page:observe` **同一份采集**，只是只渲染元素并解析 ref。 */
   function ingestElements(payload) {
     const obs = payload?.observation && typeof payload.observation === 'object' ? payload.observation : null
     if (!obs) return fail(P.ERR.INTERNAL, '没收到页面元素数据（扩展侧采集失败？）')
@@ -240,6 +239,8 @@ function createOps(deps) {
        两条来源（正文 / 结构化观察）的判定搬到 `page-context-ingest.cjs`。 */
     [P.KIND.PAGE_CONTEXT]: (payload) => ingestPageContext(payload, { selected: getSelectedSession }),
     [P.KIND.SESSION_LIST]: () => listSessions(),
+    /* 2026-11-03：侧边栏的历史消息（只读 + 尾部切片，见 ext-session-messages.cjs） */
+    [P.KIND.SESSION_MESSAGES]: (payload) => sessionMessages(payload),
     /* Phase 3b：侧边栏发消息 → 交给渲染层跑；重连要流快照；问「当前打开哪条」 */
     [P.KIND.CHAT_SEND]: (payload) => chat.handleSend(payload),
     [P.KIND.CHAT_RESUME]: (payload) => chat.handleResume(payload),

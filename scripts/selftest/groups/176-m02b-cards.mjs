@@ -99,7 +99,11 @@ export async function run() {
   check('★★★ ChatPanel 渲染了当前网页卡', /<PageCard\s/.test(chatSrc))
   check(
     '★★ 两张卡在消息流**上方**（顺序：网页卡 → 任务卡 → 消息区）',
-    chatSrc.indexOf('<PageCard') < chatSrc.indexOf('<TaskCard') && chatSrc.indexOf('<TaskCard') < chatSrc.indexOf('aria-label="消息流"'),
+    /* 2026-11-03：消息区容器换成 AutoscrollBox（它拿 `消息流` 这个 label），
+       顺序判据跟着容器走 —— 钉的还是同一件事：卡在上、消息区在下。 */
+    chatSrc.indexOf('<PageCard') < chatSrc.indexOf('<TaskCard') &&
+      chatSrc.indexOf('<TaskCard') < chatSrc.indexOf('<AutoscrollBox') &&
+      /label="消息流"/.test(chatSrc),
   )
   check('★★ ChatPanel 不再自己订阅推送（搬到 useChatStream，防两份实现）', !/onMessage\.addListener/.test(chatSrc))
   check('★★★ ChatPanel 用 useChatStream 拿状态', /useChatStream\(sessionId\)/.test(chatSrc))

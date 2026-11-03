@@ -76,6 +76,12 @@ import { run as experienceCounterexampleGroup } from './groups/195-experience-co
 import { run as experienceCounterexampleBGroup } from './groups/196-experience-counterexamples-b.mjs'
 import { run as experienceApprovalGroup } from './groups/197-experience-approval.mjs'
 import { run as experienceLeftoversGroup } from './groups/200-experience-leftovers.mjs'
+/* 2026-11-03：侧边栏显示整条会话（session:messages）—— 切片预算 / 合并规则 / 协议接线 / 锚点 */
+import { run as edgeSidepanelHistoryGroup } from './groups/201-edge-sidepanel-history.mjs'
+/* 2026-11-04：在设置里一键装浏览器插件 —— 固定 ID / 包装器字节纪律 / 真装一遍 / 不收路径 */
+import { run as edgeInstallGroup } from './groups/202-edge-install.mjs'
+/* 2026-11-04：扩展记录别当用户消息 —— 摘要从正文里抠 / source 走通 / 两侧共用折叠卡 */
+import { run as edgeIngestNoteGroup } from './groups/203-edge-ingest-note.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -278,4 +284,7 @@ export const GROUPS = [
   experienceLifecycleGroup, experienceE2EGroup, experienceCounterexampleGroup, experienceCounterexampleBGroup,
   experienceApprovalGroup, uiSelectorsGroup, experienceApprovalUiGroup,
   experienceLeftoversGroup, experienceLeftoversUiGroup,
+  edgeSidepanelHistoryGroup,
+  edgeInstallGroup,
+  edgeIngestNoteGroup,
 ]

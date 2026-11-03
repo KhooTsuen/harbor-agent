@@ -30,6 +30,22 @@
  *    都要标出它摘自哪一份文件…」一个关键词都不含 → 被整句跳过，模型重贴汇总时没带
  *    `[文件名]`。教训：靠关键词猜「哪句是要求」不可靠 —— 所以不挑句；超上限时发送入口会拦。
  *
+ * ── 2026-11-04 第七轮：**用户原话永不截断** ─────────────────────
+ *
+ * 上一版给用户原话设了 `USER_FOLD_CAP`（2000 字），超了就留「开头一半 + 结尾一半」，
+ * 中段丢掉并让 `fold-gate` 拦下来问用户。真机代价：一条 2449 字的原话只超 449 字，
+ * 就被拦住，用户得**自己把中段手打一遍**——而原文一直躺在会话记录里
+ * （`fold-gate.originOf` 按指纹就能捞回全文）。**程序握着全文却让用户补，这就是病根。**
+ *
+ * 现在：整段原样进，**没有上限**。`missing` 恒为 0，折叠不再产生有损项。
+ * ⚠️ 代价要说清：折叠块变长之后，真正卡住内容的是 `context-builder.assemble` 的
+ *   对话层额度（默认 14745 字符 = 16384 × 3 × 30%）。单条超过那个数的原话会在那一层
+ *   被 `trim` 截断，而那一层**不报 lossy、不弹卡**。所以「永不截断」的完整兑现，
+ *   下一层还差一步（见 `docs/` 与 CHANGELOG 的「已知遗留」）。
+ *
+ * `USER_FOLD_CAP` 保留导出**只因为**自检夹具还拿它当口径（185/186 造「有损」样本），
+ * 内核里已经没有任何一处据此截断 —— 别再照着名字以为它还在管字数。
+ *
  * ── 为什么低信任那条用 user 角色 ───────────────────────────────
  *
  * 上游只有 system / user / assistant / tool 四种角色：`tool` 必须有配对的 `tool_call_id`
@@ -46,8 +62,8 @@ const TEXT_CAP = 400
 /** 折进来的一条内容总字数上限（挑句后）—— 摘要必须**预算有界** */
 const FOLD_CAP = 900
 /**
- * **用户原话**在折叠块里的字数上限（2000 的来由：真机复现那份 929 字 + 一倍余量）。
- * ⚠️ 唯一一处上限 —— 超过就有损，有损必须报出来（见 wholeOf 的 missing）。
+ * **历史值，内核已不再据此截断**（第七轮取消了用户原话的上限，见文件头）。
+ * 保留导出只因为自检夹具拿它当口径造「有损」样本 —— 别再以为它在管字数。
  */
 const USER_FOLD_CAP = 2000
 /** 单句最多留多少字（超了当场标注原长） */
@@ -151,39 +167,24 @@ function quoteOf(text, cap = FOLD_CAP) {
 }
 
 /**
- * **用户原话** → 摘录行（2026-10-23 第四轮：不挑句，整段保留）。
+ * **用户原话** → 摘录行。第七轮起：**整段原样进，永不截断**。
  *
- * 挑句靠 `KEEP_WORDS`（不要 / 必须 / 禁止 …）猜「哪句是要求」，而漏掉的那句
- * 「每一条检查要点后面都要标出它摘自哪一份文件…」一个关键词都不含 —— 关键词表不可能完备。
- * 口径（有明确上限，不静默丢）：不超 `cap` 就**整段原样**进；超了保留**开头一半 +
- * 结尾一半**（约束常在末尾），中间如实报「N 字没有进入本次请求」，`missing` / `fp`
- * 交给调用方 —— 有损就绝不假装原文都在（发送入口会据此拦下来问用户）。
+ * 老口径是「超过 `USER_FOLD_CAP` 就留开头一半 + 结尾一半」，中间丢掉并让发送入口拦下来
+ * 问用户。真机代价：2449 字里只超了 449 字，用户就得**自己把中段手打一遍** ——
+ * 而原文一直躺在会话记录里，程序按指纹就能捞回来（`fold-gate.originOf`）。
+ *
+ * 挑句 / 截半两条路都试过，都是「程序替用户判断哪句不重要」；约束恰恰经常不在
+ * 开头也不在结尾。所以现在不判断：全文进。
  *
  * @param {string} text 用户原话
- * @param {number} [cap] 字数上限（默认 `USER_FOLD_CAP`）
+ * @param {number} [_cap] 已废弃，保留形参只为不改调用方签名
  * @returns {{ lines: Array<string>, missing: number, total: number, fp: string }}
- *          `fp` = 原文指纹：发送入口靠它认出「同一段旧历史已经提示过了」，不会永久挡住
+ *          `missing` 恒为 0；`fp` = 原文指纹（闸门与自检靠它认同一段原话）
  */
-function wholeOf(text, cap = USER_FOLD_CAP) {
+function wholeOf(text, _cap = USER_FOLD_CAP) {
   const full = String(text ?? '').trim()
   if (!full) return { lines: [], missing: 0, total: 0, fp: '' }
-  const fp = fingerprint(full)
-  if (full.length <= cap) return { lines: [`· ${full}`], missing: 0, total: full.length, fp }
-
-  const half = Math.floor(cap / 2)
-  const head = full.slice(0, half)
-  const tail = full.slice(-half)
-  const missing = full.length - head.length - tail.length
-  return {
-    lines: [
-      `· ${head}`,
-      `· …（中间 ${missing} 字没有进入本次请求：原文 ${full.length} 字，这里只进了开头 ${head.length} 字和结尾 ${tail.length} 字）`,
-      `· ${tail}`,
-    ],
-    missing,
-    total: full.length,
-    fp,
-  }
+  return { lines: [`· ${full}`], missing: 0, total: full.length, fp: fingerprint(full) }
 }
 
 /** 稳定指纹：用来和会话记录里的原文核对，不把正文搬进提示 */

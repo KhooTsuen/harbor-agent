@@ -1,10 +1,13 @@
 /**
- * GitHub Release 的两件小事：认仓库、拿凭据、发请求。
+ * GitHub Release 的两件小事：认仓库、拿凭据、发普通请求。
  *
  * 为什么单独一个文件（硬约束 #9：同一段逻辑只能有一份实现）：
  * 「从 origin 认 owner/repo」「走 `git credential fill` 拿 token」「拼请求头」
  * 这几段，上传脚本和清理脚本都要用 —— 各写一遍就是又一个「改一处忘另一处」。
  * 注意：**token 只在内存里**，任何路径都不打印。
+ *
+ * 上传资产（流式 + 进度）在 `./release/upload-asset.mjs`：
+ * 那是另一件事（把 236MB 发出去、还要让人看得见），混在这里曾把本文件顶到 322 行。
  */
 
 import { spawnSync } from 'node:child_process'
@@ -18,6 +21,10 @@ const CWD = process.cwd()
  * Node 24 的 fetch 认 `NODE_USE_ENV_PROXY=1` + `HTTPS_PROXY`，所以这里把 git 的配置
  * 翻译成那两个变量。**已经显式设了环境变量的不覆盖**（声明式的优先）。
  * 放在模块顶层：必须在第一个 fetch 之前生效。
+ *
+ * ★ curl 也会继承这两个变量。236MB 全程过一遍本地代理往往只有一两百 KB/s，
+ *   而 `uploads.github.com` 直连是通的 —— 所以上传脚本提供了 `--no-proxy`
+ *   （给 curl 传 `--noproxy '*'`）。这里不受影响：fetch 那条路仍走代理。
  */
 if (!process.env.HTTPS_PROXY && !process.env.https_proxy) {
   const proxy = (spawnSync('git', ['config', '--get', 'http.proxy'], { encoding: 'utf8' }).stdout ?? '').trim()

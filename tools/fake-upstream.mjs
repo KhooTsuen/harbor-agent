@@ -15,12 +15,15 @@
  *   retry    第一次发半截正文后报 429（可重试）、第二次正常 —— 验证「重试不显示两遍」
  *   shellfail 工具真失败冒烟
  *   experience 每轮都发同一条 `run_shell` 命令（自我纠错闭环真机验收用）
+ *   busy     每轮发一条 `run_shell`（`dir /b`）：造「任务真的在干活」的画面
+ *            —— 验「注入不打断在跑的任务」必须在这个状态下注入（见 fake-upstream-busy.mjs）
  *   （无后缀）正常返回（对照组）
  */
 
 import { createServer } from 'node:http'
 import { handleRetryMode } from './fake-retry-mode.mjs' /* retry 模式整套住在那边 */
 import { streamExperienceRound } from './fake-upstream-experience.mjs' /* experience 模式整套住在那边 */
+import { streamBusyRound } from './fake-upstream-busy.mjs' /* busy 模式：「任务真在干活」那一幕 */
 import { handleFailMode } from './fake-upstream-fail.mjs' /* fail 模式整套住在那边 */
 
 const PORT = Number(process.env.FAKE_PORT ?? 9977)
@@ -195,6 +198,12 @@ const server = createServer(async (req, res) => {
 
   if (mode === 'experience') {
     await streamExperienceRound(res, sseChunk)
+    return
+  }
+
+  /* busy：「任务真的在干活」那一幕 —— 每轮一条真工具调用，实现见那边文件头 */
+  if (mode === 'busy') {
+    await streamBusyRound(res, sseChunk)
     return
   }
 

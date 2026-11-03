@@ -6,46 +6,98 @@
  *
  * 为什么必须拷：主进程是 CJS，`require('pdfjs-dist')` 之类只能在
  * `resources/app/node_modules` 下找到；漏一个不是「报个错」，而是**运行时该功能不可用**。
+ *
+ * ★ 「哪些包」的答案不在这个文件里 —— 在 `prod-deps-closure.mjs`（唯一真相源）。
+ *   以前这里是「`npm ls --omit=dev` 列出什么就全拷」，于是把 mermaid（120MB）、
+ *   lucide-react、react-dom 这些**只有渲染层用**的包也搬进了安装包：
+ *   175 个包 / 333MB，主进程碰不到其中 220MB，压进 zip 仍剩 51MB。
+ *   现在按主进程的 require 闭包裁，并把这个差额**打进日志**（不是悄悄少拷）。
  */
-import { cpSync, existsSync, mkdirSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, join, sep } from 'node:path'
+import { dirname, join } from 'node:path'
+import { listShipped, planProdDeps } from './prod-deps-closure.mjs'
+
+/** 递归算目录体积（拷贝前先知道总量，进度才有分母） */
+function sizeOf(dir) {
+  let total = 0
+  const walk = (d) => {
+    let entries
+    try {
+      entries = readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = join(d, entry.name)
+      try {
+        if (entry.isDirectory()) walk(full)
+        else if (entry.isFile()) total += statSync(full).size
+      } catch {
+        /* 读不到就跳过，不该让打包挂在算体积上 */
+      }
+    }
+  }
+  walk(dir)
+  return total
+}
+
+const mb = (bytes) => (bytes / 1048576).toFixed(1)
 
 /**
- * 主进程的**生产依赖**全表：直接问 `npm ls --omit=dev --all --parseable`，
- * 照着相对 node_modules 的路径整份拷。
- *
- * 好处：以后再加依赖**不用回来改这里**；devDependencies（electron / vite / vitest…）
- * 天然不进来。以前只硬拷 node-pty，2026-10-08 加文件解析库时踩到「打包版附件全挂」。
+ * 主进程的**生产依赖**：照 `prod-deps-closure.mjs` 算出的闭包裁，只拷真正会 require 的。
  *
  * node-pty 跳过 —— 它由 `copyNativeDeps` 单独处理（只拷本平台预编译）。
- * `@napi-rs/canvas` 是 pdfjs 的**可选**依赖，没装也不影响（PDF 走纯文本抽取）。
  */
 export function copyProdDeps(ROOT, APP_OUT, step) {
-  /* Windows 上 npm 是 .cmd，Node 24 起**必须**经 shell 才起得动（CVE-2024-27980 之后）。
-     整条命令写成字符串（不给 args 数组）—— 那样才不会触发 DEP0190 那条警告。 */
-  const result = spawnSync('npm ls --omit=dev --all --parseable', {
-    cwd: ROOT,
-    encoding: 'utf8',
-    shell: true,
-  })
-  const lines = String(result.stdout ?? '')
-    .split(/\r?\n/)
-    .filter(Boolean)
   const nm = join(ROOT, 'node_modules')
   const dest = join(APP_OUT, 'node_modules')
+  const shipped = listShipped(ROOT, spawnSync)
+  const plan = planProdDeps(ROOT, shipped)
 
+  /* 主进程里有「拼出来的 require」= 闭包算不准，宁可不打包也不能打出一个缺包的版本 */
+  if (plan.dynamicErrors.length > 0) {
+    throw new Error(
+      `主进程有 ${plan.dynamicErrors.length} 处动态 require，依赖闭包算不准：\n  ${plan.dynamicErrors.join('\n  ')}`,
+    )
+  }
+
+  const todo = plan.copy.filter((rel) => rel !== 'node-pty')
+  const sizes = new Map(todo.map((rel) => [rel, sizeOf(join(nm, rel))]))
+  const totalBytes = [...sizes.values()].reduce((sum, n) => sum + n, 0)
+  const skippedBytes = plan.skip.reduce((sum, item) => sum + sizeOf(join(nm, item.rel)), 0)
+
+  step(
+    `主进程扫了 ${plan.scanned} 个文件，闭包 ${plan.closure} 个包；要拷 ${todo.length} 个 / ${mb(totalBytes)}MB` +
+      `，跳过 ${plan.skip.length} 个只给渲染层用的 / ${mb(skippedBytes)}MB`,
+  )
+
+  /* 进度：以前是「每 20 个包一行」，但前 20 个包里就有 mermaid（120MB），
+     头一行字要等 25 秒 —— 外面看起来还是卡住。改成按**时间**报，最多每 2 秒一行，
+     并且带上「已拷 MB / 总量」，不动的时候一眼能看出是真的没动。 */
   let copied = 0
-  for (const line of lines) {
-    if (!line.startsWith(nm + sep) || !existsSync(line)) continue
-    const rel = line.slice(nm.length + 1)
-    if (rel === 'node-pty') continue
+  let bytes = 0
+  let lastAt = Date.now()
+  for (const rel of todo) {
     const to = join(dest, rel)
     mkdirSync(dirname(to), { recursive: true })
-    cpSync(line, to, { recursive: true })
+    cpSync(join(nm, rel), to, { recursive: true })
     copied++
+    bytes += sizes.get(rel) ?? 0
+    if (Date.now() - lastAt >= 2000 || copied === todo.length) {
+      lastAt = Date.now()
+      const pct = totalBytes > 0 ? Math.round((bytes / totalBytes) * 100) : 100
+      step(`已拷 ${copied}/${todo.length} 个包 · ${mb(bytes)}/${mb(totalBytes)}MB（${pct}%）`)
+    }
   }
-  step(`主进程依赖已放入：${copied} 个包（npm ls --omit=dev --all）`)
+
+  /* 跳过了什么要留痕：将来某个功能在打包版里挂了，第一件事就是回来看这张单子。
+     只列前 12 个 + 总数 —— 145 个名字刷一屏，反而会把真正要紧的几行挤掉。 */
+  if (plan.skip.length > 0) {
+    const unique = [...new Set(plan.skip.map((item) => item.name))].sort()
+    const head = unique.slice(0, 12).join(', ')
+    step(`未拷（主进程零引用）${unique.length} 个：${head}${unique.length > 12 ? ` …等` : ''}`)
+  }
 }
 
 /**

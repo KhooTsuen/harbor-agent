@@ -37,6 +37,15 @@ const KIND = {
   CHAT_REGENERATE: 'chat:regenerate', // 侧边栏重新生成当前对话最近一条回答
   SESSION_SELECTED: 'session:selected', // push：侧边栏现在在看哪条（3c，**无 id**）
   /*
+   * 2026-11-03：侧边栏要「这条会话说过什么」（历史消息）。
+   *
+   * ★ 为什么必须有这一条：侧边栏以前只显示**当前这一轮**（靠 `chat:event` 推流），
+   *   打开面板时看不到之前的往返 —— 与主窗口（整条会话）不是一回事，用户报的
+   *   「分裂感」主要来自这里。也没有别的路能拿到：`session:list` 只给摘要。
+   * ★ 只读、只取尾部（切片与瘦身在 `ext-session-messages.cjs`，那边有字节预算）。
+   */
+  SESSION_MESSAGES: 'session:messages',
+  /*
    * 页面上下文槽（2026-10-21）：页面内容**不进对话流**，只更新一个槽，
    * 每轮构建提示词时注入（见 core/page-context-slot.cjs 的文件头）。
    * ★ 与 EXT_PAGE 的区别就是「落哪」：EXT_PAGE 写会话文件，这条只写槽。

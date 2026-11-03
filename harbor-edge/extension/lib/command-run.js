@@ -187,12 +187,13 @@ export async function runCommand(payload) {
         result = { ok: false, error: raw.error || '当前页面无法读取' }
       } else if (!raw || raw.__timeout === true || String(raw.url || '') !== target.url || !(await stillActiveTab(target.tab.id, target.url))) {
         result = { ok: false, error: '读取期间页面或活动标签已改变，或页面没有返回正文；没有发送旧页面内容' }
-      } else result = { ok: true, ...limitPageText(raw, 40 * 1024) }
+      } else result = { ok: true, ...limitPageText(raw, 40 * 1024, args.offset) }
     } else if (command === 'get-elements') {
       /* 复用 collectPageContext（M03 那份）—— 下行回执形状是 {ok:true, ...} */
       const maxItems = Number(args.maxItems) > 0 ? Math.min(Number(args.maxItems), 200) : 60
+      const query = String(args.query ?? '').slice(0, 100)
       const settled = await injectBounded(target.tab.id, waitForStablePage, [], 2500)
-      const raw = settled?.url === target.url ? await injectBounded(target.tab.id, collectPageContext, [{ maxItems, maxSelection: 0 }], 8000) : null
+      const raw = settled?.url === target.url ? await injectBounded(target.tab.id, collectPageContext, [{ maxItems, maxSelection: 0, query }], 8000) : null
       result =
         raw && typeof raw === 'object' && raw.__timeout !== true
           ? { ok: true, ...raw }

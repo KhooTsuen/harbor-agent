@@ -66,4 +66,75 @@ export async function run() {
   check('空选区不创建草稿', (await quick.saveSelectionDraft('', 'https://edge.test')).ok === false)
   globalThis.chrome = oldChrome
   check('快捷入口只在用户调用时注入选区按钮', source('harbor-edge/extension/lib/quick-entry.js').includes('showSelectionToolbar(tab)') && !JSON.parse(source('harbor-edge/extension/manifest.json')).content_scripts)
+
+  group('Edge 长页 · 正文分段与元素过滤（2026-11-03）')
+  /* ① 正文分段：真跑 limitPageText —— 段号、下一段 offset、读完的标志三者要对得上 */
+  const long = 'x'.repeat(250)
+  const seg1 = pageText.limitPageText({ url: 'https://edge.test/long', title: 'Long', text: long }, 100, 0)
+  const seg2 = pageText.limitPageText({ url: 'https://edge.test/long', title: 'Long', text: long }, 100, 100)
+  const seg3 = pageText.limitPageText({ url: 'https://edge.test/long', title: 'Long', text: long }, 100, 200)
+  check('★ 第 1 段：说自己第 1 / 3 段，并给下一段 offset=100', seg1.segment === 1 && seg1.segments === 3 && seg1.nextOffset === 100 && seg1.text.length === 100)
+  check('★ 第 3 段读完：nextOffset 是 null（不是 undefined、不是 250）', seg3.nextOffset === null && seg3.truncated === false && seg3.text.length === 50)
+  check('★ 每段取的是**不同**的内容（offset 真的生效，不是总从头来）', seg2.offset === 100 && seg2.text === long.slice(100, 200))
+  check('★ 超出正文长度不报错，返回空段 + 没有下一段', pageText.limitPageText({ text: 'abc' }, 10, 999).nextOffset === null)
+  /* ② wrapWebText 必须把「下一段从哪读」讲给模型 —— 否则模型以为读完了 */
+  const wrappedMid = note.wrapWebText({ source: 'edge', url: 'https://edge.test', text: 'aaa', truncated: true, segments: 3, segment: 1, nextOffset: 100 })
+  check('★ 分段时明确给出「下一段传 offset=」', wrappedMid.includes('第 1 / 3 段') && wrappedMid.includes('offset=100'))
+  check('★ 不分段（内置浏览器那条路）不凭空多出分段字样', !note.wrapWebText({ text: 'aaa' }).includes('段'))
+  /* ③ 元素过滤：只缩显示窗口，**不动 ref、不动版本号** —— 真跑主进程渲染器 */
+  const O = require(join(ROOT, 'electron/core/ext-observe.cjs'))
+  const mk = (i) => ({ ref: `v1.${i}`, role: 'button', tag: 'BUTTON', text: `按钮${i}`, masked: false })
+  const all = Array.from({ length: 9 }, (_, i) => mk(i + 1))
+  const filtered = O.renderElements(
+    { url: 'https://edge.test', title: 'T', pageVersion: 'v1', elements: all, stats: { elements: 9, query: '按钮5', matchedRefs: ['v1.3', 'v1.4', 'v1.5', 'v1.6', 'v1.7'] } },
+    {},
+  )
+  check('★ 过滤后只显示命中项 + 前后各 2 个', filtered.markdown.includes('v1.5') && filtered.markdown.includes('v1.3') && filtered.markdown.includes('v1.7'))
+  check('★ 窗口外的元素不出现（不是「过滤只是加个标题」）', !filtered.markdown.includes('v1.2') && !filtered.markdown.includes('v1.8'))
+  check('★ 过滤不改引用本身（还是 v1.5，没有被重编号成 v1.1）', filtered.markdown.includes('| v1.5 |') || filtered.markdown.includes('v1.5 |'))
+  check('★ 说明里写清「整页 9 个 / 只显示 5 个」', filtered.markdown.includes('整页 9 个'))
+  const noHit = O.renderElements({ url: 'u', title: 't', pageVersion: 'v1', elements: all, stats: { elements: 9, query: '不存在', matchedRefs: [] } }, {})
+  check('★ 命中 0 个时不冒充「页面没有元素」，而是说没匹配', noHit.markdown.includes('没有一条匹配') && !noHit.markdown.includes('这个页面上没有可见的可交互元素'))
+  /* ④ 扩展侧：过滤必须在版号/ref 之后（顺序反了 = 用户手里的 ref 全失效） */
+  const obsSrcNow = source('harbor-edge/extension/lib/observe.js')
+  const sigAt = obsSrcNow.indexOf('const version = fnv1a(')
+  const filterAt = obsSrcNow.indexOf('matchedRefs = Array.from(keep)')
+  check('★ 过滤在版本号之后算（顺序反了会凭空改版号、ref 全失效）', sigAt > 0 && filterAt > sigAt)
+  check('★ 过滤窗口由扩展侧算，写进 stats（主进程只按它裁显示）', /stats:\s*\{[\s\S]*?\bquery,?[\s\S]*?\bmatchedRefs,?[\s\S]*?\}/.test(obsSrcNow) && source('electron/core/ext-observe.cjs').includes('stats.matchedRefs'))
+
+  /*
+   * ⑤ **真跑**采集器（JSDOM）：光读源码正则，抓不到「过滤把 ref 重排了」这种真错。
+   *   jsdom 没有 checkVisibility、几何也全是 0 —— 打桩成可见，否则元素一个都进不来。
+   */
+  const observe = await extImport('harbor-edge/extension/lib/observe.js')
+  const dom2 = new JSDOM(
+    '<main><button>首页</button><button>文档</button><button>定价</button><a href="/login">登录</a>' +
+      '<button>保存草稿</button><button>发布</button><input placeholder="搜索关键词"><button>退出</button><button>帮助</button></main>',
+    { url: 'https://edge.test/page' },
+  )
+  dom2.window.Element.prototype.checkVisibility = function () { return true }
+  const saved = { window: globalThis.window, document: globalThis.document, location: globalThis.location, gcs: globalThis.getComputedStyle }
+  globalThis.window = dom2.window
+  globalThis.document = dom2.window.document
+  globalThis.location = dom2.window.location
+  globalThis.getComputedStyle = dom2.window.getComputedStyle
+  let plainObs
+  let filteredObs
+  try {
+    plainObs = observe.collectPageContext({ maxItems: 60, maxSelection: 0 })
+    filteredObs = observe.collectPageContext({ maxItems: 60, maxSelection: 0, query: '保存' })
+  } finally {
+    globalThis.window = saved.window
+    globalThis.document = saved.document
+    globalThis.location = saved.location
+    globalThis.getComputedStyle = saved.gcs
+    dom2.window.close()
+  }
+  const refsOf = (o) => JSON.stringify(o.elements.map((e) => e.ref))
+  check('★ 真跑：不打 query 时 matchedRefs 是 null（不是空数组）', plainObs.stats.matchedRefs === null && plainObs.elements.length === 9)
+  check('★★ 真跑：加 query 后**版本号一字不变**（过滤不该改版号）', plainObs.pageVersion === filteredObs.pageVersion)
+  check('★★ 真跑：加 query 后**每个 ref 都和原来一样**（没有被重编号）', refsOf(plainObs) === refsOf(filteredObs))
+  check('★ 真跑：窗口是命中项 + 前后各 2 个 = 5 个', filteredObs.stats.matchedRefs.length === 5)
+  const winTexts = filteredObs.elements.filter((e) => filteredObs.stats.matchedRefs.includes(e.ref)).map((e) => e.text)
+  check('★ 真跑：窗口里真的有命中的那个，且前后都带上', winTexts[2] === '保存草稿' && winTexts[0] === '定价' && winTexts[4] === '搜索关键词')
 }

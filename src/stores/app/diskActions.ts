@@ -1,4 +1,4 @@
-import type { Thread } from '@/types'
+import type { Message, Thread } from '@/types'
 import { useRealBackend } from '@/lib/backend'
 import { fetchMessagesFromDisk, fetchWorkspaceFromDisk } from './disk'
 import type { AppState } from './types'
@@ -42,6 +42,44 @@ export function mergeThreads(current: readonly Thread[], fresh: readonly Thread[
   })
 }
 
+/**
+ * 重读盘回来时：**保住内存里正在跑的那一轮**，其余听磁盘的。
+ *
+ * ★ 为什么必须有（2026-11-04 真机，用户报「注入时流式对话断了、但后台还在跑」）：
+ *
+ *   浏览器扩展送进来的内容由**主进程直接写会话文件**，写完推 `ext:page`，渲染层
+ *   收到就重读盘（见 `hooks/useExtBridge.ts`）。而磁盘上**没有**正在流式的那一条
+ *   （它只在分段快照里，是几秒前的一份），所以整份覆盖之后占位消息就没了 ——
+ *   之后每个分片调的 `updateMessage(placeholder.id)` 全都找不到目标：界面停在
+ *   那一刻看着像「被打断」，而主进程那一轮根本没被取消，照旧跑到底。
+ *   更糟的一半：收尾落盘按 id 找那条消息（见 `replyPersistence.persistReply`），
+ *   找不到就整轮不写 —— 磁盘上只剩几秒前那份快照，重开显示「这条回复没写完」。
+ *
+ * 判据只有一条 `status === 'streaming'`：**没有正在跑的一轮时原样返回磁盘那份**，
+ * 老行为零变化（引用守卫仍由调用方管）。
+ */
+export function mergeLiveMessages(fromDisk: Message[], current: readonly Message[]): Message[] {
+  const live = current.filter((m) => m.status === 'streaming')
+  if (live.length === 0) return fromDisk
+
+  /*
+   * 磁盘上属于这些在跑回复的分段快照要丢掉：快照用占位消息的 id 当 key
+   * （`persistMessage(threadId, { key: messageId, … })`），读回时落在 `diskKey`
+   * —— 内存里那份一定比它新，留着就是同一轮出现两条、一条还是半截。
+   */
+  const liveKeys = new Set(live.map((m) => m.id))
+  const disk = fromDisk.filter((m) => !liveKeys.has(m.id) && !liveKeys.has(m.diskKey ?? ''))
+
+  /*
+   * 内存里**磁盘上还没有**的消息也要接上（刚发的提问、排队那条）：
+   * 判据用时间 —— 只取晚于磁盘最新一条的那些，老会话不会被误留（它们的 ts 都更早）。
+   */
+  const lastDiskTs = fromDisk.reduce((max, m) => (m.timestamp > max ? m.timestamp : max), 0)
+  const pending = current.filter((m) => m.status !== 'streaming' && (m.timestamp ?? 0) > lastDiskTs)
+
+  return [...disk, ...pending, ...live]
+}
+
 export function makeDiskActions(set: Setter, get: Getter): DiskActions {
   return {
     loadFromDisk: async () => {
@@ -80,9 +118,27 @@ export function makeDiskActions(set: Setter, get: Getter): DiskActions {
         const messages = await fetchMessagesFromDisk(id)
         if (!messages) return
         const current = get().threads.find((t) => t.id === id)
-        if (!current || current.messages !== before?.messages) return
+        if (!current) return
+        /*
+         * 卡住「读回来的时候把刚加的消息盖掉」这个真 bug：
+         *
+         * 这条 `await` 期间用户完全可能已经发消息了 —— `resumeTask`（点「继续」）
+         * 就是 setActiveThread 紧接着 sendMessage，中间没有等待。
+         * 读回来直接 set 就会把刚插进去的用户消息 + 流式占位一起抹掉，
+         * 界面上就是「点继续以后对话一片空白，但 Agent 其实在跑」。
+         *
+         * ★ 2026-11-04 补一层：**有正在跑的一轮时不能整份放弃**（原来这里直接 return）。
+         *   扩展注入恰好发生在流式中（见 mergeLiveMessages 的文件头），整份放弃的结果是
+         *   注入的内容一直不显示；而等到某个空档又一次性覆盖，把流式那条顶掉。
+         *   现在改成「合并」：磁盘那份 + 内存里正在跑的那条（及其之后）。
+         */
+        const touched = current.messages !== before?.messages
+        const running = current.messages.some((m) => m.status === 'streaming')
+        if (touched && !running) return
         set((state) => ({
-          threads: state.threads.map((t) => (t.id === id ? { ...t, messages } : t)),
+          threads: state.threads.map((t) =>
+            t.id === id ? { ...t, messages: mergeLiveMessages(messages, current.messages) } : t,
+          ),
         }))
       } finally {
         if (mustRead)
@@ -102,14 +158,22 @@ export function makeDiskActions(set: Setter, get: Getter): DiskActions {
        *   于是第一次的刷新被这句吞掉，用户以为没成功、再点一次才看见
        *   （实测会话文件里成对写入、间隔 1–3 秒，共 30 条）。
        *   现在照常重读；只在**确实没有被改过**时才覆盖（与 openFromDisk 同一个守卫）。
+       *
+       * ★ 2026-11-04：与 openFromDisk 同一处放宽 —— 有正在跑的一轮时改走合并，
+       *   否则流式那条会被顶掉（见 mergeLiveMessages）。
        */
       try {
         const messages = await fetchMessagesFromDisk(id)
         if (!messages) return
         const current = get().threads.find((t) => t.id === id)
-        if (!current || current.messages !== before.messages) return
+        if (!current) return
+        const touched = current.messages !== before.messages
+        const running = current.messages.some((m) => m.status === 'streaming')
+        if (touched && !running) return
         set((state) => ({
-          threads: state.threads.map((t) => (t.id === id ? { ...t, messages } : t)),
+          threads: state.threads.map((t) =>
+            t.id === id ? { ...t, messages: mergeLiveMessages(messages, current.messages) } : t,
+          ),
         }))
       } catch {
         /* 读失败就让它空着：这一轮上下文会缺这段，但不该因此崩掉整条发送 */

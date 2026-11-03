@@ -5,6 +5,7 @@ import { LAYOUT } from '@/constants'
 import { clamp } from '@/lib/utils'
 import { useRealBackend, pushGeneral } from '@/lib/backend'
 import { settingsToConfig } from '@/lib/configMapping'
+import { DEFAULT_NOTIFY_ROUTES, normalizeRoutes } from '@/lib/notifyCenter'
 import { useConfigSaveStatus } from './configSaveStatus'
 
 /* ══════════════════════════════════════════════════════════════
@@ -29,6 +30,12 @@ export const DEFAULT_SETTINGS: Settings = {
   bootAnimation: true,
   /* 重要通知记录默认开 —— 与加上这个开关之前的行为逐字一致 */
   noticeHistory: true,
+  /*
+   * 每一类通知去哪儿。默认 = 右下角只弹「要你处理的事」：
+   * 出错 / 要拍板 / 日常确认弹卡片；任务结果 / 下载 / 过程播报只进「通知」标签。
+   * 展开成新对象（不直接引用常量）—— 免得哪天有人就地改默认值把常量污染了。
+   */
+  notifyRoutes: { ...DEFAULT_NOTIFY_ROUTES },
   asciiQuality: 'high',
   asciiReducedMotion: false,
   sidebarWidth: LAYOUT.sidebar.default,
@@ -110,7 +117,8 @@ function normalize(input: Partial<Settings> | undefined): Settings {
       s.lastRightTab === 'artifacts' ||
       s.lastRightTab === 'tasks' ||
       s.lastRightTab === 'state' ||
-      s.lastRightTab === 'errors'
+      s.lastRightTab === 'errors' ||
+      s.lastRightTab === 'notifications'
         ? s.lastRightTab
         : 'diff',
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,
@@ -125,6 +133,11 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     bootAnimation: s.bootAnimation !== false,
     /* 同 bootAnimation 的口径：只有显式 false 才关，读不懂的值一律当开 */
     noticeHistory: s.noticeHistory !== false,
+    /*
+     * 通知去向：老版本没有这个字段（`undefined`）→ 每类独立补默认。
+     * ★ 不能整表替换：用户只改过下载一类时，其余五类得留住他设的值。
+     */
+    notifyRoutes: normalizeRoutes(s.notifyRoutes),
     asciiQuality:
       s.asciiQuality === 'medium' || s.asciiQuality === 'low' || s.asciiQuality === 'static'
         ? s.asciiQuality
