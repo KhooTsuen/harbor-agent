@@ -103,8 +103,8 @@ export async function run() {
   check('恢复清单有两条', rolled.restored.length === 2)
   check('删除清单有一条', rolled.removed.length === 1)
 
-  changesetCore.prune(0)
-  check('事务可以被清理', true)
+  const pruned = changesetCore.prune(0)
+  check('事务真的被清理（返回移除条数 + 记录读不回来）', pruned?.ok === true && pruned.removed >= 1 && changesetCore.get(cs.id) === null, `removed=${pruned?.removed}`)
 
   /* ══════════════════════════════════════════════════════
      P1：错误分类与重试
