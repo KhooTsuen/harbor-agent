@@ -14,7 +14,7 @@
  *   只有那一份实现（硬约束 #9），工具不自己拼一遍。
  */
 
-const { runEdge, edgeCommand } = require('./edge-shared.cjs')
+const shared = require('./edge-shared.cjs')
 
 module.exports = {
   name: 'edge_page',
@@ -45,14 +45,18 @@ module.exports = {
     return url ? `在用户的 Edge 里打开 ${url}` : `读用户 Edge 当前页的元素${q ? `（过滤：${q}）` : ''}`
   },
 
-  async run(args) {
+  async run(args, ctx) {
     const url = String(args?.url ?? '').trim()
-    const cmd = edgeCommand()
+    const cmd = shared.edgeCommand()
     if (!cmd) return `错误：没连上你的 Edge 扩展 —— 先在 Edge 里点一下工具栏的 Harbor 图标。`
 
     const parts = []
     if (url) {
-      const nav = await runEdge('navigate', { url })
+      /* ★ 目标地址准入：网络策略的「禁止」与站点黑名单的**目标**判定都在这里收口。
+         漏了这一句，同一个地址 `browse` 被拦、`edge_page` 照样导航（2026-11-05 实测）。 */
+      const blocked = shared.targetGuard(url, ctx)
+      if (blocked) return blocked
+      const nav = await shared.runEdge('navigate', { url })
       if (nav.startsWith('错误：')) return nav
       parts.push(nav)
     }

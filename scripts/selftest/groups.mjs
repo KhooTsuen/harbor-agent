@@ -92,6 +92,7 @@ import { run as memoryMetadataGroup } from './groups/207-memory-metadata.mjs'
 import { run as memoryDedupeScopeGroup } from './groups/208-memory-dedupe-scope.mjs'
 import { run as execParityGroup } from './groups/209-exec-parity.mjs'
 import { run as llmAttributionGroup } from './groups/210-llm-attribution.mjs'
+import { run as edgeTargetGuardGroup } from './groups/211-edge-target-guard.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -294,7 +295,6 @@ export const GROUPS = [
   experienceLifecycleGroup, experienceE2EGroup, experienceCounterexampleGroup, experienceCounterexampleBGroup,
   experienceApprovalGroup, uiSelectorsGroup, experienceApprovalUiGroup,
   experienceLeftoversGroup, experienceLeftoversUiGroup, edgeSidepanelHistoryGroup,
-  edgeInstallGroup, edgeIngestNoteGroup,
-  mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
-  memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup,
+  edgeInstallGroup, edgeIngestNoteGroup, mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
+  memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
 ]

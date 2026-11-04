@@ -21,22 +21,18 @@
  * ── 后来又补的两件（审批中心的最小切片）──
  *
  *   ③ **兜底超时**：`ctx.confirm` 永不 resolve 就等于把这条工具调用永久挂起
- *      （tools/break-test-loop.mjs 的 D7 段实测过：8 秒没动静）。
- *      界面层（handlers/chat.cjs 的 CONFIRM_TIMEOUT_MS）也有超时，
- *      但工具层不能把「不挂死」寄托在调用方身上 —— 超时按**拒绝**处理。
- *
- *   ④ **每条确认有 id**：`requestId` 写进请求体和台账，日志/界面/台账
- *      以后能对上同一条；`list(ctx)` 是读口，供后续 Approval Center 用。
+ *      （tools/break-test-loop.mjs 的 D7 段实测过：8 秒没动静）。界面层
+ *      （handlers/chat.cjs 的 CONFIRM_TIMEOUT_MS）也有超时，但工具层不能把「不挂死」
+ *      寄托在调用方身上 —— 超时按**拒绝**处理。
+ *   ④ **每条确认有 id**：`requestId` 写进请求体和台账，日志/界面/台账以后能对上同一条；
+ *      `list(ctx)` 是读口，供后续 Approval Center 用。
  *
  * ── 审批中心（Approval Center）这一轮补的两件 ──
  *
- *   ⑤ **每条审批带 `scope`**：这次批准**管到哪儿**（一次性 / 本会话 / 永久）。
- *      以前一律记成 `once`，于是界面看不出「这条是永久授权」，也就没法只给
- *      永久的那几条配「撤销」按钮 —— 「给出去的权限要能收回来」缺的就是这个字段。
- *
- *   ⑥ `list(ctx)` 改成**最新在前**、字段归一化：它现在是界面的读口，
- *      不再是台账快照 —— 界面要的是「最近发生了什么」，而且旧记录
- *      （加 id 之前写的那些）字段不全也不该把界面带崩。
+ *   ⑤ **每条审批带 `scope`**：这次批准**管到哪儿**（一次性 / 本会话 / 永久）。以前一律
+ *      记成 `once`，界面看不出「这条是永久授权」，也就没法只给永久的那几条配「撤销」。
+ *   ⑥ `list(ctx)` 改成**最新在前**、字段归一化：它现在是界面的读口，不再是台账快照 ——
+ *      界面要的是「最近发生了什么」，而且旧记录（加 id 之前写的）字段不全也不该把界面带崩。
  */
 
 const taskCore = require('../task.cjs')
@@ -45,11 +41,10 @@ const log = require('../log.cjs')
 /**
  * 批过一次之后，多久之内同类不再问。
  *
- * ★ 这个数字是从真机验证里改出来的：最初把「本次」定成**这一轮**，
- *   结果同一个任务里模型分了三轮写文件，弹了三次框 —— 正是 AG-014 要消灭的现象。
- *   文档举的例子是「修改 3 个文件 + 运行测试」列成**一张单子**，
- *   那些操作在时间上是挨着的，所以按**时间窗口**放行才符合它的意图。
- *   隔了几分钟之后再动文件，是另一回事了 —— 那时候重新问一次。
+ * ★ 这个数字是从真机验证里改出来的：最初把「本次」定成**这一轮**，结果同一个任务里
+ *   模型分了三轮写文件，弹了三次框 —— 正是 AG-014 要消灭的现象。文档举的例子是
+ *   「修改 3 个文件 + 运行测试」列成**一张单子**，那些操作在时间上是挨着的，所以按
+ *   **时间窗口**放行才符合它的意图；隔几分钟之后再动文件，是另一回事，那时候重新问。
  */
 const GRANT_WINDOW_MS = 2 * 60 * 1000
 
@@ -174,9 +169,13 @@ async function raceConfirm(ctx, request) {
  * @param {object} ctx  工具上下文；`ctx.granted` 是本轮已批准的类型集合（跨轮保留），
  *                      `ctx.confirmTimeoutMs` 可覆盖兜底超时
  * @param {{ kind: string, name?: string, args?: object, summary?: string, scope?: string,
- *           rememberKey?: string, alwaysAsk?: boolean, requestId?: string }} request
+ *           rememberKey?: string, alwaysAsk?: boolean, requestId?: string,
+ *           impact?: string[], diff?: object[], diffNote?: string }} request
  *        会**被就地写入** `requestId` —— 调用方因此也能拿到本次确认的 id
  *        `scope` 说明这次批准管到哪儿（缺省 `once`），原样记进台账
+ *        `impact` / `diff` / `diffNote` 是**确认卡渲染的内容**（`ask` 把整个 request
+ *        交给 `ctx.confirm` 原样透传）。补进类型是因为 `tools/index.cjs` 一直在传，
+ *        checkJs 因此报 TS2353（不认识的属性）—— 补注释不改行为。
  *        `rememberKey` 覆盖「记住这次批准」用的键（不给就按 `kind` 查 `REMEMBERED`）；
  *        MCP 用它按服务器区分：`mcp:<服务器>`（见 `tools/mcp-gate.cjs` 的 `serverKeyOf`）
  *        `alwaysAsk`（由 `ctx.freshApproval` 决定）= 逐次审批，卡片要照它改文案

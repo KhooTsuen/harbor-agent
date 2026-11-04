@@ -1,5 +1,71 @@
 ## [未发布]
 
+### 修：edge_* 绕过网络策略与站点黑名单，关标签不问（P2-3）
+
+**问题**（隔离探针实测，不是读注释）：
+
+1. **网络策略对 `edge_*` 完全不生效**。`browse` 走 `net-policy.decide({kind:'webview'})`，
+   同一地址明确拒绝；`edge_page` / `edge_tabs create` 照样把**用户的浏览器**导航过去，
+   一句提示都没有。`ext-actions.cjs:190` 的注释写着「地址是否允许由主进程的 net-policy
+   先判」，代码里一次都没调。
+2. **站点黑名单只判「当前标签」**。把某站拉黑后，`edge_page({url:该站})` 仍会导航，
+   之后读才被拒 —— 等于「打开了但读不到」。
+3. **`edge_tabs close` 任何档位都不问**。关标签不可逆（未保存的草稿跟着没），
+   而内置浏览器的 `browse_click` 在「需要确认」档是要问的。
+
+改前实测（`tmp/p2-3-edge-probe.cjs`，隔离数据 + 打桩记录「发出几条指令」）：
+
+```
+B1 网络策略=禁止 + edge_page 带 url      → 放行，发出 1 条 navigate
+B2 网络策略=禁止 + edge_tabs create      → 放行，发出 1 条 tabsCreate
+C1 目标站点被拉黑 + edge_page 带 url     → 放行，发出 1 条 navigate
+C2 目标站点被拉黑 + edge_tabs create     → 放行，发出 1 条 tabsCreate
+E1 ask 档 + edge_tabs close             → 放行，发出 1 条 tabsClose（确认框调用 0 次）
+```
+
+**改了什么**（3 个源文件 + 1 个自检组）：
+
+- `electron/core/tools/edge-shared.cjs`：新增 `targetGuard(url, ctx)` —— 调
+  `net-policy.decide({kind:'webview'})` 与 `ext-sites.check()` 两处**已有**判据，
+  只拦「明确禁止」（用户 2026-11-05 拍板：「每次先问」照旧放行，不替用户决定）。
+  被拦时文案以「错误：」开头 —— 否则 `tools/index.cjs` 会把它记成 `ok:true`。
+- `electron/core/tools/edge-page.cjs`：带 url 时先过 `targetGuard`（不给 url 只读当前页
+  不受影响 —— 没有目标地址可判）。
+- `electron/core/tools/edge-tabs.cjs`：`create` 过 `targetGuard`；`close` 在
+  「需要确认」档走 `approvals.ask` 问一次，「完全访问」档不问（与 `browse_click` 同口径）。
+  扩展侧那两道闸（id 必须在 list 里 + 回读确认）**一个字没动** —— 这里是多问一次，
+  不是替代它们。
+- `scripts/selftest/groups/211-edge-target-guard.mjs`（新增，已注册）：把
+  `edge-shared.runEdge` 打成记录器后走**真实**的 `tools/index.cjs execute()`，
+  判据是「被拦时一条指令都没发出」，不看返回文案。
+
+**为什么工具改成运行时取 `shared.*`**：原来是在 require 时解构
+（`const { runEdge } = require(...)`），自检没法打桩，只能靠读源码正则 ——
+那种判据验的是「代码长什么样」，不是「真的发没发出去」。
+
+**改后实测**（同一条探针）：
+
+```
+B1/B2/C1/C2  → 被拦，发出 0 条（回话以「错误：」开头）
+E1 ask 档 close + 用户拒绝 → 问 1 次，发出 0 条
+     ask 档 close + 用户批准 → 问 1 次，发出 1 条 tabsClose
+F1 full 档 close           → 不问，发出 1 条
+A1-A4 只分析轮 / 只读档 / 本轮禁网 → 仍全部被拦（既有行为没变）
+```
+
+**没改的（有意）**：
+
+- 导航本身**不是**敏感动作，「需要确认」档不弹卡 —— 用户定的「只在敏感动作确认」；
+- `edge_tabs` 整族仍算「会改动」（`list` 在「只分析」轮也被拦）—— 工具粒度有意为之，
+  拆它要动 `registry.cjs` + `index.cjs` 两处判定，属于权限体系扩展，本阶段按拍板不动；
+- `edge_wait` / `edge_read` 是纯读，在「只分析」轮照旧放行。
+
+**验证**：`npm test` 通过 6654 项 / 0 失败（新增 211 组 24 项）；
+`npm run preflight` 全绿（`channelsExpected=175`、`channelsMissing=[]`）。
+
+**遗留**：`edge_*` 仍没有接「确认链」，「每次先问」档位下它不产生任何问询（本次按拍板
+只拦「明确禁止」）；要覆盖「先问」得先给这一族接确认路径。
+
 ### 修：模型调用记录永久查不到「属于哪个任务」（P2）
 
 **问题**：项目里有三个标识各管一段 —— `sessionId`（会话）、`req_*`（一次运行，
