@@ -97,8 +97,29 @@ function scopeCoexist(memory) {
   const again = memory.add({ content: '事实X-同内容', scope: 'project', projectId: 'p' })
   sec('SEC-060', again.deduped === true, '同内容 + 同 scope + 同归属仍判重复（不会每次调用都堆一条）')
 
+  /*
+   * ★ session 维度单独钉（2026-11-05 补）：本条标题是「同名不同 Scope」，但原来只覆盖
+   *   global / project —— 而 session 是**最窄**也最敏感的那一档（漏出去就是跨会话泄漏）。
+   *   与 SEC-065 不重复：那边测 retrieve 会不会带出别人的私事（注入路径），
+   *   这里测 add 时 scope 与 sessionId 是不是**一起**落下、别的会话取不取得到（存储路径）。
+   */
+  const sess = memory.add({ content: '事实X-同内容', scope: 'session', sessionId: 's2' })
+  sec(
+    'SEC-060',
+    sess.ok === true && sess.item?.scope === 'session' && sess.item?.sessionId === 's2',
+    '同内容按会话作用域另建一条时，scope 与 sessionId 一起落下（不是无主影子）',
+  )
+  const inS2 = memory.retrieve({ sessionId: 's2' }).map((i) => i.id)
+  const inS3 = memory.retrieve({ sessionId: 's3' }).map((i) => i.id)
+  sec('SEC-060', inS2.includes(sess.item?.id), '会话 s2 看得见自己那条（功能没被砍掉）')
+  sec('SEC-060', !inS3.includes(sess.item?.id), '会话 s3 看不见 s2 那条（会话私有没漏出去）')
+
   memory.add({ content: '事实Y-另一条', scope: 'session', sessionId: 's1' })
-  sec('SEC-060', memory.list({ includeSuperseded: true }).length === 3, '不同内容按各自作用域共存（不互相覆盖）')
+  sec(
+    'SEC-060',
+    memory.list({ includeSuperseded: true }).length === 4,
+    '不同内容 / 不同归属按各自作用域共存（不互相覆盖）',
+  )
   memory.clear()
 }
 
