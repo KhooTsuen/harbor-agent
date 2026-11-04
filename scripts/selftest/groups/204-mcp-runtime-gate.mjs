@@ -23,6 +23,7 @@ const tools = require(join(ROOT, 'electron/core/tools/index.cjs'))
 const mcpCore = require(join(ROOT, 'electron/core/mcp.cjs'))
 const auditCore = require(join(ROOT, 'electron/core/audit.cjs'))
 const gate = require(join(ROOT, 'electron/core/tools/mcp-gate.cjs'))
+const approvalsCore = require(join(ROOT, 'electron/core/tools/approval.cjs'))
 
 /** 只要带 `mcp__` 前缀就会走 MCP 分支，不需要真注册一个服务器 */
 const MCP_TOOL = 'mcp__selftest__probe'
@@ -32,13 +33,16 @@ const FAKE_RESULT = 'ok-from-fake-mcp'
  * 跑一次 `tools.execute`，MCP 调用与审计都换成探针。
  *
  * @param {object} override 覆盖 ctx 的字段（`permission` / `allowWrite` / `confirm` …）
- * @returns {Promise<{ text: string, calls: number, audits: object[] }>}
+ * @param {string} [toolName] 换一个 MCP 工具名（默认本组那个 `mcp__selftest__probe`）
+ * @returns {Promise<{ text: string, calls: number, audits: object[], asked: number }>}
  *   `calls` = 假 `mcp.callTool` 被真正执行的次数（**本组的主要判据**）
+ *   `asked` = 真的问了几次人（确认粒度看这个）
  */
-async function probe(override = {}) {
+async function probe(override = {}, toolName = MCP_TOOL) {
   const originalCall = mcpCore.callTool
   const originalRecord = auditCore.record
   let calls = 0
+  let asked = 0
   const audits = []
   mcpCore.callTool = async () => {
     calls += 1
@@ -48,15 +52,27 @@ async function probe(override = {}) {
     audits.push(entry)
   }
   try {
-    const text = await tools.execute(MCP_TOOL, { probe: true }, {
+    const ctx = {
       workdir: SANDBOX,
       permission: 'full',
       sessionId: 'selftest-mcp-runtime-gate',
       /* 每次给新的 Map：`approvals.ask` 会按 kind 记忆 2 分钟，复用会让后一个用例白嫖前一个的批准 */
       granted: new Map(),
       ...override,
-    })
-    return { text, calls, audits }
+    }
+    /*
+     * 默认**不给**确认通道（各档位用例靠它钉 fail-closed）；
+     * 要测「问人」的用例自己在 override 里传 confirm —— 这里只负责数次数。
+     */
+    if (typeof override.confirm === 'function') {
+      const real = override.confirm
+      ctx.confirm = async (request) => {
+        asked += 1
+        return real(request)
+      }
+    }
+    const text = await tools.execute(toolName, { probe: true }, ctx)
+    return { text, calls, audits, asked }
   } finally {
     mcpCore.callTool = originalCall
     auditCore.record = originalRecord
@@ -174,8 +190,59 @@ export async function run() {
     `实际：${String(writeDenied).slice(0, 120)}`,
   )
 
-  /* ─────────── ⑤ 判据只有一处（硬约束 9）─────────── */
-  group('204 / ⑤ 判据的唯一真相源')
+  /* ─────────── ⑤ 批准按「服务器」记住，不按「整类 mcp」─────────── */
+  /*
+   * 起因（2026-11-05 实测）：旧代码把 `mcp` 放进 `approval.cjs` 的 `REMEMBERED`，
+   * 于是批准 `mcp__fetch__fetch`（只读抓取）之后，同一 2 分钟窗口内
+   * `mcp__filesystem__write_file`（**另一个服务器、会写盘**）不再问就执行
+   * （探针：asked=0 / calls=1）。卡片上「允许本次」在 MCP 上实际是
+   * 「允许所有外部工具两分钟」。
+   *
+   * ★ 这里的判据同样是**调用次数 + 问人次数**，不是文案：
+   *   同一个 `ctx.granted` Map 里，换一个服务器必须重新问，同一个服务器的工具不再问。
+   */
+  group('204 / ⑤ 一次批准只覆盖同一个服务器的工具（不跨服务器免问）')
+
+  const sharedGranted = new Map()
+  /** 用户批准 —— `probe` 会在这个包装外面数 `asked` 次数 */
+  const approve = async () => true
+  const sameServer = await probe({ permission: 'ask', granted: sharedGranted, confirm: approve })
+  const sameServerAgain = await probe({ permission: 'ask', granted: sharedGranted, confirm: approve })
+  check(
+    '★ 同一服务器的工具：第一次问（asked=1），第二次不再问（asked=0）',
+    sameServer.asked === 1 && sameServerAgain.asked === 0,
+    `第一次 asked=${sameServer.asked}，第二次 asked=${sameServerAgain.asked}`,
+  )
+  check(
+    '两次都真的执行了（不重复打扰 ≠ 不执行）',
+    sameServer.calls === 1 && sameServerAgain.calls === 1,
+    `calls=${sameServer.calls}/${sameServerAgain.calls}`,
+  )
+
+  const otherServer = await probe(
+    { permission: 'ask', granted: sharedGranted, confirm: approve },
+    'mcp__otherserver__write_something',
+  )
+  check(
+    '★ 换一个服务器的工具 → **必须重新问**（跨服务器不许共用批准）',
+    otherServer.asked === 1,
+    `asked=${otherServer.asked}（0 就是漏洞：别的服务器靠前一次批准免问了）`,
+  )
+
+  const keys = [...sharedGranted.keys()]
+  check(
+    '记住的键带服务器标识（不是一个笼统的 `mcp`）',
+    keys.length > 0 && keys.every((k) => k.startsWith('mcp:')),
+    `实际键：${JSON.stringify(keys)}`,
+  )
+  check(
+    '★ 整类 `mcp` 已从 REMEMBERED 移出（忘传 rememberKey 时退回「每次问」，不是「整类免问」）',
+    !approvalsCore.REMEMBERED.has('mcp') && approvalsCore.REMEMBERED.has('write'),
+    `REMEMBERED=${JSON.stringify([...approvalsCore.REMEMBERED])}`,
+  )
+
+  /* ─────────── ⑥ 判据只有一处（硬约束 9）─────────── */
+  group('204 / ⑥ 判据的唯一真相源')
 
   const src = readFileSync(join(ROOT, 'electron/core/tools/index.cjs'), 'utf8')
   check(

@@ -77,6 +77,29 @@ const REASONS = {
 }
 
 /**
+ * 从 `mcp__<server>__<tool>` 里取出**服务器**标识，用来做「记住这次批准」的键。
+ *
+ * ★ 为什么要按服务器、而不是按整类 `mcp`（2026-11-05 实测）：
+ *   旧行为是批准一次就按类记住 2 分钟。实测批准 `fetch`（只读抓取）之后，
+ *   同一窗口内 `mcp__filesystem__write_file`（**另一个服务器、会写盘**）
+ *   不再问就执行（asked=0 / calls=1）—— 卡片上「允许本次」在 MCP 上实际是
+ *   「允许所有外部工具两分钟」。换一个服务器就是换一个第三方进程，
+ *   两边能力没有任何关系，不能共用一次批准。
+ *
+ * ★ 解析不出来时退回**整个名字**（= 按工具记，比按服务器更严）：宁可多问一次，
+ *   也不能让两件不相干的事共用一次批准。方向与 `REMEMBERED` 里那条一致。
+ *
+ * @param {string} name 完整工具名
+ * @returns {string} 形如 `mcp:filesystem`
+ */
+function serverKeyOf(name) {
+  const text = String(name ?? '')
+  const rest = text.startsWith('mcp__') ? text.slice('mcp__'.length) : text
+  const cut = rest.indexOf('__')
+  return `mcp:${cut > 0 ? rest.slice(0, cut) : rest}`
+}
+
+/**
  * 过一遍 MCP 调用前的所有硬约束。
  *
  * @param {{ name: string, args: Record<string, unknown>|undefined, ctx: object,
@@ -132,6 +155,12 @@ async function check({ name, args, ctx = {}, startedAt, audit }) {
     kind: 'mcp',
     name,
     args,
+    /*
+     * ★ 按**服务器**记住，不按整类 `mcp`（2026-11-05 实测的那个漏洞）：
+     *   换成按类的话，批准一条只读抓取就等于批准了另一个服务器的写盘操作。
+     *   键交给 `serverKeyOf` 生成，别在调用方另拼一份（硬约束 9）。
+     */
+    rememberKey: serverKeyOf(name),
     summary: `调用 MCP 工具 ${name}（外部进程，行为不受本应用控制）`,
   })
   /* 严格 `!== true`：`approvals.ask` 可能回 `{ ok: false }` 这类假值，
@@ -142,4 +171,4 @@ async function check({ name, args, ctx = {}, startedAt, audit }) {
   return { approval: true }
 }
 
-module.exports = { check, TEXTS, REASONS, UNKNOWN_CAPABILITY }
+module.exports = { check, TEXTS, REASONS, UNKNOWN_CAPABILITY, serverKeyOf }

@@ -56,8 +56,14 @@ const GRANT_WINDOW_MS = 2 * 60 * 1000
 /**
  * 批过一次、窗口内就不再问的类型。
  * 只放**同一类操作风险同质**的；`risk` / `path` 不放（理由见文件头）。
+ *
+ * ★ `mcp` 2026-11-05 移出（实测漏洞）：按整类记住时，批准 `fetch`（只读抓取）之后
+ *   同一窗口内 `filesystem` 的**写**工具不再问就执行（asked=0 / calls=1）。
+ *   不同的 MCP 服务器是**不同的第三方进程**，不能共用一次批准。现在由
+ *   `tools/mcp-gate.cjs` 显式传 `rememberKey: 'mcp:<服务器>'`（按服务器记）。
+ *   移出而不是留着兜底：调用方忘传时退回的是「每次问」（保守），不是「整类免问」（漏洞）。
  */
-const REMEMBERED = new Set(['write', 'mcp'])
+const REMEMBERED = new Set(['write'])
 
 /**
  * 这一次确认「值不值得记住」。
@@ -76,7 +82,7 @@ const REMEMBERED = new Set(['write', 'mcp'])
 function rememberKeyOf(request) {
   const explicit = String(request?.rememberKey ?? '')
   if (explicit) return explicit
-  /* 老路径：`write` / `mcp` 按 kind 记住（行为与以前逐字节一致） */
+  /* 老路径：`write` 按 kind 记住（行为与以前逐字节一致） */
   const kind = String(request?.kind ?? '')
   return REMEMBERED.has(kind) ? kind : ''
 }
@@ -168,9 +174,11 @@ async function raceConfirm(ctx, request) {
  * @param {object} ctx  工具上下文；`ctx.granted` 是本轮已批准的类型集合（跨轮保留），
  *                      `ctx.confirmTimeoutMs` 可覆盖兜底超时
  * @param {{ kind: string, name?: string, args?: object, summary?: string, scope?: string,
- *           alwaysAsk?: boolean, requestId?: string }} request
+ *           rememberKey?: string, alwaysAsk?: boolean, requestId?: string }} request
  *        会**被就地写入** `requestId` —— 调用方因此也能拿到本次确认的 id
  *        `scope` 说明这次批准管到哪儿（缺省 `once`），原样记进台账
+ *        `rememberKey` 覆盖「记住这次批准」用的键（不给就按 `kind` 查 `REMEMBERED`）；
+ *        MCP 用它按服务器区分：`mcp:<服务器>`（见 `tools/mcp-gate.cjs` 的 `serverKeyOf`）
  *        `alwaysAsk`（由 `ctx.freshApproval` 决定）= 逐次审批，卡片要照它改文案
  * @returns {Promise<boolean>} true = 允许；超时按**拒绝**（false）
  */
@@ -181,7 +189,8 @@ async function ask(ctx, request) {
    * ★ 逐次审批（2026-10-17 第三阶段）：`ctx.freshApproval === true` 时，这一类的
    *   「窗口内不再问」**与**「批过就记住」**都不生效** —— 每次都得真人点头。
    *   用途：Codex 经 MCP 的写入（用户要求「必须分别弹卡，不得利用两分钟记忆自动批准」）。
-   *   ★ 默认未设 = 既有行为**逐字节不变**（`REMEMBERED` 与窗口常量一个都没动）。
+   *   ★ 默认未设 = 既有行为**逐字节不变**（窗口常量与 `REMEMBERED` 里的 `write` 都没动；
+   *     `mcp` 已于 2026-11-05 移出，改为由 `mcp-gate.cjs` 按服务器传 `rememberKey`）。
    */
   const fresh = ctx.freshApproval === true
   /*
