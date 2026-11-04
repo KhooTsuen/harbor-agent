@@ -18,6 +18,8 @@ const log = require('./log.cjs')
 const store = require('./memory-store.cjs')
 const recall = require('./memory-recall.cjs')
 const explain = require('./memory-explain.cjs')
+/* 「这两行是不是同一行改了字」—— 判据在 memory-similarity（与冲突取代同一处） */
+const { pairEdits } = require('./memory-similarity.cjs')
 
 /** 老文件的路径，仅用于迁移 */
 function legacyFile() {
@@ -103,6 +105,13 @@ function read() {
  *   现在的口径：这份纯文本只是**内容**视图（`read()` 本来也只输出内容行），
  *   所以「这行内容还在」= 这条记忆没被删，元数据一个字节都不动（连 updatedAt
  *   都不碰，往返是幂等的）；只有真消失的行才停用，只有新出现的行才新增。
+ *
+ * ★ P1 第二轮（同日）：上面这条只堵住了「保留」的一半 —— 用户**改掉一行里的字**
+ *   时，内容既「消失」又「新出现」，于是照样会走「停用旧的 + 按 fact/global 新增」：
+ *   实测一条 `instruction/session/s1` 改成同义句之后变成 `fact/global`，而在
+ *   另一个会话 s2 里能读到它 —— 该藏的没藏住。现在先让 `pairEdits` 判断「这两行
+ *   是不是同一行改了字」，配上的**原地换内容**（id/type/scope/sessionId/projectId
+ *   全留），配不上的才按老口径处理。
  */
 function write(text) {
   const lines = String(text ?? '')
@@ -127,19 +136,38 @@ function write(text) {
     keptContents.add(line)
   }
 
-  /* 文本里已经没有的 → 停用（不删，仍可追溯） */
+  /* 文本里已经没有的条目 → 先别急着停用，看它是不是只被改了字 */
+  const removed = []
   for (const bucket of byContent.values()) {
-    for (const item of bucket) if (!keptIds.has(item.id)) store.disable(item.id)
+    for (const item of bucket) if (!keptIds.has(item.id)) removed.push(item)
   }
 
-  /* 文本里新出现的行 → 新增（没有任何元数据可继承，按老口径 fact/global） */
+  /* 文本里新出现的行（同一行写了两次时只算一次，add 本来也会 dedupe） */
+  const added = []
   for (const line of lines) {
-    if (keptContents.has(line)) continue
+    if (keptContents.has(line) || added.includes(line)) continue
+    added.push(line)
+  }
+
+  const edited = pairEdits(removed, added)
+  const editedIds = new Set(edited.map((pair) => pair.item.id))
+  const editedLines = new Set(edited.map((pair) => pair.content))
+
+  /* ① 同一行改了字：原地换内容 —— update() 只动 content/updatedAt，归属与类型碰都不碰 */
+  for (const pair of edited) store.update(pair.item.id, { content: pair.content })
+
+  /* ② 真被删掉的行 → 停用（不删，仍可追溯） */
+  for (const item of removed) if (!editedIds.has(item.id)) store.disable(item.id)
+
+  /* ③ 真新出现的行 → 新增（没有任何元数据可继承，按老口径 fact/global） */
+  for (const line of added) {
+    if (editedLines.has(line)) continue
     store.add({ content: line, type: 'fact', source: 'user_explicit' })
   }
 
   return { ok: true, count: lines.length, stats: stats() }
 }
+
 
 /** 追加一条（`remember` 工具走这里） */
 

@@ -25,7 +25,7 @@
  */
 
 import { check, group } from '../harness.mjs'
-import { ROOT, join, require as req, readFileSync, memory } from '../env.mjs'
+import { ROOT, join, require as req, readFileSync, writeFileSync, memory } from '../env.mjs'
 
 const store = req(join(ROOT, 'electron/core/memory-store.cjs'))
 const remember = req(join(ROOT, 'electron/core/tools/remember.cjs'))
@@ -145,6 +145,59 @@ export async function run() {
   check('没被删的行仍然保留原 type', stillPref?.type === 'preference' && stillPref?.status === 'active', `${stillPref?.type}/${stillPref?.status}`)
   const added = afterTrim.find((i) => i.content.includes('这是新加的一行'))
   check('新出现的一行按老口径落成 fact/global', added?.type === 'fact' && added?.scope === 'global', `${added?.type}/${added?.scope}`)
+
+  /* ═══════════ ③b 改文字：元数据原地保留（P1 第二轮，2026-11-05） ═══════════ */
+  group('207 / ③b write() 改掉一行里的字：归属/类型都还在，可见范围不放大')
+
+  memory.clear()
+  const sessLine = '自检 207b：这次对话里说的不吃香菜'
+  await remember.run({ content: sessLine, type: 'instruction', scope: 'session' }, { sessionId: 's207-a' })
+  await remember.run({ content: '自检 207b：项目里不要用 any', type: 'project_rule', scope: 'project' }, { sessionId: 's207-a', projectId: 'proj-207' })
+
+  const origin = rawItems().find((i) => i.content === sessLine)
+  memory.write(memory.read().replace('不吃香菜', '不吃香菜和葱'))
+  const edited = rawItems().find((i) => i.content.includes('不吃香菜和葱'))
+
+  check('★ 改字是原地改（id 没变），不是「停用旧的 + 新增一条」', edited?.id === origin?.id, `${origin?.id} → ${edited?.id}`)
+  check('★ type 没被冲成 fact', edited?.type === 'instruction', String(edited?.type))
+  check('★ scope / sessionId 原样保留', edited?.scope === 'session' && edited?.sessionId === 's207-a', `${edited?.scope} / ${edited?.sessionId}`)
+  check(
+    '★★ 别的会话读不到改后这条（可见范围没有被放大）',
+    store.list({ sessionId: 's207-b', projectId: '' }).filter((i) => i.content.includes('不吃香菜和葱')).length === 0,
+    's207-b 里读到了',
+  )
+  check('没有多出一份 fact/global 的影子条目', rawItems().filter((i) => i.content.includes('不吃香菜')).length === 1, String(rawItems().filter((i) => i.content.includes('不吃香菜')).length))
+
+  /* 真删一行 + 真加一行无关的 → 仍然走老口径：停用 + fact/global 新增 */
+  memory.clear()
+  await remember.run({ content: '自检 207b：用 pnpm', type: 'preference', scope: 'global' }, { sessionId: 's207-a' })
+  memory.write('自检 207b：日志在 data/logs 下')
+  const swappedRows = rawItems()
+  check('★ 删掉的那条被停用（可追溯）', swappedRows.find((i) => i.content === '自检 207b：用 pnpm')?.status === 'disabled', '')
+  const brandNew = swappedRows.find((i) => i.content.includes('日志在'))
+  check('★ 无关的新行按老口径 fact/global，不继承任何旧归属', brandNew?.type === 'fact' && brandNew?.scope === 'global', `${brandNew?.type}/${brandNew?.scope}`)
+
+  /* 库里本来就有两条同内容、不同 scope（导入/历史数据才造得出来）—— 各自改字不能串 */
+  memory.clear()
+  memory.add({ content: '自检 207b：提交前先跑测试', type: 'fact', scope: 'global' })
+  {
+    const file = store.filePath()
+    const data = JSON.parse(readFileSync(file, 'utf8'))
+    const base = data.items[0]
+    data.items.push({ ...base, id: 'mem_207b_project', seq: (base.seq ?? 0) + 1, type: 'project_rule', scope: 'project', projectId: 'proj-207' })
+    writeFileSync(file, JSON.stringify(data, null, 2), 'utf8')
+  }
+  memory.write(
+    memory
+      .read()
+      .split('\n')
+      .map((line, i) => `${line}${i === 0 ? '（全局适用）' : '（项目适用）'}`)
+      .join('\n'),
+  )
+  const twinGlobal = rawItems().find((i) => i.content.includes('（全局适用）'))
+  const twinProject = rawItems().find((i) => i.content.includes('（项目适用）'))
+  check('★ 同内容两条各改各的：全局那条仍是 global', twinGlobal?.scope === 'global', String(twinGlobal?.scope))
+  check('★ 同内容两条各改各的：项目那条仍是 project（没被顶成全局）', twinProject?.scope === 'project' && twinProject?.projectId === 'proj-207', `${twinProject?.scope}/${twinProject?.projectId}`)
 
   /* ═══════════ ④ 边界：空文本 = 全部停用（数据搬运/清空旧整篇走这条路） ═══════════ */
   group('207 / ④ write("") 仍然把记忆清空（停用而非删除）')
