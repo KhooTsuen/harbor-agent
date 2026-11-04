@@ -37,13 +37,77 @@ const container = document.createElement('div')
 const root = createRoot(container)
 document.body.append(container)
 
+/*
+ * ★ jsdom 没有布局引擎：`document.documentElement.clientWidth / clientHeight` 都是 0，
+ *   所有 `getBoundingClientRect()` 也返回全 0 的矩形。
+ *
+ *   而 `Popover`（floating-ui）拿这两个量推「视口」和「锚点可见性」：
+ *   视口被算成 0×0 → `hide()` 中间件报 `referenceHidden` → `Popover` 里的
+ *   `if (open && referenceHidden) onOpenChange(false)` 立刻把浮层关掉。
+ *
+ *   于是这些用例**能不能过全看竞态**：浮层先渲染出来就绿，hide 先到就红。
+ *   2026-11-04 的 preflight 就是红在这一片上（单跑 12 轮全绿、全量跑会红）。
+ *
+ *   补法照 `src/components/ui/__tests__/popover.test.tsx`（那里是浮层的真相源）：
+ *   视口补成 jsdom 默认窗口尺寸，矩形给「视口同款」兜底，面板宽高走 offsetWidth/Height。
+ *   这里不钉像素位置，所以不需要逐元素塞矩形。
+ */
+const FALLBACK = {
+  width: 1024,
+  height: 768,
+  left: 0,
+  top: 0,
+  right: 1024,
+  bottom: 768,
+  x: 0,
+  y: 0,
+  toJSON: () => ({}),
+} as DOMRect
+
+/* offsetWidth / offsetHeight 是 defineProperty 盖上去的，restoreAllMocks 管不到 ——
+   先存下 jsdom 原本的描述符，收尾时原样还回去（别 delete，那会连 jsdom 的 getter 一起没了） */
+const OFFSET_BEFORE = {
+  width: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth'),
+  height: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight'),
+}
+
 beforeEach(() => {
   h.models = ['first-model', 'chosen-model']
   toast.calls = []
+
+  Object.defineProperty(document.documentElement, 'clientWidth', {
+    value: 1024,
+    configurable: true,
+  })
+  Object.defineProperty(document.documentElement, 'clientHeight', {
+    value: 768,
+    configurable: true,
+  })
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => FALLBACK)
+  /* floating-ui 量面板宽高走 offsetWidth / offsetHeight，jsdom 里恒为 0 */
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get: () => 320,
+  })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get: () => 240,
+  })
 })
 
 afterEach(() => {
   act(() => root.render(null))
+  vi.restoreAllMocks()
+  /* 把 offsetWidth / offsetHeight 的描述符原样还回去（见上面 OFFSET_BEFORE 的说明） */
+  for (const [key, descriptor] of [
+    ['offsetWidth', OFFSET_BEFORE.width],
+    ['offsetHeight', OFFSET_BEFORE.height],
+  ] as const) {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, key, descriptor)
+    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[key]
+  }
+  /* 清掉浮层残留，免得下一个用例看到上一个的门 */
+  document.body.querySelectorAll('[role="menu"]').forEach((el) => el.remove())
 })
 
 function renderPicker(props: Partial<ComponentProps<typeof CollabPicker>> = {}): void {

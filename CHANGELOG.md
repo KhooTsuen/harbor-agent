@@ -224,6 +224,38 @@
 
 **验证**：`node scripts/check-rules.mjs` 11 项全 ✓（新检查 0 违规）；`node scripts/test-rules.mjs` 56 通过 / 0 失败；`npm run package` 跑通，期间 `E:\Harbor-Dev` 的 5 个进程 PID 全程未变（没再被杀）。
 
+### 浮层测试缺 jsdom 布局桩：全量跑时随机红（P0 收尾核对查出来的「偶发非零退出码」）
+
+**起因**：C-1 修复期间出现过一次「测试输出看着全绿、进程退出码却非 0」。当时按偶发处理，
+没查明。这轮把它查到底：翻出当轮的 `tmp/p0-testunit.log`，**不是进程收尾问题** ——
+里面明明白白写着 `Tests 1 failed | 2108 passed`，挂的是
+`src/components/chat/__tests__/collabPicker.test.tsx > 单模型状态显示供应商和当前供应商的模型列表`。
+（当初误判，是因为 `preflight` 的日志尾部被截掉了约 50 行，正好丢了 `Test Files / Duration`
+那两行汇总 —— 于是剩下的片段看起来「每条都是 ✓」。）
+
+**根因**：`CollabPicker` 的门是 `Popover`（floating-ui）。jsdom 没有布局引擎，
+`document.documentElement.clientWidth / clientHeight` 都是 **0**，floating-ui 据此把视口
+算成 0×0，`hide()` 中间件于是报 `referenceHidden`，而 `Popover` 里有
+`if (open && referenceHidden) onOpenChange(false)` —— **门一开就被自己关掉**。
+能不能读到门里的内容全看竞态：门先渲染出来就绿，`hide()` 先到就红。
+`src/components/ui/__tests__/popover.test.tsx` 早就知道这件事（第 96-129 行打了补丁），
+`collabPicker.test.tsx` 没打。
+
+**改了什么**（只动测试，产品代码一字未改）
+
+- `src/components/chat/__tests__/collabPicker.test.tsx`：`beforeEach` 补上 jsdom 布局桩
+  （`clientWidth/Height` 补成 1024×768、`getBoundingClientRect` 给视口同款兜底、
+  面板宽高走 `offsetWidth/Height`），`afterEach` 把 `offsetWidth/Height` 的描述符
+  **原样还回去**（`vi.restoreAllMocks()` 管不到 `defineProperty` 盖上去的访问器；
+  直接 `delete` 会把 jsdom 原本的 getter 一起没了），并清掉残留的 `[role="menu"]`。
+  桩的形状照 `popover.test.tsx`，不另造一套。
+- `scripts/selftest/groups/206-sensitive-grant-record.mjs`：补一组
+  「同一 ctx 上的并发调用」判据（读到次数 ≤ 问到次数、跑完不留可用授权、无身份放行不落盘）。
+
+**验证**：改前 —— 全量 `test:unit` 3 次里红 2 次（1 failed / 3 failed），单跑 12 轮全绿
+（所以「单跑全绿」不算证据）；改后 —— 全量连跑 3 轮 **229 文件 / 2109 用例全过**，单跑 10 轮全绿。
+内核自检 6541 项通过 / 0 失败。
+
 ## [1.35.0] — 2026-11-04 · 折叠治本（原话不再被截断）+ Edge 侧边栏对话流对齐主窗口 + 通知中心 + 发版提速
 
 ### 用户原话不再被折叠截断（治本：程序握着全文，就不该让用户手打一遍）

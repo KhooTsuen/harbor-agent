@@ -18,6 +18,7 @@ import { check, group } from '../harness.mjs'
 import { SANDBOX, join } from '../env.mjs'
 import {
   OUTSIDE,
+  SECRET,
   capability,
   legacy,
   live,
@@ -26,6 +27,7 @@ import {
   reset,
   rules,
   seed,
+  tools,
 } from '../lib/sensitive-kit.mjs'
 
 export async function run() {
@@ -234,6 +236,53 @@ export async function run() {
     readonlyOutside.asked === 1 && readonlyOutside.text.includes('outside'),
     `问了 ${readonlyOutside.asked} 次｜${readonlyOutside.text.slice(0, 70)}`,
   )
+
+  /* ═══════════ ⑨ 一个回合里多个调用共用同一个 ctx ═══════════ */
+  group('206 / ⑨ 同一 ctx 上的并发调用：不误放行、也不留下授权')
+
+  /*
+   * 真实链路里一个回合的工具调用共用**一个** ctx，`approvedPaths` 就挂在它上面
+   * （`tools/permission.cjs` 的 retryOnce 在重试前后成对加删）。
+   *
+   * 这里只钉**一定成立**的性质，不钉「两个调用都一次成功」：并发时那份名单是
+   * 同一个数组，先结束的调用会把路径 splice 掉，另一个可能因此被重新问一次 ——
+   * 那是**更严**的方向（fail-closed），不是漏洞；拿它当判据只会造一条偶发红的测试。
+   */
+  reset()
+  let sharedAsks = 0
+  const sharedCtx = {
+    workdir: SANDBOX,
+    permission: 'ask',
+    granted: new Map(),
+    confirm: async () => {
+      sharedAsks += 1
+      return true
+    },
+  }
+  const [readEnv, readOutsideEnv] = await Promise.all([
+    tools.execute('read_file', { path: join(SANDBOX, '.env') }, sharedCtx),
+    tools.execute('read_file', { path: join(OUTSIDE, '.env') }, sharedCtx),
+  ])
+  const hits = [readEnv, readOutsideEnv].filter((text) => String(text).includes(SECRET)).length
+  check(
+    '★ 并发下「读到」的次数不超过「问到」的次数（没有一条静默放行）',
+    hits > 0 && hits <= sharedAsks,
+    `问到 ${sharedAsks} 次｜读到 ${hits} 次`,
+  )
+
+  /* 最硬的那条：跑完之后同一个 ctx 上不能还留着能用的放行 */
+  sharedAsks = 0
+  sharedCtx.confirm = async () => {
+    sharedAsks += 1
+    return false
+  }
+  const reuse = String(await tools.execute('read_file', { path: join(SANDBOX, '.env') }, sharedCtx))
+  check(
+    '★ 并发跑完后不留可用授权（再读仍要问人，拒绝后读不到）',
+    sharedAsks === 1 && !reuse.includes(SECRET),
+    `又问了 ${sharedAsks} 次｜${reuse.split('\n')[0].slice(0, 60)}`,
+  )
+  check('★ 无身份调用的放行一条都没落盘', live().length === 0, `剩 ${live().length} 条`)
 
   /* 收尾：别把授权留给后面的组 */
   reset()
