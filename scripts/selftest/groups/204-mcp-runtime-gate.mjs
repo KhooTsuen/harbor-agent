@@ -34,11 +34,12 @@ const FAKE_RESULT = 'ok-from-fake-mcp'
  *
  * @param {object} override 覆盖 ctx 的字段（`permission` / `allowWrite` / `confirm` …）
  * @param {string} [toolName] 换一个 MCP 工具名（默认本组那个 `mcp__selftest__probe`）
+ * @param {Record<string, unknown>} [args] 这一组工具参数（默认 `{ probe: true }`）
  * @returns {Promise<{ text: string, calls: number, audits: object[], asked: number }>}
  *   `calls` = 假 `mcp.callTool` 被真正执行的次数（**本组的主要判据**）
  *   `asked` = 真的问了几次人（确认粒度看这个）
  */
-async function probe(override = {}, toolName = MCP_TOOL) {
+async function probe(override = {}, toolName = MCP_TOOL, args = { probe: true }) {
   const originalCall = mcpCore.callTool
   const originalRecord = auditCore.record
   let calls = 0
@@ -71,7 +72,7 @@ async function probe(override = {}, toolName = MCP_TOOL) {
         return real(request)
       }
     }
-    const text = await tools.execute(toolName, { probe: true }, ctx)
+    const text = await tools.execute(toolName, args, ctx)
     return { text, calls, audits, asked }
   } finally {
     mcpCore.callTool = originalCall
@@ -190,33 +191,52 @@ export async function run() {
     `实际：${String(writeDenied).slice(0, 120)}`,
   )
 
-  /* ─────────── ⑤ 批准按「服务器」记住，不按「整类 mcp」─────────── */
+  /* ─────────── ⑤ 一次批准只覆盖这一次调用（不按服务器、不按整类）─────────── */
   /*
-   * 起因（2026-11-05 实测）：旧代码把 `mcp` 放进 `approval.cjs` 的 `REMEMBERED`，
-   * 于是批准 `mcp__fetch__fetch`（只读抓取）之后，同一 2 分钟窗口内
-   * `mcp__filesystem__write_file`（**另一个服务器、会写盘**）不再问就执行
-   * （探针：asked=0 / calls=1）。卡片上「允许本次」在 MCP 上实际是
-   * 「允许所有外部工具两分钟」。
-   *
-   * ★ 这里的判据同样是**调用次数 + 问人次数**，不是文案：
-   *   同一个 `ctx.granted` Map 里，换一个服务器必须重新问，同一个服务器的工具不再问。
+   * 两轮实测结论：① 按**整类**记 → 跨服务器免问（上一轮修了）；② 按**服务器**记
+   * （`dc9a3f2`）→ 同服务器内仍然整台放行：批准 `read_file` 之后 `write_file` /
+   * `delete_file` 都 asked=0，连同一个 `read_file` 换个目标（`a.txt` → `~/.ssh/id_rsa`）
+   * 也 asked=0。能力分级不可靠时，唯一站得住的粒度是**这一次调用**。
+   * ★ 判据是**问人次数**不是文案；「多问一次」不等于「不执行」（calls 仍是 1）。
    */
-  group('204 / ⑤ 一次批准只覆盖同一个服务器的工具（不跨服务器免问）')
+  group('204 / ⑤ 一次批准只覆盖它显示的那一次调用（同服务器换工具/换参数都要再问）')
 
   const sharedGranted = new Map()
   /** 用户批准 —— `probe` 会在这个包装外面数 `asked` 次数 */
   const approve = async () => true
-  const sameServer = await probe({ permission: 'ask', granted: sharedGranted, confirm: approve })
-  const sameServerAgain = await probe({ permission: 'ask', granted: sharedGranted, confirm: approve })
+  const first = await probe({ permission: 'ask', granted: sharedGranted, confirm: approve })
+  const again = await probe({ permission: 'ask', granted: sharedGranted, confirm: approve })
   check(
-    '★ 同一服务器的工具：第一次问（asked=1），第二次不再问（asked=0）',
-    sameServer.asked === 1 && sameServerAgain.asked === 0,
-    `第一次 asked=${sameServer.asked}，第二次 asked=${sameServerAgain.asked}`,
+    '★ 同一个只读工具连调两次 → 问 2 次（MCP 不记批准）',
+    first.asked === 1 && again.asked === 1,
+    `第一次 asked=${first.asked}，第二次 asked=${again.asked}（0 就是旧行为：靠上次批准免问）`,
   )
   check(
-    '两次都真的执行了（不重复打扰 ≠ 不执行）',
-    sameServer.calls === 1 && sameServerAgain.calls === 1,
-    `calls=${sameServer.calls}/${sameServerAgain.calls}`,
+    '两次都真的执行了（多问一次 ≠ 不执行）',
+    first.calls === 1 && again.calls === 1,
+    `calls=${first.calls}/${again.calls}`,
+  )
+
+  const sameServerWrite = await probe(
+    { permission: 'ask', granted: sharedGranted, confirm: approve },
+    'mcp__selftest__write_something',
+  )
+  check(
+    '★ 同一服务器换一个工具（读 → 写）→ **必须重新问**',
+    sameServerWrite.asked === 1,
+    `asked=${sameServerWrite.asked}（0 就是漏洞：批了一个读，顺带把写也放行了）`,
+  )
+
+  const otherArgs = await probe(
+    { permission: 'ask', granted: sharedGranted, confirm: approve },
+    MCP_TOOL,
+    /* 同一工具、换一组参数（目标换成一个完全不同的地方） */
+    { probe: true, path: 'E:/somewhere/else/id_rsa' },
+  )
+  check(
+    '★ 同一个工具换一组参数 → 仍然要问（参数不同就是另一次操作）',
+    otherArgs.asked === 1,
+    `asked=${otherArgs.asked}`,
   )
 
   const otherServer = await probe(
@@ -224,21 +244,33 @@ export async function run() {
     'mcp__otherserver__write_something',
   )
   check(
-    '★ 换一个服务器的工具 → **必须重新问**（跨服务器不许共用批准）',
+    '★ 换一个服务器的工具 → 也要重新问（跨服务器不许共用批准）',
     otherServer.asked === 1,
-    `asked=${otherServer.asked}（0 就是漏洞：别的服务器靠前一次批准免问了）`,
+    `asked=${otherServer.asked}`,
   )
 
   const keys = [...sharedGranted.keys()]
   check(
-    '记住的键带服务器标识（不是一个笼统的 `mcp`）',
-    keys.length > 0 && keys.every((k) => k.startsWith('mcp:')),
+    '★ 内核**没有**为 MCP 记住任何批准（`ctx.granted` 里一个 mcp 键都没有）',
+    keys.every((k) => !k.startsWith('mcp')),
     `实际键：${JSON.stringify(keys)}`,
   )
   check(
-    '★ 整类 `mcp` 已从 REMEMBERED 移出（忘传 rememberKey 时退回「每次问」，不是「整类免问」）',
+    '★ 整类 `mcp` 早已从 REMEMBERED 移出（忘传 rememberKey 时退回「每次问」，不是「整类免问」）',
     !approvalsCore.REMEMBERED.has('mcp') && approvalsCore.REMEMBERED.has('write'),
     `REMEMBERED=${JSON.stringify([...approvalsCore.REMEMBERED])}`,
+  )
+
+  /*
+   * 卡片文案与内核行为必须一致（硬约束 9：同一个约定只写一处，另一处**对着它**钉）。
+   * 内核已经完全不记 MCP 的批准，界面就绝不能说「同意后本轮内同类不再询问」。
+   */
+  const confirmSrc = readFileSync(join(ROOT, 'src/stores/thread/confirmEvents.ts'), 'utf8')
+  check(
+    '★ 界面只在 `write` 上说「不再询问」，MCP 走的是「只对这一次有效」',
+    /kind === 'write' && event\.alwaysAsk !== true/.test(confirmSrc) &&
+      confirmSrc.includes('「这一次」的同意只对这一次调用有效'),
+    'confirmEvents.ts 里的 remembered / perCall 判据要和内核对齐',
   )
 
   /* ─────────── ⑥ 判据只有一处（硬约束 9）─────────── */

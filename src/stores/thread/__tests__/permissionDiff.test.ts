@@ -98,3 +98,77 @@ describe('AG-036 / 确认事件带着 diff 进弹窗', () => {
     expect(useUIStore.getState().permission?.title).toContain('执行命令')
   })
 })
+
+/* ══════════════════════════════════════════════════════════════
+   卡片文案 ↔ 内核行为对齐（2026-11-05）
+
+   内核 `mcp-gate.cjs` 现在**完全不记** MCP 的批准（能力分级不可靠，
+   一次确认只能授权它显示的那一次调用）；`approval.cjs` 的 `REMEMBERED`
+   里也只剩 `write`。卡片上要是还写着「同意后本轮内同类操作不再询问」，
+   那就是界面在承诺一件内核不会做的事 —— 用户按这句话预期不再被问，
+   结果每次都要点，会以为卡坏了。
+
+   这条必须测「界面真的渲染出的那句话」，不能只测常量：
+   把 `perCall` 那行删掉，只测内核的话这里照样绿（就是那种假绿）。
+   ══════════════════════════════════════════════════════════════ */
+
+describe('2026-11-05 / 确认卡说的「会不会再问」必须与内核一致', () => {
+  it('★ MCP 的卡：不承诺「不再询问」，明说只对这一次有效', () => {
+    act(() => {
+      handleStreamEvent(
+        {
+          type: 'confirm_request',
+          confirmId: 'cfm_mcp',
+          toolName: 'mcp__filesystem__read_file',
+          summary: '调用 MCP 工具 mcp__filesystem__read_file',
+          args: { path: 'a.txt' },
+          kind: 'mcp',
+        },
+        state(),
+      )
+    })
+    const text = useUIStore.getState().permission?.description ?? ''
+    expect(text).not.toContain('不再询问')
+    expect(text).toContain('只对这一次调用有效')
+  })
+
+  it('write 的卡仍然承诺「本轮内同类不再询问」（那一档内核确实会记）', () => {
+    act(() => {
+      handleStreamEvent(
+        {
+          type: 'confirm_request',
+          confirmId: 'cfm_write',
+          toolName: 'write_file',
+          summary: '写文件 README.md',
+          args: { path: 'README.md' },
+          kind: 'write',
+        },
+        state(),
+      )
+    })
+    const text = useUIStore.getState().permission?.description ?? ''
+    expect(text).toContain('本轮')
+    expect(text).toContain('不再询问')
+    expect(text).not.toContain('只对这一次调用有效')
+  })
+
+  it('alwaysAsk（Codex 经 MCP 的写路径）仍然说「每一次都会单独询问」', () => {
+    act(() => {
+      handleStreamEvent(
+        {
+          type: 'confirm_request',
+          confirmId: 'cfm_codex',
+          toolName: 'write_file',
+          summary: '写文件 README.md',
+          args: { path: 'README.md' },
+          kind: 'write',
+          alwaysAsk: true,
+        },
+        state(),
+      )
+    })
+    const text = useUIStore.getState().permission?.description ?? ''
+    expect(text).toContain('每一次都会单独询问')
+    expect(text).not.toContain('本轮')
+  })
+})

@@ -147,12 +147,21 @@ export function askPermissionFor(event: Record<string, unknown>): void {
   const risk = (event.risk ?? null) as { level?: string } | null
   const high = risk?.level === 'high'
   /*
-   * 和 core/tools/approval.cjs 的 REMEMBERED 保持一致。
+   * 和 core/tools/approval.cjs 的 REMEMBERED 保持一致（那里只有 `write`）。
+   * ★ `mcp` 2026-11-05 第二轮移出：内核已经**完全不记** MCP 的批准
+   *   （能力分级不可靠，一次确认只能授权它显示的那一次调用）。这里要是还留着
+   *   `mcp`，卡片会写着「同意后，本轮内同类操作不再询问」—— 与实际行为相反，
+   *   用户按那句话预期不会再被问，结果每次都要点，反而以为卡坏了。
    * ★ 但 `alwaysAsk`（Codex 经 MCP 的写路径，逐次审批）时**必须为 false** ——
    *   那种情况卡片上说「本轮内同类不再询问」是**反的**（用户第 3 条）。
    */
-  const remembered = (kind === 'write' || kind === 'mcp') && event.alwaysAsk !== true
+  const remembered = kind === 'write' && event.alwaysAsk !== true
   const alwaysAsk = event.alwaysAsk === true
+  /*
+   * MCP 的「不会记住」要说在明面上：它和 `alwaysAsk` 是两回事
+   * （后者是 Codex 写路径的逐次审批标志），但卡片上要传达的是同一句话。
+   */
+  const perCall = kind === 'mcp' && !alwaysAsk
 
   useUIStore.getState().askPermission({
     /*
@@ -168,6 +177,7 @@ export function askPermissionFor(event: Record<string, unknown>): void {
     description: [
       String(event.summary ?? ''),
       remembered ? '同意后，「本轮」内同类操作不再询问。' : '',
+      perCall ? '外部工具不受本应用控制，「这一次」的同意只对这一次调用有效（下次还会问）。' : '',
       alwaysAsk
         ? '这是外部 Codex 经 MCP 发起的写入，「每一次都会单独询问」（不会记住本次同意）。'
         : '',

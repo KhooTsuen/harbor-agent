@@ -1,5 +1,58 @@
 ## [未发布]
 
+### 修：MCP 批准一次会把同服务器的写/删/换目标一起放行（P1）
+
+上一笔（`dc9a3f2`）把「记住批准」的单位从整类 `mcp` 收到**按服务器**。
+探针实测这一笔之前的真实行为（假 MCP + 计数器，判据是 `calls` / `asked` 次数）：
+
+```
+批准 mcp__filesystem__read_file 之后，同一 2 分钟窗口内
+  mcp__filesystem__write_file   → calls=1 asked=0   ← 免问就执行
+  mcp__filesystem__delete_file  → calls=1 asked=0
+  read_file 换目标 a.txt → ~/.ssh/id_rsa → asked=0
+```
+
+一个服务器内部，「读一个文件」和「删一个文件」的能力差得比两个服务器还远 ——
+按服务器记依然把卡片上那句「允许本次」放大成了「允许这台服务器的所有工具、所有参数」。
+用户点的是「这一次」，拿到的却是「这一类」。
+
+修法（MCP 能力分级不可靠 → 粒度收到**这一次调用**）：
+
+- `mcp-gate.cjs`：**不再传** `rememberKey`。`approval.cjs` 的 `REMEMBERED` 里本来
+  就没有 `mcp`，所以忘传时退回的是「每次都问」（保守方向），不是「整类免问」（漏洞方向）。
+  `serverKeyOf` 保留（「这是哪个服务器」仍有人问），但注释里写明**别拿它拼 `rememberKey`**。
+- `src/stores/thread/confirmEvents.ts`：`remembered` 收回到 `kind === 'write'`；
+  MCP 的卡改说「『这一次』的同意只对这一次调用有效（下次还会问）」。
+  界面与内核不许各说一套（AGENT.md 硬约束 9）。
+- 自检 `204` ⑤ 重写为 8 条断言：同服务器换工具要问、同一工具换参数要问、
+  换服务器要问、连调两次问两次、`ctx.granted` 里一条 `mcp` 键都没有、
+  界面文案只在 `write` 上说「不再询问」。
+
+**改后实测（同一探针）**：① 三条从 asked=0 → asked=1；② 换目标从 0 → 1；
+③ 跨服务器仍是 1；④ `readonly` / `allowWrite:false` / `allowNetwork:false` /
+`allowTools:false` 仍全部 calls=0，`full` 仍 calls=1 asked=0（**语义一字未改**）；
+⑤ 用户拒绝后同服务器另一工具仍要问。
+
+**代价说清楚**：同一个只读工具连调 5 次现在会问 5 次。这是刻意的 ——
+一次确认不该自动授权别的操作。要减少打扰，正确方向是能力分级（未实施）。
+
+### 修：设置页撤掉没有读者的「服务器工具权限」下拉
+
+`server.permission` 在内核**没有任何读者**（`config-normalize-parts.cjs` 存下来，
+`mcp-gate.cjs` 只看全局 `ctx.permission`）。选了「只读」不会让那台服务器变只读 ——
+用户以为限住了，实际什么都没变。
+
+- `ServerIsolation.tsx`：撤掉那个下拉，原地换成一行实话（每次调用单独问，
+  能不能调用由全局「工具权限」决定）。撤掉而不是灰掉 —— 灰掉仍在暗示「功能存在」。
+- **不动数据**：老配置里的 `permission` 字段保留读入、不回写、不迁移。
+  等哪天内核真的按它判了，旧值立刻有意义。
+
+验证：`node tmp/mcp-granularity-probe.mjs`（改前/改后各一次，见上）；
+`node scripts/selftest.mjs` 自检 **6602 项全过**（组 204 单独跑 39 项全过）；
+`npm run typecheck` 0 错误；`npm run lint` 0 错误（2 条既有 warning）；
+`npm run lint:kernel` 410 个 `.cjs` 无未定义标识符；`npm run check:lines` 无文件超 300 行。
+
+
 ### 修：批准一次 MCP 工具会让另一个服务器免问（P1）
 
 `approval.cjs` 的 `REMEMBERED` 原来含 `'mcp'` —— 批准是**按整类**记住 2 分钟的。

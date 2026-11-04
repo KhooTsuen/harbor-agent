@@ -101,24 +101,24 @@ export function ServerIsolation({
           />
           ms
         </label>
-
-        <label className="flex items-center gap-1.5 text-2xs text-fg-secondary">
-          工具权限
-          <select
-            value={server.permission ?? 'ask'}
-            onChange={(e) =>
-              onChange(server.id, {
-                permission: e.target.value as McpServerConfig['permission'],
-              })
-            }
-            className="rounded-sm border border-line-subtle bg-bg-raised px-1.5 py-0.5 text-2xs text-fg-primary focus:outline-none"
-          >
-            <option value="readonly">只读</option>
-            <option value="ask">每次问</option>
-            <option value="full">完全访问</option>
-          </select>
-        </label>
       </div>
+
+      {/*
+       * ★ 这里原来有一个「工具权限」下拉（只读 / 每次问 / 完全访问），2026-11-05 撤掉。
+       *   原因：`server.permission` 在内核**没有任何读者** —— `config-normalize-parts.cjs`
+       *   会把它归一化存下来，但 `mcp-gate.cjs` 只看全局 `ctx.permission`，全仓再无一处读它。
+       *   也就是说选了「只读」**不会**让这台服务器变只读，用户以为已经限住了，实际什么都没变。
+       *
+       *   ★ 没有改成「禁用」而是直接撤掉：灰掉的下拉仍然在暗示「这个功能存在、只是暂时不能用」，
+       *     它会继续诱导用户以为选过什么。这里留一行实话更省事。
+       *   ★ 老配置里的 `permission` 字段**保留读入、不回写、不迁移** —— 用户之前存的
+       *     值原样躺在 config.json 里，等哪天内核真的按它判了，旧值立刻有意义。
+       *   ★ 真实生效的规则只有两条：全局工具权限档（设置 → 权限与安全）+ 每一次调用单独确认。
+       */}
+      <p className="mt-2 text-2xs leading-relaxed text-fg-tertiary">
+        外部工具没法预先判断「只读还是写入」，所以服务器不再单独设权限档：
+        每次调用都会单独问一次，能不能调用由全局「工具权限」那一档决定。
+      </p>
     </div>
   )
 }
