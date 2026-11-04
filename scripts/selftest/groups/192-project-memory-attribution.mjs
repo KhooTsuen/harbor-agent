@@ -159,8 +159,17 @@ export async function run() {
 
   group('项目记忆归属 / ⑥ 不按内容或会话猜归属（源码守卫）')
   const storeSrc = read('electron/core/memory-store.cjs')
-  check('★ 落盘归属只来自调用方给的 projectId', storeSrc.includes("projectId: String(input.projectId ?? '')"))
-  check('★ 没有拿 sessionId / 内容去倒推 projectId', !/projectId\s*[:=][^\n]{0,30}(sessionId|content)/.test(storeSrc))
+  /* 归属归一化在 2026-11-05 挪进了 memory-schema 的 wantedOf（判重与落库必须用同一份），
+     守卫跟着搬 —— 断言的语义不变：归属只来自调用方，不按会话/内容倒推。
+     只取 wantedOf 的函数体来看：文件头注释/类型注解里出现 sessionId 不算倒推。 */
+  const schemaSrc = read('electron/core/memory-schema.cjs')
+  const wantedBody = (schemaSrc.match(/function wantedOf[\s\S]*?\n}/) ?? [''])[0]
+  check('★ 落盘归属只来自调用方给的 projectId', wantedBody.includes("projectId: String(input.projectId ?? '')"), wantedBody.slice(0, 80))
+  check('★ 没有拿 sessionId / 内容去倒推 projectId', wantedBody !== '' && !/projectId\s*[:=][^\n]{0,30}(sessionId|content)/.test(wantedBody))
+  check(
+    '★ 落库那条真的用这份归一化结果（不是自己又算一遍）',
+    storeSrc.includes('const wanted = wantedOf(content, input)') && storeSrc.includes('projectId: wanted.projectId'),
+  )
   check(
     '★ fail-closed 的判据没被改松',
     read('electron/core/memory-scope.cjs').includes(

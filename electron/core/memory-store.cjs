@@ -27,6 +27,8 @@ const {
   SOURCES,
   STATUSES,
   looksLikeSecret,
+  sameEntry,
+  wantedOf,
   filePath,
   newId,
   nextSeq,
@@ -44,11 +46,15 @@ function load() {
   }
   try {
     const parsed = JSON.parse(raw)
-    const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && typeof i.content === 'string').map(normalizeItem) : []
+    const items = Array.isArray(parsed.items)
+      ? parsed.items.filter((i) => i && typeof i.content === 'string').map(normalizeItem)
+      : []
     return { version: 1, items }
   } catch (error) {
     /* 解不开：先留一份 —— 不然接下来任何一次 add/touch 写盘都会把它盖成空列表 */
-    log.error(`记忆文件解不开（已另存 ${keepCorruptCopy(filePath())}）：${error instanceof Error ? error.message : error}`)
+    log.error(
+      `记忆文件解不开（已另存 ${keepCorruptCopy(filePath())}）：${error instanceof Error ? error.message : error}`,
+    )
     return { version: 1, items: [] }
   }
 }
@@ -79,10 +85,10 @@ function add(input) {
 
   const data = load()
 
-  /* 完全相同的内容直接当重复 */
-  const duplicate = data.items.find(
-    (item) => item.status === 'active' && item.content.trim() === content,
-  )
+  /* 同一条记忆的判据与归一化都只有一处：memory-schema.cjs 的 sameEntry / wantedOf。
+     以前判重比的是原始 scope、落库比的是校验后的值 —— 两边看到的 scope 可能不是一个 */
+  const wanted = wantedOf(content, input)
+  const duplicate = data.items.find((item) => sameEntry(item, wanted))
   if (duplicate) {
     duplicate.lastUsedAt = Date.now()
     persist(data)
@@ -95,7 +101,7 @@ function add(input) {
     seq: nextSeq(data),
     content,
     type: TYPES.includes(input.type) ? input.type : 'fact',
-    scope: SCOPES.includes(input.scope) ? input.scope : 'global',
+    scope: wanted.scope,
     source: SOURCES.includes(input.source) ? input.source : 'user_explicit',
     confidence: clamp(input.confidence, 0, 1, 1),
     importance: clamp(input.importance, 0, 1, 0.6),
@@ -103,8 +109,8 @@ function add(input) {
     updatedAt: Date.now(),
     lastUsedAt: 0,
     expiresAt: Number(input.expiresAt) || 0,
-    projectId: String(input.projectId ?? ''),
-    sessionId: String(input.sessionId ?? ''),
+    projectId: wanted.projectId,
+    sessionId: wanted.sessionId,
     status: 'active',
     supersededBy: '',
   }
@@ -187,13 +193,8 @@ function touch(ids) {
 }
 
 /** 停用而不是删除 —— 用户可能只是想让它暂时别生效 */
-function disable(id) {
-  return update(id, { status: 'disabled' })
-}
-
-function enable(id) {
-  return update(id, { status: 'active' })
-}
+const disable = (id) => update(id, { status: 'disabled' })
+const enable = (id) => update(id, { status: 'active' })
 
 function remove(id) {
   const data = load()

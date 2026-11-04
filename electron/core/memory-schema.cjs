@@ -102,12 +102,68 @@ function normalizeItem(item) {
   }
 }
 
+/**
+ * 「库里这条和这次要写的，是不是**同一条**记忆」—— `add` 的去重判据（要判重的地方只准用这一处）。
+ *
+ * 三个键：内容 + scope + 归属（projectId / sessionId）。
+ *
+ * ★ 为什么 scope 和归属必须进这个键（2026-11-05 实测修）：以前只比内容，于是
+ *
+ *   · `remember(scope=session)` 一条**已经作为 global 存在**的内容 → 回 deduped，
+ *     库里仍是那条 global：用户明确要求的「只在这个会话里生效」**建不起来**，
+ *     而内容照样全局可见 —— 受限意图被降级成公开（SEC-065 那个方向）；
+ *   · 设置页「新增记忆」选「项目」时同样只弹一句「这条已经记过了」。
+ *
+ *   `docs/Memory设计.md` §3 的口径是：scope 是**有效性语境**，不同 scope 的合法
+ *   差异不叫冲突（User 用 pnpm、Project A 用 npm）。所以「同内容分别存在于
+ *   global / project / session」是**设计允许的**，不是重复。
+ *
+ * ★ `type` 不进这个键：同内容 + 同 scope 只是换个类型，是同一句话被贴了两个标签，
+ *   不是两件事。这种仍算「已经记过」，并且**不覆盖**原类型（覆盖 = 偷偷改语义），
+ *   由 `remember` 如实告诉调用方「还是原来那个类型」（自检 207 ⑤）。
+ *
+ * ★ 已知限制：`workspace` / `task` 两种 scope **没有**对应的归属字段，
+ *   只按「内容 + scope」比 —— 同一个工作目录 / 任务里的同内容记忆会互相去重。
+ *
+ * @param {{ status?: string, content?: string, scope?: string, projectId?: string, sessionId?: string }} item
+ * @param {{ content: string, scope: string, projectId: string, sessionId: string }} wanted 已归一化（认不出的值已退回 global / 空串）
+ * @returns {boolean}
+ */
+function sameEntry(item, wanted) {
+  if (!item || item.status !== 'active') return false
+  if (String(item.content ?? '').trim() !== wanted.content) return false
+  if ((SCOPES.includes(item.scope) ? item.scope : 'global') !== wanted.scope) return false
+  if (String(item.projectId ?? '') !== wanted.projectId) return false
+  return String(item.sessionId ?? '') === wanted.sessionId
+}
+
+/**
+ * 把 `add` 的入参归一化成「这条记忆的归属」—— 认不出的值退回 global / 空串。
+ *
+ * 为什么单独一个函数：`store.add` 要拿它①判重（`sameEntry`）②落库，两处必须是
+ * **同一份**归一化结果。以前判重比的是原始 `input.scope`、落库比的是校验后的值，
+ * 于是 `scope: 'bogus'` 这种输入在两边看到两个不同的 scope。
+ *
+ * @param {string} content
+ * @param {{ scope?: string, projectId?: string, sessionId?: string }} input
+ */
+function wantedOf(content, input) {
+  return {
+    content,
+    scope: SCOPES.includes(input.scope) ? input.scope : 'global',
+    projectId: String(input.projectId ?? ''),
+    sessionId: String(input.sessionId ?? ''),
+  }
+}
+
 module.exports = {
   TYPES,
   SCOPES,
   SOURCES,
   STATUSES,
   looksLikeSecret,
+  sameEntry,
+  wantedOf,
   filePath,
   newId,
   nextSeq,

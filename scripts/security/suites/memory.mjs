@@ -56,14 +56,49 @@ function memoryCarriesInstruction(memory, capability, workspace) {
   memory.clear()
 }
 
-/** SEC-060：同名/同内容不同 Scope 不错误覆盖 */
+/**
+ * SEC-060：同名/同内容不同 Scope 不错误覆盖
+ *
+ * ★ 2026-11-05 判据改精确（不是放松）。原来这里钉的是「同内容换 scope 必须
+ *   回 deduped、不许建第二条」—— 那是 scope 还没落地的年代写的保守判据：
+ *   那时候第二条**必然带错 scope**（add 根本不看 scope），所以「不建」是唯一安全选择。
+ *   现在 scope 真的落了，而 `docs/Memory设计.md` §3 明确「不同 Scope 的合法差异
+ *   不是冲突（User 用 pnpm、Project A 用 npm）」—— 同内容按项目作用域另存一条
+ *   是**设计要的功能**。
+ *
+ *   于是本条改成钉「不产生错作用域影子」的本意：
+ *   · 另建的那条，scope 与归属必须**一起**落下（不许「叫 project 却没有 projectId」）；
+ *   · 原来那条不被改写成别的 scope（不错误覆盖）；
+ *   · 适用范围正确：项目 p 看得见自己那条 + 全局，项目 q 看不见 p 那条；
+ *   · 同内容 + 同 scope + 同归属**仍然**判重复（不会每次调用都堆一条）。
+ */
 function scopeCoexist(memory) {
   memory.clear()
-  memory.add({ content: '事实X-同内容', scope: 'global' })
-  const dup = memory.add({ content: '事实X-同内容', scope: 'project', projectId: 'p' })
-  sec('SEC-060', dup.deduped === true, '完全相同内容不因作用域不同又建一条（不产生错作用域影子）')
-  memory.add({ content: '事实Y-另一条', scope: 'session' })
-  sec('SEC-060', memory.list({ includeSuperseded: true }).length === 2, '不同内容按各自作用域共存（不互相覆盖）')
+  const g = memory.add({ content: '事实X-同内容', scope: 'global' })
+  const p = memory.add({ content: '事实X-同内容', scope: 'project', projectId: 'p' })
+
+  sec(
+    'SEC-060',
+    p.ok === true && p.item?.scope === 'project' && p.item?.projectId === 'p',
+    '同内容按项目作用域另建一条时，scope 与 projectId 一起落下（不是错作用域影子）',
+  )
+  sec(
+    'SEC-060',
+    g.item?.scope === 'global' && g.item?.projectId === '' && g.item?.id !== p.item?.id,
+    '原来那条全局记忆没被改写成项目作用域（不错误覆盖，两条各有自己的 id）',
+  )
+
+  /* 适用范围正确 —— 这才是「Scope 生效」的实际含义 */
+  const inP = memory.retrieve({ projectId: 'p' }).map((i) => i.id)
+  const inQ = memory.retrieve({ projectId: 'q' }).map((i) => i.id)
+  sec('SEC-060', inP.includes(g.item?.id) && inP.includes(p.item?.id), '项目 p 里两条都适用（全局 + 本项目）')
+  sec('SEC-060', inQ.includes(g.item?.id) && !inQ.includes(p.item?.id), '项目 q 只看得到全局那条（项目私有没漏出去）')
+
+  const again = memory.add({ content: '事实X-同内容', scope: 'project', projectId: 'p' })
+  sec('SEC-060', again.deduped === true, '同内容 + 同 scope + 同归属仍判重复（不会每次调用都堆一条）')
+
+  memory.add({ content: '事实Y-另一条', scope: 'session', sessionId: 's1' })
+  sec('SEC-060', memory.list({ includeSuperseded: true }).length === 3, '不同内容按各自作用域共存（不互相覆盖）')
   memory.clear()
 }
 
