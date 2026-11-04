@@ -1,5 +1,33 @@
 ## [未发布]
 
+### 文档：写清 Native Host 的信任边界（只改文档，不动行为）
+
+`docs/安全模型.md` 新增一节「Native Host 的信任边界（2026-11-05 实测）」。
+
+为什么补：这是**唯一一条从 Harbor 进程外部把请求送进来**的通路，而「本地优先」很容易被
+读成「外面进不来」。实测结论是「能进来，但进来之后权限一个都没松」—— 两件事都得写清，
+免得下次有人把 argv 里的 `origin`、或者那条 token，当成身份验证。
+
+实测做法与结果（真管道 + 真 token + 伪造权限字段）：
+- 载荷里塞 `permission:'full'` / `allowWrite` / `allowNetwork` / `workdir:'C:\Windows'`
+  —— **一个都没漏进主进程**（host 侧白名单只取 `text`）；
+- 主进程**不自己跑这一轮**，只推一条 `chat:event` 给渲染层，执行者仍是渲染层；
+- 外部来源读 `.env` 照样弹卡、拒了就读不到（批准后能读到，只问一次）；
+  `rm -rf /` 照样判 `critical` 直接拦；`browse` 反而**更严**（被拒，要求用 `edge_read`）。
+
+如实记下平台限制（都是实测，不是推测）：
+- token 文件 ACL 是 `Authenticated Users:(M)` / `Users:(RX)`（`icacls` 实测），
+  `writeToken` 里的 `mode: 0o600` 在 Windows 上被忽略 —— 所以 token 只挡「别的 Harbor 实例」
+  和「旧 host」，挡不住同用户的另一个进程；
+- 命名管道默认 ACL 同样给「当前用户 FullControl + Everyone Read」（.NET 实测读回安全描述符），
+  Harbor 没有另设 ACL。
+
+方案 A（来源标记）评估结论：骨架其实已经在了（`origin: 'edge-sidepanel'` 已贯穿到
+`tools/index.cjs`），但它的收益是**可观测性**，不是安全性 —— 同用户的恶意进程根本不必走
+native host。所以未实施。
+
+末尾加「这次没做的四条」，避免以后当成漏洞重新查一遍。
+
 ### 改一行里的字会把 session/project 记忆变成 fact/global（P1 第二轮）
 
 上一轮修的是「内容没变的行要保留」，但**改掉一行里的字**时，那一行既不等于原文、
