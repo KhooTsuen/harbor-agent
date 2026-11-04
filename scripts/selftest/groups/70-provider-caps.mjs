@@ -13,8 +13,9 @@ import { check, group } from '../harness.mjs'
      ④ 用户覆盖 > 内置预设 > 未知，两种覆盖写法都认
      ⑤ `missing()` 把「明确不支持」和「说不准」分开
      ⑥ 这个模块**不联网、不 require electron**（自检能跑起来的前提）
+      ⑦ 渲染层那份维度清单（src/types/model-caps.ts）与内核**逐字同步**
 
-   注意：这一组**没有**注册进 scripts/selftest.mjs（按本轮任务要求），
+   注册在 scripts/selftest/groups.mjs（npm test 会跑到）；单独跑法：
    单独跑法：
      node -e "import('./scripts/selftest/groups/70-provider-caps.mjs').then(m=>m.run())"
    ══════════════════════════════════════════════════════════════ */
@@ -23,6 +24,11 @@ const caps = require(join(ROOT, 'electron/core/provider-capabilities.cjs'))
 const presets = require(join(ROOT, 'electron/core/provider-presets.cjs'))
 const configModule = require(join(ROOT, 'electron/core/config.cjs'))
 
+/*
+ * 这份名单是手抄的「契约本身」—— 钉的是「维度就是这十个、顺序也不许变」。
+ * 它**钉不住**渲染层 `src/types/model-caps.ts` 有没有跟着改（那是第 ⑦ 组断言的事）。
+ * 两份分工不同，别想着合并成一份：合并之后两侧都读同一处，漂了就都发现不了。
+ */
 const EXPECTED_DIMS = [
   'chat',
   'streaming',
@@ -212,4 +218,34 @@ export async function run() {
   check('★ 不 require electron（自检能跑起来的前提）', sources.includes("require('electron')") === false)
   check('★ 不发网络请求（这一轮不做探测）', sources.includes('fetch(') === false && sources.includes('node:http') === false)
   check('★ 文件头写明「声明不是探测」', /声明/.test(sources) && /不是探测/.test(sources))
+
+  /* ── ⑦ 渲染层那份清单与内核逐字同步 ─────────────────────── */
+
+  group('Provider 能力 / ⑦ 渲染层类型与内核同步（四处要一起改的第四处）')
+  const tsSrc = readFileSync(join(ROOT, 'src/types/model-caps.ts'), 'utf8')
+
+  /* 联合类型：export type CapabilityDim = \n  | 'chat' \n  | ... */
+  const unionBody = (tsSrc.match(/export type CapabilityDim\s*=([\s\S]*?)\n\n/) || [])[1] || ''
+  const tsDims = [...unionBody.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
+
+  /* 接口字段：ModelCapabilities 的每个 `xxx: boolean | null` */
+  const ifaceBody = (tsSrc.match(/export interface ModelCapabilities\s*\{([\s\S]*?)\n\}/) || [])[1] || ''
+  const tsFields = ifaceBody
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('/*') && !line.startsWith('*'))
+    .map((line) => (line.match(/^([a-z_]+)\s*:/) || [])[1])
+    .filter(Boolean)
+
+  check('抠得到渲染层的联合类型（抠不到说明 ts 文件改写法了，这条会红不是误报）', tsDims.length > 0, String(tsDims.length))
+  check(
+    '★★ 渲染层 CapabilityDim 与内核 DIMENSIONS **逐个逐序相同**（只改内核会在这里红）',
+    tsDims.join(',') === caps.DIMENSIONS.join(','),
+    `ts=[${tsDims.join(',')}] 内核=[${caps.DIMENSIONS.join(',')}]`,
+  )
+  check(
+    '★ ModelCapabilities 的字段与 DIMENSIONS 逐个相同（少一个字段 = 界面拿不到那一维）',
+    tsFields.join(',') === caps.DIMENSIONS.join(','),
+    `ts=[${tsFields.join(',')}] 内核=[${caps.DIMENSIONS.join(',')}]`,
+  )
 }
