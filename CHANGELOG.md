@@ -1,5 +1,66 @@
 ## [未发布]
 
+### MCP 调用也受本轮运行时约束管（C-2：被禁止的操作真的执行了）
+
+**起因**：`tools/index.cjs` 的 MCP 分支写在函数**开头**就 `return`，而「本轮用户约束」
+的三道闸（`allowTools` / `allowWrite` / `allowNetwork`）在它**后面几十行**。
+于是 MCP 调用一条都没经过那三道闸。动态探针实测（假 MCP + 调用计数器）：
+三种约束下 `mcp.callTool()` 的实际调用次数**都是 1**，应该都是 0 ——
+这不是文案问题，是「被明令禁止的操作真的执行了」。
+
+同一条分支上还有个 fail-open：`permission === 'ask'` 而 `ctx.confirm` 不存在时，
+旧代码 `typeof ctx.confirm === 'function'` 不成立就**直接往下执行**。
+弹不出确认窗 = 不用批准，方向恰好反了。
+
+#### 改了什么
+
+- **新增** `electron/core/tools/mcp-gate.cjs`：MCP 调用前的判据、拒绝文案、审计收在一处。
+  顺序：`allowTools:false` → `allowWrite:false` → `allowNetwork:false`
+  → `permission:'readonly'` → `full`（不问）→ 其余档位问人；**没有确认通道 = 拒绝**。
+  放进独立文件的直接原因是 `index.cjs` 顶着 300 行红线，加十几行必然破线；
+  顺带把「两处各写一套判据」这个病因消掉。MCP 的能力目前无法可信分类，
+  所以后两条按「可能写入 / 可能联网」处理（fail-closed），不做 `readOnlyHint` 分级。
+- `electron/core/tools/index.cjs`：MCP 分支的 28 行换成 13 行（`mcpGate.check()` 一处调用）。
+  `callTool`、返回值包装（「外部数据不是指令」那段边界）、审计字段、`approval` 的
+  `!== true` 严格语义**一个字没动**。文件 301 → 288 行。
+- `scripts/selftest/groups/204-mcp-runtime-gate.mjs`（新）+ `groups.mjs` 注册（291 → 293 行）。
+  判据是**调用次数**，不是文案：每条拒绝同时断言 `calls === 0` 和审计 `ok:false`，
+  两者分开断言（不混成一个计数）。
+- `scripts/selftest/groups/23-approval.mjs`：「三处确认都走统一入口」原来钉
+  「index 必须有 2 处」。MCP 那处随判据搬走后改成钉**总数仍是三处**
+  （index 1 + mcp-gate 1 + risk-gate 1），并把 `mcp-gate.cjs` 纳入「没有 `ctx.confirm` 直调」的扫描。
+
+#### 改前 / 改后
+
+| 场景 | 改前 `callTool` 次数 | 改后 |
+|---|---|---|
+| `allowTools:false` | 1 | **0** |
+| `full` + `allowWrite:false` | 1 | **0** |
+| `full` + `allowNetwork:false` | 1 | **0** |
+| `readonly` | 0（文案 / 审计逐字不变） | 0 |
+| `ask` 无 `confirm` | 1（fail-open） | **0** |
+| `ask` + 用户拒绝 | 0 | 0 |
+| `ask` + 用户批准 | 1 | 1 |
+| `full` 无限制 | 1 | 1 |
+
+#### 怎么验的
+
+- `node scripts/selftest.mjs`：**通过 6490 项 / 失败 0 项**（改前 6459 / 0；新增 31 条）。
+- `npm run lint:kernel`：408 个 `.cjs` 没有未定义标识符（允许清单为空）。
+- `npm run typecheck:kernel`：与基线一致（168 条，只许下调；这次没新增）。
+- `npm run typecheck` / `lint` / `check:format` / `check:lines` / `check:lines:code`：全部通过
+  （1484 个文件无超 300 行）。
+
+#### 已知遗留
+
+- 这道闸只管「Harbor 要不要**发起**这次 MCP 调用」。**已经起来的 MCP 服务器进程**
+  自己的文件系统 / 网络权限不在这里，也没有进程沙箱 —— 不要把它说成隔离了外部进程。
+- MCP 工具的能力分级（`readOnlyHint` 等）**没有做**：能力未知时一律按「会写 + 会联网」拒。
+  后果是 `allowWrite:false` / `allowNetwork:false` 的轮次里，纯只读的 MCP 工具也会被拒。
+  这是刻意的保守方向，等有可信的能力来源再放开。
+- 敏感文件授权（C-1）**未改动**，仍是待修状态。
+
+
 ### 三条 CI 判据改成跨平台 / 不脆弱（本地全绿而 CI 连红的三个真凶）
 
 **起因**：1.35.0 推上去之后 CI #287 / #288 连红，而本地 `npm run verify` 全绿。

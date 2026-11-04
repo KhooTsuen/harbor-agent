@@ -7,6 +7,8 @@ const riskGate = require('./risk-gate.cjs')
 const scaleGate = require('./scale-gate.cjs')
 const writeDiff = require('../write-diff.cjs')
 const preWriteGate = require('./pre-write-gate.cjs')
+/* MCP 调用的运行时约束闸（判据/文案/审计都在那儿，见它的文件头） */
+const mcpGate = require('./mcp-gate.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
 const risk = require('../risk.cjs')
 const toolFailure = require('../tool-failure.cjs')
@@ -51,33 +53,18 @@ async function execute(name, args, ctx = {}) {
   /* 风险确认已经问过一次了吗 —— 同一个动作弹两次窗最招人烦（见下面的写操作确认） */
   let riskApproved = false
 
-  /* ── MCP 工具：外部进程，按写操作对待。确认一律 `approval !== true`（fail-closed；
-        破坏性测试传过 `{ ok: false }`，本意拒绝却被当同意、还写进了磁盘）。 ── */
+  /* ── MCP 工具：外部进程，按写操作对待。★ 判据 / 文案 / 审计都在 `mcp-gate.cjs`：
+        这个函数是唯一咽喉，但不是判据的家 —— 两边各写一套正是这次绕过的病因。 ── */
   if (isMcpTool(name)) {
-    let approval = null
-    if (ctx.permission === 'readonly') {
-      auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '只读模式下拒绝 MCP 工具' })
-      return `错误：当前是「只读」权限，MCP 工具（外部进程）被拒绝。需要在设置里放宽权限。`
-    }
-    if (ctx.permission !== 'full' && typeof ctx.confirm === 'function') {
-      approval = await approvals.ask(ctx, {
-        kind: 'mcp',
-        name,
-        args,
-        summary: `调用 MCP 工具 ${name}（外部进程，行为不受本应用控制）`,
-      })
-      if (approval !== true) {
-        auditCall(ctx, {
-          tool: name,
-          args,
-          startedAt,
-          ok: false,
-          approval: false,
-          error: '用户拒绝',
-        })
-        return `用户拒绝了这个操作：${name}`
-      }
-    }
+    const gated = await mcpGate.check({
+      name,
+      args,
+      ctx,
+      startedAt,
+      audit: (entry) => auditCall(ctx, entry),
+    })
+    if (gated.blocked) return gated.blocked
+    const approval = gated.approval
     try {
       /* AG-010：中断信号要一路带到 MCP 请求里，否则 Stop 之后还得等满超时 */
       const result = await mcp.callTool(name, args ?? {}, ctx.signal)

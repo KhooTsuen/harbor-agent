@@ -82,6 +82,8 @@ import { run as edgeSidepanelHistoryGroup } from './groups/201-edge-sidepanel-hi
 import { run as edgeInstallGroup } from './groups/202-edge-install.mjs'
 /* 2026-11-04：扩展记录别当用户消息 —— 摘要从正文里抠 / source 走通 / 两侧共用折叠卡 */
 import { run as edgeIngestNoteGroup } from './groups/203-edge-ingest-note.mjs'
+/* 2026-11-04：MCP 调用也受本轮运行时约束管（allowTools / allowWrite / allowNetwork + 无确认通道 fail-closed） */
+import { run as mcpRuntimeGateGroup } from './groups/204-mcp-runtime-gate.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -287,4 +289,5 @@ export const GROUPS = [
   edgeSidepanelHistoryGroup,
   edgeInstallGroup,
   edgeIngestNoteGroup,
+  mcpRuntimeGateGroup,
 ]

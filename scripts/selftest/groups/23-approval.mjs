@@ -125,19 +125,26 @@ export async function run() {
   /*
    * 数量 2026-09-29 改：风险那一关拆去了 `tools/risk-gate.cjs`（index.cjs 加完
    * 「完全访问不再弹窗」那段说明就破 300 行了），所以现在是「index 2 + risk-gate 1」。
+   *
+   * 2026-11-04 再改：MCP 那处确认随判据一起搬去了 `tools/mcp-gate.cjs`（C-2 ——
+   * MCP 分支原来在 index.cjs 开头就 return，绕过了后面所有运行时约束）。
+   * ★ 断言的是**总数仍是三处**，不是「index 里必须有两处」—— 后者是位置耦合，
+   *   会在下次拆分时又误报一次；真正要钉的是「确认不许自己写一套」。
    */
   const idxSrc = readCore('electron/core/tools/index.cjs')
   const permSrc = readCore('electron/core/tools/permission.cjs')
   const gateSrc = readCore('electron/core/tools/risk-gate.cjs')
+  const mcpGateSrc = readCore('electron/core/tools/mcp-gate.cjs')
+  const askSites = (src) => (src.match(/approvals\.ask\(/g) ?? []).length
   check(
-    '★ 三处确认都走统一入口（index 2 处 + risk-gate 1 处）',
-    (idxSrc.match(/approvals\.ask\(/g) ?? []).length === 2 &&
-      (gateSrc.match(/approvals\.ask\(/g) ?? []).length === 1,
+    '★ 三处确认都走统一入口（index 1 + mcp-gate 1 + risk-gate 1）',
+    askSites(idxSrc) === 1 && askSites(mcpGateSrc) === 1 && askSites(gateSrc) === 1,
+    `index=${askSites(idxSrc)} mcp-gate=${askSites(mcpGateSrc)} risk-gate=${askSites(gateSrc)}`,
   )
   check('permission.cjs 也改了', permSrc.includes('approvals.ask('))
   check(
     '★ 没有漏网的 ctx.confirm 直调（漏一处就等于没合并）',
-    !/await ctx\.confirm\(/.test(idxSrc + permSrc + gateSrc),
+    !/await ctx\.confirm\(/.test(idxSrc + permSrc + gateSrc + mcpGateSrc),
   )
 
   /* ── 界面 ── */
