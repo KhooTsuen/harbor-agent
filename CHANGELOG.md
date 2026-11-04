@@ -1,5 +1,48 @@
 ## [未发布]
 
+### 修：两套工具执行器在「命令退出码非 0」上判得不一样（P2）
+
+这一笔只修**一处真实缺陷**，不顺带合并两份执行器。
+
+`loop-tools.executeToolCallsSerial`（串行回退路径）与 `tool-runner.executeToolCalls`（生产路径）
+是同一职责的两份实现。串行那份以前调 `tools.execute(name, args, ctx)` —— **没传 `wantMeta`**。
+而 `tools.execute` 的契约是「`ctx.wantMeta === true` 才返回 `{ text, toolOk, exitCode… }`，
+否则只返回**字符串**」。于是同一条 `node -e "process.exit(1)"`（探针实测）：
+
+```
+串行（前）：ok=true   facts=null            事件=…completed            ← 绿勾
+并行（前）：ok=false  facts={exitCode:1}    事件=…failed  reason=EXIT_CODE
+串行（后）：ok=false  facts={exitCode:1}    事件=…failed  reason=EXIT_CODE   ← 与并行一致
+```
+
+这正是 `tool-failure.cjs` 文件头登记的那个绿勾病：并行修了、串行漏了。
+顺手补齐同一族还漏的三样（都复用并行版**已有的**入口，不新增判据、不改阈值）：
+
+- `buildRunCtx` → `ctx.progress` / `ctx.subagentEmit`（工具进度、子代理步骤原来在串行路径全丢）
+- `actionCore.of` + `ctx.action`（各 gate 的 `notePermission` 原来静默不记，Action 面板空白）
+- `run.facts`（独立验证器读不到退出码 / 超时 / 中断）
+
+重试分类也改成吃 `outTextOf(output)` —— 结构化返回里 `text` 才是正文，与并行那份同一句。
+
+**新增 `scripts/selftest/groups/209-exec-parity.mjs`**（已注册进 `groups.mjs`）：跑**真命令**
+（`node -e "process.exit(1)"` / `process.exit(0)`），两份执行器各跑一遍，逐项比对
+`ok` / `facts.exitCode` / `reasonCode` / 发出的事件名，再比对它们给工具的 ctx 形状。
+判据是**跑出来的结果**，不是「源码里有没有某个字符串」—— 只钉正则的话改个变量名就骗过去了。
+
+**这次没做什么**（写清楚免得被当成已改）：两份执行器**没有合并**。串行那份仍无生产调用方
+（`loop.cjs` 取的是并行版），保留作回退路径；合并属于架构调整，不在本阶段范围。
+
+**审查中确认「不是缺陷」的两处**（不改代码，只登记结论）：
+
+1. `codex-mcp-bridge.makeCtx` 在 `runId` 查不到时，`allowTools` / `allowWrite` 兜底成 `true`，
+   看着像 fail-open。但 `codex-mcp-lifecycle.cjs` 的注释写的是「形状不合法 → 不注入
+   （桥拿不到上下文，**写类调用被拒**）」—— 所以「未登记时只读仍可用」是**有意设计**。
+   探针实测：未登记时 `harbor_write_file` 的写入**被审批层拒掉**，界外文件确实没被创建；
+   所有 `harbor_*` 调用在审计里都记成 `sessionId: codex-mcp`，可追溯。
+   真正不准的是 `codex-mcp-context.cjs` 文件头那句笼统的「查不到就拒绝」—— 它只对
+   需要审批的动作成立。
+2. `ctx.permission` 的取值已被 `config-normalize.cjs` 收窄到三档，桥那行三元写法不是隐患。
+
 ### 检查：P1 真实测试与回归基线（补 1 处恒真断言、写清六个入口的关系）
 
 这一笔**不动产品代码**。做的事有两件：把「现有测试到底验了什么」落成一份可长期用的记录，

@@ -90,6 +90,7 @@ import { run as sensitiveGrantRecordGroup } from './groups/206-sensitive-grant-r
 import { run as memoryMetadataGroup } from './groups/207-memory-metadata.mjs'
 /* 2026-11-05：去重键含 scope 与归属 —— 否则「只在本次会话生效」建不起来 */
 import { run as memoryDedupeScopeGroup } from './groups/208-memory-dedupe-scope.mjs'
+import { run as execParityGroup } from './groups/209-exec-parity.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -293,8 +294,7 @@ export const GROUPS = [
   experienceApprovalGroup, uiSelectorsGroup, experienceApprovalUiGroup,
   experienceLeftoversGroup, experienceLeftoversUiGroup,
   edgeSidepanelHistoryGroup,
-  edgeInstallGroup,
-  edgeIngestNoteGroup,
+  edgeInstallGroup, edgeIngestNoteGroup,
   mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
-  memoryMetadataGroup, memoryDedupeScopeGroup,
+  memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup,
 ]

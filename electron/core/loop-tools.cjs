@@ -20,6 +20,10 @@ const toolFailure = require('./tool-failure.cjs')
 const experience = require('./experience-loop.cjs')
 const { buildFailureNote } = require('./loop-prompt.cjs')
 const { isAborted } = require('./abort.cjs')
+/* 与 `tool-runner` 同一套注入（progress / subagentEmit）与同一个 Action 组装入口 */
+const { buildRunCtx } = require('./tool-run-ctx.cjs')
+const actionCore = require('./action.cjs')
+const { lastUserText } = require('./loop-route.cjs')
 
 /* 成败判定与失败事实都只定义在 `tool-failure.cjs`；这里只接线（两份执行器共用） */
 const { isToolOk, outTextOf } = toolFailure
@@ -71,8 +75,25 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
       continue
     }
 
-    emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args })
     const startedAt = Date.now()
+
+    /*
+     * 这次调用专用的 ctx + 这次调用的 Action —— 与 `tool-runner.runOne()` **同一套**。
+     *
+     * ★ 这里原来直接传 `ctx`，于是串行路径少了三样并行路径有的东西：
+     *   · `ctx.action`  → 各 gate 的 `actionCore.notePermission` 静默不记（Action 面板空白）
+     *   · `ctx.progress` / `ctx.subagentEmit` → 工具报的进度与子代理步骤全丢
+     * ★ `wantMeta: true` 更要紧，见下面 `tools.execute` 那段。
+     */
+    const action = actionCore.of({
+      name: call.name,
+      args,
+      workdir: ctx?.workdir ?? '',
+      userText: lastUserText(options?.history),
+    })
+    emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args, action })
+    const runCtx = buildRunCtx(ctx, { emit, toolCallId: call.id, toolName: call.name })
+    runCtx.action = action
 
     /*
      * AG-016：失败后自动恢复（文档策略表里的 FileChanged→重新读取、
@@ -81,14 +102,23 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
      * ★ 只对**只读**工具做 —— 理由在 `errors.canAutoRecover`：
      *   `run_shell` 超时后自动重试等于把命令再跑一遍，那不是恢复是重复副作用。
      *   写操作交给模型判断（AG-015 已经把分类和建议喂给它了）。
+     *
+     * ★★ `wantMeta: true` 不是可选项（2026-11-05 P2 实测）：
+     *   `tools.execute` 的契约是「`ctx.wantMeta === true` 才返回 `{ text, toolOk, exitCode… }`，
+     *   否则只返回**字符串**」。串行这份以前没传，于是同一条 `node -e "process.exit(1)"`：
+     *     并行 → `toolOk:false` + `facts.exitCode=1` → 判失败（红）
+     *     串行 → 纯文本 `…[退出码 1]`，前缀不是「错误：」 → `isToolOk` 判**成功**（绿勾）
+     *   这正是 `tool-failure.cjs` 文件头写的那个绿勾病 —— 并行修了、串行漏了。
+     *   两处必须一致：`isToolOk` 只能有一个判据，喂给它的东西也必须同形。
      */
-    let output = await tools.execute(call.name, args, ctx)
+    let output = await tools.execute(call.name, args, { ...runCtx, wantMeta: true })
     /* AG-040：重试次数上限来自任务预算（默认 3），不再写死 */
     const maxRetries = Number.isFinite(options.budget?.maxRetries)
       ? Math.max(0, options.budget.maxRetries)
       : errors.MAX_AUTO_RETRY
     for (let retry = 0; retry < maxRetries && !isToolOk(output); retry += 1) {
-      const retryInfo = errors.classifyToolOutput(output, { name: call.name })
+      /* 分类吃的是**正文**（结构化返回里 `text` 才是正文）—— 与并行那份同一句 */
+      const retryInfo = errors.classifyToolOutput(outTextOf(output), { name: call.name })
       if (!errors.canAutoRecover(retryInfo, call.name)) break
       /* AG-002 定义的 agent.retrying —— 界面和日志都看得到「它在自己重试」 */
       emit({
@@ -100,7 +130,7 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
         hint: retryInfo.hint,
       })
       await sleep(errors.backoffMs(retry, retryInfo.kind))
-      output = await tools.execute(call.name, args, ctx)
+      output = await tools.execute(call.name, args, { ...runCtx, wantMeta: true })
     }
 
     const ok = isToolOk(output)
@@ -120,6 +150,8 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
       ok,
       output: outText,
       ms: Date.now() - startedAt,
+      /* 结构化事实（退出码 / 超时 / 中断）：独立验证器读它，不读正文 —— 与并行版同形 */
+      facts: toolFailure.factsOf(output),
       ...(failure ? { error: failure } : {}),
     }
     toolRuns.push(run)
