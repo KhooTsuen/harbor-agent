@@ -81,10 +81,28 @@ function read() {
 }
 
 /**
- * 整段覆盖写入。
+ * 整段覆盖写入（`memory:set` 通道：数据搬运清空旧版整篇 / 老版本设置页的整段编辑）
  *
  * 按行拆成条目 —— 这样老的编辑体验不变，但底层已经是结构化的了。
- * 已有条目会被停用（不是删），保留历史。
+ * 文本里没有的条目会被**停用**（不是删），保留历史。
+ *
+ * ★ P1（2026-11-05）修的是元数据：以前是「无条件停用全部 active，再把每一行
+ *   add 成 fact/global」，于是任何走这条通道的整段写回都会把 type / scope /
+ *   sessionId / projectId 冲成 `fact` / `global` / `''`：
+ *
+ *     · 偏好、约束、项目规则降级成事实 —— 检索时不再被优先遵守；
+ *     · 会话 / 项目作用域的记忆变成全局可见 —— **该藏的反而藏不住了**（SEC-065）。
+ *
+ *   探针实测：3 条（preference/project_rule/fact，含 project/session 归属）
+ *   过一遍 write(read()) 之后，active 条数翻倍，而 type 只剩 fact、scope 只剩
+ *   global、sessionId 全是空串、projectId 全空 —— 元数据**全部丢失**。
+ *
+ *   （当前界面已经改成逐条列表编辑，不再有整段 textarea；但这条通道还在
+ *   预加载白名单里、数据搬运也用它，语义仍然要正确 —— 有损的入口留着就是隐患。）
+ *
+ *   现在的口径：这份纯文本只是**内容**视图（`read()` 本来也只输出内容行），
+ *   所以「这行内容还在」= 这条记忆没被删，元数据一个字节都不动（连 updatedAt
+ *   都不碰，往返是幂等的）；只有真消失的行才停用，只有新出现的行才新增。
  */
 function write(text) {
   const lines = String(text ?? '')
@@ -92,8 +110,31 @@ function write(text) {
     .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s*/, '').trim())
     .filter((line) => line.length > 0)
 
-  for (const item of store.list({ status: 'active' })) store.disable(item.id)
+  /* 内容 → 现有 active 条目（同内容有两条时按顺序一人认领一条，与老 add 的 dedupe 一致） */
+  const byContent = new Map()
+  for (const item of store.list({ status: 'active' })) {
+    const bucket = byContent.get(item.content)
+    if (bucket) bucket.push(item)
+    else byContent.set(item.content, [item])
+  }
+
+  const keptIds = new Set()
+  const keptContents = new Set()
   for (const line of lines) {
+    const bucket = byContent.get(line)
+    if (!bucket || bucket.length === 0) continue
+    keptIds.add(bucket.shift().id)
+    keptContents.add(line)
+  }
+
+  /* 文本里已经没有的 → 停用（不删，仍可追溯） */
+  for (const bucket of byContent.values()) {
+    for (const item of bucket) if (!keptIds.has(item.id)) store.disable(item.id)
+  }
+
+  /* 文本里新出现的行 → 新增（没有任何元数据可继承，按老口径 fact/global） */
+  for (const line of lines) {
+    if (keptContents.has(line)) continue
     store.add({ content: line, type: 'fact', source: 'user_explicit' })
   }
 
@@ -133,7 +174,13 @@ function append(input) {
     importance: 0.7,
   })
 
-  return result.ok ? { ok: true, item: result.item, stats: stats() } : result
+  /*
+   * ★ P1（2026-11-05）：`deduped` 必须往上传。
+   *   以前这里只挑 `ok: true, item, stats` 三样，把 store 那句「这是重复，
+   *   我只是把它当成又用了一次」的事实丢了 —— 于是 `remember` 永远回「记下了」，
+   *   用户以为新类型/新作用域生效了，其实库里那条一个字都没变。
+   */
+  return result.ok ? { ok: true, item: result.item, deduped: result.deduped === true, stats: stats() } : result
 }
 
 function autoWritePolicy() {

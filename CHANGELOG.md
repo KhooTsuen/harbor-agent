@@ -1,5 +1,60 @@
 ## [未发布]
 
+### 记忆的元数据在「整段覆盖写入」之后会被冲掉（P1）
+
+**起因**：能力边界审查指出 `type` / `scope` / `sessionId` 没有完整传到最终存储。
+实测确认：`memory.write()`（`memory:set` 通道）是「无条件停用全部 active，再把每一行
+`add` 成 fact/global」，而它接的那份纯文本（`read()`）本来就只有内容、没有元数据。
+
+探针实测（3 条：preference / project_rule / fact，其中一条带 `projectId`、一条带
+`sessionId`）过一遍 `write(read())` 之后：active 从 3 条变成 6 条，而 `type` 只剩
+`fact`、`scope` 只剩 `global`、`sessionId` 与 `projectId` 全成空串 —— **元数据整片丢失**。
+后果是偏好/约束/项目规则降级成事实（检索不再优先遵守），以及会话/项目作用域的记忆
+变成全局可见（SEC-065）。
+
+修法（`electron/core/memory.cjs`）：这份纯文本按**内容视图**对待 —— 内容还在的行
+保留原来那条（id / type / scope / sessionId / projectId / updatedAt 全部不动，
+往返幂等）；文本里消失的行停用（不删）；新出现的行才按老口径落成 fact/global。
+传空文本仍然是「全部停用」，数据搬运清空的行为不变。
+
+**范围诚实说明**：当前界面（设置 → 记忆）已经是逐条列表编辑，不再有整段 textarea，
+所以这次修复的用户可见面是「这条通道的语义」而不是某个按钮 —— 现在真实调用方是
+数据搬运清空（传 `''`）与老调用方；通道留着，语义就不该是有损的。
+
+### 重复内容被当成「记下了」，其实类型没改（P1）
+
+`store.add` 遇到同内容只更新 `lastUsedAt` 就返回（不改 type/scope —— 改 scope 会
+改可见性，这是刻意的）。但 `memory.append` 把 `deduped` 丢了，`remember` 一律回
+「记下了」，模型以为类型/范围改了，实际没改。现在 `deduped` 往上传，重复时如实说
+「已存在，仍按原来的 X/Y 记着」；纯字符串老调用方行为不变。
+
+### 自检组 207-memory-metadata（27 项）
+
+钉住：四条元数据落盘、`list()` 读回完整、会话隔离（A 可见 B 不可见）、
+`write(read())` 往返幂等且 id 不变、删行停用不删、`write("")` 仍然清空、
+dedupe 不覆盖类型但如实告知、纯字符串 append 老口径不变。
+
+### 核对：共用 ctx 的并发调用不会共享一次临时放行（P1）
+
+`approvedPaths` 全仓库唯一写入点是 `tools/permission.cjs` 的 `retryOnce`（重试前后
+成对 add/splice），它写的对象是 `tool-runner.cjs` 用 `buildRunCtx` 给**每次调用**
+新建的子对象 —— 不是父 ctx。
+
+探针实测（`tmp/p1-approved-paths-probe.cjs` 10 项、`tmp/p1-runctx-isolation-probe.cjs`
+5 项，全部通过）：
+
+- 同一敏感文件、两种路径写法（调度器当不同目标并行）：问到 2 次、读到 1 次；
+- 字面同一路径（调度器拆批串行）：只批过的那次读到；
+- 一次批准一次拒绝：被拒的读不到；
+- 工具自身抛错（把目录当文件读）：`finally` 照样清干净；
+- 工具参数里塞 `approvedPaths`：不起作用，仍然要问人；
+- 跑完 ctx 上没有任何残留，授权表里一条没落盘；
+- 唯一「会共享」的形状是父 ctx 自己带一个数组（浅拷贝同引用）—— 真实链路里没有
+  任何一处往父 ctx 写这个字段，不可达。
+
+**遗留（有意保留）**：并发下先结束的调用会 splice 掉自己的那条，另一个调用可能因此
+被重新问一次人 —— 方向是更严（fail-closed），已有 `206 / ⑨` 钉住。
+
 ### 敏感文件批准了也读不到（C-1：一次性诊断了六个病）
 
 **起因**：用户明确批准一个敏感文件（`.env` / `.ssh` / `id_rsa` …），确认框点了

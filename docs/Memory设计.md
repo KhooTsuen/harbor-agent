@@ -100,7 +100,7 @@ Observation → Candidate → Active → Updated / Superseded / Expired → Arch
 | 3 | 类型 8 种 | 9 种：多 project_rule/habit/instruction，无 Relationship/Project State | `memory-schema.cjs:24-34` | 需映射迁移 |
 | 4 | 生命周期 6 态 | 4 态：active/superseded/disabled/**expired**（P0-3 已加） | `memory-schema.cjs` STATUSES | 仍缺 Candidate/Archived |
 | 5 | Expire 是一条链 | 过期现在**标记不删**（P0-3 已修）；但 `expiresAt` 仍**没有生产方** | `memory-store.cjs` pruneExpired | 半悬空 |
-| 6 | 按类型/来源分开记 | `remember` 能带类型了（P0-2 已修）；**scope 仍写死 global** | `memory.cjs` append · `tools/remember.cjs` | 部分修复 |
+| 6 | 按类型/来源分开记 | `remember` 能带类型**和 scope** 了（P0-2 / P1 已修）；`memory.write()` 整段写回也不再冲掉 type/scope/sessionId/projectId | `memory.cjs` append + write · `tools/remember.cjs` | ✅ 对齐（写入路径） |
 | 7 | 按 source 档位给基础可信度 | 打分只读 `confidence`，**不读 source** | `memory-explain.cjs` signals | 阶梯未落地 |
 | 8 | 冲突 = 语义互斥 | 2-gram 相似/包含；**只对 5 类生效**；`fact` 不进是**刻意的**（2-gram 分不清「第 0 条 / 第 1 条」，放进去会让一批独立事实互取代） | `memory-similarity.cjs` CONFLICT_TYPES | 有意取舍 |
 | 9 | 每条带 Evidence | 无此字段 | `memory-store.cjs:97-114` | 无承载体 |
@@ -119,8 +119,9 @@ Observation → Candidate → Active → Updated / Superseded / Expired → Arch
 ## 7. 落地顺序建议
 
 **Phase 0（前提 —— 原文档没写、但代码卡着全局）**：先打通**写入路径**。
-2026-10-08 起 `remember` 能带 `type` 了（P0-2），所以「类型阈值」有了输入；但 **Scope 仍写死 `global`**，
-于是 §3 的 Scope、§6 的 Evidence/Utility **依旧没有输入** —— 先做它们等于在「一个全是 global 的库」上盖楼。
+2026-10-08 起 `remember` 能带 `type` 了（P0-2），2026-11-05 起 `scope` 也能了（P1，
+且 `memory.write()` 整段写回不再把归属冲成 global/空串），所以 §3 的 Scope 有了输入；
+但 **§6 的 Evidence / Utility 仍然没有承载体**，先做它们等于在「一个没有证据字段的库」上盖楼。
 
 之后按原文档顺序：稳定 → Evidence → Candidate → Recall → Utility。
 其中 Recall 前必须先拍两个**设计分叉**（便宜，但不先定就白干）：

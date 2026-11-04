@@ -76,7 +76,23 @@ module.exports = {
 
     const stats = memory.stats()
     const tail = stats.overLimit ? `（记忆已有 ${stats.count} 条，偏长了，建议清理）` : ''
-    return result.skipped ? `这条已经在记忆里了，没重复写。${tail}` : `记下了。${tail}`
+    /*
+     * ★ P1（2026-11-05）：重复内容**如实说**，别回一句「记下了」。
+     *
+     * `store.add` 遇到同内容只更新 `lastUsedAt` 就返回（deduped），**不改**
+     * 已有那条的 type / scope —— 这是刻意的（改 scope 会改可见性，见
+     * `memory-store.cjs` 的 dedupe 分支）。但以前这层不知道，于是模型以为
+     * 「我刚把它记成 constraint 了」，实际库里还是原来的类型。
+     * 现在把实际情况说清楚：原样保留了什么，用户/模型才不会基于错的前提往下走。
+     */
+    if (result.deduped) {
+      const kept = `${result.item?.type ?? ''}/${result.item?.scope ?? ''}`
+      const differs =
+        (typeof args.type === 'string' && args.type !== result.item?.type) ||
+        (typeof args.scope === 'string' && args.scope !== result.item?.scope)
+      return `这条已经在记忆里了，没重复写${differs ? `（仍按原来的 ${kept} 记着，类型/范围没被这次调用改掉）` : ''}。${tail}`
+    }
+    return `记下了。${tail}`
   },
 
   summarize(args) {

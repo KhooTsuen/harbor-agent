@@ -87,6 +87,7 @@ import { run as mcpRuntimeGateGroup } from './groups/204-mcp-runtime-gate.mjs'
 /* 2026-11-04（C-1）：敏感文件批准后必须真的能读；记录语义（隔离/once/续期）另起一组 */
 import { run as sensitiveGrantGroup } from './groups/205-sensitive-grant.mjs'
 import { run as sensitiveGrantRecordGroup } from './groups/206-sensitive-grant-record.mjs'
+import { run as memoryMetadataGroup } from './groups/207-memory-metadata.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -295,4 +296,5 @@ export const GROUPS = [
   mcpRuntimeGateGroup,
   sensitiveGrantGroup,
   sensitiveGrantRecordGroup,
+  memoryMetadataGroup,
 ]
