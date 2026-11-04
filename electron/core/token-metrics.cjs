@@ -60,8 +60,17 @@ function recordRequest(row) {
 /**
  * 一次成功的模型调用 → 一行指标（llm.cjs 直接调它，保持那边行数可控）。
  *
+ * `trace` 与 `taskId` 是**两个东西，都记、谁也不替代谁**（P2，2026-11-05）：
+ *   · `trace`  = 这一轮**运行实例**的 key（生产里是 `req_*`，`chat.cjs` 的 phaseKey）
+ *   · `taskId` = **任务台账** id（`task_*`，`loop-run` 建/复用的那条）
+ * 以前只记 trace，而台账里没有任何 `req_*` 字段、`task` 事件又不落盘 ——
+ * 于是「哪一次调用属于哪个任务」在持久层里**永久查不回来**（实测：4182 行指标 × 100 条台账，
+ * 一条都对不上）。调用方没给 taskId 就记空串，**不猜**：起标题 / 起建议 / 预热 / 压缩
+ * 这些辅助调用本来就不属于任何任务。
+ *
  * @param {{ label?: string, model?: string, providerId?: string, trace?: string,
- *           retryIndex?: number, usage?: object, ttftMs?: number|null, latencyMs?: number }} input
+ *           taskId?: string, retryIndex?: number, usage?: object,
+ *           ttftMs?: number|null, latencyMs?: number|null }} input
  */
 function logLlm(input = {}) {
   const usage = input.usage ?? null
@@ -73,6 +82,7 @@ function logLlm(input = {}) {
     model: String(input.model ?? ''),
     providerId: String(input.providerId ?? ''),
     trace: String(input.trace ?? ''),
+    taskId: String(input.taskId ?? '').slice(0, 40),
     retryIndex: Number(input.retryIndex) || 0,
     prompt: Number(usage?.prompt_tokens) || 0,
     completion: Number(usage?.completion_tokens) || 0,

@@ -1,5 +1,64 @@
 ## [未发布]
 
+### 修：模型调用记录永久查不到「属于哪个任务」（P2）
+
+**问题**：项目里有三个标识各管一段 —— `sessionId`（会话）、`req_*`（一次运行，
+`chat.cjs` 的 phaseKey）、`task_*`（一条任务台账）。生产入口的
+`phaseKey = payload.taskId || requestId`，而渲染层从不发 `payload.taskId`，
+于是指标行的 `trace` 恒为 `req_*`；台账里**没有任何 `req_*` 字段**，唯一能连起来的
+`type:'task'` 事件又**不落盘**（`events.cjs` 只持久化 `agent.*`）。
+
+实测（用户真数据，改前）：
+
+```
+data/logs/token-metrics.jsonl   4182 行：4042 行 trace=req_* + 140 行 trace 空
+data/tasks/                     100 条台账，含 req_ 的 0 条
+data/events/*.jsonl             153828 条事件 / 11 种类型，task 类型 0 条
+                                （同文件里 metrics.timeline 落了 1041 条 → 确实是按前缀判的）
+```
+
+即「这次调用属于哪个任务」在持久层里**永久查不回来**。
+
+**改了什么**（3 个源文件，净增约 4 行逻辑）：
+
+- `electron/core/loop.cjs`：`callModel` 多传一个 `taskId`（台账 id）
+- `electron/core/llm.cjs`：落指标时带上 `taskId`；顺带把 `chatStream` 的入参形状
+  补成内联 JSDoc（`label` / `topP` / `reasoningEffort` / `traceId` / `taskId` /
+  `retryIndex` 原来都缺声明）
+- `electron/core/token-metrics.cjs`：`logLlm` 落 `taskId` 字段，截断 40 字
+
+`trace` **保留不动** —— 它是运行实例，`taskId` 是台账，两个都记、谁也不替代谁。
+
+**改后实测**（隔离探针 + 新增自检组，真 `fetch` 链路，指标真落盘）：
+
+```
+单任务两轮      同一 taskId 两行调用
+并发两任务      taskId 各一行，trace ↔ taskId 配对 0 错
+失败重试        成功那次 retryIndex=1，taskId 仍对
+降级            打到 backup.invalid（探针第 9 次请求），taskId 仍是同一任务
+辅助调用        起标题/起建议 → taskId 空串（不瞎填）
+```
+
+**新增 `scripts/selftest/groups/210-llm-attribution.mjs`**（已注册）：**不打桩
+`chatStream`**（打了桩指标根本不落盘，等于什么都没验），只替换 `globalThis.fetch`，
+跑完**读回磁盘上的 jsonl** 判归属。判据是「写下去又读回来」的字段，不是源码里的字符串。
+
+**这次没做什么**（写清楚免得被当成已改）：
+
+- **失败的调用仍然一行都不记**。`llm.cjs` 只在成功收流后写指标，重试前的失败尝试、
+  彻底失败的调用在 `token-metrics.jsonl` 里看不见。要修得改「一进一出成对落盘」的
+  记录模型，属结构改动，本阶段不动。
+- **CLI 后端（codex-cli）完全不写指标**。走 `codex-cli.chatStream` 的调用
+  在 `token-metrics.jsonl` 里一行没有 —— 它和 `llm.cjs` 同形契约，但没接 `logLlm`。
+- **台账没有 provider 字段**。只有 `model` / `models`；降级换了供应商，事后从台账看不出来
+  （指标行里倒是有 `providerId`）。
+- **辅助调用（起标题 / 起建议 / 预热 / 压缩）的 trace 和 providerId 都是空**，无从归属。
+
+`scripts/kernel-types-baseline.json` 顺带从 167 条降到 157 条：llm.cjs 的 8 条 TS2339
+因参数形状补全清零，`prewarm.cjs` / `scene.cjs` 各 1~2 条连带修好（同一因果链）。
+棘轮只降不升。
+
+
 ### 修：两套工具执行器在「命令退出码非 0」上判得不一样（P2）
 
 这一笔只修**一处真实缺陷**，不顺带合并两份执行器。

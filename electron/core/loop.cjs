@@ -175,6 +175,10 @@ async function runLoop(options) {
       reasoningEffort: threadSettings.reasoning,
       /* AG-037：以前 emit 从没传进来过 —— 重试/降级/超限提示在界面上从未出现过 */
       traceId: traceKey(options),
+      /* ★ P2：台账 id 一路传进指标行。`traceId` 是**这一轮运行**的 key（生产里是
+         `req_*`），跟 `task_*` 是两个东西 —— 只记 trace 的话，事后永远说不清
+         「这次调用属于哪个任务」。两个都记，谁也不替代谁。 */
+      taskId: options.taskId ?? '',
       emit,
       signal,
       allowNetwork: ctx.allowNetwork,

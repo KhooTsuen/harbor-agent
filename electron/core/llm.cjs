@@ -38,21 +38,15 @@ function parseSseLine(line) {
 /**
  * 发起一次流式对话。
  *
- * @param {object} options
- * @param {string} options.baseUrl
- * @param {string} options.apiKey
- * @param {string} [options.chatPath]
- * @param {string} options.model
- * @param {Array} options.messages
- * @param {Array} [options.tools]
- * @param {number} [options.temperature]
- * @param {number} [options.maxTokens]
- * @param {AbortSignal} [options.signal]
- * @param {number} [options.idleTimeoutMs] 空闲超时毫秒数（默认 45 秒；测试里给短值）
- * @param {(text: string) => void} [options.onContent]
- * @param {(text: string) => void} [options.onReasoning]
- * @param {(calls: Array) => void} [options.onToolCalls]
- * @param {(usage: object) => void} [options.onUsage]
+ * `traceId` 与 `taskId` 是**两个东西**：前者是这一轮运行实例的 key（生产里 `req_*`），
+ * 后者是任务台账 id（`task_*`）。每请求指标两个都记，谁也不替代谁。
+ *
+ * @param {{ baseUrl: string, apiKey: string, model: string, messages: Array,
+ *   chatPath?: string, tools?: Array, provider?: object, label?: string,
+ *   temperature?: number, topP?: number, maxTokens?: number, reasoningEffort?: string,
+ *   signal?: AbortSignal, idleTimeoutMs?: number, onContent?: Function, onReasoning?: Function,
+ *   onToolCalls?: Function, onUsage?: Function, traceId?: string, taskId?: string,
+ *   retryIndex?: number }} options
  */
 async function chatStream(options) {
   const {
@@ -254,8 +248,7 @@ async function chatStream(options) {
     .map(([, call]) => call)
     .filter((call) => call.name)
 
-  /* 收完流还是空的 —— 也得给出个说得通的错，不然界面上就是一条空气泡。
-     常见原因：模型名不存在、供应商没额度、被中转站拦了。 */
+  /* 收完流还是空的 —— 也得给出个说得通的错，不然界面上就是一条空气泡 */
   if (!content && !reasoning && toolCalls.length === 0 && !finishReason) {
     throw new Error(
       `上游没有返回任何内容（模型 ${model}）。常见原因：模型名不对、供应商额度不足、或被中转站拒绝。`,
@@ -265,13 +258,14 @@ async function chatStream(options) {
   if (toolCalls.length > 0) onToolCalls?.(toolCalls)
   if (usage) onUsage?.(usage)
 
-  /* 每请求指标落盘（只记数字与 hash，不记内容）；写不进去不影响请求 */
   try {
     metrics.logLlm({
       label,
       model,
       providerId: provider?.id ?? '',
       trace: options.traceId ?? '',
+      /* ★ P2：任务归属（`task_*`）。trace 是运行实例（`req_*`），两个都记、谁也不替代谁 */
+      taskId: options.taskId ?? '',
       retryIndex: Number(options.retryIndex) || 0,
       usage,
       ttftMs,
