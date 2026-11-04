@@ -93,9 +93,16 @@ export interface SafetyBridge extends TaskBridge, ProfileBridge {
   }>
 
   capabilityList: () => Promise<{ ok: boolean; grants: CapabilityGrant[] }>
-  capabilityGrant: (payload: { path: string; mode?: string; reason?: string }) => Promise<{
+  capabilityGrant: (payload: {
+    path: string
+    mode?: string
+    /* C-1：会话类授权必须带会话身份，不带会被内核拒（见 capability-store） */
+    sessionId?: string
+    reason?: string
+  }) => Promise<{
     ok: boolean
     path?: string
+    mode?: string
     error?: string
   }>
   capabilityRevoke: (target: string) => Promise<{ ok: boolean; removed?: number }>

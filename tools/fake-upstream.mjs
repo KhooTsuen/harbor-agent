@@ -21,6 +21,7 @@
  */
 
 import { createServer } from 'node:http'
+import { writeFileSync } from 'node:fs'
 import { handleRetryMode } from './fake-retry-mode.mjs' /* retry 模式整套住在那边 */
 import { streamExperienceRound } from './fake-upstream-experience.mjs' /* experience 模式整套住在那边 */
 import { streamBusyRound } from './fake-upstream-busy.mjs' /* busy 模式：「任务真在干活」那一幕 */
@@ -35,8 +36,8 @@ const SLOW_MS = Number(process.env.FAKE_SLOW_MS ?? 5000)
 let planRounds = 0
 /* loop 模式的轮次计数（AG-041）：偶数轮 A、奇数轮 B */
 let loopRounds = 0
-/* 「第 1 轮发一次工具调用、之后收尾」的模式计数：confirm（确认卡）/ ask（澄清卡）/ shellfail（工具真失败） */
-const onceRounds = { confirm: 0, ask: 0, shellfail: 0 }
+/* 「第 1 轮发一次工具调用、之后收尾」的模式计数：confirm（确认卡）/ ask（澄清卡）/ shellfail（工具真失败）/ sensitive（敏感文件授权） */
+const onceRounds = { confirm: 0, ask: 0, shellfail: 0, sensitive: 0 }
 
 function sseChunk(delta) {
   return `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
@@ -54,6 +55,23 @@ const server = createServer(async (req, res) => {
   req.resume()
 
   console.log(`[fake-upstream] ${req.method} ${url.pathname} → mode=${mode}`)
+  /*
+   * C-1 真机验收要读「第 2 个请求里到底有没有那个密钥」——
+   * 假上游自己记一份请求体（只在设了 FAKE_DUMP_PATH 时写，默认不写盘）。
+   */
+  if (process.env.FAKE_DUMP_PATH) {
+    req.on('end', () => {
+      try {
+        writeFileSync(
+          process.env.FAKE_DUMP_PATH,
+          Buffer.concat(bodyChunks).toString('utf8'),
+          { flag: 'a' },
+        )
+      } catch {
+        /* 记不下来不影响上游本身 */
+      }
+    })
+  }
 
   if (mode === 'html') {
     res.writeHead(502, { 'Content-Type': 'text/html' })
@@ -158,7 +176,7 @@ const server = createServer(async (req, res) => {
    *   · ask      → `ask_user`（→ 弹**澄清卡**）· 自动化测试「脚本自己点卡」用
    *   · shellfail→ `run_shell` 跑 `exit /b 7`（退出码 7）· 「工具真失败」冒烟的入口
    */
-  if (mode === 'confirm' || mode === 'ask' || mode === 'shellfail') {
+  if (mode === 'confirm' || mode === 'ask' || mode === 'shellfail' || mode === 'sensitive') {
     onceRounds[mode] += 1
     const askCall = {
       name: 'ask_user',
@@ -182,13 +200,19 @@ const server = createServer(async (req, res) => {
         ? { name: 'run_shell', arguments: JSON.stringify({ command: 'echo smoke-ok > smoke-shell-ok.txt' }) }
         : mode === 'shellfail'
           ? { name: 'run_shell', arguments: JSON.stringify({ command: 'exit /b 7' }) }
-          : askCall
+          : mode === 'sensitive'
+            ? { name: 'read_file', arguments: JSON.stringify({ path: process.env.FAKE_SENSITIVE_PATH ?? '' }) }
+            : askCall
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
     if (onceRounds[mode] === 1) {
       const call = { index: 0, id: `call_${mode}_1`, type: 'function', function: once }
       res.write(sseChunk({ tool_calls: [call] }))
     } else {
-      const done = { confirm: '确认卡冒烟：这一步已经处理完了。', shellfail: '接住了这次失败，换一条命令再试。' }
+      const done = {
+        confirm: '确认卡冒烟：这一步已经处理完了。',
+        shellfail: '接住了这次失败，换一条命令再试。',
+        sensitive: '敏感文件那一步已经处理完了。',
+      }
       res.write(sseChunk({ content: done[mode] ?? '澄清卡冒烟：这一步已经处理完了。' }))
     }
     res.write('data: [DONE]' + String.fromCharCode(10, 10))

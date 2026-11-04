@@ -35,7 +35,7 @@ async function runWithPathPermission(tool, args, ctx) {
     if (ctx.permission === 'full') {
       actionCore.notePermission(ctx, 'path', 'bypassed')
       /*
-       * 完全访问 = 不问。但**不能悄悄放行**：审计里留一条、界面上弹一条 toast。
+       * 完全访问 = 不问。但**不能悄悄放行**：审计里留一条。
        * 走的是同一条授权 + 重试，只是跳过了「问」这一步。
        */
       /*
@@ -65,12 +65,19 @@ async function runWithPathPermission(tool, args, ctx) {
        * ★ 授权用 `once`（用完即销），**不能**用 `session`：
        *   完全访问下放行一次就留下一条 12 小时的会话授权的话，用户之后切回
        *   「需要确认」档、那个路径也会不再问 —— 等于悄悄削弱了更严的那一档。
+       * ★ C-1：会话类授权现在**必须带 sessionId**（不带会被拒，见 capability-store），
+       *   而 once 用完即销、绝不跨会话 —— 正是这里要的语义。
        */
-      capability.grant(target, {
+      const granted = capability.grant(target, {
         mode: 'once',
-        sessionId: ctx.sessionId ?? '',
+        sessionId: capability.sessionKey(ctx),
         reason: `${error.reason}（完全访问，未询问）`,
       })
+      /*
+       * 授权没落下来（比如这次没有会话身份）时**不能**硬重试 ——
+       * 重试必然还是同一个拒绝，模型会以为工具坏了而反复试。
+       */
+      if (!granted?.ok) return `错误：${error.message}`
       return await tool.run(args ?? {}, ctx)
     }
 
@@ -89,14 +96,66 @@ async function runWithPathPermission(tool, args, ctx) {
     }
     actionCore.notePermission(ctx, 'path', 'granted')
 
-    capability.grant(error.target, {
+    /*
+     * ★ C-1：敏感文件批的是**这个精确路径**（`check` 对敏感路径也只认精确授权），
+     *   所以这里必须把 `error.target`（抛错时那个具体文件）当作授权对象，
+     *   而不是它所在的目录。非敏感路径的行为一字未改：仍然是「批一次这个路径」，
+     *   `findGrant` 对非敏感路径照旧允许父目录覆盖。
+     *
+     * ★ C-1（2026-11-04 复核）：`owner` 为空时**不能**退成 `once` 落盘 ——
+     *   `capability-store.add` 对所有非 permanent 模式都要求 owner，于是 grant
+     *   直接返回 `ok:false`，用户刚点的「允许」一点效果都没有（探针实测：批准后
+     *   仍返回「需要授权才能访问」，授权表里一条记录都没有）。而真实存在这种 ctx
+     *   （`codex-mcp-bridge.cjs` 的 makeCtx 既无 sessionId 也无 threadId）。
+     *   无身份时走 `retryOnce`：只在**这次调用内**放行这一个精确路径，不落盘。
+     *   「这次是谁」走 `capability.sessionKey`，和 `_shared.cjs` 的检查用**同一个**算法。
+     */
+    const owner = capability.sessionKey(ctx)
+    if (!owner) return await retryOnce(tool, args, ctx, error.target)
+
+    const granted = capability.grant(error.target, {
       mode: 'session',
-      sessionId: ctx.sessionId ?? '',
+      sessionId: owner,
       reason: error.reason,
     })
+    if (!granted?.ok) {
+      /* 授权没落下来就不要硬重试：重试必然还是同一个拒绝 */
+      return `错误：${error.message}`
+    }
 
     /* 授权过了再试一次，这次应该能过 */
     return await tool.run(args ?? {}, ctx)
+  }
+}
+
+/**
+ * 用户批了，但这次调用**没有会话身份** —— 落不了盘（`capability-store.add`
+ * 对所有非 permanent 模式都要求 owner），于是只在**这次调用内**放行这一个精确路径。
+ *
+ * 三条纪律（每一条都对应一种会被踩的漏洞）：
+ *
+ *   ① push 之后**一定**在 finally 里删掉。ctx 是同一轮里所有工具调用共用的，
+ *      忘了删就等于「批一次 = 这一轮随便用」。
+ *   ② 只放行 `target` 这一个路径：`capability.approvedNow` 只做精确相等比较，
+ *      不给父目录开绿灯（否则批 `D:\project` 就等于批了下面的 `.env`）。
+ *   ③ **不落盘**。落了就成一条无 owner 的授权，任何别的无身份调用都能复用 ——
+ *      那正是「once 被别的会话用掉」的旧病换个形状复发。
+ *
+ * @param {object} tool
+ * @param {object} args
+ * @param {object} ctx
+ * @param {string} target 用户刚批准的那个绝对路径
+ */
+async function retryOnce(tool, args, ctx, target) {
+  const owned = !Array.isArray(ctx.approvedPaths)
+  const list = owned ? (ctx.approvedPaths = []) : ctx.approvedPaths
+  list.push(target)
+  try {
+    return await tool.run(args ?? {}, ctx)
+  } finally {
+    const index = list.lastIndexOf(target)
+    if (index >= 0) list.splice(index, 1)
+    if (owned && list.length === 0) delete ctx.approvedPaths
   }
 }
 

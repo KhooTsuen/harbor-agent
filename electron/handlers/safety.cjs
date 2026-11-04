@@ -133,14 +133,13 @@ function register({ ipcMain }) {
     return { ok: true }
   })
 
-  /** 手动加一条授权（用户主动放开一个目录） */
+  /** 手动加一条授权（用户主动放开一个目录）；C-1：会话类必须带 sessionId，否则等于谁都能用 */
   ipcMain.handle('capability:grant', (_event, payload = {}) => {
     const target = String(payload.path ?? '').trim()
     if (!target) return { ok: false, error: '缺路径' }
-    const mode = ['once', 'session', 'permanent'].includes(payload.mode)
-      ? payload.mode
-      : 'permanent'
-    return capability.grant(target, { mode, reason: payload.reason ?? '用户手动添加' })
+    const mode = ['once', 'session', 'permanent'].includes(payload.mode) ? payload.mode : 'permanent'
+    const sessionId = String(payload.sessionId ?? '')
+    return capability.grant(target, { mode, sessionId, reason: payload.reason ?? '用户手动添加' })
   })
 
   /* ── 审批中心（Approval Center）───────────────────────── */

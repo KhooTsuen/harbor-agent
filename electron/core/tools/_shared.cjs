@@ -29,7 +29,7 @@ class PermissionRequiredError extends Error {
  *
  * @param {string} input
  * @param {string} workdir
- * @param {{ sessionId?: string, threadId?: string }} [ctx]
+ * @param {{ sessionId?: string, threadId?: string, approvedPaths?: string[] }} [ctx]
  */
 function resolvePath(input, workdir, ctx) {
   if (!input) throw new Error('缺少路径参数')
@@ -42,7 +42,13 @@ function resolvePath(input, workdir, ctx) {
 
   const decision = capability.check(absolute, {
     workdir,
-    sessionId: ctx?.sessionId ?? ctx?.threadId ?? '',
+    /* 「这次是谁」只有一处算法：`capability.sessionKey`（别在这再写一遍表达式） */
+    sessionId: capability.sessionKey(ctx),
+    /*
+     * 无会话身份时，用户刚批准的路径只在**本次调用内**有效（不落盘）。
+     * 名单由 `tools/permission.cjs` 在重试前后成对加删，这里只负责透传。
+     */
+    approvedPaths: ctx?.approvedPaths,
   })
 
   if (!decision.ok) {
