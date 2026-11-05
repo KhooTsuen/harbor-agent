@@ -33,6 +33,7 @@
 const fs = require('node:fs')
 const { resolvePath } = require('./_shared.cjs')
 const { grantsWriteIn } = require('../user-constraints.cjs')
+const { sessionGranted } = require('../user-grants.cjs')
 
 /**
  * 这道闸管哪些工具：**只会有 `path` 的那两个**。
@@ -143,8 +144,13 @@ function check({ name, args, ctx, switches }) {
    * 判据在 `user-constraints.cjs` 的 `grantsWriteIn`（唯一真相源，别在这里再写一份）。
    * 只放 C 闸；**B 闸（先给计划）与风险闸不受影响** —— 那不是"征得同意"，
    * 而是要一个可回看的计划，跟授权无关。
+   *
+   * ★ 2026-11-06 补：授权跨轮次继续算数（`user-grants.cjs`）。
+   *   真机第二个现场：用户上一条写「本轮明确授权…」，下一条只说「我已重启好了」
+   *   → `lastUserText` 换了 → 又拦一次。授权的作用域是**这件事**，不是**这一句**。
+   *   撤销只有一种：他自己说停手 / 这轮只读（`noWriteIn` 命中时 noteGrant 会清掉）。
    */
-  const userGranted = grantsWriteIn(ctx?.lastUserText)
+  const userGranted = grantsWriteIn(ctx?.lastUserText) || sessionGranted(ctx?.sessionId)
 
   /* C 闸：覆盖已有文件 = 不可逆。问过一次就不再管（用户点头就是点头了）。 */
   if (!userGranted && !st.asked && !st.blockAsk && on('clarifyFirst') && overwrites(args, ctx)) {

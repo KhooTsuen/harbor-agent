@@ -1,16 +1,13 @@
 /**
  * 自检分组清单（从 selftest.mjs 抽出来的）
  *
- * 为什么抽：`selftest.mjs` 顶到 300 行红线（硬约束 #2），而它 90% 的行是
- * 「一组一行」的 import + GROUPS 数组 —— 这部分**只增不减**（每加一个自检组
- * 就多一行），留在主文件里等于把红线焊死。抽出来之后主文件只剩「跑 + 收尾」。
+ * 为什么抽：`selftest.mjs` 顶到 300 行红线，而它 90% 的行是「一组一行」的 import +
+ * GROUPS 项（**只增不减**，留在主文件里等于把红线焊死）。抽出来主文件只剩「跑 + 收尾」。
  *
- * ⚠️ **加载时机不变**：本文件被 `selftest.mjs` 静态 import，各 group 模块的顶层
- * 代码仍在 `prepareSelftest()` 之前执行 —— 与原实现一字不差（`paths.cjs` 的
- * `isSelftestRun()` 判的是 `process.argv[1]`，只认 `selftest.mjs`，不受影响）。
+ * ⚠️ **加载时机不变**：本文件被 `selftest.mjs` 静态 import，各 group 模块的顶层代码仍在
+ * `prepareSelftest()` 之前执行 —— 与原实现一字不差（`paths.cjs` 只认 `process.argv[1]`）。
  *
- * 加新组：在这里 import 一行、GROUPS 里加一项（组间不共享状态，见各组文件头）。
- * ★ GROUPS 的顺序 = 运行顺序，**动了就是行为变更**（别顺手重排）。
+ * 加新组：这里 import 一行 + GROUPS 加一项；顺序即运行顺序，**别顺手重排**（组间不共享状态）。
  */
 
 import { run as basics } from './groups/01-basics.mjs'
@@ -93,6 +90,7 @@ import { run as memoryDedupeScopeGroup } from './groups/208-memory-dedupe-scope.
 import { run as execParityGroup } from './groups/209-exec-parity.mjs'
 import { run as llmAttributionGroup } from './groups/210-llm-attribution.mjs'
 import { run as edgeTargetGuardGroup } from './groups/211-edge-target-guard.mjs'
+import { run as userGrantsGroup } from './groups/213-user-grants.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -297,4 +295,5 @@ export const GROUPS = [
   experienceLeftoversGroup, experienceLeftoversUiGroup, edgeSidepanelHistoryGroup,
   edgeInstallGroup, edgeIngestNoteGroup, mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
   memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
+  userGrantsGroup,
 ]

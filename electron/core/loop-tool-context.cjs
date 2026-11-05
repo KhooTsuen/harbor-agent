@@ -1,6 +1,7 @@
 const log = require('./log.cjs')
 const skillPin = require('./skill-pin.cjs')
 const userConstraints = require('./user-constraints.cjs')
+const userGrants = require('./user-grants.cjs')
 
 function buildToolContext({
   options,
@@ -15,6 +16,15 @@ function buildToolContext({
   confirm,
   emit,
 }) {
+  /*
+   * 记下「这个会话他说过授权」—— 判据在 user-constraints（唯一真相源），
+   * 这里只负责把这一轮的原话送进去判一次。授权轮之后用户改口说「继续」，
+   * C 闸仍认这是同一件事，不会重新问（见 user-grants.cjs 的文件头）。
+   */
+  userGrants.noteGrant(options.sessionId ?? '', {
+    granted: userConstraints.grantsWriteIn(userText),
+    stopped: userConstraints.noWriteIn(userText),
+  })
   return {
     workdir,
     vision: { config, provider: useProvider, model: useModel },
