@@ -199,6 +199,7 @@ import { run as runStatsGroup } from './groups/95-run-stats.mjs'
 import { run as replayRiskGroup } from './groups/96-replay-risk.mjs'
 import { run as projectRulesGroup } from './groups/97-project-rules.mjs'
 import { run as rollbackPreviewGroup } from './groups/98-rollback-preview.mjs'
+import { run as rollbackConflictGroup } from './groups/212-rollback-conflict.mjs'
 import { run as clarifyGroup } from './groups/99-clarify.mjs'
 import { run as clarifyTimeoutGroup } from './groups/100-clarify-timeout.mjs'
 import { run as confirmBridgeGroup } from './groups/101-confirm-bridge.mjs'
@@ -241,7 +242,6 @@ import { run as browseHistoryGroup } from './groups/138-browse-history.mjs'
 import { run as browseSettleGroup } from './groups/139-browse-settle.mjs'
 import { run as shellHeartbeatGroup } from './groups/140-shell-heartbeat.mjs'
 import { run as decisionEventNamesGroup } from './groups/141-decision-event-names.mjs'
-
 /* ★ 顺序即运行顺序，保持既有次序不动 */
 export const GROUPS = [
   basics, skillsMemory, fsSafety, reliability,
@@ -261,7 +261,7 @@ export const GROUPS = [
   partialPersist, versionSync, taskReuse, answers,
   logging, actionLog, selectorStability, answerPick,
   destructive, redactFields, durableIntent, approvalCenter,
-  tokenBadge, rollbackTo, artifactGroup, skillPerms,
+  tokenBadge, rollbackTo, artifactGroup, skillPerms, rollbackConflictGroup,
   providerCaps, memoryExplain, scheduleGroup, netPolicyGroup,
   sessionCrypto, projectsGroup, taskPresets, consistencyGroup,
   boundsGroup, llmStream, handlersGroup, regenGroup,

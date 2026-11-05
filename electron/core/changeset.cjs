@@ -15,6 +15,11 @@ const log = require('./log.cjs')
 const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs')
 /* 「撤到某个检查点为止」在单独一个文件里（它惰性 require 本模块，顶层不引用） */
 const { rollbackTo } = require('./changeset-rollback.cjs')
+/*
+ * 整批回滚（rollback）连同「覆盖冲突判定」一起搬到 changeset-conflict.cjs：
+ * 冲突判据要能被单独钉住，而且本文件已经贴到 300 行。它同样惰性 require 本模块。
+ */
+const { rollback } = require('./changeset-conflict.cjs')
 
 function root() {
   return path.join(DIRS.data, 'changesets')
@@ -182,44 +187,10 @@ function commit(id, { verified = null } = {}) {
   return { ok: true, files: meta.files.length }
 }
 
-/** 回滚。三类都要处理：① 改过的 → 写回快照 ② 新建的 → 删掉 ③ 没快照的（太大）→ 明确告诉用户 */
-function rollback(id) {
-  const meta = readMeta(id)
-  if (!meta) return { ok: false, error: '事务不存在' }
-
-  const restored = []
-  const removed = []
-  const failed = []
-
-  for (const entry of meta.files) {
-    try {
-      if (!entry.existed) {
-        if (fs.existsSync(entry.path)) fs.rmSync(entry.path, { force: true })
-        removed.push(entry.path)
-        continue
-      }
-
-      if (!entry.snapshot || !entry.snap) {
-        failed.push({ path: entry.path, reason: entry.reason ?? '没有快照' })
-        continue
-      }
-
-      const content = fs.readFileSync(path.join(dirFor(id), 'files', entry.snap), 'utf8')
-      fs.mkdirSync(path.dirname(entry.path), { recursive: true })
-      fs.writeFileSync(entry.path, content, 'utf8')
-      restored.push(entry.path)
-    } catch (error) {
-      failed.push({ path: entry.path, reason: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  meta.status = 'rolled-back'
-  meta.rolledBackAt = Date.now()
-  writeMeta(id, meta)
-
-  log.info(`改动事务回滚：恢复 ${restored.length} 个，删除 ${removed.length} 个，失败 ${failed.length} 个`)
-  return { ok: true, restored, removed, failed }
-}
+/*
+ * 回滚（整批撤）不在这里了：连「覆盖冲突判定」一起搬到 `changeset-conflict.cjs`。
+ * 外部照旧 `changeset.rollback(id, { force })` —— 见下方 module.exports。
+ */
 
 /** 盖「被重新生成替代」标记：事务本体不动、不自动回滚，只是让审查面板能看出它是旧一版的 */
 function markSuperseded(id, byTaskId = '') {

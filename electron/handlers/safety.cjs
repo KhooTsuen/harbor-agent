@@ -21,7 +21,6 @@ const metrics = require('../core/metrics.cjs')
 const budget = require('../core/budget.cjs')
 const configCore = require('../core/config.cjs')
 const recovery = require('../core/task-recovery.cjs')
-const changeset = require('../core/changeset.cjs')
 const changesetDiff = require('../core/changeset-diff.cjs')
 const credentials = require('../core/credentials.cjs')
 const config = require('../core/config.cjs')
@@ -252,27 +251,9 @@ function register({ ipcMain }) {
   ipcMain.handle('task:pauseRunning', () => task.pauseRunning())
 
   /* ── 改动事务 ─────────────────────────────────────────── */
-
-  ipcMain.handle('changeset:list', (_event, options = {}) => ({
-    ok: true,
-    changesets: changeset.list({
-      limit: Math.min(100, Number(options.limit) || 20),
-      taskId: options.taskId ?? '',
-      sessionId: options.sessionId ?? '',
-    }),
-  }))
-
-  ipcMain.handle('changeset:get', (_event, id) => ({
-    ok: true,
-    changeset: changeset.get(String(id ?? '')),
-  }))
-
-  ipcMain.handle('changeset:rollback', (_event, id) => {
-    const result = changeset.rollback(String(id ?? ''))
-    log.info(`用户回滚了一次改动：${id}（恢复 ${result.restored?.length ?? 0} 个文件）`)
-    return result
-  })
-  /* 「撤到某个检查点为止」单独一个文件（本文件已贴 300 行上限，见那边的头注释） */
+  /* 列表 / 详情 / 整批撤销在单独一个文件（本文件已贴 300 行上限，见那边的头注释） */
+  require('./changeset.cjs').register({ ipcMain })
+  /* 「撤到某个检查点为止」同样单独一个文件 */
   require('./changeset-rollback.cjs').register({ ipcMain })
 
   /*

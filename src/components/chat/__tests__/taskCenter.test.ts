@@ -229,8 +229,13 @@ describe('AG-028 / 接线守卫', () => {
 
   it('★ 撤销改动也在任务中心（横幅撤掉后唯一入口）', () => {
     const center = readFileSync(join(SRC, 'components/chat/TaskCenter.tsx'), 'utf8')
-    expect(center).toContain('changesetRollback(changeset.id)')
+    /* 2026-11-06：撤销流程搬去 changesetRollbackFlow.ts（那边多了「覆盖冲突」确认卡）。
+       这里钉的仍是同一件事：任务中心里那个「撤销」按钮真的接到了撤销内核上，
+       而不是变成一句空话。 */
+    expect(center).toContain('requestRollback(changeset, {')
     expect(center).toContain('可撤销的改动')
+    const flow = readFileSync(join(SRC, 'components/chat/changesetRollbackFlow.ts'), 'utf8')
+    expect(flow).toContain('changesetRollback(changeset.id)')
     const store = readFileSync(join(SRC, 'stores/useTaskStore.ts'), 'utf8')
     expect(store).toContain('changesetList({ limit: 5 })')
     expect(store).toContain("c.status === 'committed' && c.fileCount > 0")

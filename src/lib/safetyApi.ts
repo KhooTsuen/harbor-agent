@@ -5,7 +5,6 @@ import type {
   AuditEntry,
   AuditStats,
   CapabilityGrant,
-  ChangeSetSummary,
   CredentialsStatus,
   RiskVerdict,
   TaskRecord,
@@ -252,37 +251,11 @@ export async function taskRemove(id: string): Promise<void> {
   }
 }
 
-export async function changesetList(options?: { limit?: number }): Promise<ChangeSetSummary[]> {
-  if (!bridge?.changesetList) return []
-  try {
-    const result = await bridge.changesetList(options)
-    return result.changesets ?? []
-  } catch {
-    return []
-  }
-}
-
-export async function changesetRollback(id: string): Promise<{
-  ok: boolean
-  restored: string[]
-  removed: string[]
-  failed: Array<{ path: string; reason: string }>
-}> {
-  if (!bridge?.changesetRollback) {
-    return { ok: false, restored: [], removed: [], failed: [] }
-  }
-  try {
-    const result = await bridge.changesetRollback(id)
-    return {
-      ok: result.ok === true,
-      restored: result.restored ?? [],
-      removed: result.removed ?? [],
-      failed: result.failed ?? [],
-    }
-  } catch {
-    return { ok: false, restored: [], removed: [], failed: [] }
-  }
-}
+/* 改动事务的三样（列表 / 冲突形状 / 整批撤销）搬去了 `changesetApi.ts`：
+   那边留得下 300 行，而且撤销多了「覆盖冲突」这层。这里原样转出，
+   调用方的 import 路径不用改。 */
+export { changesetList, changesetRollback } from './changesetApi'
+export type { RollbackConflict, RollbackResult } from './changesetApi'
 
 export async function credentialsStatus(): Promise<CredentialsStatus | null> {
   if (!bridge?.credentialsStatus) return null

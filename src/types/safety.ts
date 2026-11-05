@@ -117,11 +117,18 @@ export interface SafetyBridge extends TaskBridge, ProfileBridge {
   /** AG-037：最近几次的性能时间线（性能面板用）—— 纯读，读的是内存里的那几份 */
   metricsRecent: (payload?: { limit?: number }) => Promise<{ ok: boolean; items: PerfTimeline[] }>
   changesetGet: (id: string) => Promise<{ ok: boolean; changeset: Record<string, unknown> | null }>
-  changesetRollback: (id: string) => Promise<{
+  changesetRollback: (payload: {
+    id: string
+    /** 用户已经在确认卡上看过冲突清单、仍然要覆盖 */
+    force?: boolean
+  }) => Promise<{
     ok: boolean
     restored?: string[]
     removed?: string[]
     failed?: Array<{ path: string; reason: string }>
+    /** 有覆盖冲突 → 盘上一个字都没动、等用户确认 */
+    blocked?: boolean
+    conflicts?: Array<{ path: string; kind: string; reason: string; detail: string }>
     error?: string
   }>
 

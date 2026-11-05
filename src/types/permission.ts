@@ -21,6 +21,8 @@ export type PermissionKind =
   | 'clear-tasks'
   /* AG-052：撤销检查点之后的改动（破坏性，要二次确认 + 影响预览） */
   | 'rollback-checkpoint'
+  /* 2026-11-06：整批撤销会盖掉后来的改动 —— 先摆冲突清单，用户点头才强撤 */
+  | 'rollback-changeset'
   /* AG-053：开工前澄清（要用户拿主意的地方，答完才动手） */
   | 'clarify'
 

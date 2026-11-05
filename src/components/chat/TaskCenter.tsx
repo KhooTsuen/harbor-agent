@@ -8,7 +8,8 @@ import { useThreadStore } from '@/stores/useThreadStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useSettingsStore } from '@/stores/useSettingsStore'
 import { scopeLabelOf, scopeToggleLabelOf, scopeWorkdirOf } from '@/lib/taskScope'
-import { changesetRollback, taskRemoveMany, taskRemoveSafe, taskUpdate } from '@/lib/safetyApi'
+import { taskRemoveMany, taskRemoveSafe, taskUpdate } from '@/lib/safetyApi'
+import { requestRollback } from './changesetRollbackFlow'
 import { Button } from '@/components/ui/Button'
 import { TaskCenterEmpty } from './TaskCenterEmpty'
 import { IconButton } from '@/components/ui/IconButton'
@@ -151,21 +152,12 @@ export function TaskCenter() {
   }
 
   async function rollback(changeset: ChangeSetSummary): Promise<void> {
-    setBusy(changeset.id)
-    const result = await changesetRollback(changeset.id)
-    setBusy('')
-    if (!result.ok) {
-      showToast('error', '撤销失败', '看日志里怎么说')
-      return
-    }
-    const failed = result.failed.length
-    showToast(
-      failed > 0 ? 'warning' : 'success',
-      '已撤销这次改动',
-      `恢复 ${result.restored.length} 个 · 删除 ${result.removed.length} 个` +
-        (failed > 0 ? ` · ${failed} 个没恢复成功（可能太大没快照）` : ''),
-    )
-    await refresh(projectWorkdir)
+    await requestRollback(changeset, {
+      setBusy,
+      showToast,
+      askPermission,
+      refresh: () => void refresh(projectWorkdir),
+    })
   }
 
   if (!loaded) {

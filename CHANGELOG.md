@@ -1,5 +1,32 @@
 ## [未发布]
 
+### 修：撤销改动时会静默覆盖后来的改动（回滚覆盖冲突保护）
+
+**改前真实行为**（隔离探针 `tmp/rollback-safety-probe.mjs`，8 个场景实测）：
+`changeset.rollback(id)` 拿到快照就无条件写回，不看 status、也不看文件在这之后有没有被改过。
+于是「11 月 1 日那次事务」的快照可以盖掉此后任何合法改动，界面只报「已撤销，恢复 1 个」——
+丢的东西看不见。实测里同一个文件被更晚的两次已提交改动改过，点一下撤销就回到旧内容；
+事务新建的文件被用户删掉又重建，撤销直接把用户那份删掉。
+
+**改后**：写盘前逐文件判三类冲突，任一命中就**一个字节都不写**（不碰文件、不改 `meta.status`），
+返回冲突清单；用户在确认卡上看过、点「仍然撤销」才带 `force` 真撤（行为与改前逐字节一致）。
+
+| 判据 | 抓什么 |
+| --- | --- |
+| `later_changeset` | 另一个**没被撤回**的事务也 record 过同一文件、且更晚 |
+| `modified_after` | 事务收尾之后文件 mtime 又变了（事务自己的写入早于 commit，不会误判） |
+| `deleted_after` / `recreated` | 撤销会把删掉的文件重建回来 / 会把用户重建的那份删掉 |
+
+**不误伤**（自检钉住的两条）：任务失败后的整批撤销（open 事务不比 mtime —— `record()`
+在写文件之前调用，比 mtime 会把正常回滚全拦下）、刚提交就撤（同一毫秒写完的文件不算事后被改）。
+
+改动：新增 `electron/core/changeset-conflict.cjs`（判据 + 回滚执行体）、
+`electron/handlers/changeset.cjs`（三个通道从 `safety.cjs` 搬出来，那边已贴 300 行）、
+`src/lib/changesetApi.ts`、`src/components/chat/changesetRollbackFlow.ts`（冲突卡流程）；
+新增自检组 `212-rollback-conflict`（27 条断言）。
+已知遗留：检查点回退（`changeset:rollbackTo`）**没有**这套保护，同类风险仍在。
+
+
 ### 查：B 类债务复核（P2 第四阶段，8 条逐项判定 + 1 条自检补钉）
 
 **这一阶段不改产品行为**，逐项核对第一阶段「能力边界审查」留下的 8 条 B 类事项，

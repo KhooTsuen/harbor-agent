@@ -195,7 +195,7 @@ const api = {
 
   changesetList: (options) => call('changeset:list', options),
   changesetGet: (id) => call('changeset:get', id),
-  changesetRollback: (id) => call('changeset:rollback', id),
+  changesetRollback: (payload) => call('changeset:rollback', payload),
   changesetRollbackTo: (payload) => call('changeset:rollbackTo', payload),
   changesetDiff: (payload) => call('changeset:diff', payload),
   artifactList: (options) => call('artifact:list', options),
