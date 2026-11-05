@@ -33,7 +33,7 @@
 | 想让模型**一眼看出「有什么工具、何时该掏哪个」**（工具清单现状核对 / 分组地图 / 重复性分析 / token 实测） | [`research/toolbox-map-design.md`](research/toolbox-map-design.md)（方案 · 2026-10-13 · **已实施（B 方案）**：`core/tool-map.cjs` 分组地图，提示词 `/7→/8`） |
 | | 想让智能体**更主动**（主动查记忆 / 连续失败给替代方案 / 工具按需加载省 token） | [`research/agent-capability-upgrade-design.md`](research/agent-capability-upgrade-design.md)（只读调研 + 方案 · 2026-10-14 · **未实施，待拍板**；外部趋势已核实：Meta 官方博客 / OpenAI 两份官方文档 / Agent Arena 榜 / DeepSeek 官方） |
 | 想知道**当前架构的真实状态**（重复表达 / 多真相源 / 跨层耦合） | [`Architecture Reality Audit.md`](Architecture%20Reality%20Audit.md)（现状审计 · 2026-10-08 · **不是**设计稿） |
-| 从 Harbor 自举版终端运行统一测试、看 TUI 人话报告 | PowerShell 中打开仓库，运行 `npm run harbor-test -- all --target=source`；安装版隔离自检用 `--target=installed`。空参数进入 TUI 选择，非交互环境加 `--plain`（入口 `tools/harbor-test.mjs`） |
+| 从 Harbor 自举版终端运行统一测试、看 TUI 人话报告 | PowerShell 中打开仓库，运行 `npm run harbor-test -- all --target=source`；安装版隔离自检用 `--target=installed`。空参数进入 TUI 选择，非交互环境加 `--plain`（入口 `tools/harbor-test.mjs`；设计与验收记录：[`research/harbor-test-design-2026-10-29.md`](research/harbor-test-design-2026-10-29.md) · [第一批](research/harbor-test-acceptance-batch1-2026-10-29.md) · [第二批](research/harbor-test-acceptance-batch2-2026-10-29.md)） |
 | 查**同一个事实在几处被定义**（真相源 / 重复候选） | [`真相源地图.md`](真相源地图.md)（`npm run contracts` + `npm run dup`） |
 | 想知道**重复/多真相源要怎么收敛**（真相源地图怎么做、分几步） | [`research/truth-map-design.md`](research/truth-map-design.md)（设计稿 · 2026-10-13 · 目标态） |
 | 想知道**接下来还能往哪改**（改进候选 / 撞哪条红线 / 建议顺序） | [`改进清单.md`](改进清单.md)（内部自产 · 2026-10-13；**不是**外部核对账 —— 那份是 [`improvement-checklist.md`](improvement-checklist.md)） |
@@ -59,6 +59,9 @@
 | 改验收判据 / 刚遇到「测试红了可它没错」 | [`判据自检.md`](判据自检.md)（三态 + 证据 + 反向用例） |
 | 想知道**现在有哪几个测试入口、每块能力验到哪一层、哪些场景还没证据** | [`回归基线.md`](回归基线.md)（现状说明 · 2026-11-05 · 含发版前最低回归标准） |
 | 想知道**2026-11 那轮能力边界审查查了什么、修了什么、哪些决定不修** | [`能力边界审查-2026-11.md`](能力边界审查-2026-11.md)（**正式归档** · 2026-11-05 · 范围与过程 / 逐项证据 / 验证层级 / 遗留清单） |
+| 想知道 `research/` 里**哪份调研还有效、哪份已经是历史** | [`research/README.md`](research/README.md)（分档索引 · 2026-11-06 · A 档被代码引用 / D 档零引用） |
+| 想**对外分享**这套约束机制的做法（不是内部文档） | [`对外/让AI写代码不被它自己骗过.md`](对外/让AI写代码不被它自己骗过.md)（对外稿 · 2026-11-06 · 面向不熟悉本项目的人，可直接发布） |
+| 想知道**资料都放在哪、哪些散了/重了/过期了**（仓库内外一起看） | [`资料盘点-2026-11.md`](资料盘点-2026-11.md)（**盘点结论** · 2026-11-06 · 21 个外部目录逐项定性 / 重复与过期判定 / 待决定清单；第 8 节是**第一批执行记录**：1/2/5/8 项已做） |
 | 看性能口径与历史基准 | [`性能基准.md`](性能基准.md) |
 | 看截图证据 | [`screenshots/`](screenshots/) |
 
