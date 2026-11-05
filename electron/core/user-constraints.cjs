@@ -8,24 +8,15 @@
  *
  * ★ 2026-10-15 修掉的误判（用户报「内置浏览器调不动」）
  *
- *   原来是 `/(只分析|不要修改|禁止修改|不许写|不要写文件|不执行修改)/` —— 其中
- *   **`不许写` 太泛**：用户给模型的**输出要求**「凡是你没能在网页上核实的，
- *   一律标注『未验证』，**不许写成确定的事实**」里就带着它，于是整整一轮
+ *   原来是一条大正则，其中 **`不许写` 太泛**：用户给模型的**输出要求**
+ *   「一律标注『未验证』，不许写成确定的事实」里就带着它，于是整整一轮
  *   `allowWrite=false`，`browse` / `run_shell` / `write_file` 全被拒
  *   （装机版 errors/2026-10-15.jsonl 16:46–16:49 六条全是这个）。
  *
- *   现在拆成两半，**任一半命中才算「别动东西」**：
- *
- *     ① **明确短语**：语义本来就指向「别动东西」，不需要宾语。
- *        例：「只分析」「不执行修改」—— 只有一种解释，不需要宾语。
- *
- *     ② **否定词 + 泛动词 + 文件类对象**：`不许写` / `不要改` 这类泛动词
- *        必须和**宾语**同现才算。「不许写**成**确定的事实」被两道挡下 ——
- *        `(?!成)`（挡「写成…」这种输出要求的固定搭配）+ 后面 12 字内没有
- *        文件类对象（挡「写成…的事实」）。
- *
- *   代价是明确写下的：**光说「不许写」而没说写什么，不再算约束**。
- *   这比反过来（把「不许写成事实」当成禁写）安全得多 —— 后者会让整轮工具不可用。
+ *   现在拆成两半，**任一半命中才算「别动东西」**：① 明确短语（「只分析」这类
+ *   语义自足、不需要宾语）；② 否定词 + 泛动词 + 文件类对象（必须同现，
+ *   `(?!成)` 挡「写成…」那种输出要求）。
+ *   代价写下了：**光说「不许写」而没说写什么，不再算约束** —— 这比反过来安全得多。
  */
 
 /* ── ⓪ 「停手，等我点头」的说法清单 —— **唯一真相源** ──────────
@@ -69,6 +60,40 @@ const STOP_PHRASES = [
  * 结局一样：不许落盘。
  */
 const NO_WRITE_PHRASE = new RegExp(`(只分析|不执行修改|不执行写入|${STOP_PHRASES.join('|')})`)
+
+/* ── ①′ 「提及」不等于「下达」（2026-11-06 真机误判）────────────
+ *
+ * 病：用户在同一段话里既**授权**改源码、又要写验收标准 ——
+ *   「5. 用户明确要求只分析、不修改：仍然严格遵守。」
+ *   「之前消息中出现的「只分析、不修改」只是测试场景。」
+ * 两处都命中明确短语，整轮 `allowWrite=false`，而这轮正在授权动手。病根是判据
+ * 不区分**引述**和**发令**。只收两条有客观标记的判据，不猜语义：
+ *   ⓐ 引号里的是**提到**某句话，不是发出它 → 剥掉（「」『』“”""）。
+ *   ⓑ 短语前 12 字内有**转述主语**（用户明确要求 / 如果 / 场景 / 验收 / 测试…）→ 不算命令。
+ * 代价：**「我要求只分析」仍拦**（清单只收第三方的「用户要求」）。漏放只是那一轮
+ * 没锁上（PermissionBar 兜底），错拦则整轮全废 —— 方向不能反。
+ */
+const QUOTED_TEXT = /「[^」]*」|『[^』]*』|“[^”]*”|"[^"\n]*"/g
+
+const MENTION_SUBJECT = /(用户(明确)?(要求|说|提到|表示)|如果|假如|当|场景|验收|测试|示例|描述|说的是)/
+
+/** 把「引号里的话」抹成空格 —— 被提到的文本不是指令 */
+function stripQuoted(text) {
+  return text.replace(QUOTED_TEXT, ' ')
+}
+
+/** 明确短语有没有真的命中（逐处看前文，跳过「转述」的那几处） */
+function phraseHits(text) {
+  const re = new RegExp(NO_WRITE_PHRASE.source, 'g')
+  let m = re.exec(text)
+  while (m !== null) {
+    if (!MENTION_SUBJECT.test(text.slice(Math.max(0, m.index - 12), m.index))) return true
+    /* 零宽匹配时手动前移，避免 exec 原地打转 */
+    if (re.lastIndex <= m.index) re.lastIndex = m.index + 1
+    m = re.exec(text)
+  }
+  return false
+}
 
 /* ── ①-b 分阶段要求：写入**还没被授权** ────────────────────────
  *
@@ -188,10 +213,29 @@ function blocksAllWrites(text) {
  * @returns {boolean}
  */
 function noWriteIn(userText) {
-  const text = typeof userText === 'string' ? userText : ''
-  if (NO_WRITE_PHRASE.test(text)) return true
+  const raw = typeof userText === 'string' ? userText : ''
+  /* 先剥引号：被**提到**的那句话不是这一轮的命令（见 ①′） */
+  const text = stripQuoted(raw)
+  if (phraseHits(text)) return true
   if (NO_WRITE_PHASED.test(text)) return true
   return blocksAllWrites(text)
+}
+
+/* ── ⑤ 本轮**明确授权动手**的说法（2026-11-06）────────────────
+ *
+ * 用途：写工具前面那道「覆盖已有文件要先问一声」（`tools/pre-write-gate.cjs` 的 C 闸）
+ * 靠它判断「这条已经批过了，别再问一遍」。
+ * 本轮真机现场就是它：用户原话「本轮明确授权修改相关源码、测试、规范及必要的构建产物」，
+ * C 闸照样拦下第一次覆盖 —— 把已经批过的事又问了一遍。
+ * 只收**给了范围或明确许可**的强信号；不收裸的「可以」（「这个可以吗」不是授权）。
+ */
+const GRANT_PHRASE =
+  /(明确授权|授权你|我授权|允许(你)?(修改|改动|编辑|写入|更新)|可以直接(改|修改|动手)|不用(再)?(问|确认)|别问我|你看着办|自行决定|放手做)/
+
+/** 这一轮用户是不是**明确授权动手**了 */
+function grantsWriteIn(userText) {
+  const text = typeof userText === 'string' ? userText : ''
+  return GRANT_PHRASE.test(text)
 }
 
 /**
@@ -242,8 +286,11 @@ module.exports = {
   SCOPED_MODIFIER,
   EXHAUSTIVE_MODIFIER,
   NO_NETWORK_PHRASE,
+  GRANT_PHRASE,
   noWriteIn,
+  grantsWriteIn,
   blocksAllWrites,
+  stripQuoted,
   noNetworkIn,
   allowsWrite,
   allowsNetwork,

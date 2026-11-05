@@ -10,6 +10,7 @@
 | --- | --- |
 | 知道**什么能做、什么必须先问** | [`../AGENT.md`](../AGENT.md)（硬约束 / 硬禁区 / 收工必跑） |
 | 想知道**Harbor 要做成什么样、长期方向有哪几条**（五条产品原则 + 哪些已由代码保障、哪些还是缺口） | [`产品原则.md`](产品原则.md)（**长期方向** · 2026-11-06 立 · 全文只此一处，`AGENT.md` 第 0.5 节只有标签 + 指针） |
+| 想知道**为什么 Agent 有时不问就直接干了、什么时候才该打断我**（最小必要打扰） | 同上 [`产品原则.md`](产品原则.md) 的「最小必要打扰」一节（**不是第六条**，是第 1、5 条的执行准则） |
 | 想知道**有哪些功能、目录结构、怎么跑、已知取舍** | [`../README.md`](../README.md) |
 | 想知道**这个项目分几层、每层干什么、骨干是谁**（结构导览） | [`项目地图.md`](项目地图.md)（**不背数字**，要体量就跑 `npm run map`） |
 | 知道**一件事分几步、报告怎么写** | [`开发流程.md`](开发流程.md) |
@@ -32,7 +33,7 @@
 | 想改**记忆**功能 / 看记忆的目标态、边界与治理 | [`Memory设计.md`](Memory设计.md)（设计稿 · 目标态，不是现状） |
 | 想把记忆从「每轮注入全文」升级成「摘要 + 按需取全文」（现状核对 / 改动面 / 老机器性能 / 负面案例 / 红线） | [`research/memory-layered-recall-design.md`](research/memory-layered-recall-design.md)（方案 · 2026-10-13 · **阶段 1 已实施**：只读工具 `memory_search` + 指路文案；阶段 2 摘要注入未做、默认关） |
 | 想让模型**一眼看出「有什么工具、何时该掏哪个」**（工具清单现状核对 / 分组地图 / 重复性分析 / token 实测） | [`research/toolbox-map-design.md`](research/toolbox-map-design.md)（方案 · 2026-10-13 · **已实施（B 方案）**：`core/tool-map.cjs` 分组地图，提示词 `/7→/8`） |
-| | 想让智能体**更主动**（主动查记忆 / 连续失败给替代方案 / 工具按需加载省 token） | [`research/agent-capability-upgrade-design.md`](research/agent-capability-upgrade-design.md)（只读调研 + 方案 · 2026-10-14 · **未实施，待拍板**；外部趋势已核实：Meta 官方博客 / OpenAI 两份官方文档 / Agent Arena 榜 / DeepSeek 官方） |
+| 想让智能体**更主动**（主动查记忆 / 连续失败给替代方案 / 工具按需加载省 token） | [`research/agent-capability-upgrade-design.md`](research/agent-capability-upgrade-design.md)（只读调研 + 方案 · 2026-10-14 · **未实施，待拍板**；外部趋势已核实：Meta 官方博客 / OpenAI 两份官方文档 / Agent Arena 榜 / DeepSeek 官方） |
 | 想知道**当前架构的真实状态**（重复表达 / 多真相源 / 跨层耦合） | [`Architecture Reality Audit.md`](Architecture%20Reality%20Audit.md)（现状审计 · 2026-10-08 · **不是**设计稿） |
 | 从 Harbor 自举版终端运行统一测试、看 TUI 人话报告 | PowerShell 中打开仓库，运行 `npm run harbor-test -- all --target=source`；安装版隔离自检用 `--target=installed`。空参数进入 TUI 选择，非交互环境加 `--plain`（入口 `tools/harbor-test.mjs`；设计与验收记录：[`research/harbor-test-design-2026-10-29.md`](research/harbor-test-design-2026-10-29.md) · [第一批](research/harbor-test-acceptance-batch1-2026-10-29.md) · [第二批](research/harbor-test-acceptance-batch2-2026-10-29.md)） |
 | 查**同一个事实在几处被定义**（真相源 / 重复候选） | [`真相源地图.md`](真相源地图.md)（`npm run contracts` + `npm run dup`） |
@@ -50,7 +51,6 @@
 | 要**给 Phase 6 做真机验收 / 重新打包**（怎么点、看什么、没通过怎么反馈） | [`research/phase6-acceptance-checklist.md`](research/phase6-acceptance-checklist.md)（操作清单 + 归档待办 · 2026-10-13 · **真机验收通过，已进入日常观察期**） |
 | 想知道**浏览器扩展做到哪了、还剩什么**（12 个模块进度 + 每条依据） | [`research/edge-extension-roadmap.md`](research/edge-extension-roadmap.md)（进度表 · 2026-10-20 · M01/M04/M05 完成，M02 小批 B/C + M03 阅读模式未做） |
 | 想知道**扩展最近一批改了什么、踩了什么坑**（会话归属 / 站点黑名单 / 去重 / 真侧栏验收口径） | [`research/edge-extension-m06-m07-report.md`](research/edge-extension-m06-m07-report.md)（交付报告 · 2026-10-20 · 代码与自检已完成，**未提交**） |
-| 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 要动**凭证库写入保护**（状态转换 / 提交一致性 / reset 出口 / 测试方案） | [`credentials写入保护-设计修订.md`](credentials写入保护-设计修订.md)（设计稿 · 2026-10-13 · 未实施） |
 | 想知道**凭证库损坏时怎么不丢 Key**（下一阶段设计） | [`credentials写入保护-设计.md`](credentials写入保护-设计.md)（设计稿 · 2026-10-13 · **未实施**，等批准） |
 | 改架构前后要量「行为有没有变坏」 | [`Golden Tasks.md`](Golden%20Tasks.md)（跑什么）· [`Model Interaction Baseline.md`](Model%20Interaction%20Baseline.md)（量什么 + 基线） |

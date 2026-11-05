@@ -164,6 +164,68 @@ export async function run() {
   check('★★ 「未经批准，先别动」仍拦', U.noWriteIn('未经批准，先别动') === true)
   check('★ 反向自证：「不要自动修改任何文件」不算整轮禁写（"自动"才是被否的）', U.noWriteIn('不要自动修改任何文件') === false)
 
+  group('用户约束 · 提及 ≠ 下达（2026-11-06 真机误判的回归钉子）')
+  /*
+   * 病：用户同一段话里既**授权**改源码、又要写验收标准 —— 两处都带「只分析、不修改」，
+   * 整轮 allowWrite=false，而这轮正在授权动手（本组就是照着那条原文写的）。
+   * 判据见 user-constraints.cjs 的 ①′（引号剥离 + 转述主语）。
+   */
+  const GRANT_TURN = `本轮明确授权修改相关源码、测试、规范及必要的构建产物。
+
+特别说明：之前消息中出现的「只分析、不修改」只是需要测试的用户约束场景，不是我当前下达的限制。本轮允许实际修改。
+
+验收标准：
+5. 用户真正要求只读时，写入操作仍然被拒绝。`
+  check('★★★ 授权原文（含被引号引起来的「只分析、不修改」）不再整轮锁死', U.noWriteIn(GRANT_TURN) === false)
+  check(
+    '★★★ 验收标准里的场景描述不再整轮锁死',
+    U.noWriteIn('用新的会话验证：用户明确要求只分析、不修改时，仍然严格遵守。') === false,
+  )
+  check(
+    '★★★ 反向不能松：真的下令仍拦（「只分析，不修改」不带转述标记）',
+    U.noWriteIn('这一轮只分析，不修改。') === true,
+  )
+  check('★★★ 反向不能松：引号外单独一句话仍是命令', U.noWriteIn('只分析。') === true)
+  check(
+    '★★ 「如果用户说只分析」是条件转述，不算命令',
+    U.noWriteIn('如果用户说只分析，这条规则就该在自检里被覆盖到') === false,
+  )
+  check(
+    '★★ 第一人称的命令不受影响（清单只收第三方的「用户要求」）',
+    U.noWriteIn('我要求：只分析，不修改') === true,
+  )
+  check('★★ 「先别动」被引号引起来时不算命令', U.noWriteIn('他上次说「先别动」，这次可以动手了') === false)
+
+  group('用户约束 · 本轮明确授权（2026-11-06）')
+  check('★ 授权原文 → grantsWriteIn 为真', U.grantsWriteIn(GRANT_TURN) === true)
+  check('★ 「别问我」「你看着办」也算授权', U.grantsWriteIn('别问我，你看着办') === true)
+  check('★ 普通需求不算授权（否则 C 闸就白设了）', U.grantsWriteIn('帮我修一下这个 bug') === false)
+  check('★ 问句不算授权', U.grantsWriteIn('这个可以吗？') === false)
+  check('★ 空输入不抛、判 false', U.grantsWriteIn(undefined) === false && U.grantsWriteIn('') === false)
+
+  group('用户约束 · 只读轮里安全只读命令照跑（2026-11-06）')
+  const RO = require(join(ROOT, 'electron/core/tools/readonly-allow.cjs'))
+  check('★ git status 属于安全只读 → 放行', RO.allowedInReadonly('run_shell', { command: 'git status --short' }) === true)
+  check('★ dir 属于安全只读 → 放行', RO.allowedInReadonly('run_shell', { command: 'dir /b' }) === true)
+  check('★ type 属于安全只读 → 放行', RO.allowedInReadonly('run_shell', { command: 'type a.txt' }) === true)
+  check(
+    '★★ 写文件命令仍拦（「只分析」真正要护的东西）',
+    RO.allowedInReadonly('run_shell', { command: 'del a.txt' }) === false,
+  )
+  check(
+    '★★ 串联命令不算只读（dir && del x）',
+    RO.allowedInReadonly('run_shell', { command: 'dir && del x.txt' }) === false,
+  )
+  check(
+    '★★ 只读命令带破坏性参数不算只读（find . -delete）',
+    RO.allowedInReadonly('run_shell', { command: 'find . -delete' }) === false,
+  )
+  check('★★ 跑脚本不算只读（node x.mjs）', RO.allowedInReadonly('run_shell', { command: 'node x.mjs' }) === false)
+  check('★★ 写文件工具一律不放行', RO.allowedInReadonly('write_file', { path: 'a.txt' }) === false)
+  const roSrc = require('node:fs').readFileSync(join(ROOT, 'electron/core/tools/readonly-allow.cjs'), 'utf8')
+  check('★★ 放行判据只有一处（readonly-allow 用 risk-patterns 的 isReadOnlyCommand）', roSrc.includes('isReadOnlyCommand'))
+  check('★★ 咽喉上真的接了这个判据', indexSrc.includes('readonlyAllow.allowedInReadonly'))
+
   group('用户约束 · C 纯读浏览不再被「只分析」拦')
 
   const M = registry.MUTATING_TOOLS

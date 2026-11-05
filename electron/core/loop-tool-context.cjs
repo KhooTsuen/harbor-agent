@@ -43,6 +43,8 @@ function buildToolContext({
       mode,
       threadAllowWrite: threadSettings.allowWrite,
     }),
+    /* 这一轮用户原话：写工具那两道闸要靠它判断「已经明确授权了别再问」 */
+    lastUserText: typeof userText === 'string' ? userText : '',
     allowNetwork: userConstraints.allowsNetwork({
       userText,
       threadAllowNetwork: threadSettings.allowNetwork,

@@ -230,6 +230,46 @@ export async function run() {
     read('electron/core/tools/pre-write-gate.cjs').includes("'../config.cjs'"),
   )
 
+  /* ─────────── ⑥ 已明确授权就别再问（2026-11-06）─────────── */
+  group('190 / ⑥ 本轮已明确授权 → C 闸不再问一遍')
+  gate.reset()
+  const tGrant = makeTask('已授权就別再问')
+  created.push(tGrant.id)
+  const grantCtx = (taskId, text) => ({ ...ctxOf(taskId), lastUserText: text })
+  const GRANT_REAL =
+    '本轮明确授权修改相关源码、测试、规范及必要的构建产物。可以正常使用 Shell、编辑文件、运行测试。'
+  check(
+    '★★ 授权原文 → 覆盖已有文件不拦（这就是真机上被多问一次的那条）',
+    gate.check({
+      name: 'edit_file',
+      args: { path: 'exists.txt', oldText: '原来的内容', newText: '新的内容' },
+      ctx: grantCtx(tGrant.id, GRANT_REAL),
+      switches: askSwitches,
+    }) === '',
+  )
+  check(
+    '★ 反向：没说授权 → 该拦还拦（别把闸门白拆了）',
+    gate.check({
+      name: 'edit_file',
+      args: { path: 'exists.txt', oldText: '原来的内容', newText: '新的内容' },
+      ctx: grantCtx(tGrant.id, '帮我看看这个 bug 怎么回事'),
+      switches: askSwitches,
+    }).length > 0,
+  )
+  check(
+    '★ 「这个可以吗」不算授权（问句不是许可）',
+    U.grantsWriteIn('这个可以吗？') === false,
+  )
+  check(
+    '★ 授权判据只有一处（pre-write-gate 用的是 user-constraints 那份）',
+    read('electron/core/tools/pre-write-gate.cjs').includes('grantsWriteIn') &&
+      !/明确授权\|授权你/.test(read('electron/core/tools/pre-write-gate.cjs')),
+  )
+  check(
+    '★ ctx 里真的带上了这一轮原话（否则上面那条永远不成立）',
+    read('electron/core/loop-tool-context.cjs').includes('lastUserText:'),
+  )
+
   disposeTasks(created)
   gate.reset()
 }

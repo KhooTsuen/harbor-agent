@@ -7,6 +7,8 @@ const riskGate = require('./risk-gate.cjs')
 const scaleGate = require('./scale-gate.cjs')
 const writeDiff = require('../write-diff.cjs')
 const preWriteGate = require('./pre-write-gate.cjs')
+/* 只读轮里放行「安全只读命令」（判据来自 risk-patterns，见它的文件头） */
+const readonlyAllow = require('./readonly-allow.cjs')
 /* MCP 调用的运行时约束闸（判据/文案/审计都在那儿，见它的文件头） */
 const mcpGate = require('./mcp-gate.cjs')
 const { executePlugin } = require('./plugin-tool.cjs')
@@ -162,8 +164,11 @@ async function execute(name, args, ctx = {}) {
     return `错误：本次对话已关闭工具调用，${name} 被拒绝。`
   }
   if (ctx.allowWrite === false && MUTATING_TOOLS.has(name)) {
-    auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
-    return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
+    /* 只读轮里，**安全只读命令照跑**（判据在 readonly-allow.cjs，别处不再判一次） */
+    if (!readonlyAllow.allowedInReadonly(name, args)) {
+      auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
+      return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
+    }
   }
   /* B / C 两道硬化闸（判据/话术/刹车都在 pre-write-gate.cjs，那里自己记审计） */
   const preWrite = preWriteGate.check({ name, args, ctx })

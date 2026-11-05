@@ -32,6 +32,7 @@
 
 const fs = require('node:fs')
 const { resolvePath } = require('./_shared.cjs')
+const { grantsWriteIn } = require('../user-constraints.cjs')
 
 /**
  * 这道闸管哪些工具：**只会有 `path` 的那两个**。
@@ -93,7 +94,6 @@ function overwrites(args, ctx) {
 }
 
 /* 话术里都写清**怎么脱身** —— 只拦不说，模型只会原地重试同一个调用。 */
-
 const PLAN_TEXT = [
   '拦下了：这次要改文件，但本任务已经动过手了，计划却还是空的。',
   '设置里「先给计划再动手」是开着的，这一步是内核拦的（不是提示）。',
@@ -132,8 +132,22 @@ function check({ name, args, ctx, switches }) {
   const on = (key) => (typeof switches?.[key] === 'boolean' ? switches[key] : flagOn(key))
   const st = stateFor(taskId)
 
+  /*
+   * ★ 用户这一轮**已经明确授权动手** → C 闸不再问（2026-11-06）。
+   *
+   * 病（真机现场）：用户原话「本轮明确授权修改相关源码、测试、规范及必要的构建产物」，
+   * 第一次覆盖老文件照样被拦下要问一遍 —— 把已经批过的事又问了一次。
+   * C 闸的判据本来就只是「问过没有」的**近似**（用「覆盖已有文件」代替「不可逆」），
+   * 它没有理由盖过用户当轮的明确授权。
+   *
+   * 判据在 `user-constraints.cjs` 的 `grantsWriteIn`（唯一真相源，别在这里再写一份）。
+   * 只放 C 闸；**B 闸（先给计划）与风险闸不受影响** —— 那不是"征得同意"，
+   * 而是要一个可回看的计划，跟授权无关。
+   */
+  const userGranted = grantsWriteIn(ctx?.lastUserText)
+
   /* C 闸：覆盖已有文件 = 不可逆。问过一次就不再管（用户点头就是点头了）。 */
-  if (!st.asked && !st.blockAsk && on('clarifyFirst') && overwrites(args, ctx)) {
+  if (!userGranted && !st.asked && !st.blockAsk && on('clarifyFirst') && overwrites(args, ctx)) {
     st.blockAsk = true
     return ASK_TEXT
   }
