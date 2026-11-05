@@ -23,7 +23,9 @@
 改动：新增 `electron/core/changeset-conflict.cjs`（判据 + 回滚执行体）、
 `electron/handlers/changeset.cjs`（三个通道从 `safety.cjs` 搬出来，那边已贴 300 行）、
 `src/lib/changesetApi.ts`、`src/components/chat/changesetRollbackFlow.ts`（冲突卡流程）；
-新增自检组 `212-rollback-conflict`（27 条断言）。
+新增自检组 `212-rollback-conflict`（8 个场景：正常回滚不许被拦 / 更晚事务改过同一文件 / 确认后覆盖 /
+事务结束后被手改 / 新建的又被重建 / 撤销前已删除 / 边界 / 接线）。断言行数不写在这里 ——
+它是会涨的数字，看 `npm test` 输出（本项目这条已经漂过三次，见 AGENT.md 第 2 节第 8 条）。
 已知遗留：检查点回退（`changeset:rollbackTo`）**没有**这套保护，同类风险仍在。
 
 
