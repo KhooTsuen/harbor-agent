@@ -43,6 +43,7 @@
 | [`phase1-stage-summary.md`](phase1-stage-summary.md) · [`phase2-implementation-report.md`](phase2-implementation-report.md) · [`phase4-final-report.md`](phase4-final-report.md) | `../可靠性改进现状复核报告.md`（复核时的依据） |
 | [`a-display-pricing-design.md`](a-display-pricing-design.md) · [`usage-stats-enhancement-design.md`](usage-stats-enhancement-design.md) | `../cost-optimization-log.md` |
 | [`harbor-test-design-2026-10-29.md`](harbor-test-design-2026-10-29.md) | `../README.md`（统一测试工具入口行）；本目录两份验收记录（`harbor-test-acceptance-batch1/2`）。**改 `tools/harbor-test/` 前看 §2 边界与 §4 判定口径**；§7 的文件清单是当时计划，不是现行规范 |
+| [`context-continuity-p0-baseline-2026-11-06.md`](context-continuity-p0-baseline-2026-11-06.md) | `../README.md`（上下文连续性 P0）。**改 `context-builder.cjs` / `history-window.cjs` / `history-fold.cjs` / `compact.cjs` / `stores/thread/compact.ts` 前看它** —— §2 是两层裁剪的判据，§3 是五个已实测的病灶（含 `assemble` 会把整份历史清零的归因），§9 是 P1/P2/P3 顺序 |
 
 ## C 档：只在本目录内部互引 —— 研究过程记录
 

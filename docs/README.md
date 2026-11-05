@@ -35,6 +35,7 @@
 | 想让模型**一眼看出「有什么工具、何时该掏哪个」**（工具清单现状核对 / 分组地图 / 重复性分析 / token 实测） | [`research/toolbox-map-design.md`](research/toolbox-map-design.md)（方案 · 2026-10-13 · **已实施（B 方案）**：`core/tool-map.cjs` 分组地图，提示词 `/7→/8`） |
 | 想让智能体**更主动**（主动查记忆 / 连续失败给替代方案 / 工具按需加载省 token） | [`research/agent-capability-upgrade-design.md`](research/agent-capability-upgrade-design.md)（只读调研 + 方案 · 2026-10-14 · **未实施，待拍板**；外部趋势已核实：Meta 官方博客 / OpenAI 两份官方文档 / Agent Arena 榜 / DeepSeek 官方） |
 | 想知道**当前架构的真实状态**（重复表达 / 多真相源 / 跨层耦合） | [`Architecture Reality Audit.md`](Architecture%20Reality%20Audit.md)（现状审计 · 2026-10-08 · **不是**设计稿） |
+| 想知道**长对话为什么丢任务信息**、上下文到底用了多少、重启/切模型/说「继续」能恢复到哪一步 | [`research/context-continuity-p0-baseline-2026-11-06.md`](research/context-continuity-p0-baseline-2026-11-06.md)（P0 现状 + 基线 · 2026-11-06 · 每条结论带 L1/L2/L3 验证层级；改上下文链路前先看它 §2 判据与 §3 五个病灶） |
 | 从 Harbor 自举版终端运行统一测试、看 TUI 人话报告 | PowerShell 中打开仓库，运行 `npm run harbor-test -- all --target=source`；安装版隔离自检用 `--target=installed`。空参数进入 TUI 选择，非交互环境加 `--plain`（入口 `tools/harbor-test.mjs`；设计与验收记录：[`research/harbor-test-design-2026-10-29.md`](research/harbor-test-design-2026-10-29.md) · [第一批](research/harbor-test-acceptance-batch1-2026-10-29.md) · [第二批](research/harbor-test-acceptance-batch2-2026-10-29.md)） |
 | 查**同一个事实在几处被定义**（真相源 / 重复候选） | [`真相源地图.md`](真相源地图.md)（`npm run contracts` + `npm run dup`） |
 | 想知道**重复/多真相源要怎么收敛**（真相源地图怎么做、分几步） | [`research/truth-map-design.md`](research/truth-map-design.md)（设计稿 · 2026-10-13 · 目标态） |
