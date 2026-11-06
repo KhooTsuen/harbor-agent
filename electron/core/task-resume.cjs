@@ -72,7 +72,7 @@ function reopen(taskId) {
  */
 function checkEnvironment(taskId) {
   const task = taskCore.get(String(taskId ?? ''))
-  if (!task) return { ok: false, changed: [] }
+  if (!task) return { ok: false, changed: [], shells: 0 }
   const changed = []
   for (const item of task.changedFiles ?? []) {
     const file = String(item?.path ?? '')
@@ -83,7 +83,46 @@ function checkEnvironment(taskId) {
       changed.push(file)
     }
   }
-  return { ok: true, changed }
+  /*
+   * P1-C：**跑过几条命令**（只数，不推断）。
+   *
+   * 为什么不推断「它改了哪些文件」：`run_shell` 的输出里没有可信的文件清单，从命令
+   * 字符串反推（`git checkout`？`npm install`？`mv`？）只会猜错 —— 而猜错的代价是模型
+   * 以为工作区还是老样子。所以这里只给一个事实：「跑过 N 条命令」，剩下让它自己核对现状。
+   * （`changedFiles` 只由 write_file / edit_file 写入，见 tool-runner 与 loop-tools。）
+   */
+  const shells = (Array.isArray(task.steps) ? task.steps : []).filter(
+    (step) => step?.tool === 'run_shell' && step?.ok !== false,
+  ).length
+  return { ok: true, changed, shells }
+}
+
+/**
+ * 恢复 / 接着做时，台账该多说两句什么（P1-C）。
+ *
+ * 两条都只在**有内容时**返回，且都是「给事实、让它自己核对」的口径：
+ *  · 跑过命令 → 提醒核对现状。**不编文件清单**：`run_shell` 改了哪些文件无法可靠推断
+ *    （`git checkout` / `mv` / 脚本），猜错会让模型以为工作区还是老样子。
+ *  · 有历史步骤 → 提一句可以用 `recall` 回看，而不是把工具重跑一遍。
+ *
+ * 为什么不放 `task-context.cjs`：那个文件贴着行数红线，而这两条与 `checkEnvironment`
+ * 是同一件事（「接着做之前该知道什么」），放一起不容易漂。
+ *
+ * @param {{ task: object, env: { changed: string[], shells: number }, isCurrent: boolean }} input
+ * @returns {string[]}
+ */
+function resumeNotesOf({ task, env, isCurrent }) {
+  const notes = []
+  if (env.shells > 0 && env.changed.length === 0) {
+    notes.push(
+      `  ⚠ 这一轮跑过 ${env.shells} 条命令，它们可能已改动工作区（命令改了哪些文件无法从台账可靠推断）：` +
+        '接着改之前先**用 read_file / run_shell 核对当前状态**，不要凭上一轮的印象直接写。',
+    )
+  }
+  if (isCurrent && (task.steps ?? []).length > 0) {
+    notes.push('  想看清上一轮某次工具到底读到了什么：`recall` 按指纹或序号取回（只读本会话，比重跑一遍安全）。')
+  }
+  return notes
 }
 
 /**
@@ -164,4 +203,4 @@ function openForRun({
   })
 }
 
-module.exports = { canResume, reopen, checkEnvironment, openForRun, activeForSession, RESUMABLE }
+module.exports = { canResume, reopen, checkEnvironment, resumeNotesOf, openForRun, activeForSession, RESUMABLE }

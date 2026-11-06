@@ -82,6 +82,8 @@ export const AGENT_ACTIONS: Record<string, [string, string]> = {
   mark_step_done: ['打卡', '步'],
   /* 记忆分层改造阶段 1（2026-10-13）：模型按关键词读长期记忆（只读工具） */
   memory_search: ['搜索记忆', '次'],
+  /* P1-C（2026-11-07）：回取本会话的历史工具证据 —— 动作词「回看」，量词「次」 */
+  recall: ['回看历史', '次'],
   /*
    * Edge 工具族（2026-10-16）：操作**用户自己的 Edge**（与 `browse_*` 的内嵌
    * 浏览器区分开）—— 动作词带「Edge」，让时间线上一眼看出动的是哪个浏览器。
@@ -139,6 +141,8 @@ export const TOOL_LABELS: Record<string, string> = {
   mark_step_done: '完成一步',
   /* 记忆分层改造阶段 1（2026-10-13）：模型搜长期记忆取回完整内容 */
   memory_search: '搜索长期记忆',
+  /* P1-C（2026-11-07）：回取本会话的历史工具证据 —— 界面上说「回看历史记录」 */
+  recall: '回看历史记录',
   /* Edge 工具族（2026-10-16）：操作**用户自己的 Edge**，与 browse_* 的内嵌浏览器分开 */
   edge_page: '打开 Edge 页面',
   edge_click: '点击 Edge 元素',
@@ -197,6 +201,8 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   spawn_subagent: Bot,
   mark_step_done: Check,
   memory_search: Search,
+  /* P1-C（2026-11-07）：回看历史 —— 用「搜索」那枚（它就是「去找已有的东西」） */
+  recall: Search,
   /* Edge 工具族（2026-10-16）：同族共用一枚（与 browse* 一样是「浏览」类） */
   edge_page: Globe,
   edge_click: Globe,

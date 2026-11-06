@@ -38,6 +38,8 @@ const analyzeTestFailure = require('./analyze_test_failure.cjs')
 /* 3B-2 / 3B-3：按分析结果**真的改一次**源码并重测；以及精确退回那次修改（都会写盘） */
 const applyTestFix = require('./apply_test_fix.cjs')
 const restoreTestFix = require('./restore_test_fix.cjs')
+/* P1-C：本会话历史证据的**只读**回取（只认 ctx.sessionId，不收路径参数） */
+const recall = require('./recall.cjs')
 /* ── edge_*：操作**用户自己的 Edge**（与 browse_* 那族操作内嵌浏览器不是一回事）── */
 const edgePage = require('./edge-page.cjs')
 const edgeRead = require('./edge-read.cjs')
@@ -93,6 +95,14 @@ const ALL = [
   edgeKey,
   edgeFocus,
   edgeTabs,
+  /*
+   * P1-C：回取本会话历史工具证据。
+   * ★ **追加在末尾**，不重排已有工具 —— 工具清单进的是稳定前缀区，
+   *   重排会让每个会话的首个请求失去前缀缓存。
+   * ★ 不进 `WRITE_TOOLS` / `MUTATING_TOOLS`：它一个字节都不写，
+   *   「这一轮只分析」也该允许它读回自己刚跑过什么。
+   */
+  recall,
 ]
 
 /*

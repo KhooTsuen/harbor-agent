@@ -45,6 +45,8 @@ const MAX_DETAILED = 40
  */
 const TOOL_GROUPS = [
   { title: '摸清现状（动手前）', tools: ['list_dir', 'read_file', 'read_image'] },
+  /* P1-C：上下文被压缩 / 重启接着做时，先看这条 —— 比把工具重跑一遍安全 */
+  { title: '找回历史证据（压缩后 / 重启接着做）', tools: ['recall'] },
   { title: '改文件', tools: ['edit_file', 'write_file', 'download'] },
   {
     title: '跑命令与测试',
@@ -94,6 +96,8 @@ const TOOL_GROUPS = [
 const TOOL_HINTS = {
   list_dir: '不确定项目结构时先看这里',
   read_file: '不确定路径先用 list_dir；大文件给 offset/limit',
+  recall:
+    '压缩过、或重启后接着做时，想看清「之前那次工具到底读到了什么」就用它按指纹/序号取回原始输出 —— 比把工具重跑一遍安全（重跑可能重复副作用）；只能读本会话',
   read_image: '用户提到图片或你发现图片路径时用它看真实图像，无法识别要如实说明',
   edit_file: '改少量内容优先用它，比 write_file 安全',
   write_file: '只有新建文件、或整体重写才用它',

@@ -45,6 +45,7 @@
 | [`harbor-test-design-2026-10-29.md`](harbor-test-design-2026-10-29.md) | `../README.md`（统一测试工具入口行）；本目录两份验收记录（`harbor-test-acceptance-batch1/2`）。**改 `tools/harbor-test/` 前看 §2 边界与 §4 判定口径**；§7 的文件清单是当时计划，不是现行规范 |
 | [`context-continuity-p0-baseline-2026-11-06.md`](context-continuity-p0-baseline-2026-11-06.md) | `../README.md`（上下文连续性 P0）。**改 `context-builder.cjs` / `history-window.cjs` / `history-fold.cjs` / `compact.cjs` / `stores/thread/compact.ts` 前看它** —— §2 是两层裁剪的判据，§3 是五个已实测的病灶（含 `assemble` 会把整份历史清零的归因），§9 是 P1/P2/P3 顺序 |
 | [`context-continuity-p1-baseline-2026-11-07.md`](context-continuity-p1-baseline-2026-11-07.md) | `../README.md`（上下文连续性 P1 第一批）。**改 `context-groups.cjs` / `context-text.cjs` / `context-builder.cjs` / `history-window.cjs` / `compact.cjs` / `stores/thread/contextUsage.ts` 前看它** —— §2 是「消息组」规则与两个新模块的边界，§3 是改前/改后真实数字，§4 说明界面圈与内核估算**同口径但不是同一个分母**，§8 是遗留 |
+| [`context-continuity-p1c-recall-2026-11-07.md`](context-continuity-p1c-recall-2026-11-07.md) | `../README.md`（上下文连续性 P1-C 回取）。**改 `session-recall.cjs` / `tools/recall.cjs` / `tool-map.cjs` / `task-resume.cjs` 前看它** —— §2 是这个工具**能做什么、不能做什么**（含「为什么不走 capability」的完整理由），§3 是三层验证的数字，§5 是已知限制与「协作轮次输出为空」等遗留 |
 
 ## C 档：只在本目录内部互引 —— 研究过程记录
 

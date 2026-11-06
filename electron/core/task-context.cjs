@@ -206,6 +206,7 @@ function buildTaskState({
       lines.push('  ⚠ 你停手之后这些文件又变过，动它们之前先重新读一遍：')
       for (const file of env.changed.slice(0, 6)) lines.push(`    · ${file}`)
     }
+    for (const note of taskResume.resumeNotesOf({ task, env, isCurrent })) lines.push(note)
     blocks.push(lines.join('\n'))
   }
 
