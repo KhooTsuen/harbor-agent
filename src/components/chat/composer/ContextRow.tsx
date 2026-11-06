@@ -61,6 +61,18 @@ function ContextGauge() {
     : DEFAULT_AUTO_RATIO
   const remain = Math.max(0, Math.round(autoAt * advice.limit - advice.used))
   const b = advice.breakdown
+  /*
+   * P1-B（2026-11-07 验收补）：内核这一轮**实际组装完**的量。
+   *
+   * `advice.used` 是「待组装的理论量」（压缩点之后全部消息展开），内核真正发出去的
+   * 还要过字符额度裁剪。两者在没超预算时相等，超预算时差距很大（实测一份会话
+   * 理论 912%、实际只用了对话层 30%）。只给理论量会让用户以为爆了 ——
+   * 和以前只算正文（显示 55%、实际 128%）是同一种误导，只是方向反了。
+   * 那条数字来自 `turn_start.input`（`assemble.estimates`），不在这里另算。
+   */
+  const actual = [...thread.messages]
+    .reverse()
+    .find((message) => message.contextInput)?.contextInput
   const detail = [
     `上下文 ${pct}%（估算 ${advice.used.toLocaleString()} / ${advice.limit.toLocaleString()} token）`,
     `口径：按**实际请求体**估（含展开的工具记录与单条 2000 字上限），不是只算正文`,
@@ -69,6 +81,12 @@ function ContextGauge() {
       : '没有这个模型的窗口数据，分母只用你的上限',
     `这条会话存了 ${b.storedMessages.toLocaleString()} 条（估算 ${b.storedTokens.toLocaleString()} token）；` +
       `压缩点之后要带进上下文 ${b.inContextMessages.toLocaleString()} 条，其中工具记录占 ${Math.round(b.toolShare * 100)}%`,
+    actual
+      ? `上一轮内核**实际**组装：对话层 ${actual.conversationChars.toLocaleString()} / ` +
+        `${actual.conversationBudget.toLocaleString()} 字符` +
+        `（${Math.round((actual.conversationChars / Math.max(1, actual.conversationBudget)) * 100)}%），` +
+        `进上下文 ${actual.selectedMessages.toLocaleString()} 条、裁掉 ${actual.droppedMessages.toLocaleString()} 条`
+      : '',
     cached > 0 ? `缓存命中 ${cached.toLocaleString()} token（命中部分便宜很多）` : '',
     advice.auto
       ? '已经超过自动压缩线 —— 下一轮会自动压缩'

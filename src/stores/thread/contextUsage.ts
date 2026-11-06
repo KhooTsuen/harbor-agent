@@ -1,4 +1,4 @@
-import type { Message } from '@/types'
+import type { ContextInputEstimate, Message } from '@/types'
 import type { ToolRunRecord } from '@/types/rounds'
 
 /* ══════════════════════════════════════════════════════════════
@@ -149,4 +149,16 @@ export function breakdownOf(
     requestTokens: estimateTokensOf(requestChars),
     toolShare: requestChars > 0 ? Number((toolCharsTotal(inContext) / requestChars).toFixed(2)) : 0,
   }
+}
+
+/**
+ * 从事件里取 `input`（没有就是空对象，`patch` 展开它不会覆盖原值）。
+ *
+ * 判据只看「有没有这个 key 且是对象」——坏形状不抛错，界面照旧退回自算。
+ */
+export function inputOfEvent(event: Record<string, unknown>): {
+  contextInput?: ContextInputEstimate
+} {
+  const input = event.input
+  return input && typeof input === 'object' ? { contextInput: input as ContextInputEstimate } : {}
 }

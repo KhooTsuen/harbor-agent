@@ -134,4 +134,36 @@ export async function run() {
       'sizeOfMessage',
     ),
   )
+
+  /*
+   * P1-B（2026-11-07 验收补）：内核推上去的 `turn_start.input`，渲染层必须真的接住。
+   *
+   * 以前这个数是**死代码** —— `loop.cjs` 发了，`streamEvents` 的 `turn_start` 分支
+   * 只处理 rounds，`input` 被丢掉，界面照样用自算的「待组装理论量」。
+   * 症状是「一份会话显示 912%，实际内核只用了 30%」——数字翻了三倍，用户以为爆了。
+   *
+   * 三条一起钉（缺一条就等于没接）：
+   *   ① 内核那侧真的发（`turn_start` 带 `input`，且只在本轮第一回合发）；
+   *   ② 渲染层那侧真的收（`turn_start` 分支里调了 `inputOfEvent`）；
+   *   ③ 形状只定义一处（字段名来自生产方 `assemble.estimates`）。
+   */
+  group('P1-B / 「实际组装量」这条线真的接通了（不是死代码）')
+  const loopSrc = readFileSync(join(ROOT, 'electron/core/loop.cjs'), 'utf8')
+  const streamSrc = readFileSync(join(ROOT, 'src/stores/thread/streamEvents.ts'), 'utf8')
+  check(
+    '★ 内核发：turn_start 带 input（且只在本轮第一回合）',
+    /turn_start'[^\n]*\.\.\.\(turn === 0 && estimates \? \{ input: estimates \}/.test(loopSrc),
+  )
+  check('★ 渲染层收：turn_start 分支调了 inputOfEvent', /inputOfEvent\(event\)/.test(streamSrc))
+  const wiredEst = builder.assemble({
+    maxTokens: 52428,
+    messages: [{ role: 'user', content: 'x' }, ...toolGroup(['i0', 'i1'], '')],
+  }).estimates
+  const shape = ['chars', 'tokens', 'systemChars', 'conversationChars', 'conversationBudget', 'selectedMessages', 'droppedMessages']
+  check(
+    '★★ 形状对齐：生产方那七个字段，渲染层类型里一个不少',
+    shape.every((key) => Object.prototype.hasOwnProperty.call(wiredEst, key)) &&
+      shape.every((key) => readFileSync(join(ROOT, 'src/types/conversation.ts'), 'utf8').includes(`${key}:`)),
+    shape.filter((k) => !Object.prototype.hasOwnProperty.call(wiredEst, k)).join(',') || '七个都在',
+  )
 }

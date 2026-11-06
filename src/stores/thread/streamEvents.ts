@@ -18,6 +18,8 @@ import { refreshAfterTool } from './toolRefresh'
 /* 重试回滚 + 提示类事件（那边有来由；回滚规则见 retryRollback.ts） */
 import { dispatchLightEvent } from './streamLight'
 import { markRoundStart, type RetryMarks } from './retryRollback'
+/* P1-B：内核这一轮**实际组装完**的输入量（`turn_start.input`）—— 与自算的理论量分开显示 */
+import { inputOfEvent } from './contextUsage'
 
 /* 流式事件落到消息；跨层接线必须真跑，空占位事故见 docs/踩坑记录.md。 */
 
@@ -200,8 +202,9 @@ export function handleStreamEvent(
       state.rounds.push({ reasoning: '', content: '', tools: [] })
       /* 新一轮 = 新的重试起点（重试只退本轮的半截，前面几轮一个字不动） */
       state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
-      /* 立刻挂到消息上 —— 否则新的一轮要等它出了第一个字才在界面上出现 */
-      state.patch({ rounds: syncRounds(state) })
+      /* 立刻挂到消息上 —— 否则新的一轮要等它出了第一个字才在界面上出现。
+         P1-B：第一轮的 `turn_start` 还带 `input`（内核实际组装完的量），一起挂上。 */
+      state.patch({ rounds: syncRounds(state), ...inputOfEvent(event) })
       return { handled: true }
     }
 

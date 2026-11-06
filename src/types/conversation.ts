@@ -22,6 +22,33 @@ import type { StoredClarify } from './clarify'
    ConversationState 之后过了 300 行。
    ══════════════════════════════════════════════════════════════ */
 
+/**
+ * 内核这一轮**实际组装完**的模型输入（`assemble.estimates`，经 `turn_start` 推上来）。
+ *
+ * ── 为什么界面要有这一份（2026-11-07 验收时补）────────────────────
+ *
+ * `contextUsage.breakdownOf` 算的是「压缩点之后**全部**消息展开后有多大」——
+ * 那是**待组装**的理论量。内核真正发出去的还要过 `context-builder.assemble` 的
+ * 字符额度：装不下的整组不进。
+ *
+ * 两者在没超预算时相等；超预算时差距很大。实测 `sess_mw2ab`：理论量 912%，
+ * 而内核裁完只用了对话层的 30%（46,540 / 47,185 字符）。只显示理论量会让用户
+ * 以为「爆了」，其实内核早就裁好了 —— 和以前只算正文（显示 55%、实际 128%）
+ * 是同一种误导，只是方向反了。
+ *
+ * ⚠️ 字段名与 `context-builder.cjs` 的 `estimates` 逐字一致（那边是生产方）。
+ * 全部是**估算**（chars/3），不是计费 token。
+ */
+export interface ContextInputEstimate {
+  chars: number
+  tokens: number
+  systemChars: number
+  conversationChars: number
+  conversationBudget: number
+  selectedMessages: number
+  droppedMessages: number
+}
+
 export interface Message {
   id: string
   /**
@@ -64,6 +91,17 @@ export interface Message {
   usage?: UsageBucket
   /** 生成的图片（data URL 或 http URL），显示在消息里 */
   images?: string[]
+  /**
+   * 这一轮**实际组装完**的模型输入（P1-B，2026-11-07）。
+   *
+   * 与 `usage` 不同：`usage` 是供应商返回的**计费** token，这个是内核按字符换算的
+   * **估算**（含展开的工具记录）。界面用它显示「理论量 vs 本轮实际裁到多少」——
+   * 只显示理论量会让用户以为爆了，实际上内核早裁好了（实测 912% vs 30%）。
+   *
+   * ⚠️ 不落盘（只在内存里活一轮）：它是「这一轮发生了什么」的快照，重开会话时
+   * 重新组装就是了。所以「存了但读回时没带」那类漏字段事故在这里不适用。
+   */
+  contextInput?: ContextInputEstimate
   /** 这一轮跑过的工具（真实后端模式下有值） */
   toolRuns?: ToolRunRecord[]
   /**
