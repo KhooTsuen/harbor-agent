@@ -224,10 +224,15 @@ function load(id) {
  *   · **有效压缩点只有一处定义**（`compact-point.cjs`）：摘要段用 `system` 角色、
  *     文案与渲染层逐字一致。以前这里自己拼一句、界面那条路把整条摘要丢掉，
  *     「刚聊完」和「重开会话」模型看到的东西不一样。
+ *
+ * ★ 2026-11-07（P1-A③）：`limit` 的单位从「消息条数」改成「**轮次**」，并新增
+ *   `options.foldChars`（单轮字符阈值）。理由见 `history-window.cjs` 文件头第四轮 ——
+ *   一轮跑 836 次工具调用时，按条数算会让整轮被折叠成三行元数据，工具结果一条都进不来。
  */
 
-/** 这条记录里有可用的图片吗（用户带图提问时，图片是单独存的一个数组） */
+/** 可用的记录：正文非空 / 带图 / 正文为空但有工具记录（P1-A，成因与实测见自检 214 组） */
 const hasImages = (m) => Array.isArray(m.images) && m.images.some((x) => typeof x === 'string' && x)
+const hasToolRuns = (m) => Array.isArray(m.toolRuns) && m.toolRuns.length > 0
 
 /**
  * 一条记录 → 发给模型的内容。
@@ -259,15 +264,15 @@ function expandOne(m, index) {
   return [{ role: m.role, content }]
 }
 
-function toApiMessages(id, limit = 20) {
+function toApiMessages(id, limit = 20, options = {}) {
   const data = load(id)
   if (!data) return []
 
   const usable = data.messages.filter(
     (m) =>
       (m.role === 'user' || m.role === 'assistant') &&
-      /* 只有图片、没有文字的那条也算可用 —— 不然「光发一张图」在这条链路上会整条消失 */
-      (typeof m.content === 'string' && m.content.trim() ? true : hasImages(m)),
+      /* 只有图片 / 正文为空但有工具记录的也算可用：不然「光发一张图」和「工具结果」都会整条消失 */
+      (typeof m.content === 'string' && m.content.trim() ? true : hasImages(m) || hasToolRuns(m)),
   )
 
   /*
@@ -280,7 +285,10 @@ function toApiMessages(id, limit = 20) {
   /* 先展开（这里才有 tool_calls / tool 的成组关系），再按轮次切 */
   const expanded = afterCompact.flatMap((m, i) => expandOne(m, i))
   /* limit 是「逐条带多少条」的预算，摘要段不算在内；切点只落在轮次边界 */
-  const windowed = takeTurns(expanded, limit, { minTurns: 1 })
+  const windowed = takeTurns(expanded, limit, {
+    minTurns: 1,
+    ...(Number(options?.foldChars) > 0 ? { foldChars: Number(options.foldChars) } : {}),
+  })
 
   const out = []
   const summary = summaryMessageOf(point)

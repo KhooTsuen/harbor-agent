@@ -33,6 +33,15 @@ const REQUIRE = '每一条检查要点后面都要标出它摘自哪一份文件
 /** 真机那次的原话长度：只超旧上限 449 字，用户就得手打中段 */
 const REAL_CASE = 2449
 
+/**
+ * 「这一轮太大」的字符阈值（夹具用的小数字）。
+ *
+ * ★ 2026-11-07（P1-A③）：预算改成按**轮**算之后，「一轮跑 30 次工具」不再因条数超预算
+ * 而折叠（一轮恒占 1 位）。折叠改由**单轮字符阈值**触发（用户要求：仍须遵守 Token
+ * 预算，单轮工具输出过大时按完整工具组折叠）。本组测折叠路径，所以显式给阈值。
+ */
+const FOLD_CHARS = 500
+
 export async function run() {
   const gate = gateOf()
 
@@ -45,7 +54,7 @@ export async function run() {
   const realTurn = windowCore.takeTurns(
     [...turnOf(realText, 30, '结论：读完了'), { role: 'user', content: '接着做' }],
     20,
-    { minTurns: 1 },
+    { minTurns: 1, foldChars: FOLD_CHARS },
   )
   check('★ 夹具成立：这一轮确实走了折叠（否则测的不是折叠路径）', realTurn.foldedTurns === 1, String(realTurn.foldedTurns))
   check('★★ 2449 字：lostChars = 0（无损）', realTurn.lostChars === 0, String(realTurn.lostChars))
@@ -63,7 +72,7 @@ export async function run() {
   const hugeTurn = windowCore.takeTurns(
     [...turnOf(hugeText, 30, '结论：读到一半'), { role: 'user', content: '接着做' }],
     20,
-    { minTurns: 1 },
+    { minTurns: 1, foldChars: FOLD_CHARS },
   )
   check('★★ 5 万字：lostChars = 0', hugeTurn.lostChars === 0, String(hugeTurn.lostChars))
   check('★ 5 万字：lossy 为空', hugeTurn.lossy.length === 0, JSON.stringify(hugeTurn.lossy))

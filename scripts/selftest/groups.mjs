@@ -45,14 +45,11 @@ import { run as m02bCardsGroup } from './groups/176-m02b-cards.mjs'
 import { run as m02cSettingsGroup } from './groups/177-m02c-settings.mjs'
 import { run as compactChunkedGroup } from './groups/178-compact-chunked.mjs'
 import { run as edgeP0Group } from './groups/179-edge-p0.mjs'
-/* P0（2026-10-23）：历史轮次 + 压缩摘要 / 任务归属 + 记忆可见性 */
+/* P0（2026-10-23 起）：历史轮次 / 压缩摘要 / 归属 / 折叠 / 协作口径 —— 细节见各组文件头 */
 import { run as p0WindowCompactGroup } from './groups/180-p0-window-compact.mjs'
 import { run as p0AttributionMemoryGroup } from './groups/181-p0-attribution-memory.mjs'
-/* P0-2（2026-10-23 第二轮）：压缩写盘结果 + 重启后读取（从 180 拆出来的） */
 import { run as p0CompactWriteGroup } from './groups/182-p0-compact-write.mjs'
-/* P0-1（2026-10-23 第三轮）：长原话里的约束 + 工具输出不是指令 */
 import { run as p0TrustWindowGroup } from './groups/183-p0-trust-window.mjs'
-/* P0-1（2026-10-23 第四轮）：折叠必须保住「不带关键词」的用户要求（真机漏了 [文件名]） */
 import { run as p0FoldKeepsRequirementsGroup } from './groups/184-p0-fold-keeps-requirements.mjs'
 import { run as p0FoldHardBlockGroup } from './groups/185-p0-fold-hard-block.mjs'
 /* P0-1（2026-10-23 第六轮）：「已提示」≠「已获确认」——有损阻断后的恢复条件 */
@@ -91,6 +88,9 @@ import { run as execParityGroup } from './groups/209-exec-parity.mjs'
 import { run as llmAttributionGroup } from './groups/210-llm-attribution.mjs'
 import { run as edgeTargetGuardGroup } from './groups/211-edge-target-guard.mjs'
 import { run as userGrantsGroup } from './groups/213-user-grants.mjs'
+/* P1-A/B（2026-11-07）：上下文消息完整性（空正文工具组 / 孤立 tool / 压缩尾巴）+ 用量口径 */
+import { run as contextIntegrityGroup } from './groups/214-context-integrity.mjs'
+import { run as usageAccountingGroup } from './groups/215-usage-accounting.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -295,5 +295,5 @@ export const GROUPS = [
   experienceLeftoversGroup, experienceLeftoversUiGroup, edgeSidepanelHistoryGroup,
   edgeInstallGroup, edgeIngestNoteGroup, mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
   memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
-  userGrantsGroup,
+  userGrantsGroup, contextIntegrityGroup, usageAccountingGroup,
 ]

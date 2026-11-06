@@ -1,5 +1,84 @@
 ## [未发布]
 
+### 修：Context Continuity P1-A / P1-B — 工具调用不再在组装与压缩里丢失，用量口径收到一处
+
+**这一笔修的是 P0 报告点名的三个硬故障 + 一个口径故障**（报告：
+`docs/research/context-continuity-p0-baseline-2026-11-06.md`）。全程零真实 API 调用。
+
+**P1-A① `assemble` 把工具组连带丢掉（两处成因，各自的数字）**
+
+- **空正文的 `assistant(tool_calls)` 被算成 0**：`sizeOf(content)` 只看正文，而
+  `loop.cjs` 写 `content: result.content || ''` —— 模型只调工具不说话时正文就是空串 →
+  这条被判「无意义消息」跳过 → 它后面那串 `tool` 全成孤儿 → 配对校验整组丢掉。
+  改法：消息大小改成 `sizeOfMessage`（正文 + `tool_calls` 的 id / 名字 / 参数 + 形状开销），
+  唯一实现在新增的 `electron/core/context-text.cjs`。
+  实测（30 次工具 + 空正文，62 条 / 26,033 字符）：改前 **2 条 / 13 字符**，改后 **62 条 / 26,047 字符**。
+- **尾部一串孤立 `tool` 把整份历史清零**：一条一条从尾部取，26 条 `tool` 各有个内容、
+  先被选中，而组的开头 `assistant(tool_calls)` 早被额度挡在外面 → 全部判不完整 → 输出 0 条。
+  改法：选取改成**按消息组**（新增 `electron/core/context-groups.cjs`）——
+  `assistant(tool_calls)` + 紧跟的 `tool` 是一个逻辑单元，整组进或整组不进；
+  额度不够就**跳过这组继续往前**（不是就地停止）；完整组实在放不下时保尾部连续的几次调用
+  并**把 `tool_calls` 裁成同一子集**（留的是真发生过的调用，不编造）。
+  实测（真实会话 `sess_mw16gqqesenmq.jsonl`，866 条展开）：改前 **0 条非系统消息**，
+  改后 **159 条 / 32,500 字符**（含 154 条工具结果 + 最后那句「继续」）。
+  另一份 `sess_mw2ab99yxg2l3.jsonl`（3,369 条展开）：改前 0 条，改后 **241 条 / 30,767 字符**。
+
+**第二处同源判据（组装层之外）**：`session-read.toApiMessages` 与 `history.buildHistory`
+的「这条记录算不算可用」以前都是「正文非空或带图」—— 于是上面那种空正文 assistant
+**在还没轮到组装时整条就没了**。现在两处都认「有工具记录」（真实会话 `sess_mw2ab`
+189 条 assistant 里有 18 条是这种形状）。修组装层却不修这里，等于给进不来的东西加座位。
+
+**P1-A② `compact.rebuild` 的 `slice(-6)` 切出孤儿 `tool`**：16 个真实形状用例里
+**8 个**协议不合法 → 自动压缩后下一轮直接 400，用户看到的是「压完又报错」。
+改成从尾部按**逻辑组**往前累加（`tailGroups`），切点必然落在组边界上；遇到不完整的组
+整组跳过继续往前（能留多少留多少）。**改后 16 个用例 0 个不合法。**
+
+**P1-A③ `historyLimit` 从「消息条数」改成「轮次」**：这个预算要管的是「记得住几轮对话」，
+不是「塞进几条消息」—— 工具调用是一轮**内部**的事。改前实测（`sess_mw16`）：一轮 836 次
+调用展开成 866 条，预算 20 条 → 这一轮「装不下」→ 整轮折成三行元数据，**836 条工具输出
+一条都没进上下文**。改后一轮恒占 1 位，容量交给下一层（`assemble` 的字符额度，按组挑）。
+纯聊天完全不受影响（没工具时一轮 = 几条消息，20 位就是 20 条，与改前逐字一致）。
+配套：`takeTurns` / `windowHistory` / `toApiMessages` 新增可选 `foldChars`（单轮字符阈值）——
+预算改成按轮之后「一轮装不下」不再发生，但**单轮工具输出特别大**仍会独占 Token 预算，
+所以把这一维度显式交出来，`minTurns` 以内的轮次（最后一轮）不受它影响。
+
+**P1-B 用量口径收到一处**：界面那个圈以前只累加 `message.content.length`，完全不含
+`toolRuns`，而真实请求体要**展开**工具记录（每条 output 截 2000）。
+实测同一份会话：界面 55.4% vs 实际 127.6%（低估 2.3 倍）；另一份 145.9% vs 912.9%（6.3 倍）。
+自动压缩线（0.6）判的就是那个偏小的数 —— 于是「圈里才一半，它已经超了」。
+- 新增 `src/stores/thread/contextUsage.ts`：逐条按**展开后的请求体形状**算，
+  并给出四项分项（存了多少 / 准备发多少 / 实际拼成多少 / 工具占多少）；
+  `ContextGauge` 的 tooltip 把这些分开显示，并写明「是估算，不是计费 token」。
+- 内核侧 `assemble` 返回 `estimates`（整份输入 = 系统各层 + 对话层，可对照），
+  经 `loop-prompt` → `loop` 的首次 `turn_start` 推到界面 —— 两边同一个数。
+- **两边逐条相等有测试盯着**：`contextUsageDrift.test.ts` 把**真的** `buildHistory` 输出
+  喂给**真的**内核 `sizeOfMessage`，断言逐条相等（不是近似）。回放 id 的公式也收成一处
+  （`replayCallIdOf`）—— 用量要按 id 真实长度算进预算，两处各写一份就是「显示 3.4 万、实际发 3.5 万」。
+
+**自检**：新增 `214-context-integrity.mjs`（消息完整性与「可用」判据）与
+`215-usage-accounting.mjs`（用量口径与源码守位），两条都同时验**协议合法性**
+（每个 `tool` 有带同 id 的调用、每个调用有对应结果）—— 条数变多但协议坏了更糟。
+P0 的一次性探针整理成 `tools/dev/context-replay.mjs`（进仓库，只读、不碰 `data/`）。
+**真机端到端**新增 `tools/e2e-context-integrity.mjs` + `tools/fake-upstream-context.mjs`：
+真 Electron → 真界面 → 真 loop → 真 HTTP，假上游第 1 轮发 12 个 `tool_calls` 且正文为空，
+**判据是第 2 轮真实请求体里有没有那 12 条工具结果**（同一形状喂改前内核：2 条 / 0 条工具结果；
+改后：18 条 messages / 12 条工具结果 / 0 孤儿 / 请求体 30,767 字符）。
+
+**报告**：`docs/research/context-continuity-p1-baseline-2026-11-07.md`（改前改后数字、
+验证层级、遗留与「界面圈与内核估算同口径但不是同一个分母」），已登记到 `docs/README.md`
+与 `docs/research/README.md` 的 B 档。
+
+**顺手修的一条假红**：`186` 组第三次发送没带 `limit: 8`，预算一回到默认 20 就装得下、
+闸门根本不拦，于是 `confirmed` 永远为空 —— 看起来像「确认没被记住」，其实这一轮压根没被拦。
+
+**验证**：`npm run typecheck` 0 错 · `lint` 0 错（2 个老 warning）· `lint:kernel` 416 个 `.cjs` 干净 ·
+行数红线 1519 文件全过 · 单测 2132 项全过 · 内核自检 6772 项 0 失败 · 零真实 API 调用。
+
+**遗留**：DeepSeek 的有效上下文预算本轮**没变**（仍是 65,536 × 0.8 × 30% 那条链，本轮不动容量）；
+Provider 真实请求的协议有效性只验到「构造出的请求体」这一层，没有发真请求；
+新自检把「逐条相等」钉住了，但**渲染层拿不到**内核的 `estimateTokensOf`（跨进程），
+只靠测试比对，不是共享常量。
+
 ### 调研：Context Continuity — P0 现状与基线（只读，不改运行机制）
 
 **新增报告** `docs/research/context-continuity-p0-baseline-2026-11-06.md`，登记到

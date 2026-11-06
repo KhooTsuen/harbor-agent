@@ -1,14 +1,18 @@
 /** CE-003：统一 Context Builder。
  * 预算以字符估算，优先保留当前任务、状态和近期消息；超长工具结果截断。
  *
- * ⚠️ 2026-09-28 真机事故（用户报「DeepSeek 都支持多模态了，它还说看不见图」）：
- * 这里以前对每条消息一律 `JSON.stringify(content)` 再按字符切。带图消息的 content
- * 是**多模态数组** ——
- *   `[{type:'text',text:'这是什么'},{type:'image_url',image_url:{url:'data:image/png;base64,iVBOR…'}}]`
- * 压成字符串再切，图片就只剩一段文件头。模型收到的是**坏图**，
- * 于是如实回答「画面数据没进来」。现在：**图片块整块保留，只切文本**。
+ * ── 2026-11-07（P1-A）：选取改成**按消息组** ────────────────────
+ *
+ * 这里曾经是一条一条从尾部往前取，于是「取到一串孤立 tool」时会把整份历史清零
+ * （真实会话实测 863 条 → 0 条），「assistant 只调工具不说话」时更隐蔽
+ * （62 条 → 2 条 / 13 字符）。选取逻辑现在住在 `context-groups.cjs`，
+ * 那边解释了两种残缺的成因与本文件的规则。
+ *
+ * 本文件只剩三件事：**各层额度怎么算、系统层怎么拼、把结果整理成可诊断的形状**。
+ * 文本口径（一条占多少预算、怎么按额度切）在 `context-text.cjs` —— 别在这里再写一份。
  */
-const { textOf, countImages } = require('./message-text.cjs')
+const { trim, trimContent, sizeOfMessage, trimMessage } = require('./context-text.cjs')
+const { selectMessages, MIN_KEEP_CHARS } = require('./context-groups.cjs')
 
 /**
  * 各层占上下文预算的百分比 —— **只列 `assemble` 真的会用的那些**。
@@ -63,96 +67,6 @@ const DEFAULT_BUDGET = {
 const PROJECT_FLOOR = require('./prompt-limits.cjs').PROJECT_FLOOR_CHARS
 
 /**
- * 一张图按多少字符占预算。
- *
- * **不能按 base64 的真实长度算**：一张 200KB 的图是 27 万字符，而 API 侧只按
- * 一千来个 token 计——照真长算的话，一张图就把整个对话预算挤没，消息全被丢掉。
- * 给个固定成本，保证「带图的那条」总排得进来，同时压住「一次塞五张图」的极端情况。
- */
-const IMAGE_COST = 800
-
-function chars(value) {
-  return typeof value === 'string' ? value.length : 0
-}
-
-/**
- * 至少留这么多原文才值得把一条消息留下（见 assemble 里那个 `size < MIN_KEEP_CHARS`）。
- *
- * 2026-10-04：以前预算被挤到极限时，旧消息会被裁得**只剩一行裁剪说明**（14 字符）——
- * 它占着预算，却不提供任何信息，模型只能看到一串「上下文已按预算裁剪」。
- * 现在这种残片不要：宁可整条不进上下文（并把条数告诉模型，见 assemble 的 droppedNote）。
- */
-const MIN_KEEP_CHARS = 200
-
-/**
- * 裁剪说明的**固定长度**（算预算时要预先留出来）。
- *
- * 带上了原长：模型（和事后看日志的人）能区分「这条本来就很短」和「它有两万字但只进来了开头」。
- * 尾部的 `…上下文已按预算裁剪…` 刻意保留原措辞 —— 历史文档、自检组（86-vision）与
- * 用户回的会话记录里都是这个串，换掉它等于把过去的证据链断掉。
- */
-const TRIM_NOTE_RESERVE = 64
-const trimNote = (len) => `\n[这条消息原有 ${len} 字符，只有开头进得来。…上下文已按预算裁剪…]`
-
-function trim(value, limit) {
-  const text = String(value ?? '')
-  if (text.length <= limit) return text
-  const note = trimNote(text.length)
-  return `${text.slice(0, Math.max(0, limit - note.length))}${note}`
-}
-/** 切一条消息的内容：多模态**只切文本、图片整块留**（切一半的 base64 是坏图） */
-function trimContent(content, limit) {
-  if (!Array.isArray(content)) return trim(textOf(content), limit)
-  const textLimit = Math.max(0, limit - countImages(content) * IMAGE_COST)
-  return content
-    .map((part) => {
-      if (typeof part?.text !== 'string') return part
-      /* 文本预算已被图片占满：整段丢掉。留半句话除了误导模型没别的作用 */
-      if (textLimit <= 0) return null
-      return { ...part, text: trim(part.text, textLimit) }
-    })
-    .filter((part) => part !== null)
-}
-
-/** 一条消息占多少预算：文本按字符，图片按固定成本 */
-function sizeOf(content) {
-  if (!Array.isArray(content)) return chars(content)
-  return chars(textOf(content)) + countImages(content) * IMAGE_COST
-}
-
-/** 预算或历史条数可能从工具组中间截断；上游只接受完整的 assistant/tool 配对。 */
-function completeToolGroups(messages) {
-  const safe = []
-  let discarded = 0
-  for (let i = 0; i < messages.length; ) {
-    const message = messages[i]
-    if (message?.role === 'tool') {
-      discarded += 1
-      i += 1
-      continue
-    }
-    const calls = message?.role === 'assistant' ? message.tool_calls : null
-    if (!Array.isArray(calls) || calls.length === 0) {
-      safe.push(message)
-      i += 1
-      continue
-    }
-    let end = i + 1
-    while (messages[end]?.role === 'tool') end += 1
-    const tools = messages.slice(i + 1, end)
-    const ids = calls.map((call) => call?.id)
-    const complete =
-      ids.every((id) => typeof id === 'string' && id.length > 0) &&
-      new Set(ids).size === ids.length &&
-      tools.length === ids.length &&
-      tools.every((tool, index) => tool.tool_call_id === ids[index])
-    if (complete) safe.push(message, ...tools)
-    else discarded += end - i
-    i = end
-  }
-  return { messages: safe, discarded }
-}
-/**
  * `assistant.maxTokens = 0`（不限）时的上下文基准。
  *
  * 2026-10-04 真机实测：贴 96122 字符，模型只看到前 3646 字符（≈3.8%）—— 因为
@@ -171,6 +85,15 @@ function completeToolGroups(messages) {
  * （跨进程没法共享常量）；`contextBaseDrift.test.ts` 盯着两边。
  */
 const DEFAULT_CONTEXT_TOKENS = 16384
+
+/**
+ * 字符当量 → token 的**粗估**。系数的唯一出处是 `compact-chunked.cjs`（同一个公式不写两遍）。
+ * ⚠️ 这是估算：中文约 1.5 字/token、英文约 4 字符/token，混算取 chars/3 偏保守。
+ * **不是** API 计费 token（那只有供应商返回的 usage 才是）。
+ */
+function estimateTokensOf(chars) {
+  return Math.ceil((Number(chars) || 0) / 3)
+}
 
 function assemble(input = {}) {
   /*
@@ -196,59 +119,73 @@ function assemble(input = {}) {
   const project = trim(input.project, Math.max(cap('project'), PROJECT_FLOOR))
   const task = trim(input.task, cap('task'))
   const recent = Array.isArray(input.messages) ? input.messages : []
-  let remaining = cap('conversation')
-  const selected = []
-  let dropped = 0
-  let i = recent.length - 1
-  for (; i >= 0 && remaining > 0; i -= 1) {
-    const item = recent[i]
-    const original = sizeOf(item.content)
-    const copy = { ...item, content: trimContent(item.content, remaining) }
-    const size = sizeOf(copy.content)
-    /*
-     * 「被裁到只剩一行说明」的残片不要（见 MIN_KEEP_CHARS 的注释）。
-     * 判据是「被缩过 且 剩得很小」—— 本来就很短的消息（「你好」）不受影响。
-     * 不扣预算：留不出像样内容的残片不值得占位，宁可让更早的消息也因此整条不进。
-     */
-    if (size > 0 && size < MIN_KEEP_CHARS && size < original) {
-      dropped += 1
-      continue
-    }
-    if (size > 0) {
-      selected.unshift(copy)
-      remaining -= size
-    }
-  }
-  /* 预算用完时，更早的那些**根本没轮到** —— 它们同样是「没进上下文」，要一起算上 */
-  if (i + 1 > 0) dropped += i + 1
+
+  /* 对话层：按**消息组**从尾部往前挑（规则见 context-groups.cjs 的文件头） */
+  const selected = selectMessages(recent, cap('conversation'), { sizeOfMessage, trimMessage })
+  const dropped = selected.dropped
+
   /*
    * 有消息被整条丢掉时，**一处**说明比 N 行残片有用：模型因此知道「上面还有内容」，
    * 却又不用为每个被丢的旧消息付一行预算。挂在会话状态那一层（系统侧）。
+   * 两种原因分开说：预算不够 / 记录本身不完整（后者不该被当成「被裁了」）。
    */
-  const complete = completeToolGroups(selected)
-  dropped += complete.discarded
-  const removedChars = selected
-    .filter((message) => !complete.messages.includes(message))
-    .reduce((sum, message) => sum + sizeOf(message.content), 0)
-  const droppedNote = dropped > 0 ? `\n（更早的 ${dropped} 条对话因预算没进上下文）` : ''
-  const incompleteNote = complete.discarded > 0 ? '\n（不完整的工具调用记录已从本轮上下文排除）' : ''
+  const budgetDropped = Math.max(0, dropped - selected.invalid)
+  const droppedNote = budgetDropped > 0 ? `\n（更早的 ${budgetDropped} 条对话因预算没进上下文）` : ''
+  const incompleteNote =
+    selected.invalid > 0 ? `\n（${selected.invalid} 条工具调用记录不完整，已从本轮上下文排除）` : ''
+  const systemContext = {
+    memory,
+    project,
+    /* 历史遗留字段：`prompt-stack` 不读它，但返回形状保持原样（别处可能取） */
+    task,
+    conversationState: state + droppedNote + incompleteNote,
+  }
+  /*
+   * 口径（P1-B）：这里给出的是**这一轮真正拼进请求的那份东西**，不是磁盘上的历史总量。
+   * 四项分开写，别合成一个「用量」——
+   *   · `conversation.chars`  对话层实际发出去的字符当量（含工具调用与结果的真实占比）
+   *   · `system.chars`        各系统层拼完之后的字符数
+   *   · `input.chars/tokens`  **整份模型输入**的估算（系统各层 + 对话层）
+   *   · `budget`              这一层的额度与分母（谁给的、给了多少）
+   * 全部是**字符换算的估算**，不是 API 计费 token（那个只有供应商返回的 usage 才是）。
+   */
+  const systemChars =
+    systemContext.memory.length +
+    systemContext.project.length +
+    systemContext.task.length +
+    systemContext.conversationState.length
+  const inputChars = systemChars + selected.chars
   return {
-    systemContext: { memory, project, task, conversationState: state + droppedNote + incompleteNote },
-    messages: complete.messages,
+    systemContext,
+    messages: selected.messages,
     estimates: {
       maxTokens,
-      chars: totalChars - remaining - removedChars,
-      selectedMessages: complete.messages.length,
+      /** 整份模型输入的字符当量（系统各层 + 对话层） */
+      chars: inputChars,
+      /** 字符当量换算的 token 估算（**估算**，见 estimateTokensOf） */
+      tokens: estimateTokensOf(inputChars),
+      systemChars,
+      conversationChars: selected.chars,
+      /** 对话层额度（字符）与还剩多少 —— 用来判断「是不是预算不够」 */
+      conversationBudget: cap('conversation'),
+      conversationRemaining: selected.remaining,
+      selectedMessages: selected.messages.length,
       droppedMessages: dropped,
+      /** 其中因为工具协议不完整被排除的 */
+      invalidMessages: selected.invalid,
     },
   }
 }
+
 module.exports = {
   DEFAULT_BUDGET,
   DEFAULT_CONTEXT_TOKENS,
   MIN_KEEP_CHARS,
   PROJECT_FLOOR,
-  TRIM_NOTE_RESERVE,
+  TRIM_NOTE_RESERVE: require('./context-text.cjs').TRIM_NOTE_RESERVE,
   assemble,
+  estimateTokensOf,
+  /* 文本口径的老出口（自检组与测试按它比）—— 实现只有一处：context-text.cjs */
   trim,
+  trimContent,
 }

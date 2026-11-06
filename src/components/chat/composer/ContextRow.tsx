@@ -47,9 +47,12 @@ function ContextGauge() {
   const status: UiStatus = advice.auto ? 'failed' : advice.warn ? 'warning' : 'neutral'
   const color = colorOf(status)
   /*
-   * Phase 7 二期：tooltip 再给两条**现成的**信息（都不碰内核）——
+   * Phase 7 二期：tooltip 再给几条**现成的**信息（都不碰内核）——
    *   · 缓存命中 token（`message.usage.cached`，命中部分便宜很多）；
-   *   · 距自动压缩线还差多少（`autoCompactAt × 上限 − 已用`）。
+   *   · 距自动压缩线还差多少（`autoCompactAt × 上限 − 已用`）；
+   *   · P1-B 起多给**分项**：存了多少 / 准备发多少 / 工具占多少。
+   *     为什么要有：以前只有一个数，用户看到「55% 却把历史裁没了」无从判断
+   *     （那个数只算正文、不含工具记录，实测低估 2.3～6.3 倍）。
    * 口径与压缩同一份（`advice`），不自己另算一套。
    */
   const cached = thread.messages.reduce((sum, message) => sum + (message.usage?.cached ?? 0), 0)
@@ -57,15 +60,20 @@ function ContextGauge() {
     ? Number(cfg?.context?.autoCompactAt)
     : DEFAULT_AUTO_RATIO
   const remain = Math.max(0, Math.round(autoAt * advice.limit - advice.used))
+  const b = advice.breakdown
   const detail = [
     `上下文 ${pct}%（估算 ${advice.used.toLocaleString()} / ${advice.limit.toLocaleString()} token）`,
+    `口径：按**实际请求体**估（含展开的工具记录与单条 2000 字上限），不是只算正文`,
     window
       ? `分母 = min(模型窗口 ${window.toLocaleString()} × 80%, 你的上限)`
       : '没有这个模型的窗口数据，分母只用你的上限',
+    `这条会话存了 ${b.storedMessages.toLocaleString()} 条（估算 ${b.storedTokens.toLocaleString()} token）；` +
+      `压缩点之后要带进上下文 ${b.inContextMessages.toLocaleString()} 条，其中工具记录占 ${Math.round(b.toolShare * 100)}%`,
     cached > 0 ? `缓存命中 ${cached.toLocaleString()} token（命中部分便宜很多）` : '',
     advice.auto
       ? '已经超过自动压缩线 —— 下一轮会自动压缩'
       : `距自动压缩线还差约 ${remain.toLocaleString()} token`,
+    `数字是按字符换算的估算，不是 API 计费 token`,
   ]
     .filter(Boolean)
     .join('\n')

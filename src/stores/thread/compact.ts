@@ -5,6 +5,8 @@ import { CONTEXT_BASE_TOKENS } from '@/constants'
 import { infoOf } from '@/lib/modelCapabilityWarn'
 import { appendCompact, compactChat } from '@/lib/backend'
 import { effectiveCompactPoint } from './history'
+import { breakdownOf } from './contextUsage'
+import type { UsageBreakdown } from './contextUsage'
 import { useAppStore } from '../useAppStore'
 import { useUIStore } from '../useUIStore'
 
@@ -23,14 +25,12 @@ import { useUIStore } from '../useUIStore'
 /** 压缩时保留最近多少条不进去（太近的内容摘要会丢关键细节） */
 export const KEEP_RECENT = 6
 
-/** 消息文本长度 → token 粗估（和后端 compact.cjs 用同一个系数） */
-export function estimateTokens(text: string): number {
-  return Math.ceil(String(text).length / 3)
-}
-
-export function estimateMessages(messages: readonly Message[]): number {
-  return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0)
-}
+/*
+ * 用量口径（`estimateMessages` / `estimateTokens` / `estimateTokensOf`）搬到了
+ * `contextUsage.ts`（P1-B）：那边解释为什么必须按**请求体**算、不再只算正文。
+ * 这里转出去 —— 外部一直 import 的是 `./compact`，改名会让调用方跟着漂。
+ */
+export { estimateMessages, estimateTokens, estimateTokensOf, OUTPUT_CAP } from './contextUsage'
 
 /**
  * 内核那套「可用消息」的口径 —— 两边必须一致，否则压缩点之后算出来的用量对不上。
@@ -127,6 +127,11 @@ export interface CompactAdvice {
   ratio: number
   warn: boolean
   auto: boolean
+  /**
+   * 四个分项（P1-B）：存了多少 / 准备发多少 / 实际拼成多少 / 工具占多少。
+   * 数字全是**字符换算的估算**，不是 API 计费 token。
+   */
+  breakdown: UsageBreakdown
 }
 
 export function adviseCompact(
@@ -135,13 +140,15 @@ export function adviseCompact(
   ratios: CompactRatios = {},
   modelWindow?: number | null,
 ): CompactAdvice {
-  /* 用量只算**压缩点之后**那一段（见 contextMessages） */
-  const used = estimateMessages(contextMessages(messages))
+  /* 用量只算**压缩点之后**那一段（见 contextMessages），但按**请求体口径**估（展开工具记录） */
+  const inContext = contextMessages(messages)
+  const breakdown = breakdownOf(messages, inContext)
+  const used = breakdown.requestTokens
   const limit = resolveLimit(maxTokens, modelWindow)
   const warnAt = Number.isFinite(ratios.warn) ? Number(ratios.warn) : DEFAULT_WARN_RATIO
   const autoAt = Number.isFinite(ratios.auto) ? Number(ratios.auto) : DEFAULT_AUTO_RATIO
   const ratio = used / limit
-  return { used, limit, ratio, warn: ratio >= warnAt, auto: ratio >= autoAt }
+  return { used, limit, ratio, warn: ratio >= warnAt, auto: ratio >= autoAt, breakdown }
 }
 
 /** 生成一条「压缩点」消息，插在消息流里让用户看得见 */

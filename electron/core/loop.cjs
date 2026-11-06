@@ -56,7 +56,7 @@ async function runLoop(options) {
   /* AG-035：记下是哪只模型在干这个活（诊断报告要写它） */
   if (options.taskId) taskCore.recordModel(options.taskId, useModel)
 
-  const { messages, promptVersion } = buildPromptContext({
+  const { messages, promptVersion, estimates } = buildPromptContext({
     config,
     workdir,
     mode,
@@ -157,7 +157,9 @@ async function runLoop(options) {
     /* 用量闸（全局，按天/月）：调模型**之前**查账（唯一能真省钱的位置） */
     limits.enforce(emit)
     life.mark('thinking', traceKey(options))
-    emit({ type: 'turn_start', turn: turn + 1 })
+    /* P1-B：只在本轮第一次 `turn_start` 带 `input` —— 那是「这一轮组装完的模型输入」。
+       后续回合的 messages 只在追加工具结果，初始组装量仍是最有参考价值的那个数。 */
+    emit({ type: 'turn_start', turn: turn + 1, ...(turn === 0 && estimates ? { input: estimates } : {}) })
 
     /* ── 调模型（带重试与降级）── */
     const stream = transcript.stream(emit)

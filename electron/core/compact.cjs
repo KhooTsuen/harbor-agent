@@ -149,6 +149,23 @@ const COMPACT_RATIO = 0.6
  *
  * 保留尾巴是有意的：摘要一定会丢细节，而「刚刚发生的事」往往还要接着用
  * （刚读出来的文件内容、刚报的错、刚写的计划）。
+ *
+ * ── 2026-11-07（P1-A②）：尾巴按**工具组边界**留，不再 `slice(-keepTail)`
+ * ────────────────────────────────────────────────────────────
+ *
+ * 老实现直接按条数从尾部切。P0 用真实形状（成组的 `assistant(tool_calls)` + N 条 `tool`）
+ * 测 16 个用例：**8 个切出孤儿 `tool`**（组的头被切掉、`tool` 留下了）。而这条路径
+ * 是「上游 400 之后就地换掉 messages」——下一次请求直接带着孤儿 tool 出去，必 400，
+ * 而用户看到的是「压缩完立刻又报错」。
+ *
+ * 现在：从尾部按**逻辑组**往前累加，装不下就停 —— 切点必然落在组的边界上。
+ * 组内要么整组进、要么整组不进（不裁 `tool_calls`：这条路径没有字符预算，
+ * 只有「留几条」的预算，没有理由去动协议形状）。
+ *
+ * @param {Array<object>} history
+ * @param {string} summary
+ * @param {number} keepTail 保留多少条（按消息条数算的预算，切点仍只落在组边界）
+ * @returns {Array<object>}
  */
 function rebuild(history, summary, keepTail = 6) {
   const list = Array.isArray(history) ? history : []
@@ -165,8 +182,53 @@ function rebuild(history, summary, keepTail = 6) {
   return [
     ...system,
     { role: 'user', content: `【之前对话的摘要 v${version}】\n${summary}` },
-    ...rest.slice(-keepTail),
+    ...tailGroups(rest, keepTail),
   ]
+}
+
+/**
+ * 从尾部按**逻辑组**取 `budget` 条以内的消息（切点只落在组边界）。
+ *
+ * 组 = `assistant(tool_calls)` + 紧跟的一串 `tool`；其余消息单条成组。
+ * 判据与 `context-groups.cjs` 的 `groupMessages` 同一个意思，但这里**不借用**它：
+ * 那边会把「不完整的组」标成 `complete: false` 让调用方丢弃，而重建尾巴时
+ * 遇到不完整的组应当**整组跳过、继续往前**（能留多少留多少，不能因为历史里有一段
+ * 残缺就把更早的也扔掉）。
+ *
+ * 最后一道保险：结果再做一次配对校验，任何人都别指望「上游会容忍」。
+ */
+function tailGroups(rest, budget) {
+  const limit = Math.max(0, Math.floor(Number(budget) || 0))
+  if (limit === 0) return []
+  const picked = []
+  let count = 0
+  let i = rest.length - 1
+  while (i >= 0 && count < limit) {
+    if (rest[i]?.role === 'tool') {
+      /* 尾部是一串 tool：往前找它的组头 */
+      let head = i
+      while (head >= 0 && rest[head]?.role === 'tool') head -= 1
+      const group = rest.slice(head + 1, i + 1)
+      const headMsg = rest[head]
+      const ids = (headMsg?.role === 'assistant' && Array.isArray(headMsg.tool_calls) ? headMsg.tool_calls : []).map(
+        (call) => call?.id,
+      )
+      const complete =
+        ids.length >= group.length &&
+        group.every((tool, k) => tool.tool_call_id === ids[k]) &&
+        new Set(ids).size === ids.length
+      /* 整组放得下才收；放不下就停 —— 不能只收半组（那正是孤儿 tool 的来源） */
+      if (!complete || count + group.length + 1 > limit) break
+      picked.unshift(headMsg, ...group)
+      count += group.length + 1
+      i = head - 1
+      continue
+    }
+    picked.unshift(rest[i])
+    count += 1
+    i -= 1
+  }
+  return picked
 }
 
 function shouldCompact(messages, maxTokens) {

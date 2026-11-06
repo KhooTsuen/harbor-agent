@@ -146,7 +146,18 @@ export async function run() {
     { role: 'assistant', content: '（这一轮没有发给模型：…）' },
     { role: 'user', content: '接着做' },
   ]
-  const drop2 = await send(dropSession, grown, `${dropSession}-2`)
+  /*
+   * ★ 2026-11-07（P1-A③）：预算改成按**轮**算之后，「第二轮历史多一条 → 装不下 → 整轮
+   * 省略」不再自然发生（`assistant` 不新起一轮）。
+   *
+   * 这里要造的是**同一段原话从「折叠」退化成「整轮省略」**：`grown` 归一化后 11 轮，
+   * 而折叠最多 2 轮（`foldTurns`）。所以
+   *   · 预算 9 → 最近 9 轮整进 + 最早那 2 轮被折叠（原话还在折叠块里，lossy 为空 → 不拦）
+   *   · 预算 8 → 最近 8 轮 + 2 轮折叠 + 第 9 轮**整轮省略**（就是带原话那轮）
+   * 第二次必须比第一次小 1，否则永远落在「折叠」那一档，测不到这个洞。
+   * （实测数字写在 `tmp/p1-186-probe.cjs` 的注释里，改夹具先跑它。）
+   */
+  const drop2 = await send(dropSession, grown, `${dropSession}-2`, null, null, { limit: 8 })
   check('★ 夹具成立：第二次 lossy 是空的（省略不进 lossy —— 正是要补的那条判据）', drop2.lossy.length === 0, JSON.stringify(drop2.lossy))
   check('★★ 第二次（整轮被省略）：仍阻断，Provider 0 次', Boolean(drop2.error) && drop2.calls === 0, `provider ${drop2.calls}`)
   check(
@@ -154,7 +165,12 @@ export async function run() {
     String(drop2.error?.message ?? '').includes('连摘要都没进请求'),
     String(drop2.error?.message ?? '').slice(0, 70),
   )
-  const drop3 = await send(dropSession, grown, `${dropSession}-3`, gate.CHOICE_CONTINUE)
+  /*
+   * ⚠️ 第三发必须与第二发**同样的 `limit`**：省略是「预算装不下」造成的，
+   * 预算一回到默认 20 就装得下、闸门根本不拦，于是 `confirmed` 永远是空的 ——
+   * 那会测出一条**假红**（看起来像「确认没被记住」，其实这一轮压根没被拦）。
+   */
+  const drop3 = await send(dropSession, grown, `${dropSession}-3`, gate.CHOICE_CONTINUE, null, { limit: 8 })
   check('★★ 明确确认之后才放行（恢复路径仍在）', drop3.calls === 1 && Boolean(drop3.value), `provider ${drop3.calls}`)
   check('★ 确认后这条指纹进了 confirmed', gate.snapshot(dropSession).confirmed.length === 1, JSON.stringify(gate.snapshot(dropSession)))
 

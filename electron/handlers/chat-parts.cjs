@@ -50,8 +50,18 @@ function lastUserText(history) {
  *          `omitted` = 「省了哪轮」的说明；`lossy` = 用户原话真的没进请求的逐条明细
  *          （空数组 = 无损）—— 发送入口拿它做程序级判断（`core/fold-gate.cjs`）
  */
-function windowHistory(rawHistory, limit = currentHistoryLimit()) {
-  const windowed = takeTurns(rawHistory, limit, { minTurns: 1 })
+/**
+ * 发送入口的历史窗口（`chat:send` 用的那一个）。
+ *
+ * @param {Array<object>} rawHistory
+ * @param {number} [limit] 轮次预算（一轮算一位）
+ * @param {{ foldChars?: number }} [options] `foldChars` = 单轮字符阈值（超过就折叠）
+ */
+function windowHistory(rawHistory, limit = currentHistoryLimit(), options = {}) {
+  const windowed = takeTurns(rawHistory, limit, {
+    minTurns: 1,
+    ...(Number(options?.foldChars) > 0 ? { foldChars: Number(options.foldChars) } : {}),
+  })
   return {
     history: windowed.kept,
     omitted: describeWindow(windowed, rawHistory),

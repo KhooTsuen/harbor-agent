@@ -41,6 +41,16 @@ const PAD = '这一段是背景说明，只交代手册的来历。'
 /** 末尾约束（含关键词，老口径也能保住；用来对比） */
 const TAIL = '汇总的最后一行必须正好是「验收结束：未发布」'
 
+/**
+ * 「这一轮太大」的字符阈值（夹具用的小数字）。
+ *
+ * ★ 2026-11-07（P1-A③）：预算改成按**轮**算之后，「一轮跑 30 次工具」不再因为条数
+ * 超预算而折叠（一轮恒占 1 位）。折叠改由**单轮字符阈值**触发 —— 用户的要求是
+ * 「仍须遵守最终 Token 预算，单轮工具输出过大时可以按完整工具组裁剪或折叠」。
+ * 本组测的是折叠路径，所以显式给阈值让这一轮真的走到那条分支。
+ */
+const FOLD_CHARS = 500
+
 function payloadOf(messages) {
   return JSON.stringify(bodyCore.buildChatBody({ model: 'probe-model', messages, stream: true }))
 }
@@ -103,7 +113,7 @@ export async function run() {
   check('★ 夹具成立：这句要求不含任何 KEEP_WORDS（老实现的漏点）', !foldCore.quoteOf(userText).join('').includes(REQUIRE))
 
   const history = [...turnOf(userText, 30, '结论：读完了五个文件'), { role: 'user', content: '接着做' }]
-  const squeezed = windowCore.takeTurns(history, 20, { minTurns: 1 })
+  const squeezed = windowCore.takeTurns(history, 20, { minTurns: 1, foldChars: FOLD_CHARS })
   check('★ 夹具成立：这一轮确实被折叠了', squeezed.foldedTurns === 1, String(squeezed.foldedTurns))
   check('★ 用户原话完整进入折叠块（lostChars = 0）', squeezed.lostChars === 0, String(squeezed.lostChars))
 
@@ -130,7 +140,7 @@ export async function run() {
     toolRuns: Array.from({ length: 30 }, (_, i) => ({ name: 'read_file', ok: true, output: `out#${i}` })),
   })
   session.append(thread.id, { role: 'user', content: '接着做' })
-  const api = session.toApiMessages(thread.id, 20)
+  const api = session.toApiMessages(thread.id, 20, { foldChars: 500 })
   const apiPayload = payloadOf(api)
   check('★★ 重开会话这条路上那句要求也在请求里', apiPayload.includes(REQUIRE))
   check('★ 重开会话这条路：工具正文没有搬进请求', !apiPayload.includes('out#0'))
@@ -142,9 +152,11 @@ export async function run() {
   group('P0-1（第 7 轮）/ ③ 原话再长也整段进（上限已取消）')
   const huge = `${PAD.repeat(60)}${REQUIRE}。${PAD.repeat(160)}${TAIL}。`
   check('★ 夹具成立：这条原话远超老的 USER_FOLD_CAP', huge.length > foldCore.USER_FOLD_CAP, `${huge.length} 字`)
-  const hugeSqueezed = windowCore.takeTurns([...turnOf(huge, 30, '结论：读了一半'), { role: 'user', content: '接着做' }], 20, {
-    minTurns: 1,
-  })
+  const hugeSqueezed = windowCore.takeTurns(
+    [...turnOf(huge, 30, '结论：读了一半'), { role: 'user', content: '接着做' }],
+    20,
+    { minTurns: 1, foldChars: FOLD_CHARS },
+  )
   check('★★ 超长原话：lostChars = 0（不再有损）', hugeSqueezed.lostChars === 0, String(hugeSqueezed.lostChars))
   const hugeText = String(foldedUser(hugeSqueezed.kept)?.content ?? '')
   check('★★ 那句要求逐字还在（落在旧上限会砍掉的中段）', hugeText.includes(REQUIRE))
@@ -158,7 +170,7 @@ export async function run() {
     const one = windowCore.takeTurns(
       [...turnOf(`目标：合并五个文件。${PAD.repeat(10)}${REQUIRE}。`, n, '结论：合并完了'), { role: 'user', content: '再核一遍' }],
       20,
-      { minTurns: 1 },
+      { minTurns: 1, foldChars: FOLD_CHARS },
     )
     const onePayload = payloadOf(one.kept)
     check(`★ ${n} 次工具：那句要求仍在请求载荷里`, onePayload.includes(REQUIRE))

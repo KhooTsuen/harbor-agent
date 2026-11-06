@@ -18,7 +18,8 @@
  *
  *   · 轮次起点 = 一条 `user` 消息。后面跟着的 assistant / tool 都归这一轮。
  *   · 截取单位 = 轮次：要么整轮进来，要么整轮出去 —— 因此工具组**不可能被切半**。
- *   · 预算仍按消息条数算（设置里那个 historyLimit 口径不变），但切点只落在轮次边界。
+ *   · 预算按**轮**算（设置里那个 historyLimit 的数字不变，但一轮算一位 ——
+ *     见下面「2026-11-07 第四轮」）。
  *   · 至少保留 `minTurns` 个完整轮次（默认 1）：最后一轮一定要在，否则模型
  *     看不到用户这次到底要什么（`lastUserText` 也靠它）。
  *   · 开头连续的系统消息（压缩摘要）**钉住**，不参与预算、不会被切 ——
@@ -47,6 +48,19 @@
  *
  * 调用方：`handlers/chat.cjs`（内存历史）与 `core/session-read.cjs`（磁盘历史）。
  * 两边必须用同一份 —— 这是硬约束 9 在本项目里第七次被踩之后加的。
+ *
+ * ── 2026-11-07 第四轮（P1-A③）：预算按**轮**算，不再按展开后的条数 ──────
+ *
+ * P0 实测（`sess_mw16gqqesenmq.jsonl`）：一轮里跑了 **836 次工具调用**，展开成 866 条
+ * 消息，预算默认 20 条 → 这一轮「装不下」→ 整轮被折成三行元数据，**836 条工具输出
+ * 一条都没进上下文**。而下一句「接着改」时，模型手里只剩「上一轮跑了 836 次工具调用」。
+ *
+ * 这个预算要管的是「记得住几轮对话」，不是「塞进几条消息」。工具调用是**一轮内部**
+ * 的事：跑 3 次还是 800 次，对「记住几轮」没有影响。容量由下一层
+ * （`context-builder.assemble` 的字符额度）管，那里按消息组挑、装不下的整组不进，
+ * 并如实报「少了多少条」。
+ *
+ * 纯聊天完全不受影响：没有工具时一轮 = 几条消息，20 位就是 20 条，与改前逐字一致。
  */
 
 /* 文本口径（字符串原样 / 多模态数组只取 text）只有一处实现：message-text.cjs */
@@ -88,20 +102,28 @@ function isPinnedTurn(turn) {
 const { foldTurn, TEXT_CAP, TOOL_LINES } = require('./history-fold.cjs')
 
 /**
- * 从尾部往前取完整轮次，直到条数超过预算。
+ * 从尾部往前取完整轮次，直到轮数超过预算。
  *
  * @param {Array<object>} messages
- * @param {number} budget 消息条数预算（<=0 = 一条都不取）
- * @param {{ minTurns?: number, foldTurns?: number }} [options]
+ * @param {number} budget 轮次预算，**一轮算一位**（<=0 = 一条都不取）。注意：不是
+ *        展开后的消息条数 —— 一轮跑 800 次工具调用仍只占 1 位（见文件头第四轮）
+ * @param {{ minTurns?: number, foldTurns?: number, foldChars?: number }} [options]
  *        `minTurns` = 至少保留几个完整轮次（默认 1）；
- *        `foldTurns` = 最多把几轮折成摘要（默认 2，0 = 不折叠，退回「整轮丢」的老行为）
+ *        `foldTurns` = 最多把几轮折成摘要（默认 2，0 = 不折叠，退回「整轮丢」的老行为）；
+ *        `foldChars` = **单轮的字符阈值**（默认 0 = 不按字符折叠）。这一轮展开后超过它，
+ *        就折成「原话 + 工具元数据 + 结论」三条（正文不搬）。为什么需要它：
+ *        预算改成按轮算之后，「一轮装不下」这件事在轮数维度上不再发生（一轮恒占 1 位），
+ *        但**单轮工具输出特别大**仍然会独占整个 Token 预算 —— 用户的要求是
+ *        「仍须遵守最终 Token 预算；单轮工具输出过大时可以按完整工具组裁剪或折叠，
+ *        不能无限保留」。所以把这一维度显式交出来，由调用方给阈值。
+ *        `minTurns` 以内的轮次不受它影响（最后一轮必须是完整原文）。
  * @returns {{ kept: Array<object>, dropped: number, droppedTurns: number, foldedTurns: number,
  *            lostChars: number, lossy: Array<{ fp: string, total: number, missing: number }>,
  *            turns: number }}
  *          `lostChars` = 用户原话真的没进请求的字数（0 = 完整）；`lossy` 是逐条明细
  *          （哪一段、原文多少字、缺多少、指纹）—— 发送入口（`core/fold-gate.cjs`）拿它拦。
  */
-function takeTurns(messages, budget, { minTurns = 1, foldTurns = 2 } = {}) {
+function takeTurns(messages, budget, { minTurns = 1, foldTurns = 2, foldChars = 0 } = {}) {
   const list = Array.isArray(messages) ? messages : []
   const empty = { kept: [], dropped: 0, droppedTurns: 0, foldedTurns: 0, lostChars: 0, lossy: [], turns: 0 }
   if (list.length === 0) return empty
@@ -109,6 +131,10 @@ function takeTurns(messages, budget, { minTurns = 1, foldTurns = 2 } = {}) {
   const turns = groupTurns(list)
   const pinned = turns.filter(isPinnedTurn)
   const movable = turns.filter((turn) => !isPinnedTurn(turn))
+  /** 一轮展开后占多少字符（按正文算；这一层只做粗判，精确的额度在 context-builder） */
+  const charsOfTurn = (turn) =>
+    (turn?.messages ?? []).reduce((sum, m) => sum + textOf(m?.content).length, 0)
+  const foldThreshold = Math.max(0, Number(foldChars) || 0)
 
   if (!(Number(budget) > 0)) {
     return {
@@ -121,6 +147,7 @@ function takeTurns(messages, budget, { minTurns = 1, foldTurns = 2 } = {}) {
   }
 
   const keptTurns = []
+  /* `count` = **逻辑预算**消耗（一轮算一位），不是展开后的消息条数 —— 见下面那段注释 */
   let count = 0
   let keep = 0
   let folded = 0
@@ -128,39 +155,48 @@ function takeTurns(messages, budget, { minTurns = 1, foldTurns = 2 } = {}) {
   let lost = 0
   /** 逐条有损明细（发送入口据此拦下来问用户） */
   const lossy = []
+  /**
+   * 把一轮折成「原话 + 工具元数据 + 结论」，并记进 keptTurns。
+   * @returns {boolean} true = 折进来了（调用方 continue）；false = 这一轮取不到任何内容
+   */
+  const foldInto = (index) => {
+    const digest = foldTurn(movable[index])
+    const messages = Array.isArray(digest?.messages) ? digest.messages : []
+    if (messages.length === 0) return false
+    keptTurns.unshift({ messages })
+    count += 1
+    folded += 1
+    lost += Number(digest?.missing) || 0
+    if (Array.isArray(digest?.lossy)) {
+      /* `turnsBack` = 倒数第几轮（用户要看到「哪一轮不完整」，只给字数不够） */
+      const back = movable.length - index
+      lossy.push(...digest.lossy.map((one) => ({ ...one, turnsBack: back })))
+    }
+    return true
+  }
+
   for (let i = movable.length - 1; i >= 0; i -= 1) {
-    const size = movable[i].messages.length
-    /* 够 minTurns 之前一律整轮放进（最后一轮是「这轮到底要什么」，不能用摘要代替） */
-    if (keep < minTurns || count + size <= Number(budget)) {
+    /*
+     * 这一轮要不要折叠，看两件事：
+     *   · 轮数预算不够了（`count + 1 > budget`）—— 老口径，现在只在轮数超预算时发生；
+     *   · 这一轮展开后超过 `foldChars`（单轮畸形大）—— 用户明确要求「单轮工具输出
+     *     过大时可以按完整工具组裁剪或折叠，不能无限保留」。
+     * `minTurns` 以内的轮次一律整轮进（最后一轮是「这轮到底要什么」，不能用摘要代替）。
+     */
+    const tooBig = foldThreshold > 0 && charsOfTurn(movable[i]) > foldThreshold
+    const overBudget = count + 1 > Number(budget)
+    if (keep < minTurns || (!overBudget && !tooBig)) {
       keptTurns.unshift(movable[i])
-      count += size
+      count += 1
       keep += 1
       continue
     }
     /*
-     * 装不下整轮 → 折成「原角色 + 低信任数据」那一组消息（默认最多 2 轮）。
-     * ★ 折叠只发生在「已经满足 minTurns」之后，所以最后一轮永远是完整原文。
-     * ★ 折出来的可能不止一条（user 原话 / 工具摘要 / assistant 结论），
-     *   所以预算按**实际折出来的条数**算 —— 否则会悄悄超预算。
-     * ★ `lost` 是用户原话真的没进请求的字数（`history-fold.wholeOf` 报的）——
-     *   随结果一起返回，调用方要如实说「缺了多少」，不能当成完整原文。
+     * 折叠：折成「原角色 + 低信任数据」那一组消息（默认最多 2 轮）。折出来的一组
+     * 同样只占 1 位预算（它替代的就是那一轮）。`lost` 是用户原话真的没进请求的字数
+     * （`history-fold.wholeOf` 报的）—— 随结果报出去，不能当成完整原文。
      */
-    if (folded < foldTurns && count + 1 <= Number(budget)) {
-      const digest = foldTurn(movable[i])
-      const messages = Array.isArray(digest?.messages) ? digest.messages : []
-      if (messages.length > 0 && count + messages.length <= Number(budget)) {
-        keptTurns.unshift({ messages })
-        count += messages.length
-        folded += 1
-        lost += Number(digest?.missing) || 0
-        if (Array.isArray(digest?.lossy)) {
-          /* `turnsBack` = 倒数第几轮（用户要看到「哪一轮不完整」，只给字数不够） */
-          const back = movable.length - i
-          lossy.push(...digest.lossy.map((one) => ({ ...one, turnsBack: back })))
-        }
-        continue
-      }
-    }
+    if (folded < foldTurns && (overBudget || tooBig) && foldInto(i)) continue
     break
   }
 

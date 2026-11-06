@@ -1,4 +1,5 @@
 import type { Message } from '@/types'
+import { replayCallIdOf } from './contextUsage'
 
 /**
  * 把会话里的消息拼成「喂给主进程」的历史。
@@ -40,11 +41,18 @@ export interface CompactPoint {
   summary: string
 }
 
-/** 一条消息是否「可用」（与内核 `session-read.toApiMessages` 的 usableOf 同口径） */
+/**
+ * 一条消息是否「可用」（与内核 `session-read.toApiMessages` 的 usable 判据同口径）。
+ *
+ * ★ 2026-11-07（P1-A）：这里以前是「正文非空或带图」，于是「正文为空、只带工具记录」
+ *   的 assistant 整条被丢掉 —— 它引出的那串 `tool` 也一起没了。内核 `loop.cjs` 写
+ *   `content: result.content || ''`，所以这种形状在真实会话里很常见（`sess_mw2ab`
+ *   189 条 assistant 里 18 条）。同一处判据在内核 `session-read.cjs` 里也修了。
+ */
 function isUsable(m: Message): boolean {
   return (
     (m.role === 'user' || m.role === 'assistant') &&
-    (m.content.trim() !== '' || (m.images?.length ?? 0) > 0)
+    (m.content.trim() !== '' || (m.images?.length ?? 0) > 0 || (m.toolRuns?.length ?? 0) > 0)
   )
 }
 
@@ -120,8 +128,11 @@ export function buildHistory(messages: Message[], exceptMessageId: string): Hist
       continue
     }
 
-    const suffix = String(m.diskKey ?? m.id).slice(-8)
-    const callIdOf = (k: number): string => `replay_${suffix}_${k}`
+    /*
+     * ★ 回放 id 的公式只在一处（`contextUsage.replayCallIdOf`）：用量估算要按
+     *   id 的实际长度算进预算，两处各写一遍就会「显示 3.4 万、实际发 3.5 万」。
+     */
+    const callIdOf = (k: number): string => replayCallIdOf(m.diskKey, m.id, k)
     out.push({
       role: 'assistant',
       content: m.content,

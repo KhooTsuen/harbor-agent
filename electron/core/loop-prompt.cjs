@@ -86,7 +86,9 @@ function buildFailureNote({ done = [], failed = [] } = {}) {
  *
  * @param {{ config: object, workdir: string, mode: string, history: Array,
  *           threadSettings: object, options: object, model?: string, provider?: object }} input
- * @returns {{ messages: Array, promptVersion: string }}
+ * @returns {{ messages: Array, promptVersion: string,
+ *             estimates?: ReturnType<typeof import('./context-builder.cjs').assemble>['estimates'] }}
+ *          `estimates` = `assemble` 的估算（P1-B），界面那个圈与压缩判据看同一份数。
  */
 function buildPromptContext({ config, workdir, mode, history, threadSettings, options, model, provider }) {
   /* AG-037：这段（提示词拼装 + 记忆召回 + 项目说明）自己计时，循环那边只管编排 */
@@ -290,8 +292,9 @@ function buildPromptContext({ config, workdir, mode, history, threadSettings, op
   }
 
   perfMarks.mark(traceId, 'context', Date.now() - startedAt)
-  /* ②-1：把提示词版本一并交出去，循环那边记进任务台账 */
-  return { messages, promptVersion: stack.version, diag }
+  /* P1-B：`estimates` = `assemble` 的真实组装结果 —— 为什么从这里出去、为什么算估算，
+     见 `context-builder.cjs` 里 `estimates` 那段注释。循环把它推给界面，两边同一个数。 */
+  return { messages, promptVersion: stack.version, diag, estimates: assembled.estimates }
 }
 
 module.exports = { buildPromptContext, buildFailureNote }

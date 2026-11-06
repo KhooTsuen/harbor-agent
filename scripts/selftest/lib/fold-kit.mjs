@@ -138,12 +138,29 @@ export function lossyOf(text, { turnsBack = 1, missing = 600 } = {}) {
  * @param {string|null} choice 用户在确认卡上点的出口（`null` = 关掉卡 / 没确认）
  * @param {Array<object>|null} injectLossy 显式注入的有损条目（`null` = 用真实链路的；
  *        第七轮起真实链路恒无损，测闸门的组靠它造样本）
+ * @param {{ limit?: number, foldChars?: number }} [options] `limit` = 轮次预算（默认 20）；
+ *        `foldChars` = 单轮字符阈值（默认 500，让夹具真的走到折叠分支）
  * @returns {Promise<{ value?: object, error?: Error, card: object|null, events: Array<object>,
  *                     calls: number, history: Array<object>, lossy: Array<object>, omitted: string }>}
  *          `error` 有值 = 这一轮被拦下（**不抛**，交给断言读；抛了就分不出「失败」和「拦住」）
  */
-export async function send(sessionId, rawHistory, phaseKey, choice = null, injectLossy = null) {
-  const { history, omitted, lossy } = chatParts.windowHistory(rawHistory, 20)
+export async function send(
+  sessionId,
+  rawHistory,
+  phaseKey,
+  choice = null,
+  injectLossy = null,
+  options = {},
+) {
+  /*
+   * ★ 2026-11-07（P1-A③）：预算改成按**轮**算之后，「一轮跑 30 次工具」不再因为条数
+   * 超预算而折叠（一轮恒占 1 位）。这一族自检测的正是**折叠路径**（有损样本、闸门、
+   * 折叠块里的原话），所以必须让它真的折叠 —— 用单轮字符阈值触发。
+   * 数字小到「夹具里那轮工具输出必然超过」，又不至于把普通短对话也折了。
+   */
+  const limit = Number(options?.limit) > 0 ? Number(options.limit) : 20
+  const foldChars = Number(options?.foldChars) > 0 ? Number(options.foldChars) : 500
+  const { history, omitted, lossy } = chatParts.windowHistory(rawHistory, limit, { foldChars })
   /* 夹具注入优先：闸门拿到的就是这一份，和真实链路给它的东西同形状 */
   const effective = Array.isArray(injectLossy) ? injectLossy : lossy
   const events = []

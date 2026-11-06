@@ -41,6 +41,14 @@ const LIMIT_A = '不要改 public API'
 const LIMIT_B = '不要引入新依赖'
 const CONCLUSION = '结论：拆完了，npm test 全绿'
 
+/**
+ * 「这一轮太大」的字符阈值（夹具用的小数字）。
+ *
+ * 生产里这个阈值由发送入口按上下文预算算；自检只关心**走到折叠分支**，
+ * 所以给一个远小于夹具工具总量的值。★ 数字写在一处，别在每个断言里各写一个。
+ */
+const FOLD_CHARS = 500
+
 /** 上一轮的助手消息（磁盘形态：一条记录 + toolRuns） */
 function assistantWithRuns(n) {
   return {
@@ -127,8 +135,14 @@ export async function run() {
     ]
     const expanded = expandOf(history)
 
-    /* 默认预算（设置里 historyLimit 的默认值 20）：真机复现用的就是它 */
-    const squeezed = windowCore.takeTurns(expanded, 20, { minTurns: 1 })
+    /*
+     * 预算 = 20 **轮**，且这一轮工具输出超过 FOLD_CHARS 就要折叠。
+     * ★ 2026-11-07（P1-A③）：预算口径从「消息条数」改成「对话轮数」之后，
+     *   「一轮跑 30 次工具」不再因为**条数**超预算而折叠（一轮恒占 1 位）——
+     *   折叠改由**单轮字符阈值**触发（用户要求：仍须遵守 Token 预算，单轮过大时折叠）。
+     *   本组测的是折叠路径本身，所以这里显式给出小阈值，让这一轮真的走到那条分支。
+     */
+    const squeezed = windowCore.takeTurns(expanded, 20, { minTurns: 1, foldChars: FOLD_CHARS })
     const orphan = orphanOf(squeezed.kept)
     check(
       `★ ${n} 次工具 + 预算 20：没有孤立 tool 消息、也没有悬空 tool_calls`,
@@ -193,8 +207,12 @@ export async function run() {
     windowCore.takeTurns([{ role: 'system', content: '摘要' }, { role: 'user', content: 'x' }], 0).kept.length === 1,
   )
   check(
-    'foldTurns=0 时退回「整轮丢」（旧行为，便于对照）',
-    windowCore.takeTurns(expandOf([{ role: 'user', content: 'a' }, assistantWithRuns(30), { role: 'user', content: 'b' }]), 20, { foldTurns: 0 }).foldedTurns === 0,
+    'foldTurns=0 时退回「整轮丢」（旧行为，便于对照）—— 轮数预算 1 装不下两轮，且不许折叠',
+    windowCore.takeTurns(
+      expandOf([{ role: 'user', content: 'a' }, assistantWithRuns(30), { role: 'user', content: 'b' }]),
+      1,
+      { foldTurns: 0 },
+    ).foldedTurns === 0,
   )
   /* 反证：不折叠时那三个要点确实**不在**载荷里 —— 证明上面的断言有牙齿 */
   const noFold = windowCore.takeTurns(
@@ -203,7 +221,8 @@ export async function run() {
       assistantWithRuns(30),
       { role: 'user', content: '那个地方接着改' },
     ]),
-    20,
+    /* 预算 1 轮 + 不许折叠 → 上一轮整轮丢（旧行为；折叠那版见上面 FOLD_CHARS 那组） */
+    1,
     { foldTurns: 0 },
   )
   const noFoldPayload = payloadOf(noFold.kept)

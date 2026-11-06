@@ -220,7 +220,8 @@ export async function run() {
    * [object Object]）。现在统一 require message-text.cjs —— 少一个就会退回老毛病。
    */
   const users = [
-    'electron/core/context-builder.cjs',
+    /* ★ 2026-11-07（P1-A）：真正的 content→text 在这里（从 context-builder 搬出来的） */
+    'electron/core/context-text.cjs',
     'electron/core/conversation-state.cjs',
     'electron/core/session-read.cjs',
     'electron/handlers/chat-parts.cjs',
@@ -229,6 +230,17 @@ export async function run() {
   ]
   const missing = users.filter((rel) => !readFileSync(join(ROOT, rel), 'utf8').includes('message-text.cjs'))
   check('这 6 个文件都走 message-text.cjs 的统一口径', missing.length === 0, missing.join(', '))
+  /*
+   * 名单跟着实现走：`context-builder.cjs` 不再直接 require message-text（它走 context-text），
+   * 所以换成断言它**没有自己再写一份** —— 比「文件里出现 message-text.cjs 字符串」严格，
+   * 后者只要留一句 import 就能过。
+   */
+  const builderSrc = readFileSync(join(ROOT, 'electron/core/context-builder.cjs'), 'utf8')
+  check(
+    '★ context-builder 的文本口径走 context-text.cjs（没有自己再写一份 content→text）',
+    /* 不写字面量 `require(...)`：12-requires 组会把它当真的引用去解析路径（会误报） */
+    /context-text\.cjs/.test(builderSrc) && !/message-text\.cjs/.test(builderSrc),
+  )
 
   /* 收尾：把测试建的会话删掉（别在 data/sessions 里留垃圾） */
   for (const id of created) sessionCore.remove(id)
