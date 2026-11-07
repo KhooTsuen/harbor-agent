@@ -38,6 +38,20 @@ function noteGrant(sessionId, signals = {}) {
   /* 停手优先：同一句话里又授权又说只读，按最保守的理解处理 */
   if (stopped) {
     grantedSessions.delete(id)
+    /*
+     * 卡片授权只在「**比它更新**的这句话说停手」时才撤销。
+     *
+     * ★ 为什么必须比时刻（2026-11-07 自检逮到的真错）：`noteGrant` 每轮开头都调，
+     *   传的是**最后一条**用户消息。用户说「只分析」→ 被拦 → 弹卡片 → 用户点「允许写」，
+     *   这时最新消息**仍然是**「只分析」；下一次建 ctx 若照旧清掉，等于
+     *   「他刚点的同意被他自己更早那句话推翻了」—— 正是这个缺陷的翻版。
+     *   同一轮里 noteGrant 发生在授权**之前**（`now < at`）→ 不清；
+     *   授权之后用户发新消息说停手（`now > at`）→ 清。语义就是「更新的拒绝才算数」。
+     */
+    const now = Date.now()
+    for (const [key, hit] of [...cardGrants]) {
+      if (key.startsWith(`${id}::`) && now > (hit?.at ?? 0)) cardGrants.delete(key)
+    }
     return
   }
   if (!granted) return
@@ -60,6 +74,68 @@ function sessionGranted(sessionId) {
 /** 自检用：清空记忆（不进生产路径） */
 function resetSessionGrants() {
   grantedSessions.clear()
+  cardGrants.clear()
 }
 
-module.exports = { noteGrant, sessionGranted, resetSessionGrants, SESSION_CAP }
+/*
+ * ── 卡片授权（2026-11-07）──────────────────────────────────────
+ *
+ * 病：用户在 `ask_user` 卡片上点了「放开约束」，后续写操作**照样被拦**。
+ *   `user-constraints` 判的是消息正文，而卡片答复走 `chat-confirm` → 工具返回值
+ *   那条通道，从来没有回写运行时约束。用户看到的是「我点了同意，它还说不行」。
+ *
+ * ★ 判据不从自然语言来：模型在**选项上**声明 `intent`（`clarify.cjs` 的白名单），
+ *   用户在卡片上点中它 = 一条结构化授权事件。这样不新增第二套语义，
+ *   也不会把「用户答了个普通问题」误当成授权。
+ *
+ * ★ 作用域 = **这个会话的这个任务**（不是全局、不跨任务）：需求要求「仅对获批的
+ *   任务和操作生效」。任务一换，key 就变了，天然不继承。
+ * ★ 撤销有三种，都走同一条：`deny-write` 选项 / 正文说停手（`noteGrant` 的
+ *   `stopped`）/ 会话结束。**更新的拒绝一定盖过更早的授权** —— 靠 at 比对。
+ */
+const cardGrants = new Map()
+
+const keyOf = (sessionId, taskId) => `${String(sessionId ?? '')}::${String(taskId ?? '')}`
+
+/**
+ * 用户在卡片上点了一个带意图的选项。
+ *
+ * @param {{ sessionId?: string, taskId?: string, intents?: string[] }} input
+ * @returns {{ granted: boolean, revoked: boolean }}
+ */
+function noteCardGrant({ sessionId, taskId, intents } = {}) {
+  const id = String(sessionId ?? '')
+  const list = Array.isArray(intents) ? intents : []
+  if (!id || list.length === 0) return { granted: false, revoked: false }
+  const key = keyOf(id, taskId)
+  /* 拒绝优先：同一张卡里又同意又拒绝（多个问题），按最保守的算 */
+  if (list.includes('deny-write')) {
+    cardGrants.delete(key)
+    return { granted: false, revoked: true }
+  }
+  if (!list.includes('grant-write')) return { granted: false, revoked: false }
+  cardGrants.set(key, { at: Date.now() })
+  return { granted: true, revoked: false }
+}
+
+/**
+ * 这个任务的卡片授权还有效吗。
+ *
+ * @param {string} [sessionId]
+ * @param {string} [taskId]
+ */
+function cardGranted(sessionId, taskId) {
+  const id = String(sessionId ?? '')
+  if (!id) return false
+  const hit = cardGrants.get(keyOf(id, taskId))
+  return Boolean(hit)
+}
+
+module.exports = {
+  noteGrant,
+  sessionGranted,
+  noteCardGrant,
+  cardGranted,
+  resetSessionGrants,
+  SESSION_CAP,
+}

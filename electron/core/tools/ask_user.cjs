@@ -22,6 +22,7 @@ const clarify = require('../clarify.cjs')
 const scaleGate = require('./scale-gate.cjs')
 const gate = require('./ask-user-gate.cjs')
 const preWriteGate = require('./pre-write-gate.cjs')
+const userGrants = require('../user-grants.cjs')
 
 /**
  * 谁能把问题送到界面上？
@@ -75,6 +76,14 @@ module.exports = {
                   effect: {
                     type: 'string',
                     description: '因为 X 所以会有 Y 效果 —— 具体数字或事实',
+                  },
+                  /* 结构化意图：用户在卡片上点中它 = 一条可核验的授权/撤销事件（不靠文字匹配） */
+                  intent: {
+                    type: 'string',
+                    enum: ['grant-write', 'deny-write'],
+                    description:
+                      '只在「这一问就是在问要不要放开写入」时才标：选它=允许本任务写文件则给 grant-write，' +
+                      '选它=继续禁止写入则给 deny-write。普通问答不要标。',
                   },
                 },
                 required: ['label', 'effect'],
@@ -230,6 +239,21 @@ module.exports = {
     } else if (reply?.skipped === true) clarify.noteSkip(sessionId)
     else if (Array.isArray(reply?.answers) && reply.answers.length > 0) {
       clarify.noteAnswered(sessionId)
+      /*
+       * 卡片授权（2026-11-07）：用户点中的选项如果带结构化意图，就记进运行时约束。
+       * 只认 `checked.questions` 里真实存在的 option —— 答复是外部数据（历史文本 /
+       * 模型编造都不可能凭空产生一条 intent），所以判据只有这一处。
+       * 超时 / 跳过 / 无人值守都走不到这里（answers 为空），因此不会误授权。
+       */
+      const intents = []
+      for (const answer of reply.answers) {
+        const q = checked.questions.find((one) => one.question === answer?.question)
+        const hit = q?.options.find((one) => one.label === answer?.choice)
+        if (hit?.intent) intents.push(hit.intent)
+      }
+      if (intents.length > 0) {
+        userGrants.noteCardGrant({ sessionId, taskId: ctx.taskId, intents })
+      }
       /*
        * A2：他答过一次**规模确认** → 本对话内同类重操作不再问（审计问题 7 后收窄：
        * 得是紧接着拦截那次问的、且问题看着像在问规模；无关问题不给授权）。

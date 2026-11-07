@@ -3,6 +3,8 @@
 
 const mcp = require('../mcp.cjs')
 const approvals = require('./approval.cjs')
+/* 卡片授权（用户点了「允许写」）要实时复查 —— 见 tools/index.cjs 里那段 */
+const userGrants = require('../user-grants.cjs')
 const riskGate = require('./risk-gate.cjs')
 const scaleGate = require('./scale-gate.cjs')
 const writeDiff = require('../write-diff.cjs')
@@ -164,8 +166,11 @@ async function execute(name, args, ctx = {}) {
     return `错误：本次对话已关闭工具调用，${name} 被拒绝。`
   }
   if (ctx.allowWrite === false && MUTATING_TOOLS.has(name)) {
-    /* 只读轮里，**安全只读命令照跑**（判据在 readonly-allow.cjs，别处不再判一次） */
-    if (!readonlyAllow.allowedInReadonly(name, args)) {
+    /* 只读轮放行安全只读命令；卡片上刚点过「允许写」也立即放行（ctx 是建时算的，见 user-grants） */
+    if (
+      !readonlyAllow.allowedInReadonly(name, args) &&
+      !userGrants.cardGranted(ctx.sessionId, ctx.taskId)
+    ) {
       auditCall(ctx, { tool: name, args, startedAt, ok: false, error: '本轮约束禁止写入' })
       return `错误：本轮对话的运行时约束是「只分析，不修改」，${name} 被拒绝。`
     }

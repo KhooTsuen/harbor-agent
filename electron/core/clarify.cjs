@@ -86,19 +86,24 @@ function text(value, max) {
     .slice(0, max)
 }
 
+/** 选项可声明的结构化意图（白名单）：`grant-write` = 选它即「允许本任务写文件」，`deny-write` = 撤销；不靠匹配「同意」这类自然语言（硬约束 9），只管写、不碰权限三档 */
+const OPTION_INTENTS = ['grant-write', 'deny-write']
+
 /** 规范一个选项；坏选项返回 null */
 function option(raw) {
   const label = text(raw?.label, MAX_LABEL_CHARS)
   if (!label) return null
   const effect = text(raw?.effect, MAX_EFFECT_CHARS)
-  return { label, effect, concrete: concrete(effect) }
+  const asked = text(raw?.intent, 24) /* 认不出就丢掉：它只是可选标记，不该让整个选项报废 */
+  const intent = OPTION_INTENTS.includes(asked) ? asked : ''
+  return { label, effect, concrete: concrete(effect), ...(intent ? { intent } : {}) }
 }
 
 /**
  * 校验并规范模型给的提问。
  *
  * @param {unknown} raw 形如 `[{ question, options: [{label, effect}], allowFreeform, defaultValue }]`
- * @returns {{ questions: Array<{question: string, options: Array<{label: string, effect: string, concrete: boolean}>,
+ * @returns {{ questions: Array<{question: string, options: Array<{label: string, effect: string, concrete: boolean, intent?: string}>,
  *            allowFreeform: boolean, defaultValue: string, defaultFrom: 'model'|'first', index: number}>,
  *            dropped: Array<{question: string, reason: string}>,
  *            warnings: Array<{question: string, warning: string}> }}
