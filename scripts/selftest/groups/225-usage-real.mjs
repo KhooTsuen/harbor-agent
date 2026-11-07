@@ -240,6 +240,40 @@ export async function run() {
     check('★★ 直调 llm 真的落了一行（不是只写在源码里）', afterDirect === beforeDirect + 1, `${beforeDirect} → ${afterDirect}`)
     check('★ 那一行的数字来自上游', coverRow?.total === 9 && coverRow?.known === true, JSON.stringify({ t: coverRow?.total, k: coverRow?.known }))
 
+    /*
+     * ★ 混合对账：主对话 + 场景各一次 → 账本正好 +2。
+     *   这是「不多不少」的正面判据：漏了会 <2，两层各记一次会 >2。
+     */
+    const mixedBefore = metrics.summarize({}).requests
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(c) {
+          const enc = new TextEncoder()
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: 'y' } }] })}\n\n`))
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } })}\n\n`))
+          c.enqueue(enc.encode('data: [DONE]\n\n'))
+          c.close()
+        },
+      }),
+    })
+    try {
+      const mixCfg = { providers: [{ id: 'mix-p', kind: 'openai', baseUrl: 'https://m.example/v1', models: ['mix-m'], enabled: true }], assistant: { model: 'mix-m' }, fallback: { enabled: false, attempts: 0, retryOn: [] } }
+      await require(join(ROOT, 'electron/core/loop-model.cjs')).callModel({
+        config: mixCfg, provider: mixCfg.providers[0], model: 'mix-m',
+        messages: [{ role: 'user', content: 'x' }], traceId: 'req_mix_a', emit: () => {},
+      })
+      await require(join(ROOT, 'electron/core/llm.cjs')).chatStream({
+        provider: mixCfg.providers[0], baseUrl: 'https://m.example/v1', apiKey: 'k',
+        model: 'mix-m', messages: [{ role: 'user', content: 'x' }], traceId: 'req_mix_b',
+      })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const mixedAfter = metrics.summarize({}).requests
+    check('★★ 主对话 + 场景各 1 次 → 账本正好 +2（漏了会 <2，记两遍会 >2）', mixedAfter === mixedBefore + 2, `${mixedBefore} → ${mixedAfter}`)
+
     /* ══ ⑫ 估算不许混进真实用量 ══════════════════════════════════ */
     group('真实用量 / ⑫ 本地估算只服务裁剪与预算，不进这本账')
     check('★★ token-metrics 里没有任何估算函数', !/estimate|估算/i.test(tmSrc))
