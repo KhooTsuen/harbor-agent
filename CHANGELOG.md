@@ -31,6 +31,12 @@
    （正在写 / 用户手工拷的），超量清理可独立被启动链调。
 4. `backup.maybeAuto` 改用 `lastRealBackupAt()`：只认「有 meta 且记了清单」的备份。
 
+**验收时又抓到自己一处**：`pruneAll` 里别的步骤 `removed` 都是**文件名数组**，
+而 `audit.prune()` 原本的契约是 `removed: <数字>`（`audit:prune` 那个 IPC 和界面照它渲染，
+不能改）。两种形状混在同一张表里，日志对不上、排查先得猜是哪一半。
+故在 `growth-retention.steps()` 里包一层（`removed: []` + `count: <数字>`），
+并加一条自检钉住「三步的 removed 都是数组」。
+
 **没动的**：`sessions` 一行不删（`recall` 依赖原始会话），`events` / 日志 / 崩溃转储的
 保留策略原样，`audit.retentionDays` 仍读配置。
 

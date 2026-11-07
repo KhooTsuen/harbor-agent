@@ -78,7 +78,19 @@ function pruneChangesets(keep = CHANGESET_KEEP) {
  */
 function steps({ changesetKeep } = {}) {
   return [
-    ['audit', () => pruneAudit()],
+    [
+      'audit',
+      () => {
+        const r = pruneAudit()
+        /*
+         * 形状对齐：`audit.prune()` 原本的契约是 `removed: <数字>`（`audit:prune` 那个
+         * IPC 与界面照它渲染，不能改）。但 `pruneAll` 里别的步骤 `removed` 都是
+         * **文件名数组** —— 两种形状混在一张表里，日志对不上、排查先得猜是哪一半。
+         * 所以这里包一层：数组仍给空（它本来就不返回名字），数量另开 `count`。
+         */
+        return { ok: r.ok, removed: [], count: r.removed, reason: r.reason ?? '' }
+      },
+    ],
     [
       'changesets',
       () => {

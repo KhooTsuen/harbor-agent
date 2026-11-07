@@ -185,6 +185,19 @@ export async function run() {
       check(`★ ${key} 返回 ok 字段`, typeof out?.ok === 'boolean', JSON.stringify(out).slice(0, 90))
     }
     check('★ 三步都没抛（清理失败不该拦住启动）', Object.keys(ran).length === 3)
+    /*
+     * ★ 形状对齐（2026-11-07 真实数据验收时发现的）：`audit.prune()` 原本的契约是
+     * `removed: <数字>`（`audit:prune` 那个 IPC 与界面照它渲染，不能改），
+     * 而 `pruneAll` 里别的步骤 `removed` 都是**文件名数组**。
+     * 两种形状混在同一张表里 → 日志对不上，排查时先得猜是哪一半。
+     */
+    check(
+      '★★ 三步的 removed 都是数组（形状与既有步骤一致）',
+      Object.values(ran).every((out) => Array.isArray(out?.removed)),
+      Object.entries(ran)
+        .map(([k, v]) => `${k}=${Array.isArray(v?.removed) ? 'array' : typeof v?.removed}`)
+        .join(' '),
+    )
 
     /* ══ ⑤ 不该动的东西：会话证据 ═════════════════════════ */
     group('增长治理 / ⑤ 边界：会话证据不在这次清理范围内')
