@@ -158,7 +158,16 @@ function register({ ipcMain }) {
 
   /* ── 备份 ─────────────────────────────────────────────── */
 
-  ipcMain.handle('backup:list', () => backup.list())
+  /*
+   * 备份列表：**异步算体积**（2026-11-08 修卡顿）。
+   *
+   * 病：`backup.list()` 会对每份备份递归 `statSync`。Dev 现场 12 份 / 22615 个文件，
+   * 一次 **6.2~7.0 秒**，而且同步跑在主进程 —— 设置页「数据与用量」一打开就卡死
+   * （`BackupPanel` 挂载即拉列表），界面完全点不动。
+   *
+   * 现在：体积带缓存（备份目录写完就不变，mtime 当键），且每 200 个文件让出事件循环。
+   */
+  ipcMain.handle('backup:list', () => backup.listAsync())
   ipcMain.handle('backup:create', () => backup.create('manual'))
   ipcMain.handle('backup:restore', (_event, name) => backup.restore(String(name)))
   ipcMain.handle('backup:remove', (_event, name) => backup.remove(String(name)))

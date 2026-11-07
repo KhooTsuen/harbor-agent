@@ -19,7 +19,13 @@ export * from './models-session'
 export interface BackupInfo {
   name: string
   path: string
-  size: number
+  /**
+   * 占用体积（字节）。
+   *
+   * `null` = **还没算出来**（老备份没有 meta 体积，后台正在补算）。
+   * 界面要显示成「统计中…」而不是 0 —— 0 是「确认为空」，两者不能混。
+   */
+  size: number | null
   reason: string
   items: string[]
   createdAt: number

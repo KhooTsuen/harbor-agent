@@ -53,7 +53,13 @@ function planPrune({ root, keep } = {}) {
   const limit = Number.isFinite(keep) ? Number(keep) : KEEP
   const candidates = []
   const skipped = []
-  for (const old of list(root).slice(limit)) {
+  /*
+   * ★ `sizes: 'cache'`（2026-11-08）：这里只需要名字、顺序、`empty`、路径。
+   *   体积仅用于「预计能回收多少」的提示，有缓存就用、没有就先当 0。
+   *   走默认的 `list()` 会为了算体积递归 statSync 两万多个文件 ——
+   *   启动清理链上白卡 6~7 秒，而它根本不需要那个数字。
+   */
+  for (const old of list(root, { sizes: 'cache' }).slice(limit)) {
     /*
      * 判据是**有没有内容**，不是有没有 meta.json —— 老版本创建的备份没有 meta，
      * 但内容齐全（见文件头「2026-11-07 修正判据」）。

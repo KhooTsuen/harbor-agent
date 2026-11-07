@@ -3,12 +3,9 @@
  *
  * 备份「用户自己的数据」到 data/backups/<时间戳>/。恢复就是把文件拷回去。
  *
- * 为什么只备这几样：config（配置）、memory（记忆）、sessions（对话）、skills（技能）、
- * tasks（任务台账）、changesets（改动事务）—— 这几样都**删了不可重建**。凭证库有意不备
- * （DPAPI 密文再复制一份没意义，纯 Node 下甚至是明文；见 backup-scan.cjs 的 ITEMS 注释）。
- * 日志是排错用的、缓存能重建，备了只是浪费空间。
- * `data/errors`（内核记的错误，见 error-observer.cjs）**故意不备**：同一类东西 ——
- * 它是诊断材料，随时能用 `npm run errors --export` 再生成一份，而且留 30 天后会被自动清理。
+ * 为什么只备这几样：config / memory / sessions / skills / tasks / changesets —— 都**删了不可重建**。
+ * 凭证库有意不备（DPAPI 密文再复制一份没意义，纯 Node 下甚至明文；见 backup-scan 的 ITEMS）。
+ * 日志是排错用的、缓存能重建，备了只是浪费空间。`data/errors` 同理：诊断材料，能再生成。
  *
  * 为什么用目录拷贝而不是打包压缩：用户能直接进去看、单独拿一个文件出来。
  * 这个软件本来就是「文件都在文件夹里」的形态，备份也跟着这个逻辑走。
@@ -21,17 +18,16 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DIRS } = require('./paths.cjs')
 const log = require('./log.cjs')
-/* 清单 / 路径 / 算体积 / 列出备份都在 backup-scan.cjs（那边是只读的一半，
-   加完「空壳备份」防护后这个文件过 300 行了，按职责拆的） */
-const { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list, isBackupName } =
+/* 清单 / 路径 / 算体积 / 列出备份都在 backup-scan.cjs（只读的一半）；体积实现在 backup-size.cjs */
+const { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list, listAsync, isBackupName } =
   require('./backup-scan.cjs')
 
 /** 自动备份的间隔 */
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000
 
-/** 超量就删最旧的 */
+/** 超量就删最旧的。体积不需要 → 走缓存，不扫盘（见 backup-scan 的 sizes 选项） */
 function prune() {
-  const all = list()
+  const all = list(backupRoot(), { sizes: 'cache' })
   const removed = []
   for (const old of all.slice(KEEP)) {
     try {
@@ -62,6 +58,8 @@ function create(reason = 'manual') {
 
   const copied = []
   const skipped = []
+  /* 备份完的体积：写进 meta（下次 list 不必再扫），也直接当返回值 */
+  let createdBytes = 0
   try {
     fs.mkdirSync(finalTarget, { recursive: true })
 
@@ -86,10 +84,25 @@ function create(reason = 'manual') {
 
     if (skipped.length > 0) log.info(`备份跳过这几项（还没有 / 是空的）：${skipped.join(', ')}`)
 
+    /*
+     * ★ 体积在**备完这一刻**算一次并写进 meta（2026-11-08）。
+     *   目录刚写完，这一次扫描只扫这一份（约占总量的 1/10）；
+     *   之后 `list()` 直接读 `meta.totalBytes`，不再为已备好的备份扫盘。
+     *   不写这一步的话，每次打开设置页都要把 12 份全扫一遍（实测 6~7 秒）。
+     */
+    createdBytes = dirSize(finalTarget)
+
     fs.writeFileSync(
       path.join(finalTarget, 'meta.json'),
       JSON.stringify(
-        { reason, items: copied, skipped, createdAt: new Date().toISOString(), version: 1 },
+        {
+          reason,
+          items: copied,
+          skipped,
+          createdAt: new Date().toISOString(),
+          version: 1,
+          totalBytes: createdBytes,
+        },
         null,
         2,
       ),
@@ -114,7 +127,7 @@ function create(reason = 'manual') {
     ok: true,
     name: path.basename(finalTarget),
     path: finalTarget,
-    size: dirSize(finalTarget),
+    size: createdBytes,
     items: copied,
     skipped,
     removed,
@@ -123,21 +136,19 @@ function create(reason = 'manual') {
 
 /**
  * 启动时调：距上次备份超过一天就自动备一份。
- * 用备份目录里最新一份的时间来判断，不额外存状态 —— 少一个可能不同步的地方。
  *
- * ★ 2026-11-07 补：只认**带 meta.json 的**备份来判「上次是什么时候备的」。
- *
- * 病（真机现场）：`data/backups/20261107-021212` 是一份**手工拷进去**的目录
- * （没有 meta.json，是 11-06 18:12 拷的），`list()` 照样把它当备份、`createdAt`
- * 取的是目录 mtime。于是 `maybeAuto` 认为「今天已经备过了」——
- * 而真机日志里连着 6 次都是「自动备份：今天已经备过了」，
- * **自动备份整整停了一天**，那份没 meta 的目录替它顶了名。
- *
- * 判据：`items.length > 0`（meta 里记的「实际拷了哪几项」）。
- * 老备份可能没有 meta → 退回「目录里有内容」就算数，不能用 mtime 一把揽。
+ * 判据：只认**有 meta 且记了清单（`items` 非空）**的备份来判「上次是什么时候备的」。
+ * 病（2026-11-07 真机）：一份手工拷进来的无 meta 目录被 `list()` 当成最新备份，
+ * `maybeAuto` 于是连着 6 次报「今天已经备过了」，**自动备份停了一整天**。
+ * 老备份可能没有 meta → 退回「目录里有内容」也算数，不能只看 mtime。
  */
 function lastRealBackupAt() {
-  for (const one of list()) {
+  /*
+   * ★ `sizes: 'cache'`（2026-11-08）：这里只看 `items` / `empty` / `createdAt`，
+   *   **一个体积都不需要**。以前走默认的 `list()` 会为了算体积递归 statSync
+   *   两万多个文件 —— 每次启动白卡 6~7 秒，只为判断「今天备过没」。
+   */
+  for (const one of list(backupRoot(), { sizes: 'cache' })) {
     /* `list()` 已经把 meta 读过了：`items` 非空 = 有 meta 且记了清单 */
     if (Array.isArray(one.items) && one.items.length > 0) return one.createdAt
     /* 老备份没有 meta：至少有用户数据也算数（不然会重复备份，但不是「不备」） */
@@ -285,4 +296,5 @@ function root() {
   return backupRoot()
 }
 
-module.exports = { create, list, restore, remove, maybeAuto, root, stamp, KEEP, ITEMS }
+/* `listAsync` = IPC 用的异步版（体积带缓存、不等扫盘），见 backup-scan 的说明 */
+module.exports = { create, list, listAsync, restore, remove, maybeAuto, root, stamp, KEEP, ITEMS }

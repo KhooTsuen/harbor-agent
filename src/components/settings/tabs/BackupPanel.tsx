@@ -14,7 +14,14 @@ import { Row } from '../parts'
    因为恢复是不可逆的覆盖。
    ══════════════════════════════════════════════════════════════ */
 
-function formatSize(bytes: number): string {
+/**
+ * 体积显示。
+ *
+ * `null` = **还没算出来**（首次升级、老备份没有 meta 体积，后台正在补），
+ * 显示「…」而不是 0 —— 0 是「确认为空」，两者不能混。
+ */
+function formatSize(bytes: number | null): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return '统计中…'
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
