@@ -114,6 +114,41 @@ export async function run() {
         String(httpErr?.message ?? '').includes('rate limited'),
     )
 
+    /* ④′ ★ 状态码要**挂在错误对象上** —— 只写进文本时上游 500 被归成 unknown（不重试）。
+       真机现场（2026-11-07 15:05 / 15:13 / 16:00）：DeepSeek 三次 internal_error 500，
+       日志里全是 `模型调用失败（deepseek · unknown）`，一次都没自动重试。 */
+    const errorsCore = require(join(ROOT, 'electron/core/errors.cjs'))
+    const httpErrorOf = async (status, text) => {
+      globalThis.fetch = async () => ({ ok: false, status, statusText: 'E', text: async () => text })
+      try {
+        await llm.chatStream({ baseUrl: 'https://x/y', model: 'm', messages: [] })
+      } catch (error) {
+        return error
+      }
+      return null
+    }
+
+    const e500 = await httpErrorOf(500, '{"error":{"type":"internal_error"}}')
+    check('★★ 上游 500 的错误对象上带 status（改前只有文本）', e500?.status === 500, String(e500?.status))
+    const i500 = errorsCore.classify(e500)
+    check('★★ 500 归类成 server（改前是 unknown → 不重试）', i500.kind === 'server', i500.kind)
+    check('★ server 可以自动重试', errorsCore.shouldRetry(i500, 0, { attempts: 2 }) === true)
+    check('★ 重试仍然有限（第 2 次就不许再试）', errorsCore.shouldRetry(i500, 2, { attempts: 2 }) === false)
+
+    const i400 = errorsCore.classify(await httpErrorOf(400, 'bad request'))
+    check('★★ 400 归成 bad_request（没有因为这次改动被当成 server）', i400.kind === 'bad_request', i400.kind)
+    check('★★ 客户端错误不自动重试', errorsCore.shouldRetry(i400, 0, { attempts: 2 }) === false)
+
+    const i401 = errorsCore.classify(await httpErrorOf(401, 'nope'))
+    check('★ 401 仍是 auth：要用户介入、不重试', i401.kind === 'auth' && i401.needsUser === true && errorsCore.shouldRetry(i401, 0, {}) === false, JSON.stringify({ kind: i401.kind, needsUser: i401.needsUser }))
+
+    const i429 = errorsCore.classify(await httpErrorOf(429, 'slow down'))
+    check('★ 429 仍是 rate_limit，且退避比 server 久', i429.kind === 'rate_limit' && errorsCore.backoffMs(0, 'rate_limit') > errorsCore.backoffMs(0, 'server'), `${errorsCore.backoffMs(0, 'rate_limit')} vs ${errorsCore.backoffMs(0, 'server')}`)
+
+    const abortedInfo = errorsCore.classify(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+    check('★★ 用户点了停止 → 就算是 5xx 也不重试（中止行为不退化）', errorsCore.shouldRetry(abortedInfo, 0, { attempts: 2 }) === false)
+    check('★ 老调用方读 message 的地方不受影响（状态码和原文都还在）', String(e500?.message ?? '').includes('500') && String(e500?.message ?? '').includes('internal_error'))
+
     /* ══════════════════════════════════════════════════════════
        ⑤ 空闲看门狗 —— 上游「挂住」不许无限等
        （2026-09-25 真机验收实测：24 次运行里 3 次撞上挂住，

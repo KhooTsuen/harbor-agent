@@ -134,7 +134,12 @@ async function chatStream(options) {
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
     const short = detail.slice(0, 500)
-    throw new Error(`上游返回 ${response.status}：${short || response.statusText}`)
+    /* ★ 状态码要挂在错误对象上：`errors.classify` 判 server / rate_limit / auth 读的是
+       `error.status`，只写进文本的后果是 500 被归成 unknown（不重试、直接报失败）。 */
+    const error = Object.assign(new Error(`上游返回 ${response.status}：${short || response.statusText}`), {
+      status: response.status,
+    })
+    throw error
   }
   if (!response.body) throw new Error('上游没有返回流式响应体')
 

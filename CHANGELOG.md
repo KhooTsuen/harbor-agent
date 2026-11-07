@@ -1,5 +1,41 @@
 ## [未发布]
 
+### 修：上游 5xx 不再被当成「未知错误」（不重试、直接报失败）
+
+**真机现场**（2026-11-07，三次）：DeepSeek 返回 `500 internal_error`（带 `request_id`），
+Harbor 日志里全是 `模型调用失败（deepseek · unknown）`，**一次都没自动重试**，直接弹
+「任务失败」。
+
+**根因**：`llm.cjs` 抛错时只把状态码写进**文本**（`上游返回 500：…`），没挂到
+`error.status`。而 `errors.classify` 判 server / rate_limit / auth 读的正是
+`extra.status ?? error.status ?? error.statusCode` —— 拿到 0，14 条文本正则里又
+没有认 5xx 的，于是落到 `unknown`。
+
+两个 kind 的实际差别：
+
+| | kind | retryable | needsUser | 行为 |
+|---|---|---|---|---|
+| 改前 | `unknown` | false | **true** | 不重试、直接报失败、通知用户 |
+| 改后 | `server` | **true** | false | 按已有规则重试一次（退避 500ms） |
+
+**改法**（`electron/core/llm.cjs`，+5 行）：抛错前 `error.status = response.status`。
+**没有新增任何重试逻辑** —— 走的是 `loop-model.cjs` 早就有的 `shouldRetry`
+（`attempts` 默认 2、`retryOn` 白名单、`aborted` 一律不重试）。
+
+**验证数字**（自检 79 组，新增 10 条断言）：
+- 500 → `server`、`retryable:true`、`shouldRetry(0)=true`、`shouldRetry(2)=false`（**仍然有限**）
+- 400 → `bad_request`、不重试（没有因为这次改动被误判成 server）
+- 401 → `auth`、`needsUser:true`、不重试
+- 429 → `rate_limit`，退避 2000ms > server 的 500ms
+- `AbortError`（用户点停止）→ 即使是 5xx 也不重试
+- 老调用方读 `message` 的地方不受影响（状态码与上游原文都还在）
+
+`npm test` 6876 项 0 失败（原 6866，+10）。
+
+**没做的事**：没有改「工具失败后的自动重试」（`tool-runner` 那条 `READONLY_TOOLS`
+白名单本来就只让只读工具重试，写操作一律不重试 —— 那条边界没动）。
+
+
 ### 修：卡片上点了「允许写」却还是被「只分析」拦着（2026-11-07）
 
 **真机两次现场**：用户在 `ask_user` 卡片上明确选了「放开约束，按最小方案修」，
