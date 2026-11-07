@@ -239,6 +239,8 @@ function registerHandlers(deps) {
   require('./handlers/image-file.cjs').register({ ipcMain, getMainWindow })
   require('./handlers/shell.cjs').register({ ipcMain })
   require('./handlers/scene.cjs').register({ ipcMain })
+  /* 数据目录：用户指定位置 + 安全迁移（见 handlers/data-location.cjs） */
+  require('./handlers/data-location.cjs').register({ ipcMain })
   require('./handlers/diagnostics.cjs').register({ ipcMain })
   /* 终端（真 PTY）：单独一组通道，和 shell.cjs 的「一次性执行」并存 */
   require('./handlers/pty.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })
@@ -246,8 +248,7 @@ function registerHandlers(deps) {
   require('./handlers/safety.cjs').register({ ipcMain })
   /* 成果（Artifact）：落盘 + 版本历史 + 打开文件，数据在 data/artifacts/ */
   require('./handlers/artifact.cjs').register({ ipcMain })
-  /* 定时任务：台账 CRUD + 立刻跑一次。心跳（30 秒一跳）不在这里起 —— 它要等 app ready，
-     由 main.cjs 调 `handlers/schedules.cjs` 的 `start()`（同一处装配依赖，免得两套）。 */
+  /* 定时任务：台账 CRUD + 立刻跑一次。心跳（30 秒一跳）不在这里起 —— 它要等 app ready， 由 main.cjs 调 `handlers/schedules.cjs` 的 `start()`（同一处装配依赖，免得两套）。 */
   const schedules = require('./handlers/schedules.cjs')
   schedules.register({ ipcMain })
   /* 下载管理器（并行分段 / 续传 / 重试 + 队列 / 限速），台账在 data/downloads.json */

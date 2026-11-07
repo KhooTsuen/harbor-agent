@@ -116,6 +116,8 @@ const api = {
   searchProviders: () => call('search:providers'),
   testSearch: (override) => call('search:test', override),
   diagnosticsCopy: () => call('diagnostics:copy'),
+  /* 数据目录：看当前用哪儿 / 迁到别处（旧目录不删，见 core/data-migrate.cjs） */
+  dataLocationGet: () => call('dataLocation:get'), dataLocationMigrate: (p) => call('dataLocation:migrate', p),
   diagnosticsSave: () => call('diagnostics:save'),
   diagnosticsOpenDir: () => call('diagnostics:openDir'),
   sceneSnapshot: () => call('scene:snapshot'),
@@ -270,23 +272,20 @@ const api = {
   /* 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
   onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
   onImageDone: (callback) => subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
-  /* 浏览：主进程发来的操作请求（见 useBrowseBridge.ts）+ 网页弹窗转过来的新标签地址 */
+  /* 浏览：主进程发来的操作请求 + 网页弹窗转过来的新标签地址 */
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
   onBrowserOpenTab: (callback) => subscribe('browser:openTab', callback),
   /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准） */
   onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
   /* 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
   onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
-  /** 把「当前标签的 webContents id / 就绪」推给主进程（B5：主进程据此直连，不必每次往返） */
+  /* 当前标签的 webContents id / 就绪推给主进程（B5：主进程据此直连，不必往返） */
   browserActive: (payload) => call('browser:active', payload),
-  /* 扩展桥（Phase 2）+ 安装浏览器插件：两者都不收路径（路径全在主进程按数据根算） */
+  /* 扩展桥 + 安装插件：两者都不收路径（路径全在主进程按数据根算） */
   extActiveSession: (id) => call('ext:activeSession', id),
-  onExtPage: (callback) => subscribe('ext:page', callback),
-  extStatus: () => call('ext:status'), extInstall: () => call('ext:install'),
-
-  /* 界面动作（点击了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
+  onExtPage: (callback) => subscribe('ext:page', callback), extStatus: () => call('ext:status'), extInstall: () => call('ext:install'),
+  /* 界面动作（点了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
   logAction: (entry) => report(entry),
-
   probeProvider: (providerId, model) => call('provider:probe', { providerId, model }),
   /** 渲染层没被捕获的异常（window.onerror / unhandledrejection / ErrorBoundary） */
   logError: (entry) => {

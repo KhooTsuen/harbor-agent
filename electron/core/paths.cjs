@@ -12,11 +12,18 @@
 
 const path = require('node:path')
 const fs = require('node:fs')
+/* 用户指定数据目录的**位置指针**（独立文件，见它的文件头：为什么不能放配置里） */
+const dataLocation = require('./data-location.cjs')
 
 /** 是否运行在打包后的便携版里（由 main.cjs 在启动时设置） */
 let packaged = false
 /** 打包态的基准目录（exe 所在目录） */
 let packagedBase = ''
+
+/** 最近一次 `dataDir()` 为什么没用用户指定的目录（空串 = 没回退）。
+ *  只有「指针存在但目标不可用」（U 盘拔了 / 网盘没挂载）才写它 —— 否则用户会
+ *  看到「明明设了 D 盘，怎么还是空的」却查不出原因。 */
+let fallbackReason = ''
 
 function markPackaged(baseDir) {
   packaged = true
@@ -133,8 +140,14 @@ function dataDir() {
     }
     return custom
   }
+  /* 隔离（自检 / 单测 / 探针）**永远优先于**用户的自定义目录：
+     用户一旦在别处指定过数据目录，若不这样排，跑一次自检就会写进他的真实数据。 */
   const iso = isolationDirName()
-  return iso ? path.join(realDataDir(), iso) : realDataDir()
+  if (iso) return path.join(realDataDir(), iso)
+  /* 用户指定过数据目录 → 用它；没有 / 不可用 → 老行为 `<root>/data` */
+  const picked = dataLocation.resolve(rootDir(), realDataDir())
+  fallbackReason = picked.fallback
+  return picked.dir
 }
 
 const DIRS = {
@@ -268,6 +281,8 @@ module.exports = {
   rootDir,
   dataDir,
   realDataDir,
+  /** 指定的数据目录不可用时的原因（空串 = 没回退）—— 诊断用 */
+  fallbackReason: () => fallbackReason,
   isSelftestRun,
   isUnitTestRun,
   isProbeRun,
