@@ -156,11 +156,18 @@ export async function run() {
     const keepAfterLegacy = fs.readFileSync(metrics.file(), 'utf8').trim().split('\n').filter(Boolean).slice(0, mark)
     fs.writeFileSync(metrics.file(), keepAfterLegacy.length ? `${keepAfterLegacy.join('\n')}\n` : '', 'utf8')
 
-    /* ══ ⑨ 记账点收敛：只有一处，且成功失败都记 ══════════════════ */
+    /* ══ ⑨ 记账点收敛：每请求只记一次，且成功失败都记 ══════════ */
     group('真实用量 / ⑨ 记账点收敛（两处各记一份就会重复计数）')
-    check('★★ llm.cjs 不再自己记账（记那里会让重试的中间几次永久丢失）', !/metrics\.logLlm|token-metrics/.test(readFileSync(join(ROOT, 'electron/core/llm.cjs'), 'utf8')))
+    /*
+     * 2026-11-08 改口径：以前断言「llm.cjs 里一个字都不许有记账」。
+     * 现在 llm 出口**必须**有兜底 —— 场景/压缩/识图直接调它、不经过重试循环，
+     * 不兜就一条账都没有。真正要防的是「同一请求记两遍」，所以判据换成：
+     * 兜底存在 + 主对话传了 accounted（跳过兜底）+ 记账仍在重试循环里。
+     */
+    check('★★ llm 出口走的是兜底入口（不是又一处置记）', /token-metrics\.cjs'\)\.autoLog/.test(readFileSync(join(ROOT, 'electron/core/llm.cjs'), 'utf8')))
     const lmSrc = readFileSync(LM, 'utf8')
     check('★★ 记账在重试循环里（它才知道第几次、发给谁）', /logAttempt\(target, options, model/.test(lmSrc))
+    check('★★ 重试循环声明自己记过（否则同一请求被记两遍）', /accounted: true/.test(lmSrc))
     check('★ 成功与失败两条路都记', /outcome: 'ok'/.test(lmSrc) && /'aborted' : 'failed'/.test(lmSrc))
     check('★ 记账包了 try（写不进也不许拦住调用）', (() => {
       /* 按函数体范围判断，不数固定字符数（那会随改写失效） */
@@ -184,9 +191,57 @@ export async function run() {
     })())
     check('★ 入口类型按后端种类判定（cli / api 分得开）', /isCodexCli\(target\) \? 'cli' : 'api'/.test(lmSrc))
 
-    /* ══ ⑪ 估算不许混进真实用量 ══════════════════════════════════ */
-    group('真实用量 / ⑪ 本地估算只服务裁剪与预算，不进这本账')
+    /* ══ ⑪ 调用路径覆盖：每一次真发出去的请求都有账 ═══════════ */
+    group('真实用量 / ⑪ 调用路径覆盖（场景 / 压缩 / 识图 / 协作）')
     const tmSrc = readFileSync(join(ROOT, 'electron/core/token-metrics.cjs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const llmSrc = readFileSync(join(ROOT, 'electron/core/llm.cjs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const cliSrc = readFileSync(join(ROOT, 'electron/core/codex-cli.cjs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    check('★★ llm 出口兜底记账（场景 / 压缩 / 识图都走这里）', /autoLog\(options \?\? \{\}, result, null\)/.test(llmSrc))
+    check('★★ 失败也记（发出去过就有账，失败那次也是真请求）', /autoLog\(options \?\? \{\}, null, error\)/.test(llmSrc))
+    check('★★ codex-cli 出口也兜底（协作走这条，不经 loop-model）', /autoLog\(options, result, null\)/.test(cliSrc))
+    check('★ 调用方自己记过就跳过（accounted）', /if \(options\.accounted\) return/.test(tmSrc))
+    check('★ 主对话传了 accounted（否则同一请求记两遍）', /accounted: true/.test(lmSrc))
+    check('★★ prewarm 也传了（它自己记那条带 systemBytes 的）', /accounted: true/.test(readFileSync(join(ROOT, 'electron/core/prewarm.cjs'), 'utf8')))
+    check('★ entry 按后端种类判（不在 autoLog 里另写一份）', /provider-kinds\.cjs'\)\.isCodexCli/.test(tmSrc))
+    /* 真跑一次：直调 llm（= 场景/压缩/识图 那条路），看磁盘上有没有多一行 */
+    const beforeDirect = metrics.summarize({}).requests
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(c) {
+          const enc = new TextEncoder()
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: '标题' } }] })}\n\n`))
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 } })}\n\n`))
+          c.enqueue(enc.encode('data: [DONE]\n\n'))
+          c.close()
+        },
+      }),
+    })
+    try {
+      await require(join(ROOT, 'electron/core/llm.cjs')).chatStream({
+        provider: { id: 'cover-p', kind: 'openai' },
+        baseUrl: 'https://cover.example/v1', apiKey: 'k', model: 'cover-m',
+        messages: [{ role: 'user', content: 'x' }], label: '场景 title', traceId: 'req_cover',
+      })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const afterDirect = metrics.summarize({}).requests
+    const coverRow = countRows !== null ? (() => {
+      try {
+        const all = readFileSync(metrics.file(), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+        return all.filter((r) => r.trace === 'req_cover').pop()
+      } catch {
+        return null
+      }
+    })() : null
+    check('★★ 直调 llm 真的落了一行（不是只写在源码里）', afterDirect === beforeDirect + 1, `${beforeDirect} → ${afterDirect}`)
+    check('★ 那一行的数字来自上游', coverRow?.total === 9 && coverRow?.known === true, JSON.stringify({ t: coverRow?.total, k: coverRow?.known }))
+
+    /* ══ ⑫ 估算不许混进真实用量 ══════════════════════════════════ */
+    group('真实用量 / ⑫ 本地估算只服务裁剪与预算，不进这本账')
     check('★★ token-metrics 里没有任何估算函数', !/estimate|估算/i.test(tmSrc))
     check('★ 上下文估算仍在原来那处（这次没动它）', /estimates/.test(readFileSync(join(ROOT, 'electron/core/context-builder.cjs'), 'utf8')))
   } finally {

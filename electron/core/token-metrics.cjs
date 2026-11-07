@@ -123,6 +123,45 @@ function recordRequest(row) {
 }
 
 /**
+ * 兜底记账：**每一次真发出去的 HTTP 请求**都会落到这里（`llm.chatStream` 的出口）。
+ *
+ * ── 为什么要有兜底（2026-11-08）──────────────────────────────
+ *
+ * 主对话的记账点搬到了 `loop-model.cjs` 的重试循环（那里才知道「第几次、发给谁」）。
+ * 但**压缩 / 场景（标题·翻译·建议）/ 协作**这三条路根本不经过那个循环 ——
+ * 它们直接调 `llm.chatStream`。搬完以后它们一条账都不落：账本上「今天用了多少」
+ * 会比真实少，而少的那部分正是后台悄悄烧掉的。
+ *
+ * 所以出口这里再兜一层：调用方自己记过了（传 `accounted: true`）就跳过，
+ * 没记过就补一笔 —— 判据仍然只有一处（本文件的 `buildRow`），不另立口径。
+ * 新增供应商 / 新增调用方都不用再想着「记得记账」。
+ *
+ * @param {object} options `llm.chatStream` 的入参（取 provider / model / traceId / taskId）
+ * @param {object|null} result 成功时的返回（取 usage / ttftMs / latencyMs）
+ * @param {Error|null} error 失败时的异常（判中止还是失败）
+ */
+function autoLog(options = {}, result = null, error = null) {
+  if (options.accounted) return { ok: false, skipped: 'caller-accounted' }
+  const aborted = Boolean(error) && (error?.name === 'AbortError' || /abort/i.test(String(error?.message ?? '')))
+  return logAttempt({
+    /* 入口类型按**后端种类**判（判据在 `provider-kinds.cjs`，别在这儿另写一份） */
+    entry: require('./provider-kinds.cjs').isCodexCli(options.provider) ? 'cli' : 'api',
+    outcome: error ? (aborted ? 'aborted' : 'failed') : 'ok',
+    providerId: options.provider?.id ?? '',
+    model: options.model ?? '',
+    label: options.label ?? '',
+    sessionId: options.sessionId ?? '',
+    trace: options.traceId ?? '',
+    taskId: options.taskId ?? '',
+    retryIndex: options.retryIndex ?? 0,
+    usage: result?.usage ?? null,
+    reason: error ? String(error?.message ?? error) : '',
+    ttftMs: result?.ttftMs ?? null,
+    latencyMs: result?.latencyMs ?? null,
+  })
+}
+
+/**
  * 一次**成功的**模型调用 → 一行账（老调用方的入口，判据与 logAttempt 同一处）。
  *
  * `trace` 与 `taskId` 是**两个东西，都记、谁也不替代谁**（P2，2026-11-05）：
@@ -251,4 +290,4 @@ function summarize(options = {}) {
   return out
 }
 
-module.exports = { file, cacheFields, hitRate, recordRequest, logAttempt, logLlm, summarize }
+module.exports = { file, cacheFields, hitRate, recordRequest, logAttempt, autoLog, logLlm, summarize }

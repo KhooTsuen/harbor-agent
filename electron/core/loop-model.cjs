@@ -126,8 +126,9 @@ async function callModelInner(options, emit) {
           messages: preparedMessages,
           /* 日志里能一眼分出「对话轮次」和「起标题/建议」那种场景调用 */
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
-          /* 每请求指标里记第几次尝试（0 = 首次）—— 指标写不写得进不影响请求 */
           retryIndex: attempt,
+          /* ★ 别让 llm 再记一遍（这一层已经记了，见下方 logAttempt） */
+          accounted: true,
           /* provider 整个传下去：extraBody / omitParams / streamUsage 都是供应商级的
              （见 llm-body.cjs）。漏传 = 配置改了没反应，而且不报错。 */
           provider: target,

@@ -14,11 +14,6 @@ const { createIdleGuard } = require('./llm-idle.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
 const plugins = require('./plugins.cjs')
 
-/**
- * 把 baseUrl 和 chatPath 拼成完整地址。
- * 两边的斜杠都要处理，否则会出现 //chat 或 /v1chat 这类问题。
- */
-
 /** 从 SSE 的一行里取出 data 段 */
 function parseSseLine(line) {
   const trimmed = line.trim()
@@ -47,7 +42,7 @@ function parseSseLine(line) {
  *   onToolCalls?: Function, onUsage?: Function, traceId?: string, taskId?: string,
  *   retryIndex?: number }} options
  */
-async function chatStream(options) {
+async function chatStreamImpl(options) {
   const {
     label,
     baseUrl,
@@ -262,14 +257,25 @@ async function chatStream(options) {
   if (toolCalls.length > 0) onToolCalls?.(toolCalls)
   if (usage) onUsage?.(usage)
 
-  /*
-   * ★ 这里**不再记指标**（2026-11-07 第 6 项）：记账点移到了 `loop-model.cjs` 的
-   *   重试循环里 —— 那里才知道「这是第几次尝试、最终用的是哪家」。记在这里的话，
-   *   ① 重试的中间几次永远不落账；② codex-cli 走的是另一个引擎，一条都不记。
-   *   这个文件只负责「把这一次请求发完并如实返回 usage」。
-   */
-
   return { content, reasoning, toolCalls, usage, finishReason, ttftMs, latencyMs: Date.now() - startedAt }
+}
+
+/**
+ * 对外出口：**记账兜底**（判据在 `token-metrics.autoLog`，这里只管包）。
+ *
+ * 主对话自己记（`loop-model` 的重试循环知道第几次、发给谁，会传 `accounted: true`）；
+ * 压缩 / 场景 / 协作这三条路直接调这里、不经过那个循环 —— 由这层补上，
+ * 否则它们烧掉的 token 在账本上根本不存在。成功与失败都记：失败那次**也是真发出去过**。
+ */
+async function chatStream(options) {
+  try {
+    const result = await chatStreamImpl(options)
+    require('./token-metrics.cjs').autoLog(options ?? {}, result, null)
+    return result
+  } catch (error) {
+    require('./token-metrics.cjs').autoLog(options ?? {}, null, error)
+    throw error
+  }
 }
 
 const probe = require('./llm-probe.cjs')

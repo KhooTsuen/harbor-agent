@@ -99,7 +99,7 @@ function explainEmpty(state, stderrTail) {
  *           finishReason: string, ttftMs: number|null, latencyMs: number,
  *           codexNotices: string[], threadId: string }>}
  */
-async function chatStream(options = {}) {
+async function chatStreamImpl(options) {
   const startedAt = Date.now()
   const provider = options.provider && typeof options.provider === 'object' ? options.provider : {}
   const model = String(options.model ?? '')
@@ -184,6 +184,24 @@ async function chatStream(options = {}) {
     /* 额外信息：不破坏同形契约（加字段安全），给上层做提示/诊断用 */
     codexNotices: state.notices,
     threadId: state.threadId,
+  }
+}
+
+/**
+ * 对外出口：**记账兜底**（判据在 `token-metrics.autoLog`，这里只管包）。
+ *
+ * 协作（`collab-codex` / `collab-executor-codex`）直接调这里、不经过 `loop-model`
+ * 的重试循环 —— 不兜这一层，它们烧掉的 token 在账本上就不存在。
+ * 主对话会传 `accounted: true`（那边自己记，知道第几次、发给谁）。
+ */
+async function chatStream(options = {}) {
+  try {
+    const result = await chatStreamImpl(options)
+    require('./token-metrics.cjs').autoLog(options, result, null)
+    return result
+  } catch (error) {
+    require('./token-metrics.cjs').autoLog(options, null, error)
+    throw error
   }
 }
 

@@ -63,6 +63,8 @@ async function maybeRun() {
       maxTokens: 1,
       temperature: 0,
       label: '预热',
+      /* ★ 这条自己记（下面那条带 systemBytes 的 kind:'prewarm'），别让 llm 再兜底记一遍 */
+      accounted: true,
     })
     const cache = metrics.cacheFields(result.usage)
     metrics.recordRequest({
