@@ -35,7 +35,7 @@ const {
    ══════════════════════════════════════════════════════════════ */
 
 const DEFAULTS = {
-  version: 2,
+  /* 3 起：旧版默认落盘的 fallback.enabled=true 按「没选过」处理（见 config-normalize.cjs） */ version: 3,
 
   /** 个人资料：侧栏左下角那个圆显示什么（头像文件在 data/avatars/） */
   profile: {

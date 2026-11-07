@@ -43,8 +43,28 @@ function contextBaseTokensOf(raw) {
   return clampNumber(n || C.DEFAULTS.context.baseTokens, 0, 1000000, C.DEFAULTS.context.baseTokens)
 }
 
+/**
+ * 从这个版本起，`fallback.enabled` 的 `true` 才算「用户自己选的」。
+ *
+ * ★ 为什么必须靠**版本号**判，而不是看值是 true 还是 false（2026-11-07）：
+ *   旧版的 `config.save()` 会把**默认值一起落盘**，而旧版默认就是这个 `true`
+ *   —— 于是老盘上几乎都存着 true，**用户从没在界面上选过它**：旧设置页那一块
+ *   只有一个「自动重试次数」输入框，压根没有这个开关。
+ *   所以 version < 3 的配置里那个 true 只能当「当年写死的默认值」，不能当用户意愿。
+ *
+ *   version >= 3 之后写的 true 才可信：那时开关已经在设置页上了，能让它变 true 的
+ *   唯一路径就是用户自己点开（`patch` → `save` 会把 version 一起写成新版本）。
+ *
+ * ★ 不在这里写盘：读配置不动磁盘是规矩（`config.cjs` 的 load 只在配置损坏/藏密钥迁移时写）。
+ *   而「按 false 处理」这个判定**幂等** —— 下次还读到 version 2，就再判一次 false，
+ *   行为完全一致，不会因为没落盘而漂。
+ */
+const FALLBACK_OPT_IN_VERSION = 3
+
 function normalize(raw) {
   const g = obj(raw)
+  /* 这份配置是**哪个版本写下的**（缺失 = 更早的、连 version 字段都没有的版本 → 0） */
+  const incomingVersion = Number(g.version) || 0
   const general = obj(g.general)
   const assistant = obj(g.assistant)
   const tools = obj(g.tools)
@@ -58,6 +78,12 @@ function normalize(raw) {
   const router = obj(g.router)
   const roles = obj(router.roles)
   const fallback = obj(g.fallback)
+  /*
+   * 旧版把 `fallback.enabled: true` 当默认值**一起落盘**了，而那时设置页上根本没有这个开关
+   * —— 那份 true 不是用户选的，不能当意愿用（判据见上面 FALLBACK_OPT_IN_VERSION）。
+   * 这里算一次，下面「按什么值生效」与「要不要留痕」共用同一个判断。
+   */
+  const dropLegacyFallback = incomingVersion < FALLBACK_OPT_IN_VERSION && fallback.enabled === true
   const audit = obj(g.audit)
   const changeset = obj(g.changeset)
   const image = obj(g.image)
@@ -70,7 +96,13 @@ function normalize(raw) {
       : JSON.parse(JSON.stringify(C.DEFAULTS.providers))
 
   return {
-    version: 2,
+    version: C.DEFAULTS.version,
+    /*
+     * 只在「旧配置那个从没被选过的 true 被按未选择处理」时为 true —— `config.cjs` 的 load
+     * 据此记一条日志告诉用户「它自己关了，要用去设置里打开」。落盘前会被 stripInternal 摘掉。
+     * ★ 固定带这个键（不用条件展开）：条件展开会让返回类型变成并集，调用方赋值就过不了类型检查。
+     */
+    _migratedFallback: dropLegacyFallback,
 
     profile: {
       name: typeof raw?.profile?.name === 'string' ? raw.profile.name.slice(0, 40) : '',
@@ -192,10 +224,8 @@ function normalize(raw) {
     },
 
     fallback: {
-      /* ★ 必须是**显式 true** 才开（2026-11-07 改）：以前写 `!== false`，于是
-         所有老配置（根本没有这个字段）一升级就自动变成「允许跨供应商降级」。
-         跨供应商是「换了谁在回答你」，得用户自己点头，不能靠缺省值默认给。 */
-      enabled: fallback.enabled === true,
+      /* ★ 用户自己点头才开：旧版默认落盘的那个 true 不算（判据见 FALLBACK_OPT_IN_VERSION） */
+      enabled: dropLegacyFallback ? false : fallback.enabled === true,
       attempts: clampNumber(fallback.attempts, 0, 5, 2),
       retryOn: Array.isArray(fallback.retryOn)
         ? fallback.retryOn.filter((k) => typeof k === 'string')

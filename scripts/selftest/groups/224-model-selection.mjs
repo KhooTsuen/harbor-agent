@@ -141,8 +141,14 @@ export async function run() {
       bare.fallback.enabled === false,
       String(bare.fallback.enabled),
     )
-    const explicit = normalize.normalize({ fallback: { enabled: true } })
-    check('★ 用户显式写 true 才开', explicit.fallback.enabled === true, String(explicit.fallback.enabled))
+    /* ★ 旧版把 true 当默认值落盘了，那时设置页没有这个开关 —— 那是一份「没选过」的 true */
+    const nz = (v) => normalize.normalize(v)
+    check('★★ 旧版写下的 true 不算用户选择（升级后是关）', nz({ version: 2, fallback: { enabled: true } }).fallback.enabled === false)
+    check('★ 旧配置被按未选择处理时会留痕（load 据此记日志）', nz({ version: 2, fallback: { enabled: true } })._migratedFallback === true)
+    check('★★ 新版写下的 true 才算用户点头（开）', nz({ version: 3, fallback: { enabled: true } }).fallback.enabled === true)
+    check('★ 新版不产生迁移痕迹', nz({ version: 3, fallback: { enabled: true } })._migratedFallback === false)
+    check('★ 用户主动关掉之后重启仍是关', nz({ version: 3, fallback: { enabled: false } }).fallback.enabled === false)
+    check('★ 归一化出来的配置带当前版本号（下次保存即升级）', nz({}).version === defaults.version, String(nz({}).version))
 
     /* ══ ② 关着的时候：只打你选的那家 ═════════════════════════ */
     group('模型选择 / ② 关掉之后只用你选的那家')

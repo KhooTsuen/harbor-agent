@@ -57,10 +57,9 @@ function messageOf(error) {
   return error?.message ?? String(error)
 }
 
-/** 落盘前把只存在于内存的字段摘掉 */
+/** 落盘前摘掉只活在内存里的字段（`_loadWarning` / `_migratedFallback`） */
 function stripInternal(cfg) {
-  /* _loadWarning 只活在内存里（给界面提示用），落盘时摘掉 */
-  const { _loadWarning, ...rest } = cfg
+  const { _loadWarning, _migratedFallback, ...rest } = cfg
   return {
     ...rest,
     providers: rest.providers.map(({ _legacyApiKey, ...p }) => p),
@@ -99,6 +98,7 @@ function load() {
 
   cache = normalize(raw)
   cache._loadWarning = loadWarning
+  if (cache._migratedFallback) log.info('失败不再自动换供应商（旧版默认值不算你的选择）；要用去设置里打开')
 
   /* 老配置里可能有明文 key —— 搬家并立刻重写文件 */
   const migrated = migrateLegacySecrets(cache)
