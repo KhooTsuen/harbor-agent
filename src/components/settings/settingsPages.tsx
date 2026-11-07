@@ -6,7 +6,7 @@ import { ExperienceTab } from './tabs/ExperienceTab'
 import { ProfileTab } from './tabs/ProfileTab'
 import { UsageTab } from './tabs/UsageTab'
 import { DataTab } from './tabs/DataTab'
-import { GeneralPanel } from './panels/GeneralPanel'
+import { GeneralTab } from './tabs/GeneralTab'
 import { ConversationPanel } from './panels/ConversationPanel'
 import { ContextPanel } from './panels/ContextPanel'
 import { AccessPanel } from './panels/AccessPanel'
@@ -36,7 +36,7 @@ export function settingsPageOf(id: SettingsTabId): ReactNode {
     case 'profile':
       return <ProfileTab />
     case 'general':
-      return <GeneralPanel />
+      return <GeneralTab />
     case 'appearance':
       return <AppearanceTab />
     case 'models':
