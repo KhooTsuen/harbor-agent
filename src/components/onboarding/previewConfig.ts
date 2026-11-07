@@ -85,7 +85,11 @@ export const PREVIEW_CONFIG: AppConfig = {
     autoCompactAt: 0.6,
   },
   router: { enabled: false, roles: { fast: '', reasoning: '', coding: '', vision: '', cheap: '' } },
-  fallback: { enabled: true, attempts: 2, retryOn: ['timeout', 'rate_limit', 'server', 'network'] },
+  fallback: {
+    enabled: false,
+    attempts: 2,
+    retryOn: ['timeout', 'rate_limit', 'server', 'network'],
+  },
   audit: { enabled: true, retentionDays: 30 },
   limits: { enabled: false, dailyTokens: 0, monthlyTokens: 0, onExceed: 'block' },
   /* 单价：**照抄** core/pricing-defaults.cjs 的默认（渲染层 require 不到内核 .cjs，

@@ -192,7 +192,10 @@ function normalize(raw) {
     },
 
     fallback: {
-      enabled: fallback.enabled !== false,
+      /* ★ 必须是**显式 true** 才开（2026-11-07 改）：以前写 `!== false`，于是
+         所有老配置（根本没有这个字段）一升级就自动变成「允许跨供应商降级」。
+         跨供应商是「换了谁在回答你」，得用户自己点头，不能靠缺省值默认给。 */
+      enabled: fallback.enabled === true,
       attempts: clampNumber(fallback.attempts, 0, 5, 2),
       retryOn: Array.isArray(fallback.retryOn)
         ? fallback.retryOn.filter((k) => typeof k === 'string')

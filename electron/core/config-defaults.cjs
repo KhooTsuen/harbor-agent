@@ -213,9 +213,10 @@ const DEFAULTS = {
     roles: { fast: '', reasoning: '', coding: '', vision: '', cheap: '' },
   },
 
-  /** 失败重试与降级 */
+  /* 失败重试与跨供应商降级：enabled 只管「换一家」（默认关 —— 换谁在答你得你点头）；
+     attempts 是同一家内的重试次数，与它无关（以前共用开关，关掉降级连重试都没了） */
   fallback: {
-    enabled: true,
+    enabled: false,
     attempts: 2,
     retryOn: ['timeout', 'rate_limit', 'server', 'network'],
   },

@@ -18,6 +18,17 @@ const perfMarks = require('./perf-marks.cjs')
 const loopGuard = require('./loop-guard.cjs')
 
 /**
+ * 这些错误**不换供应商**：换一家也不会变好，只会把真问题盖住。
+ *
+ *   · auth        —— 你的 key 无效。换家用的是别家的额度，用户永远发现不了自己 key 坏了
+ *   · bad_request —— 请求本身不被接受（模型名错 / 参数超范围），换家重发必然再错
+ *   · context_overflow —— 上下文超长属于「这段内容太长」，换家一样超（这边会先压一次）
+ *
+ * ★ 判据的**种类名**来自 `errors.cjs` 的分类（唯一真相源），这里只声明「哪几种不换家」。
+ */
+const NO_SWITCH_KINDS = new Set(['auth', 'bad_request', 'context_overflow'])
+
+/**
  * 这个供应商提供这个模型吗。`models` 为空 = 没声明支持哪些 → 当作「都能」
  * （别因为没声明就不给用）。
  */
@@ -46,10 +57,18 @@ async function callModel(options) {
 async function callModelInner(options, emit) {
   const { config, provider, model, signal } = options
   const fb = config.fallback ?? {
-    enabled: true,
+    enabled: false,
     attempts: 2,
     retryOn: ['timeout', 'rate_limit', 'server', 'network'],
   }
+
+  /*
+   * ★ 两件事必须分开（2026-11-07 修）：
+   *   ① `attempts` = **同一家内**重试几次 —— 与用户选的是谁无关，任何时候都有效。
+   *   ② `enabled`  = 这家彻底不行了要不要**换成另一家** —— 那是「谁在回答你」变了。
+   *   以前两者共用一个开关：关掉降级 → 连同一家的重试都没了（实测 500 只发一次）。
+   */
+  const retries = Math.max(0, Number(fb.attempts) || 0)
 
   const candidates = [provider]
   /*
@@ -75,7 +94,11 @@ async function callModelInner(options, emit) {
 
   for (let index = 0; index < candidates.length; index += 1) {
     const target = candidates[index]
-    const maxAttempts = index === 0 && fb.enabled ? fb.attempts : 0
+    /*
+     * 同一家内重试只给第一候选（换到备家之后就不再重试了 —— 再失败就如实报）。
+     * ★ 不再与 `fb.enabled` 挂钩：那是「要不要换家」的开关，不该管重试。
+     */
+    const maxAttempts = index === 0 ? retries : 0
     const preparedMessages = await require('./vision-messages.cjs').prepareMessages(options.messages, {
       config, provider: target, model, signal, allowNetwork: options.allowNetwork, emit,
     })
@@ -153,7 +176,25 @@ async function callModelInner(options, emit) {
       }
     }
 
+    /*
+     * ── 要不要换成另一家 ────────────────────────────────────────
+     *
+     * ★ 只有「这一家不行了」才换；「这次请求本身不对」换到别家也一样错。
+     *   以前不分青红皂白一律换 —— 实测 401（key 无效）和 400（参数被拒）
+     *   都会跑到第二家，用另一家的额度把问题**盖过去**，用户永远不知道
+     *   自己那把 key 是坏的。
+     *
+     * 不换家的三类（判据来自 errors 的分类，别处不再写一份）：
+     *   · auth         —— 换家能用，但那是在掩盖「你这把 key 不行」
+     *   · bad_request  —— 请求本身有问题，换家重发只会再失败一次
+     *   · aborted      —— 上面已经 throw 了，走不到这里
+     */
     if (index < candidates.length - 1) {
+      const kind = errors.classify(lastError).kind
+      if (NO_SWITCH_KINDS.has(kind)) {
+        log.info(`不换供应商（${kind}）—— 这个错误换一家也一样`)
+        break
+      }
       emit?.({
         type: 'fallback',
         from: candidates[index].id,

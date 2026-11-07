@@ -170,7 +170,7 @@ export function ScenesTab() {
       <SectionTitle>失败处理</SectionTitle>
       <Row
         label="自动重试次数"
-        hint="只对「值得重试」的错误生效：网络抖动、超时、限流、对方 5xx。认证失败（401）和上下文超限不重试 —— 重试一万次也不会变好。"
+        hint="同一家供应商内重试几次。只对「值得重试」的错误生效：网络抖动、超时、限流、对方 5xx。认证失败（401）和上下文超限不重试 —— 重试一万次也不会变好。"
       >
         <input
           type="number"
@@ -180,6 +180,24 @@ export function ScenesTab() {
           onChange={(e) => void patchFallback({ attempts: Number(e.target.value) || 0 })}
           className="w-20 rounded-sm border border-line-subtle bg-bg-input px-2 py-1 font-mono text-dense text-fg-primary focus:outline-none"
         />
+      </Row>
+      {/*
+        跨供应商降级（默认关）。以前它默认开着而且这里没有开关 —— 用户选 DeepSeek 却
+        可能收到别家的回复，界面上只弹一句「已换用一个供应商」，事后也无从查起。
+      */}
+      <Row
+        label="失败后换用其他供应商"
+        hint="关着时：这家失败了就一直报错，绝不偷偷换人。开着时：这家彻底不行了才换成你配置里的另一家（要它真的提供同一个模型）。认证失败和请求参数错误不会触发切换 —— 换一家也一样错，只会把真问题盖住。"
+      >
+        <label className="flex items-center gap-2 text-dense text-fg-primary">
+          <input
+            type="checkbox"
+            checked={config?.fallback?.enabled === true}
+            onChange={(e) => void patchFallback({ enabled: e.target.checked })}
+            aria-label="失败后换用其他供应商"
+          />
+          {config?.fallback?.enabled === true ? '已开启（会换人）' : '已关闭（只用你选的那家）'}
+        </label>
       </Row>
 
       <SectionTitle>上下文预算</SectionTitle>
