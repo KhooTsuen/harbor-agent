@@ -95,6 +95,12 @@ export function fullRecordText(message: Message): string {
 
   /* 未完成 / 出错 —— 导出文件里也必须留着，不然读的人以为这就是全篇 */
   if (message.interrupted) parts.push('> 这条回复没写完 —— 上次运行被打断了。')
+  else if (message.truncated)
+    parts.push(
+      message.truncated === 'length'
+        ? '> 这条回复撞到了模型的输出上限，内容不完整。'
+        : '> 这条回复在网络中断在半路，内容不完整。',
+    )
   else if (message.status === 'error') parts.push('> 这次没能完成，上面是已完成的部分。')
 
   return parts.filter(Boolean).join('\n\n')

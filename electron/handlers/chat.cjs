@@ -37,10 +37,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     /* ★ 会话自己选的模型要盖过全局 —— 来由与口径见 core/model-select.cjs */
     const picked = withRequestedModel(current, payload?.model)
     const effective = picked.config
-    /*
-     * 预检：「有没有可用的供应商」—— **按这个模型挑**（会话里可能选的是别家的）。
-     * `activeProvider` 是 config **模块**上的函数，当配置对象的方法调会直接 TypeError。
-     */
+    /* 预检：按这个模型挑供应商；`activeProvider` 是模块函数，当配置方法调会 TypeError */
     const provider = config.providerForModel(effective.assistant.model) ?? config.activeProvider()
     /*
      * 优先用这条会话自己的工作目录（侧栏里每条对话可以挂不同目录）；
@@ -224,6 +221,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           turns: result.turns,
           toolRuns: result.toolRuns,
           exhausted: result.exhausted === true,
+          /* 空串 = 完整；`length` / `stream_cut` = 截断及原因。缺了界面就会当成完整回复 */
+          truncated: result.truncated ?? '',
         })
 
         const spent = ((Date.now() - (payload?.requestTime || startedAt)) / 1000).toFixed(1)

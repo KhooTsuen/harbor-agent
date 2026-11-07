@@ -154,8 +154,7 @@ async function callModelInner(options, emit) {
           toolCalls: result.toolCalls.length,
           ms: result.latencyMs,
         })
-        result.retryCount = attempt
-        /* ★ 真实用量入账：只认**上游自己报的** usage（没有就是 null → 标未知，不估算） */
+        /* 真实用量入账：只认**上游自己报的** usage（没有就是 null → 标未知，不估算） */
         logAttempt(target, options, model, {
           outcome: 'ok',
           retryIndex: attempt,

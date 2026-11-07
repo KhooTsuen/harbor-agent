@@ -67,6 +67,11 @@ export interface StoredMessage {
   /** 收尾落盘时标上：这条是被用户中止的（读侧映射成 interrupted —— 按钮据此说「重试」） */
   aborted?: boolean
   /**
+   * 上游说的「没写完」（2026-11-08）：`length` = 撞输出上限，`stream_cut` = 断流。
+   * 与 `interrupted` 的区别：那个是**磁盘上只剩快照**推断出来的，这个是**上游亲口说的**。
+   */
+  truncated?: 'length' | 'stream_cut' | ''
+  /**
    * 这一轮实际花了多少毫秒（2026-10-21）。
    *
    * 起止点口径写在 `src/types/conversation.ts` 的 `Message.durationMs` 注释里。

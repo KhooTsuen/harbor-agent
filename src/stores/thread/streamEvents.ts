@@ -219,7 +219,7 @@ export function handleStreamEvent(
         state.patch({
           content: finalContent,
           reasoning: String(event.reasoning ?? '') || state.reasoning,
-          /* 用时：起点是这条消息的 timestamp（按下发送那一刻），终点是现在 */
+          /* 用时：起点是这条消息的 timestamp，终点是现在 */
           durationMs: endedNow(state),
           usage: (event.usage ?? undefined) as Message['usage'],
           toolRuns: [...state.toolRuns],
@@ -228,6 +228,8 @@ export function handleStreamEvent(
           citations: [...state.citations],
           status: 'sent',
           kind: 'text',
+          /* ★ 上游说「这条没写完」（length/断流）→ 标上；续写救回来时主进程带空串 */
+          ...(event.truncated ? { truncated: event.truncated as Message['truncated'] } : {}),
         }),
       )
       /* 批⑤：「先不做了」的收尾必须等 done（主进程收尾写完才写得上 paused，见 confirmEvents） */
@@ -283,11 +285,7 @@ export function handleStreamEvent(
     case 'context_overflow':
       return { handled: dispatchLightEvent(type, event, state) }
 
-    /*
-     * 这些不落到消息上，也不打扰用户：
-     *   turn_end —— 进度，界面靠线程状态体现（phase）；mode / route —— 属调试信息；
-     *   task —— 任务台账走 IPC 读（任务中心），不走事件流
-     */
+    /* 不落到消息上也不打扰用户：turn_end 是进度（界面靠 phase）；mode/route 属调试；task 走 IPC */
     case 'plan': {
       /* AG-004：计划变了 → 让 useTaskStore 重读（和工具跑完走同一条刷新，见 toolRefresh.ts） */
       refreshAfterTool()

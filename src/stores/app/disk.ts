@@ -75,6 +75,8 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.interrupted ? { interrupted: true } : {}),
     /* 被中止的回复（落盘时标了 aborted）也按 interrupted 显示 —— 操作条据此说「重试」 */
     ...(stored.aborted ? { interrupted: true } : {}),
+    /* ★ 上游说「没写完」（length / 断流）：漏了这一行就是「明明存了但看不见」 */
+    ...(stored.truncated ? { truncated: stored.truncated } : {}),
     /*
      * 用时（2026-10-21）：老记录没有这个字段 → **什么都不加**，界面显示「N 步」。
      * 不在这里拿别的东西推算 —— 推算出来的秒数比不显示更糟（用户会当真）。

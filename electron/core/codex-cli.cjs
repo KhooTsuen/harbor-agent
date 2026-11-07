@@ -46,6 +46,16 @@ function finishReasonOf(state) {
 }
 
 /**
+ * CLI 侧「流是否正常收尾」的判据 —— 与 `llm.cjs` 的 `sawDone` 同形（同形契约的一部分）。
+ *
+ * codex 没有 `[DONE]`，它的正规收尾是 `turn.completed`。所以：
+ * 收到过 `turn.completed` = 正常结束；没收到 = 真的断在半路（进程被杀 / 崩溃）。
+ */
+function sawEndOfStream(state) {
+  return state.turnCompleted === true
+}
+
+/**
  * 组子进程的环境变量。
  *
  * ★ 默认**逐字节沿用 `process.env`**（不加任何键）—— 修复前就是这样，不改变现有行为。
@@ -96,7 +106,7 @@ function explainEmpty(state, stderrTail) {
  *
  * @param {object} options 见文件头「同形契约」
  * @returns {Promise<{ content: string, reasoning: string, toolCalls: Array, usage: object|null,
- *           finishReason: string, ttftMs: number|null, latencyMs: number,
+ *           finishReason: string, sawDone: boolean, ttftMs: number|null, latencyMs: number,
  *           codexNotices: string[], threadId: string }>}
  */
 async function chatStreamImpl(options) {
@@ -179,6 +189,8 @@ async function chatStreamImpl(options) {
     toolCalls: [],
     usage: state.usage,
     finishReason: finishReasonOf(state),
+    /* 与 llm.cjs 同名的判据（同形契约）：没见到 turn.completed = 真断在半路 */
+    sawDone: sawEndOfStream(state),
     ttftMs,
     latencyMs: Date.now() - startedAt,
     /* 额外信息：不破坏同形契约（加字段安全），给上层做提示/诊断用 */

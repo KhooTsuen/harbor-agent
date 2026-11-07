@@ -88,7 +88,9 @@ export async function run() {
   check('★ 每一轮结束都并进总账', loopSrc.includes('transcript.mergeRound()'))
   check(
     '★ 正常收尾回的是**全量**，不是最后一轮',
-    loopSrc.includes('...transcript.soFar(result.content)'),
+    /* 2026-11-08：收尾改为优先用「续写新增的那段」（reply.added），没有续写就退回本轮终稿。
+       两者都过 soFar()，全量语义没变 —— 断言跟着改，别让它变成假绿。 */
+    /transcript\.soFar\((reply\.added \|\| )?result\.content\)/.test(loopSrc),
   )
   check(
     '★ 四条提前结束的路都带上了（暂停 / 撞预算 / 转圈交人 / 轮数到顶）',

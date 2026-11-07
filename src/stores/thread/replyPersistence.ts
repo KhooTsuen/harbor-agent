@@ -213,6 +213,8 @@ export function createReplyPersistence(opts: {
         ...(final.clarify ? { clarify: final.clarify } : {}),
         ...(final.citations?.length ? { citations: final.citations } : {}),
         ...(final.usage ? { usage: final.usage } : {}),
+        /* ★ 上游说「这条没写完」（length / 断流）：落盘，否则重开会话就看不出来了 */
+        ...(final.truncated ? { truncated: final.truncated } : {}),
         /* 被中止的那条：落盘标上 aborted —— 重开会话后「重试」文案还能回来 */
         ...(type === 'aborted' ? { aborted: true } : {}),
         ...answer,

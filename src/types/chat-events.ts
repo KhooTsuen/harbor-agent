@@ -118,6 +118,12 @@ export type ChatEvent =
       usage: UsageBucket | null
       turns: number
       exhausted: boolean
+      /**
+       * 这条回复没写完（2026-11-08）。空/缺 = 完整。
+       * `length` = 模型撞输出上限；`stream_cut` = 流没给 finish_reason 就断了。
+       * 由内核 `reply-continue.cjs` 判定，续写救回来了就不带这个字段。
+       */
+      truncated?: 'length' | 'stream_cut' | ''
     }
   | { requestId: string; type: 'aborted' }
   | {

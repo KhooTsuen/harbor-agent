@@ -122,6 +122,17 @@ export interface Message {
    */
   interrupted?: boolean
   /**
+   * 这条回复**没写完**，而且是上游明确说的（2026-11-08）。
+   *
+   * 与 `interrupted` 不是一回事，别合并：
+   *   · `interrupted` = 磁盘上只留了流式快照（上次运行崩了/被强杀）—— **事后推断**的
+   *   · `truncated`   = 模型自己报了 `length`，或流没给 finish_reason 就断了 —— **上游说的**
+   *
+   * 取值：`'length'`（撞输出上限）/ `'stream_cut'`（断流）。空/无 = 完整。
+   * 续写救回来了就不写这个字段。
+   */
+  truncated?: 'length' | 'stream_cut' | ''
+  /**
    * 这一轮实际花了多少毫秒（2026-10-21）。
    *
    * 计时口径（用户 2026-10-21 拍板「明确计时起止点」）：

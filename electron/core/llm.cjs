@@ -41,6 +41,9 @@ function parseSseLine(line) {
  *   signal?: AbortSignal, idleTimeoutMs?: number, onContent?: Function, onReasoning?: Function,
  *   onToolCalls?: Function, onUsage?: Function, traceId?: string, taskId?: string,
  *   retryIndex?: number }} options
+ * @returns {Promise<{ content: string, reasoning: string, toolCalls: Array, usage: object|null,
+ *   finishReason: string|null, sawDone: boolean, ttftMs: number|null, latencyMs: number }>}
+ *   `sawDone` = 见过 `[DONE]`。判「流有没有正常收尾」只能看它，不能看 finish_reason。
  */
 async function chatStreamImpl(options) {
   const {
@@ -152,6 +155,9 @@ async function chatStreamImpl(options) {
   const toolCallMap = new Map()
   let usage = null
   let finishReason = null
+  /** 见过 `[DONE]` 吗 —— 判断流是否正常收尾**只能看它**（不能用「有没有 finish_reason」：
+      很多中转站正常答完也不发）。显式带出去：字段缺失 = 不知道，调用方不许据此判截断。 */
+  let sawDone = false
 
   for (;;) {
     /* 快路径：上一个 chunk 处理完就已经断了，不必再等 reader */
@@ -182,6 +188,7 @@ async function chatStreamImpl(options) {
       const parsed = parseSseLine(line)
       if (!parsed) continue
       if (parsed.done) {
+        sawDone = true
         buffer = ''
         break
       }
@@ -257,7 +264,7 @@ async function chatStreamImpl(options) {
   if (toolCalls.length > 0) onToolCalls?.(toolCalls)
   if (usage) onUsage?.(usage)
 
-  return { content, reasoning, toolCalls, usage, finishReason, ttftMs, latencyMs: Date.now() - startedAt }
+  return { content, reasoning, toolCalls, usage, finishReason, sawDone, ttftMs, latencyMs: Date.now() - startedAt }
 }
 
 /**
