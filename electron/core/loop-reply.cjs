@@ -10,7 +10,10 @@
  * 以后加第三个调用点就会漏。所以统一走返回值，`loop.cjs` 里 merge 一次。
  */
 const replyContinue = require('./reply-continue.cjs')
+const summaryPhase = require('./summary-phase.cjs')
+const handoff = require('./summary-handoff.cjs')
 const { mergeUsage } = require('./loop-model.cjs')
+const taskCore = require('./task.cjs')
 
 /**
  * @param {{ result: object, messages: Array<object>, emit?: Function, callModel: Function,
@@ -39,4 +42,42 @@ async function finishReply(input) {
   return { ...reply, usage }
 }
 
-module.exports = { finishReply }
+/**
+ * 收尾：**要不要开独立总结对话**。
+ *
+ * 判据只有一条：这一轮真执行过工具（`toolRuns` 非空）。
+ * 纯聊天不开 —— 那种情况下「最后一段话」本来就是回答本身，再让它自己总结一遍
+ * 只会多一次请求、多一份重复内容。
+ *
+ * ★ 这条判据**只回答「要不要开总结」**，不回答「任务做成没」。
+ *   成没成由 `summary-handoff.verdictOf` 按台账证据判（失败项 / 计划 / 测试退出码）。
+ *
+ * @returns {Promise<{ content: string, truncated: string, usage: object|null }>}
+ */
+async function finishTurn(input) {
+  const { toolRuns = [], taskId = '', goal = '', ...rest } = input
+
+  if (!summaryPhase.wantSummary({ toolRuns })) {
+    const reply = await finishReply(rest)
+    const said = rest.transcript.soFar(reply.added || rest.result.content)
+    return {
+      content: said.content,
+      truncated: reply.cut ? String(reply.reason ?? '') : '',
+      usage: reply.usage,
+    }
+  }
+
+  /* 工作阶段这一轮说的话先进总账（它属于「过程」，不是结论） */
+  rest.transcript.mergeRound()
+  const task = taskId ? taskCore.get(taskId) : null
+  const built = handoff.buildHandoff({ task, toolRuns, goal })
+  const sum = await summaryPhase.runSummary({
+    handoff: built,
+    baseArgs: rest.baseArgs,
+    callModel: rest.callModel,
+    emit: rest.emit,
+  })
+  return { content: sum.text, truncated: sum.truncated, usage: sum.usage }
+}
+
+module.exports = { finishReply, finishTurn }

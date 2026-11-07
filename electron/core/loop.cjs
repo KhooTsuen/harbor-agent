@@ -22,13 +22,12 @@ const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
 const modeRouter = require('./mode-router.cjs')
 const { buildToolContext } = require('./loop-tool-context.cjs')
-/* 截断识别与续写：判据与「为什么续写不带工具」都在 reply-continue.cjs 文件头 */
-const { finishReply } = require('./loop-reply.cjs')
+/* 收尾与截断续写（判据见 reply-continue.cjs 文件头；总结阶段见 summary-phase.cjs） */
+const { finishTurn } = require('./loop-reply.cjs')
 
 const MAX_TURNS = 200
 /** AG-041：重复执行顶几次就停下来问用户（第 1 次只是「改道」） */
 const LOOP_NUDGE_LIMIT = 2
-
 function traceKey(options) {
   return (typeof options.traceId === 'string' && options.traceId) || options.taskId || ''
 }
@@ -224,13 +223,12 @@ async function runLoop(options) {
         continue
       }
 
-      /* ★ 截断续写（2026-11-08 实测：length 时正文丢一半且被当成完整回复）：
-         判据、去重、以及「续写不带工具所以不可能重跑已完成的活」都在 reply-continue.cjs */
-      const reply = await finishReply({
-        result, messages, emit, callModel, transcript,
-        /* 续写失败别重试（本来就在救火）；trace/task 要带，否则账对不上 */
-        baseArgs: { config, provider: useProvider, model: useModel, signal, emit, traceId: traceKey(options), taskId: options.taskId ?? '', maxRetries: 0 },
-      })
+      /* ★ 收尾：干过工具 → 开**独立总结对话**（只汇报、没工具，见 summary-phase.cjs）；
+         纯聊天走原路不多花请求；截断续写也在这里面 */
+      const reply = await finishTurn({
+        result, messages, emit, callModel, transcript, toolRuns,
+        taskId: options.taskId ?? '', goal: options.goal ?? '',
+        baseArgs: { config, provider: useProvider, model: useModel, signal, emit, traceId: traceKey(options), taskId: options.taskId ?? '', maxRetries: 0 } })
       if (reply.usage) totalUsage = mergeUsage(totalUsage, reply.usage)
 
       /* 收尾前打最后一个检查点，写明「到这为止是好的」 */
@@ -247,9 +245,11 @@ async function runLoop(options) {
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
       life.mark('responding', traceKey(options))
       life.mark('completed', traceKey(options))
-      /* 整轮的正文与思考一起回给渲染层（只有最后一轮的话，复制/导出/下一轮历史都缺内容） */
-      /* ★ 往上带「这条到底写完了没」：空串 = 完整；`length` / `stream_cut` = 截断及原因 */
-      return { ...transcript.soFar(reply.added || result.content), usage: totalUsage, turns: turn + 1, toolRuns, truncated: reply.cut ? reply.reason : '' }
+      /* 整轮正文与思考一起回给渲染层；truncated 空串 = 完整，`length`/`stream_cut` = 截断 */
+      return {
+        content: reply.content, reasoning: transcript.soFar().reasoning,
+        usage: totalUsage, turns: turn + 1, toolRuns, truncated: reply.truncated,
+      }
     }
 
     /* AG-010：读流结束到开始执行工具之间也要查中断（真机：停止后 2.7 秒仍发起新工具） */

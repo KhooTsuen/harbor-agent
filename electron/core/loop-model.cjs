@@ -31,16 +31,15 @@ function servesModel(provider, model) {
 
 /**
  * 记一次**真实尝试**（成功 / 失败 / 中止都记）。
- *
- * ★ 记在这里而不是 `llm.cjs`：这个循环是**唯一知道「真发了几次、每次发给谁」的地方**。
- *   记在底层只有两件事会发生：重试的中间几次凭空消失；CLI 整条路径一条都不记。
- *   记账失败绝不许影响调用本身，所以整块包 try。
+ * ★ 记在这里：这个循环是**唯一知道「真发了几次、每次发给谁」的地方**；记在 llm.cjs
+ *   会让重试的中间几次凭空消失，且 CLI 整条路径一条都不记。整块包 try —— 记账绝不许影响调用。
  */
 function logAttempt(target, options, model, extra) {
   try {
     require('./token-metrics.cjs').logAttempt({
       entry: kinds.isCodexCli(target) ? 'cli' : 'api', providerId: target?.id ?? '', model,
-      purpose: 'chat',
+      /* ★ 用途由调用方给（总结阶段传 'summary'）—— 账本据此把「干活」和「汇报」分开算 */
+      purpose: options.purpose ?? 'chat',
       sessionId: options.sessionId ?? '', trace: options.traceId ?? '', taskId: options.taskId ?? '',
       ...extra,
     })
@@ -124,8 +123,9 @@ async function callModelInner(options, emit) {
           ...options,
           messages: preparedMessages,
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
-          /* 主对话是最大的一类消耗；统计按 purpose 分类，不靠 label 文本猜 */
-          purpose: 'chat',
+          /* 主对话是最大的一类消耗；按 purpose 分类，不靠 label 文本猜。
+             允许调用方改（总结传 'summary'）—— 写死的话「干活」和「汇报」就分不开 */
+          purpose: options.purpose ?? 'chat',
           retryIndex: attempt,
           /* ★ 别让 llm 再记一遍（这一层已经记了，见下方 logAttempt） */
           accounted: true,

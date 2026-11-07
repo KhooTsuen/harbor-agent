@@ -208,10 +208,14 @@ export async function run() {
 
   const byTask = {}
   for (const r of rows) byTask[r.taskId] = (byTask[r.taskId] ?? 0) + 1
+  /* 2026-11-08 起工作与总结分离：一个有工具的任务 = 2 行 chat（两轮）+ 1 行 summary */
+  const purposesOf = (taskId) => rows.filter((r) => r.taskId === taskId).map((r) => r.purpose || 'chat')
+  const chatLines = purposesOf(created[0]).filter((p) => p === 'chat').length
+  const sumLines = purposesOf(created[0]).filter((p) => p === 'summary').length
   check(
-    '一个任务跑两轮 → 同一个 taskId 两行调用',
-    byTask[created[0]] === 2,
-    `taskId=${created[0]} 行数=${byTask[created[0]]}`,
+    '一个任务跑两轮 → 2 行「干活」+ 1 行「总结」（分离后必然如此）',
+    chatLines === 2 && sumLines === 1,
+    `taskId=${created[0]} chat=${chatLines} summary=${sumLines} 总=${byTask[created[0]]}`,
   )
   check(
     '并发两个任务 → 各 1 行，没并到一起',

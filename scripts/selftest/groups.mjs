@@ -3,8 +3,6 @@
  *
  * 为什么抽：`selftest.mjs` 顶到 300 行红线，而它 90% 的行是「一组一行」的 import +
  * GROUPS 项（**只增不减**，留在主文件里等于把红线焊死）。抽出来主文件只剩「跑 + 收尾」。
- *
- *
  * 加新组：这里 import 一行 + GROUPS 加一项；顺序即运行顺序，**别顺手重排**（组间不共享状态）。
  */
 
@@ -239,6 +237,7 @@ import { run as shellHeartbeatGroup } from './groups/140-shell-heartbeat.mjs'
 import { run as decisionEventNamesGroup } from './groups/141-decision-event-names.mjs'
 import { run as usagePageFreezeGroup } from './groups/228-usage-page-freeze.mjs'
 import { run as replyTruncationGroup } from './groups/229-reply-truncation.mjs'
+import { run as summaryPhaseGroup } from './groups/230-summary-phase.mjs'
 /* ★ 顺序即运行顺序，保持既有次序不动 */
 export const GROUPS = [
   basics, skillsMemory, fsSafety, reliability,
@@ -296,4 +295,5 @@ export const GROUPS = [
   memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
   userGrantsGroup, contextIntegrityGroup, usageAccountingGroup, recallGroup, cardGrantGroup, growthRetentionGroup, dataLocationGroup, usageRealGroup, modelSelectionGroup, migrateReliabilityGroup, migrateAsyncGroup, usagePageFreezeGroup, usageQueryGroup, backupListPerfGroup, replyTruncationGroup,
   growthAuthorizationGroup,
+  summaryPhaseGroup,
 ]

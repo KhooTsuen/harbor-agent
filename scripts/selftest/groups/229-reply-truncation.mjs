@@ -274,10 +274,10 @@ export async function run() {
   group('回复截断 / 接线（信号必须真的从内核传到落盘与界面）')
   const read = (rel) => require('node:fs').readFileSync(join(ROOT, rel), 'utf8')
 
-  check('★★ loop.cjs 收尾前调了续写（不是写了个没人用的模块）', /finishReply\(/.test(read('electron/core/loop.cjs')))
+  check('★★ loop.cjs 收尾前调了续写/总结（不是写了个没人用的模块）', /finishTurn\(/.test(read('electron/core/loop.cjs')))
   check(
     '★★ loop.cjs 把 truncated 往上带（缺了这一行，下面全白做）',
-    /truncated:\s*reply\.cut/.test(read('electron/core/loop.cjs')),
+    /truncated:\s*reply\.truncated/.test(read('electron/core/loop.cjs')),
   )
   check('★★ done 事件带 truncated（渲染层才知道这条没写完）', /truncated:\s*result\.truncated/.test(read('electron/handlers/chat.cjs')))
   check('★★ 渲染层收到就标上', /truncated:\s*event\.truncated/.test(read('src/stores/thread/streamEvents.ts')))
