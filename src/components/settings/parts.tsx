@@ -80,6 +80,21 @@ function hasField(children: ReactNode): boolean {
   return found
 }
 
+/**
+ * 一行设置 —— **紧凑布局**（标题/说明在左，控件在右）。
+ *
+ * ── 第二阶段为什么要改这一处 ────────────────────────────────────
+ * 以前左栏钉死 `w-56`（224px）。工作区内容宽到 1000px 之后，这 224px
+ * 只占 22%，一句「Agent 打开网页时的放行策略。ask = 先问一次；…」
+ * 被挤成四行，右边控件却空着一大片 —— 真机截图里最难看的就是这个。
+ *
+ * 现在左侧按比例拿（basis 46% + flex-1，最小 11rem），右侧 `max-w-[32rem]`
+ * 收住控件不被拉成长条。窄窗口时两栏各自到最小宽度就**换行成上下**
+ * （flex-wrap），不会把输入框压成一条缝，也不出横向滚动条。
+ *
+ * 说明文字用 `text-fg-secondary`（原来是 tertiary）——深色下 tertiary
+ * 太淡，成片的小灰字读起来很累。
+ */
 export function Row({
   label,
   hint,
@@ -112,15 +127,16 @@ export function Row({
       ref={rowRef}
       className={cn(
         /* 每个子选项 = 一块独立的亚克力板（用户明确过粒度是子选项，不是节） */
-        'acrylic-card flex items-center gap-5',
+        'acrylic-card flex flex-wrap items-center gap-x-6 gap-y-2.5',
         danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
       )}
     >
-      <div className="w-56 shrink-0">
+      {/* 左侧按比例拿，最小 11rem —— 不再钉死 224px（说明被挤成四行的根因） */}
+      <div className="min-w-[11rem] flex-1 basis-[46%]">
         <p
           onClick={focusField}
           className={cn(
-            /* 标签走 meta 档、说明走 dense 档 —— dense 是规格允许的最小档，说明文字不再用 [过渡] 的 12px */
+            /* 标签走 meta 档、说明走 dense 档 —— dense 是规格允许的最小档 */
             'text-meta',
             danger ? 'text-[var(--error)]' : 'text-fg-primary',
             /* 有输入框可聚焦时才给「能点」的样子；开关类不给，免得诱导 */
@@ -129,14 +145,56 @@ export function Row({
         >
           {label}
         </p>
-        {hint ? <p className="mt-0.5 text-dense leading-relaxed text-fg-tertiary">{hint}</p> : null}
+        {hint ? <p className="mt-1 text-dense leading-relaxed text-fg-secondary">{hint}</p> : null}
       </div>
-      {/* 限一个上限：设置弹窗很宽，不限的话输入框会被拉成一条横跨半屏的长条 */}
       {/*
        * justify-end：开关、按钮这类「小控件」自然靠右（设置页的通行做法），
        * 而输入框自己带 w-full，会照旧占满 —— 一个类同时满足两种。
+       * max-w-[32rem]：不限的话输入框会被拉成横跨半屏的长条。
        */}
-      <div className="flex min-w-0 max-w-2xl flex-1 items-center justify-end gap-2">{children}</div>
+      <div className="flex min-w-[12rem] flex-1 basis-[40%] max-w-[32rem] flex-wrap items-center justify-end gap-2">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 一行设置 —— **展开布局**（文字在上，控件在下）。
+ *
+ * 什么时候用它而不是 `Row`：说明长到三四句、或者控件本身是一组按钮 /
+ * 一个多选/多行输入。横向摆的话左侧文字不管是 46% 还是 60% 都会被压扁，
+ * 而右侧那组控件挤在一角很局促。上下摆读起来顺，控件也能铺开。
+ *
+ * 两种布局**并存**是刻意的：不要为了「统一」把复杂行硬塞进紧凑布局。
+ */
+export function RowStack({
+  label,
+  hint,
+  children,
+  danger,
+}: {
+  label: string
+  hint?: string
+  children: ReactNode
+  danger?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'acrylic-card flex flex-col gap-2.5',
+        danger && 'border-[color-mix(in_srgb,var(--error)_40%,transparent)]',
+      )}
+    >
+      <div>
+        <p className={cn('text-meta', danger ? 'text-[var(--error)]' : 'text-fg-primary')}>
+          {label}
+        </p>
+        {hint ? (
+          <p className="mt-1 max-w-[68ch] text-dense leading-relaxed text-fg-secondary">{hint}</p>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
     </div>
   )
 }

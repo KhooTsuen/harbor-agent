@@ -87,6 +87,13 @@ export const SETTINGS_INDEX_REST: readonly SettingsEntry[] = [
   /* ── 扩展 ── */
   /* 这一条压成单行：这份表贴着 300 行红线，prettier 一展开就破线 */
   { tab: 'extension', label: '安装浏览器插件', hint: 'Edge 侧边栏', keywords: ['edge', '插件'] },
+  /* 第二阶段从「通用」搬到「工具与扩展」，索引跟着走 */
+  {
+    tab: 'extension',
+    label: '网页里的链接',
+    hint: 'Agent 打开网页时的放行策略（问 / 放行 / 禁止）',
+    keywords: ['链接', '网页', '浏览', '放行', 'url', 'browser'],
+  },
   {
     tab: 'extension',
     label: '技能',

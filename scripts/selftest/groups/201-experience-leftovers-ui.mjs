@@ -97,6 +97,12 @@ export async function run() {
   group('经验遗留（界面）/ ② 类别/领域不再只写不读（界面能按它筛）')
 
   const tab = readFileSync(join(ROOT, 'src/components/settings/tabs/ExperienceTab.tsx'), 'utf8')
+  /*
+   * 第二阶段：行本身拆到了 `ExperienceRow.tsx`（页面 299 行贴顶）。
+   * `data-experience-category` 那个钩子在行组件上 —— 判据看合并后的渲染层。
+   */
+  const row = readFileSync(join(ROOT, 'src/components/settings/tabs/ExperienceRow.tsx'), 'utf8')
+  const ui = `${tab}\n${row}`
   const display = readFileSync(join(ROOT, 'src/lib/experienceDisplay.ts'), 'utf8')
   check(
     '★ 复刻旧洞：以前这一页只把 domain 当文字拼进摘要，没有任何筛选',
@@ -115,7 +121,7 @@ export async function run() {
     /aria-label="筛选类别：全部"/.test(tab),
     '拼出来的文案脚本找不稳',
   )
-  check('★ 行上带 data-experience-category（真机脚本能按类别定位）', /data-experience-category/.test(tab))
+  check('★ 行上带 data-experience-category（真机脚本能按类别定位）', /data-experience-category/.test(ui))
   check(
     '★ 显示口径搬进了 experienceDisplay.ts（组件不继续膨胀）',
     /export function metaOf/.test(display) && /STATUS_LABEL/.test(display),
@@ -164,7 +170,12 @@ export async function run() {
 
   const touched = [
     'src/components/settings/SettingsModal.tsx',
+    'src/components/settings/SettingsPage.tsx',
     'src/components/settings/tabs/ExperienceTab.tsx',
+    /* 第二阶段拆出来的行组件与标签映射 —— 同样是这一页的界面文件 */
+    'src/components/settings/tabs/ExperienceRow.tsx',
+    'src/components/settings/tabs/memoryLabels.ts',
+    'src/components/settings/tabs/MemoryList.tsx',
     'src/lib/experienceDisplay.ts',
     'src/types/experience.ts',
   ]

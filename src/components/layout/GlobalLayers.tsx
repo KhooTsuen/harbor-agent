@@ -5,7 +5,12 @@ import { ToastViewport } from '@/components/ui/Toast'
 import { useImageLightbox } from '@/stores/useImageLightbox'
 import { useUIStore } from '@/stores/useUIStore'
 import { HarborEggs } from './HarborEggs'
-import { CommandPalette, HarborStatsModal, ImageLightbox, Onboarding } from '@/components/layout/lazyAppParts'
+import {
+  CommandPalette,
+  HarborStatsModal,
+  ImageLightbox,
+  Onboarding,
+} from '@/components/layout/lazyAppParts'
 import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
 import type { AppConfig } from '@/types/models'
 

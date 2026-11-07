@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useConfigSaveStatus } from '@/stores/configSaveStatus'
@@ -10,24 +10,31 @@ import { SETTINGS_NAV, type SettingsTabDef } from './settingsNav'
 /* ══════════════════════════════════════════════════════════════
    设置工作区 · 一页的外框
 
-   ── 统一的三段结构 ────────────────────────────────────────────
-     ① 页头：标题 + 一句话说明 +（右侧）这一阶段要显眼的动作
-     ② 保存状态：配置自动保存 / 失败 —— 每页都有，不是只放首页
-     ③ 内容：`.settings-body` + 受控最大宽度
+   ── 内容宽度由这一处决定（第二阶段）────────────────────────────
+   第一阶段用的是 `max-w-3xl`（768px），减去两侧 64px 后实际只有约 700px，
+   在 1400px+ 的窗口里右边大片空白，说明文字被挤成四行。
+   现在收到 `max-w-[1000px]`：常规页一行能放下「名称 + 说明 + 控件」，
+   同时不会把输入框拉成横跨半屏的长条。
 
-   ── 为什么要有最大宽度 ────────────────────────────────────────
-   工作区比原来的弹窗宽得多。不限宽时输入框会被拉成一条横跨半屏的
-   长条（原弹窗里靠 `Row` 的 `max-w-2xl` 挡着，但那只管控件不管整页）。
-   这里按 `max-w-3xl` 收住正文，两侧留白交给居中 —— 和常见设置页一致。
+   ★ 宽度**只写在这里**，各页不许自己写像素值。内容特别宽的页用
+     `wide` 道具调一档，而不是改基础宽度（改了会把 11 个页一起带偏）。
 
-   ── 保存状态为什么在两处都有 ──────────────────────────────────
-   原来只在弹窗里显示一次。工作区里用户可能整场都在这一页改东西，
-   看不到「保存失败」就等于不知道改动没进去。
+   ── 保存状态改成按需出现（第二阶段）────────────────────────────
+   以前常驻一行「修改配置后自动保存 / 配置已自动保存」—— 每页都占一条
+   视觉噪音，而且「已保存」长期挂着会让人以为那句话本身是个按钮。
+   现在：idle 不渲染；saving / failed 立刻出现；saved 只闪 1.8 秒。
    ══════════════════════════════════════════════════════════════ */
+
+/** 内容区最大宽度（常规页）。改这里 = 改全部 13 页 */
+const CONTENT_MAX = 'max-w-[1000px]'
+/** 宽表 / 双列页用这一档 */
+const CONTENT_WIDE = 'max-w-[1180px]'
 
 export interface SettingsPageProps {
   tab: SettingsTabDef
   children: ReactNode
+  /** 内容特别宽（宽表、双列）时用一档更宽的容器 */
+  wide?: boolean
 }
 
 /** 页头右侧的动作：重置设置（唯一实现见 lib/resetAllSettings.ts） */
@@ -68,38 +75,69 @@ export function ResetAction(): React.ReactElement {
   )
 }
 
-/** 保存状态那一行 —— 三态各说各的话，失败要说清去哪儿查 */
-function SaveStatus(): React.ReactElement {
+/**
+ * 保存状态 —— **按需出现**，不常驻。
+ *
+ * 三种情况才显示：正在保存 / 保存失败 / 刚保存成功（1.8 秒后自己消失）。
+ * 失败必须一直挂着：用户改了东西却不知道没写进去，是最坏的体验。
+ */
+function SaveStatus(): React.ReactElement | null {
   const state = useConfigSaveStatus((s) => s.state)
-  return (
-    <p
-      role="status"
-      className={`mb-2 text-xs ${state === 'failed' ? 'text-danger' : 'text-fg-tertiary'}`}
-    >
-      {state === 'saving'
-        ? '配置正在保存…'
-        : state === 'failed'
-          ? '配置保存失败。请检查数据目录或重试修改。'
-          : state === 'saved'
-            ? '配置已自动保存'
-            : '修改配置后自动保存'}
-    </p>
-  )
+  const [savedVisible, setSavedVisible] = useState(false)
+
+  useEffect(() => {
+    if (state !== 'saved') {
+      setSavedVisible(false)
+      return
+    }
+    setSavedVisible(true)
+    const timer = window.setTimeout(() => setSavedVisible(false), 1800)
+    return () => window.clearTimeout(timer)
+  }, [state])
+
+  if (state === 'saving') {
+    return (
+      <p role="status" className="mb-3 text-dense text-fg-secondary">
+        正在保存…
+      </p>
+    )
+  }
+  if (state === 'failed') {
+    return (
+      <p
+        role="alert"
+        className="mb-3 rounded-sm border border-line-hairline bg-bg-raised/40 px-3 py-2 text-dense leading-relaxed text-danger"
+      >
+        保存失败 —— 这次改动没有写进配置。检查数据目录是否可写，或再改一次重试。
+      </p>
+    )
+  }
+  if (savedVisible) {
+    return (
+      <p role="status" className="mb-3 text-dense text-fg-secondary">
+        已保存
+      </p>
+    )
+  }
+  return null
 }
 
-export function SettingsPage({ tab, children }: SettingsPageProps): React.ReactElement {
+export function SettingsPage({ tab, children, wide }: SettingsPageProps): React.ReactElement {
   const settingsView = useSettingsStore((s) => s.settings.settingsView)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   /* 简洁视图下被收起来的页 —— 进来时仍然看得见，并告诉用户为什么它在「专业」里 */
   const hidden = settingsView !== 'detailed' && tab.detailedOnly === true
+  const maxWidth = wide ? CONTENT_WIDE : CONTENT_MAX
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="shrink-0 border-b border-line-subtle px-8 py-4">
-        <div className="mx-auto flex w-full max-w-3xl items-start gap-4">
+      <header className="shrink-0 border-b border-line-subtle px-8 py-3.5">
+        <div className={`mx-auto flex w-full ${maxWidth} items-start gap-4`}>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-fg-primary">{tab.label}</h1>
-            <p className="mt-0.5 text-xs leading-relaxed text-fg-tertiary">{tab.blurb}</p>
+            <h1 className="text-body font-semibold tracking-tight text-fg-primary">{tab.label}</h1>
+            <p className="mt-1 max-w-[62ch] text-dense leading-relaxed text-fg-secondary">
+              {tab.blurb}
+            </p>
           </div>
           <div className="shrink-0 pt-0.5">
             <ResetAction />
@@ -108,13 +146,13 @@ export function SettingsPage({ tab, children }: SettingsPageProps): React.ReactE
       </header>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto px-8 py-4"
+        className="min-h-0 flex-1 overflow-y-auto px-8 py-5"
         /* 页 id 落在 DOM 上：测试与「跳到某页」都靠它认页，不靠文案 */
         data-settings-page={tab.id}
       >
-        <div className="mx-auto w-full max-w-3xl">
+        <div className={`mx-auto w-full ${maxWidth}`}>
           {hidden ? (
-            <p className="mb-2 rounded-sm border border-line-hairline bg-bg-raised/30 px-2 py-1.5 text-2xs leading-relaxed text-fg-secondary">
+            <p className="mb-3 rounded-sm border border-line-hairline bg-bg-raised/30 px-2.5 py-2 text-dense leading-relaxed text-fg-secondary">
               这一页的功能
               <strong className="font-semibold">始终在生效</strong>
               ，只是默认收在「详细视图」里。

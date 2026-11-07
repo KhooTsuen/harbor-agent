@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, Pencil, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import type { ExperienceItem, ExperienceStats } from '@/types/experience'
 import { useUIStore } from '@/stores/useUIStore'
 import { experienceList, experienceReview, experienceSupported } from '@/lib/experienceApi'
 import { Button } from '@/components/ui/Button'
 import { Row, SectionTitle } from '../parts'
-import { colorOf } from '@/lib/statusLanguage'
-import {
-  FILTERS,
-  STATUS_COLOR,
-  metaOf,
-  needsDraftInput,
-  type Filter,
-} from '@/lib/experienceDisplay'
+import { FILTERS, type Filter } from '@/lib/experienceDisplay'
+import { ExperienceRow } from './ExperienceRow'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 经验与规则（自我纠错闭环的**审批档位**）
@@ -28,6 +22,14 @@ import {
        没有就不许批 —— 批一条「遇到过 X，但不知道怎么办」进提示没有意义。
      · 批完能**改做法**（`amend`）：只换那句话，不动状态 ——
        否则措辞不清楚就只能驳回，而驳回是终点（等于逼人做更大的决定）。
+
+   ── 第二阶段：把「这三类分别是什么、为什么升不上去」写明白 ──────
+   以前只在文件头注释里解释，界面上只有一句概括。用户进来第一反应是
+   「这些跟『规则』有什么关系」，所以现在顶上先放一张三行说明表：
+
+     候选（还没验证）→ 生效中（进每轮提示）→ 已停止（被反例打停）
+
+   然后才是筛选和列表。列表项在 `ExperienceRow.tsx`（原文件 299 行贴顶）。
    ══════════════════════════════════════════════════════════════ */
 
 /** 类别筛选：`category` 以前只写不读（库里有、界面看不见） */
@@ -40,6 +42,16 @@ const CATEGORY_LABEL: Record<string, string> = {
 }
 
 const CATEGORY_FILTERS = Object.keys(CATEGORY_LABEL)
+
+/** 三种状态各是什么意思 —— 用户进来最先要搞清的就是这个 */
+const LIFECYCLE = [
+  { key: '候选', text: '真跑里发现的一次失败，还没被独立验证。不会进提示，只在这儿等你判断。' },
+  {
+    key: '生效中',
+    text: '验证过、或你亲手批准过。每轮会挑相关的几条注入提示 —— 这是它唯一的影响方式。',
+  },
+  { key: '已停止', text: '被后来的反例打停了。记录留着（能追查），但不再注入，可以手动恢复。' },
+]
 
 export function ExperienceTab() {
   const showToast = useUIStore((s) => s.showToast)
@@ -99,9 +111,12 @@ export function ExperienceTab() {
     void refresh()
   }
 
-  if (!experienceSupported()) {
-    return <p className="p-3 text-dense text-fg-tertiary">经验列表需要桌面版。</p>
-  }
+  /*
+   * 浏览器预览没有经验通道 —— **只让列表消失**，说明和统计照旧。
+   * 第二阶段修：以前整页提前 return 成一句话，说明文字（三种状态各是什么）
+   * 在预览形态下完全看不到，而它是纯文本，没有理由依赖桌面桥。
+   */
+  const supported = experienceSupported()
 
   const shown = items.filter((item) => {
     if (category && item.category !== category) return false
@@ -111,188 +126,111 @@ export function ExperienceTab() {
   })
 
   return (
-    <div className="flex flex-col gap-2 pb-6">
-      <SectionTitle>自我纠错</SectionTitle>
-      <p className="px-2 py-1 text-dense text-fg-tertiary">
-        系统在真实执行里观察到的失败，只有**独立验证过**才会变成建议。
-        这里能让人批准、驳回、改做法，或把被反例打停的经验恢复回来。 库容量上限 200
-        条，超出时先清最旧的已驳回条目。
-      </p>
+    <>
+      <SectionTitle hint="只有验证过的才会进提示 —— 这是它唯一的影响方式">
+        它是怎么起作用的
+      </SectionTitle>
 
-      <Row label="现在库里有" hint="待处理 = 还没被验证通过、也没被驳回的；生效中 = 会进每轮提示。">
+      <div className="acrylic-card">
+        <ul className="flex flex-col gap-2 text-dense leading-relaxed text-fg-secondary">
+          {LIFECYCLE.map((row) => (
+            <li key={row.key}>
+              <span className="font-medium text-fg-primary">{row.key}：</span>
+              {row.text}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <Row
+        label="现在库里有"
+        hint="待处理 = 还没被验证通过、也没被驳回的；生效中 = 会进每轮提示。库容量上限 200 条，超出时先清最旧的已驳回条目"
+      >
         <span className="font-mono text-dense text-fg-secondary">
           共 {stats.total} 条 · 待处理 {stats.byStatus.candidate ?? 0} · 生效中{' '}
           {stats.byStatus.verified ?? 0} · 已停止 {stats.byStatus.suspended ?? 0}
         </span>
       </Row>
 
-      <div className="flex items-center gap-1.5 py-2">
-        {FILTERS.map((entry) => (
+      <SectionTitle hint="按状态看；「类别」再按失败来源细分">筛选</SectionTitle>
+
+      {/* 状态与类别两组按钮放同一块板里，中间用一条细线分开 */}
+      <div className="acrylic-card flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-2xs text-fg-secondary">状态</span>
+          {FILTERS.map((entry) => (
+            <Button
+              key={entry.id}
+              variant={filter === entry.id ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setFilter(entry.id)}
+              aria-label={`筛选：${entry.label}`}
+            >
+              {entry.label}
+            </Button>
+          ))}
           <Button
-            key={entry.id}
-            variant={filter === entry.id ? 'secondary' : 'ghost'}
+            variant="ghost"
             size="sm"
-            onClick={() => setFilter(entry.id)}
-            aria-label={`筛选：${entry.label}`}
+            icon={<RotateCcw size={12} />}
+            onClick={() => void refresh()}
           >
-            {entry.label}
+            刷新
           </Button>
-        ))}
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<RotateCcw size={12} />}
-          onClick={() => void refresh()}
-        >
-          刷新
-        </Button>
+        </div>
+
+        {/* 类别筛选：`category` 以前只写进库、界面完全看不到 */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-line-hairline pt-2">
+          <span className="mr-1 text-2xs text-fg-secondary">类别</span>
+          <Button
+            variant={category === '' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setCategory('')}
+            aria-label="筛选类别：全部"
+          >
+            全部
+          </Button>
+          {CATEGORY_FILTERS.map((id) => (
+            <Button
+              key={id}
+              variant={category === id ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setCategory(id)}
+              aria-label={`筛选类别：${CATEGORY_LABEL[id]}`}
+            >
+              {CATEGORY_LABEL[id]}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      {/* 类别筛选：`category` 以前只写进库、界面完全看不到 */}
-      <div className="flex flex-wrap items-center gap-1.5 pb-2">
-        <span className="text-2xs text-fg-tertiary">类别</span>
-        <Button
-          variant={category === '' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setCategory('')}
-          aria-label="筛选类别：全部"
-        >
-          全部
-        </Button>
-        {CATEGORY_FILTERS.map((id) => (
-          <Button
-            key={id}
-            variant={category === id ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setCategory(id)}
-            aria-label={`筛选类别：${CATEGORY_LABEL[id]}`}
-          >
-            {CATEGORY_LABEL[id]}
-          </Button>
-        ))}
-      </div>
-
-      {busy && shown.length === 0 ? (
-        <p className="py-2 text-dense text-fg-tertiary">读取中…</p>
+      {!supported ? (
+        <p className="px-1 py-3 text-dense text-fg-secondary">
+          经验列表需要桌面版（浏览器预览里没有读取经验的通道）。
+        </p>
+      ) : busy && shown.length === 0 ? (
+        <p className="px-1 py-3 text-dense text-fg-secondary">读取中…</p>
       ) : shown.length === 0 ? (
-        <p className="py-2 text-dense text-fg-tertiary">
+        <p className="px-1 py-3 text-dense text-fg-secondary">
           {filter === 'pending'
             ? '没有待处理的。跑任务时真失败了，这里会出现一条候选（不会直接变成规则）。'
             : '这一类现在是空的。'}
         </p>
       ) : (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="flex flex-col gap-2">
           {shown.map((item) => (
-            <li
+            <ExperienceRow
               key={item.id}
-              className="flex flex-col gap-1.5 rounded-sm border border-line-hairline bg-bg-raised/30 px-2 py-1.5"
-              data-experience-id={item.id}
-              data-experience-status={item.status}
-              data-experience-category={item.category}
-            >
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="break-words text-dense text-fg-primary">{item.triggerText}</p>
-                  {item.recommendedAction ? (
-                    <p className="mt-0.5 break-words text-2xs text-fg-secondary">
-                      做法：{item.recommendedAction}
-                    </p>
-                  ) : null}
-                  {item.causeHypothesis ? (
-                    <p className="mt-0.5 break-words text-2xs text-fg-tertiary">
-                      原因假设：{item.causeHypothesis}
-                    </p>
-                  ) : null}
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-fg-tertiary">
-                    {metaOf(item).map((bit) => (
-                      <span key={bit}>{bit}</span>
-                    ))}
-                    <span style={{ color: colorOf(STATUS_COLOR[item.status]) }}>
-                      {item.injectable ? '会进提示' : '不进提示'}
-                    </span>
-                    <span>{item.target || '（没有目标）'}</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* 没有系统做法时批准必须先写一句；点了「改做法」也复用这个输入框 */}
-              {needsDraftInput(item, editing[item.id] === true) ? (
-                <input
-                  value={drafts[item.id] ?? (editing[item.id] ? item.recommendedAction : '')}
-                  onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                  placeholder="这次该怎么做？批准前必须写一句（会进提示）"
-                  aria-label="批准时使用的做法"
-                  className="w-full rounded-sm border border-line-subtle bg-bg-input px-2 py-1 text-dense text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
-                />
-              ) : null}
-
-              <div className="flex items-center gap-1.5">
-                {item.status === 'candidate' ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<ShieldCheck size={12} />}
-                    onClick={() => void act(item, 'approve')}
-                    aria-label="批准这条经验"
-                  >
-                    批准
-                  </Button>
-                ) : null}
-                {item.status === 'suspended' ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<CheckCircle2 size={12} />}
-                    onClick={() => void act(item, 'restore')}
-                    aria-label="恢复这条经验"
-                  >
-                    恢复
-                  </Button>
-                ) : null}
-                {item.recommendedAction &&
-                item.status !== 'rejected' &&
-                item.status !== 'deprecated' ? (
-                  editing[item.id] ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={<Pencil size={12} />}
-                      onClick={() => void act(item, 'amend')}
-                      aria-label="保存修改后的做法"
-                    >
-                      保存
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<Pencil size={12} />}
-                      onClick={() => setEditing((prev) => ({ ...prev, [item.id]: true }))}
-                      aria-label="修改这条经验的做法"
-                    >
-                      改做法
-                    </Button>
-                  )
-                ) : null}
-                {item.status !== 'rejected' && item.status !== 'deprecated' ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={<Trash2 size={12} />}
-                    onClick={() => void act(item, 'reject')}
-                    aria-label="驳回这条经验"
-                  >
-                    驳回
-                  </Button>
-                ) : null}
-                {item.blockedReason ? (
-                  <span className="text-2xs text-fg-tertiary">{item.blockedReason}</span>
-                ) : null}
-              </div>
-            </li>
+              item={item}
+              draft={drafts[item.id] ?? ''}
+              onDraftChange={(value) => setDrafts((prev) => ({ ...prev, [item.id]: value }))}
+              editing={editing[item.id] === true}
+              onStartEdit={() => setEditing((prev) => ({ ...prev, [item.id]: true }))}
+              onAct={(action) => void act(item, action)}
+            />
           ))}
         </ul>
       )}
-    </div>
+    </>
   )
 }

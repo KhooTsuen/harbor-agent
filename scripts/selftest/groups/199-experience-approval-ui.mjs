@@ -27,6 +27,13 @@ import { check, group } from '../harness.mjs'
 import { ROOT, join } from '../env.mjs'
 
 const TAB = join(ROOT, 'src/components/settings/tabs/ExperienceTab.tsx')
+/*
+ * 第二阶段：列表项从 `ExperienceTab.tsx` 拆到了 `ExperienceRow.tsx`
+ * （那边 299 行贴顶，重排层级必须先腾地方）。按钮的 aria-label 与
+ * 行的 data-* 钩子跟着搬过去了 —— 「渲染层里有这些元素」的原意不变，
+ * 只是页面的渲染层现在由两个文件组成，所以这里合并后再抠。
+ */
+const ROW = join(ROOT, 'src/components/settings/tabs/ExperienceRow.tsx')
 const E2E = join(ROOT, 'tools/e2e-experience-approve.mjs')
 
 /**
@@ -43,8 +50,11 @@ function labelsIn(source) {
 
 export async function run() {
   const tabSrc = readFileSync(TAB, 'utf8')
+  /* 列表项在 ExperienceRow.tsx —— 合并后再抠，原意是「整个页面的渲染层」 */
+  const rowSrc = readFileSync(ROW, 'utf8')
+  const uiSrc = `${tabSrc}\n${rowSrc}`
   const e2eSrc = readFileSync(E2E, 'utf8')
-  const tabLabels = labelsIn(tabSrc)
+  const tabLabels = labelsIn(uiSrc)
 
   /* ══════════════════════════════════════════════════════════
      ① 真机脚本依赖的那几个名字，渲染层里真的还有
@@ -64,7 +74,7 @@ export async function run() {
   /* 抠不出来就是拼出来的 —— 那种文案脚本找不稳，明确判死 */
   check(
     '★★ 这几条都是**字面量**（不是拼出来的），脚本才能稳定找到',
-    ACTIONS.every((label) => tabSrc.includes(`aria-label="${label}"`)),
+    ACTIONS.every((label) => uiSrc.includes(`aria-label="${label}"`)),
   )
 
   /* ══════════════════════════════════════════════════════════
@@ -73,7 +83,7 @@ export async function run() {
   group('审批档位界面 / ② 行的两个钩子还在')
 
   for (const hook of ['data-experience-id', 'data-experience-status']) {
-    check(`★ 渲染层里有 ${hook}`, tabSrc.includes(hook), '没有它，脚本只能靠文案猜是哪一行')
+    check(`★ 渲染层里有 ${hook}`, uiSrc.includes(hook), '没有它，脚本只能靠文案猜是哪一行')
     check(`★ 真机脚本读的是 ${hook}`, e2eSrc.includes(hook), 'e2e 脚本里找不到')
   }
 
@@ -82,10 +92,18 @@ export async function run() {
      ══════════════════════════════════════════════════════════ */
   group('审批档位界面 / ③ 入口依赖的「切到详细视图」还在')
 
-  const modal = readFileSync(join(ROOT, 'src/components/settings/SettingsModal.tsx'), 'utf8')
-  check('★ 设置页里还有「切到详细视图」这个动作', /切到详细视图/.test(modal), '没有它，脚本进不去审批页')
+  /*
+   * 第二阶段：这个动作从 `SettingsModal.tsx` 搬到了 `SettingsPage.tsx`
+   * （设置的主入口已经是主区域工作区，弹窗只是过渡兼容）。
+   * 判据跟着移到新家 —— 要守的是「渲染层里有这个动作」，不是它在哪个文件。
+   */
+  const pageSrc = readFileSync(join(ROOT, 'src/components/settings/SettingsPage.tsx'), 'utf8')
+  check('★ 设置页里还有「切到详细视图」这个动作', /切到详细视图/.test(pageSrc), '没有它，脚本进不去审批页')
   check('★ 真机脚本找的也是这句话', /切到详细视图/.test(e2eSrc), 'e2e 脚本里找不到')
-  check('★ 「经验与规则」这个标签还在导航表里', /experience/.test(modal) && /经验与规则/.test(tabSrc + modal))
+  check(
+    '★ 「经验与规则」这个页还在导航表里',
+    /experience/.test(uiSrc) && /经验与规则/.test(readFileSync(join(ROOT, 'src/components/settings/settingsNav.ts'), 'utf8')),
+  )
 
   /*
    * 视图**归零**这条绳子（2026-11-02 真机第一次跑出来的）：点「去处理」会把

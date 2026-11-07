@@ -186,8 +186,16 @@ describe('设置工作区 / ⑤ 返回聊天与键盘可达', () => {
 
 describe('设置工作区 / ⑥ 窄窗口不裁切', () => {
   it('★ 内容区有最大宽度 + 居中（超宽屏不被拉成一条）', () => {
+    /*
+     * 第二阶段：宽度从 768px（max-w-3xl）放宽到 1000px —— 原宽度下
+     * 左右两侧留白过多、说明文字被挤成四行。
+     *
+     * 判据改成「**有**受控最大宽度 + 居中」，不再钉死某一个 Tailwind 类名：
+     * 宽度是会随设计迭代调整的值，把类名写死在测试里，每次调宽度都得改测试。
+     * 真正要守的是结构：宽度有上限、且居中。
+     */
     const page = strip(read('src/components/settings/SettingsPage.tsx'))
-    expect(page).toContain('max-w-3xl')
+    expect(page).toMatch(/max-w-(\[|\d)/)
     expect(page).toContain('mx-auto')
   })
 

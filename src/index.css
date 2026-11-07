@@ -773,7 +773,13 @@
     /* 下限跟规格对齐（dense 档 13px）；11/12 是 [过渡] 遗留档，新写的别再往下加 */
     font-size: 13px;
     line-height: 1.5;
-    color: var(--text-tertiary);
+    /*
+     * ★ 第二阶段：tertiary → secondary。
+     * 深色主题里 --text-tertiary 是 #6b6b6b，成片的说明文字读起来很吃力
+     * （用户反馈「大量过小、过淡的灰色文字」）。secondary 是 #9a9a9a，
+     * 在深底上对比度明显够了，又不会抢标题的视觉层级。
+     */
+    color: var(--text-secondary);
   }
 
   /* ── 玻璃表面的状态：只动透明度 / 边框 / 内高光，不做位移动画 ── */

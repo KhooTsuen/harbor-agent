@@ -76,9 +76,9 @@ export const SETTINGS_INDEX_BASIC: readonly SettingsEntry[] = [
   },
 
   /* ── 对话 ── */
-  /* 这一条压成单行（≤100 字符）—— 这份表贴着 300 行红线，prettier 一展开就破线 */
+  /* 工作目录 / 项目上下文在第一阶段搬去了 `context` 页 —— 索引跟着走，否则搜到点进去是空页 */
   {
-    tab: 'conversation',
+    tab: 'context',
     label: '默认工作目录',
     hint: '全局默认：没挂目录的对话在哪开工',
     keywords: ['工作目录', 'workdir'],
@@ -89,11 +89,25 @@ export const SETTINGS_INDEX_BASIC: readonly SettingsEntry[] = [
     hint: '默认的回答详细程度',
     keywords: ['深度', '详细', '简洁', '回答长度', 'depth'],
   },
+  /* 「发送方式」就是通用页的回车发送 —— 第二阶段核实时发现它一直标错页 */
   {
-    tab: 'conversation',
+    tab: 'general',
     label: '发送方式',
     hint: 'Enter 发送还是 Ctrl+Enter 发送',
     keywords: ['发送', '回车', 'enter', 'ctrl'],
+  },
+  /* 第二阶段从「通用」搬进「对话与任务」的两项 */
+  {
+    tab: 'conversation',
+    label: '默认模式',
+    hint: '新建对话时用哪个模式（pair / plan / execute / goal）',
+    keywords: ['模式', 'mode', '默认', '计划', '执行'],
+  },
+  {
+    tab: 'conversation',
+    label: '自动起标题',
+    hint: '第一轮结束后让模型起标题',
+    keywords: ['标题', '起名', 'title', '名称'],
   },
   {
     tab: 'conversation',
@@ -126,7 +140,7 @@ export const SETTINGS_INDEX_BASIC: readonly SettingsEntry[] = [
     keywords: ['下载', '保存', '目录', '路径'],
   },
   {
-    tab: 'conversation',
+    tab: 'context',
     label: '项目上下文',
     hint: '当前项目的额外说明',
     keywords: ['项目', '上下文', 'context'],
