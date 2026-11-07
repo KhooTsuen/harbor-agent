@@ -17,7 +17,18 @@ function register({ ipcMain }) {
     const taskId = String(payload?.taskId ?? '')
     /* dryRun = 界面确认框的「影响预览」：只算会撤哪些、一下都不动盘（见内核头注释边界④） */
     const dryRun = payload?.dryRun === true
-    const result = changeset.rollbackTo(taskId, payload?.checkpointId, { dryRun })
+    /*
+     * `force: true` = 用户已经在冲突卡上看过「会盖掉哪些新改动」、仍然要撤。
+     * 不传就是默认保护：有冲突**一个字都不写**，返回 `blocked` + 冲突清单。
+     */
+    const force = payload?.force === true
+    const result = changeset.rollbackTo(taskId, payload?.checkpointId, { dryRun, force })
+    if (result.blocked) {
+      log.info(
+        `回退到检查点被拦下：任务 ${taskId}（${result.conflicts?.length ?? 0} 个文件有新改动，等用户确认）`,
+      )
+      return result
+    }
     if (result.ok && !dryRun) {
       log.info(
         `用户回退到检查点：任务 ${taskId}，撤了 ${result.changesets.length} 个事务` +

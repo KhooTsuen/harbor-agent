@@ -197,7 +197,8 @@ export async function run() {
     rmSync(join(changeset.root(), cs4, 'files', meta4.files[0].snap), { force: true })
 
     const failedRun = changeset.rollbackTo(task.id, cpLast.at)
-    check('回退整体仍然 ok（一个文件坏掉不该让整条报废）', failedRun.ok === true)
+    /* G5：有文件没恢复成功就不算成功 —— 不许把部分回退报成成功 */
+    check('回退报「没全成」', !failedRun.ok && !failedRun.blocked, JSON.stringify(failedRun.failed))
     check(
       '★ 没恢复成功的文件进了 failed',
       failedRun.failed.length === 1 && failedRun.failed[0].path === broken,

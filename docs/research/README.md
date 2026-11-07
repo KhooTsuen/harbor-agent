@@ -46,6 +46,7 @@
 | [`context-continuity-p0-baseline-2026-11-06.md`](context-continuity-p0-baseline-2026-11-06.md) | `../README.md`（上下文连续性 P0）。**改 `context-builder.cjs` / `history-window.cjs` / `history-fold.cjs` / `compact.cjs` / `stores/thread/compact.ts` 前看它** —— §2 是两层裁剪的判据，§3 是五个已实测的病灶（含 `assemble` 会把整份历史清零的归因），§9 是 P1/P2/P3 顺序 |
 | [`context-continuity-p1-baseline-2026-11-07.md`](context-continuity-p1-baseline-2026-11-07.md) | `../README.md`（上下文连续性 P1 第一批）。**改 `context-groups.cjs` / `context-text.cjs` / `context-builder.cjs` / `history-window.cjs` / `compact.cjs` / `stores/thread/contextUsage.ts` 前看它** —— §2 是「消息组」规则与两个新模块的边界，§3 是改前/改后真实数字，§4 说明界面圈与内核估算**同口径但不是同一个分母**，§8 是遗留 |
 | [`context-continuity-p1c-recall-2026-11-07.md`](context-continuity-p1c-recall-2026-11-07.md) | `../README.md`（上下文连续性 P1-C 回取）。**改 `session-recall.cjs` / `tools/recall.cjs` / `tool-map.cjs` / `task-resume.cjs` 前看它** —— §2 是这个工具**能做什么、不能做什么**（含「为什么不走 capability」的完整理由），§3 是三层验证的数字，§5 是已知限制与「协作轮次输出为空」等遗留 |
+| [`ask-user-grant-gap-2026-11-07.md`](ask-user-grant-gap-2026-11-07.md) | 本轮变更记录（2026-11-07）。**改 `user-constraints.cjs` / `user-grants.cjs` / `ask_user` 的授权链路前看它** —— 记的是「卡片答复不算授权」这个已核实缺陷（根因在第 1 节，修法方向在第 5 节，**未实施**） |
 
 ## C 档：只在本目录内部互引 —— 研究过程记录
 

@@ -40,9 +40,21 @@ const path = require('node:path')
 const errors = require('./errors.cjs')
 const log = require('./log.cjs')
 
-/** 失败也保持 `{ ok, restored, removed, failed }` 这个形状（界面照它渲染） */
+/** 失败也保持**完整**返回形状（界面照它渲染，不必判空 —— 少一个键就会有人写 `?.` 兜住） */
 function failure(error) {
-  return { ok: false, error, restored: [], removed: [], failed: [], skipped: [], changesets: [] }
+  return {
+    ok: false,
+    error,
+    blocked: false,
+    forced: false,
+    dryRun: false,
+    conflicts: [],
+    restored: [],
+    removed: [],
+    failed: [],
+    skipped: [],
+    changesets: [],
+  }
 }
 
 /**
@@ -133,14 +145,40 @@ function restoreOne(changeset, meta, entry, out, dryRun) {
 /**
  * 回退到某个检查点：撤销该检查点**之后**的改动，之前的不动。
  *
+ * ── 2026-11-07（G1~G6）：动手之前先整体判一遍冲突 ──────────────────
+ *
+ * 以前这里拿到快照就无条件写回，一条判定都没有。于是「11 月 1 日那次检查点」
+ * 之后的**任何合法改动**（用户手改的、后面几轮改的）都能被一下盖掉，界面还报
+ * 「恢复 N 个」。整批撤销（`rollback(id)`）有这套保护，这条没有。
+ *
+ * 现在分三遍，**判完才动手**：
+ *   ① 算计划（会撤哪些事务、哪些文件，一条都不写盘）；
+ *   ② 对计划里的每个文件跑 `changeset-conflict.inspect` —— 任一冲突且没 `force`
+ *      就整体拦下，**一个字都不写**（不碰文件、不改 meta.status）；
+ *   ③ 无冲突（或用户确认覆盖）才真撤。
+ *
+ * ★ 为什么必须「先全判、再执行」：照老结构在循环里逐条判，会变成
+ *   「前 2 个写了、第 3 个冲突」—— 用户看到的是「撤了一半」。
+ *
+ * ★ `ignore` = 本次要一起撤的事务。连续几轮改同一个文件时，它们互相「更晚」
+ *   是正常的（都会被撤掉），不是冲突；不排掉会把**正常回退误拦**。
+ * ★ `only` = 只判本次真要撤的文件。检查点**之前**也改过的文件不撤（进 `skipped`），
+ *   它被人改过不该拦住这次回退。
+ *
  * @param {string} taskId 任务 id（台账里的那条）
  * @param {string|number} checkpointId 检查点的 `at`（推荐）或数组下标
- * @param {{ dryRun?: boolean }} [options] `dryRun` = 只算「会撤哪些、会删哪些、哪些撤不动」，
- *        **一下都不动盘**。界面拿它做确认框里的「影响预览」（AG-052）。
- * @returns {{ ok: boolean, error?: string, dryRun?: boolean, restored: string[], removed: string[],
+ * @param {{ dryRun?: boolean, force?: boolean }} [options]
+ *        `dryRun` = 只算「会撤哪些、会删哪些、哪些撤不动」，**一下都不动盘**（AG-052 的影响预览）。
+ *        预览**也判冲突** —— 否则「预览说没问题，一确认才报错/才盖掉」。
+ *        `force` = 用户在确认卡上看过冲突清单、仍要覆盖。
+ * @returns {{ ok: boolean, blocked: boolean, forced: boolean, dryRun: boolean,
+ *            conflicts: Array<{path: string, kind: string, reason: string, detail: string}>,
+ *            error?: string, restored: string[], removed: string[],
  *            failed: Array<{path: string, reason: string, detail: string, kind: string}>,
  *            skipped: Array<{path: string, reason: string}>,
  *            changesets: string[], checkpoint?: {at: number, label: string, index: number} }}
+ *          `ok` = **真的全都成了**：有文件没恢复成功（`failed` 非空）或
+ *          有冲突没确认（`blocked`）都是 `false` —— 不许把部分回退报成成功。
  */
 function rollbackTo(taskId, checkpointId, options = {}) {
   /*
@@ -149,8 +187,10 @@ function rollbackTo(taskId, checkpointId, options = {}) {
    */
   const changeset = require('./changeset.cjs')
   const tasks = require('./task.cjs')
+  const conflictCheck = require('./changeset-conflict.cjs')
 
   const dryRun = options?.dryRun === true
+  const force = options?.force === true
   const id = String(taskId ?? '').trim()
   if (!id) return failure('没有给任务 id')
 
@@ -164,19 +204,49 @@ function rollbackTo(taskId, checkpointId, options = {}) {
   if (!found.checkpoint) return failure(found.error)
 
   const at = Number(found.checkpoint.at) || 0
-  const out = { restored: [], removed: [], failed: [], skipped: [], changesets: [] }
+  const checkpoint = { at, label: String(found.checkpoint.label ?? ''), index: found.index }
 
-  /* list 是「新的在前」：越靠后的改动越先撤，符合「从后往前退」的直觉 */
+  /* ══ ① 算计划：list 是「新的在前」，越靠后的改动越先撤 ══ */
+  const plan = []
   for (const summary of changeset.list({ taskId: id, limit: 500 })) {
     const meta = changeset.readMeta(summary.id)
     if (!meta || !Array.isArray(meta.files)) continue
     /* 已经整批撤过的不动它（别把「已回滚」的那批数字再报一遍） */
     if (meta.status === 'rolled-back') continue
-
     const hits = meta.files.filter((entry) => afterCheckpoint(entry, meta, at))
     /* 整个事务都在检查点之前 → 原样留着，不必多话 */
     if (hits.length === 0) continue
+    plan.push({ meta, hits })
+  }
 
+  /* ══ ② 冲突判定：必须在动手之前全部判完 ══ */
+  const scope = plan.map((item) => item.meta.id)
+  /*
+   * 「最后一次动盘」按**整批**算，不是每个事务各算各的 —— 连续几轮改同一个文件时，
+   * 磁盘上是最后一轮写的内容，拿第一轮的 finishedAt 去比会把正常回退误拦。
+   */
+  const settled = conflictCheck.batchSettled(plan.map((item) => item.meta))
+  const conflicts = force
+    ? []
+    : plan.flatMap((item) =>
+        conflictCheck.inspect(item.meta.id, item.meta, {
+          only: item.hits.map((entry) => entry.path),
+          ignore: scope,
+          settled,
+        }),
+      )
+  const blocked = conflicts.length > 0
+  const head = { blocked, forced: force, dryRun, conflicts, checkpoint }
+
+  /* 有冲突且没确认覆盖、又不是预览 → 一个字都不写 */
+  if (blocked && !dryRun) {
+    log.info(`回退到检查点被拦下（会覆盖 ${conflicts.length} 个文件的新改动）：任务 ${id}`)
+    return { ok: false, ...head, restored: [], removed: [], failed: [], skipped: [], changesets: [] }
+  }
+
+  /* ══ ③ 真撤（dryRun 时只算不写）══ */
+  const out = { restored: [], removed: [], failed: [], skipped: [], changesets: [] }
+  for (const { meta, hits } of plan) {
     /* 跨检查点：只撤之后的那几个，之前的那几个**明说没动**（不许悄悄少文件） */
     for (const entry of meta.files) {
       if (!afterCheckpoint(entry, meta, at)) {
@@ -201,33 +271,25 @@ function rollbackTo(taskId, checkpointId, options = {}) {
     }
   }
 
-  if (dryRun) {
-    return {
-      ok: true,
-      dryRun: true,
-      restored: out.restored,
-      removed: out.removed,
-      failed: out.failed,
-      skipped: out.skipped,
-      changesets: out.changesets,
-      checkpoint: { at, label: String(found.checkpoint.label ?? ''), index: found.index },
-    }
+  /* ok = 真的全都成了（G5：有文件没恢复成功 / 有冲突未确认 都不算成功） */
+  const ok = !blocked && out.failed.length === 0
+
+  if (!dryRun) {
+    log.info(
+      `回退到检查点：恢复 ${out.restored.length} 个文件，删除 ${out.removed.length} 个，` +
+        `跳过 ${out.skipped.length} 个，失败 ${out.failed.length} 个` +
+        (force ? '（用户确认覆盖）' : ''),
+    )
   }
 
-  log.info(
-    `回退到检查点：恢复 ${out.restored.length} 个文件，删除 ${out.removed.length} 个，` +
-      `跳过 ${out.skipped.length} 个，失败 ${out.failed.length} 个`,
-  )
-
   return {
-    ok: true,
-    dryRun: false,
+    ok,
+    ...head,
     restored: out.restored,
     removed: out.removed,
     failed: out.failed,
     skipped: out.skipped,
     changesets: out.changesets,
-    checkpoint: { at, label: String(found.checkpoint.label ?? ''), index: found.index },
   }
 }
 

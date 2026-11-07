@@ -74,8 +74,41 @@ function settledAt(meta) {
   return Math.max(finished, rolledBack)
 }
 
-/** 目录里其它事务的 meta（排除自己、排除已撤回的） */
-function siblingMetas(selfId) {
+/**
+ * 一批事务「最后一次动盘」的时刻 —— `rollbackTo` 一次撤多个事务时用它。
+ *
+ * ★ 为什么不能逐个用自己那个 `settledAt`（2026-11-07 自检 217 组场景③ 逮到的误拦）：
+ *   连续三轮改同一个文件、三轮都在检查点之后时，**磁盘上是最后一轮写的内容**。
+ *   拿第一轮的 `finishedAt` 去比，那个 mtime 当然更晚 → 判成「事务结束之后被改过」
+ *   → 一次本来完全正常的回退被拦下。而它其实是「同一批里更晚那轮写的」，
+ *   这一批本来就要一起撤。
+ *   判据应当是「晚于**整批**最后一次活动」才算事后被改。
+ *
+ * ★ 任一事务还在跑（open）→ 返回 0（整批不比 mtime）：理由同文件头那条 ——
+ *   `record()` 在写文件之前调用，open 事务的 mtime 天然晚于自己的 startedAt。
+ *
+ * @param {Array<object>} metas
+ * @returns {number} 毫秒时间戳；0 = 不参与 mtime 判定
+ */
+function batchSettled(metas) {
+  let max = 0
+  for (const meta of metas ?? []) {
+    const one = settledAt(meta)
+    if (!one) return 0
+    if (one > max) max = one
+  }
+  return max
+}
+
+/**
+ * 目录里其它事务的 meta（排除自己、排除已撤回的）。
+ *
+ * @param {string} selfId 自己
+ * @param {Set<string>|null} [ignore] 本次要**一起撤**的事务 —— 它们不算「后来的改动」。
+ *   只有 `rollbackTo` 会用到：连续几轮改同一个文件时，那些事务都在检查点之后，
+ *   互相「更晚」是正常的，不是冲突。不排掉就会把**正常回退误拦**（比不拦更糟）。
+ */
+function siblingMetas(selfId, ignore = null) {
   /* 惰性 require：changeset.cjs 顶层 require 本文件，直接引用会拿到没赋值的空导出 */
   const changeset = require('./changeset.cjs')
   let names = []
@@ -87,6 +120,7 @@ function siblingMetas(selfId) {
   const out = []
   for (const name of names) {
     if (name === selfId) continue
+    if (ignore && ignore.has(name)) continue
     const meta = changeset.readMeta(name)
     if (!meta || !Array.isArray(meta.files)) continue
     /* 已经整批撤回去的事务，它的文件内容不再是「后来的改动」 */
@@ -94,6 +128,13 @@ function siblingMetas(selfId) {
     out.push(meta)
   }
   return out
+}
+
+/** 各种形状 → Set（传 null / undefined 就是「不过滤」） */
+function toSet(value) {
+  if (value instanceof Set) return value
+  if (Array.isArray(value)) return new Set(value)
+  return null
 }
 
 /** 这个文件在别的（没被撤回的）事务里、且记得比 `at` 晚吗？返回那个事务 id */
@@ -167,14 +208,22 @@ function conflictOf(entry, meta, siblings, settled) {
  *
  * @param {string} id 事务 id
  * @param {object} meta 已经读出来的 meta（调用方刚读过，别再读一遍）
+ * @param {{ only?: string[]|Set<string>, ignore?: string[]|Set<string>, settled?: number }} [options]
+ *   `only` —— 只判这些路径（`rollbackTo` 只撤检查点之后的文件，不能拿整个事务去判，
+ *   否则「检查点之前那个文件被改过」会把一次本来安全的回退拦下来）；
+ *   `ignore` —— 本次要一起撤的事务（见 `siblingMetas`）；
+ *   `settled` —— 覆盖「事务最后一次动盘」的时刻（见 `batchSettled`，一次撤多个事务时用）。
+ *   都不传 = 原来的行为（判整个事务），整批撤销走的正是这条。
  * @returns {Array<{path: string, kind: string, reason: string, detail: string}>}
  */
-function inspect(id, meta) {
+function inspect(id, meta, options = {}) {
   if (!meta || !Array.isArray(meta.files) || meta.files.length === 0) return []
-  const siblings = siblingMetas(id)
-  const settled = settledAt(meta)
+  const only = toSet(options?.only)
+  const siblings = siblingMetas(id, toSet(options?.ignore))
+  const settled = Number.isFinite(options?.settled) ? Number(options.settled) : settledAt(meta)
   const out = []
   for (const entry of meta.files) {
+    if (only && !only.has(entry.path)) continue
     const hit = conflictOf(entry, meta, siblings, settled)
     if (hit) out.push(hit)
   }
@@ -242,4 +291,4 @@ function rollback(id, options = {}) {
   return { ok: true, blocked: false, forced: force, restored, removed, failed }
 }
 
-module.exports = { rollback, inspect, laterThanSettled, MTIME_SLACK_MS }
+module.exports = { rollback, inspect, laterThanSettled, MTIME_SLACK_MS, batchSettled }
