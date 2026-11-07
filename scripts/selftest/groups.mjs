@@ -89,7 +89,7 @@ import { run as llmAttributionGroup } from './groups/210-llm-attribution.mjs'
 import { run as edgeTargetGuardGroup } from './groups/211-edge-target-guard.mjs'
 import { run as userGrantsGroup } from './groups/213-user-grants.mjs'
 /* P1-A/B（2026-11-07）：上下文消息完整性（空正文工具组 / 孤立 tool / 压缩尾巴）+ 用量口径 */
-import { run as contextIntegrityGroup } from './groups/214-context-integrity.mjs'; import { run as usageAccountingGroup } from './groups/215-usage-accounting.mjs'; import { run as recallGroup } from './groups/216-recall.mjs'; import { run as rollbackToConflictGroup } from './groups/217-rollback-to-conflict.mjs'; import { run as cardGrantGroup } from './groups/218-card-grant.mjs'; import { run as growthRetentionGroup } from './groups/219-growth-retention.mjs'
+import { run as contextIntegrityGroup } from './groups/214-context-integrity.mjs'; import { run as usageAccountingGroup } from './groups/215-usage-accounting.mjs'; import { run as recallGroup } from './groups/216-recall.mjs'; import { run as rollbackToConflictGroup } from './groups/217-rollback-to-conflict.mjs'; import { run as growthAuthorizationGroup } from './groups/220-growth-authorization.mjs'; import { run as cardGrantGroup } from './groups/218-card-grant.mjs'; import { run as growthRetentionGroup } from './groups/219-growth-retention.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -295,4 +295,5 @@ export const GROUPS = [
   edgeInstallGroup, edgeIngestNoteGroup, mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
   memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
   userGrantsGroup, contextIntegrityGroup, usageAccountingGroup, recallGroup, cardGrantGroup, growthRetentionGroup,
+  growthAuthorizationGroup,
 ]

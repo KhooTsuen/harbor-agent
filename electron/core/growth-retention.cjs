@@ -29,7 +29,9 @@
  *   3. **删了要留痕**：数量与保留期写进主日志（两边各自会记）。
  */
 
+const fs = require('node:fs')
 const log = require('./log.cjs')
+const guard = require('./retention-guard.cjs')
 
 /** 已关闭的改动事务留多少个 —— 够回退最近几十轮，又不至于攒成 GB */
 const CHANGESET_KEEP = 50
@@ -39,7 +41,7 @@ const CHANGESET_KEEP = 50
  *
  * 保留期由 `audit.cjs` 自己读 `config.audit.retentionDays`（唯一真相源，别在这再读一次）。
  *
- * @returns {{ ok: boolean, removed: number, reason?: string }}
+ * @returns {{ ok: boolean, removed: number, pending?: number, bytes?: number, reason?: string }}
  */
 function pruneAudit() {
   try {
@@ -53,16 +55,27 @@ function pruneAudit() {
 /**
  * 改动事务：只留最近 `keep` 个**已关闭**的，`open` 的一个都不动。
  *
+ * `pending` / `bytes` 是「积压没删、等用户批准」时透出来的数量与体积 ——
+ * 不标出来的话，`removed: 0` 看着像「没事」，其实是一堆没清。
+ *
  * @param {number} [keep]
- * @returns {{ ok: boolean, removed: number, names: string[], keptOpen: number, reason?: string }}
+ * @returns {{ ok: boolean, removed: number, names: string[], keptOpen: number,
+ *             pending?: number, bytes?: number, reason?: string }}
  */
 function pruneChangesets(keep = CHANGESET_KEEP) {
   try {
     const r = require('./changeset.cjs').prune(keep)
-    return { ok: r.ok, removed: r.removed, names: r.names ?? [], keptOpen: r.keptOpen ?? 0 }
+    return {
+      ok: r.ok,
+      removed: r.removed,
+      names: r.names ?? [],
+      keptOpen: r.keptOpen ?? 0,
+      pending: r.pending ?? 0,
+      bytes: r.bytes ?? 0,
+    }
   } catch (error) {
     log.warn(`清理改动事务失败：${error instanceof Error ? error.message : error}`)
-    return { ok: false, removed: 0, names: [], keptOpen: 0, reason: String(error) }
+    return { ok: false, removed: 0, names: [], keptOpen: 0, pending: 0, bytes: 0, reason: String(error) }
   }
 }
 
@@ -88,7 +101,12 @@ function steps({ changesetKeep } = {}) {
          * **文件名数组** —— 两种形状混在一张表里，日志对不上、排查先得猜是哪一半。
          * 所以这里包一层：数组仍给空（它本来就不返回名字），数量另开 `count`。
          */
-        return { ok: r.ok, removed: [], count: r.removed, reason: r.reason ?? '' }
+        return {
+          ok: r.ok,
+          removed: [],
+          count: r.removed,
+          reason: r.pending ? `${r.pending} 天积压待批准（没删）` : (r.reason ?? ''),
+        }
       },
     ],
     [
@@ -99,8 +117,13 @@ function steps({ changesetKeep } = {}) {
           ok: r.ok,
           removed: r.names ?? [],
           kept: r.removed,
-          /* 进行中的没动 —— 这个数字要透出来，否则「只删了 3 个」看着像没干活 */
-          reason: r.keptOpen ? `${r.keptOpen} 个进行中没动` : '',
+          /* 进行中的没动 / 积压没删 —— 这两个数字都要透出来，
+             否则「只删了 0 个」看着像没干活、或者像清干净了 */
+          reason: r.pending
+            ? `${r.pending} 个积压待批准（没删）`
+            : r.keptOpen
+              ? `${r.keptOpen} 个进行中没动`
+              : '',
         }
       },
     ],
@@ -113,11 +136,35 @@ function steps({ changesetKeep } = {}) {
       'backups',
       () => {
         const r = require('./backup-prune.cjs').pruneBackups()
-        return { ok: r.ok, removed: r.removed, kept: undefined, reason: r.skipped.length ? `${r.skipped.length} 份没有 meta，没动` : '' }
+        return {
+          ok: r.ok,
+          removed: r.removed,
+          kept: undefined,
+          reason: r.pending
+            ? `${r.pending} 份积压待批准（没删）`
+            : r.skipped.length
+              ? `${r.skipped.length} 份没有 meta，没动`
+              : '',
+        }
       },
     ],
   ]
 }
 
-module.exports = { CHANGESET_KEEP, pruneAudit, pruneChangesets, steps }
+/**
+ * 一轮清扫跑完之后调一次。
+ *
+ * 只有**没有待批准积压**时才记「策略已开始工作」——
+ * 否则下次仍按「首次」处理（继续只盘点），直到用户真的批准。
+ * 这一条是整套机制的关键：光写 `pending` 不解除，等于永久拦住；
+ * 光 markSwept 不看 pending，等于首次拦一次就失效。
+ */
+function finalizeSweep() {
+  if (fs.existsSync(guard.pendingFile())) return { marked: false, reason: '还有待批准的积压' }
+  guard.markSwept()
+  if (guard.isArmed()) guard.clearPending()
+  return { marked: true }
+}
+
+module.exports = { CHANGESET_KEEP, pruneAudit, pruneChangesets, steps, finalizeSweep }
 

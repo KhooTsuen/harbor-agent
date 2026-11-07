@@ -183,11 +183,37 @@ function prune() {
   }
 
   const cutoff = Date.now() - retention * 24 * 60 * 60 * 1000
-  let removed = 0
-
+  const stale = []
   for (const day of days()) {
     const ts = Date.parse(`${day}T00:00:00Z`)
     if (!Number.isFinite(ts) || ts >= cutoff) continue
+    stale.push(day)
+  }
+
+  /*
+   * 存量要问过用户（2026-11-07）：审计流水删了事后查不到「谁批准了什么」，
+   * 而这一批可能是他第一次见到的积压。判据在 retention-guard.cjs。
+   */
+  const guard = require('./retention-guard.cjs')
+  if (guard.decide({ key: 'audit', would: stale.length }) === 'report') {
+    let bytes = 0
+    for (const day of stale) {
+      try {
+        bytes += fs.statSync(fileFor(day)).size
+      } catch {
+        /* 读不到就不算 */
+      }
+    }
+    guard.notePending({ key: 'audit', items: stale, bytes })
+    log.warn(
+      `审计日志积压 ${stale.length} 天（约 ${Math.round(bytes / 1048576)}MB），超过一次能清的量 —— ` +
+        '只记清单，一个都没删。清单在 data/retention-pending.json',
+    )
+    return { ok: true, removed: 0, pending: stale.length, bytes }
+  }
+
+  let removed = 0
+  for (const day of stale) {
     try {
       fs.unlinkSync(fileFor(day))
       removed += 1

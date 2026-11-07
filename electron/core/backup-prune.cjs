@@ -15,12 +15,24 @@
  *
  * 所以清理要能**独立被启动链调**，不能挂在「这次真备了一份」后面。
  *
- * ── 哪些不删（两条都不许省）──
+ * ── 哪些不删（2026-11-07 修正判据）──
  *
- *   ① **没有 `meta.json` 的**：那是「正在写」或「用户自己拷进来的」——
- *      前者删了等于毁掉一次备份，后者是用户留的退路。宁可多占一个位置。
- *      真机上就有一份手工拷进来的 `20261107-021212`（无 meta）。
+ * 判据是**有没有内容**，不是**有没有 meta.json**。
+ *
+ * 上一轮写的是「没有 `meta.json` 的一律不动」，真机一盘点就发现判错了：
+ * Dev 那台 11 份备份里有 **7 份没有 meta.json**，但它们并不是「正在写」或「手工拷的」
+ * —— 是**老版本创建的完整备份**（`meta.json` 是后来才加的字段），内容一项不缺
+ * （sessions / changesets / tasks 全在）。按旧判据它们被永久保护，
+ * 于是 `KEEP=10` 的名额被它们占着、真正参与轮换的只有 4 份，增长根本没治住。
+ *
+ * 现在的两条：
+ *   ① **`empty === true`（一个用户项都没有）的不删** —— 空壳 / 正在写的那一份。
+ *      这是「别把未完成、正在写入的备份当成可删对象」的落地。
  *   ② **最新的 `KEEP` 份**：留足回退点（`KEEP` 在 `backup-scan.cjs`）。
+ *      `list()` 已按 `mtime` 倒序排，老格式新格式一视同仁。
+ *
+ * 名字不是时间戳形状的（如手工拷的 `hotfix-tool-history-20261021`）在 `list()`
+ * 那一步就被白名单滤掉了，根本进不来 —— 这一层不需要再判一次。
  *
  * 删了什么写进主日志 —— 删用户数据这件事不能静默。
  */
@@ -29,25 +41,58 @@ const fs = require('node:fs')
 const log = require('./log.cjs')
 /* 清单与排序都在那边（唯一真相源）。惰性不必要：backup-scan 不 require 本文件 */
 const { KEEP, list } = require('./backup-scan.cjs')
+/* 存量要问过用户（判据在那边，见它的文件头） */
+const guard = require('./retention-guard.cjs')
+
+/**
+ * 只算不删：哪几份进删除名单、哪几份要留着。
+ *
+ * @param {{ root?: string, keep?: number }} [options]
+ */
+function planPrune({ root, keep } = {}) {
+  const limit = Number.isFinite(keep) ? Number(keep) : KEEP
+  const candidates = []
+  const skipped = []
+  for (const old of list(root).slice(limit)) {
+    /*
+     * 判据是**有没有内容**，不是有没有 meta.json —— 老版本创建的备份没有 meta，
+     * 但内容齐全（见文件头「2026-11-07 修正判据」）。
+     * `empty` 由 `list()` 算（按 `ITEMS` 逐项查），空壳/正在写的那份才会是 true。
+     */
+    if (old.empty === true) {
+      skipped.push(old)
+      continue
+    }
+    candidates.push(old)
+  }
+  return { limit, candidates, skipped }
+}
 
 /**
  * 把超量的旧备份删掉。
  *
  * @param {{ root?: string, keep?: number }} [options]
  *   `root` / `keep` 只给测试注入；生产不传 = 真实备份目录 + `backup-scan` 的 `KEEP`。
- * @returns {{ ok: boolean, removed: string[], skipped: string[], kept: number }}
+ * @returns {{ ok: boolean, removed: string[], skipped: string[], kept: number,
+ *             pending?: number, bytes?: number }}
  */
-function pruneBackups({ root, keep } = {}) {
-  const limit = Number.isFinite(keep) ? Number(keep) : KEEP
-  const all = list(root)
+function pruneBackups(options = {}) {
+  const plan = planPrune(options)
+  const skipped = plan.skipped.map((old) => old.name)
+  const would = plan.candidates.length
+  const bytes = plan.candidates.reduce((sum, old) => sum + (Number(old.size) || 0), 0)
+
+  if (guard.decide({ key: 'backups', would }) === 'report') {
+    guard.notePending({ key: 'backups', items: plan.candidates.map((old) => old.name), bytes })
+    log.warn(
+      `旧备份积压 ${would} 份（约 ${Math.round(bytes / 1048576)}MB），超过一次能清的量 —— ` +
+        '只记清单，一份都没删。清单在 data/retention-pending.json',
+    )
+    return { ok: true, removed: [], skipped, kept: plan.limit, pending: would, bytes }
+  }
+
   const removed = []
-  const skipped = []
-  for (const old of all.slice(limit)) {
-    if (!Array.isArray(old.items) || old.items.length === 0) {
-      /* 没 meta = 来路不明（正在写 / 手工拷的），不动 */
-      skipped.push(old.name)
-      continue
-    }
+  for (const old of plan.candidates) {
     try {
       fs.rmSync(old.path, { recursive: true, force: true })
       removed.push(old.name)
@@ -55,9 +100,9 @@ function pruneBackups({ root, keep } = {}) {
       log.warn(`删旧备份失败 ${old.name}：${error instanceof Error ? error.message : error}`)
     }
   }
-  if (removed.length > 0) log.warn(`清理旧备份：删了 ${removed.length} 份（保留最近 ${limit} 份）`)
+  if (removed.length > 0) log.warn(`清理旧备份：删了 ${removed.length} 份（保留最近 ${plan.limit} 份）`)
   if (skipped.length > 0) log.info(`这几份没有 meta.json，不当作可清理对象：${skipped.join(', ')}`)
-  return { ok: true, removed, skipped, kept: limit }
+  return { ok: true, removed, skipped, kept: plan.limit }
 }
 
-module.exports = { pruneBackups }
+module.exports = { planPrune, pruneBackups }

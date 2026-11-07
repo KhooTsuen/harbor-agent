@@ -18,7 +18,9 @@ import {
   paths,
   projectCore,
   readFileSync,
+  require,
   resolve,
+  ROOT,
   routerCore,
   taskCore,
   writeFileSync,
@@ -102,9 +104,13 @@ export async function run() {
   check('新建的文件被删掉', !existsSync(targetNew))
   check('恢复清单有两条', rolled.restored.length === 2)
   check('删除清单有一条', rolled.removed.length === 1)
-
+  /* 先过「存量要问过用户」那道闸：首次清扫只盘点不删；这组验「删得动」，让开再还原 */
+  const guard = require(join(ROOT, 'electron/core/retention-guard.cjs'))
+  const hadState = existsSync(guard.stateFile())
+  if (!hadState) guard.markSwept()
   const pruned = changesetCore.prune(0)
   check('事务真的被清理（返回移除条数 + 记录读不回来）', pruned?.ok === true && pruned.removed >= 1 && changesetCore.get(cs.id) === null, `removed=${pruned?.removed}`)
+  if (!hadState) guard.clearState()
 
   /* ══════════════════════════════════════════════════════
      P1：错误分类与重试
@@ -220,14 +226,7 @@ export async function run() {
      ══════════════════════════════════════════════════════ */
 
   group('自动备份')
-
-  /* ── 备份 ──
-   *
-   * 注意这一组会**真的往 data/backups 里写**，跑完自己清掉。
-   * 断言盯的是「备份真的能用」：文件在不在、meta 记没记、删了会不会清干净。
-   * 顺带盯两个容易退化的行为：同一秒内连点不能互相覆盖；24 小时内不重复自动备份。
-   */
-
+  /* 会真的往 data/backups 写、跑完自己清；盯「备份真能用」+「连点不覆盖」+「24h 不重复」 */
   const backupRoot = backupCore.root()
   const beforeCount = backupCore.list().length
 

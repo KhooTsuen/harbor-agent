@@ -248,11 +248,7 @@ function pruneAll({ now = Date.now(), dirs = {} } = {}) {
         }),
     ],
     ['promptDiag', () => diagRetention.pruneOrphanDiags({ dirs })],
-    /*
-     * 用户数据侧的保留期（audit / changesets）—— 2026-11-07 补。
-     * 那两样和上面这些不是一个性质：删了不可重建，所以判据也不同
-     * （保留 N 个 + 进行中的不动）。单独一个文件，见 `growth-retention.cjs`。
-     */
+    /* 用户数据侧（audit / changesets）—— 删了不可重建，判据见 growth-retention.cjs */
     ...growthRetention.steps(),
     /*
      * token 指标（问题 4）：写的时候也会轮转（`recordRequest` 里那道），
@@ -276,6 +272,12 @@ function pruneAll({ now = Date.now(), dirs = {} } = {}) {
       log.warn(`启动清理 ${key} 失败：${error instanceof Error ? error.message : error}`)
       out[key] = { ok: false, removed: [], kept: 0, reason: String(error) }
     }
+  }
+  /* 记「策略已开始工作」（解除首次清扫的只盘点，判据见 retention-guard.cjs） */
+  try {
+    out.__sweep = growthRetention.finalizeSweep()
+  } catch {
+    /* 记不上不影响清理本身 */
   }
   return out
 }

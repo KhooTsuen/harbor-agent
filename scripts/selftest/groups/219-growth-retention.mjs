@@ -67,7 +67,19 @@ export async function run() {
     const allClosedBefore = changeset
       .list({ limit: 9999 })
       .filter((one) => one.status !== 'open').length
+    /*
+     * 先过「存量要问过用户」那道闸：这组验的是 keep 生效（真删得动），
+     * 而 32 个已关闭事务超过 SAFE_BATCH.changesets（20）——按新判据本来就该拦。
+     * 所以这里模拟「用户已经批准」的状态（armed），这才是「批准后清理真能生效」的场景。
+     */
+    const guard = require(join(ROOT, 'electron/core/retention-guard.cjs'))
+    const hadState = existsSync(guard.stateFile())
+    const hadArmed = existsSync(guard.armedFile())
+    if (!hadState) guard.markSwept()
+    writeFileSync(guard.armedFile(), JSON.stringify({ armed: true }), 'utf8')
     const pruned = changeset.prune(1)
+    if (!hadState) guard.clearState()
+    if (!hadArmed) rmSync(guard.armedFile(), { force: true })
     check(
       '★★ open 的事务还在（删了它 commit 会失败、也撤不回去）',
       existsSync(join(changeset.root(), live.id)),
@@ -85,21 +97,24 @@ export async function run() {
     const stillWorks = changeset.commit(live.id)
     check('★★ 进行中的那份提交照旧能成功（证明它没被清坏）', stillWorks?.ok !== false, JSON.stringify(stillWorks ?? {}).slice(0, 80))
 
-    /* ══ ② 备份清理：无 meta 的不动 ══════════════════════════ */
-    group('增长治理 / ② 备份清理：来路不明的不碰')
+    /* ══ ② 备份清理：判据是「有没有内容」，不是「有没有 meta」══════ */
+    group('增长治理 / ② 备份清理：空壳不碰，老格式照常参与')
     const bRoot = join(SANDBOX, 'growth-backups')
     rmSync(bRoot, { recursive: true, force: true })
     mkdirSync(bRoot, { recursive: true })
 
     /*
-     * 造 3 份「有 meta」+ 1 份「没有 meta」（手工拷进来的那种）。
-     * ★ 没有 meta 那份放在**最旧**的位置 —— 只有落在超出 keep 的那一段里，
-     *   「跳过它」这条判据才真的被测到（放最新的话它压根不参与清理）。
+     * ★ 2026-11-07 修正判据：**有没有内容**才是判据，不是有没有 meta.json。
+     *   真机上 11 份备份里 7 份没有 meta（老版本创建的），内容一项不缺 ——
+     *   按旧判据它们被永久保护，KEEP 名额被占着、增长根本没治住。
+     *   真正该保的是**空壳**（`empty === true`，正在写 / 一份用户项都没有）。
+     *
+     * 造 4 份有内容（最旧那份**没有 meta**，模拟老格式）+ 1 份空壳，keep=2。
+     * 空壳放最旧位置 —— 只有落在超出 keep 那一段里，「跳过它」才真被测到。
      */
-    const mk = (name, withMeta, ageMs = 0) => {
+    const mk = (name, withMeta, withContent, ageMs = 0) => {
       const full = join(bRoot, name)
-      mkdirSync(full, { recursive: true })
-      writeFileSync(join(full, 'config.json'), '{"a":1}', 'utf8')
+      mkdirSync(join(full, 'sessions'), { recursive: true })
       if (withMeta) {
         writeFileSync(
           join(full, 'meta.json'),
@@ -107,7 +122,7 @@ export async function run() {
           'utf8',
         )
       }
-      /* 让排序确定：list 按目录 mtimeMs 降序，把老的往前推 */
+      if (withContent) writeFileSync(join(full, 'config.json'), '{"a":1}', 'utf8')
       const past = (Date.now() - ageMs) / 1000
       try {
         require('node:fs').utimesSync(full, past, past)
@@ -116,28 +131,36 @@ export async function run() {
       }
       return full
     }
-    /* 最旧那份没有 meta（模拟真机那份手工拷贝），后面三份都有 meta */
-    const noMeta = mk('20260101-000001', false, 4 * 86400000)
-    mk('20260102-000002', true, 3 * 86400000)
-    mk('20260103-000003', true, 2 * 86400000)
-    mk('20260104-000004', true, 86400000)
+    const shell = mk('20260100-000000', false, false, 5 * 86400000) /* 空壳：无 meta 无内容 */
+    const oldNoMeta = mk('20260101-000001', false, true, 4 * 86400000) /* 老格式：无 meta 有内容 */
+    mk('20260102-000002', true, true, 3 * 86400000)
+    mk('20260103-000003', true, true, 2 * 86400000)
+    mk('20260104-000004', true, true, 86400000)
 
+    const hadState2 = existsSync(guard.stateFile())
+    if (!hadState2) guard.markSwept()
     const applied = backupPrune.pruneBackups({ root: bRoot, keep: 2 })
-    check('★ 4 份里只有超出的 2 份参与清理', applied.removed.length + applied.skipped.length === 2, `removed=${applied.removed.length} skipped=${applied.skipped.length}`)
+    if (!hadState2) guard.clearState()
+
     check(
-      '★★ 没有 meta 的那份不在可删名单里（正在写 / 用户自己拷的）',
-      applied.skipped.includes('20260101-000001'),
+      '★★ 空壳不在可删名单里（正在写 / 一份用户项都没有）',
+      applied.skipped.includes('20260100-000000'),
       JSON.stringify(applied.skipped),
     )
-    check('★★ 没有 meta 的那份还在盘上（一个字节都没动）', existsSync(noMeta))
-    check('★ 有 meta 的才真删（1 份）', applied.removed.length === 1, JSON.stringify(applied.removed))
+    check('★★ 空壳那份还在盘上（一个字节都没动）', existsSync(shell))
     check(
-      '★ 删掉的是有 meta 里最旧那份',
-      applied.removed[0] === '20260102-000002',
+      '★★ 老格式（无 meta 但有内容）照常参与清理 —— 否则 KEEP 名额被它占着，增长治不住',
+      applied.removed.includes('20260101-000001'),
       JSON.stringify(applied.removed),
     )
     check(
-      '★ 保留的两份有 meta 的还在',
+      '★ 超出 keep 的正好删掉（4 份有内容、留 2 → 删 2）',
+      applied.removed.length === 2,
+      JSON.stringify(applied.removed),
+    )
+    check('★ 老格式那份已不在盘上', !existsSync(oldNoMeta))
+    check(
+      '★ 保留的两份还在',
       existsSync(join(bRoot, '20260103-000003')) && existsSync(join(bRoot, '20260104-000004')),
       `${existsSync(join(bRoot, '20260103-000003'))} / ${existsSync(join(bRoot, '20260104-000004'))}`,
     )
@@ -217,8 +240,8 @@ export async function run() {
       read('electron/core/audit.cjs').includes("config.cjs').get().audit.retentionDays"),
     )
     check(
-      '★ changeset 只有「已关闭」才参与清理（判据在 prune 里，不在这儿再写一份）',
-      read('electron/core/changeset.cjs').includes("meta?.status === 'open'"),
+      '★ changeset 只有「已关闭」才参与清理（判据在 changeset-prune，不在这儿再写一份）',
+      read('electron/core/changeset-prune.cjs').includes("meta?.status === 'open'"),
     )
   } finally {
     for (const id of tasks) {

@@ -241,59 +241,13 @@ function get(id) {
   return { ...meta, files: meta.files.map((f) => ({ path: f.path, existed: f.existed, size: f.size })) }
 }
 
-/**
- * 清理旧的（保留最近 N 个已关闭的事务）。
- *
- * ★ 两条不能省的（2026-11-07：真机 1128 个事务 / 116MB，从没被清过）：
- *   ① **`open` 的一个都不删** —— 那是正在跑的任务的回滚凭据，删了它 commit 会失败。
- *      这就是「别把未完成的当成可删对象」在改动事务上的落地。
- *   ② **删了什么要说出来**（`names` + 一条日志）—— 删数据不能静默。
- *
- * 排序靠目录名（`cs_<base36 时间戳>_<随机>`，字典序 = 时间序）。
- * open 的不占 keep 名额。
- *
- * @param {number} [keep] 保留多少个已关闭的事务
- * @returns {{ ok: boolean, removed: number, names: string[], keptOpen: number }}
+/*
+ * 清理在 `changeset-prune.cjs`（那边多了「存量要问过用户」这层，这里塞不下）。
+ * 它惰性 require 本模块拿 `root()` / `readMeta()` / `dirFor()` —— 判据不重写一份。
  */
-function prune(keep = 50) {
-  let names = []
-  try {
-    names = fs.readdirSync(root()).filter((name) => name.startsWith('cs_')).sort()
-  } catch {
-    return { ok: true, removed: 0, names: [], keptOpen: 0 }
-  }
-
-  /* 先分拣：open 的一律留着；已关闭的才参与「保留最近 N 个」 */
-  const closed = []
-  let keptOpen = 0
-  for (const id of names) {
-    const meta = readMeta(id)
-    if (meta?.status === 'open') {
-      keptOpen += 1
-      continue
-    }
-    closed.push(id)
-  }
-
-  const stale = closed.slice(0, Math.max(0, closed.length - keep))
-  const removed = []
-  for (const id of stale) {
-    try {
-      fs.rmSync(dirFor(id), { recursive: true, force: true })
-      removed.push(id)
-    } catch {
-      /* 删不掉就算了（下次启动还会来） */
-    }
-  }
-  if (removed.length > 0) {
-    log.warn(
-      `清理改动事务：删了 ${removed.length} 个（保留最近 ${keep} 个；另有 ${keptOpen} 个进行中的没动）`,
-    )
-  }
-  return { ok: true, removed: removed.length, names: removed, keptOpen }
-}
+const { prune } = require('./changeset-prune.cjs')
 
 module.exports = {
   begin, record, commit, rollback, rollbackTo, markSuperseded,
-  list, get, readMeta, writeMeta, prune, root,
+  list, get, readMeta, writeMeta, prune, root, dirFor,
 }
