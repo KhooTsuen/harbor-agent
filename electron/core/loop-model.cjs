@@ -1,7 +1,6 @@
 /**
  * Agent 循环：调模型（从 loop.cjs 拆出来的，那边过 300 行了）
- * 这里只管「把请求发出去、失败了怎么办」，不碰循环本身。
- * 真实用量的记账也在这里 —— 只有这个循环知道「真发了几次、每次发给谁」。
+ * 只管「把请求发出去、失败了怎么办」+ 真实用量记账（只有这里知道真发了几次、发给谁）。
  */
 
 const llm = require('./llm.cjs')
@@ -34,13 +33,14 @@ function servesModel(provider, model) {
  * 记一次**真实尝试**（成功 / 失败 / 中止都记）。
  *
  * ★ 记在这里而不是 `llm.cjs`：这个循环是**唯一知道「真发了几次、每次发给谁」的地方**。
- *   记在底层只有两件事会发生：重试的中间几次凭空消失；CLI 整条路径一条都不记
- *   （它根本不经过 llm.cjs）。记账失败绝不许影响调用本身，所以整块包 try。
+ *   记在底层只有两件事会发生：重试的中间几次凭空消失；CLI 整条路径一条都不记。
+ *   记账失败绝不许影响调用本身，所以整块包 try。
  */
 function logAttempt(target, options, model, extra) {
   try {
     require('./token-metrics.cjs').logAttempt({
       entry: kinds.isCodexCli(target) ? 'cli' : 'api', providerId: target?.id ?? '', model,
+      purpose: 'chat',
       sessionId: options.sessionId ?? '', trace: options.traceId ?? '', taskId: options.taskId ?? '',
       ...extra,
     })
@@ -82,8 +82,8 @@ async function callModelInner(options, emit) {
   /* 候选 = 你选的那家；只有用户开了降级、且另有一家真提供这个模型，才多一个 */
   const candidates = [provider]
   /*
-   * ★ codex-cli 没有凭据 → 天然不在降级候选里：这是**有意的**。
-   *   用户没选它，就不该被自动换过去（换过去还会连工具一起丢，见设计 §1）。
+   * ★ codex-cli 没有凭据 → 天然不在降级候选里（有意的）：用户没选它，就不该被自动换过去
+   *   （换过去还会连工具一起丢，见设计 §1）。
    */
   if (fb.enabled) {
     const others = (config.providers ?? []).filter(
@@ -118,14 +118,14 @@ async function callModelInner(options, emit) {
 
       try {
         /* ★ 按**后端种类**分流 —— 全项目只有这一处（设计 §3）：codex-cli → CLI 适配器，
-           其余 → 原来的 HTTP/SSE。两者 `chatStream` 是**同形契约**（同入参 / 返回 / 取消），
-           所以循环 / 工具 / 审批 / 预算 / 恢复全都不感知这次分流。 */
+           其余 → HTTP/SSE。两者 `chatStream` 同形契约，所以循环/工具/审批/预算/恢复都不感知 */
         const engine = kinds.isCodexCli(target) ? codexCli : llm
         const result = await engine.chatStream({
           ...options,
           messages: preparedMessages,
-          /* 日志里能一眼分出「对话轮次」和「起标题/建议」那种场景调用 */
           label: `对话 ${log.shortId(options.traceId || options.taskId)}`,
+          /* 主对话是最大的一类消耗；统计按 purpose 分类，不靠 label 文本猜 */
+          purpose: 'chat',
           retryIndex: attempt,
           /* ★ 别让 llm 再记一遍（这一层已经记了，见下方 logAttempt） */
           accounted: true,

@@ -63,36 +63,38 @@ async function maybeRun() {
       maxTokens: 1,
       temperature: 0,
       label: '预热',
-      /* ★ 这条自己记（下面那条带 systemBytes 的 kind:'prewarm'），别让 llm 再兜底记一遍 */
+      /* ★ 这条自己记（见下方的 logAttempt），别让 llm 再兜底记一遍 */
       accounted: true,
     })
     const cache = metrics.cacheFields(result.usage)
-    metrics.recordRequest({
-      kind: 'prewarm',
-      ok: true,
+    /* 走统一入口（2026-11-08）：以前这里 `Number(x) || 0`，预热没拿到 usage 时
+       就把「未知」记成了 0 —— 和别的路径口径不一致，统计里会变成假的零消耗。
+       诊断信息（提示词体积 / 缓存命中）留在下面那行主日志里，账行只留标准字段。 */
+    metrics.logAttempt({
+      purpose: 'prewarm',
+      entry: 'api',
+      outcome: 'ok',
       model: config.assistant?.model ?? '',
       providerId: provider.id,
-      prompt: Number(result.usage?.prompt_tokens) || 0,
-      completion: Number(result.usage?.completion_tokens) || 0,
-      total: Number(result.usage?.total_tokens) || 0,
-      cacheHit: cache.hit,
-      cacheMiss: cache.miss,
-      cacheSource: cache.source,
-      hitRate: metrics.hitRate(cache.hit, cache.miss),
+      usage: result.usage ?? null,
       latencyMs: Date.now() - startedAt,
       ttftMs: result.ttftMs ?? null,
-      retryIndex: 0,
-      systemBytes: system.length,
     })
     log.info(
-      `预热完成：${((Date.now() - startedAt) / 1000).toFixed(1)}s · in=${result.usage?.prompt_tokens ?? '?'} · cached=${cache.hit ?? 'unavailable'}`,
+      `预热完成：${((Date.now() - startedAt) / 1000).toFixed(1)}s · 提示词 ${system.length} 字 · ` +
+        `in=${result.usage?.prompt_tokens ?? '?'} · cached=${cache.hit ?? 'unavailable'}`,
     )
     return { ok: true, usage: result.usage ?? null, ms: Date.now() - startedAt }
   } catch (error) {
-    metrics.recordRequest({
-      kind: 'prewarm',
-      ok: false,
-      error: String(error?.message ?? error).slice(0, 200),
+    /* 失败也记一行（发出去过就是真请求）—— 同样走统一入口，标「未知」而不是 0 */
+    metrics.logAttempt({
+      purpose: 'prewarm',
+      entry: 'api',
+      outcome: 'failed',
+      model: config.assistant?.model ?? '',
+      providerId: provider.id,
+      usage: null,
+      reason: String(error?.message ?? error),
     })
     log.warn(`预热失败（不影响启动）：${error instanceof Error ? error.message : error}`)
     return { ok: false, error: String(error?.message ?? error) }

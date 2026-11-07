@@ -101,6 +101,7 @@ async function run(input) {
   }
 
   const res = await chatStream({
+    purpose: 'collab',
     messages: [{ role: 'user', content: executorPrompt({ goal, plan, projectRoot }) }],
     model: 'codex-cli',
     provider: input.provider ?? { kind: 'codex-cli', codexPath: '' },

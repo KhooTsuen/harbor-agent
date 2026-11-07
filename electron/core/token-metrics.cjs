@@ -39,8 +39,8 @@ function cacheFields(usage) {
 /** hit/(hit+miss)；缺任一分量 → null（不可计算，不估） */
 function hitRate(hit, miss) {
   if (!Number.isFinite(hit) || !Number.isFinite(miss)) return null
-  const total = hit + miss
-  return total > 0 ? Number((hit / total).toFixed(4)) : null
+  const sum = hit + miss
+  return sum > 0 ? Number((hit / sum).toFixed(4)) : null
 }
 
 /**
@@ -51,18 +51,17 @@ function hitRate(hit, miss) {
  *   不然后两次的消耗在账上凭空消失，而前两次的失败又查不到。
  *
  * ★ 三类数值必须分得开（这是这一层存在的理由）：
- *   · `known: true`  + 数字 → 服务商/CLI 确实上报了，数字就是数字
- *   · `known: true`  + 0     → 确实上报了「0」（少见，但不能当成没报）
- *   · `known: false` + null  → **没拿到**（失败 / 中止 / 这家不给 usage）
+ *   · `known: true` + 数字 → 确实上报了（**给 0 也算上报**，不能当成没报）
  *   以前统一 `Number(x) || 0`，第三种被写成 0 混进累计 —— 用户看到的「消耗」里
  *   掺着猜的值，而这正是本项要根除的东西。
  *
  * @param {{ entry?: 'api'|'cli', providerId?: string, model?: string,
  *           sessionId?: string, trace?: string, taskId?: string, retryIndex?: number,
  *           outcome?: 'ok'|'failed'|'aborted', usage?: object|null,
- *           reason?: string, ttftMs?: number|null, latencyMs?: number|null,
- *           label?: string }} input
- *   `usage` 传 null/undefined = 这次没拿到真实用量（**照记这一行**，标已知为假）。
+ *           reason?: string, ttftMs?: number|null, latencyMs?: number|null, label?: string,
+ *           purpose?: string }} input
+ *   `purpose` = 调用类别（chat / compact / scene / vision / prewarm / collab…），统计按它分类；
+ *   不给就留空 → 归「未标注」，**不猜成 chat**。`usage` 传 null = 没拿到真实用量，照记这一行。
  */
 function logAttempt(input = {}) {
   const usage = input.usage && typeof input.usage === 'object' ? input.usage : null
@@ -84,6 +83,10 @@ function logAttempt(input = {}) {
     known,
     missing: known ? '' : String(input.reason ?? (usage ? 'usage 里没有 token 数' : '没有 usage')).slice(0, 80),
     label: String(input.label ?? '').slice(0, 40),
+    /* ★ 显式调用类别（2026-11-08）。`label` 是自由文本，压缩/识图/协作根本没有它，
+       拿它分类等于猜。这里是**唯一**能把「主对话 / 压缩 / 场景 / 识图 / 预热 / 协作」
+       分开的字段；调用方不给就留空，统计侧归「未标注」，不猜成 chat。 */
+    purpose: String(input.purpose ?? '').slice(0, 16),
     model: String(input.model ?? ''),
     providerId: String(input.providerId ?? ''),
     sessionId: String(input.sessionId ?? '').slice(0, 40),
@@ -150,6 +153,8 @@ function autoLog(options = {}, result = null, error = null) {
     providerId: options.provider?.id ?? '',
     model: options.model ?? '',
     label: options.label ?? '',
+    /* 调用方显式声明类别；不声明就留空（统计里算「未标注」，不冒充 chat） */
+    purpose: options.purpose ?? '',
     sessionId: options.sessionId ?? '',
     trace: options.traceId ?? '',
     taskId: options.taskId ?? '',

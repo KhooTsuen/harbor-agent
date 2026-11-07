@@ -176,6 +176,7 @@ async function callCodex(prompt, options) {
   try {
     const res = await chatStream({
       /* 拍平用：只给一条 user 消息，prompt 已经是完整指令 */
+      purpose: 'collab',
       messages: [{ role: 'user', content: prompt }],
       model: 'codex-cli',
       provider: provider ?? { kind: 'codex-cli', codexPath: '' },

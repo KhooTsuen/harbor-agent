@@ -60,6 +60,8 @@ async function describe(bytes, mime, question, name, ctx, target) {
     text: `${name} 将交给${target.source}识别`,
   })
   const response = await require('../llm.cjs').chatStream({
+    /* 识图是独立计费路径：统计里单独一格（它烧的是视觉模型的 token） */
+    purpose: 'vision',
     baseUrl: target.provider.baseUrl,
     apiKey: configCore.providerKey(target.provider),
     chatPath: target.provider.chatPath,

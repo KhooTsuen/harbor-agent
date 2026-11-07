@@ -90,6 +90,8 @@ const REASONING_FALLBACK_CHARS = 1500
 async function askModel(options, system, messages) {
   const budget = Number(options.maxTokens) > 0 ? Number(options.maxTokens) : SUMMARIZE_MAX_TOKENS
   const result = await llm.chatStream({
+    /* 压缩是**辅助任务**：统计里要和主对话分开算（它烧的钱不含任何用户可见产出） */
+    purpose: 'compact',
     baseUrl: options.baseUrl,
     apiKey: options.apiKey,
     chatPath: options.chatPath,

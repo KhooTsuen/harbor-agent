@@ -239,8 +239,8 @@ function registerHandlers(deps) {
   require('./handlers/image-file.cjs').register({ ipcMain, getMainWindow })
   require('./handlers/shell.cjs').register({ ipcMain })
   require('./handlers/scene.cjs').register({ ipcMain })
-  /* 数据目录：用户指定位置 + 安全迁移（见 handlers/data-location.cjs） */
   require('./handlers/data-location.cjs').register({ ipcMain })
+  require('./handlers/usage.cjs').register({ ipcMain })
   require('./handlers/diagnostics.cjs').register({ ipcMain })
   /* 终端（真 PTY）：单独一组通道，和 shell.cjs 的「一次性执行」并存 */
   require('./handlers/pty.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })

@@ -73,6 +73,9 @@ const EXPECTED_CHANNELS = [
   /* 数据目录：用户指定位置 + 安全迁移（指针文件独立于配置，见 core/data-location.cjs） */
   'dataLocation:get',
   'dataLocation:migrate',
+  /* 真实用量查询（唯一读法，见 core/usage-query.cjs）—— 后续界面都走这两个 */
+  'usage:query',
+  'usage:semantics',
   'diagnostics:copy',
   'diagnostics:openDir',
   'errors:list',

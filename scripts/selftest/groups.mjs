@@ -4,8 +4,6 @@
  * 为什么抽：`selftest.mjs` 顶到 300 行红线，而它 90% 的行是「一组一行」的 import +
  * GROUPS 项（**只增不减**，留在主文件里等于把红线焊死）。抽出来主文件只剩「跑 + 收尾」。
  *
- * ⚠️ **加载时机不变**：本文件被 `selftest.mjs` 静态 import，各 group 模块的顶层代码仍在
- * `prepareSelftest()` 之前执行 —— 与原实现一字不差（`paths.cjs` 只认 `process.argv[1]`）。
  *
  * 加新组：这里 import 一行 + GROUPS 加一项；顺序即运行顺序，**别顺手重排**（组间不共享状态）。
  */
@@ -89,7 +87,7 @@ import { run as llmAttributionGroup } from './groups/210-llm-attribution.mjs'
 import { run as edgeTargetGuardGroup } from './groups/211-edge-target-guard.mjs'
 import { run as userGrantsGroup } from './groups/213-user-grants.mjs'
 /* P1-A/B（2026-11-07）：上下文消息完整性（空正文工具组 / 孤立 tool / 压缩尾巴）+ 用量口径 */
-import { run as contextIntegrityGroup } from './groups/214-context-integrity.mjs'; import { run as usageAccountingGroup } from './groups/215-usage-accounting.mjs'; import { run as recallGroup } from './groups/216-recall.mjs'; import { run as rollbackToConflictGroup } from './groups/217-rollback-to-conflict.mjs'; import { run as growthAuthorizationGroup } from './groups/220-growth-authorization.mjs'; import { run as cardGrantGroup } from './groups/218-card-grant.mjs'; import { run as growthRetentionGroup } from './groups/219-growth-retention.mjs'; import { run as usageRealGroup } from './groups/225-usage-real.mjs'; import { run as dataLocationGroup } from './groups/221-data-location.mjs'; import { run as modelSelectionGroup } from './groups/224-model-selection.mjs'; import { run as migrateReliabilityGroup } from './groups/222-migrate-reliability.mjs'; import { run as migrateAsyncGroup } from './groups/223-migrate-async.mjs'
+import { run as contextIntegrityGroup } from './groups/214-context-integrity.mjs'; import { run as usageAccountingGroup } from './groups/215-usage-accounting.mjs'; import { run as recallGroup } from './groups/216-recall.mjs'; import { run as rollbackToConflictGroup } from './groups/217-rollback-to-conflict.mjs'; import { run as growthAuthorizationGroup } from './groups/220-growth-authorization.mjs'; import { run as cardGrantGroup } from './groups/218-card-grant.mjs'; import { run as growthRetentionGroup } from './groups/219-growth-retention.mjs'; import { run as usageRealGroup } from './groups/225-usage-real.mjs'; import { run as dataLocationGroup } from './groups/221-data-location.mjs'; import { run as modelSelectionGroup } from './groups/224-model-selection.mjs'; import { run as migrateReliabilityGroup } from './groups/222-migrate-reliability.mjs'; import { run as migrateAsyncGroup } from './groups/223-migrate-async.mjs'; import { run as usageQueryGroup } from './groups/226-usage-query.mjs'
 import { run as experienceLeftoversUiGroup } from './groups/201-experience-leftovers-ui.mjs'
 /* 2026-11-02：界面选择器唯一真相源 —— 前缀匹配会点中「新建对话并指定目录」开原生框 */
 import { run as uiSelectorsGroup } from './groups/198-ui-selectors.mjs'
@@ -294,6 +292,6 @@ export const GROUPS = [
   experienceLeftoversGroup, experienceLeftoversUiGroup, edgeSidepanelHistoryGroup,
   edgeInstallGroup, edgeIngestNoteGroup, mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
   memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
-  userGrantsGroup, contextIntegrityGroup, usageAccountingGroup, recallGroup, cardGrantGroup, growthRetentionGroup, dataLocationGroup, usageRealGroup, modelSelectionGroup, migrateReliabilityGroup, migrateAsyncGroup,
+  userGrantsGroup, contextIntegrityGroup, usageAccountingGroup, recallGroup, cardGrantGroup, growthRetentionGroup, dataLocationGroup, usageRealGroup, modelSelectionGroup, migrateReliabilityGroup, migrateAsyncGroup, usageQueryGroup,
   growthAuthorizationGroup,
 ]

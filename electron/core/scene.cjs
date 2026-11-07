@@ -121,6 +121,8 @@ async function call(sceneId, { messages, maxTokens = 512, temperature = 0.3, sig
 
   const result = await llm.chatStream({
     label: `场景 ${sceneId}`,
+    /* 调用类别（统计要按「主对话 / 场景 / 压缩 / 识图」分开算） */
+    purpose: 'scene',
     baseUrl: provider.baseUrl,
     apiKey: config.providerKey(provider),
     chatPath: provider.chatPath,
