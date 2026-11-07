@@ -25,6 +25,31 @@ const bridge: WorkbenchBridge | undefined =
 
 const EMPTY_STATS: AuditStats = { days: 0, total: 0, failed: 0, denied: 0, byTool: {} }
 
+/**
+ * 「数据与用量」页的计数 —— **只拿数字，不读内容**。
+ *
+ * 面板原来用 5 个返回完整数据的接口取 `.length`（会话 965ms + 任务 298ms
+ * + 审计 1938ms），主进程会冻死一两秒。判据与口径在 `core/data-port.cjs`。
+ *
+ * 拿不到就返回全 0（浏览器预览没有桥）—— 面板显示 0 项而不是崩掉。
+ */
+export async function dataPortCount(): Promise<{
+  sessions: number
+  tasks: number
+  memory: number
+  audit: number
+  skills: number
+}> {
+  const zero = { sessions: 0, tasks: 0, memory: 0, audit: 0, skills: 0 }
+  if (!bridge?.dataPortCount) return zero
+  try {
+    const result = await bridge.dataPortCount()
+    return { ...zero, ...(result?.counts ?? {}) }
+  } catch {
+    return zero
+  }
+}
+
 export async function auditList(options?: {
   day?: string
   limit?: number

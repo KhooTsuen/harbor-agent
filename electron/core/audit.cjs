@@ -153,7 +153,21 @@ function read({ day, limit = 200, sessionId = '', tool = '', onlyProblems = fals
   return out
 }
 
-/** 汇总：今天/最近 N 天的调用数、失败数、被拒数 */
+/**
+ * 汇总（**异步版，IPC 用这个**）。
+ *
+ * 同步版 `stats()` 下面那个：真机实测 `stats(90)` = 1938 ms（29 个文件 / 137.7 MB
+ * / 81737 条），跑在主进程里会**整个界面冻结**。实现与理由在 `audit-stats.cjs`。
+ *
+ * @param {number} [daysBack]
+ * @returns {Promise<{ days: number, total: number, failed: number, denied: number,
+ *                     byTool: Record<string, number> }>}
+ */
+function statsAsync(daysBack = 7) {
+  return require('./audit-stats.cjs').statsAsync(daysBack)
+}
+
+/** 汇总：今天/最近 N 天的调用数、失败数、被拒数（**同步版**，只留给脚本/测试） */
 function stats(daysBack = 7) {
   const list = days().slice(0, daysBack)
   let total = 0
@@ -239,4 +253,4 @@ function clear() {
   return { ok: true, removed }
 }
 
-module.exports = { record, read, days, stats, prune, clear, today, dir }
+module.exports = { record, read, days, stats, statsAsync, prune, clear, today, dir }

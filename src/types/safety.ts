@@ -83,6 +83,11 @@ export interface SafetyBridge extends TaskBridge, ProfileBridge {
     onlyProblems?: boolean
   }) => Promise<{ ok: boolean; entries: AuditEntry[]; days: string[] }>
   auditStats: (days?: number) => Promise<{ ok: boolean; stats: AuditStats }>
+  /** 「数据与用量」的计数：只要数字、不读内容（见 core/data-port.cjs） */
+  dataPortCount: () => Promise<{
+    ok: boolean
+    counts: { sessions: number; tasks: number; memory: number; audit: number; skills: number }
+  }>
   auditClear: () => Promise<{ ok: boolean; removed: number }>
   auditPrune: () => Promise<{ ok: boolean; removed: number }>
   riskClassify: (command: string) => Promise<{

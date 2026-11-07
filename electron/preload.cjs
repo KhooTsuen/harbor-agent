@@ -137,7 +137,7 @@ const api = {
   pickImageAsDataUrl: () => call('fs:pickImageAsDataUrl'),
   /* 「附加文件」：任何格式，主进程按扩展名分流解析（见 handlers/file-attach.cjs） */
   attachFiles: () => call('file:attach'),
-  /* 图片查看器三条：另存为 / 在文件夹里显示 / 复制到剪贴板（见 handlers/image-file.cjs） */
+  /* 图片查看器三条：另存为 / 文件夹里显示 / 复制（见 handlers/image-file.cjs） */
   imageSaveAs: (src) => call('image:saveAs', { src }),
   imageReveal: (src) => call('image:reveal', { src }),
   imageCopy: (src) => call('image:copy', { src }),
@@ -149,15 +149,15 @@ const api = {
   projectRulesReadFile: (payload) => call('projectRules:readFile', payload),
   projectRulesWriteFile: (payload) => call('projectRules:writeFile', payload),
 
-  shellCwd: () => call('shell:cwd'),
-  shellReset: () => call('shell:reset'),
+  shellCwd: () => call('shell:cwd'), shellReset: () => call('shell:reset'),
   shellRun: (payload) => call('shell:run', payload),
   shellAbort: (requestId) => call('shell:abort', requestId),
 
   auditList: (options) => call('audit:list', options),
   auditStats: (days) => call('audit:stats', days),
-  auditClear: () => call('audit:clear'),
-  auditPrune: () => call('audit:prune'),
+  /* 「数据与用量」的计数：只要数字、不读内容（见 core/data-port.cjs） */
+  dataPortCount: () => call('dataPort:count'),
+  auditClear: () => call('audit:clear'), auditPrune: () => call('audit:prune'),
   /* 错误清单（右栏「错误」标签）：只读，只看观察哨记的那一路 */
   errorsList: (options) => call('errors:list', options),
   riskClassify: (command) => call('risk:classify', command),

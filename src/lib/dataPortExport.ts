@@ -12,7 +12,7 @@ import { APP_VERSION, listSessions, loadConfig, loadSession, saveText } from './
 import { getMemory } from './extrasApi'
 import { memoryList } from './memoryApi'
 import { listSkills } from './skillsApi'
-import { auditStats, taskList } from './safetyApi'
+import { dataPortCount, taskList } from './safetyApi'
 
 /* ══════════════════════════════════════════════════════════════
    统一导出：一个 JSON 带走全部数据
@@ -194,22 +194,16 @@ export interface ExportPayload {
 const MAX_TASKS = 200
 const MAX_SESSIONS = 200
 
-/** 轻量统计（面板显示「删掉多少」用）—— 不读会话正文 */
+/**
+ * 轻量统计（面板显示「删掉多少」用）—— **只拿数字，不读内容**。
+ *
+ * 原来用 `Promise.all` 调 5 个**返回完整数据**的接口取 `.length`。Dev 实测：
+ * session.list 965ms + task.list 298ms + audit.stats 1938ms = 1985ms，主进程冻死
+ * 1877ms（`Promise.all` 对同步函数没有并发效果）。判据见 `core/data-port.cjs`。
+ */
 export async function countData(): Promise<DataPortCounts> {
-  const [sessions, tasks, memory, audit, skills] = await Promise.all([
-    listSessions(),
-    taskList({ limit: MAX_TASKS }),
-    memoryList({ includeSuperseded: true }),
-    auditStats(90),
-    listSkills(),
-  ])
-  return {
-    sessions: sessions.length,
-    tasks: tasks.length,
-    memory: memory.length,
-    audit: audit.total,
-    skills: skills.length,
-  }
+  const result = await dataPortCount()
+  return result
 }
 
 /** 逐条读完整会话（含消息）—— 这是唯一的重活，所以单独一层 */

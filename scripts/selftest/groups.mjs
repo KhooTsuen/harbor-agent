@@ -237,6 +237,7 @@ import { run as browseHistoryGroup } from './groups/138-browse-history.mjs'
 import { run as browseSettleGroup } from './groups/139-browse-settle.mjs'
 import { run as shellHeartbeatGroup } from './groups/140-shell-heartbeat.mjs'
 import { run as decisionEventNamesGroup } from './groups/141-decision-event-names.mjs'
+import { run as usagePageFreezeGroup } from './groups/228-usage-page-freeze.mjs'
 /* ★ 顺序即运行顺序，保持既有次序不动 */
 export const GROUPS = [
   basics, skillsMemory, fsSafety, reliability,
@@ -292,6 +293,6 @@ export const GROUPS = [
   experienceLeftoversGroup, experienceLeftoversUiGroup, edgeSidepanelHistoryGroup,
   edgeInstallGroup, edgeIngestNoteGroup, mcpRuntimeGateGroup, sensitiveGrantGroup, sensitiveGrantRecordGroup,
   memoryMetadataGroup, memoryDedupeScopeGroup, execParityGroup, llmAttributionGroup, edgeTargetGuardGroup,
-  userGrantsGroup, contextIntegrityGroup, usageAccountingGroup, recallGroup, cardGrantGroup, growthRetentionGroup, dataLocationGroup, usageRealGroup, modelSelectionGroup, migrateReliabilityGroup, migrateAsyncGroup, usageQueryGroup, backupListPerfGroup,
+  userGrantsGroup, contextIntegrityGroup, usageAccountingGroup, recallGroup, cardGrantGroup, growthRetentionGroup, dataLocationGroup, usageRealGroup, modelSelectionGroup, migrateReliabilityGroup, migrateAsyncGroup, usagePageFreezeGroup, usageQueryGroup, backupListPerfGroup,
   growthAuthorizationGroup,
 ]

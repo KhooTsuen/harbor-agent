@@ -92,9 +92,14 @@ function register({ ipcMain }) {
     days: audit.days(),
   }))
 
-  ipcMain.handle('audit:stats', (_event, daysBack) => ({
+  /*
+   * 统计（设置页「数据与用量」挂载时就会问一次）。
+   * ★ 必须 await 异步版：同步版在真机上 1938 ms（29 个文件 / 137.7 MB），
+   *   跑在主进程里等于整个界面冻结（见 `core/audit-stats.cjs` 的文件头）。
+   */
+  ipcMain.handle('audit:stats', async (_event, daysBack) => ({
     ok: true,
-    stats: audit.stats(Math.min(90, Number(daysBack) || 7)),
+    stats: await audit.statsAsync(Math.min(90, Number(daysBack) || 7)),
   }))
 
   ipcMain.handle('audit:clear', () => {
@@ -104,6 +109,18 @@ function register({ ipcMain }) {
   })
 
   ipcMain.handle('audit:prune', () => audit.prune())
+
+  /*
+   * 「数据与用量」页要的计数（2026-11-08）。面板原来用 5 个**返回完整数据**的接口
+   * 去取 `.length`，实测冷启动 1985 ms、主进程冻死 1877 ms（`Promise.all` 对同步
+   * 函数没有并发效果）。计数不需要读内容 —— 见 `core/data-port.cjs`。
+   * 审计是唯一要真读文件的（137.7 MB），走异步版 + 按天缓存，合在这里返回。
+   */
+  ipcMain.handle('dataPort:count', async () => {
+    const counts = require('../core/data-port.cjs').counts()
+    const stats = await audit.statsAsync(90)
+    return { ok: true, counts: { ...counts, audit: stats.total } }
+  })
 
   /** 试算一条命令的风险 —— 设置页里给用户看的示例用 */
   ipcMain.handle('risk:classify', (_event, command) => {
