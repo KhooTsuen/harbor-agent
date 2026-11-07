@@ -4,20 +4,31 @@
  * 检查与校验在 `data-migrate-plan.cjs`（那边只读，判据与理由都在它的文件头）；
  * 这里只管**按顺序执行**：标记 → 复制 → 校验 → 切指针。
  *
+ * ── 为什么**异步**复制（2026-11-07 修正，V1 的判断是错的）────────
+ *
+ * V1 用 `fs.cpSync` 同步复制，理由写的是「主进程被占住 → 没有别的写入能插进来
+ * → 这就是"运行状态协调"」。**这个理由不成立**，两个方向都错：
+ *
+ *   ① **它保护不了一致性**：`data/chromium` 是 **Chromium 自己的进程**在写，
+ *      主进程把自己阻塞住根本拦不住它；渲染层也照画，IPC 只是排队等着。
+ *      换句话说「我卡住了自己」≠「别人不会写」。
+ *   ② **代价是真的**：4.8GB 同步复制 = main 进程几十秒不响应 —— 界面像死了一样。
+ *
+ * 现在的一致性靠**证据**，不靠「我卡住了谁」：
+ *   a. 纯缓存目录不复制（可重建 + 正在被写，搬过去必然是半旧的）
+ *   b. 复制完对**每一个文件**算 SHA-256 与源比（`data-migrate-verify.cjs`）
+ *   c. 复制前后各拍一次源快照，差异如实报出来（诊断用，不当成功）
+ *   d. 校验不过 → **只重拷那几个文件**再验一次（最多 2 轮，日志追加这类抖动
+ *      靠它收敛）；还不过 → 不切指针，旧数据一个字节没动
+ *
  * ── 顺序不能改 ────────────────────────────────────────────────
  *
  *   ① 检查 —— 调 `plan.inspect()`，任一阻碍就整体拒绝（一个字节都不动）
  *   ② 标记 —— 目标里先写 `.harbor-migrate.json`（中断后靠它认出来）
- *   ③ 复制 —— `fs.cpSync` **同步**跑
- *   ④ 校验 —— 调 `plan.verify()`，**不看复制命令的退出码**
+ *   ③ 拍快照 → 复制（异步，每 64 个文件让出事件循环）
+ *   ④ 校验 —— **全量 SHA-256**，不看复制命令的退出码
  *   ⑤ 切指针 —— 一次原子 rename，这是唯一"生效"的动作
  *   ⑥ 旧目录**原样保留** —— 绝不自动删，也不清理
- *
- * ── 为什么同步复制 ────────────────────────────────────────────
- *
- * 迁移期间数据不能被改，否则拷出来是个不一致的快照。用同步 `fs` 会占住主进程，
- * 别的写入（日志追加、会话落盘、任务台账）全部排队 —— 这就是"运行状态协调"的
- * 落地方式，不需要另造一套锁。代价是几 GB 数据会卡几秒到几十秒，前端转圈。
  *
  * ── 中断了怎么办（三个位置都能恢复）──────────────────────────
  *
@@ -35,10 +46,17 @@
  */
 
 const fs = require('node:fs')
+const fsp = require('node:fs/promises')
 const path = require('node:path')
 const plan = require('./data-migrate-plan.cjs')
+/* 搬字节（异步 + 拍快照）与核对字节（全量 SHA-256）各住一个文件 */
+const copy = require('./data-migrate-copy.cjs')
+const verify = require('./data-migrate-verify.cjs')
 
 const { STATE_NAME, readState } = plan
+
+/** 校验不过时重拷坏文件的最多轮数（日志追加这类抖动靠它收敛；不是无限重试） */
+const REPAIR_ROUNDS = 2
 
 const fail = (phase, error, extra = {}) => ({ ok: false, phase, error, ...extra })
 
@@ -65,7 +83,30 @@ function markPhase(to, phase, error) {
  * @returns {{ ok: boolean, phase?: string, error?: string, from?: string, to?: string,
  *             files?: number, bytes?: number, ms?: number, pointer?: string, keptOldDir?: string }}
  */
-function migrate(input) {
+/** 这次校验失败里，哪几个文件值得重拷一遍（缺的 / 大小不符的 / hash 对不上的） */
+function repairList(result) {
+  if (!result || result.ok) return []
+  const out = []
+  if (Array.isArray(result.missing)) out.push(...result.missing)
+  if (Array.isArray(result.sized)) out.push(...result.sized)
+  if (Array.isArray(result.bad)) out.push(...result.bad.map((item) => item.rel))
+  return [...new Set(out)].slice(0, 500)
+}
+
+/**
+ * 执行迁移（**异步**：复制与校验都分批让出事件循环，界面不会卡死）。
+ *
+ * @param {{ root: string, from: string, to: string,
+ *           switchPointer?: (to: string) => object,
+ *           onProgress?: (done: number, total?: number) => void }} input
+ *   `root` = 程序根目录（决定指针文件写哪）；`switchPointer` / `onProgress` 只给
+ *   测试与界面用，生产不传 `switchPointer` → 用 `data-location.write`。
+ * @returns {Promise<{ ok: boolean, phase?: string, error?: string, from?: string, to?: string,
+ *             files?: number, bytes?: number, ms?: number, pointer?: string,
+ *             keptOldDir?: string, concurrentChanges?: Array<{rel: string, reason: string}>,
+ *             repaired?: number }>}
+ */
+async function migrate(input) {
   const started = Date.now()
   const checked = plan.inspect({ from: input?.from, to: input?.to })
   if (!checked.ok) {
@@ -74,11 +115,12 @@ function migrate(input) {
 
   const src = checked.from
   const dst = checked.to
+  const progress = typeof input?.onProgress === 'function' ? input.onProgress : null
 
   /* ② 先写状态：中断后靠它认出"这是个没迁完的目标" */
   try {
-    fs.mkdirSync(dst, { recursive: true })
-    fs.writeFileSync(
+    await fsp.mkdir(dst, { recursive: true })
+    await fsp.writeFile(
       path.join(dst, STATE_NAME),
       JSON.stringify({ from: src, to: dst, phase: 'copying', at: Date.now() }, null, 2),
       'utf8',
@@ -87,30 +129,65 @@ function migrate(input) {
     return fail('mark', `目标目录不可写：${error instanceof Error ? error.message : error}`)
   }
 
-  /* ③ 复制（同步：期间主进程被占住，没有别的写入能插进来） */
+  /* ③ 清半成品（只清我自己上次拷的）→ 拍快照 → 异步复制 */
+  let before = []
   try {
     if (checked.resume) {
-      /* 上次的半成品：只清目标里除状态文件之外的东西 —— 那是我自己刚拷的 */
-      for (const name of fs.readdirSync(dst)) {
-        if (name !== STATE_NAME) fs.rmSync(path.join(dst, name), { recursive: true, force: true })
+      for (const name of await fsp.readdir(dst)) {
+        if (name !== STATE_NAME) await fsp.rm(path.join(dst, name), { recursive: true, force: true })
       }
     }
-    fs.cpSync(src, dst, { recursive: true, force: true, dereference: false })
+    before = await copy.snapshot(src)
+    await copy.copyTree({ from: src, to: dst, onProgress: progress })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     markPhase(dst, 'copy_failed', message)
     return fail('copy', `复制失败：${message}（旧数据一个字节没动）`, { from: src, to: dst })
   }
 
-  /* ④ 校验 —— 不看复制命令的退出码，自己数 */
+  /* 复制期间源动过没有（诊断信息；真正的一致性判据是下面的全量 SHA-256） */
+  let after = []
+  try {
+    after = await copy.snapshot(src)
+  } catch {
+    /* 拍不到就当没变化 —— 内容对不对由 verifyAll 说了算 */
+  }
+  const moved = copy.diffSnapshots(before, after)
+
+  /* ④ 全量校验 —— 不看复制命令的退出码，逐文件比 SHA-256 */
   markPhase(dst, 'verifying', '')
-  const verified = plan.verify(src, dst)
+  let verified = await verify.verifyAll({ from: src, to: dst, source: before })
+
+  /*
+   * 校验不过 → **只重拷那几份坏文件**再验一次（最多 REPAIR_ROUNDS 轮）。
+   * 为什么需要它：迁移期间日志还在追加，刚拷完那一瞬两边就可能不等。
+   * 无限重试不行（会永远追不上正在写的东西），一刀切失败也不行（正常迁移会被
+   * 一点抖动打死）。两轮之后还不过，就是真的有问题，如实报红。
+   */
+  let repaired = 0
+  for (let round = 0; round < REPAIR_ROUNDS && !verified.ok; round += 1) {
+    const names = repairList(verified)
+    if (names.length === 0) break
+    repaired += names.length
+    for (const rel of names) {
+      try {
+        await fsp.mkdir(path.dirname(path.join(dst, rel)), { recursive: true })
+        await fsp.copyFile(path.join(src, rel), path.join(dst, rel))
+      } catch {
+        /* 拷不动就让下一轮校验如实报红 */
+      }
+    }
+    verified = await verify.verifyAll({ from: src, to: dst, source: before })
+  }
+
   if (!verified.ok) {
     markPhase(dst, 'verify_failed', verified.error)
     return fail('verify', `${verified.error}（旧数据一个字节没动，指针没切）`, {
       from: src,
       to: dst,
       detail: verified,
+      /* 在这期间动过的文件 —— 用户拿它判断是不是自己还开着什么在写 */
+      concurrentChanges: moved.slice(0, 20),
     })
   }
 
@@ -139,7 +216,11 @@ function migrate(input) {
     pointer: switched.file ?? '',
     /** 旧目录**没删**，也没清 —— 用户确认无误后自己处理 */
     keptOldDir: src,
+    /** 迁移期间源里被改过、但最终校验一致的文件（空 = 全程没动过） */
+    concurrentChanges: moved.slice(0, 20),
+    /** 校验不过时重拷过几个文件（0 = 一次就过） */
+    repaired,
   }
 }
 
-module.exports = { STATE_NAME, migrate, inspect: plan.inspect, verify: plan.verify }
+module.exports = { STATE_NAME, migrate, inspect: plan.inspect, verify: verify.verifyAll }

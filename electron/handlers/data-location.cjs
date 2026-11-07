@@ -8,10 +8,15 @@
  *
  * ── 为什么迁移前要挡「有任务在跑」──────────────────────────
  *
- * 迁移会同步复制整个数据目录（几 GB，主进程被占住几秒到几十秒）。那时正在跑的
- * 任务如果恰好有未落盘的状态，复制出来的就是**半截现场**；而任务本身在复制完
- * 之后还会继续写 —— 它写的是哪个目录取决于那一刻的指针，两边都可能，说不清。
- * 所以只要还有 running 的任务就整体拒绝，让用户先停下来再迁。
+ * 迁移会把整个数据目录复制一遍。正在跑的任务在复制**之后**还会继续写，
+ * 它写的是哪个目录取决于那一刻的指针，两边都可能，说不清。所以只要还有
+ * running 的任务就整体拒绝，让用户先停下来再迁。
+ *
+ * ── 迁移已经是异步的了（2026-11-07）────────────────────────
+ *
+ * 内核改成逐文件异步复制 + 全量 SHA-256 校验，界面不会卡死。但**这不等于
+ * 可以并发迁移**：同一次只能有一个迁移在跑，否则两个 cp 会往同一个目标里写。
+ * `migrating` 就是这个闸（进程内标记，不落盘 —— 迁移完就清）。
  */
 
 const path = require('node:path')
@@ -19,6 +24,9 @@ const { DIRS, rootDir, realDataDir, fallbackReason } = require('../core/paths.cj
 const dataLocation = require('../core/data-location.cjs')
 const dataMigrate = require('../core/data-migrate.cjs')
 const log = require('../core/log.cjs')
+
+/** 同一次只能有一个迁移在跑（否则两个复制会往同一个目标里写） */
+let migrating = false
 
 /** 现在有没有东西正在往数据目录里写 */
 function busyReasons() {
@@ -63,18 +71,36 @@ function register({ ipcMain }) {
    * 内核那边先检查（不通过一个字都不动）→ 复制 → 校验 → **最后**才切指针，
    * 旧目录原样保留。失败时如实报是哪一步红的，绝不返回 ok:true。
    */
-  ipcMain.handle('dataLocation:migrate', (_event, payload = {}) => {
+  ipcMain.handle('dataLocation:migrate', async (_event, payload = {}) => {
     const to = String(payload?.to ?? '').trim()
     const from = DIRS.data
+    if (migrating) {
+      return { ok: false, phase: 'busy', error: '上一次迁移还在跑，等它结束', blockers: [] }
+    }
     const busy = busyReasons()
     if (busy.length > 0) return { ok: false, phase: 'busy', error: busy[0], blockers: [] }
 
     log.info(`开始迁移数据目录：${from} → ${to || '（未指定）'}`)
-    const result = dataMigrate.migrate({ root: rootDir(), from, to })
+    migrating = true
+    /* 先声明成 null 再赋值：用带 blockers 的字面量初始化会把类型锁死（TS2741） */
+    let result = null
+    try {
+      /* ★ 必须 await：内核已经是异步的（逐文件复制 + 全量 SHA-256 校验） */
+      result = await dataMigrate.migrate({ root: rootDir(), from, to })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn(`数据目录迁移抛异常：${message}`)
+      result = { ok: false, phase: 'error', error: message, blockers: [] }
+    } finally {
+      migrating = false
+    }
+    if (!result) result = { ok: false, phase: 'error', error: '迁移没有返回结果', blockers: [] }
+
     if (result.ok) {
       log.info(
         `数据目录已迁移到 ${result.to}（${result.files} 个文件 / ` +
-          `${Math.round(result.bytes / 1024 / 1024)}MB / ${result.ms}ms）；旧目录保留在 ${result.keptOldDir}`,
+          `${Math.round(result.bytes / 1024 / 1024)}MB / ${result.ms}ms` +
+          `${result.repaired ? ` / 重拷 ${result.repaired} 个` : ''}）；旧目录保留在 ${result.keptOldDir}`,
       )
     } else {
       log.warn(`数据目录迁移失败（${result.phase}）：${result.error}`)

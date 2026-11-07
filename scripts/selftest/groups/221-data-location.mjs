@@ -21,6 +21,8 @@ export async function run() {
   const location = require(join(ROOT, 'electron/core/data-location.cjs'))
   const plan = require(join(ROOT, 'electron/core/data-migrate-plan.cjs'))
   const migrateCore = require(join(ROOT, 'electron/core/data-migrate.cjs'))
+const verifyCore = require(join(ROOT, 'electron/core/data-migrate-verify.cjs'))
+const copyCore = require(join(ROOT, 'electron/core/data-migrate-copy.cjs'))
   const paths = require(join(ROOT, 'electron/core/paths.cjs'))
 
   const dir = join(SANDBOX, 'data-location')
@@ -111,7 +113,7 @@ export async function run() {
     check('★ 检查报出了文件数与体积', checked.files === 5 && checked.bytes > 3000, `${checked.files} 个 / ${checked.bytes} 字节`)
 
     let pointedAt = ''
-    const result = migrateCore.migrate({
+    const result = await migrateCore.migrate({
       root: probeRoot,
       from: src,
       to: dst,
@@ -161,27 +163,28 @@ export async function run() {
     require('node:fs').cpSync(halfSrc, halfDst, { recursive: true })
     /* 模拟"拷了一半"：把一个文件截短 */
     writeFileSync(join(halfDst, 'sessions', 'sess_b.jsonl'), 'x'.repeat(10), 'utf8')
-    const halfCheck = plan.verify(halfSrc, halfDst)
+    const halfCheck = await verifyCore.verifyAll({ from: halfSrc, to: halfDst })
     check('★★ 文件被截短 → 校验报红', halfCheck.ok === false, halfCheck.error)
     check('★ 报出了是哪个文件不对', (halfCheck.sized ?? []).length === 1, JSON.stringify(halfCheck.sized))
 
     rmSync(join(halfDst, 'config.json'), { force: true })
-    const fewer = plan.verify(halfSrc, halfDst)
+    const fewer = await verifyCore.verifyAll({ from: halfSrc, to: halfDst })
     check('★★ 少了一个文件 → 校验报红', fewer.ok === false, fewer.error)
 
     /* 完整复制必须过 —— 否则上面那些红就不算"测到了" */
     const okDst = join(dir, 'ok-dst')
     mkdirSync(okDst, { recursive: true })
     require('node:fs').cpSync(halfSrc, okDst, { recursive: true })
-    const good = plan.verify(halfSrc, okDst)
+    const good = await verifyCore.verifyAll({ from: halfSrc, to: okDst })
     check('★★ 完整复制校验通过（判据不是永远报红）', good.ok === true, String(good.error ?? ''))
+    check('★ 校验真的逐文件算过 hash（不是只看大小）', good.checked === good.files && good.files > 0, `${good.checked}/${good.files}`)
 
     /* ══ ⑥ 迁移失败时旧数据一个字节没动 ═══════════════════════ */
     group('数据目录 / ⑥ 校验失败 → 指针不切、旧数据不动')
     const failSrc = makeData(join(dir, 'fail-src'))
     const failDst = join(dir, 'fail-dst')
     let switched = false
-    const failed = migrateCore.migrate({
+    const failed = await migrateCore.migrate({
       root: probeRoot,
       from: failSrc,
       to: failDst,
@@ -227,7 +230,7 @@ export async function run() {
       JSON.stringify({ from: retrySrc, to: retryDst, phase: 'copying' }),
       'utf8',
     )
-    const retried = migrateCore.migrate({
+    const retried = await migrateCore.migrate({
       root: probeRoot,
       from: retrySrc,
       to: retryDst,
