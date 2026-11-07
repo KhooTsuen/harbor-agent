@@ -51,6 +51,13 @@ const DAY_MS = 86_400_000
 const pad = (n) => String(n).padStart(2, '0')
 const dayOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
+/*
+ * 用户数据侧的保留期（audit / changesets）—— 2026-11-07 补。
+ * 那两样和上面这些不是一个性质：删了不可重建，所以判据也不同
+ * （保留 N 个 + 进行中的不动）。实现全在 `growth-retention.cjs`。
+ */
+const growthRetention = require('./growth-retention.cjs')
+
 /** 主日志：一天一个 `2026-10-04.log` */
 const MAIN_LOG_RE = /^(\d{4}-\d{2}-\d{2})\.log$/
 /** 动作流水：一天一个 `actions-2026-10-04.jsonl`（单文件 6MB 轮转在 log-actions 里） */
@@ -241,6 +248,12 @@ function pruneAll({ now = Date.now(), dirs = {} } = {}) {
         }),
     ],
     ['promptDiag', () => diagRetention.pruneOrphanDiags({ dirs })],
+    /*
+     * 用户数据侧的保留期（audit / changesets）—— 2026-11-07 补。
+     * 那两样和上面这些不是一个性质：删了不可重建，所以判据也不同
+     * （保留 N 个 + 进行中的不动）。单独一个文件，见 `growth-retention.cjs`。
+     */
+    ...growthRetention.steps(),
     /*
      * token 指标（问题 4）：写的时候也会轮转（`recordRequest` 里那道），
      * 这里补一次「启动时也看一眼」—— 上次跑完正好压线、之后又没发过请求的话，

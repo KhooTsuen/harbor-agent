@@ -124,12 +124,32 @@ function create(reason = 'manual') {
 /**
  * 启动时调：距上次备份超过一天就自动备一份。
  * 用备份目录里最新一份的时间来判断，不额外存状态 —— 少一个可能不同步的地方。
+ *
+ * ★ 2026-11-07 补：只认**带 meta.json 的**备份来判「上次是什么时候备的」。
+ *
+ * 病（真机现场）：`data/backups/20261107-021212` 是一份**手工拷进去**的目录
+ * （没有 meta.json，是 11-06 18:12 拷的），`list()` 照样把它当备份、`createdAt`
+ * 取的是目录 mtime。于是 `maybeAuto` 认为「今天已经备过了」——
+ * 而真机日志里连着 6 次都是「自动备份：今天已经备过了」，
+ * **自动备份整整停了一天**，那份没 meta 的目录替它顶了名。
+ *
+ * 判据：`items.length > 0`（meta 里记的「实际拷了哪几项」）。
+ * 老备份可能没有 meta → 退回「目录里有内容」就算数，不能用 mtime 一把揽。
  */
+function lastRealBackupAt() {
+  for (const one of list()) {
+    /* `list()` 已经把 meta 读过了：`items` 非空 = 有 meta 且记了清单 */
+    if (Array.isArray(one.items) && one.items.length > 0) return one.createdAt
+    /* 老备份没有 meta：至少有用户数据也算数（不然会重复备份，但不是「不备」） */
+    if (!one.empty) return one.createdAt
+  }
+  return 0
+}
+
 function maybeAuto() {
-  const all = list()
-  const newest = all[0]
-  if (newest && Date.now() - newest.createdAt < AUTO_INTERVAL_MS) {
-    return { skipped: true, lastAt: newest.createdAt }
+  const lastAt = lastRealBackupAt()
+  if (lastAt && Date.now() - lastAt < AUTO_INTERVAL_MS) {
+    return { skipped: true, lastAt }
   }
   return create('auto')
 }
@@ -261,7 +281,6 @@ function remove(name) {
   }
 }
 
-/** 打开备份目录（用系统文件管理器） */
 function root() {
   return backupRoot()
 }

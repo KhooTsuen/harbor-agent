@@ -112,11 +112,11 @@ function isBackupName(name) {
   return NAME_RE.test(String(name ?? ''))
 }
 
-/** 列出所有备份，新的在前 */
-function list() {
+/** 列出所有备份，新的在前。`root` 只给测试注入（生产不传 = 用真实备份目录） */
+function list(root = backupRoot()) {
   let entries = []
   try {
-    entries = fs.readdirSync(backupRoot(), { withFileTypes: true })
+    entries = fs.readdirSync(root, { withFileTypes: true })
   } catch {
     return []
   }
@@ -126,7 +126,7 @@ function list() {
       /* 同一秒内连点会顺延成 20260914-080206-1，后缀要认得 */
       .filter((e) => e.isDirectory() && isBackupName(e.name))
       .map((e) => {
-        const full = path.join(backupRoot(), e.name)
+        const full = path.join(root, e.name)
         let meta = {}
         try {
           meta = JSON.parse(fs.readFileSync(path.join(full, 'meta.json'), 'utf8'))
