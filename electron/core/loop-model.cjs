@@ -1,6 +1,7 @@
 /**
  * Agent 循环：调模型（从 loop.cjs 拆出来的，那边过 300 行了）
  * 这里只管「把请求发出去、失败了怎么办」，不碰循环本身。
+ * 真实用量的记账也在这里 —— 只有这个循环知道「真发了几次、每次发给谁」。
  */
 
 const llm = require('./llm.cjs')
@@ -17,21 +18,12 @@ const observer = require('./error-observer.cjs')
 const perfMarks = require('./perf-marks.cjs')
 const loopGuard = require('./loop-guard.cjs')
 
-/**
- * 这些错误**不换供应商**：换一家也不会变好，只会把真问题盖住。
- *
- *   · auth        —— 你的 key 无效。换家用的是别家的额度，用户永远发现不了自己 key 坏了
- *   · bad_request —— 请求本身不被接受（模型名错 / 参数超范围），换家重发必然再错
- *   · context_overflow —— 上下文超长属于「这段内容太长」，换家一样超（这边会先压一次）
- *
- * ★ 判据的**种类名**来自 `errors.cjs` 的分类（唯一真相源），这里只声明「哪几种不换家」。
- */
+/** 换一家也不会变好的错误 → 不换家（种类名来自 errors.cjs，唯一真相源）：
+    auth（key 无效，换家用的是别家额度）· bad_request（请求本身不被接受）·
+    context_overflow（这段内容太长，换家一样超 —— 这边会先压一次） */
 const NO_SWITCH_KINDS = new Set(['auth', 'bad_request', 'context_overflow'])
 
-/**
- * 这个供应商提供这个模型吗。`models` 为空 = 没声明支持哪些 → 当作「都能」
- * （别因为没声明就不给用）。
- */
+/** 这个供应商提供这个模型吗。`models` 为空 = 没声明支持哪些 → 当作「都能」 */
 function servesModel(provider, model) {
   const list = Array.isArray(provider?.models) ? provider.models : []
   if (list.length === 0) return true
@@ -39,9 +31,27 @@ function servesModel(provider, model) {
 }
 
 /**
- * 调模型，带**重试**与**降级**。两层：①同供应商重试 N 次（指数退避）；
- * ②换供应商继续，但要明确告诉用户。三种情况不重试：用户中断、认证失败、
- * 上下文超限（该压缩，不是该重发）。
+ * 记一次**真实尝试**（成功 / 失败 / 中止都记）。
+ *
+ * ★ 记在这里而不是 `llm.cjs`：这个循环是**唯一知道「真发了几次、每次发给谁」的地方**。
+ *   记在底层只有两件事会发生：重试的中间几次凭空消失；CLI 整条路径一条都不记
+ *   （它根本不经过 llm.cjs）。记账失败绝不许影响调用本身，所以整块包 try。
+ */
+function logAttempt(target, options, model, extra) {
+  try {
+    require('./token-metrics.cjs').logAttempt({
+      entry: kinds.isCodexCli(target) ? 'cli' : 'api', providerId: target?.id ?? '', model,
+      sessionId: options.sessionId ?? '', trace: options.traceId ?? '', taskId: options.taskId ?? '',
+      ...extra,
+    })
+  } catch {
+    /* 指标写不进不影响这次调用 */
+  }
+}
+
+/**
+ * 调模型，带**重试**与**降级**。两层：①同供应商重试 N 次（指数退避）；②换供应商继续，
+ * 但要明确告诉用户。三种情况不重试：用户中断、认证失败、上下文超限（该压缩，不是改重发）。
  */
 async function callModel(options) {
   /* AG-037：整次调用计时（含重试与降级 —— 用户等的是这个总数） */
@@ -69,7 +79,7 @@ async function callModelInner(options, emit) {
    *   以前两者共用一个开关：关掉降级 → 连同一家的重试都没了（实测 500 只发一次）。
    */
   const retries = Math.max(0, Number(fb.attempts) || 0)
-
+  /* 候选 = 你选的那家；只有用户开了降级、且另有一家真提供这个模型，才多一个 */
   const candidates = [provider]
   /*
    * ★ codex-cli 没有凭据 → 天然不在降级候选里：这是**有意的**。
@@ -144,11 +154,29 @@ async function callModelInner(options, emit) {
           ms: result.latencyMs,
         })
         result.retryCount = attempt
+        /* ★ 真实用量入账：只认**上游自己报的** usage（没有就是 null → 标未知，不估算） */
+        logAttempt(target, options, model, {
+          outcome: 'ok',
+          retryIndex: attempt,
+          usage: result.usage ?? null,
+          ttftMs: result.ttftMs ?? null,
+          latencyMs: result.latencyMs ?? null,
+        })
         return result
       } catch (error) {
         const info = errors.classify(error)
         lastError = error
         log.warn(`模型调用失败（${target.id} · ${info.kind}）：${info.message}`)
+        /*
+         * ★ 失败 / 中止也记一行（内容为「没拿到用量」）：发出去过却在账上不存在的请求，
+         *   会让「消耗」比真实少。上游错误体里带 usage 就用，没带就是 null —— 不估算。
+         */
+        logAttempt(target, options, model, {
+          outcome: info.kind === 'aborted' ? 'aborted' : 'failed',
+          retryIndex: attempt,
+          usage: error?.usage ?? null,
+          reason: info.message,
+        })
         /* aborted 是用户点的停，不算故障 → 不记（理由见 error-observer.cjs 顶部） */
         if (info.kind !== 'aborted') {
           const { kind, needsUser, retryable, hint } = info

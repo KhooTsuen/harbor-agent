@@ -13,7 +13,6 @@ const { onAbort } = require('./abort.cjs')
 const { createIdleGuard } = require('./llm-idle.cjs')
 const { buildUrl, buildChatBody } = require('./llm-body.cjs')
 const plugins = require('./plugins.cjs')
-const metrics = require('./token-metrics.cjs')
 
 /**
  * 把 baseUrl 和 chatPath 拼成完整地址。
@@ -263,22 +262,12 @@ async function chatStream(options) {
   if (toolCalls.length > 0) onToolCalls?.(toolCalls)
   if (usage) onUsage?.(usage)
 
-  try {
-    metrics.logLlm({
-      label,
-      model,
-      providerId: provider?.id ?? '',
-      trace: options.traceId ?? '',
-      /* ★ P2：任务归属（`task_*`）。trace 是运行实例（`req_*`），两个都记、谁也不替代谁 */
-      taskId: options.taskId ?? '',
-      retryIndex: Number(options.retryIndex) || 0,
-      usage,
-      ttftMs,
-      latencyMs: Date.now() - startedAt,
-    })
-  } catch {
-    /* 指标失败不阻塞 */
-  }
+  /*
+   * ★ 这里**不再记指标**（2026-11-07 第 6 项）：记账点移到了 `loop-model.cjs` 的
+   *   重试循环里 —— 那里才知道「这是第几次尝试、最终用的是哪家」。记在这里的话，
+   *   ① 重试的中间几次永远不落账；② codex-cli 走的是另一个引擎，一条都不记。
+   *   这个文件只负责「把这一次请求发完并如实返回 usage」。
+   */
 
   return { content, reasoning, toolCalls, usage, finishReason, ttftMs, latencyMs: Date.now() - startedAt }
 }

@@ -43,6 +43,71 @@ function hitRate(hit, miss) {
   return total > 0 ? Number((hit / total).toFixed(4)) : null
 }
 
+/**
+ * 一次模型调用尝试 → 一行账。
+ *
+ * ★ 为什么叫「尝试」而不是「请求」（2026-11-07 第 6 项）：
+ *   一次用户可见的调用可能真发 3 次（重试）。**每一次真发出去的都单独记账** ——
+ *   不然后两次的消耗在账上凭空消失，而前两次的失败又查不到。
+ *
+ * ★ 三类数值必须分得开（这是这一层存在的理由）：
+ *   · `known: true`  + 数字 → 服务商/CLI 确实上报了，数字就是数字
+ *   · `known: true`  + 0     → 确实上报了「0」（少见，但不能当成没报）
+ *   · `known: false` + null  → **没拿到**（失败 / 中止 / 这家不给 usage）
+ *   以前统一 `Number(x) || 0`，第三种被写成 0 混进累计 —— 用户看到的「消耗」里
+ *   掺着猜的值，而这正是本项要根除的东西。
+ *
+ * @param {{ entry?: 'api'|'cli', providerId?: string, model?: string,
+ *           sessionId?: string, trace?: string, taskId?: string, retryIndex?: number,
+ *           outcome?: 'ok'|'failed'|'aborted', usage?: object|null,
+ *           reason?: string, ttftMs?: number|null, latencyMs?: number|null,
+ *           label?: string }} input
+ *   `usage` 传 null/undefined = 这次没拿到真实用量（**照记这一行**，标已知为假）。
+ */
+function logAttempt(input = {}) {
+  const usage = input.usage && typeof input.usage === 'object' ? input.usage : null
+  const cache = cacheFields(usage)
+  /* 有对象但一个 token 字段都没有 → 同样算「没拿到」，不当成 0 */
+  const anyToken = usage
+    ? ['prompt_tokens', 'completion_tokens', 'total_tokens'].some((k) => Number.isFinite(Number(usage[k])))
+    : false
+  const known = Boolean(usage) && anyToken
+  const num = (value) => (known && Number.isFinite(Number(value)) ? Number(value) : null)
+
+  return recordRequest({
+    kind: 'llm',
+    entry: input.entry === 'cli' ? 'cli' : 'api',
+    /* `ok` 保留：老报告脚本按它筛（`summarize` 里 out.errors 数它） */
+    ok: input.outcome === 'ok' || input.outcome === undefined,
+    outcome: input.outcome ?? 'ok',
+    /* ★ 这一行到底有没有真实用量 —— 统计侧只累 known 的行 */
+    known,
+    missing: known ? '' : String(input.reason ?? (usage ? 'usage 里没有 token 数' : '没有 usage')).slice(0, 80),
+    label: String(input.label ?? '').slice(0, 40),
+    model: String(input.model ?? ''),
+    providerId: String(input.providerId ?? ''),
+    sessionId: String(input.sessionId ?? '').slice(0, 40),
+    trace: String(input.trace ?? ''),
+    taskId: String(input.taskId ?? '').slice(0, 40),
+    retryIndex: Number(input.retryIndex) || 0,
+    prompt: num(usage?.prompt_tokens),
+    completion: num(usage?.completion_tokens),
+    total: num(usage?.total_tokens),
+    /* 思考 token 没给就 null，不填 0 —— 与上面同一条纪律 */
+    reasoning: known ? (budget.reasoningOf(usage) ?? null) : null,
+    cacheHit: cache.hit,
+    cacheMiss: cache.miss,
+    cacheSource: cache.source,
+    hitRate: hitRate(cache.hit, cache.miss),
+    /* 费用：**只有服务商真给了金额才记**。本地定价表算出来的一律不写在这里
+       （那块留在 pricing 侧做「预估」，两者永远不混）。目前没有一家返回金额。 */
+    cost: Number.isFinite(Number(usage?.cost)) ? Number(usage.cost) : null,
+    costSource: Number.isFinite(Number(usage?.cost)) ? 'provider' : 'unavailable',
+    ttftMs: Number.isFinite(input.ttftMs) ? input.ttftMs : null,
+    latencyMs: Number.isFinite(input.latencyMs) ? input.latencyMs : null,
+  })
+}
+
 function recordRequest(row) {
   try {
     fs.mkdirSync(DIRS.logs, { recursive: true })
@@ -58,55 +123,39 @@ function recordRequest(row) {
 }
 
 /**
- * 一次成功的模型调用 → 一行指标（llm.cjs 直接调它，保持那边行数可控）。
+ * 一次**成功的**模型调用 → 一行账（老调用方的入口，判据与 logAttempt 同一处）。
  *
  * `trace` 与 `taskId` 是**两个东西，都记、谁也不替代谁**（P2，2026-11-05）：
  *   · `trace`  = 这一轮**运行实例**的 key（生产里是 `req_*`，`chat.cjs` 的 phaseKey）
  *   · `taskId` = **任务台账** id（`task_*`，`loop-run` 建/复用的那条）
- * 以前只记 trace，而台账里没有任何 `req_*` 字段、`task` 事件又不落盘 ——
- * 于是「哪一次调用属于哪个任务」在持久层里**永久查不回来**（实测：4182 行指标 × 100 条台账，
- * 一条都对不上）。调用方没给 taskId 就记空串，**不猜**：起标题 / 起建议 / 预热 / 压缩
- * 这些辅助调用本来就不属于任何任务。
+ * 调用方没给 taskId 就记空串，**不猜**：起标题 / 起建议 / 预热 / 压缩这些辅助调用
+ * 本来就不属于任何任务。
  *
  * @param {{ label?: string, model?: string, providerId?: string, trace?: string,
- *           taskId?: string, retryIndex?: number, usage?: object,
+ *           sessionId?: string, taskId?: string, retryIndex?: number, usage?: object|null,
+ *           entry?: 'api'|'cli', outcome?: 'ok'|'failed'|'aborted',
  *           ttftMs?: number|null, latencyMs?: number|null }} input
  */
 function logLlm(input = {}) {
-  const usage = input.usage ?? null
-  const cache = cacheFields(usage)
-  return recordRequest({
-    kind: 'llm',
-    ok: true,
-    label: String(input.label ?? '').slice(0, 40),
-    model: String(input.model ?? ''),
-    providerId: String(input.providerId ?? ''),
-    trace: String(input.trace ?? ''),
-    taskId: String(input.taskId ?? '').slice(0, 40),
-    retryIndex: Number(input.retryIndex) || 0,
-    prompt: Number(usage?.prompt_tokens) || 0,
-    completion: Number(usage?.completion_tokens) || 0,
-    total: Number(usage?.total_tokens) || 0,
-    /*
-     * 思考 token（CE-019）。**没给就记 null，不填 0** —— 和缓存字段同一个纪律：
-     * 0 = 这家给了确实是 0，null = 这家不给这个字段。混起来事后分不清。
-     */
-    reasoning: budget.reasoningOf(usage),
-    cacheHit: cache.hit,
-    cacheMiss: cache.miss,
-    cacheSource: cache.source,
-    hitRate: hitRate(cache.hit, cache.miss),
-    ttftMs: Number.isFinite(input.ttftMs) ? input.ttftMs : null,
-    latencyMs: Number.isFinite(input.latencyMs) ? input.latencyMs : null,
-  })
+  /* 兼容老调用方（prewarm 等辅助调用）：一律走 logAttempt，判据只有一处 */
+  return logAttempt({ ...input, entry: input.entry ?? 'api', outcome: input.outcome ?? 'ok' })
 }
 
 /**
- * 汇总（给报告用）。
+ * 汇总（给报告 / 后续界面用）。
  *
- * @param {{ sinceMs?: number, kind?: string }} options
+ * ★ 三类请求数必须分开报（2026-11-07 第 6 项）：
+ *   `known`   —— 真的拿到了用量，数字可信
+ *   `unknown` —— 没拿到（失败 / 中止 / 这家中转不给 usage），**不许按 0 计入**
+ *   `legacy`  —— 老记录（这个字段还没有的时候写的），单独标出来，
+ *                免得新旧混着算完被标成「实际消耗」
+ *
+ * @param {{ sinceMs?: number, kind?: string, entry?: ''|'api'|'cli' }} options `entry` 传空 = 不筛入口
  */
-function summarize({ sinceMs = 0, kind = '' } = {}) {
+function summarize(options = {}) {
+  const sinceMs = Number(options.sinceMs) || 0
+  const kind = String(options.kind ?? '')
+  const entry = String(options.entry ?? '')
   let rows = []
   try {
     rows = fs
@@ -126,9 +175,14 @@ function summarize({ sinceMs = 0, kind = '' } = {}) {
   }
   if (sinceMs) rows = rows.filter((r) => r.at >= sinceMs)
   if (kind) rows = rows.filter((r) => r.kind === kind)
+  if (entry) rows = rows.filter((r) => (r.entry ?? 'api') === entry)
 
   const out = {
     requests: rows.length,
+    /* 到底几行有真实用量 / 几行没有 —— 界面要能说「N 次里 M 次有数据」 */
+    known: 0,
+    unknown: 0,
+    legacy: 0,
     prompt: 0,
     completion: 0,
     total: 0,
@@ -141,23 +195,60 @@ function summarize({ sinceMs = 0, kind = '' } = {}) {
     rateable: 0,
     retries: 0,
     errors: 0,
+    aborted: 0,
+    /* 服务商真给了金额的才累计；`costUnavailable` = 有这么多行没给 */
+    cost: 0,
+    costUnavailable: 0,
+    byProvider: {},
+    byEntry: {},
   }
+  const bump = (map, key, value) => {
+    map[key] = map[key] ?? { requests: 0, known: 0, unknown: 0, prompt: 0, completion: 0, total: 0 }
+    map[key].requests += 1
+    if (value.known) map[key].known += 1
+    else map[key].unknown += 1
+    map[key].prompt += value.prompt
+    map[key].completion += value.completion
+    map[key].total += value.total
+  }
+
   for (const r of rows) {
-    out.prompt += Number(r.prompt) || 0
-    out.completion += Number(r.completion) || 0
-    out.total += Number(r.total) || 0
+    /*
+     * `known` 字段是本轮新加的。老记录没有它 —— 那些都是成功走完的调用，
+     * 按「有 token 数字就算拿到了」判，并计入 legacy（不假装它是新口径采到的）。
+     */
+    const hasFlag = typeof r.known === 'boolean'
+    const known = hasFlag ? r.known : Number(r.prompt) > 0 || Number(r.completion) > 0 || Number(r.total) > 0
+    if (!hasFlag) out.legacy += 1
+    if (known) out.known += 1
+    else out.unknown += 1
+
+    const p = known ? Number(r.prompt) || 0 : 0
+    const c = known ? Number(r.completion) || 0 : 0
+    const t = known ? Number(r.total) || 0 : 0
+    out.prompt += p
+    out.completion += c
+    out.total += t
     if (Number.isFinite(r.reasoning)) out.reasoning += r.reasoning
     else out.reasoningUnavailable += 1
     if (Number.isFinite(r.cacheHit)) out.cacheHit += r.cacheHit
     else out.cacheUnavailable += 1
     if (Number.isFinite(r.cacheMiss)) out.cacheMiss += r.cacheMiss
     if (Number.isFinite(r.cacheHit) && Number.isFinite(r.cacheMiss)) out.rateable += 1
+    if (Number.isFinite(r.cost)) out.cost += r.cost
+    else out.costUnavailable += 1
     out.retries += Number(r.retryIndex) || 0
-    if (r.ok === false) out.errors += 1
+    if (r.outcome === 'aborted') out.aborted += 1
+    else if (r.ok === false) out.errors += 1
+
+    bump(out.byProvider, String(r.providerId || '（未标注）'), { known, prompt: p, completion: c, total: t })
+    bump(out.byEntry, String(r.entry ?? 'api'), { known, prompt: p, completion: c, total: t })
   }
   out.hitRate =
     out.rateable > 0 ? Number((out.cacheHit / (out.cacheHit + out.cacheMiss)).toFixed(4)) : null
+  /* 没有任何一行给金额 → 这个数是「未提供」，不是 0 元 */
+  out.cost = out.costUnavailable === rows.length ? null : out.cost
   return out
 }
 
-module.exports = { file, cacheFields, hitRate, recordRequest, logLlm, summarize }
+module.exports = { file, cacheFields, hitRate, recordRequest, logAttempt, logLlm, summarize }

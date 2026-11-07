@@ -99,6 +99,16 @@ function createJsonlParser(opts = {}) {
  */
 function mapUsage(raw) {
   const u = raw && typeof raw === 'object' ? raw : {}
+  /*
+   * ★ 一个字段都没有 → 返回 **null**，不是「全 0 对象」（2026-11-07 第 6 项逮住）。
+   *   以前这里无条件返回 {prompt_tokens: 0, …}：CLI 没报用量时，下游看到的是
+   *   「上报了 0」——于是那次调用被当成「消耗 0 token」计入账本，比不记更糟
+   *   （它让「未知」冒充了「确认没有」）。只有真出现数字字段才算有数据。
+   */
+  const hasAny = ['input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_output_tokens'].some(
+    (k) => Number.isFinite(Number(u[k])),
+  )
+  if (!hasAny) return null
   const input = Number(u.input_tokens) || 0
   const output = Number(u.output_tokens) || 0
   const cached = Number(u.cached_input_tokens) || 0

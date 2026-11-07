@@ -1,27 +1,18 @@
 /**
- * 自检 / 210 —— 模型调用记录能不能归属到任务（P2）
+ * 自检 / 210 —— 模型调用记录能不能归属到任务（P2，2026-11-05）
  *
- * ── 起因（2026-11-05 实测）────────────────────────────────────
+ * 三个标识各管一段：`sessionId`（会话）、`req_*`（一次运行，`chat.cjs` 的 phaseKey）、
+ * `task_*`（任务台账）。生产入口 `phaseKey = payload.taskId || requestId`，而渲染层从不
+ * 发 `payload.taskId` → 指标行 `trace` 恒为 `req_*`，台账里又没有 `req_*` 字段，
+ * 唯一能连的 `type:'task'` 事件还不落盘 —— 于是「这次调用属于哪个任务」永久查不回来
+ * （实测 4182 行指标 × 100 条台账，一条都对不上）。
  *
- * 项目里有三个标识，各管一段：`sessionId`（会话）、`req_*`（一次运行，
- * `chat.cjs` 的 phaseKey）、`task_*`（一条任务台账）。
+ * 修法：`loop.cjs` 把 `taskId` 传给 `callModel` → `loop-model` 带下去 → 落进指标行，
+ * `trace` 保留不动。
  *
- * 生产入口的 `phaseKey = payload.taskId || requestId`，而渲染层从不发 `payload.taskId`
- * → 指标行的 `trace` 恒为 `req_*`。台账里**没有任何 `req_*` 字段**，唯一能连起来的
- * `type:'task'` 事件又**不落盘**（`events.cjs` 只持久化 `agent.*`）。于是「这次调用属于
- * 哪个任务」在持久层里查不回来：真实数据 4182 行指标 × 100 条台账，**一条都对不上**。
- *
- * ── 修了什么 ──────────────────────────────────────────────────
- *
- * `loop.cjs` 把 `taskId` 传给 `callModel` → `loop-model` 原样带下去 → `llm.cjs`
- * 写进指标行 → `token-metrics.logLlm` 落 `taskId` 字段。`trace` 保留不动。
- *
- * ── 本组怎么判 ────────────────────────────────────────────────
- *
- * **不打桩 `chatStream`**（打了桩 token-metrics 根本不落盘，等于什么都没验），
- * 只替换 `globalThis.fetch` —— 真实链路跑一遍，然后**读回磁盘上的 jsonl** 判：
- * 每行带 taskId 且能在台账查到 / 两轮同一 taskId / 并发不串 / 重试与降级仍对 /
- * 辅助调用记空串。判据是**写下去又读回来**的字段，不是源码里的字符串。
+ * 本组**不打桩 `chatStream`**（打了桩指标根本不落盘，等于什么都没验），只替换
+ * `globalThis.fetch` 跑真实链路，再**读回磁盘上的 jsonl** 判 —— 判据是写下去又读回来的
+ * 字段，不是源码里的字符串。
  */
 
 import { check, group } from '../harness.mjs'
@@ -246,18 +237,30 @@ export async function run() {
     JSON.stringify(mismatched.map((r) => ({ trace: r.trace, taskId: r.taskId }))),
   )
 
-  const retried = rows.find((r) => r.trace === 'req_selftest_c')
+  /*
+   * ★ 每次尝试都单独一行（2026-11-07 第 6 项）—— 所以这里要**挑成功那次**，
+   *   而不是“第一条”：c 的第一条是失败的重试，d 的前两条是主供应商的失败。
+   *   顺带把“每次都记”本身钉住：漏记重试的话，消耗会比真实少。
+   */
+  const rowsOf = (trace) => rows.filter((r) => r.trace === trace)
+  check('★★ 重试 2 次 → 账上 2 行（失败那次也记，否则消耗会比真实少）', rowsOf('req_selftest_c').length === 2, `${rowsOf('req_selftest_c').length} 行`)
+  const retried = rowsOf('req_selftest_c').find((r) => r.outcome === 'ok')
   check(
     '重试成功那次仍归属到同一个任务，且 retryIndex 记了第 2 次',
     retried?.retryIndex === 1 && retried?.taskId === created[3],
-    JSON.stringify(retried),
+    JSON.stringify(retried && { retryIndex: retried.retryIndex }),
   )
-
-  const fallbackRow = rows.find((r) => r.trace === 'req_selftest_d')
+  check('★★ 降级场景账上 3 行（主家 2 次失败 + 备用 1 次成功）', rowsOf('req_selftest_d').length === 3, `${rowsOf('req_selftest_d').length} 行`)
+  const fallbackRow = rowsOf('req_selftest_d').find((r) => r.outcome === 'ok')
   check(
-    '降级到备用供应商后，调用仍归属到同一个任务',
+    '降级到备用供应商后，调用仍归属到同一个任务，且记的是**实际执行的那家**',
     fallbackRow?.providerId === 'selftest-p2-backup' && fallbackRow?.taskId === created[4],
-    JSON.stringify(fallbackRow),
+    JSON.stringify(fallbackRow && { providerId: fallbackRow.providerId }),
+  )
+  check(
+    '★ 失败那两行记的仍是主家（谁失败记谁，不冒功）',
+    rowsOf('req_selftest_d').filter((r) => r.outcome === 'failed').every((r) => r.providerId === 'selftest-p2'),
+    JSON.stringify(rowsOf('req_selftest_d').map((r) => `${r.providerId}:${r.outcome}`)),
   )
 
   /*

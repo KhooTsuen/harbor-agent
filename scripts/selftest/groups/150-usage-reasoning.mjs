@@ -63,9 +63,10 @@ export async function run() {
 
   /* ── 落盘：token-metrics 记 reasoning，缺字段是 null ── */
   group('CE-019 / 指标落盘带 reasoning')
-  check('★ logLlm 会把 reasoning 落进那一行（源码里有这个字段）', /reasoning:\s*budget\.reasoningOf/.test(
-    require('node:fs').readFileSync(join(ROOT, 'electron/core/token-metrics.cjs'), 'utf8'),
-  ))
+  check('★ logLlm 会把 reasoning 落进那一行（且取法只用 budget.reasoningOf 那一处）', (() => {
+    const src = require('node:fs').readFileSync(join(ROOT, 'electron/core/token-metrics.cjs'), 'utf8')
+    return /reasoning:\s*[^\n]*budget\.reasoningOf/.test(src)
+  })())
   check('★ summarize 汇总里有 reasoning 与 reasoningUnavailable', (() => {
     const s = metrics.summarize({})
     return typeof s.reasoning === 'number' && typeof s.reasoningUnavailable === 'number'

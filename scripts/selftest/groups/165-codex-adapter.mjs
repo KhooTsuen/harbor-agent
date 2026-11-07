@@ -108,7 +108,7 @@ export async function run() {
   check('缓存命中 → prompt_tokens_details.cached_tokens', st.usage.prompt_tokens_details.cached_tokens === 90)
   check('思考 token → completion_tokens_details.reasoning_tokens', st.usage.completion_tokens_details.reasoning_tokens === 3)
   check('认不出的事件忽略（上游加事件不该让我们炸）', (() => { const z = J.newState(); J.applyEvent(z, { type: '外星事件' }); return z.text === '' })())
-  check('usage 缺失时不崩', J.mapUsage(null).total_tokens === 0)
+  check('usage 缺失时**返回 null**（不是全 0 对象 —— 否则「没上报」会被记成「上报了 0」）', J.mapUsage(null) === null)
   check('turn.completed → finishReason=stop', CLI.finishReasonOf({ turnCompleted: true }) === 'stop')
   check('没完成 → finishReason 空串（不谎报 stop）', CLI.finishReasonOf({ turnCompleted: false }) === '')
 
