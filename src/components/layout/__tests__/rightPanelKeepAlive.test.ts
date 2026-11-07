@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest'
 
 const FILE = join(process.cwd(), 'src/components/layout/RightPanel.tsx')
 const APP_FILE = join(process.cwd(), 'src/App.tsx')
+const MAIN_AREA_FILE = join(process.cwd(), 'src/components/layout/MainArea.tsx')
 const HOST_FILE = join(process.cwd(), 'src/components/layout/RightPanelHost.tsx')
 
 describe('右栏：浏览器标签常驻', () => {
@@ -71,10 +72,49 @@ describe('右栏：折叠也不卸载', () => {
     expect(flatHost).toContain("!visible && 'hidden'")
   })
 
-  it('App 用的是这个 host（别把面板又内联回去）', () => {
+  it('布局用的是这个 host（别把面板又内联回去）', () => {
+    /* 2026-11-08：三栏布局从 App.tsx 搬到 MainArea.tsx（App 只留引导与快捷键） */
+    const area = readFileSync(MAIN_AREA_FILE, 'utf8').replace(/\s+/g, ' ')
+    expect(area).toContain('<RightPanelHost')
+    expect(area).not.toContain('<RightPanel />')
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════
+   同一类问题的第四处：**进设置工作区时聊天区也不能卸载**
+
+   和上面三条是同一个坑的另一个入口。用户进设置再回来，如果聊天区被条件渲染
+   卸掉，会发生：输入框草稿没了、消息列表重新挂载（滚动位置归零、开屏再来一次）、
+   **正在流式的回复没人接了**（订阅跟着组件卸载）、正在跑的任务状态断掉。
+
+   这条测试守的就是「别把它优化成条件渲染」。
+   ══════════════════════════════════════════════════════════════ */
+
+describe('设置工作区：进设置不卸载聊天区', () => {
+  const area = readFileSync(MAIN_AREA_FILE, 'utf8')
+  const flatArea = area.replace(/\s+/g, ' ')
+
+  it('★ 聊天区（main）用 hidden 切换，不是三元渲染', () => {
+    expect(flatArea).toMatch(/settingsOpen && 'hidden'/)
+    /* 聊天区不许出现在 `settingsOpen ? ... : null` 这种条件渲染里 */
+    expect(flatArea).not.toMatch(/settingsOpen \?\s*<main/)
+  })
+
+  it('★ 侧栏同理（它有滚动位置与选中文件夹）', () => {
+    const sidebarLine = area
+      .split('\n')
+      .findIndex((l) => l.includes('shrink-0') && l.includes('hidden'))
+    expect(sidebarLine).toBeGreaterThanOrEqual(0)
+  })
+
+  it('★ 设置工作区在 settingsOpen 时才渲染（它没有要保的现场）', () => {
+    expect(flatArea).toContain('<SettingsWorkspace />')
+    expect(flatArea).toMatch(/settingsOpen \? \(/)
+  })
+
+  it('App 仍然挂 MainArea（别把布局又内联回 App）', () => {
     const app = readFileSync(APP_FILE, 'utf8').replace(/\s+/g, ' ')
-    expect(app).toContain('<RightPanelHost')
-    expect(app).not.toContain('<RightPanel />')
+    expect(app).toContain('<MainArea')
   })
 })
 

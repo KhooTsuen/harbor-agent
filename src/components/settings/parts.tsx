@@ -1,96 +1,33 @@
 import { Children, isValidElement, useRef, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import {
-  BrainCircuit,
-  Cpu,
-  UserRound,
-  Database,
-  Info,
-  Palette,
-  Puzzle,
-  Settings2,
-  Shield,
-  SlidersHorizontal,
-  Sparkles,
-} from 'lucide-react'
+import { SETTINGS_NAV, type SettingsTabDef, type SettingsTabId } from './settingsNav'
 
 /* ══════════════════════════════════════════════════════════════
    设置页的公用零件
 
-   抽出来是为了让 SettingsModal 只关心「哪个标签页显示什么」，
+   抽出来是为了让「工作区」与「过渡弹窗」都只关心「哪一页显示什么」，
    不再重复写布局。
+
+   ★ 导航结构（13 页 / 5 组）在 `settingsNav.ts` —— 那边是唯一真相源，
+     这里只 re-export，老的 import 路径一个字都不用改。
    ══════════════════════════════════════════════════════════════ */
 
-export type SettingsTabId =
-  | 'profile'
-  | 'general'
-  | 'appearance'
-  | 'conversation'
-  | 'models'
-  | 'access'
-  | 'datausage'
-  | 'extension'
-  | 'memory'
-  | 'experience'
-  | 'about'
+export type { SettingsTabId, SettingsTabDef }
+export { SETTINGS_NAV, SETTINGS_GROUPS, SETTINGS_HOME, isSettingsTabId } from './settingsNav'
+
+/**
+ * 兼容别名 —— 老代码 / 老测试都按 `SETTINGS_TABS` 读这一份清单。
+ * 它现在就是 13 页的全集（顺序即导航顺序）。
+ */
+export const SETTINGS_TABS: readonly SettingsTabDef[] = SETTINGS_NAV
 
 /* ══════════════════════════════════════════════════════════════
-   设置的分组与顺序
-
-   原来是 15 个平铺的标签，扫不完也找不到东西。现在按两件事重排：
-
-     ① **按「用户想干什么」分组**，不按实现模块分。
-        最典型的：「权限三档」原来在「工具」、「文件访问范围」在「安全」——
-        同一件事劈成两半，用户得两边找。现在合成「权限与安全」。
-     ② **常用 / 高级分组**，用标题隔开。
-        90% 的时间在改前四个，后几个配置一次就不动了。
-        「关于」单独放最后（几乎所有软件都这样）。
-
-   15 → 9 个。合并的对应关系：
-     通用       ← 通用 + 快捷键
-     对话       ← 模型与提示词 + 项目上下文 + 本次会话
-     模型       ← 模型（供应商 + 助手参数）
-     权限与安全  ← 工具 + 安全
-     数据与用量  ← 用量 + 数据
-     扩展       ← 技能 + 扩展(MCP)
-     外观 / 记忆 / 关于  原样
+   设置视图过滤（P2 #1 沿用）
+   · 简洁视图只列非 detailedOnly 的页
+   · 但用户被某个入口指到详细页时，那一页必须仍然出现（否则点了没反应）
+   ★ 导航（13 页）不做这层过滤 —— 工作区里 13 页始终都在，见 settingsNav.ts。
+     这里保留是因为搜索结果要用它决定「在详细视图里」那句提示。
    ══════════════════════════════════════════════════════════════ */
-
-export const SETTINGS_TABS: readonly {
-  id: SettingsTabId
-  label: string
-  icon: typeof Settings2
-  /** 分组标题（null = 不分组，直接列在最下面） */
-  group: string | null
-  /**
-   * 只在详细视图显示（P2 #1）。
-   *
-   * 判据是「普通用户为了**正常用**需不需要碰它」：`access`（权限档位 / 网络
-   * 策略 / 审计）、`memory`（结构化记忆）属于配置一次就不动、但改错会出事的那类，
-   * 默认收进详细视图。**不代表它们关了就不生效** —— 简洁视图顶部会点名列出
-   * 当前生效的专业设置（见 SettingsModal）。
-   */
-  detailedOnly?: boolean
-}[] = [
-  { id: 'profile', label: '个人资料', icon: UserRound, group: '常用' },
-  { id: 'general', label: '通用', icon: Settings2, group: '常用' },
-  { id: 'appearance', label: '外观', icon: Palette, group: '常用' },
-  { id: 'conversation', label: '对话', icon: SlidersHorizontal, group: '常用' },
-  { id: 'models', label: '模型', icon: Cpu, group: '常用' },
-
-  { id: 'access', label: '权限与安全', icon: Shield, group: '高级', detailedOnly: true },
-  { id: 'datausage', label: '数据与用量', icon: Database, group: '高级' },
-  { id: 'extension', label: '扩展', icon: Puzzle, group: '高级' },
-  { id: 'memory', label: '记忆', icon: BrainCircuit, group: '高级', detailedOnly: true },
-  /*
-   * 经验与规则：自我纠错闭环的**审批档位**。
-   * 放进「高级」并 detailedOnly —— 普通用户不需要进来，但改错会出事
-   * （批错一条建议，它以后每轮都会进提示）。判据同 access / memory。
-   */
-  { id: 'experience', label: '经验与规则', icon: Sparkles, group: '高级', detailedOnly: true },
-
-  { id: 'about', label: '关于', icon: Info, group: null },
-] as const
 
 /**
  * 一行设置 —— **一块独立的「亚克力板」**
@@ -102,27 +39,19 @@ export const SETTINGS_TABS: readonly {
  *     亚克力的边会反光，纯半透明看起来只是「变淡」）
  *   · 块与块之间留空隙，不靠分隔线区分
  *
- * 用统一的类名而不是给每处写样式：9 个标签页、几十个设置项，
+ * 用统一的类名而不是给每处写样式：13 个页面、几十个设置项，
  * 改一处全部生效 —— 这也是它值得单独一个组件的原因。
  */
-/**
- * 设置视图过滤（P2 #1）。抽成函数是因为它是**纯判据**，值得单独测：
- *   · 简洁视图只列非 detailedOnly 的标签
- *   · 但用户被某个入口指到详细页时，那一页必须仍然出现（否则点了没反应）
- */
 export function visibleTabsOf(
-  tabs: typeof SETTINGS_TABS,
+  tabs: readonly SettingsTabDef[],
   view: 'simple' | 'detailed',
   current: string,
-): typeof SETTINGS_TABS {
-  const kept = tabs.filter(
-    (item) => view === 'detailed' || !item.detailedOnly || item.id === current,
-  )
-  return kept as unknown as typeof SETTINGS_TABS
+): readonly SettingsTabDef[] {
+  return tabs.filter((item) => view === 'detailed' || !item.detailedOnly || item.id === current)
 }
 
 /** 简洁视图下被收起来的那些页（顶部要「点名」它们仍在生效） */
-export function hiddenTabsOf(tabs: typeof SETTINGS_TABS, view: 'simple' | 'detailed') {
+export function hiddenTabsOf(tabs: readonly SettingsTabDef[], view: 'simple' | 'detailed') {
   return view === 'detailed' ? [] : tabs.filter((item) => item.detailedOnly)
 }
 

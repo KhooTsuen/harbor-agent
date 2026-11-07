@@ -60,6 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   taskScope: 'project',
   /* P2 #1：默认简洁视图（首次使用不该被几十个专业选项吓到） */
   settingsView: 'simple',
+  /* 第一阶段：上次访问的设置页。默认落在「通用与快捷键」（装完最可能先调的地方） */
+  lastSettingsTab: 'general',
   /* P2 #30：任务结果摘要默认关（用户主动开才显示） */
   taskSummary: false,
   /* ★ 开屏性格层默认开；夜航主题默认没解锁；航道畅通计数从 0 起 */
@@ -124,6 +126,8 @@ function normalize(input: Partial<Settings> | undefined): Settings {
     lastBottomPanelOpen: s.lastBottomPanelOpen === true,
     taskScope: s.taskScope === 'all' ? 'all' : 'project',
     settingsView: s.settingsView === 'detailed' ? 'detailed' : 'simple',
+    /* 设置页 id：白名单校验交给读取方（那里才有导航表）；这里只保证是字符串 */
+    lastSettingsTab: typeof s.lastSettingsTab === 'string' ? s.lastSettingsTab : 'general',
     taskSummary: s.taskSummary === true,
     persona: s.persona !== false,
     nightUnlocked: s.nightUnlocked === true,

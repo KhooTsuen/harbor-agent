@@ -64,6 +64,11 @@ interface UIState {
   openSettings: (tab?: string) => void
   /** 打开设置时想直接落到哪一页；没指定就是空 */
   settingsTab: string | null
+  /**
+   * 切换设置工作区里的当前页。与 `openSettings(tab)` 写的是同一个字段 ——
+   * 只有一个来源，不会出现「导航选的」和「入口指定的」两份状态打架。
+   */
+  setSettingsTab: (tab: string) => void
   closeSettings: () => void
   setCommandPaletteOpen: (open: boolean) => void
   setSearchQuery: (q: string) => void
@@ -198,6 +203,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   setActiveRightTab: (tab) => set({ activeRightTab: tab, rightPanelVisible: true }),
   setImageTask: (task) => set({ imageTask: task }),
   openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null }),
+  setSettingsTab: (tab) => set({ settingsTab: tab }),
   closeSettings: () => set({ settingsOpen: false }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setSearchQuery: (q) => set({ searchQuery: q }),

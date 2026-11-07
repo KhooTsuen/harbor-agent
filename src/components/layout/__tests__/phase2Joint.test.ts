@@ -135,14 +135,19 @@ describe('右栏 · 审查 / 文件树 / 收起长条', () => {
 })
 
 describe('设置 · 工作目录与两处重置', () => {
-  it('★ 默认工作目录在「对话」页最上面，并标明是全局默认', () => {
+  /*
+   * 2026-11-08（第一阶段 13 页）：默认工作目录从「对话」页搬到「上下文与项目」页。
+   * 断言跟着搬，判据不变：它在 ContextPanel 里、标明是全局默认、而且排在项目覆盖之前。
+   */
+  it('★ 默认工作目录在「上下文与项目」页最上面，并标明是全局默认', () => {
+    const ctx = strip(read('src/components/settings/panels/ContextPanel.tsx'))
+    expect(ctx).toContain('<WorkdirRow />')
+    expect(ctx).toContain('全局默认')
+    /* 而且在项目覆盖之前（顶部） */
+    expect(ctx.indexOf('<WorkdirRow />')).toBeLessThan(ctx.indexOf('ProjectContextTab />'))
+    /* 对话页不再有它（不出现两处真源） */
     const conv = strip(read('src/components/settings/panels/ConversationPanel.tsx'))
-    expect(conv).toContain('<WorkdirRow />')
-    expect(conv).toContain('全局默认')
-    /* 而且在体验页之前（顶部） */
-    expect(conv.indexOf('<WorkdirRow />')).toBeLessThan(
-      conv.indexOf('ConversationExperienceTab />'),
-    )
+    expect(conv).not.toContain('WorkdirRow')
   })
 
   it('★ 「工具」页不再有工作目录（不出现两处真源）', () => {
@@ -150,10 +155,20 @@ describe('设置 · 工作目录与两处重置', () => {
     expect(providers).not.toContain('WorkdirRow')
   })
 
-  it('★ 两处重置走同一个实现', () => {
-    const modal = strip(read('src/components/settings/SettingsModal.tsx'))
+  /*
+   * 2026-11-08：重置实现收敛成一个 `ResetAction` 组件。
+   * 第一阶段收尾时把旧弹窗从全局层摘掉了（两个界面会同时挂载），
+   * 所以现在只有工作区页头渲染它 —— 但保留「弹窗也走它」的判断，
+   * 万一以后再把弹窗接回来，不能退回到各写一份。
+   */
+  it('★ 重置只有一个实现，工作区页头渲染它', () => {
+    const page = strip(read('src/components/settings/SettingsPage.tsx'))
     const data = strip(read('src/components/settings/tabs/DataTab.tsx'))
-    expect(modal).toContain('resetAllSettings()')
+    /* 页头渲染那个组件 */
+    expect(page).toContain('<ResetAction />')
+    /* 那个组件内部才是真正的实现 */
+    expect(page).toContain('resetAllSettings()')
+    /* 数据页自己的重置也走同一实现 */
     expect(data).toContain('resetAllSettings()')
     /* 旧的「先本地重置、再看全局保存状态猜成败」不许回来 */
     expect(data).not.toContain('resetToDefaults()')
@@ -161,12 +176,13 @@ describe('设置 · 工作目录与两处重置', () => {
   })
 
   it('★ 两处都叫「重置设置」（同一个名字、同一个范围）', () => {
-    const modal = strip(read('src/components/settings/SettingsModal.tsx'))
+    const page = strip(read('src/components/settings/SettingsPage.tsx'))
     const data = strip(read('src/components/settings/tabs/DataTab.tsx'))
-    expect(modal).toContain('重置设置')
+    /* 名字在唯一实现里写一次，两处共用 */
+    expect(page).toContain('重置设置')
     expect(data).toContain('重置设置')
     /* 弹窗底部不再叫「恢复默认」（那是工作目录那一项自己的按钮名） */
-    expect(modal).not.toContain("'恢复默认'")
+    expect(page).not.toContain("'恢复默认'")
   })
 
   it('★ 工作目录三路保存都会回报结果（手填 / 选目录 / 恢复默认）', () => {

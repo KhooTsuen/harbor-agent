@@ -1,14 +1,7 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BootSequence } from '@/components/boot/BootSequence'
 import { useBootGate } from '@/components/boot/useBootGate'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { BottomPanel, MessageList, RightPanelHost } from '@/components/layout/lazyAppParts'
-import { AppTitleBar } from '@/components/layout/AppTitleBar'
-import { StatusBar } from '@/components/layout/StatusBar'
-import { GlobalLayers } from '@/components/layout/GlobalLayers'
-import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { ResizeHandle } from '@/components/ui/ResizeHandle'
-import { Composer } from '@/components/chat/Composer'
+import { MainArea } from '@/components/layout/MainArea'
 import { useAppBootstrap } from '@/hooks/useAppBootstrap'
 import { useOnboardingGate } from '@/hooks/useOnboardingGate'
 import { useSettingsStore } from '@/stores/useSettingsStore'
@@ -17,7 +10,6 @@ import { confirmDeleteThread } from '@/lib/confirmDeleteThread'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useThreadStore } from '@/stores/useThreadStore'
-import { LAYOUT } from '@/constants'
 import { matchCombo } from '@/lib/utils'
 import { useBackendSubscriptions } from '@/hooks/useBackendSubscriptions'
 import { useApplyAppearance } from '@/hooks/useApplyAppearance'
@@ -56,10 +48,8 @@ function MainApp() {
   const updateSettings = useSettingsStore((s) => s.updateSettings)
 
   const activeThreadId = useAppStore((s) => s.activeThreadId)
-  const thread = useAppStore((s) => s.threads.find((t) => t.id === activeThreadId))
   const createThread = useAppStore((s) => s.createThread)
 
-  const rightPanelVisible = useUIStore((s) => s.rightPanelVisible)
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel)
   const setRightPanelVisible = useUIStore((s) => s.setRightPanelVisible)
   const openSettings = useUIStore((s) => s.openSettings)
@@ -205,96 +195,6 @@ function MainApp() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onKeyDown])
 
-  /* ④ 布局 */
-  const messages = thread?.messages ?? []
-
-  return (
-    <div className="flex h-full flex-col bg-bg-base text-fg-primary">
-      {/* 窗口级顶栏（横跨三栏）。也包一层：它一出错整个窗口就没法操作了 */}
-      <ErrorBoundary>
-        <AppTitleBar onToggleBottomPanel={() => setBottomOpen(!bottomOpen)} />
-      </ErrorBoundary>
-
-      <div className="flex min-h-0 flex-1">
-        {/* 侧栏 */}
-        <div
-          className="shrink-0"
-          style={{
-            width: settings.sidebarCollapsed ? LAYOUT.sidebar.collapsed : settings.sidebarWidth,
-          }}
-        >
-          {/* 三个区域各自包一层 ErrorBoundary：一处崩了不影响另外两处 */}
-          <ErrorBoundary>
-            <Sidebar />
-          </ErrorBoundary>
-        </div>
-
-        {!settings.sidebarCollapsed ? (
-          <ResizeHandle
-            side="right"
-            label="调整侧边栏宽度"
-            value={settings.sidebarWidth}
-            min={LAYOUT.sidebar.min}
-            max={LAYOUT.sidebar.max}
-            onChange={(next) => updateSettings({ sidebarWidth: next })}
-          />
-        ) : null}
-
-        {/* 主区 */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="对话区">
-          <ErrorBoundary>
-            {/*
-              这里原本挂着「未完成任务」横幅（对话顶部那条黄条）。
-              AG-028 把它整个撤掉了 —— 任务的东西只在右栏「任务」里出现，
-              打开应用不再先看到一条黄条。
-            */}
-            <Suspense fallback={<div className="min-h-0 flex-1" />}>
-              {/* 空对话时 MessageList 自己渲染开屏（launch/LaunchScreen.tsx） */}
-              <MessageList messages={messages} conversationId={activeThreadId} />
-            </Suspense>
-          </ErrorBoundary>
-
-          <ErrorBoundary>
-            <Composer />
-          </ErrorBoundary>
-
-          {/* 底部面板也要包：它一崩，历史上会把整个应用卸载成白屏 */}
-          {bottomOpen ? (
-            <ErrorBoundary>
-              <Suspense fallback={null}>
-                <BottomPanel onClose={() => setBottomOpen(false)} />
-              </Suspense>
-            </ErrorBoundary>
-          ) : null}
-        </main>
-
-        {/* 右侧面板（抽成组件是因为「折叠也不卸载」，里面那段注释值得单独放） */}
-        <ErrorBoundary className="shrink-0">
-          <Suspense
-            fallback={
-              rightPanelVisible ? (
-                <div className="shrink-0" style={{ width: settings.rightPanelWidth }} />
-              ) : null
-            }
-          >
-            <RightPanelHost
-              visible={rightPanelVisible}
-              width={settings.rightPanelWidth}
-              min={LAYOUT.rightPanel.min}
-              max={LAYOUT.rightPanel.max}
-              onToggle={toggleRightPanel}
-              onResize={(next) => updateSettings({ rightPanelWidth: next })}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      </div>
-
-      <ErrorBoundary>
-        <StatusBar />
-      </ErrorBoundary>
-
-      {/* 全局层：弹窗 / 覆盖层（里面自带 Suspense + ErrorBoundary） */}
-      <GlobalLayers config={config} showOnboarding={showOnboarding} />
-    </div>
-  )
+  /* ④ 布局（三栏 + 设置工作区，见 components/layout/MainArea.tsx） */
+  return <MainArea config={config} showOnboarding={showOnboarding} />
 }

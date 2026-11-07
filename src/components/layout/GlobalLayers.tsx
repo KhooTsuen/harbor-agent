@@ -4,15 +4,9 @@ import { PermissionDialog } from '@/components/dialogs/PermissionDialog'
 import { ToastViewport } from '@/components/ui/Toast'
 import { useImageLightbox } from '@/stores/useImageLightbox'
 import { useUIStore } from '@/stores/useUIStore'
-import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
 import { HarborEggs } from './HarborEggs'
-import {
-  CommandPalette,
-  HarborStatsModal,
-  ImageLightbox,
-  Onboarding,
-  SettingsModal,
-} from '@/components/layout/lazyAppParts'
+import { CommandPalette, HarborStatsModal, ImageLightbox, Onboarding } from '@/components/layout/lazyAppParts'
+import { PREVIEW_CONFIG } from '@/components/onboarding/previewConfig'
 import type { AppConfig } from '@/types/models'
 
 /* ══════════════════════════════════════════════════════════════
@@ -37,7 +31,6 @@ export interface GlobalLayersProps {
 
 export function GlobalLayers({ config, showOnboarding }: GlobalLayersProps) {
   const commandPaletteOpen = useUIStore((s) => s.commandPaletteOpen)
-  const settingsOpen = useUIStore((s) => s.settingsOpen)
   const harborStatsOpen = useUIStore((s) => s.harborStatsOpen)
   const lightboxOpen = useImageLightbox((s) => s.images.length > 0)
 
@@ -46,7 +39,12 @@ export function GlobalLayers({ config, showOnboarding }: GlobalLayersProps) {
       <Suspense fallback={null}>
         {showOnboarding ? <Onboarding config={config ?? PREVIEW_CONFIG} /> : null}
         {commandPaletteOpen ? <CommandPalette /> : null}
-        {settingsOpen ? <SettingsModal /> : null}
+        {/*
+          ★ 设置**不在这里**了（2026-11-08 第一阶段）：它现在是主区域里的
+            设置工作区（见 layout/MainArea.tsx），不再是弹窗。
+            这里留着旧弹窗会让两个界面同时挂载（真机测到 nav 出现两遍），
+            两份「当前设置页」状态并存 —— 需求明确要求避免这种并行。
+        */}
         {harborStatsOpen ? <HarborStatsModal /> : null}
         {lightboxOpen ? <ImageLightbox /> : null}
       </Suspense>

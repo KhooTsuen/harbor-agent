@@ -15,9 +15,6 @@ export const BottomPanel = lazy(async () => ({
 export const CommandPalette = lazy(async () => ({
   default: (await import('@/components/layout/CommandPalette')).CommandPalette,
 }))
-export const SettingsModal = lazy(async () => ({
-  default: (await import('@/components/settings/SettingsModal')).SettingsModal,
-}))
 export const Onboarding = lazy(async () => ({
   default: (await import('@/components/onboarding/Onboarding')).Onboarding,
 }))

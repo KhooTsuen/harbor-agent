@@ -113,6 +113,13 @@ export interface Settings {
    */
   settingsView: 'simple' | 'detailed'
   /**
+   * 上次访问的设置页（第一阶段：设置工作区）。
+   *
+   * 存 id 字符串而不是索引 —— 页顺序调整后索引就错了，而 id 稳定。
+   * 读到脏值（老版本 / 手改）由 `isSettingsTabId` 回落首页，不留白屏。
+   */
+  lastSettingsTab: string
+  /**
    * 每轮结束后显示任务结果摘要卡（P2 #30）。**默认关闭**。
    *
    * 关着的时候完全不生成摘要卡；开着时按真实任务台账显示完成/失败/取消、
