@@ -4,7 +4,7 @@ import { AppearanceTab } from './tabs/AppearanceTab'
 import { MemoryTab } from './tabs/MemoryTab'
 import { ExperienceTab } from './tabs/ExperienceTab'
 import { ProfileTab } from './tabs/ProfileTab'
-import { UsageTab } from './tabs/UsageTab'
+import { UsagePanel } from './usage/UsagePanel'
 import { DataTab } from './tabs/DataTab'
 import { GeneralTab } from './tabs/GeneralTab'
 import { ConversationPanel } from './panels/ConversationPanel'
@@ -50,7 +50,7 @@ export function settingsPageOf(id: SettingsTabId): ReactNode {
     case 'extension':
       return <ExtensionPanel />
     case 'usage':
-      return <UsageTab />
+      return <UsagePanel />
     case 'data':
       return <DataTab />
     case 'memory':

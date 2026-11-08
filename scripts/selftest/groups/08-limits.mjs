@@ -145,10 +145,18 @@ export async function run() {
       '★ 渲染层只负责措辞，不自己算日期 / 不自己判「超没超」',
       !/new Date|getMonth|getFullYear/.test(usageTextSrc),
     )
-    const usageTabSrc = readFileSync(join(ROOT, 'src/components/settings/tabs/UsageTab.tsx'), 'utf8')
-    check('★ 用量页把闸门状态摆出来（<GateStatus gate={data.gate} />）', usageTabSrc.includes('<GateStatus gate={data.gate} />'))
+    /*
+     * 2026-11-09：用量页从 `tabs/UsageTab.tsx` 换成 `usage/UsagePanel.tsx`
+     * （新页读真实账本 `usage:query`，旧页读 stats.json 累计桶，分不清「没上报」和 0）。
+     *
+     * 判据**没放宽**，只是跟着搬家，并明确了一件事：闸门状态仍由内核给，
+     * 新页只取 `gate` 一个字段（token 数字一律走账本）。
+     */
+    const usagePanelSrc = readFileSync(join(ROOT, 'src/components/settings/usage/UsagePanel.tsx'), 'utf8')
+    check('★ 用量页把闸门状态摆出来（<GateStatus gate={gate} />，gate 来自内核）', usagePanelSrc.includes('<GateStatus gate={gate} />'))
+    check('★ 闸门状态来自 stats:summary 的 gate 字段（不自己算日期）', usagePanelSrc.includes('statsSummary()') && usagePanelSrc.includes('summary?.gate'))
     /* 改完上限要重拉：否则数字旁边挂的还是旧的那句 */
-    check('改上限会静默重拉一次统计', usageTabSrc.includes('refresh(gateOn !== undefined)'))
+    check('改上限会静默重拉一次统计', /void load\(true\)/.test(usagePanelSrc) && usagePanelSrc.includes('gateOn, daily, monthly, onExceed'))
 
     /* ── ⑤-4 改上限不许拿旧快照把别的字段写回去 ── */
     const budgetSrc = readFileSync(join(ROOT, 'src/components/settings/tabs/BudgetLimit.tsx'), 'utf8')

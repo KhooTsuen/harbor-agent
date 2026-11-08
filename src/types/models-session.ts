@@ -5,7 +5,7 @@
    拆开是因为这一组是「一条会话在磁盘上的形状」，改动理由和文件/终端那组完全不同。
    ══════════════════════════════════════════════════════════════ */
 
-import type { UsageBucket } from './stats'
+import type { MessageUsage } from './usage'
 import type { StoredClarify } from './clarify'
 /* 时间线片段与 UI 侧共用一份定义（type-only import，没有运行时循环） */
 import type { MessageRound, Thread } from './conversation'
@@ -39,8 +39,8 @@ export interface SessionSummary {
 }
 
 export interface StoredMessage {
-  /** 这条回复的 token 用量（跟着落盘，重开会话也能算总量） */
-  usage?: UsageBucket
+  /** 这条回复的 token 用量（跟着落盘，重开会话也能算总量；`known:false` = 当时没上报） */
+  usage?: MessageUsage
   /**
    * 一轮一轮的时间线（思考 → 工具 → 正文 的真实顺序）。
    * 不存的话重开会话会塔回三段堆叠（一大块思考 → 一列工具 → 一段正文）。

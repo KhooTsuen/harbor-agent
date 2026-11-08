@@ -21,6 +21,7 @@ import type {
 import type { CodexMcpSettings, CodexMcpState } from './codexMcp'
 import type { ProjectTestsSettings, ProjectTestsState } from './projectTests'
 import type { CollabState, CollabRunResult } from './collab'
+import type { UsageQueryEnvelope, UsageQueryOptions } from './usage-query'
 
 import type { MemoryStats, SafetyBridge } from './safety'
 import type { ImageDonePayload } from './image'
@@ -174,6 +175,14 @@ export interface WorkbenchBridge
 
   statsSummary: () => Promise<StatsSummary>
   statsReset: () => Promise<{ ok: boolean; summary: StatsSummary }>
+  /**
+   * 真实用量账本查询（新口径）。与 `statsSummary` 的区别：带 `known`/`unknown`/
+   * `fieldUnavailable`，所以「没上报」不会被当成 0；`cost` 没真实金额时是 `null`。
+   * 异步 + 内核侧增量读盘（见 `core/usage-ledger.cjs`），大账本不阻塞主进程。
+   *
+   * ★ 返回的是**信封**（`{ ok, result }`），不是裸结果 —— 见 `UsageQueryEnvelope`。
+   */
+  usageQuery: (options?: UsageQueryOptions) => Promise<UsageQueryEnvelope>
 
   backupList: () => Promise<BackupInfo[]>
   backupCreate: () => Promise<{ ok: boolean; name?: string; error?: string; items?: string[] }>

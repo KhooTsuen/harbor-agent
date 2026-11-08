@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { colorOf, statusOfPhase } from '@/lib/statusLanguage'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { initialOf, useProfileStore } from '@/stores/useProfileStore'
+import { knownTotalsOf } from '@/types/usage'
 
 /* ══════════════════════════════════════════════════════════════
    StatusBar（高 28px）—— 窗口最底下那一条
@@ -19,16 +20,22 @@ import { initialOf, useProfileStore } from '@/stores/useProfileStore'
 export function StatusBar() {
   const thread = useAppStore((s) => s.threads.find((t) => t.id === s.activeThreadId))
 
-  /* 当前会话的 token 用量：把每条回复身上的 usage 加起来 */
+  /*
+   * 当前会话的 token 用量：把每条回复身上的 usage 加起来。
+   * ★ 只加**已知**的那些（`known:true`）。没上报的跳过并单独计数 ——
+   *   以前直接 `?? 0` 相加，于是「未知」被算成「确认没消耗」，数字看着正常但是错的。
+   */
   const tokens = useMemo(() => {
     let prompt = 0
     let completion = 0
+    let unknown = 0
     for (const message of thread?.messages ?? []) {
-      if (!message.usage) continue
-      prompt += message.usage.prompt ?? 0
-      completion += message.usage.completion ?? 0
+      const one = knownTotalsOf(message.usage)
+      prompt += one.prompt
+      completion += one.completion
+      unknown += one.unknown
     }
-    return { prompt, completion, total: prompt + completion }
+    return { prompt, completion, total: prompt + completion, unknown }
   }, [thread])
 
   /*
@@ -112,9 +119,25 @@ export function StatusBar() {
       {tokens.total > 0 ? (
         <span
           className="hidden shrink-0 font-mono md:inline"
-          title={`本会话 token：输入 ${formatCount(tokens.prompt)} · 输出 ${formatCount(tokens.completion)} · 合计 ${formatCount(tokens.total)}`}
+          title={
+            `本会话 token（服务商上报）：输入 ${formatCount(tokens.prompt)} · 输出 ${formatCount(tokens.completion)} · 合计 ${formatCount(tokens.total)}` +
+            (tokens.unknown > 0
+              ? `\n另有 ${tokens.unknown} 次回复服务商没返回用量 —— 那些消耗未知，没有算进这里`
+              : '')
+          }
         >
           ↑{formatTokens(tokens.prompt)} ↓{formatTokens(tokens.completion)}
+          {tokens.unknown > 0 ? (
+            <span className="text-fg-tertiary"> ·?{tokens.unknown}</span>
+          ) : null}
+        </span>
+      ) : tokens.unknown > 0 ? (
+        /* 一次都没拿到真实用量：说「未知」，**不显示 0**（0 会被读成「确认没消耗」） */
+        <span
+          className="hidden shrink-0 font-mono md:inline"
+          title={`本会话有 ${tokens.unknown} 次回复，服务商都没有返回用量 —— 消耗未知，不是 0`}
+        >
+          用量未知
         </span>
       ) : null}
     </footer>

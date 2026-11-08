@@ -233,6 +233,7 @@ const api = {
 
   statsSummary: () => call('stats:summary'),
   statsReset: () => call('stats:reset'),
+  usageQuery: (options) => call('usage:query', options), /* 真实账本（known/unknown），见 core/usage-query.cjs */
 
   backupList: () => call('backup:list'),
   backupCreate: () => call('backup:create'),

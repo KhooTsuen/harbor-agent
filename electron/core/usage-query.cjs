@@ -25,6 +25,7 @@
  */
 
 const ledger = require('./usage-ledger.cjs')
+const anomalies = require('./usage-anomalies.cjs')
 
 /** 语义声明：消费方读这些标志就知道「这个数怎么来的」，不用猜 */
 const SEMANTICS = {
@@ -36,85 +37,13 @@ const SEMANTICS = {
   legacyHasNoKnownFlag: true,
 }
 
-const UNSET = '（未标注）'
-const TASK_NONE = '（未归属）'
+/* 桶 / 事实 / 累加 / 收尾在 usage-bucket-core.cjs（那边有命中率的实测数字） */
+const core = require('./usage-bucket-core.cjs')
+const { UNSET, TASK_NONE, emptyBucket, isKnown, rowFacts, addInto, finish } = core
 
-/** 数值项：只有 known 且真有数才算 */
-const NUMS = ['prompt', 'completion', 'total', 'cacheHit', 'cacheMiss', 'reasoning', 'cost']
-
-function emptyBucket() {
-  const fieldUnavailable = {}
-  for (const key of NUMS) fieldUnavailable[key] = 0
-  return {
-    requests: 0,
-    known: 0,
-    unknown: 0,
-    legacy: 0,
-    prompt: 0,
-    completion: 0,
-    total: 0,
-    cacheHit: 0,
-    cacheMiss: 0,
-    reasoning: 0,
-    cost: 0,
-    errors: 0,
-    aborted: 0,
-    fieldUnavailable,
-  }
-}
-
-/** 这一行有没有真实用量（判据与 `token-metrics.summarize` 逐字一致） */
-function isKnown(row) {
-  if (typeof row.known === 'boolean') return row.known
-  /* 老记录：有 token 数字就算拿到了（那时没有 known 字段） */
-  return Number(row.prompt) > 0 || Number(row.completion) > 0 || Number(row.total) > 0
-}
-
-/** 这一行的派生事实（**每行只算一次**，再分发给各维度 —— 40000 行 × 8 维度不能各算一遍） */
-function rowFacts(row) {
-  const known = isKnown(row)
-  const facts = { known, hasFlag: typeof row.known === 'boolean', numbers: {} }
-  for (const key of NUMS) {
-    const value = row[key]
-    facts.numbers[key] = known && Number.isFinite(value) ? value : null
-  }
-  return facts
-}
-
-/** 把一行累进一个桶（facts 由 rowFacts 预先算好） */
-function addInto(bucket, row, f) {
-  bucket.requests += 1
-  if (f.known) bucket.known += 1
-  else bucket.unknown += 1
-  if (!f.hasFlag) bucket.legacy += 1
-  if (row.outcome === 'aborted') bucket.aborted += 1
-  else if (row.ok === false) bucket.errors += 1
-
-  const unavailable = bucket.fieldUnavailable
-  const n = f.numbers
-  for (let i = 0; i < NUMS.length; i += 1) {
-    const key = NUMS[i]
-    const value = n[key]
-    if (value === null) unavailable[key] += 1
-    else bucket[key] += value
-  }
-}
-
-/** 收尾：覆盖率 + 「没有任何一行给金额」时把 cost 归 null（不是 0 元） */
-function finish(bucket) {
-  bucket.coverage = bucket.requests > 0 ? Number((bucket.known / bucket.requests).toFixed(4)) : null
-  /* 一条都没有真金额就给 null（含「一次都没调」的空白桶）—— 0 会被读成「确认花了 0 元」 */
-  if (bucket.fieldUnavailable.cost === bucket.requests) bucket.cost = null
-  return bucket
-}
-
-/** 本地时区的日期键 `YYYY-MM-DD`（和用户看到的「今天」一致） */
-function dayKey(at) {
-  const d = new Date(Number(at))
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+/** 本地时区的日期键 `YYYY-MM-DD`（和用户看到的「今天」一致；实现在 usage-day.cjs） */
+const usageDay = require('./usage-day.cjs')
+const { dayIndexOf, labelOf, dayKey } = usageDay
 
 function bump(map, key, row, facts) {
   const k = key || UNSET
@@ -173,60 +102,87 @@ async function query(options = {}) {
   const plain =
     !from && !to && !filters.fProvider && !filters.fModel && !filters.fTask &&
     !filters.fSession && !filters.fEntry && !filters.fPurpose && !options.withRows
-
   /* ★ 先读账本再比版本号：反过来的话文件刚变过时会命中过期 memo（返回"看着正常但是错的"数字） */
   const all = await ledger.loadRows()
 
   const onlyTime = !filters.fProvider && !filters.fModel && !filters.fTask &&
     !filters.fSession && !filters.fEntry && !filters.fPurpose && (from || to)
 
-  /* 只按时间筛（热力图）：复用全量聚合，只重算 days —— 返回完整结构，调用方不用特判 */
+  /*
+   * 只按时间筛（页首 + 热力图）：**在时间窗内做完整聚合**。
+   * 2026-11-09 修的两件事：① 以前是「全量聚合再裁 days」——概览/排行的数字是
+   * 全部历史，标题却写「最近 30 天」，同一页面两套口径；② 全量聚合 4 万行要
+   * ~210ms 且期间事件循环一次都不转。限定窗口后只剩几千行（约 10ms）。
+   * 缓存键必须带 (from,to)：窗口不同结果就不同。
+   */
   if (onlyTime && !options.withRows) {
-    const stamp = ledger.currentVersion()
-    if (memo.version !== stamp || !memo.result) {
-      memo.version = stamp
-      memo.result = aggregate(all, options, { from: 0, to: 0 })
+    const key = `${ledger.currentVersion()}|${from}|${to}|${options.includeEmptyDays ? 1 : 0}`
+    if (timeMemo.key !== key) {
+      timeMemo.key = key
+      timeMemo.result = await aggregateAsync(all, options, { ...filters })
     }
-    const base = memo.result
-    const days = clipDays(base.days, options, from, to)
-    return {
-      ...structuredClone(base),
-      days,
-      matched: days.reduce((sum, d) => sum + d.requests, 0),
-    }
+    return structuredClone(timeMemo.result)
   }
 
   if (plain) {
     const stamp = ledger.currentVersion()
     if (memo.version === stamp && memo.result) return structuredClone(memo.result)
-    const result = aggregate(all, options, filters)
+    const result = await aggregateAsync(all, options, filters)
     memo.version = stamp
     memo.result = result
     /* ★ 缓存的那份不能把可变引用还出去：调用方改一下 byProvider 就会污染下次查询 */
     return structuredClone(result)
   }
-  return aggregate(all, options, filters)
+  return aggregateAsync(all, options, filters)
 }
 
 /** 无筛选查询的结果缓存（`version` 对不上就重算） */
 const memo = { version: -1, result: null }
 
-/**
- * 从全量按天数组里裁出 [from, to] 这一段。
- * 空白日的语义与全量查询一致：`requests=0` + `empty:true`，**不是** 0 token。
- */
-function clipDays(days, options, from, to) {
-  const kept = days.filter((item) => {
-    const dayStart = new Date(`${item.day}T00:00:00`).getTime()
-    const dayEnd = dayStart + 86399999
-    if (from && dayEnd < from) return false
-    if (to && dayStart > to) return false
-    return true
-  })
-  return options.includeEmptyDays ? fillDays(kept, from, to) : kept
-}
+/** 按时间窗查询的缓存：键 = 版本|from|to|补齐空白日（窗口不同，结果就不同） */
+const timeMemo = { key: '', result: null }
 
 /** 纯内存聚合（不读盘）—— `all` 是已读好的账本行 */
+/**
+ * 纯内存聚合（不读盘）—— `all` 是已读好的账本行
+ *
+ * ★ 分片让出事件循环（2026-11-09）：10 万行全量聚合要 ~300ms，期间定时器一次
+ *   都不触发（实测采样 0 次）—— 那就是「界面冻住」。现在每 5000 行 `await` 一次
+ *   宏任务，把控制权还给事件循环，渲染层和别的 IPC 都能插进来。
+ *
+ *   代价：总耗时略增（多了几次调度），换来「最长停顿从 300ms 降到个位数」。
+ *   这个取舍在设置页是可接受的：用户看到的是「统计慢慢填满」而不是「窗口卡死」。
+ */
+const SLICE = 5000
+
+/** 让出一轮宏任务（`setImmediate` 比 `setTimeout(0)` 快，且不排进定时器队列） */
+function yieldToLoop() {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
+async function aggregateAsync(all, options, filters) {
+  const { from = 0, to = 0, fProvider = '', fModel = '', fTask = '', fSession = '', fEntry = '', fPurpose = '' } = filters
+  /* 筛选也分片：10 万行 × 8 个条件同样可能上百毫秒 */
+  const rows = []
+  for (let i = 0; i < all.length; i += 1) {
+    const row = all[i]
+    if (i > 0 && i % SLICE === 0) await yieldToLoop()
+    const at = Number(row.at)
+    if (from && at < from) continue
+    if (to && at > to) continue
+    if (fProvider && String(row.providerId ?? '') !== fProvider) continue
+    if (fModel && String(row.model ?? '') !== fModel) continue
+    if (fTask && String(row.taskId ?? '') !== fTask) continue
+    if (fSession && String(row.sessionId ?? '') !== fSession) continue
+    if (fEntry && String(row.entry ?? 'api') !== fEntry) continue
+    /* 空串 = 未标注：筛选时按「未标注」这个展示名匹配（不然界面上点它永远查不到） */
+    if (fPurpose && String(row.purpose || UNSET) !== fPurpose) continue
+    rows.push(row)
+  }
+  return buildResult(rows, all.length, options, filters)
+}
+
+/** 同步版（少量数据 / 测试用；行为与 async 版逐字一致） */
 function aggregate(all, options, filters) {
   const { from = 0, to = 0, fProvider = '', fModel = '', fTask = '', fSession = '', fEntry = '', fPurpose = '' } = filters
   const rows = all.filter((row) => {
@@ -237,15 +193,19 @@ function aggregate(all, options, filters) {
     if (fTask && String(row.taskId ?? '') !== fTask) return false
     if (fSession && String(row.sessionId ?? '') !== fSession) return false
     if (fEntry && String(row.entry ?? 'api') !== fEntry) return false
-    /* 空串 = 未标注：筛选时按「未标注」这个展示名匹配（不然界面上点它永远查不到） */
     if (fPurpose && String(row.purpose || UNSET) !== fPurpose) return false
     return true
   })
+  return buildResult(rows, all.length, options, filters)
+}
+
+/** 已筛好的行 → 完整结果（同步；两个 aggregate 共用，口径只有这一份） */
+function buildResult(rows, scanned, options, filters) {
 
   const out = {
     semantics: SEMANTICS,
     /** 账本里一共有多少行（不受筛选影响）—— 用于「N 天里有 M 条」这类说明 */
-    scanned: all.length,
+    scanned,
     matched: rows.length,
     totals: emptyBucket(),
     byProvider: {},
@@ -259,6 +219,12 @@ function aggregate(all, options, filters) {
     byDay: {},
   }
 
+  /*
+   * ★ 按天这一维用**日序号（数字）当键**，最后再转 `YYYY-MM-DD`。
+   *   以前每行都调 `dayKey(row.at)`（内部 new Date + 取三个分量），4 万行 12ms，
+   *   是全量聚合里最大的单项。现在同一天只算一次（见 usage-day.cjs）。
+   */
+  const byDayIndex = new Map()
   for (const row of rows) {
     const facts = rowFacts(row)
     addInto(out.totals, row, facts)
@@ -270,8 +236,18 @@ function aggregate(all, options, filters) {
     /* 任务 / 会话只对「真有归属」的记：空串进单独的桶，不冒充某个具体任务 */
     bump(out.byTask, row.taskId || TASK_NONE, row, facts)
     bump(out.bySession, row.sessionId || TASK_NONE, row, facts)
-    const day = dayKey(row.at)
-    if (day) bump(out.byDay, day, row, facts)
+    const dayIndex = dayIndexOf(row.at)
+    if (Number.isFinite(dayIndex)) {
+      const bucket = byDayIndex.get(dayIndex) ?? emptyBucket()
+      addInto(bucket, row, facts)
+      byDayIndex.set(dayIndex, bucket)
+    }
+  }
+  /* 数字键 → 日期字符串（外部形状不变：`byDay` 的键始终是 `YYYY-MM-DD`） */
+  for (const [index, bucket] of byDayIndex) {
+    const label = labelOf(index)
+    if (!label) continue
+    out.byDay[label] = bucket
   }
 
   finish(out.totals)
@@ -288,12 +264,12 @@ function aggregate(all, options, filters) {
   let days = Object.keys(out.byDay)
     .sort()
     .map((day) => ({ day, ...finish(out.byDay[day]) }))
-  if (options.includeEmptyDays) days = fillDays(days, from, to)
+  if (options.includeEmptyDays) days = fillDays(days, Number(filters.from) || 0, Number(filters.to) || 0)
   out.days = days
 
-  /* 原始行（诊断用；默认不给 —— 调用方要了才附上，避免 IPC 传大数据） */
-  if (options.withRows) out.rows = rows
+  if (options.withRows) out.rows = rows /* 诊断用，默认不给：走 IPC 传大数组很贵 */
+  out.anomalies = anomalies.checkRows(rows) /* 只报能确证的四类，见 usage-anomalies.cjs */
   return out
 }
 
-module.exports = { query, dayKey, isKnown, emptyBucket, SEMANTICS, UNSET, TASK_NONE }
+module.exports = { query, dayKey: usageDay.dayKey, isKnown, emptyBucket, SEMANTICS, UNSET, TASK_NONE }

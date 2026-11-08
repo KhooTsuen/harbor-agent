@@ -14,6 +14,7 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { useAppStore } from '@/stores/useAppStore'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { adviseCompact, DEFAULT_AUTO_RATIO, modelWindowOf } from '@/stores/thread/compact'
+import { knownTotalsOf } from '@/types/usage'
 
 /** 圈圈直径 / 描边（px）—— 2xs 的字号旁边，再大就抢眼了 */
 const RING = 6
@@ -55,7 +56,33 @@ function ContextGauge() {
    *     （那个数只算正文、不含工具记录，实测低估 2.3～6.3 倍）。
    * 口径与压缩同一份（`advice`），不自己另算一套。
    */
-  const cached = thread.messages.reduce((sum, message) => sum + (message.usage?.cached ?? 0), 0)
+  /*
+   * 缓存命中 token：**服务商上报的真实值**（`cached` 含在 `prompt` 内，不重复加）。
+   * ★ 2026-11-09 修：以前读 `message.usage?.cached`，而落在这里的其实是原始字段
+   *   （`prompt_cache_hit_tokens`）—— 于是这个数字**永远是 0**。
+   *   现在内核在 `handlers/chat.cjs` 出口就归一成 `UsageBucket` 口径（见 `usage-bucket.cjs`）。
+   */
+  const knownSum = thread.messages.reduce(
+    (acc, message) => {
+      const one = knownTotalsOf(message.usage)
+      return {
+        prompt: acc.prompt + one.prompt,
+        completion: acc.completion + one.completion,
+        total: acc.total + one.total,
+        cached: acc.cached + one.cached,
+        requests: acc.requests + one.requests,
+        unknown: acc.unknown + one.unknown,
+      }
+    },
+    { prompt: 0, completion: 0, total: 0, cached: 0, requests: 0, unknown: 0 },
+  )
+  const cached = knownSum.cached
+  /* 最近一次**有真实用量**的回复 —— 用于「最近一次请求」那一行 */
+  const lastUsage = [...thread.messages].reverse().find((message) => message.usage?.known)?.usage
+  /* 最近一条回复（不管有没有用量）—— 用来区分「统计中」和「没上报」 */
+  const lastMessage = [...thread.messages]
+    .reverse()
+    .find((message) => message.kind !== 'error' && (message.role === 'assistant' || message.usage))
   const autoAt = Number.isFinite(cfg?.context?.autoCompactAt)
     ? Number(cfg?.context?.autoCompactAt)
     : DEFAULT_AUTO_RATIO
@@ -74,6 +101,24 @@ function ContextGauge() {
     .reverse()
     .find((message) => message.contextInput)?.contextInput
   const detail = [
+    /* ── 真实用量（服务商上报）——放在最前，它才是「花了多少」 ── */
+    lastUsage
+      ? `最近一次请求（服务商上报）：输入 ${(lastUsage.prompt ?? 0).toLocaleString()} · ` +
+        `输出 ${(lastUsage.completion ?? 0).toLocaleString()} token` +
+        (lastUsage.cached !== null
+          ? `（缓存命中 ${lastUsage.cached.toLocaleString()}，含在输入内）`
+          : '')
+      : lastMessage && (lastMessage.status === 'streaming' || lastMessage.status === 'sending')
+        ? '最近一次请求：统计中（还没拿到服务商的用量）'
+        : '最近一次请求：无数据（服务商没返回 usage）',
+    knownSum.requests > 0
+      ? `本会话累计（已知）：输入 ${knownSum.prompt.toLocaleString()} · 输出 ${knownSum.completion.toLocaleString()} · 合计 ${knownSum.total.toLocaleString()} token，共 ${knownSum.requests} 次请求`
+      : '',
+    knownSum.unknown > 0
+      ? `另有 ${knownSum.unknown} 次请求没有用量上报 —— 那些消耗**未知**，没有算进上面的合计`
+      : '',
+    /* ── 下面是上下文**估算**：用于裁剪与压缩，不是计费用量 ── */
+    `──── 以下是上下文估算（用于裁剪，不是计费）────`,
     `上下文 ${pct}%（估算 ${advice.used.toLocaleString()} / ${advice.limit.toLocaleString()} token）`,
     `口径：按**实际请求体**估（含展开的工具记录与单条 2000 字上限），不是只算正文`,
     window
@@ -91,10 +136,32 @@ function ContextGauge() {
     advice.auto
       ? '已经超过自动压缩线 —— 下一轮会自动压缩'
       : `距自动压缩线还差约 ${remain.toLocaleString()} token`,
-    `数字是按字符换算的估算，不是 API 计费 token`,
+    `百分比是按字符换算的估算，不是 API 计费 token`,
   ]
     .filter(Boolean)
     .join('\n')
+
+  /*
+   * 三种状态（方案 A：默认轻量，详情在 tooltip 里）：
+   *   · `pending`  —— 正在生成，还没拿到 usage →「统计中」
+   *   · `unknown`  —— 结束了但服务商没给 →「无数据」（**不是 0**）
+   *   · `known`    —— 有真实数字 →「入 N」
+   * 判据只看最近一条回复的状态与它的 usage.known，不猜。
+   */
+  const pending = lastMessage?.status === 'streaming' || lastMessage?.status === 'sending'
+  const usageState: 'known' | 'pending' | 'unknown' = lastUsage
+    ? 'known'
+    : pending
+      ? 'pending'
+      : lastMessage
+        ? 'unknown'
+        : 'pending'
+  const usageLabel =
+    usageState === 'known'
+      ? `入 ${(lastUsage?.prompt ?? 0).toLocaleString()}`
+      : usageState === 'pending'
+        ? '统计中'
+        : '无数据'
 
   return (
     <Tooltip content={detail}>
@@ -129,6 +196,13 @@ function ContextGauge() {
           />
         </svg>
         <span className="font-mono">{pct}%</span>
+        {/*
+         * 最近一次请求的**真实**输入 token（服务商上报）。
+         * 三种状态分开：有数 / 统计中 / 无数据 —— 后两种不许显示成 0。
+         */}
+        <span className="font-mono text-fg-tertiary" data-usage-state={usageState}>
+          {usageLabel}
+        </span>
       </span>
     </Tooltip>
   )

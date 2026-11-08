@@ -12,7 +12,8 @@ import type {
   ThreadMode,
   ThreadStatus,
 } from './index'
-import type { StoredMessage, UsageBucket } from './models-extra'
+import type { StoredMessage } from './models-extra'
+import type { MessageUsage } from './usage'
 import type { StoredClarify } from './clarify'
 
 /* ══════════════════════════════════════════════════════════════
@@ -87,8 +88,8 @@ export interface Message {
    * 重开会话时由 `stores/app/disk.ts` 从会话文件的 `compacts[].upTo` 还原。
    */
   compactUpTo?: number
-  /** 这条回复花了多少 token（服务端返回的，没有就是记不上） */
-  usage?: UsageBucket
+  /** 这条回复花了多少 token（服务端返回的；`known:false` = 这次没上报，不是 0） */
+  usage?: MessageUsage
   /** 生成的图片（data URL 或 http URL），显示在消息里 */
   images?: string[]
   /**

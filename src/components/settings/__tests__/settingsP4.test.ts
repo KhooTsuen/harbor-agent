@@ -120,10 +120,21 @@ describe('第四阶段 / ③ 权限与安全：真开关与「只读说明」分
 
   it('★★ 当前有效授权与过去的审批分成两节（顺序：先能撤的）', () => {
     const audit = strip(read('src/components/settings/security/AccessAuditGroup.tsx'))
-    const grantAt = audit.indexOf('当前有效授权')
-    const historyAt = audit.indexOf('审批记录')
-    expect(grantAt).toBeGreaterThan(-1)
-    expect(historyAt).toBeGreaterThan(grantAt)
+    /*
+     * 2026-11-09：判据从「标题文字」改成「组件挂载顺序」。
+     * 上一轮删掉了外面那个重复的「审批记录」标题（`ApprovalHistory` 自己带一个），
+     * 于是这个文件里不再出现那四个字 —— 但**顺序要求没变**，只是载体换了。
+     * 现在直接看三块谁先谁后：能撤的 → 历史 → 日志。
+     */
+    const grantAt = audit.indexOf('<GrantsPanel')
+    const historyAt = audit.indexOf('<ApprovalHistory')
+    const logAt = audit.indexOf('<AuditPanel')
+    expect(grantAt, 'GrantsPanel 没挂上').toBeGreaterThan(-1)
+    expect(historyAt, 'ApprovalHistory 没挂上').toBeGreaterThan(grantAt)
+    expect(logAt, 'AuditPanel 没挂上').toBeGreaterThan(historyAt)
+    /* 标题也还在（只是不再写「审批记录」，那个由组件自己带） */
+    expect(audit).toContain('当前有效授权')
+    expect(audit).toContain('审计日志')
   })
 })
 
