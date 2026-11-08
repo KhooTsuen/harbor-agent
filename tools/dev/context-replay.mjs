@@ -11,7 +11,7 @@
  *
  * ── 怎么跑 ────────────────────────────────────────────────────
  *
- *   node tools/dev/context-replay.mjs "E:\Harbor\data\sessions\sess_xxx.jsonl"
+ *   node tools/dev/context-replay.mjs "<你的数据目录>/sessions/sess_xxx.jsonl"
  *   node tools/dev/context-replay.mjs a.jsonl b.jsonl        # 多份一起比
  *
  * 参数（可选，都能不传）：

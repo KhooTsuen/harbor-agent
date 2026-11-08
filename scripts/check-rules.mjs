@@ -30,6 +30,7 @@ import { checkHooksInstalled } from './check-rules/checks-hooks.mjs'
 import { checkHygiene, LIMITS } from './check-rules/checks-hygiene.mjs'
 import { checkDriftingNumbers } from './check-rules/checks-drift.mjs'
 import { checkChangelogChange } from './check-rules/checks-changelog.mjs'
+import { checkTrackedCruft } from './check-rules/checks-tracked-cruft.mjs'
 
 /* 门面照旧再导出一次：`import { checkLineLimits } from './check-rules.mjs'` 仍然可用
    （测试就是这么用的 —— 拆文件不该改调用方，见 docs/踩坑记录.md）
@@ -45,6 +46,7 @@ export {
   checkNoNewDeps,
   checkNoSecretsInConfig,
   checkTodos,
+  checkTrackedCruft,
   LIMITS,
 }
 
@@ -101,6 +103,7 @@ export const CHECKS = [
   ['改了代码必须写 CHANGELOG', checkChangelogChange],
   ['约束机制在位（警告）', checkHooksInstalled],
   ['仓库卫生（警告）', checkHygiene],
+  ['误跟踪文件（警告）', checkTrackedCruft],
   ['易漂数字（警告）', checkDriftingNumbers],
   ['脚本不按映像名杀进程', checkNoKillByImageName],
 ]

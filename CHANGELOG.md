@@ -1,3 +1,84 @@
+## [未发布]
+
+### 杂项：公开源码仓库整理（退役过时开发脚本、删零引用模块、审计快照归档）
+
+**背景**：上一轮调查发现仓库里混着三类不该长期留下的东西 ——
+可误用的旧发布入口、没人引用的死代码、根目录上的历史审计产物。
+
+**① 退役 `tools/dev/` 里 18 个脚本（留 1 个）**
+
+发版、同步、自检这三件事全部有了正式入口，旧脚本成了「没有新功能、却能误用」的第二套：
+
+| 旧脚本 | 被谁取代 |
+|---|---|
+| `do-release.mjs` / `mk-release.mjs` | `npm run release:upload` |
+| `finish.mjs` / `ship-beta.mjs` / `sync-harbor-24.mjs` | `npm run package` + 发布检查第 6 步 |
+| `bump.mjs` / `bump2.mjs` | `npm version` |
+| `verify.mjs` / `run-selftest.mjs` / `selftest-tail.mjs` | `npm run verify` / `npm test` |
+| `check-commit-msg.mjs` | `scripts/hooks/commit-msg.mjs`（真钩子） |
+| `github-check.mjs` / `release-state.mjs` | `npm run check:release` + GitHub Actions |
+| `post-sync-check.mjs` | `npm run test:app`（channelsMissing） |
+| `old-safe-write.mjs` / `where-am-i.mjs` / `read-conv.mjs` | 一次性使命已完成 |
+
+其中 4 个带**真风险**，不是「旧了没用」：
+
+- `ship.mjs` 用 `git commit --no-verify` —— 直接跳过 pre-commit 与 commit-msg 两道闸门。
+- `ship.mjs` / `do-release.mjs` / `github-check.mjs` 写死 `1.29.0`；`sync-harbor-24.mjs` 写死 `1.24.0`
+  —— 十几版之前的号，谁跑谁把旧版本号带回去。
+- `read-conv.mjs` 直接读 `E:\Harbor\data\sessions`（真实用户会话，硬编码本机路径）。
+- `ship-beta.mjs` / `finish.mjs` / `sync-harbor-24.mjs` 含递归删除或 robocopy `/MIR`。
+
+**保留 `context-replay.mjs`**：它是唯一能回答「模型到底收到了什么」的只读诊断，
+P0/P1 报告点名引用，参数化传路径（顺手把注释里的 `E:\Harbor\...` 示例改成占位符）。
+`tmp/README.md` 的索引表跟着重写，改成「想干什么 → 用哪条正式命令」。
+
+**② 删 7 个零引用模块（1591 行 → 1591，减 699 行）**
+
+判据不是「文件名怪」，而是 **文件名 + 每个导出符号在全仓库（含测试、脚本、文档）
+都零使用**，逐个核过：
+
+| 模块 | 行数 | 核实结果 |
+|---|---|---|
+| `src/components/chat/composer/ModelPicker.tsx` | 293 | 导出 `ModelPicker` 零使用，无 import |
+| `src/components/layout/sidebar/WorkdirMenu.tsx` | 139 | `WorkdirMenu` / `folderLabel` 都零使用 |
+| `src/constants/glass.ts` | 87 | 7 个导出全零使用（`glassmorphism` 配置项是另一回事，仍在用） |
+| `src/hooks/useResize.ts` | 76 | 两条导出零使用 |
+| `src/hooks/useKeyboardShortcuts.ts` | 43 | 两条导出零使用 |
+| `src/hooks/useTypewriter.ts` | 31 | 零 import；`MessageItem.tsx` 里那是**同名局部函数**，不来自这个模块 |
+| `src/lib/imageError.ts` | 22 | `explainError` 零使用 |
+
+**明确没删的两个**（上轮扫描曾误报为孤儿）：`src/lib/migrateStorage.ts`
+（`main.tsx` 有 `import './lib/migrateStorage'` 副作用导入）、
+`electron/core/run-stats.cjs`（被 `scripts/run-stats.mjs` 与自检 95 组引用）。
+
+**③ 审计快照归档**
+
+`security-effectiveness-results.json`（41 KB）从仓库根移到 `docs/research/`：
+它是 2026-10 的一次性审计快照（`baseCommit` / `auditCommit` 都是历史提交），
+不是活的配置。文件名不变，所以 CHANGELOG 里的历史提及仍然准确；
+`docs/security-effectiveness-audit.md` 那一处相对链接改成 `research/...`（已复核无其它旧链接）。
+
+**④ 新增一条仓库检查：误跟踪文件（警告）**
+
+补的正是这次的坑：**已经进了 Git 的文件，之后往 `.gitignore` 加规则是拦不住的**，
+必须 `git rm --cached` 才退出跟踪。判据用 `git ls-files -i -c --exclude-standard`
+（git 自己算「被跟踪 ∩ 匹配忽略」，零误伤），外加「以 `tmp-` / `tmp_` 命名的被跟踪文件」。
+这次调查里 `tools/` 下躺着 8 个别的项目（GazBoard）的 CDP 探针，没有任何测试会说什么 ——
+现在会报出来。`tmp/README.md` 是故意进仓库的索引，已放行。
+
+**验证**
+
+- `npx tsc --noEmit`：0 错误（含测试文件，说明没有测试还在引用被删模块）。
+- 全量单测：**241 文件 / 2309 项全过**（与清理前同一数字，无回归）。
+- `node scripts/check-rules.mjs`：新检查已接纳，报「1924 个跟踪文件，没有误跟踪」。
+- 跟踪文件数 1949 → 1924（−25：18 脚本 + 7 模块，另 1 个档案是 `git mv` 不计减）。
+
+**遗留**
+
+- `tools/` 根下另有 8 个「零提及」脚本（`ab-tool-choice.mjs`、`break-test-*`、
+  `e2e-real-api.mjs` 等）**本轮没动** —— 它们不含危险入口，其中几个是安全破坏性测试的一部分，
+  要判「能不能删」得逐个读用途，不属于本轮范围。
+
 ## [1.36.0-beta.1] — 2026-11-09 · 完整设置工作区（五阶段）+ 真实模型用量监控与可视化
 
 > **这是 beta（预发布）**：正式版仍是 `1.35.0`，它的 tag / Release / 安装包一个没动。

@@ -8,24 +8,31 @@
 
 ## 1. 还活着的脚本 —— 分两处
 
-### `tools/dev/`（**进仓库**，可复用的一次性脚本搬过去了）
+### `tools/dev/`（**进仓库**，只留真正还在用的）
 
-| 脚本 | 干什么 |
+> **2026-11-09 清理**：这里原来有 19 个脚本，18 个已退役 —— 原因是
+> **发版/同步/自检这三件事全部有了正式入口**，旧脚本成了「可误用又没有新功能」的
+> 第二套：`npm run package` / `release:zip` / `release:upload` / `check:release` /
+> `npm test` / `npm run test:app` 覆盖了它们的全部能力。
+> 其中几个还带着真风险：`ship.mjs` 用 `git commit --no-verify` 跳过检查；
+> `do-release.mjs` / `ship.mjs` / `github-check.mjs` 写死 1.29.0；
+> `sync-harbor-24.mjs` 写死 1.24.0；`read-conv.mjs` 直接读
+> `E:\Harbor\data\sessions`（真实用户会话）。
+> 历史都还在 Git 里（`git log -- tools/dev/<名字>`），需要时能捞回来。
+
+| 脚本 | 干什么 | 为什么留着 |
+| --- | --- | --- |
+| `context-replay.mjs` | 上下文链路回放：真实会话 → 两层裁剪 → `assemble` → **模型最终看到什么** | 唯一能回答「模型到底收到了什么」的只读诊断，P0/P1 报告点名引用；参数化路径，不写死 |
+
+**要发版/同步/自检，用正式入口，别再造脚本：**
+
+| 想干什么 | 正式命令 |
 | --- | --- |
-| `where-am-i.mjs` | 「我现在在哪」：工作区未提交项 / 最近三笔提交 / 服务器 main / 装机版版本 |
-| `ship.mjs` / `finish.mjs` | 提交 → 推送 → 打包 → 同步到 `E:\Harbor`（跳过顶层 `data/`），结论落 `tmp/*.txt` |
-| `ship-beta.mjs` / `do-release.mjs` / `mk-release.mjs` | 建 beta release / 归档产物 / 收尾 |
-| `bump.mjs` / `bump2.mjs` | 改 `package.json` 版本号（旧手法；现在优先 `npm version`） |
-| `check-commit-msg.mjs` | 提交信息格式检查 |
-| `github-check.mjs` / `release-state.mjs` | GitHub 连不通时核对线上状态 |
-| `run-selftest.mjs` / `selftest-tail.mjs` | 只跑内核自检并把尾部写文件 |
-| `verify.mjs` | 只跑验证链并落盘（终端会乱码，所以写文件） |
-| `sync-harbor-24.mjs` / `post-sync-check.mjs` | 同步到装机版后做一遍体检 |
-| `old-safe-write.mjs` | 拿「旧版本」跑新自检的那条断言，证明它抓的是真问题 |
-| `read-conv.mjs` | 从 `E:\Harbor\data\sessions\*.jsonl` 里捞某条对话看 |
-
-> 搬过去时补了路径层级：这些脚本用 `import.meta.dirname, '..'` 当仓库根，
-> 深了一级，`check-commit-msg.mjs` / `mk-release.mjs` / `old-safe-write.mjs` 各改了一行。
+| 全链验证 | `npm run verify`（CI、pre-push、preflight 用的是同一条） |
+| 自检 + 应用自检 | `npm test` · `npm run test:app` |
+| 打包 / 打 zip / 发 Release | `npm run package` · `release:zip` · `release:upload` |
+| tag 到位检查 | `npm run check:release` |
+| 升版本号 | `npm version <版本>`（`package.json` + lock 两处一起改） |
 
 ### `tmp/`（**留在这里**）
 
