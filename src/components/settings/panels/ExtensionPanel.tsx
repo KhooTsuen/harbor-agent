@@ -1,59 +1,36 @@
-import { Select } from '@/components/ui/Field'
-import { useConfigStore } from '@/stores/useConfigStore'
-import { Row, SectionTitle } from '../parts'
-import { BrowserExtCard } from '../tabs/BrowserExtCard'
-import { SkillsTab } from '../tabs/SkillsTab'
-import { McpTab } from '../tabs/McpTab'
+import { useExtensionTabStore } from '@/stores/useExtensionTabStore'
+import { ExtensionTabs } from './ExtensionTabs'
+import { BrowserGroup } from './BrowserGroup'
+import { SkillsGroup } from './SkillsGroup'
+import { McpGroup } from './McpGroup'
 
 /* ══════════════════════════════════════════════════════════════
-   工具与扩展 = 让 Agent 多会点东西
+   工具与扩展 = 让 Agent 多会点东西（从哪来 · 连没连上 · 怎么配）
 
-   四块按「来源」排，也按「离你由近到远」排：
-     浏览器链接  Agent 打开网页时的放行策略（这是权限，不是插件）
-     浏览器插件  Edge 侧边栏（读你正在看的网页）
-     技能        本地文件（我教它怎么做这类事）
-     MCP         外部进程（接别的工具/服务）
-    ★ 第三阶段（两条都搬走了，这里不再留入口 —— 两处能改同一份配置迟早出鬼故事）：
-      · 定时任务   → 「对话与任务」（「你不在场时它替你干什么」，属于对话行为）
-      · 双模型协作 → 「模型与服务商 → 双模型协作」（原来挂在 McpTab 里，一起搬的）
+   ── 从「一个长页面」改成「三个能力区」────────────────────────
+   原来四块纵向平铺：链接策略 / 浏览器插件 / 技能 / MCP（含桥与项目测试）。
+   MCP 那块最长，把技能挤到中间要滚很久；而这三块的**维护时刻**完全不同：
+   插件装一次、技能偶尔加、MCP 接新服务时才来。
 
-   ★ 第二阶段：「网页里的链接」从「通用与快捷键」搬到这里。
-     它原来和「回车发送」摆在一起，但它改的是 **Agent 能不能打开某个地址**，
-     属于能力与放行，不是应用本身的输入习惯。配置键没变
-     （`config.general.browserNavigation`），只是换了编辑位置。
+   ── 和「权限与安全」的分工（真机上容易混）────────────────────
+     工具与扩展：**是什么 · 连没连上 · 怎么配**
+     权限与安全：**允许它做什么 · 给过什么授权 · 做过什么**
+   所以 MCP 的连接参数在右边（这一页），全局权限档在权限页；
+   需要跨页找的时候给指路句子，不复制一份可编辑控件。
 
+   ★ 双模型协作、定时任务已经分别归到「模型与服务商」「对话与任务」
+     （第三阶段），这里不再留入口。
    ══════════════════════════════════════════════════════════════ */
 
 export function ExtensionPanel(): React.ReactElement {
-  const config = useConfigStore((s) => s.config)
-  const patchGeneral = useConfigStore((s) => s.patchGeneral)
+  const tab = useExtensionTabStore((s) => s.tab)
 
   return (
     <>
-      <SectionTitle hint="Agent 在网页里点链接时怎么处理">浏览与插件</SectionTitle>
-
-      <Row
-        label="网页里的链接"
-        hint="Agent 打开网页时的放行策略：每次先问你 / 直接放行 http(s) / 只允许打开空白页"
-      >
-        <Select
-          value={config?.general.browserNavigation ?? 'ask'}
-          onChange={(v) => void patchGeneral({ browserNavigation: v as 'ask' | 'allow' | 'block' })}
-          options={[
-            { value: 'ask', label: '每次先问我' },
-            { value: 'allow', label: '直接放行' },
-            { value: 'block', label: '不允许打开网页' },
-          ]}
-        />
-      </Row>
-
-      <BrowserExtCard />
-
-      <SkillsTab />
-
-      <div>
-        <McpTab />
-      </div>
+      <ExtensionTabs />
+      {tab === 'browser' ? <BrowserGroup /> : null}
+      {tab === 'skills' ? <SkillsGroup /> : null}
+      {tab === 'mcp' ? <McpGroup /> : null}
     </>
   )
 }

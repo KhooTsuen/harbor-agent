@@ -1,4 +1,4 @@
-import { ProviderPanel, ToolsPanel } from '../ProviderPanel'
+import { ProviderPanel } from '../ProviderPanel'
 import { ModelParamsPanel } from '../providers/ModelParamsPanel'
 import { AssistantSwitches } from '../providers/AssistantSwitches'
 import { CollabPanel } from '../CollabPanel'
@@ -70,6 +70,6 @@ export function ModelsPanel(): React.ReactElement {
   )
 }
 
-/* 权限档位仍在「权限与安全」页 —— 这里只是把它转出去，
-   让老代码（AccessPanel）的引用路径不用改。 */
-export { ToolsPanel }
+/* 第四阶段：`ToolsPanel` 的过渡转出已删 —— 权限档位现在住在
+   `security/PermissionLevelSummary.tsx`（「权限与安全 → 权限策略」），
+   不再从这一页转手。留在那里会让「模型页也导出一个权限组件」继续误导人。 */

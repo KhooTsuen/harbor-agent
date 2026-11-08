@@ -1,17 +1,15 @@
-import { Plug, Plus, Shield } from 'lucide-react'
+import { Plug, Plus } from 'lucide-react'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { Button } from '@/components/ui/Button'
-import { Field } from '@/components/ui/Field'
 import { ProviderCard } from './providers/ProviderCard'
 import { CodexCliCard } from './providers/CodexCliCard'
 
 /* ══════════════════════════════════════════════════════════════
-   设置 → 模型 / 工具
+   设置 → 模型 → 供应商
 
-   拆成三个导出，各自独立：
-     ProviderPanel   供应商列表
-     AssistantPanel  助手参数（模型 / 采样 / 人设）
-     ToolsPanel      权限档位 / 工作目录 / 超时
+   ★ 第四阶段：`ToolsPanel`（权限档位 / 命令超时）搬去了
+     `security/PermissionLevelSummary.tsx` —— 它属于「权限与安全」，
+     放在模型页只是历史遗留。这里不再有它的任何副本或转出。
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 供应商 ───────────────────────────────────────────────── */
@@ -69,78 +67,6 @@ export function ProviderPanel() {
           <ProviderCard key={provider.id} provider={provider} />
         ),
       )}
-    </div>
-  )
-}
-
-/* ── 工具与权限 ───────────────────────────────────────────── */
-
-const PERMISSIONS = [
-  {
-    id: 'readonly' as const,
-    label: '只读',
-    hint: '只能看文件，不能改。让它先调研、你自己动手时用。',
-  },
-  {
-    id: 'ask' as const,
-    label: '需要确认',
-    hint: '写文件、改文件、跑命令（含低风险）都会弹窗问你。默认推荐。',
-  },
-  {
-    id: 'full' as const,
-    label: '完全访问',
-    hint: '不再弹任何确认框：写文件、跑命令（含高风险）、工作目录之外的文件都直接执行。要拦住某类命令，去「权限与安全 → Shell 风险策略」把它设成「拦住」；注意那边设成「每次先问」在这一档下不会生效（设了也不问）。',
-  },
-]
-
-export function ToolsPanel() {
-  const config = useConfigStore((s) => s.config)
-  const patchTools = useConfigStore((s) => s.patchTools)
-  if (!config) return null
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <p className="mb-2 flex items-center gap-1.5 text-2xs text-fg-tertiary">
-          <Shield size={12} />
-          工具权限
-        </p>
-        <div className="flex flex-col gap-2" role="radiogroup" aria-label="工具权限">
-          {PERMISSIONS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={config.tools.permission === p.id}
-              onClick={() => void patchTools({ permission: p.id })}
-              className={
-                config.tools.permission === p.id
-                  ? 'acrylic-card text-left'
-                  : 'acrylic-card text-left transition-colors hover:bg-bg-hover'
-              }
-            >
-              <span className="flex items-center gap-2 text-dense text-fg-primary">
-                {p.label}
-                {config.tools.permission === p.id ? (
-                  <span className="text-2xs text-fg-secondary">●</span>
-                ) : null}
-              </span>
-              <span className="mt-0.5 block text-2xs leading-relaxed text-fg-tertiary">
-                {p.hint}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <label className="acrylic-card block">
-        <span className="mb-1 block text-2xs text-fg-tertiary">命令超时（秒）</span>
-        <Field
-          type="number"
-          value={String(config.tools.shellTimeout)}
-          onChange={(v) => void patchTools({ shellTimeout: Number(v) || 60 })}
-        />
-      </label>
     </div>
   )
 }

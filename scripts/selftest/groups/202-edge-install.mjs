@@ -173,8 +173,12 @@ export async function run() {
   group('浏览器插件 · 界面不谎报已安装')
 
   const cardSrc = R('src/components/settings/tabs/BrowserExtCard.tsx')
+  /* 第四阶段：扩展页拆成三个能力区，浏览器插件进了 BrowserGroup。
+     判据原意不变 —— 「它挂在扩展设置页里」，只是路径跟着走。 */
   const panelSrc = R('src/components/settings/panels/ExtensionPanel.tsx')
-  check('★★ 挂在「扩展」设置页里', /<BrowserExtCard \/>/.test(panelSrc))
+  const groupSrc = R('src/components/settings/panels/BrowserGroup.tsx')
+  check('★★ 挂在「扩展」设置页里', /<BrowserExtCard \/>/.test(groupSrc))
+  check('★★ 而那个分组确实挂在扩展页上（不是写了个没人用的组件）', /<BrowserGroup \/>/.test(panelSrc))
   check('★★★ 「已连接」只在 connected 为真时说', /if \(s\.connected\) return \{ text: '已连接/.test(cardSrc))
   check('★★ 没连上时说的是「等你在 Edge 里加载扩展」，不是「已安装」', /等你在 Edge 里加载扩展/.test(cardSrc))
   check('★★ 把要选的目录显示出来（否则用户不知道选哪儿）', /status\.targetDir/.test(cardSrc))

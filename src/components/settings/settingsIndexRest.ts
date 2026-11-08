@@ -6,6 +6,31 @@ import type { SettingsEntry } from './settingsIndexTypes'
 
 export const SETTINGS_INDEX_REST: readonly SettingsEntry[] = [
   /* ── 权限与安全 ── */
+  /* 第四阶段：四组分开之后，新增几条「用户会拿这些词来搜」的入口 */
+  {
+    tab: 'access',
+    label: '当前权限状态',
+    hint: '现在是哪一档、意味着什么',
+    keywords: ['权限档', '档位', '状态', '允许什么', 'permission'],
+  },
+  {
+    tab: 'access',
+    label: '会话内容加密',
+    hint: '对话在磁盘上加密',
+    keywords: ['加密', '会话', 'encrypt', '磁盘'],
+  },
+  {
+    tab: 'access',
+    label: '当前有效授权',
+    hint: '现在还开着的口子，可以撤',
+    keywords: ['授权', '撤销', 'grant', '放行'],
+  },
+  {
+    tab: 'access',
+    label: '风险试算',
+    hint: '输入一条命令看会不会被拦',
+    keywords: ['风险', '试算', '拦截', 'risk', '命令'],
+  },
   {
     tab: 'access',
     label: '工具权限',

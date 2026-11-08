@@ -1,34 +1,37 @@
-import { SectionTitle } from '../parts'
-import { ToolsPanel } from '../ProviderPanel'
-import { SecurityTab } from '../tabs/SecurityTab'
-import { SearchPanel } from '../tabs/SearchPanel'
+import { useAccessTabStore } from '@/stores/useAccessTabStore'
+import { AccessTabs } from '../security/AccessTabs'
+import { AccessPolicyGroup } from '../security/AccessPolicyGroup'
+import { AccessProtectionGroup } from '../security/AccessProtectionGroup'
+import { AccessAuditGroup } from '../security/AccessAuditGroup'
+import { AccessAdvancedGroup } from '../security/AccessAdvancedGroup'
 
 /* ══════════════════════════════════════════════════════════════
-   权限与安全 = Agent 能碰什么
+   权限与安全 = Agent 能碰什么、它做过什么、我还能收回什么
 
-   原来分成「工具」和「安全」两个标签 —— 但权限三档在「工具」里、
-   文件访问范围在「安全」里，**说的是一件事**，用户得两边找。
+   ── 从「一个长页面」改成「四个分组」──────────────────────────
+   原来这一页把九块纵向平铺：权限档 / 文件范围 / Shell 三档 / 网络策略 /
+   会话加密 / 当前授权 / 审批记录 / 审计日志 / 密钥。真机要滚五六屏，
+   而且「撤销某个授权」这件最急的事排在第五块之后。
 
-   合起来之后这一页就是三条轴，很好记：
-     文件（工作目录 + 文件访问范围）
-     网络（联网搜索 + 出口）
-     命令（Shell 风险策略）
-   最后是「留下了什么痕」（审计日志）和「密钥放哪」。
+   四组的读者和时刻都不同（配一次 / 偶尔看 / 出事才来 / 平时不看），
+   所以按「什么时候会发生」排，而不是按「配置属于哪个模块」排。
+
+   ── 装配只在这里做一次 ────────────────────────────────────────
+   和 13 页装配表同一个道理：分组内容集中在一处 switch 里，
+   加一个分组只改这里。任何子组件都不许自己再挂同一块内容 ——
+   `settingsP4.test` 会逐个数渲染次数。
    ══════════════════════════════════════════════════════════════ */
 
 export function AccessPanel(): React.ReactElement {
+  const tab = useAccessTabStore((s) => s.tab)
+
   return (
     <>
-      <ToolsPanel />
-
-      <SectionTitle>联网</SectionTitle>
-      <div className="py-3">
-        <SearchPanel />
-      </div>
-
-      <div>
-        <SecurityTab />
-      </div>
+      <AccessTabs />
+      {tab === 'policy' ? <AccessPolicyGroup /> : null}
+      {tab === 'protection' ? <AccessProtectionGroup /> : null}
+      {tab === 'audit' ? <AccessAuditGroup /> : null}
+      {tab === 'advanced' ? <AccessAdvancedGroup /> : null}
     </>
   )
 }

@@ -35,6 +35,10 @@ const generalTab = strip(read('src/components/settings/tabs/GeneralTab.tsx'))
 const behavior = strip(read('src/components/settings/panels/ConversationBehavior.tsx'))
 const conversation = strip(read('src/components/settings/panels/ConversationPanel.tsx'))
 const extension = strip(read('src/components/settings/panels/ExtensionPanel.tsx'))
+/* 第四阶段：扩展页拆成三个能力区，「网页里的链接」进了 BrowserGroup。
+   判据原意不变（在工具与扩展页里、配置键没变），读的是**整页合并后的源码**。 */
+const extensionBrowser = strip(read('src/components/settings/panels/BrowserGroup.tsx'))
+const extensionAll = `${extension}\n${extensionBrowser}`
 
 describe('第二阶段 · 设置项归属（双向：新页有、旧页没有）', () => {
   it('★★ 默认模式在「对话与任务」，不在「通用与快捷键」', () => {
@@ -50,7 +54,7 @@ describe('第二阶段 · 设置项归属（双向：新页有、旧页没有）
   })
 
   it('★★ 网页里的链接在「工具与扩展」，不在「通用与快捷键」', () => {
-    expect(extension).toContain('browserNavigation')
+    expect(extensionAll).toContain('browserNavigation')
     expect(generalTab).not.toContain('browserNavigation')
   })
 
@@ -67,7 +71,7 @@ describe('第二阶段 · 设置项归属（双向：新页有、旧页没有）
     /* 搬家只动界面位置：键名写错的话，用户之前设的值会读不出来，
        表面上「设置丢了」，实际是读错了键。 */
     expect(behavior).toContain('patchGeneral({ autoTitle: v })')
-    expect(extension).toContain("browserNavigation: v as 'ask' | 'allow' | 'block'")
+    expect(extensionAll).toContain("browserNavigation: v as 'ask' | 'allow' | 'block'")
   })
 })
 

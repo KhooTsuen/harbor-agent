@@ -117,7 +117,7 @@ export const SETTINGS_NAV: readonly SettingsTabDef[] = [
     label: '权限与安全',
     icon: Shield,
     group: '能力与安全',
-    blurb: '它能碰哪些文件、能连哪些地址、命令风险怎么拦。',
+    blurb: '权限档位、文件范围、命令与网络策略、会话加密、授权与审计。',
     detailedOnly: true,
   },
   {
@@ -125,7 +125,7 @@ export const SETTINGS_NAV: readonly SettingsTabDef[] = [
     label: '工具与扩展',
     icon: Puzzle,
     group: '能力与安全',
-    blurb: '技能、MCP 服务器、浏览器插件。',
+    blurb: '浏览器扩展、技能、MCP 服务器 —— 连什么、连没连上。',
   },
   {
     id: 'usage',
