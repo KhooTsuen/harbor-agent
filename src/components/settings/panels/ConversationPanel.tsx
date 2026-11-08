@@ -1,9 +1,7 @@
-import { SectionTitle } from '../parts'
-import { ScenesTab } from '../tabs/ScenesTab'
-import { ImageSaveTab } from '../tabs/ImageSaveTab'
-import { DownloadSaveTab } from '../tabs/DownloadSaveTab'
 import { ConversationExperienceTab } from '../tabs/ConversationExperienceTab'
 import { ConversationBehavior } from './ConversationBehavior'
+import { AssistantPersona } from '../providers/AssistantPersona'
+import { SchedulesPanel } from './SchedulesPanel'
 
 /* ══════════════════════════════════════════════════════════════
    对话与任务 = 对话怎么进行
@@ -24,17 +22,10 @@ export function ConversationPanel(): React.ReactElement {
 
       <ConversationExperienceTab />
 
-      <ScenesTab />
+      <AssistantPersona />
 
-      <div className="flex flex-col gap-2 py-2">
-        <SectionTitle hint="生成的图片默认存到这个目录">生图</SectionTitle>
-        <ImageSaveTab />
-      </div>
-
-      <div className="flex flex-col gap-2 py-2">
-        <SectionTitle hint="下载的文件默认存到这个目录">下载</SectionTitle>
-        <DownloadSaveTab />
-      </div>
+      {/* 定时任务：标题由 SchedulesPanel 自己带（它内部两个分支各有一句），这里不再包一层 */}
+      <SchedulesPanel />
     </>
   )
 }

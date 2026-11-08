@@ -86,8 +86,14 @@ export const SETTINGS_INDEX_BASIC: readonly SettingsEntry[] = [
   {
     tab: 'conversation',
     label: '回答深度',
-    hint: '默认的回答详细程度',
+    hint: '全局默认；某条对话可以在「上下文与项目」单独覆盖',
     keywords: ['深度', '详细', '简洁', '回答长度', 'depth'],
+  },
+  {
+    tab: 'conversation',
+    label: '助手名字',
+    hint: '它怎么称呼自己',
+    keywords: ['名字', '助手名', 'name'],
   },
   /* 「发送方式」就是通用页的回车发送 —— 第二阶段核实时发现它一直标错页 */
   {
@@ -127,14 +133,15 @@ export const SETTINGS_INDEX_BASIC: readonly SettingsEntry[] = [
     hint: '只改变设置页展示层次，不改配置',
     keywords: ['简洁', '详细', '视图', '简单模式', '高级设置'],
   },
+  /* 第三阶段：生图 / 下载目录搬去「数据与存储」—— 它们是产物落在哪，不是对话行为 */
   {
-    tab: 'conversation',
+    tab: 'data',
     label: '生图保存目录',
     hint: '生成的图片存到哪',
     keywords: ['生图', '图片', '保存', '目录'],
   },
   {
-    tab: 'conversation',
+    tab: 'data',
     label: '下载保存目录',
     hint: '下载的文件存到哪',
     keywords: ['下载', '保存', '目录', '路径'],
@@ -179,8 +186,8 @@ export const SETTINGS_INDEX_BASIC: readonly SettingsEntry[] = [
   },
   {
     tab: 'models',
-    label: '系统提示词',
-    hint: '追加到系统提示的自定义内容',
-    keywords: ['提示词', 'prompt', '系统提示', '人设'],
+    label: '自定义人设',
+    hint: '在「对话与任务」页；留空用内置的',
+    keywords: ['提示词', 'prompt', '系统提示', '人设', 'systemPrompt'],
   },
 ] as const

@@ -84,6 +84,50 @@ export const SETTINGS_INDEX_REST: readonly SettingsEntry[] = [
     keywords: ['清空', '删除', '重置', 'reset', '恢复默认'],
   },
 
+  /* ── 第三阶段新增：这些原来散在别页、索引里搜不到 ── */
+  {
+    tab: 'models',
+    label: '场景模型',
+    hint: '八个场景（聊天/标题/翻译…）各自用哪个模型',
+    keywords: ['场景', '场景模型', '起标题', '翻译', 'ocr', 'scene'],
+  },
+  {
+    tab: 'models',
+    label: '自动路由',
+    hint: '按任务类型自动换模型（默认关）',
+    keywords: ['路由', 'router', '自动换模型', '快模型', '便宜模型'],
+  },
+  {
+    tab: 'models',
+    label: '失败重试与回退',
+    hint: '同一家内重试几次；要不要换供应商（默认不换）',
+    keywords: ['重试', '回退', '降级', 'fallback', '失败'],
+  },
+  {
+    tab: 'models',
+    label: '运行策略',
+    hint: '先给计划 / 开工先问 / 重操作问规模 / 改完验证 / 严格模式 / 流式输出',
+    keywords: ['计划', 'planFirst', '严格', 'strict', '流式', '验证', '规模'],
+  },
+  {
+    tab: 'models',
+    label: '双模型协作',
+    hint: 'Codex 规划验收 + DeepSeek 执行（默认关）',
+    keywords: ['协作', 'collab', '双模型', 'codex', '多模型'],
+  },
+  {
+    tab: 'conversation',
+    label: '定时任务',
+    hint: '到点自己跑一次，不需要你开口',
+    keywords: ['定时', '计划任务', 'schedule', 'cron', '自动'],
+  },
+  {
+    tab: 'context',
+    label: '压缩阈值',
+    hint: '用到窗口多少比例时提醒 / 自动压缩',
+    keywords: ['压缩', 'compact', '上下文', '阈值'],
+  },
+
   /* ── 扩展 ── */
   /* 这一条压成单行：这份表贴着 300 行红线，prettier 一展开就破线 */
   { tab: 'extension', label: '安装浏览器插件', hint: 'Edge 侧边栏', keywords: ['edge', '插件'] },

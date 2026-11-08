@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/Button'
 import { Row, SectionTitle } from '../parts'
 import { BackupPanel } from './BackupPanel'
 import { DataPortPanel } from '../panels/DataPortPanel'
+import { ImageSaveTab } from './ImageSaveTab'
+import { DownloadSaveTab } from './DownloadSaveTab'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 数据与隐私
@@ -193,6 +195,12 @@ export function DataTab() {
         <span className="font-mono">config.json</span>
         （设置）。登录凭据单独加密存放；清理前请先核对备份和导出范围。
       </p>
+      <SectionTitle hint="这些产物落在哪；留空各有自己的默认位置">产物存放位置</SectionTitle>
+
+      <ImageSaveTab />
+
+      <DownloadSaveTab />
+
       <SectionTitle>诊断</SectionTitle>
 
       <Row

@@ -94,21 +94,21 @@ export const SETTINGS_NAV: readonly SettingsTabDef[] = [
     label: '模型与服务商',
     icon: Cpu,
     group: '智能体与模型',
-    blurb: '连哪个服务商、用哪个模型、助手参数怎么调。',
+    blurb: '连哪个服务商、用哪个模型、场景怎么分工、运行策略与协作。',
   },
   {
     id: 'conversation',
     label: '对话与任务',
     icon: SlidersHorizontal,
     group: '智能体与模型',
-    blurb: '对话怎么进行、场景模板、生图与下载存到哪。',
+    blurb: '对话怎么进行、助手人设、定时任务。',
   },
   {
     id: 'context',
     label: '上下文与项目',
     icon: Database,
     group: '智能体与模型',
-    blurb: '默认工作目录、项目说明、这条对话的临时覆盖。',
+    blurb: '默认工作目录、压缩阈值、项目说明、这条对话的临时覆盖。',
   },
 
   /* ── 能力与安全 ── */
@@ -125,7 +125,7 @@ export const SETTINGS_NAV: readonly SettingsTabDef[] = [
     label: '工具与扩展',
     icon: Puzzle,
     group: '能力与安全',
-    blurb: '技能、MCP 服务器、浏览器插件、定时任务。',
+    blurb: '技能、MCP 服务器、浏览器插件。',
   },
   {
     id: 'usage',
@@ -141,7 +141,7 @@ export const SETTINGS_NAV: readonly SettingsTabDef[] = [
     label: '数据与存储',
     icon: Database,
     group: '数据与知识',
-    blurb: '数据存哪、备份与恢复、导出、诊断、删除。',
+    blurb: '数据存哪、产物落在哪、备份与恢复、导出、诊断、删除。',
   },
   {
     id: 'memory',

@@ -259,7 +259,7 @@ export async function run() {
     /* ══ ⑧ 设置页有开关，而且默认显示「已关闭」 ═══════════════ */
     group('模型选择 / ⑧ 界面能看见、能关')
     const { readFileSync } = require('node:fs')
-    const src = readFileSync(join(ROOT, 'src/components/settings/tabs/ScenesTab.tsx'), 'utf8')
+    const src = readFileSync(join(ROOT, 'src/components/settings/panels/ScenesPanel.tsx'), 'utf8')
     check('★★ 设置页有「失败后换用其他供应商」这个开关', src.includes('失败后换用其他供应商'))
     check(
       '★ 开关读的是 fallback.enabled（不是另一个字段）',

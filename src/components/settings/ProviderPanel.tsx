@@ -1,14 +1,9 @@
-import { Loader2, Plug, Plus, RefreshCw, Shield } from 'lucide-react'
-import { useState } from 'react'
+import { Plug, Plus, Shield } from 'lucide-react'
 import { useConfigStore } from '@/stores/useConfigStore'
-import { useUIStore } from '@/stores/useUIStore'
-import { listProviderModels } from '@/lib/backend'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { ProviderCard } from './providers/ProviderCard'
 import { CodexCliCard } from './providers/CodexCliCard'
-import { ModelField } from './providers/ModelField'
-import { AssistantSwitches } from './providers/AssistantSwitches'
 
 /* ══════════════════════════════════════════════════════════════
    设置 → 模型 / 工具
@@ -74,141 +69,6 @@ export function ProviderPanel() {
           <ProviderCard key={provider.id} provider={provider} />
         ),
       )}
-    </div>
-  )
-}
-
-/* ── 助手参数 ─────────────────────────────────────────────── */
-
-export function AssistantPanel() {
-  const config = useConfigStore((s) => s.config)
-  const patchAssistant = useConfigStore((s) => s.patchAssistant)
-  const updateProvider = useConfigStore((s) => s.updateProvider)
-  const showToast = useUIStore((s) => s.showToast)
-  const [fetching, setFetching] = useState(false)
-
-  if (!config) return null
-  /* 取成局部常量：TS 的 null 收窄进不了闭包，fetchModels 里会报 config 可能为 null */
-  const providers = config.providers
-  const a = config.assistant
-
-  /** 从供应商的 /models 接口拉清单，并合并进那家的模型列表 */
-  async function fetchModels(): Promise<void> {
-    const owner =
-      providers.find((p) => p.models.includes(a.model)) ??
-      providers.find((p) => p.enabled) ??
-      providers[0]
-    if (!owner) {
-      showToast('error', '还没有供应商', '先去上面的「供应商」里加一个')
-      return
-    }
-
-    setFetching(true)
-    const result = await listProviderModels(owner.id)
-    setFetching(false)
-
-    if (!result.ok || !result.models) {
-      showToast('error', '拉取失败', result.error)
-      return
-    }
-
-    /* 合并而不是覆盖 —— 用户手打的自定义模型名别弄丢了 */
-    const merged = [...new Set([...owner.models, ...result.models])]
-    await updateProvider(owner.id, { models: merged })
-    showToast('success', `拉到 ${result.models.length} 个模型`, `${owner.name} 的清单已更新`)
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="block">
-          <span className="mb-1 flex items-center gap-2 text-2xs text-fg-tertiary">
-            用哪个模型
-            <button
-              type="button"
-              onClick={() => void fetchModels()}
-              disabled={fetching}
-              title="从供应商的 /models 接口拉取清单"
-              className="ml-auto inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 transition-colors hover:bg-bg-hover hover:text-fg-primary disabled:opacity-50"
-            >
-              {fetching ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-              {fetching ? '拉取中' : '获取模型'}
-            </button>
-          </span>
-          <ModelField
-            value={a.model}
-            onChange={(v) => void patchAssistant({ model: v })}
-            providers={providers}
-          />
-        </div>
-        <label className="block">
-          <span className="mb-1 block text-2xs text-fg-tertiary">历史轮数（0 = 不带历史）</span>
-          <Field
-            type="number"
-            value={String(a.historyLimit)}
-            onChange={(v) => void patchAssistant({ historyLimit: Number(v) || 0 })}
-          />
-        </label>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <label className="block">
-          <span className="mb-1 block text-2xs text-fg-tertiary">temperature</span>
-          <Field
-            type="number"
-            value={String(a.temperature)}
-            onChange={(v) => void patchAssistant({ temperature: Number(v) })}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-2xs text-fg-tertiary">
-            输出上限（0 = 不限：不限制，由服务商决定能写多长）
-          </span>
-          <Field
-            type="number"
-            value={String(a.maxTokens)}
-            onChange={(v) =>
-              void patchAssistant({ maxTokens: Math.max(0, Math.round(Number(v) || 0)) })
-            }
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-2xs text-fg-tertiary">助手名字</span>
-          <Field value={a.name} onChange={(v) => void patchAssistant({ name: v })} />
-        </label>
-        {/* 助手行为开关（含 planFirst / verifyAfterEdit / streamOutput）—— 见 AssistantSwitches */}
-        <AssistantSwitches />
-        <label className="block">
-          <span className="mb-1 block text-2xs text-fg-tertiary">回答深度</span>
-          <select
-            value={a.responseDepth}
-            onChange={(e) =>
-              void patchAssistant({
-                responseDepth: e.target.value as typeof a.responseDepth,
-              })
-            }
-            className="w-full rounded-base border border-line-hairline bg-bg-surface px-2.5 py-1.5 text-dense text-fg-primary focus:border-line-focus focus:outline-none"
-          >
-            <option value="concise">简洁</option>
-            <option value="standard">标准</option>
-            <option value="detailed">详细</option>
-            <option value="deep">深入</option>
-          </select>
-        </label>
-      </div>
-
-      <label className="block">
-        <span className="mb-1 block text-2xs text-fg-tertiary">
-          自定义人设（留空用内置的，内置版本会带上环境信息和工具清单）
-        </span>
-        <textarea
-          value={a.systemPrompt}
-          onChange={(e) => void patchAssistant({ systemPrompt: e.target.value })}
-          rows={5}
-          placeholder="留空即可"
-          className="w-full resize-y rounded-base border border-line-hairline bg-bg-surface px-2.5 py-2 font-mono text-xs text-fg-primary placeholder:text-fg-tertiary focus:border-line-focus focus:outline-none"
-        />
-      </label>
     </div>
   )
 }

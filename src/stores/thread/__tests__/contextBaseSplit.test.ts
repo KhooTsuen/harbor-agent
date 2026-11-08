@@ -112,7 +112,9 @@ describe('上下文基准 / 接线没接错（源码级）', () => {
   })
 
   it('设置页那个输入框仍然是「输出上限」（写 assistant.maxTokens）', () => {
-    const src = read('src/components/settings/ProviderPanel.tsx')
+    /* 第三阶段：这个输入框从 ProviderPanel 搬进了 providers/ModelParamsPanel ——
+       判据不变（仍然写 assistant.maxTokens，不是 context.baseTokens），只换它现在住哪 */
+    const src = read('src/components/settings/providers/ModelParamsPanel.tsx')
     expect(src).toContain('patchAssistant({ maxTokens')
   })
 })

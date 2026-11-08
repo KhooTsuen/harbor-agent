@@ -131,7 +131,9 @@ export async function run() {
   check(
     '★ 设置界面有入口（能关也能再打开）',
     read('src/components/settings/providers/AssistantSwitches.tsx').includes('streamOutput') &&
-      read('src/components/settings/ProviderPanel.tsx').includes('<AssistantSwitches />'),
+      /* 第三阶段：这七个开关从 ProviderPanel 搬进「模型与服务商 → 运行策略」，
+         判据不变（界面里确实挂了），只换它现在挂在哪 */
+      read('src/components/settings/panels/ModelsPanel.tsx').includes('<AssistantSwitches />'),
   )
 
   /* ── clarifyFirst：AG-053 的开关（批④ 才补上界面）── */

@@ -2,6 +2,7 @@ import { SectionTitle } from '../parts'
 import { ProjectContextTab } from '../tabs/ProjectContextTab'
 import { ThreadSettingsTab } from '../tabs/ThreadSettingsTab'
 import { WorkdirRow } from '../providers/WorkdirRow'
+import { CompactThresholdRow } from '../tabs/CompactThresholdRow'
 
 /* ══════════════════════════════════════════════════════════════
    上下文与项目 = 它开工时看什么
@@ -26,6 +27,9 @@ export function ContextPanel(): React.ReactElement {
       </div>
 
       <div className="flex flex-col gap-2">
+        <SectionTitle hint="用掉窗口多少比例时压缩；两档都是全局默认">压缩</SectionTitle>
+        <CompactThresholdRow />
+
         <SectionTitle>项目上下文</SectionTitle>
         <p className="text-dense leading-relaxed text-fg-tertiary">
           下面两项是<strong className="font-semibold">覆盖</strong>
