@@ -267,7 +267,21 @@ function buildResult(rows, scanned, options, filters) {
   if (options.includeEmptyDays) days = fillDays(days, Number(filters.from) || 0, Number(filters.to) || 0)
   out.days = days
 
-  if (options.withRows) out.rows = rows /* 诊断用，默认不给：走 IPC 传大数组很贵 */
+  if (options.withRows) {
+    /*
+     * ★ 明细行也要带**同一份** `known` 判据（2026-11-09 真机逮到）。
+     *
+     * 病：老账本行里根本没有 `known` 字段（那时还没这个口径）。聚合侧走
+     * `isKnown()` 兜底，所以汇总数是对的；但明细把原始行直接给渲染层，那边判
+     * `row.known === false` —— `undefined === false` 是假，于是「没上报」被
+     * 渲染成 **3 个 0**（输入/输出/合计）。用户看到 0 会当成「确认没消耗」，
+     * 正是本阶段要根除的那件事。
+     *
+     * 修在一处：判据只有 `isKnown` 这一份定义，渲染层照旧只读 `known`。
+     * 有 `known` 的行原样给（不覆盖账本里已有的判断）。
+     */
+    out.rows = rows.map((row) => ('known' in row ? row : { ...row, known: isKnown(row) }))
+  } /* 诊断用，默认不给：走 IPC 传大数组很贵 */
   out.anomalies = anomalies.checkRows(rows) /* 只报能确证的四类，见 usage-anomalies.cjs */
   return out
 }

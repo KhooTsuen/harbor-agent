@@ -100,3 +100,36 @@ describe('第五阶段 / 按天归日的时区口径', () => {
     expect(day.labelOf(day.dayIndexOf(now))).toBe(label)
   })
 })
+
+describe('第五阶段 / 明细行的 known 判据', () => {
+  it('★★★ 老记录（没有 known 字段）由内核补上，不由渲染层猜', () => {
+    const q = strip(QUERY)
+    /* 判据只有 isKnown 一份；withRows 必须用它补，而不是把原始行直接给出去 */
+    expect(q).toMatch(/out\.rows = rows\.map/)
+    expect(q).toMatch(/'known' in row/)
+    expect(q).toMatch(/known: isKnown\(row\)/)
+  })
+
+  it('★★★ 真跑一遍：老行（无 known、数值全 0）被判成未知而不是 0', async () => {
+    /* 老账本行的样子：只有 token 数字，没有 known / outcome 这些新字段 */
+    const legacy = {
+      at: Date.now(),
+      providerId: 'p',
+      model: 'm',
+      prompt: 0,
+      completion: 0,
+      total: 0,
+    }
+    const { isKnown } = require('../../../../electron/core/usage-query.cjs') as {
+      isKnown: (row: Record<string, unknown>) => boolean
+    }
+    /* 0/0/0 且没有 known → 老判据「有数字就算拿到」也不成立 → 未知 */
+    expect(isKnown(legacy)).toBe(false)
+    /* 有真实数字的老行 → 算拿到（历史不能丢） */
+    expect(isKnown({ ...legacy, prompt: 12, total: 12 })).toBe(true)
+    /* 新行显式说 false → 未知（不被数值骗过去） */
+    expect(isKnown({ ...legacy, known: false, prompt: 999 })).toBe(false)
+    /* 新行显式说 true 且是 0 → 明确零（与未知区分开） */
+    expect(isKnown({ ...legacy, known: true })).toBe(true)
+  })
+})
