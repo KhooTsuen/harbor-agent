@@ -1,7 +1,7 @@
 # Harbor 全场景自我纠错、ID 关联与审批档位实施蓝图
 
 > **回迁说明（2026-11-06）**：原文件在仓库外
-> `C:\Users\BinLin\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
+> `C:\Users\<user>\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
 > 资料整理第一批移入本仓库，**原件保留在原处**。
 > **状态：设计蓝图（未核实施工进度）**。原文自述「不表示功能已经实现或通过测试」，
 > 本轮回迁只做了搬运核对，**没有逐条核实哪些阶段已落地** ——

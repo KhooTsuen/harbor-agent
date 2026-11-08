@@ -1,7 +1,7 @@
 # Harbor Agent 现状与重构决定清单
 
 > **回迁说明（2026-11-06）**：原文件在仓库外
-> `C:\Users\BinLin\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
+> `C:\Users\<user>\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
 > 资料整理第一批移入本仓库，**原件保留在原处**。
 > **状态：2026-10-29 的现状快照与待办清单**（本文档末更新 10-30）。
 > 里面的项目进度、优先级和数字都是当时的，**不随之后的工作回填**。

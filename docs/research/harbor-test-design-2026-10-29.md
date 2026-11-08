@@ -1,7 +1,7 @@
 # Harbor 统一测试工具：只读调研与设计说明
 
 > **回迁说明（2026-11-06）**：原文件在仓库外
-> `C:\Users\BinLin\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
+> `C:\Users\<user>\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
 > 资料整理第一批移入本仓库，**原件保留在原处**。
 > **状态：设计依据；第一、二批都已实施**（落地见 §8 / §9 与 `tools/harbor-test/`）。
 > §2 的两批边界和 §4 的判定口径仍是改工具时的依据；**§7「实施文件与验收计划（待确认）」是当时待拍板的形态，不是现行目录规范** ——

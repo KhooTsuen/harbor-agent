@@ -1,7 +1,7 @@
 # Harbor 统一测试工具：第二批实施与验收
 
 > **回迁说明（2026-11-06）**：原文件在仓库外
-> `C:\Users\BinLin\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
+> `C:\Users\<user>\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
 > 资料整理第一批移入本仓库，**原件保留在原处**。
 > **状态：历史验收记录** —— 下面「已实现」一栏是 2026-10-29 当时的真实行为，
 > 现在要以 `tools/harbor-test/e2e.mjs` 等现有代码为准；复跑用 `npm run harbor-test`。

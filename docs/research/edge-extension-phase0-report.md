@@ -33,7 +33,7 @@
 | 注册表（本机已有） | `HKCU\...\Google\Chrome\NativeMessagingHosts` 下 **3 个** | 含 **`com.openai.codexextension`**（Codex 浏览器扩展） |
 
 > **★ 意外收获**：本机已经躺着一个**真实可跑的参考实现** —— Codex 的 host 清单。
-> 它的 `path` 指向一个**专门的 `extension-host.exe`，不带任何参数**（`C:\Users\BinLin\.codex\plugins\cache\openai-bundled\chrome\latest\extension-host\windows\x64\extension-host.exe`）。
+> 它的 `path` 指向一个**专门的 `extension-host.exe`，不带任何参数**（`C:\Users\<user>\.codex\plugins\cache\openai-bundled\chrome\latest\extension-host\windows\x64\extension-host.exe`）。
 > 这独立印证了 §3 的实测结论，也说明「为扩展单做一个 host 可执行入口」是业界做法。
 
 ---

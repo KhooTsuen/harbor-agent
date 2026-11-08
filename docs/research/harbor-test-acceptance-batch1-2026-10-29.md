@@ -1,7 +1,7 @@
 # Harbor 统一测试工具：第一批使用与验收
 
 > **回迁说明（2026-11-06）**：原文件在仓库外
-> `C:\Users\BinLin\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
+> `C:\Users\<user>\Documents\Codex\2026-10-29\e-codexworkbench\outputs\`，
 > 资料整理第一批移入本仓库，**原件保留在原处**。
 > **状态：历史验收记录** —— 里面的数字是 2026-10-29 当次实跑的结果，**不是现行判据**；
 > 要看现在能不能用，跑 `npm run harbor-test`，别拿这份当基线。
