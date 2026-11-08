@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { sceneTranslate } from '@/lib/sceneApi'
 import { colorOf } from '@/lib/statusLanguage'
 import { fullRecordText } from '@/lib/export'
+import { bodyTextOf } from './bodyText'
 
 /* ══════════════════════════════════════════════════════════════
    助手消息的操作条（复制 / 重新生成 / 赞踩 / 分支）
@@ -68,8 +69,15 @@ export function AssistantActions({ message }: { message: Message }) {
 
   async function copy(): Promise<void> {
     try {
-      /* 默认只复制**正文**（用户 2026-10-21 拍板：过程不该混进要贴给别人的答案里） */
-      await navigator.clipboard.writeText(message.content)
+      /*
+       * 默认只复制**正文**（用户 2026-10-21 拍板：过程不该混进要贴给别人的答案里）。
+       *
+       * ★ 2026-11-09 修：以前是 `message.content` —— 那只是**最后一轮**的正文，
+       *   而界面上一条 Agent 消息常常有好几轮正文（「我先看 A」→ 工具 →「A 没问题」）。
+       *   于是出现「看到的和复制的不一样」。现在取的是**渲染同一份判据**算出来的
+       *   正文（`bodyTextOf`），界面显示什么就复制什么。
+       */
+      await navigator.clipboard.writeText(bodyTextOf(message))
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1400)
     } catch {
@@ -80,7 +88,8 @@ export function AssistantActions({ message }: { message: Message }) {
   /** 复制**完整记录**（过程 + 正文 + 状态）—— 排查问题、留档时用 */
   async function copyFull(): Promise<void> {
     try {
-      await navigator.clipboard.writeText(fullRecordText(message))
+      /* 正文与「复制」按钮**同源**（`bodyTextOf`）—— 两个按钮只差过程，不该差正文 */
+      await navigator.clipboard.writeText(fullRecordText(message, bodyTextOf(message)))
       setCopiedFull(true)
       window.setTimeout(() => setCopiedFull(false), 1400)
     } catch {

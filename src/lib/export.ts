@@ -76,8 +76,13 @@ export function processSection(message: Message): string {
  *
  * 剪贴板「复制完整记录」用它；导出也用它（`messageBlock` 里的助手分支）。
  * 默认复制走的是 `message.content`（只要正文），不调这里。
+ *
+ * @param bodyText 正文原文。**复制那条路必须传**（`bodyTextOf(message)`）——
+ *   界面正文是从 `rounds` 渲染的，比 `message.content`（只有最后一轮）多，
+ *   不传就会出现「看到的和复制的不一样」（2026-11-09 用户报的 bug）。
+ *   不传时退回 `message.content`，与以前一字不差（导出那条路就是这么用的）。
  */
-export function fullRecordText(message: Message): string {
+export function fullRecordText(message: Message, bodyText?: string): string {
   const parts: string[] = []
 
   if (message.role !== 'assistant') {
@@ -87,7 +92,7 @@ export function fullRecordText(message: Message): string {
   const process = processSection(message)
   if (process) parts.push(process)
 
-  parts.push(message.content || '')
+  parts.push(bodyText ?? message.content ?? '')
 
   for (const block of message.codeBlocks ?? []) {
     parts.push(`\`\`\`${block.language}\n${block.code}\n\`\`\`\n`)

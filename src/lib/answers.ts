@@ -29,6 +29,13 @@ export function toAnswerRecord(message: Message): StoredMessage {
     content: message.content,
     ts: message.timestamp,
     ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+    /*
+     * ★ 时间线必须一起收（2026-11-09 用户报的「复制正文和看到的不一致」）。
+     *   界面正文是从 `rounds` 渲染的（`roundsOf` 优先用它），而复制读 `content`。
+     *   台账里不收 rounds 的话，切到这一版时 `answerPatch` 无值可换 ——
+     *   界面继续显示上一条回答的 rounds，复制却是这一条的 content。
+     */
+    ...(message.rounds?.length ? { rounds: message.rounds } : {}),
     ...(message.toolRuns?.length ? { toolRuns: message.toolRuns } : {}),
     ...(message.citations?.length ? { citations: message.citations } : {}),
     ...(message.usage ? { usage: message.usage } : {}),
@@ -114,6 +121,17 @@ export function answerPatch(record: StoredMessage, index: number): Partial<Messa
   return {
     content: record.content,
     reasoning: record.reasoning ?? '',
+    /*
+     * ★ rounds **必须跟着换**（2026-11-09 用户报的「复制正文和看到的不一致」）。
+     *
+     *   界面正文走 `roundsOf(message)` → 优先 `message.rounds`；而复制走 `content`。
+     *   以前这里只换 content 不换 rounds：切到旧回答后，界面还在画**上一条回答**
+     *   的时间线，点复制拿到的却是选中的那条 —— 看到 A、复制到 B。
+     *
+     *   记录里没有 rounds（老台账 / 内核分组时没带）→ 给空数组，让 `roundsOf`
+     *   退回「用 content 合成一轮」。宁可少一段回合结构，也不能显示别人的正文。
+     */
+    rounds: record.rounds ?? [],
     toolRuns: record.toolRuns ?? [],
     citations: record.citations ?? [],
     ...(record.usage ? { usage: record.usage } : {}),
