@@ -147,15 +147,19 @@ function ContextGauge() {
    *   · `unknown`  —— 结束了但服务商没给 →「无数据」（**不是 0**）
    *   · `known`    —— 有真实数字 →「入 N」
    * 判据只看最近一条回复的状态与它的 usage.known，不猜。
+   *
+   * ★ 2026-11-09 修：尾部那个 `: 'pending'` 改成 `: 'unknown'`。
+   *   以前「一条 assistant 回复都没有」时这里判成「统计中」，而 tooltip
+   *   开头那句判成「无数据」—— 同一个渲染里两种状态互相打架（真机逮到：
+   *   `data-usage-state="pending"` 旁边写着「最近一次请求：无数据」）。
+   *   「没在跑」就不该说统计中。
    */
   const pending = lastMessage?.status === 'streaming' || lastMessage?.status === 'sending'
   const usageState: 'known' | 'pending' | 'unknown' = lastUsage
     ? 'known'
     : pending
       ? 'pending'
-      : lastMessage
-        ? 'unknown'
-        : 'pending'
+      : 'unknown'
   const usageLabel =
     usageState === 'known'
       ? `入 ${(lastUsage?.prompt ?? 0).toLocaleString()}`

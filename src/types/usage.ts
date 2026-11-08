@@ -45,7 +45,16 @@ export interface MessageUsage {
   source: string
 }
 
-/** 取「已知」的那部分合计：未知的一律不计入（不是加 0 冒充） */
+/**
+ * 取「已知」的那部分合计：未知的一律不计入（不是加 0 冒充）
+ *
+ * ★ 2026-11-09 修：「没有 usage 字段」和「请求了但没上报」是**两件事**。
+ *   `usage === undefined` 的消息（用户消息、老消息、从没跑过模型的消息）
+ *   **根本没发过请求**，以前却返回 `unknown: 1` —— 于是「另有 N 次请求没有
+ *   用量上报」的 N 里混着用户自己说的话。真机上一次 hello 之后就显示
+ *   「另有 1 次请求没有用量上报」，那条其实是用户消息。
+ *   只有 `usage` 存在且 `known === false` 才是「发了但没上报」。
+ */
 export function knownTotalsOf(usage: MessageUsage | null | undefined): {
   prompt: number
   completion: number
@@ -55,11 +64,11 @@ export function knownTotalsOf(usage: MessageUsage | null | undefined): {
   requests: number
   unknown: number
 } {
-  if (!usage)
-    return { prompt: 0, completion: 0, total: 0, cached: 0, reasoning: 0, requests: 0, unknown: 1 }
-  if (!usage.known) {
-    return { prompt: 0, completion: 0, total: 0, cached: 0, reasoning: 0, requests: 0, unknown: 1 }
-  }
+  const zero = { prompt: 0, completion: 0, total: 0, cached: 0, reasoning: 0, requests: 0 }
+  /* 没有 usage 字段 = 这条消息没发过请求，既不算已知也不算未知 */
+  if (!usage) return { ...zero, unknown: 0 }
+  /* 发了、但服务商没上报 → 这次消耗**未知**（不计入合计，也不当 0） */
+  if (!usage.known) return { ...zero, unknown: 1 }
   return {
     prompt: usage.prompt ?? 0,
     completion: usage.completion ?? 0,
