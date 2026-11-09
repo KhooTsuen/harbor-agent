@@ -30,6 +30,18 @@ export interface ToolRunRecord {
   output: string
   ms?: number
   /**
+   * 这次调用**还没拿到结果**（2026-11-09）。
+   *
+   * 为什么需要：`agent.tool.started` 建记录时 `ok` 只能先乐观填 `true`（那时还不知道
+   * 成败）。若进程在工具跑完前被强杀，磁盘快照里就是「一条 ok:true 的工具」——
+   * 重启后界面画成**成功绿勾**，而这次调用的结果其实未知（可能写了一半文件）。
+   *
+   * 所以：started 时置 `pending: true`，completed / failed 时**删掉它**。
+   * 读回后 `pending === true` 就是「跑了，但不知道结果」，界面必须如实说。
+   * 老记录没有这个字段 → 当 false 看（它们至少走完了收尾那条路）。
+   */
+  pending?: boolean
+  /**
    * 长任务自己报的进度（真机反馈 9a）。
    * `percent: null` = 只知道还在动、报不出百分比 —— 界面别把这两种画成一样。
    * 只在跑的时候有值（收尾后记录里不再需要它）。

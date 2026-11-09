@@ -57,6 +57,8 @@ export const EVENT_TYPES = [
   /* 回合分段 */
   'turn_start',
   'turn_end', // 有意忽略：进度靠 phase 体现
+  /* 任务归属已确定（与 electron/core/event-types.cjs 逐字一致） */
+  'task',
 
   /* 决策卡（P0-5）：发出 / 两类卡超时作废 */
   'confirm_request',

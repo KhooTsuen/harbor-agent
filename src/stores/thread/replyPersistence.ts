@@ -44,6 +44,8 @@ function traceOf(toolRuns: ToolRunRecord[] | undefined): ToolRunRecord[] {
     output: '',
     ...(run.ms === undefined ? {} : { ms: run.ms }),
     ...(run.subagent ? { subagent: run.subagent } : {}),
+    /* ★ 必须带：进程在工具跑完前被杀时，这就是「结果未确认」的唯一证据（见 ToolRunRecord.pending） */
+    ...(run.pending ? { pending: true } : {}),
   }))
 }
 
@@ -76,13 +78,11 @@ export function createReplyPersistence(opts: {
    * 老记录没有这个字段 → 保持「不知道是哪次」的原样，**不去猜**。
    */
   execId?: string
-  /**
-   * 这次执行归属的任务（继续原任务时 = 原 taskId）。
-   *
-   * ★ **不猜**：没有就不写。老代码里那种「取会话最近一个任务当归属」的做法
-   * 会把两条不相干的执行挂到同一个任务上，比留空更难查。
+  /*
+   * 注意：**归属不再从这里传**。请求里的 `resumeTaskId` 只是「想恢复的目标」，
+   * 主进程可能判定它不可用而新建一条 —— 所以真实归属改由 `task` 事件回送到消息上，
+   * 落盘时现取（见下面 `taskField`）。老记录没有这个字段 → 不猜。
    */
-  execTaskId?: string
   getContent: () => string
   getReasoning: () => string
   /** 最后一个事件类型：只有 done / aborted 才值得存 */
@@ -100,12 +100,18 @@ export function createReplyPersistence(opts: {
   const current = (): {
     rounds: MessageRound[]
     toolRuns: ToolRunRecord[]
+    /** 主进程回送的**真实**任务归属（`task` 事件挂上来的）；没有就是这次没绑定 */
+    execTaskId: string | undefined
   } => {
     const message = useAppStore
       .getState()
       .threads.find((t) => t.id === threadId)
       ?.messages.find((m) => m.id === messageId)
-    return { rounds: message?.rounds ?? [], toolRuns: message?.toolRuns ?? [] }
+    return {
+      rounds: message?.rounds ?? [],
+      toolRuns: message?.toolRuns ?? [],
+      execTaskId: message?.execTaskId,
+    }
   }
   const answer = {
     ...(opts.answersKey ? { answersKey: opts.answersKey } : {}),
@@ -113,10 +119,21 @@ export function createReplyPersistence(opts: {
     ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
     /* 执行身份：分段快照与收尾那条都带上 —— 重启后靠它区分三次执行（不猜） */
     ...(opts.execId ? { execId: opts.execId } : {}),
-    ...(opts.execTaskId ? { execTaskId: opts.execTaskId } : {}),
   }
   let lastFlushAt = 0
   let lastFlushLen = 0
+
+  /**
+   * 真实任务归属这一行 —— **每次落盘现取**，不是静态值。
+   *
+   * `task` 事件在流式中途才到（主进程先建台账再跑循环），所以快照落盘时它可能
+   * 已经挂上、也可能还没挂上；收尾那条一定能取到。放进 `answer` 的话就会被
+   * 首次取值冻住（那正是「续做较早答复时归属不更新」的老毛病）。
+   */
+  const taskField = (): { execTaskId?: string } => {
+    const id = current().execTaskId
+    return id ? { execTaskId: id } : {}
+  }
 
   return {
     /*
@@ -163,6 +180,7 @@ export function createReplyPersistence(opts: {
           : {}),
         ...(traces.length ? { toolRuns: traces } : {}),
         ...answer,
+        ...taskField(),
         ts: timestamp,
       })
     },
@@ -205,6 +223,7 @@ export function createReplyPersistence(opts: {
           ...(reasoning ? { reasoning } : {}),
           ...(type === 'aborted' ? { aborted: true } : {}),
           ...answer,
+          ...taskField(),
           ts: timestamp,
         })
         return
@@ -242,6 +261,7 @@ export function createReplyPersistence(opts: {
         /* 被中止的那条：落盘标上 aborted —— 重开会话后「重试」文案还能回来 */
         ...(type === 'aborted' ? { aborted: true } : {}),
         ...answer,
+        ...taskField(),
         ts: final.timestamp,
       }
       useAppStore.getState().persistMessage(threadId, message)

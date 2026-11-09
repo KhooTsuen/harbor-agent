@@ -239,9 +239,13 @@ export function homogeneousIconOf(runs: readonly ToolRunRecord[]): LucideIcon | 
  *
  * 判据和 ToolRuns.tsx 一致：**还没有 result 也没有耗时**就是还在跑 ——
  * `agent.tool.started` 先插一条空的，`completed` 才补上 output/ms。
+ *
+ * ★ 排除 `pending`（2026-11-09）：那是**上次运行被中断、结果未确认**的记录，
+ *   从磁盘读回时同样没有 output/ms —— 但它不是「现在正在跑」。
+ *   不排除的话，重启后界面会说「正在读取 b.js」，而那个进程早就没了。
  */
 export function runningOf(runs: readonly ToolRunRecord[]): ToolRunRecord | undefined {
-  return runs.find((run) => run.output === '' && run.ms === undefined)
+  return runs.find((run) => run.pending !== true && run.output === '' && run.ms === undefined)
 }
 
 /**

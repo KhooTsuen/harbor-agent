@@ -79,6 +79,8 @@ const CHAT_EVENT_TYPES = [
   'subagent.step',
   'turn_start',
   'turn_end',
+  /* 任务归属已确定（主进程建/复用台账后立刻发）—— 重启靠它认出这次属于哪条任务 */
+  'task',
 
   /* 决策卡：发出 / 两类卡超时作废（真值见上面 DECISION_EVENTS，别在这再写一套字面量） */
   ...Object.values(DECISION_EVENTS),

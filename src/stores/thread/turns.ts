@@ -170,8 +170,8 @@ export async function runElectronTurn(
     timestamp: placeholder.timestamp,
     ...(target ? { answersKey: target.key, answersVersion: target.version } : {}),
     ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
-    execId: requestId /* 执行身份：重启后靠它区分三次执行 */,
-    ...(resumeTaskId ? { execTaskId: resumeTaskId } : {}),
+    /* execId = 执行身份；execTaskId 不在这里传 —— 真实归属由主进程 `task` 事件回送 */
+    execId: requestId,
     getContent: () => content,
     getReasoning: () => reasoning,
     getEventType: () => lastEventType,

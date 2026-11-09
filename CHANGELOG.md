@@ -1,4 +1,75 @@
 ## [未发布]
+
+### 功能：执行绑定到真实任务 + 新记录的有序回放
+
+**背景**：上一轮接通了执行身份（`execId`）、验收结论（`verdict`）和正文同源，
+但**任务归属是假的** —— 落盘的 `execTaskId` 直接取请求里的 `resumeTaskId`。
+
+**病**：请求里的 `resumeTaskId` 只是「我想接着那条做」。主进程会用
+`task-attribution.decide()` 再判一次：那条任务可能已经 completed / 被删，
+这时它返回 `{ kind: 'new' }`，主进程**新建一条任务** —— 于是
+
+  · 磁盘上写着「这次执行属于任务 A」
+  · 而实际上跑的是新建的 B，A 根本没被这次执行碰过
+
+重启后按 A 去查历史，查到的是另一次执行的东西。比留空更难查。
+
+**修法（一处定义）**：主进程 `loop-run.cjs` 建好/复用了台账之后**立刻**发
+`task` 事件，带真实 `task.id`。渲染层新增 `case 'task'` 把它挂到消息上；
+落盘时从消息**现取**（`taskField()`），不放进静态的 `answer` 对象 ——
+放进去会被首次取值冻住（那正是「续做较早答复时归属不更新」的老毛病）。
+
+没有 `task` 事件 = 这次执行不归属任何任务（协作那条路不建台账），字段留空，不猜。
+
+**顺带补上的两个洞**
+
+1. `task` 事件此前**从没被任何渲染层代码处理过**（`streamEvents` 的注释写着
+   「task 走 IPC」，但没有任何地方接）。所以它一直白发。
+2. 事件 type 清单两侧（`electron/core/event-types.cjs` 与 `src/types/events.ts`）
+   都没登记 `task` —— 内核自检 `126-event-types` 直接报红，本次补上。
+
+**工具「结果未确认」（异常退出的可见证据）**
+
+`agent.tool.started` 建记录时 `ok` 只能乐观填 `true`（那时还不知道成败）。
+若用户在工具跑完前停止、或进程被强杀，磁盘快照里就是「一条 ok:true 的工具」——
+重启后界面画成**成功绿勾**，而这次调用其实**结果未知**（可能写了一半文件）。
+
+修法：started 置 `pending: true`，completed / failed 拿到结果后删掉；
+`traceOf`（快照落盘）保留它。界面新增第四档状态：
+**进行中 > 失败 > N 项结果未确认 > 成功**，用 warning 色，`data-tool-status="unconfirmed"`。
+
+**真机又逮到一个（同一批修掉的）**
+
+种子会话里那条「结果未确认」的工具，界面上显示的是 **「进行中」**。
+根因：`runningOf()` 的判据是「没有 output、也没有 ms」= 还在跑，
+而**从磁盘读回的 pending 记录恰好也是** output='' 且 ms=undefined ——
+于是重启后界面说「正在读取 b.js · 进行中」，可那个进程早就没了。
+
+修法：`runningOf` 排除 `pending === true`（判据仍只有这一处）。
+新增 `runningExcludesPending.test.ts`（5 项）钉住，含「混合时找到真在跑的那条」。
+
+**真机验收（隔离数据，打包版）**
+
+造了一个三执行会话（首次 / 继续 / 重做）后读到：
+
+| 项 | 结果 |
+|---|---|
+| 三条助手消息的 execId | `req_exec_first` / `req_exec_second` / `req_exec_regen` —— **三次执行分得开** |
+| execTaskId | 三条都是 `task_real_first` —— **继续原任务时归属不变** |
+| verdict | `done` / `partial` / `done` —— 与正文分开存，互不影响 |
+| 第一条的渲染顺序 | `第一段 → 1 个步骤 → 结论` —— 与真实执行顺序一致 |
+| 未确认工具 | `data-tool-status="unconfirmed"`、文案「1 项结果未确认」 |
+
+**验证**
+
+- 新增 `taskBinding.test.ts`（5 项）：真实 taskId 挂上 / 请求的 A 不被采用 /
+  没事件就不猜 / 空串不写 / 重复覆盖。
+- 新增 `toolPending.test.ts`（5 项）：started 置 pending / 完成清掉 / 失败也清 /
+  中途被杀仍在 / 部分完成时只有未完成的 pending。
+- 新增 `toolUnconfirmedView.test.ts`（5 项）：界面判据只认 pending 不认 ok、
+  四档顺序、`unconfirmed` 标记、warning 色。
+- 全量单测 **249 文件 / 2375 项全过**（原 2360，+15）；内核自检 **7299 项 0 失败**。
+
 ### 修复：过程折叠区排在正文之前（显示顺序与真实执行顺序不一致）
 
 **病（2026-11-09 真机看到）**：一条「正文 → 工具 → 结论」的消息，界面上是

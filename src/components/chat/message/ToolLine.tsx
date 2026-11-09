@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, XCircle } from 'lucide-react'
 import type { ToolRunRecord } from '@/types'
 import { AGENT_ACTIONS, homogeneousIconOf, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'
 import { colorOf } from '@/lib/statusLanguage'
@@ -80,6 +80,12 @@ export function ToolLine({
   const running = runningOf(runs)
   const failedCount = runs.filter((run) => !run.ok && run.ms !== undefined).length
   /*
+   * 结果**不知道**的那几条（`pending`）：上次运行在工具跑完前就结束了。
+   * ok 是乐观填的 true，**不能据此画绿勾** —— 它可能写了一半文件、也可能没跑。
+   * 判据只看 pending，不看 ok（见 ToolRunRecord.pending）。
+   */
+  const pendingCount = runs.filter((run) => run.pending === true).length
+  /*
    * 有失败且没在跑 → **默认展开明细**：失败发生在哪一步、原因是什么，
    * 不该再藏一层（用户验收表：失败要「显示失败发生在哪一步及真实错误」）。
    * 跑的时候不默认展开 —— 每来一步就重排一次，界面会抖。
@@ -110,6 +116,8 @@ export function ToolLine({
           <Loader2 size={11} className="shrink-0 animate-spin text-accent" />
         ) : failedCount > 0 ? (
           <XCircle size={11} className="shrink-0" style={{ color: colorOf('failed') }} />
+        ) : pendingCount > 0 ? (
+          <AlertTriangle size={11} className="shrink-0" style={{ color: colorOf('warning') }} />
         ) : open ? (
           <ChevronDown size={11} className="shrink-0 text-fg-tertiary" />
         ) : (
@@ -125,12 +133,32 @@ export function ToolLine({
         */}
         <span
           className="shrink-0"
-          data-tool-status={running ? 'running' : failedCount > 0 ? 'failed' : 'completed'}
+          data-tool-status={
+            running
+              ? 'running'
+              : failedCount > 0
+                ? 'failed'
+                : pendingCount > 0
+                  ? 'unconfirmed'
+                  : 'completed'
+          }
           style={{
-            color: running ? undefined : failedCount > 0 ? colorOf('failed') : colorOf('completed'),
+            color: running
+              ? undefined
+              : failedCount > 0
+                ? colorOf('failed')
+                : pendingCount > 0
+                  ? colorOf('warning')
+                  : colorOf('completed'),
           }}
         >
-          {running ? '进行中' : failedCount > 0 ? `${failedCount} 项失败` : '成功'}
+          {running
+            ? '进行中'
+            : failedCount > 0
+              ? `${failedCount} 项失败`
+              : pendingCount > 0
+                ? `${pendingCount} 项结果未确认`
+                : '成功'}
         </span>
         {/*
           几步、多久 —— VS Code 那行「Completed 58 steps in 8m 23s」就是这个意思。

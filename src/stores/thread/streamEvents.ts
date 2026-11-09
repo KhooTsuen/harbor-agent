@@ -60,10 +60,7 @@ function syncRounds(state: StreamState): MessageRound[] {
   return [...state.rounds]
 }
 
-/**
- * 收尾链上的每一步都单独兜住：任何一步抛异常都不许把后面的带走，抛了就记一笔
- * （进 `data/errors/*.jsonl`）。2026-10-04 真机事故的根因与证据链见 docs/踩坑记录.md。
- */
+/* 收尾链每步单独兜住：一步抛了不许带走后面的；抛了就记一笔（进 data/errors/*.jsonl） */
 function runSafely(where: string, fn: () => void): void {
   try {
     fn()
@@ -78,10 +75,7 @@ function isLifecycleEvent(type: string): boolean {
   return type.startsWith('agent.') && !type.startsWith('agent.tool.')
 }
 
-/**
- * 处理一个来自主进程的事件。返回值告诉调用方要不要接着跑后置动作（目前只有 done 需要），
- * 这样 turns.ts 不用把每种事件的后续逻辑都写一遍。
- */
+/* 处理一条主进程事件；返回值说明要不要跑后置动作（目前只有 done 需要） */
 export function handleStreamEvent(
   event: Record<string, unknown>,
   state: StreamState,
@@ -130,6 +124,8 @@ export function handleStreamEvent(
           (event.args ?? {}) as Record<string, unknown>,
         ),
         ok: true,
+        /* 还没拿到结果 —— 进程若在跑完前被杀，重启后靠它说「结果未确认」 */
+        pending: true,
         output: '',
       }
       state.toolRuns.push(record)
@@ -170,13 +166,12 @@ export function handleStreamEvent(
         ms: typeof event.ms === 'number' ? event.ms : undefined,
         ...failure,
       }
+      /* 拿到结果了 → 不再是「未确认」（展开把 started 那条的 pending 带过来了） */
+      delete updated.pending
       if (index >= 0) state.toolRuns[index] = updated
       else state.toolRuns.push(updated)
 
-      /*
-       * 消息状态变了，别的面板得知道（任务台账的进度时间线 + 底栏运行日志）。
-       * 两条为什么必须走事件驱动、为什么是 `void` —— 见 `toolRefresh.ts` 的文件头。
-       */
+      /* 状态变了要让台账与运行日志知道；为何走事件驱动见 toolRefresh.ts 头 */
       refreshAfterTool()
 
       /* 工具输出里能捞出引用（文件 / 网页）—— 见 toolCitations.ts */
@@ -196,6 +191,11 @@ export function handleStreamEvent(
     case 'clarify.timeout':
     case 'confirm.timeout':
       return { handled: handleCardEvent(event, type) }
+
+    /* 任务归属：主进程建/复用台账后立刻发（重启靠它认出是哪条） */
+    case 'task':
+      if (event.taskId) state.patch({ execTaskId: String(event.taskId) })
+      return { handled: true }
 
     /* 新一轮开始 —— 时间线在这里分段（以前被 default 吞掉，「哪段思考属于哪轮」就丢了） */
     case 'turn_start': {

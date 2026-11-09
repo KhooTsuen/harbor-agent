@@ -24,6 +24,15 @@ export type ChatEvent =
       provider: string
       reason: string
     }
+  /*
+   * 主进程**已确定**这次执行归属哪条任务（`loop-run.cjs` 建好/复用了台账之后立刻发）。
+   *
+   * ★ 这是任务归属的唯一来源：请求里的 `resumeTaskId` 只是「希望恢复的目标」，
+   *   那条任务可能已完成/被删（`task-attribution` 就会改用 new 建一条新的）——
+   *   拿请求参数当归属，重启后就会指向一条根本没被这次执行用过的任务。
+   *   没有发 = 这次执行不归属任何任务（协作那条路就是这样），不猜。
+   */
+  | { requestId: string; type: 'task'; taskId: string; changeSetId?: string; goal?: string }
   | { requestId: string; type: 'turn_start'; turn: number }
   /* AG-004：模型给了新的一版计划（和上一版一样就不发） */
   | { requestId: string; type: 'plan'; plan: string[]; version: number; reason: string }
@@ -124,6 +133,11 @@ export type ChatEvent =
        * 由内核 `reply-continue.cjs` 判定，续写救回来了就不带这个字段。
        */
       truncated?: 'length' | 'stream_cut' | ''
+      /*
+       * 验收结论（`done`/`partial`/`failed`/`chat`，口径见 `types/verdict.ts`）。
+       * 以前没用类型声明、靠 `as Record<string, unknown>` 转进来的 —— 补上。
+       */
+      verdict?: string
     }
   | { requestId: string; type: 'aborted' }
   | {
