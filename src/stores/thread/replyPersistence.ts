@@ -119,6 +119,12 @@ export function createReplyPersistence(opts: {
     ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
     /* 执行身份：分段快照与收尾那条都带上 —— 重启后靠它区分三次执行（不猜） */
     ...(opts.execId ? { execId: opts.execId } : {}),
+    /*
+     * 轨迹格式标识：凡是从这里写出去的记录，`rounds` 都是**执行时按事件到达顺序
+     * 攒下来的**（不是读侧合成的）。带上它，重启后读取端才知道「这份顺序可信，
+     * 可以直接回放」。老记录没有这一位 → 走兼容路径（见 types/models-session.ts）。
+     */
+    trace: 'ordered-v1' as const,
   }
   let lastFlushAt = 0
   let lastFlushLen = 0
