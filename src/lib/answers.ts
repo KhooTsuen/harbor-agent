@@ -35,6 +35,7 @@ export function toAnswerRecord(message: Message): StoredMessage {
      *   台账里不收 rounds 的话，切到这一版时 `answerPatch` 无值可换 ——
      *   界面继续显示上一条回答的 rounds，复制却是这一条的 content。
      */
+    ...(message.flow ? { flow: message.flow } : {}),
     ...(message.rounds?.length ? { rounds: message.rounds } : {}),
     ...(message.toolRuns?.length ? { toolRuns: message.toolRuns } : {}),
     ...(message.citations?.length ? { citations: message.citations } : {}),
@@ -131,6 +132,7 @@ export function answerPatch(record: StoredMessage, index: number): Partial<Messa
      *   记录里没有 rounds（老台账 / 内核分组时没带）→ 给空数组，让 `roundsOf`
      *   退回「用 content 合成一轮」。宁可少一段回合结构，也不能显示别人的正文。
      */
+    flow: record.flow,
     rounds: record.rounds ?? [],
     toolRuns: record.toolRuns ?? [],
     citations: record.citations ?? [],

@@ -101,6 +101,7 @@ export function createReplyPersistence(opts: {
     rounds: MessageRound[]
     toolRuns: ToolRunRecord[]
     /** 主进程回送的**真实**任务归属（`task` 事件挂上来的）；没有就是这次没绑定 */
+    flow: StoredMessage['flow']
     execTaskId: string | undefined
   } => {
     const message = useAppStore
@@ -111,6 +112,7 @@ export function createReplyPersistence(opts: {
       rounds: message?.rounds ?? [],
       toolRuns: message?.toolRuns ?? [],
       execTaskId: message?.execTaskId,
+      flow: message?.flow,
     }
   }
   const answer = {
@@ -162,7 +164,7 @@ export function createReplyPersistence(opts: {
     flushPartial: () => {
       const content = getContent()
       const reasoning = getReasoning()
-      const { rounds, toolRuns: runs } = current()
+      const { rounds, toolRuns: runs, flow } = current()
       const traces = traceOf(runs)
       const now = Date.now()
       /*
@@ -171,7 +173,8 @@ export function createReplyPersistence(opts: {
        *   间隔规则照旧（至少 3 秒），所以不会把写入量抬上去。
        */
       const metric = content.length + reasoning.length
-      if (!shouldFlushPartial(metric, lastFlushLen, now, lastFlushAt)) return
+      const force = flow && /^agent\.tool\.(started|completed|failed)$/.test(getEventType())
+      if (!force && !shouldFlushPartial(metric, lastFlushLen, now, lastFlushAt)) return
       lastFlushAt = now
       lastFlushLen = metric
       useAppStore.getState().persistMessage(threadId, {
@@ -181,7 +184,8 @@ export function createReplyPersistence(opts: {
         content,
         ...(reasoning ? { reasoning } : {}),
         /* 时间线：逐轮复制一份（别和 store 里的草稿共享引用） */
-        ...(rounds.length
+        ...(flow ? { flow } : {}),
+        ...(!flow && rounds.length
           ? { rounds: rounds.map((round) => ({ ...round, tools: [...round.tools] })) }
           : {}),
         ...(traces.length ? { toolRuns: traces } : {}),
@@ -244,7 +248,8 @@ export function createReplyPersistence(opts: {
         ...(final.reasoning ? { reasoning: final.reasoning } : {}),
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
         /* 时间线（思考 → 工具 → 正文 的真实顺序）—— 不存的话重开会话会塌回三段堆叠 */
-        ...(final.rounds?.length ? { rounds: final.rounds } : {}),
+        ...(final.flow ? { flow: final.flow } : {}),
+        ...(!final.flow && final.rounds?.length ? { rounds: final.rounds } : {}),
         /* 验收结论（与正文分开）—— 不存就重开会话后看不出「答复说了完成、其实有失败项」 */
         ...(final.verdict ? { verdict: final.verdict } : {}),
         /*
@@ -265,7 +270,7 @@ export function createReplyPersistence(opts: {
         /* ★ 上游说「这条没写完」（length / 断流）：落盘，否则重开会话就看不出来了 */
         ...(final.truncated ? { truncated: final.truncated } : {}),
         /* 被中止的那条：落盘标上 aborted —— 重开会话后「重试」文案还能回来 */
-        ...(type === 'aborted' ? { aborted: true } : {}),
+        ...(type === 'aborted' || final.interrupted ? { aborted: true } : {}),
         ...answer,
         ...taskField(),
         ts: final.timestamp,

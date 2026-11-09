@@ -186,20 +186,19 @@ export async function runElectronTurn(
     finished = true
     /* A1（Phase 5）：收口 phase —— 否则「终止事件没到达」= UI 永久卡「运行中」（见 turnPhase.ts） */
     applyTerminalPhase(threadId, finishReason || lastEventType)
-    /* ★ 先把「正在跑」摘掉，**再**落盘：2026-10-04 事故里落盘先抛异常 → 界面永远停在「运行中」 */
     set((s) => ({ sendingThreads: s.sendingThreads.filter((id) => id !== threadId) }))
-    /* A3：把兜底时钟拆掉（收尾与「停止」共用这一条，见 turnControl.disposeTurnWatchdog） */
     disposeTurnWatchdog(threadId)
     off()
     endTurnRequest(threadId)
-    try {
-      persistence.persistReply()
-    } catch (error) {
-      logError('turn.persistReply', error)
-    }
-    drainPendingRegen(threadId)
-    /* AG-025：这条跑完了，自动发排队的下一条 */
-    if (lastEventType === 'done' && !finishReason) drainQueued(threadId)
+    queueMicrotask(() => {
+      try {
+        persistence.persistReply()
+      } catch (error) {
+        logError('turn.persistReply', error)
+      }
+      drainPendingRegen(threadId)
+      if (lastEventType === 'done' && !finishReason) drainQueued(threadId)
+    })
   }
 
   /* 兜底时钟超阈值时的收口：**先叫停主进程**（A2，复用 chat:abort）——只放弃接收不叫停的话，
@@ -223,13 +222,13 @@ export async function runElectronTurn(
   })
   registerTurnWatchdog(threadId, () => watchdog.dispose())
 
-  /* 续跑（重新生成/接着做）时把已有时间线也带上 —— 否则老片段会被丢掉 */
   const rounds = [...(placeholder.rounds ?? [])]
   const streamState: StreamState = {
     content,
     reasoning,
     toolRuns,
     rounds,
+    nativeFlow: true,
     citations,
     patch,
     threadId,
@@ -254,8 +253,7 @@ export async function runElectronTurn(
     if (result.handled) {
       content = streamState.content
       reasoning = streamState.reasoning
-      /* 每来一段就看看该不该落盘（判断本身很便宜，不满足就直接返回） */
-      persistence.flushPartial()
+      if (!finished) persistence.flushPartial()
     }
   })
 

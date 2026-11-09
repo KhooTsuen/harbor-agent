@@ -44,7 +44,7 @@ async function askContinue({ still, sessionId, phaseKey, emit }) {
  * @param {object} args
  * @returns {Promise<{ taskId?: string, changeSetId?: string, content: string, reasoning: string,
  *   usage: object|null, turns: number, toolRuns: Array, paused?: boolean,
- *   exhausted?: boolean, truncated?: string, _collab?: object }>}
+ *   exhausted?: boolean, truncated?: string, finalContent?: string, _collab?: object }>}
  *   `taskId` / `changeSetId` 不是每个分支都有（协作交接那条就没有）。
  *   `truncated` = 空/缺 = 这条回复写完了；`length` / `stream_cut` = 没写完及原因
  *   （判据与续写在 `core/reply-continue.cjs`）。

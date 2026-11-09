@@ -30,6 +30,18 @@ function escapeMarkdown(text: string): string {
  */
 export function processSection(message: Message): string {
   const runs = message.toolRuns ?? []
+  if (message.flow) {
+    const byId = new Map(runs.map((run) => [run.id, run]))
+    const lines = message.flow.nodes.map((node) => {
+      if (node.kind !== 'tool') return escapeMarkdown(node.text)
+      const run = byId.get(node.toolId)
+      if (!run) return ''
+      return '- ' + run.name + ' · ' + (run.pending ? '结果未确认' : run.ok ? '成功' : '失败')
+    })
+    return lines.length
+      ? ['<details>', '<summary>执行过程</summary>', ...lines, '</details>'].join('\n\n')
+      : ''
+  }
   const hasProcess = Boolean(message.reasoning?.trim()) || runs.length > 0
   if (!hasProcess) return ''
 
@@ -93,7 +105,11 @@ export function fullRecordText(message: Message, bodyText?: string): string {
   const process = processSection(message)
   if (process) parts.push(process)
 
-  parts.push(bodyText ?? message.content ?? '')
+  parts.push(message.flow ? bodyTextOf(message) : (bodyText ?? message.content ?? ''))
+  if (message.flow && message.verdict && message.verdict !== 'chat') {
+    const verdict = { done: '验收通过', partial: '部分完成', failed: '验收未通过' }
+    if (message.verdict in verdict) parts.push(verdict[message.verdict as keyof typeof verdict])
+  }
 
   for (const block of message.codeBlocks ?? []) {
     parts.push(`\`\`\`${block.language}\n${block.code}\n\`\`\`\n`)

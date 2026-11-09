@@ -61,6 +61,7 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.execId ? { execId: stored.execId } : {}),
     ...(stored.execTaskId ? { execTaskId: stored.execTaskId } : {}),
     /* 轨迹格式：不还原的话读取端就一直把新记录当老快照（白存了标识） */
+    ...(stored.flow ? { flow: stored.flow } : {}),
     ...(stored.trace === 'ordered-v1' ? { trace: 'ordered-v1' as const } : {}),
     /* 用户带的图：**必须还原**。丢了的话重开会话看不到缩略图，「恢复任务」时
        模型也收不到画面 —— 只剩「（图片）」这行占位字（2026-09-28 真机复现） */

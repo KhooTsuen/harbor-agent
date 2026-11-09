@@ -45,7 +45,7 @@ async function finishReply(input) {
 /**
  * 收尾：**要不要开独立总结对话**。
  *
- * 判据只有一条：这一轮真执行过工具（`toolRuns` 非空）。
+ * 只有工具执行后缺少交付正文，才调用独立汇报作为答复。
  * 纯聊天不开 —— 那种情况下「最后一段话」本来就是回答本身，再让它自己总结一遍
  * 只会多一次请求、多一份重复内容。
  *
@@ -53,16 +53,16 @@ async function finishReply(input) {
  *   成没成由 `summary-handoff.verdictOf` 按台账证据判（失败项 / 计划 / 测试退出码），
  *   结果放在 `verdict` 里**与正文一起**带出去（界面要能同时说「答完了」和「但有失败项」）。
  *
- * @returns {Promise<{ content: string, truncated: string, usage: object|null, verdict: string }>}
+ * @returns {Promise<{ content: string, finalContent: string, truncated: string, usage: object|null, verdict: string }>}
  */
 async function finishTurn(input) {
   const { toolRuns = [], taskId = '', goal = '', ...rest } = input
 
   if (!summaryPhase.wantSummary({ toolRuns })) {
     const reply = await finishReply(rest)
-    const said = rest.transcript.soFar(reply.added || rest.result.content)
     return {
-      content: said.content,
+      content: rest.transcript.soFar(reply.added || rest.result.content).content,
+      finalContent: reply.text,
       truncated: reply.cut ? String(reply.reason ?? '') : '',
       usage: reply.usage,
       /* 纯聊天没执行工具 → 没有「验收」这回事。写 'chat' 而不是编一个 done，
@@ -71,10 +71,19 @@ async function finishTurn(input) {
     }
   }
 
-  /* 工作阶段这一轮说的话先进总账（它属于「过程」，不是结论） */
-  rest.transcript.mergeRound()
   const task = taskId ? taskCore.get(taskId) : null
   const built = handoff.buildHandoff({ task, toolRuns, goal })
+  if (String(rest.result.content ?? '').trim()) {
+    const reply = await finishReply(rest)
+    return {
+      content: rest.transcript.soFar(reply.added || rest.result.content).content,
+      finalContent: reply.text,
+      truncated: reply.cut ? String(reply.reason ?? '') : '',
+      usage: reply.usage,
+      verdict: built.verdict,
+    }
+  }
+  rest.transcript.mergeRound()
   const sum = await summaryPhase.runSummary({
     handoff: built,
     baseArgs: rest.baseArgs,
@@ -90,7 +99,7 @@ async function finishTurn(input) {
    * 「都做完了」的文字，却不知道台账里其实还有失败项。答复和验收是两件事，
    * 结论得单独带着，界面才能同时说出来（「答复已结算，任务仍未完成」是允许的）。
    */
-  return { content: sum.text, truncated: sum.truncated, usage: sum.usage, verdict: built.verdict }
+  return { content: sum.text, finalContent: sum.text, truncated: sum.truncated, usage: sum.usage, verdict: built.verdict }
 }
 
 module.exports = { finishReply, finishTurn }

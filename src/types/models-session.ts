@@ -107,6 +107,7 @@ export interface StoredMessage {
    * （reasoning / toolRuns / content）**合成**的一轮。合成的那个「顺序」是猜的，
    * 回放必须走兼容路径，不能当真实轨迹渲染。
    */
+  flow?: import('../lib/conversationFlow').ConversationFlow
   trace?: 'ordered-v1'
   /** 读的一侧加上去的：这条提问的**全部**回答（含别的版本、含重生成过的） */
   answerRecords?: StoredMessage[]

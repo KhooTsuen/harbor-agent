@@ -170,7 +170,7 @@ export async function run() {
       }
       if (nth === 2) {
         return {
-          content: '干活时的中间说明', reasoning: '', usage: null,
+          content: '', reasoning: '', usage: null,
           finishReason: 'stop', sawDone: true, ttftMs: 1, latencyMs: 10, toolCalls: [],
         }
       }
@@ -193,7 +193,7 @@ export async function run() {
     const out = await runOnce([{ role: 'user', content: '把导出按钮改成异步' }])
     if (out?.taskId) created.push(out.taskId)
 
-    check('★★★ 干过工具 → 真的多了一次独立请求（工作 2 次 + 总结 1 次）', seen.length === 3, `${seen.length} 次`)
+    check('★★★ 工具执行后没有交付正文 → 多一次独立请求（工作 2 次 + 总结 1 次）', seen.length === 3, `${seen.length} 次`)
     const sum = seen[2]
     check('★★★ 总结那次 tools 是空数组（结构上给不出工具）', sum?.tools === 0, JSON.stringify({ tools: sum?.tools, hasTools: sum?.hasTools }))
     check('★ 工作阶段那两次是带了工具的（对照组）', seen[0]?.tools > 0, String(seen[0]?.tools))
@@ -235,7 +235,7 @@ export async function run() {
         }
       }
       if (nth === 2) {
-        return { content: '好了', reasoning: '', usage: null, finishReason: 'stop', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [] }
+        return { content: '', reasoning: '', usage: null, finishReason: 'stop', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [] }
       }
       /* 第 3 次是总结：恶意/异常地返回一个 write_file 调用 */
       execAfterSummary = true
@@ -261,7 +261,7 @@ export async function run() {
       if (nth === 1) {
         return { content: '读文件', reasoning: '', usage: null, finishReason: 'tool_calls', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}' }] }
       }
-      if (nth === 2) return { content: '好了', reasoning: '', usage: null, finishReason: 'stop', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [] }
+      if (nth === 2) return { content: '', reasoning: '', usage: null, finishReason: 'stop', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [] }
       if (nth === 3) return { content: '汇报第一段。', reasoning: '', usage: null, finishReason: 'length', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [] }
       return { content: '汇报第二段。', reasoning: '', usage: null, finishReason: 'stop', sawDone: true, ttftMs: 1, latencyMs: 5, toolCalls: [] }
     }

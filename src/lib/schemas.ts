@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { conversationFlowSchema } from './conversationFlow'
 
 /* ══════════════════════════════════════════════════════════════
    外部数据的运行时校验（zod）
@@ -81,6 +82,7 @@ export const StoredMessageSchema = z.object({
    * ★ 必须在 schema 里声明：zod 的 object **默认会剥掉没声明的字段** ——
    *   不写这一块，落盘的时间线读回来就没了（界面静默塔回三段堆叠）。
    */
+  flow: conversationFlowSchema.optional(),
   rounds: z
     .array(
       z.object({

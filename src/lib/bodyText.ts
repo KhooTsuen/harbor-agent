@@ -33,6 +33,7 @@ import { isProcessSpeech } from '@/components/chat/message/groupRounds'
 export function bodyTextOf(message: Message): string {
   /* 用户 / 系统消息：只有一个 content，没有轮次这回事 */
   if (message.role !== 'assistant') return message.content
+  if (message.flow) return message.flow.final ?? ''
 
   const rounds = roundsOf(message)
   const kept = rounds

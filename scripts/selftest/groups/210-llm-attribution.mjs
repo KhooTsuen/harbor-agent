@@ -208,13 +208,13 @@ export async function run() {
 
   const byTask = {}
   for (const r of rows) byTask[r.taskId] = (byTask[r.taskId] ?? 0) + 1
-  /* 2026-11-08 起工作与总结分离：一个有工具的任务 = 2 行 chat（两轮）+ 1 行 summary */
+  /* 工作轮已给出交付正文时，两轮 chat 即可结算 */
   const purposesOf = (taskId) => rows.filter((r) => r.taskId === taskId).map((r) => r.purpose || 'chat')
   const chatLines = purposesOf(created[0]).filter((p) => p === 'chat').length
   const sumLines = purposesOf(created[0]).filter((p) => p === 'summary').length
   check(
-    '一个任务跑两轮 → 2 行「干活」+ 1 行「总结」（分离后必然如此）',
-    chatLines === 2 && sumLines === 1,
+    '有交付正文的任务跑两轮 → 2 行「干活」，无需额外总结',
+    chatLines === 2 && sumLines === 0,
     `taskId=${created[0]} chat=${chatLines} summary=${sumLines} 总=${byTask[created[0]]}`,
   )
   check(

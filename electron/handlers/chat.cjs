@@ -19,7 +19,6 @@ const chatConfirm = require('./chat-confirm.cjs')
 /* Codex MCP 桥：把这一轮的审批上下文按 runId 登记（见 codex-mcp-context.cjs） */
 const codexMcp = require('../core/codex-mcp-lifecycle.cjs')
 const usageBucket = require('../core/usage-bucket.cjs')
-
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
   chatConfirm.register({ ipcMain })
   /* ── 发起一轮对话 ─────────────────────────────────────── */
@@ -175,7 +174,6 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
       emit({ type: name ?? 'phase', phase: e.to, from: e.from, detail: e.detail })
     })
 
-    /* 不 await：立刻返回，后面靠事件推 */
     void (async () => {
       try {
         /* AG-011：带 resumeTaskId = 接着上次那条做（生命周期上是新一轮，
@@ -217,12 +215,14 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
         emit({
           type: 'done',
           content: result.content,
+          finalContent: result.finalContent,
           reasoning: result.reasoning,
           usage: usageBucket.bucketOf(result.usage),
           verdict: /** @type {any} */ (result).verdict ?? '', /* 验收结论：仅总结那条路有 */
           turns: result.turns,
           toolRuns: result.toolRuns,
           exhausted: result.exhausted === true,
+          paused: result.paused === true,
           truncated: result.truncated ?? '', /* 空串=完整；length / stream_cut = 截断 */
         })
 

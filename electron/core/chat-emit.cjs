@@ -33,15 +33,10 @@ function createEmitter({ requestId, phaseKey, send }) {
    *   · 断言「不回退」（小于上次的 seq 视为乱序，记一次告警而不是静默接受）
    *   · 落盘后回放时按它重排，不再依赖 `reconcileFinalRounds` 猜正文该并到哪
    *
-   * ★ `seq` 在**入口**分配（不是 flush 时），所以一批正文拿到的是它**第一条**
-   *   的序号 —— 批里的字是连续的，用起始序号足以定序，不必给每个字编一条。
    */
   let seq = 0
-  /** 当前这一批正文的起始序号（批为空时下一次 put 会重设） */
-  let batchStart = 0
-
   const batcher = createBatcher({
-    send: (type, text) => send('chat:event', { requestId, type, text, seq: batchStart }),
+    send: (type, text) => send('chat:event', { requestId, type, text, seq: ++seq }),
   })
 
   function emit(event) {
@@ -49,12 +44,7 @@ function createEmitter({ requestId, phaseKey, send }) {
     bus.emit(type, payload, { taskId: phaseKey })
     metrics.observe(phaseKey, event)
 
-    seq += 1
-    const mySeq = seq
-
     if ((type === 'content' || type === 'reasoning') && typeof event.text === 'string') {
-      /* 批为空 → 这条是这批的第一条，用它的序号当整批的序号 */
-      if (!batcher.pending) batchStart = mySeq
       batcher.put(type, event.text)
       return
     }
@@ -67,7 +57,7 @@ function createEmitter({ requestId, phaseKey, send }) {
      * 事件就被丢掉，**界面永远不弹权限条**，用户只能等到 5 分钟超时被当成拒绝。
      * 2026-09-25 真机抓到的：事件到了渲染层，权限条就是不出现。
      */
-    send('chat:event', { ...event, requestId, seq: mySeq })
+    send('chat:event', { ...event, requestId, seq: ++seq })
   }
 
   /**

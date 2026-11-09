@@ -123,6 +123,8 @@ export type ChatEvent =
       requestId: string
       type: 'done'
       content: string
+      finalContent?: string
+      paused?: boolean
       reasoning: string
       usage: UsageBucket | null
       turns: number

@@ -133,6 +133,7 @@ export interface Message {
   /** 这次执行归属的任务（继续原任务时的原 taskId）。没有就是没绑定，不猜 */
   execTaskId?: string
   /** 轨迹格式：`'ordered-v1'` = rounds 是执行时攒的（可直接回放）；没有 = 老记录 */
+  flow?: import('../lib/conversationFlow').ConversationFlow
   trace?: 'ordered-v1'
   /**
    * 这一轮实际花了多少毫秒（2026-10-21）。

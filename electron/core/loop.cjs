@@ -247,7 +247,7 @@ async function runLoop(options) {
       life.mark('completed', traceKey(options))
       /* 正文 / 思考 / 验收结论一起回给渲染层；truncated 空串 = 完整 */
       return {
-        content: reply.content, reasoning: transcript.soFar().reasoning,
+        content: reply.content, finalContent: reply.finalContent, reasoning: transcript.soFar().reasoning,
         usage: totalUsage, turns: turn + 1, toolRuns, truncated: reply.truncated,
         verdict: reply.verdict ?? '',
       }

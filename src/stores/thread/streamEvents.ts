@@ -1,5 +1,6 @@
 import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
 import { isToolFailure } from '@/types/rounds'
+import { advanceFlow, type ConversationFlow } from '@/lib/conversationFlow'
 import { uid } from '@/lib/utils'
 import { useAppStore } from '../useAppStore'
 import { usePerfStore } from '../usePerfStore'
@@ -21,27 +22,18 @@ import { markRoundStart, type RetryMarks } from './retryRollback'
 /* P1-B：内核这一轮**实际组装完**的输入量（`turn_start.input`）—— 与自算的理论量分开显示 */
 import { inputOfEvent } from './contextUsage'
 
-/* 流式事件落到消息；跨层接线必须真跑，空占位事故见 docs/踩坑记录.md。 */
-
 export interface StreamState {
-  /** 消息的累积内容（分片事件会不断追加） */
+  nativeFlow?: boolean
+  flow?: ConversationFlow
   content: string
   reasoning: string
   toolRuns: ToolRunRecord[]
-  /**
-   * 一轮一轮的片段（思考 / 工具下标 / 正文），顺序即发生顺序，聚合字段拼不出先后。
-   * ⚠️ 改完必须 `patch({ rounds: syncRounds(state) })`，否则整场流式退回三段堆叠。
-   */
   rounds: MessageRound[]
   citations: NonNullable<Message['citations']>
-  /** 把字段写回那条流式消息 */
   patch: (fields: Partial<Message>) => void
-  /** 这一刻的消息对象（`done` 里要拿完整字段落盘） */
   snapshot: () => Message
-  /** 收尾（取消订阅、清计时器、把 sending 置回 false） */
   finish: () => void
   threadId: string
-  /** 本轮起点 —— `retry` 时退回它，否则「半截 + 整段重说」显示两遍（见 retryRollback.ts） */
   retryMarks: RetryMarks
 }
 
@@ -92,24 +84,32 @@ export function handleStreamEvent(
     return { handled: true }
   }
 
+  if (state.nativeFlow && (state.flow || type === 'turn_start')) {
+    const next = advanceFlow(state.flow ?? { version: 1, turn: 0, nodes: [] }, event)
+    if (next !== state.flow) {
+      state.flow = next
+      runSafely('flow.patch', () => state.patch({ flow: next }))
+    }
+  }
+
   switch (type) {
     /* ── 内容与思考：分片追加 ── */
     case 'content': {
       /* AG-037：「首字上屏」—— 只在**第一个**字时记一次（这一轮的第一个字） */
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
       /* 先取轮、再累加：懒建那一轮时标记要记「加这片之前」的长度（见 currentRound） */
-      const round = currentRound(state)
+      const round = state.flow ? undefined : currentRound(state)
       state.content += String(event.text ?? '')
-      round.content += String(event.text ?? '')
+      if (round) round.content += String(event.text ?? '')
       state.patch({ content: state.content, rounds: syncRounds(state) })
       return { handled: true }
     }
 
     case 'reasoning': {
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
-      const round = currentRound(state)
+      const round = state.flow ? undefined : currentRound(state)
       state.reasoning += String(event.text ?? '')
-      round.reasoning += String(event.text ?? '')
+      if (round) round.reasoning += String(event.text ?? '')
       state.patch({ reasoning: state.reasoning, rounds: syncRounds(state) })
       return { handled: true }
     }
@@ -130,7 +130,7 @@ export function handleStreamEvent(
       }
       state.toolRuns.push(record)
       /* 这一轮跑过这个工具 —— 记下标（记录本身不重复存） */
-      currentRound(state).tools.push(state.toolRuns.length - 1)
+      if (!state.flow) currentRound(state).tools.push(state.toolRuns.length - 1)
       state.patch({ toolRuns: [...state.toolRuns], rounds: syncRounds(state) })
       return { handled: true }
     }
@@ -199,7 +199,7 @@ export function handleStreamEvent(
 
     /* 新一轮开始 —— 时间线在这里分段（以前被 default 吞掉，「哪段思考属于哪轮」就丢了） */
     case 'turn_start': {
-      state.rounds.push({ reasoning: '', content: '', tools: [] })
+      if (!state.flow) state.rounds.push({ reasoning: '', content: '', tools: [] })
       /* 新一轮 = 新的重试起点（重试只退本轮的半截，前面几轮一个字不动） */
       state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
       /* 立刻挂到消息上 —— 否则新的一轮要等它出了第一个字才在界面上出现。
@@ -210,11 +210,10 @@ export function handleStreamEvent(
 
     /* ── 结束 ── */
     case 'done': {
-      const finalContent = String(event.content ?? '') || state.content
-      /* ★ 顺序：**先收尾，再写字段** —— patch 一抛，finish 就永远轮不到（2026-10-04 事故） */
       runSafely('done.finish', () => state.finish())
+      const finalContent = String(event.content ?? '') || state.content
       /* 后台汇总可能不同于逐轮流式正文；对齐规则在 finalRounds.ts（含「整段显示两遍」的事故） */
-      state.rounds = reconcileFinalRounds(state.rounds, finalContent)
+      if (!state.flow) state.rounds = reconcileFinalRounds(state.rounds, finalContent)
       runSafely('done.patch', () =>
         state.patch({
           content: finalContent,
@@ -227,6 +226,7 @@ export function handleStreamEvent(
           rounds: state.rounds.map((round) => ({ ...round, tools: [...round.tools] })),
           citations: [...state.citations],
           status: 'sent',
+          ...(state.flow && (event.exhausted || event.paused) ? { interrupted: true } : {}),
           kind: 'text',
           /* ★ 上游说「这条没写完」（length/断流）→ 标上；续写救回来时主进程带空串 */
           ...(event.truncated ? { truncated: event.truncated as Message['truncated'] } : {}),
@@ -240,7 +240,6 @@ export function handleStreamEvent(
     }
 
     case 'aborted': {
-      /* ★ 先收尾再写字段（同上）；标 `interrupted`：操作条据此把「重新生成」换成「重试」 */
       runSafely('aborted.finish', () => state.finish())
       runSafely('aborted.patch', () =>
         state.patch({

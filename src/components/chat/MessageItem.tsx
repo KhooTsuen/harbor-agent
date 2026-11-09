@@ -1,3 +1,4 @@
+import { ConversationFlowView } from './message/ConversationFlowView'
 import { useEffect, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import type { ForkPoint } from '@/lib/branchPath'
@@ -136,11 +137,13 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
                 auto={message.clarify.auto}
               />
             ) : null}
-            {/*
-                有时间线（新记录）→ 按真实发生顺序排：思考 → 工具 → 正文 → 思考 → …
-                没有（老记录）→ `roundsOf` 合成一轮，排版和新的一致。
-              */}
-            {rounds.length > 0 && hasAnything(rounds) ? (
+            {message.flow ? (
+              <ConversationFlowView
+                message={message}
+                streaming={isStreaming}
+                streamOutput={streamOutput}
+              />
+            ) : rounds.length > 0 && hasAnything(rounds) ? (
               <MessageRounds
                 rounds={rounds}
                 toolRuns={message.toolRuns ?? []}
