@@ -195,9 +195,19 @@ export async function run() {
   check('发确认事件不抛错', emitErr === null)
   check('★ confirm_request 发出去了', !!ev)
   check('★ 它的 requestId 还是**对话的**（没被审批 id 顶掉）', ev?.payload?.requestId === 'req_chat')
+  /*
+   * 「对话 requestId 必须写在展开之后」—— 判据是**先后顺序**，不是那一行的字面量。
+   *
+   * 2026-11-09：这条原来写死 `"{ ...event, requestId }"`，加了 `seq` 之后变成
+   * `{ ...event, requestId, seq }` 就假红了 —— 而 bug 要防的（审批 id 顶掉对话 id）
+   * 一点没变。改成「找得到 `...event`，且它在 `requestId` 前面」，以后再加字段
+   * 也不会误报，可这条闸门照样拦得住真正的顺序颠倒。
+   */
+  const spreadAt = emitSrc2.indexOf('...event')
+  const reqAt = emitSrc2.indexOf('requestId', spreadAt + 1)
   check(
     '★ chat-emit 把对话 requestId 写在展开之后（顺序反了就是这个 bug）',
-    emitSrc2.includes("{ ...event, requestId }"),
+    spreadAt >= 0 && reqAt > spreadAt,
   )
   check(
     '★ askUser 不再拿 requestId 转发审批 id',

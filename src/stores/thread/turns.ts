@@ -21,9 +21,10 @@ import {
   type TurnSetter,
 } from './turnControl'
 import { createReplyPersistence } from './replyPersistence'
-/* 重试起点：`retry` 时要把这一轮已经流出去的半截退掉（见 retryRollback.ts） */
+/* 重试起点：retry 时把这一轮已流出去的半截退掉（见 retryRollback.ts） */
 import { markRoundStart } from './retryRollback'
 import { createTurnWatchdog } from './turnWatchdog'
+import { touchOrder } from './execOrder'
 import { drainPendingRegen } from './regenQueue'
 import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
 import type { StoredMessage } from '@/types/models-extra'
@@ -32,9 +33,8 @@ import { logError } from '@/lib/actionLog'
 /* ══════════════════════════════════════════════════════════════
    一轮对话的两条实现路径
 
-   **Electron** → 真流式：agent 循环、工具调用、写操作确认；**浏览器预览** → 静态回复。
-   两条路产出的 Message 形状一样，UI 不用关心走的哪条。本文件只负责「怎么产生回复」，
-   不负责 store —— 所以写成纯函数，由 useThreadStore 调用。
+   **Electron** → 真流式（agent 循环、工具、写确认）；**浏览器预览** → 静态回复。
+   两条路产出的 Message 形状一样，UI 不用关心走的哪条。本文件只负责「怎么产生回复」。
    ══════════════════════════════════════════════════════════════ */
 
 /* 「在跑的那几个请求」（登记 / 停止 / 暂停 / 排队）搬到了 turnControl.ts —— 那边自成一体，
@@ -170,6 +170,8 @@ export async function runElectronTurn(
     timestamp: placeholder.timestamp,
     ...(target ? { answersKey: target.key, answersVersion: target.version } : {}),
     ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
+    execId: requestId /* 执行身份：重启后靠它区分三次执行 */,
+    ...(resumeTaskId ? { execTaskId: resumeTaskId } : {}),
     getContent: () => content,
     getReasoning: () => reasoning,
     getEventType: () => lastEventType,
@@ -245,6 +247,7 @@ export async function runElectronTurn(
     if (event.requestId !== requestId) return
     /* 有事件就是「还活着」—— 这一行就是新旧兜底的全部区别（判定见 turnWatchdog.ts） */
     watchdog.touch()
+    touchOrder(event)
     lastEventType = String(event.type ?? '')
     /* content / reasoning 是累积的，事件本身不带全量，所以状态得跟着更新 */
     const result = handleStreamEvent(event as Record<string, unknown>, streamState)

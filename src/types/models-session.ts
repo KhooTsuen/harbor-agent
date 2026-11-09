@@ -7,6 +7,7 @@
 
 import type { MessageUsage } from './usage'
 import type { StoredClarify } from './clarify'
+import type { ExecVerdict } from './verdict'
 /* 时间线片段与 UI 侧共用一份定义（type-only import，没有运行时循环） */
 import type { MessageRound, Thread } from './conversation'
 
@@ -80,6 +81,22 @@ export interface StoredMessage {
   durationMs?: number
   /** 这条回答是「重新生成」来的：指向被替代的那条回答（磁盘 key）—— 台账对账 / 对比两次生成用 */
   regeneratedFrom?: string
+  /** 这次的验收结论（`done`/`partial`/`failed`/`chat`）—— 与答复正文分开存，口径见 `types/verdict.ts` */
+  verdict?: ExecVerdict
+  /**
+   * 这次执行的身份（= 发送时的 requestId，2026-11-09）。
+   *
+   * 一次发送 / 继续 / 重新生成各有一个 —— 重启后靠它区分「这三次是不同的执行」。
+   * 老记录没有这个字段 → 界面照旧显示，不回填、不按会话去猜。
+   */
+  execId?: string
+  /**
+   * 这次执行归属的任务（继续原任务时 = 原 taskId）。
+   *
+   * ★ 没有就**不写**。不拿「会话最近一个任务」来顶替 —— 那会把两条不相干的
+   * 执行挂到同一个任务上，比留空更难查。
+   */
+  execTaskId?: string
   /** 读的一侧加上去的：这条提问的**全部**回答（含别的版本、含重生成过的） */
   answerRecords?: StoredMessage[]
   /** 读的一侧加上去的：当前显示的是该版本回答里的第几条（0 开始） */

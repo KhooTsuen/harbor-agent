@@ -50,9 +50,10 @@ async function finishReply(input) {
  * 只会多一次请求、多一份重复内容。
  *
  * ★ 这条判据**只回答「要不要开总结」**，不回答「任务做成没」。
- *   成没成由 `summary-handoff.verdictOf` 按台账证据判（失败项 / 计划 / 测试退出码）。
+ *   成没成由 `summary-handoff.verdictOf` 按台账证据判（失败项 / 计划 / 测试退出码），
+ *   结果放在 `verdict` 里**与正文一起**带出去（界面要能同时说「答完了」和「但有失败项」）。
  *
- * @returns {Promise<{ content: string, truncated: string, usage: object|null }>}
+ * @returns {Promise<{ content: string, truncated: string, usage: object|null, verdict: string }>}
  */
 async function finishTurn(input) {
   const { toolRuns = [], taskId = '', goal = '', ...rest } = input
@@ -64,6 +65,9 @@ async function finishTurn(input) {
       content: said.content,
       truncated: reply.cut ? String(reply.reason ?? '') : '',
       usage: reply.usage,
+      /* 纯聊天没执行工具 → 没有「验收」这回事。写 'chat' 而不是编一个 done，
+         免得界面把「聊天答完了」说成「任务验收通过」。 */
+      verdict: 'chat',
     }
   }
 
@@ -77,7 +81,16 @@ async function finishTurn(input) {
     callModel: rest.callModel,
     emit: rest.emit,
   })
-  return { content: sum.text, truncated: sum.truncated, usage: sum.usage }
+  /*
+   * ★ 两样东西必须分开带出去（2026-11-09）：
+   *   · `content` —— **面向用户的答复文字**（总结对话写的那一段）
+   *   · `verdict` —— **验收结论**（按台账证据判的 done / partial / failed）
+   *
+   * 以前只有 content 往下传，verdict 停在主进程里 —— 于是界面看到一段
+   * 「都做完了」的文字，却不知道台账里其实还有失败项。答复和验收是两件事，
+   * 结论得单独带着，界面才能同时说出来（「答复已结算，任务仍未完成」是允许的）。
+   */
+  return { content: sum.text, truncated: sum.truncated, usage: sum.usage, verdict: built.verdict }
 }
 
 module.exports = { finishReply, finishTurn }

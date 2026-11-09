@@ -14,6 +14,7 @@ import type {
 } from './index'
 import type { StoredMessage } from './models-extra'
 import type { MessageUsage } from './usage'
+import type { ExecVerdict } from './verdict'
 import type { StoredClarify } from './clarify'
 
 /* ══════════════════════════════════════════════════════════════
@@ -24,21 +25,13 @@ import type { StoredClarify } from './clarify'
    ══════════════════════════════════════════════════════════════ */
 
 /**
- * 内核这一轮**实际组装完**的模型输入（`assemble.estimates`，经 `turn_start` 推上来）。
+ * 内核这一轮**实际组装完**的模型输入（`assemble.estimates`，经 `turn_start` 上来）。
  *
- * ── 为什么界面要有这一份（2026-11-07 验收时补）────────────────────
+ * 与 `contextUsage.breakdownOf` 的区别：那个算「压缩点之后全部消息展开」的**理论量**，
+ * 这个是过了 `context-builder` 字符额度裁剪的**实际量**。超预算时差距很大
+ * （实测 `sess_mw2ab` 理论 912%、实际 30%），只显示理论量会让用户以为爆了。
  *
- * `contextUsage.breakdownOf` 算的是「压缩点之后**全部**消息展开后有多大」——
- * 那是**待组装**的理论量。内核真正发出去的还要过 `context-builder.assemble` 的
- * 字符额度：装不下的整组不进。
- *
- * 两者在没超预算时相等；超预算时差距很大。实测 `sess_mw2ab`：理论量 912%，
- * 而内核裁完只用了对话层的 30%（46,540 / 47,185 字符）。只显示理论量会让用户
- * 以为「爆了」，其实内核早就裁好了 —— 和以前只算正文（显示 55%、实际 128%）
- * 是同一种误导，只是方向反了。
- *
- * ⚠️ 字段名与 `context-builder.cjs` 的 `estimates` 逐字一致（那边是生产方）。
- * 全部是**估算**（chars/3），不是计费 token。
+ * ⚠️ 字段名与 `context-builder.cjs` 的 `estimates` 逐字一致；全是**估算**（chars/3）。
  */
 export interface ContextInputEstimate {
   chars: number
@@ -133,6 +126,12 @@ export interface Message {
    * 续写救回来了就不写这个字段。
    */
   truncated?: 'length' | 'stream_cut' | ''
+  /** 验收结论（与正文两件事；口径见 `types/verdict.ts`）。老记录没有 → 不显示 */
+  verdict?: ExecVerdict
+  /** 这次执行的身份（= 发送时的 requestId）。**必须跟着读回**，否则界面仍分不出是哪一次跑的 */
+  execId?: string
+  /** 这次执行归属的任务（继续原任务时的原 taskId）。没有就是没绑定，不猜 */
+  execTaskId?: string
   /**
    * 这一轮实际花了多少毫秒（2026-10-21）。
    *

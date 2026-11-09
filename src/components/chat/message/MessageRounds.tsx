@@ -11,48 +11,27 @@ import { groupRounds, isProcessSpeech } from './groupRounds'
 /* ══════════════════════════════════════════════════════════════
    一轮一轮地排（VS Code 那种时间线）
 
-   以前是三段堆叠：**一大块思考 → 一列工具 → 一段正文**。
-   三个字段（reasoning / toolRuns / content）确实是拼在一起的，所以
-   「哪段思考发生在哪个工具之前」在界面上根本表达不出来。
+   以前是三段堆叠（一大块思考 → 一列工具 → 一段正文）—— 三个字段确实是拼在
+   一起的，所以「哪段思考发生在哪个工具之前」表达不出来。真实过程是交替的：
+   思考 → 工具 → 正文 → 思考 → 工具 → 正文 …
 
-   而真实过程是交替的：思考 → 工具 → 正文 → 思考 → 工具 → 正文 …
-   2026-09-30 真机数据（一轮 39 次工具调用）：思考累积到 8.5 万字符、
-   正文一段段长到 4300 字符 —— 三段堆叠会把过程全糊在一起。
-
-   ── 2026-10-21：过程收进折叠区 ──────────────────────────────
-
-   按顺序全平铺的后果：跑 24 步时长任务要滚过几十行工具摘要才看到结论。
-   现在分成两块：
-
+   2026-10-21 起分成两块（用户看过真机后定的）：
      · **正文**（`round.content`）—— 直接显示，是阅读主体
      · **过程**（`round.reasoning` + 工具行）—— 收进 `ProcessPanel`，
-       默认只有一行入口（「用时 31 秒 · 24 个步骤」）
+       默认只有一行入口；**什么时候都可折叠、默认收起**（代价是跑的时候看
+       不见过程细节，用户自己接受）。入口文案写「正在运行 · N 个步骤」——
+       不写这句，收起后看起来就像已经跑完了（见 processSummary）。
 
-   ★ 关键：**归属按字段来，不按关键词猜**。`reasoning` 是过程、`content` 是正文，
-     这是内核分开攒的两个通道（`loop-transcript.cjs` 的 `stream` 回调），
-     不是从这里用「我会先 / 接下来」这类词去判断的。所以老记录也照同一条规则排，
-     **不需要改写Any 原文**。
+   ★ 归属**按字段来，不按关键词猜**：`reasoning` 是过程、`content` 是正文，
+     是内核分开攒的两个通道（`loop-transcript.cjs` 的 `stream` 回调）。
 
-   ── 流式期间也折叠（2026-10-21 用户改口径）────────────────────
+   过程话不占正文：模型常写「我先核对一下 → 调工具」，这些话也走 `content`，
+   被当成正文会把结论挤下去。判据**只看结构**：一轮里**有工具**、**有正文**、
+   且**不是最后一段正文** → 收进折叠区（展开可见，一个字不删）。
 
-   上一版是「跑的时候平铺、跑完才收」。用户看过真机后改了口径：
-   **什么时候都可折叠、默认收起**，代价（跑的时候看不见过程细节）他自己接受。
-   入口文案换成「正在运行 · N 个步骤」—— 不写这句，收起后的入口看起来
-   就像已经跑完了，用户会对着静止的界面干等（见 processSummary）。
-
-   ── 过程话不占正文（同一次改动）──────────────────────────────
-
-   模型常见的写法是「我先核对一下现状 → 调工具 → 现在核完了 → 再调工具」，
-   这些话都走 `content` 通道，于是被当成正文摆在外面，把真正的结论挤下去。
-
-   归属判据**只看结构、不看措辞**：一轮里**有工具**、**有正文**、且
-   **不是这条消息最后一段正文** → 这段是过程里的话，收进折叠区（展开可见，
-   一个字不删）。最后一段正文永远是正文 —— 那就是这条消息的结论。
-
-   ── Phase 3：跨轮同类聚合 ──────────────────────────────────
-   连续、可聚合的若干轮（无正文、无失败、无子代理）折成一组，工具用一个
-   `ToolLine` 一次说完（展开仍是 100 条原始明细）。规则与强制打断都在
-   `groupRounds.ts`（纯函数，单测钉死）—— 渲染层只负责按它给的结果画。
+   Phase 3：连续、可聚合的若干轮（无正文、无失败、无子代理）折成一组，
+   工具用一个 `ToolLine` 一次说完（展开仍是 100 条明细）。规则与强制打断
+   都在 `groupRounds.ts`（纯函数，单测钉死）—— 渲染层只按它给的结果画。
    ══════════════════════════════════════════════════════════════ */
 
 export function MessageRounds({
@@ -125,14 +104,22 @@ export function MessageRounds({
   const allToolsFailed =
     toolRuns.length > 0 && toolRuns.every((run) => !run.ok && run.ms !== undefined)
   const abnormal = message?.status === 'error' || message?.interrupted === true || allToolsFailed
-  const processItems = items.filter(
-    (item) =>
-      item.kind === 'group' ||
-      Boolean(item.round.reasoning.trim()) ||
-      item.round.tools.length > 0 ||
-      (item.kind === 'round' && isProcessSpeech(rounds, item.index)),
-  )
+
+  /** 这一项算「过程」（思考 / 工具 / 过程话）—— 折叠区收的就是这些 */
+  const isProcessItem = (item: (typeof items)[number]): boolean =>
+    item.kind === 'group' ||
+    Boolean(item.round.reasoning.trim()) ||
+    item.round.tools.length > 0 ||
+    (item.kind === 'round' && isProcessSpeech(rounds, item.index))
+
+  const processItems = items.filter(isProcessItem)
   const showEntry = processItems.length > 0 || streaming
+  /*
+   * ★ 折叠区插在**第一个过程项**的位置（2026-11-09）。以前它恒排最前，于是
+   * 「正文 → 工具 → 结论」被画成「过程 → 正文 → 结论」—— 重启回放时最明显。
+   * 现在按 `items` 的真实次序算插入点，过程照样收在一个折叠区里（降噪口径没变）。
+   */
+  const insertAt = items.findIndex(isProcessItem)
 
   /**
    * 正文块（每条有正文的轮各一段，顺序不变）
@@ -240,24 +227,40 @@ export function MessageRounds({
     </p>
   ) : null
 
+  /*
+   * 过程折叠区（思考 + 工具 + 过程话）。只出现一次，位置由下面的 `insertAt` 决定。
+   * 运行中入口恒挂（`showEntry`），那时 `insertAt` 可能是 -1 —— 兜底放最前。
+   */
+  const processPanel = (
+    <ProcessPanel
+      key="process"
+      message={entryMessage}
+      runs={toolRuns}
+      activity={activity}
+      /* 手动展开 / 折叠按「对话 + 消息」记住：切走再回来仍保持（见 ProcessPanel） */
+      threadId={message?.threadId}
+      messageId={message?.id}
+      /* 出错 / 中断 → 过程默认展开，入口仍然在（状态一眼可见，过程也一眼可见） */
+      defaultOpen={abnormal}
+    >
+      {processItems.map(processOf)}
+    </ProcessPanel>
+  )
+
   return (
     <div className="flex flex-col">
       {showEntry ? (
         <>
-          {/* 先给入口（运行中恒为「实时任务」/ 中断 / 失败 · N 个步骤），再给正文 */}
-          <ProcessPanel
-            message={entryMessage}
-            runs={toolRuns}
-            activity={activity}
-            /* 手动展开 / 折叠按「对话 + 消息」记住：切走再回来仍保持（见 ProcessPanel） */
-            threadId={message?.threadId}
-            messageId={message?.id}
-            /* 出错 / 中断 → 过程默认展开，入口仍然在（状态一眼可见，过程也一眼可见） */
-            defaultOpen={abnormal}
-          >
-            {processItems.map(processOf)}
-          </ProcessPanel>
-          {items.map(bodyOf)}
+          {/* 一轮都还没结束（刚按下发送）→ 没有过程项可插，入口放最前 */}
+          {insertAt < 0 ? processPanel : null}
+          {items.flatMap((item, index) => {
+            const parts: React.ReactNode[] = []
+            /* 折叠区插在它**真实发生**的位置（见上面 insertAt 的说明） */
+            if (index === insertAt) parts.push(processPanel)
+            const body = bodyOf(item)
+            if (body) parts.push(body)
+            return parts
+          })}
         </>
       ) : (
         /*

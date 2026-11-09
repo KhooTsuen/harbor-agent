@@ -1,5 +1,6 @@
 import type { Message, Thread } from '@/types'
 import { processHeaderText, formatDuration } from '@/lib/processSummary'
+import { bodyTextOf } from '@/lib/bodyText'
 
 /* ══════════════════════════════════════════════════════════════
    导出 / 复制完整记录
@@ -120,8 +121,12 @@ function messageBlock(message: Message): string {
     return `> ${message.content}\n`
   }
 
-  /* 助手回复的小标题。用中性名字，导出文件里不该出现别的产品名 */
-  return `### Agent\n\n${fullRecordText(message)}\n`
+  /*
+   * 助手回复。正文**必须**用 `bodyTextOf` —— 和界面显示、复制按钮同一份判据
+   * （见 `lib/bodyText.ts`）。以前这里传的是 `message.content`（只有最后一轮），
+   * 于是一条多轮正文的 Agent 消息**导出时丢掉前面几段**，而屏幕上看得见。
+   */
+  return `### Agent\n\n${fullRecordText(message, bodyTextOf(message))}\n`
 }
 
 export function threadToMarkdown(thread: Thread): string {

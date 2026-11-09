@@ -18,7 +18,7 @@ const userConstraints = require('../core/user-constraints.cjs')
 const chatConfirm = require('./chat-confirm.cjs')
 /* Codex MCP 桥：把这一轮的审批上下文按 runId 登记（见 codex-mcp-context.cjs） */
 const codexMcp = require('../core/codex-mcp-lifecycle.cjs')
-const usageBucket = require('../core/usage-bucket.cjs') /* 原始 usage → UsageBucket：唯一转换处，见文件头 */
+const usageBucket = require('../core/usage-bucket.cjs')
 
 function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd }) {
   chatConfirm.register({ ipcMain })
@@ -219,11 +219,11 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           content: result.content,
           reasoning: result.reasoning,
           usage: usageBucket.bucketOf(result.usage),
+          verdict: /** @type {any} */ (result).verdict ?? '', /* 验收结论：仅总结那条路有 */
           turns: result.turns,
           toolRuns: result.toolRuns,
           exhausted: result.exhausted === true,
-          /* 空串 = 完整；`length` / `stream_cut` = 截断及原因。缺了界面就会当成完整回复 */
-          truncated: result.truncated ?? '',
+          truncated: result.truncated ?? '', /* 空串=完整；length / stream_cut = 截断 */
         })
 
         const spent = ((Date.now() - (payload?.requestTime || startedAt)) / 1000).toFixed(1)

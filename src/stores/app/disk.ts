@@ -55,6 +55,11 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
     ...(stored.toolRuns && stored.toolRuns.length > 0 ? { toolRuns: stored.toolRuns } : {}),
     /* 时间线：有就按它排（思考 → 工具 → 正文），没有（老记录）就回塔三段堆叠 */
     ...(stored.rounds && stored.rounds.length > 0 ? { rounds: stored.rounds } : {}),
+    /* 验收结论：与正文分开还原 —— 重开会话后仍能看出「答复说了完成、其实有失败项」 */
+    ...(stored.verdict ? { verdict: stored.verdict } : {}),
+    /* 执行身份：不还原就分不出「这次是哪一次跑的」（存了却不读回 = 白存） */
+    ...(stored.execId ? { execId: stored.execId } : {}),
+    ...(stored.execTaskId ? { execTaskId: stored.execTaskId } : {}),
     /* 用户带的图：**必须还原**。丢了的话重开会话看不到缩略图，「恢复任务」时
        模型也收不到画面 —— 只剩「（图片）」这行占位字（2026-09-28 真机复现） */
     ...(stored.images && stored.images.length > 0 ? { images: stored.images } : {}),

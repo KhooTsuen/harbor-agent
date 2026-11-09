@@ -230,6 +230,8 @@ export function handleStreamEvent(
           kind: 'text',
           /* ★ 上游说「这条没写完」（length/断流）→ 标上；续写救回来时主进程带空串 */
           ...(event.truncated ? { truncated: event.truncated as Message['truncated'] } : {}),
+          /* 验收结论（内核按台账证据算的，不是从正文里猜）—— 与正文分开存 */
+          ...(event.verdict ? { verdict: event.verdict as Message['verdict'] } : {}),
         }),
       )
       /* 批⑤：「先不做了」的收尾必须等 done（主进程收尾写完才写得上 paused，见 confirmEvents） */

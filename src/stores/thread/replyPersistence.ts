@@ -64,6 +64,25 @@ export function createReplyPersistence(opts: {
    * 分段快照与收尾那条都带上 —— 进程被强杀后重开，也知道它是从哪条重来的。
    */
   regeneratedFrom?: string
+  /**
+   * 这次执行的身份（= 发送时的 `requestId`）。
+   *
+   * ── 为什么它必须落盘（2026-11-09）──────────────────────────────
+   * 「一次发送 / 一次继续 / 一次重新生成」以前在磁盘上**没有痕迹**：
+   * 重启后只看得出「这条答复在哪个会话里」，看不出「它是哪一次跑出来的」。
+   * 于是继续原任务、重生成同一轮之后再回放，三次执行糊成一段。
+   *
+   * 现在每条落盘都带 `execId`，读侧能按它把同一次执行的记录收在一起。
+   * 老记录没有这个字段 → 保持「不知道是哪次」的原样，**不去猜**。
+   */
+  execId?: string
+  /**
+   * 这次执行归属的任务（继续原任务时 = 原 taskId）。
+   *
+   * ★ **不猜**：没有就不写。老代码里那种「取会话最近一个任务当归属」的做法
+   * 会把两条不相干的执行挂到同一个任务上，比留空更难查。
+   */
+  execTaskId?: string
   getContent: () => string
   getReasoning: () => string
   /** 最后一个事件类型：只有 done / aborted 才值得存 */
@@ -92,6 +111,9 @@ export function createReplyPersistence(opts: {
     ...(opts.answersKey ? { answersKey: opts.answersKey } : {}),
     ...(opts.answersVersion !== undefined ? { answersVersion: opts.answersVersion } : {}),
     ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
+    /* 执行身份：分段快照与收尾那条都带上 —— 重启后靠它区分三次执行（不猜） */
+    ...(opts.execId ? { execId: opts.execId } : {}),
+    ...(opts.execTaskId ? { execTaskId: opts.execTaskId } : {}),
   }
   let lastFlushAt = 0
   let lastFlushLen = 0
@@ -198,6 +220,8 @@ export function createReplyPersistence(opts: {
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
         /* 时间线（思考 → 工具 → 正文 的真实顺序）—— 不存的话重开会话会塌回三段堆叠 */
         ...(final.rounds?.length ? { rounds: final.rounds } : {}),
+        /* 验收结论（与正文分开）—— 不存就重开会话后看不出「答复说了完成、其实有失败项」 */
+        ...(final.verdict ? { verdict: final.verdict } : {}),
         /*
          * 用时（2026-10-21）：**只有真拿到终点才写**。
          *

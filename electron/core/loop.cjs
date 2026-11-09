@@ -245,10 +245,11 @@ async function runLoop(options) {
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
       life.mark('responding', traceKey(options))
       life.mark('completed', traceKey(options))
-      /* 整轮正文与思考一起回给渲染层；truncated 空串 = 完整，`length`/`stream_cut` = 截断 */
+      /* 正文 / 思考 / 验收结论一起回给渲染层；truncated 空串 = 完整 */
       return {
         content: reply.content, reasoning: transcript.soFar().reasoning,
         usage: totalUsage, turns: turn + 1, toolRuns, truncated: reply.truncated,
+        verdict: reply.verdict ?? '',
       }
     }
 
