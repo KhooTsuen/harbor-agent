@@ -223,7 +223,7 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           toolRuns: result.toolRuns,
           exhausted: result.exhausted === true,
           paused: result.paused === true,
-          truncated: result.truncated ?? '', /* 空串=完整；length / stream_cut = 截断 */
+          truncated: result.truncated ?? '', finishReason: result.finishReason ?? '', /* 截断原因 / Provider 说「说完了」 */
         })
 
         const spent = ((Date.now() - (payload?.requestTime || startedAt)) / 1000).toFixed(1)

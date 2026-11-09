@@ -28,6 +28,8 @@ function pausedResult({ turn, usage, toolRuns, transcript = null }) {
     turns: turn,
     toolRuns,
     paused: true,
+    /* 暂停这条路没走到 Provider 的结束信号 → 空串（界面据此不把这段当正式答复） */
+    finishReason: '',
   }
 }
 
@@ -61,6 +63,8 @@ function exhaustedResult({
     exhausted: true,
     budgetHit,
     loopHit,
+    /* 同暂停：没拿到 Provider 的结束信号 → 空串，不拿它结算正式答复 */
+    finishReason: '',
   }
 }
 

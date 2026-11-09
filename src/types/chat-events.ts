@@ -140,6 +140,12 @@ export type ChatEvent =
        * 以前没用类型声明、靠 `as Record<string, unknown>` 转进来的 —— 补上。
        */
       verdict?: string
+      /**
+       * Provider 的阶段信号（`finish_reason`）。`stop` = 模型说「这轮说完了」。
+       * 结算正式答复时用它：只有明确说完、又没有交付正文，才把最后一段认作答复。
+       * 缺/空 = 老主进程或异常结束 → 不据此改判任何东西。
+       */
+      finishReason?: string
     }
   | { requestId: string; type: 'aborted' }
   | {

@@ -245,11 +245,11 @@ async function runLoop(options) {
       emit({ type: 'turn_end', turn: turn + 1, usage: totalUsage })
       life.mark('responding', traceKey(options))
       life.mark('completed', traceKey(options))
-      /* 正文 / 思考 / 验收结论一起回给渲染层；truncated 空串 = 完整 */
+      /* 正文/思考/验收一起回渲染层；finishReason = Provider 说「这轮说完了」(stop)，结算正式答复用它 */
       return {
         content: reply.content, finalContent: reply.finalContent, reasoning: transcript.soFar().reasoning,
         usage: totalUsage, turns: turn + 1, toolRuns, truncated: reply.truncated,
-        verdict: reply.verdict ?? '',
+        verdict: reply.verdict ?? '', finishReason: result.finishReason ?? '',
       }
     }
 
