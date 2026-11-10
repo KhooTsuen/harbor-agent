@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import type { ForkPoint } from '@/lib/branchPath'
 import { cn } from '@/lib/utils'
-import { fsReveal } from '@/lib/fsApi'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { CodeBlock } from './CodeBlock'
 import { DiffViewer } from './DiffViewer'
@@ -15,19 +14,13 @@ import { MessageRounds } from './message/MessageRounds'
 import { hasAnything, roundsOf, roundsOfError } from './message/roundsOf'
 import { TerminalOutput } from './TerminalOutput'
 import { colorOf } from '@/lib/statusLanguage'
-import { isSafeHref } from '@/lib/linkPolicy'
 import { SystemMessage } from './SystemMessage'
 import { UserMessage } from './message/UserMessage'
 import { IngestedNote } from './message/IngestedNote'
-
-/* ══════════════════════════════════════════════════════════════
-   MessageItem
-
-   布局是参考实现那种：
-     · 用户消息**右对齐气泡**
-     · 助手消息左对齐、无气泡（内容就是内容）
-     · 系统消息居中、小字
-   ══════════════════════════════════════════════════════════════ */
+import { AnswerSurface } from './message/AnswerSurface'
+import { MessageDeliverables } from './message/MessageDeliverables'
+import { MessageInputReplies } from './message/MessageInputReplies'
+import { CollaborationCard } from './message/CollaborationCard'
 
 export interface MessageItemProps {
   message: Message
@@ -105,7 +98,7 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
             用户只能看到一句报错，以为白干了（这是小尾巴 #7 的另一半）。
             报错本身当然要留：红底块样式一个字没改，下面接着排发生过的东西。
           */}
-          <div className="w-full max-w-[86ch]">
+          <AnswerSurface message={message}>
             {/*
                 AG-053 批③：这一轮开工前问过什么（只读卡）。
                 放最上面 —— 它发生在那轮所有动作**之前**，顺序上就该在最前。
@@ -119,7 +112,9 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
                     但只读卡立刻出现；主进程日志 `回话 … ok=true`。）
                   它在语义上本来就是「回看时看这儿」，留到轮末不损失任何东西。
               */}
-            {message.clarify && !isStreaming ? (
+            <MessageInputReplies message={message} />
+            <CollaborationCard message={message} />
+            {message.clarify && !isStreaming && !message.inputReplies?.length ? (
               <ClarifyCard
                 readOnly
                 questions={message.clarify.questions}
@@ -137,7 +132,8 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
                 auto={message.clarify.auto}
               />
             ) : null}
-            {message.flow ? (
+            {message.flow ||
+            (isStreaming && !hasAnything(rounds) && !message.content && !message.reasoning) ? (
               <ConversationFlowView
                 message={message}
                 streaming={isStreaming}
@@ -190,72 +186,7 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
               <TerminalOutput lines={message.terminalLines} className="mt-3" />
             ) : null}
 
-            {message.artifacts && message.artifacts.length > 0 ? (
-              <div className="mt-3 flex flex-col gap-1">
-                {message.artifacts.map((artifact) => (
-                  <div
-                    key={artifact.id}
-                    className="flex items-center gap-2 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-fg-secondary">
-                      {artifact.name}
-                    </span>
-                    {artifact.path ? (
-                      <button
-                        type="button"
-                        className="shrink-0 text-fg-tertiary hover:text-fg-primary"
-                        onClick={() => void fsReveal(artifact.path ?? '')}
-                      >
-                        打开
-                      </button>
-                    ) : null}
-                    <span className="shrink-0 text-fg-tertiary">成果 · {artifact.type}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            {message.citations && message.citations.length > 0 ? (
-              <div className="mt-3 rounded-sm border border-line-subtle bg-bg-base/30 px-2.5 py-2 text-2xs text-fg-secondary">
-                <p className="mb-1 text-fg-tertiary">来源</p>
-                <ol className="flex flex-col gap-1">
-                  {message.citations.map((citation, index) => {
-                    /* 搜索结果的地址是外部来的：不在白名单里就不画成链接（审计问题 18） */
-                    const label = `${citation.title}${citation.domain ? ` · ${citation.domain}` : ''}`
-                    return (
-                      <li key={citation.id} className="flex gap-1.5">
-                        <span className="shrink-0 font-mono text-fg-tertiary">[{index + 1}]</span>
-                        {isSafeHref(citation.url) ? (
-                          <a
-                            href={citation.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="min-w-0 truncate text-fg-secondary hover:text-fg-primary hover:underline"
-                            title={citation.url}
-                          >
-                            {label}
-                          </a>
-                        ) : (
-                          <span className="min-w-0 truncate text-fg-tertiary" title={citation.url}>
-                            {label}
-                          </span>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ol>
-              </div>
-            ) : null}
-
-            {/* 生成的图片 */}
-            {message.images?.map((src) => (
-              <img
-                key={src.slice(-24)}
-                src={src}
-                alt="生成的图片"
-                className="mt-3 max-w-full rounded-base border border-line-hairline"
-              />
-            ))}
+            <MessageDeliverables message={message} />
 
             {/*
                 这条提问有好几版回答时，回答下面也常显 ‹ n / N ›（切换不重跑）。
@@ -267,7 +198,7 @@ export function MessageItem({ message, showActions = true, fork, index }: Messag
             {showActions && !isStreaming && !isError ? (
               <AssistantActions message={message} />
             ) : null}
-          </div>
+          </AnswerSurface>
         </div>
       )}
     </article>

@@ -1,0 +1,98 @@
+.flow-navigation {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  max-width: calc(100% - 32px);
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.flow-navigation button {
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.15);
+  padding: 6px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.flow-navigation button:hover,
+.flow-navigation button:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.flow-navigation button:focus-visible,
+.flow-recovery-marker button:focus-visible {
+  outline: 2px solid var(--text-secondary);
+  outline-offset: 3px;
+}
+
+.flow-navigation-new {
+  animation: flow-navigation-arrive 160ms ease-out both;
+}
+
+.flow-recovery-marker {
+  border-left: 2px solid var(--text-tertiary);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.flow-recovery-marker button {
+  margin-left: 8px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.flow-target-highlight {
+  border-radius: 4px;
+  outline: 1px solid var(--border-strong);
+  outline-offset: 4px;
+  animation: flow-navigation-highlight 1400ms ease-out both;
+  scroll-margin-top: 16px;
+}
+
+[data-animations='off'] .flow-navigation button,
+[data-animations='off'] .flow-navigation-new,
+[data-animations='off'] .flow-target-highlight {
+  animation: none;
+  transition: none;
+}
+
+@keyframes flow-navigation-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes flow-navigation-highlight {
+  from {
+    background-color: var(--bg-hover);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-navigation button,
+  .flow-navigation-new,
+  .flow-target-highlight {
+    animation: none;
+    transition: none;
+  }
+}

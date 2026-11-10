@@ -80,14 +80,22 @@ describe('答完之后卡片不复活（P0-2 验收）', () => {
 
     act(() => button('就这么干')?.click())
     expect(replies).toHaveLength(1)
-    expect(container.textContent ?? '').not.toContain('动手前先对齐一下')
+    /*
+     * 交互卡必须消失：问题文案与「就这么干」按钮都不许在。
+     * 标题会以**只读回执**的形式留下（`InputCardReceipt` 的 reply.title），
+     * 那是「我刚才答了什么」的标识，不是可再操作的卡 —— 2026-11-10 定为设计。
+     */
+    expect(container.textContent ?? '').not.toContain('用哪个包管理器？')
+    expect(button('就这么干')).toBeUndefined()
+    expect(container.querySelector('[aria-label="答复回执"]')).toBeTruthy()
 
     /* 三种最常见的「无关重渲」：换右栏标签 / 请卡片亮一下 / 整棵树重挂 */
     act(() => useUIStore.setState({ activeRightTab: 'tasks' }))
     act(() => useUIStore.getState().requestCardFocus())
     draw()
 
-    expect(container.textContent ?? '').not.toContain('动手前先对齐一下')
+    /* 重渲几次之后仍然只有回执，没有可再操作的卡 */
+    expect(button('就这么干')).toBeUndefined()
     expect(container.textContent ?? '').not.toContain('用哪个包管理器？')
   })
 

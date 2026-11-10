@@ -3,6 +3,8 @@ import type { InlineNode } from '@/lib/markdown'
 import { openImageFromDom } from '@/stores/useImageLightbox'
 import { MathSpan } from './MathNode'
 import { RawHtmlInline } from './RawHtml'
+import { ArrivalImage } from '../message/ArrivalImage'
+import { FlowReferenceLink } from '../message/FlowReference'
 
 /* ══════════════════════════════════════════════════════════════
    行内节点渲染
@@ -53,29 +55,19 @@ function render(node: InlineNode, key: number) {
 
     case 'link':
       return (
-        /* target=_blank 会被主进程的 setWindowOpenHandler 接住，交给系统浏览器 */
-        <a
-          key={key}
-          href={node.href}
-          target="_blank"
-          rel="noreferrer"
-          className="underline decoration-line-strong underline-offset-2 transition-colors hover:opacity-80"
-          style={{ color: 'var(--accent-blue)' }}
-        >
+        <FlowReferenceLink key={key} href={node.href}>
           <Inline nodes={node.children} />
-        </a>
+        </FlowReferenceLink>
       )
 
     case 'image':
       return (
-        <img
-          key={key}
+        <ArrivalImage
+          key={`${key}-${node.src}`}
           src={node.src}
           alt={node.alt}
-          loading="lazy"
-          data-chat-image="true"
           className="my-2 block max-h-80 max-w-full cursor-zoom-in rounded border border-line-subtle"
-          onClick={() => openImageFromDom(node.src)}
+          onOpen={() => openImageFromDom(node.src)}
         />
       )
 

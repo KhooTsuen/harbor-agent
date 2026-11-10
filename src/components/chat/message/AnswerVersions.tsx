@@ -6,6 +6,7 @@ import { allAnswers, answersOfVersion } from '@/lib/answers'
 import { useThreadStore } from '@/stores/useThreadStore'
 import { ForkBadge } from '@/components/chat/branch/ForkBadge'
 import { RegenCompare } from './RegenCompare'
+import { selectAnswerWithTransition, useAnswerMotion } from './AnswerSurface'
 
 /* ══════════════════════════════════════════════════════════════
    回答的 ‹ n / N ›
@@ -22,6 +23,7 @@ import { RegenCompare } from './RegenCompare'
 export function AnswerVersions({ message, fork }: { message: Message; fork?: ForkPoint }) {
   const activateAnswer = useThreadStore((s) => s.activateAnswer)
   const [comparing, setComparing] = useState(false)
+  const motion = useAnswerMotion()
   /* ★ allAnswers：连「当前这条」一起算，否则 N 会少一个、索引还越界 */
   const records = answersOfVersion(allAnswers(message), message.answersVersion ?? 0)
   if (records.length < 2) return null
@@ -31,12 +33,17 @@ export function AnswerVersions({ message, fork }: { message: Message; fork?: For
     <div
       className="mt-1 flex items-center gap-0.5 text-2xs text-fg-tertiary"
       data-answer-versions="true"
+      data-live-arrival={motion ? 'true' : undefined}
     >
       <button
         type="button"
         aria-label="上一个回答"
         disabled={index <= 0}
-        onClick={() => activateAnswer(message.threadId, message.id, index - 1)}
+        onClick={() =>
+          selectAnswerWithTransition(message.id, () =>
+            activateAnswer(message.threadId, message.id, index - 1),
+          )
+        }
         className="rounded-sm p-0.5 transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronLeft size={12} />
@@ -51,7 +58,11 @@ export function AnswerVersions({ message, fork }: { message: Message; fork?: For
         type="button"
         aria-label="下一个回答"
         disabled={index >= records.length - 1}
-        onClick={() => activateAnswer(message.threadId, message.id, index + 1)}
+        onClick={() =>
+          selectAnswerWithTransition(message.id, () =>
+            activateAnswer(message.threadId, message.id, index + 1),
+          )
+        }
         className="rounded-sm p-0.5 transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronRight size={12} />

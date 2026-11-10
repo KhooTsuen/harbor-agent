@@ -25,7 +25,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const blocks = useMemo(() => parseBlocks(text), [text])
 
   return (
-    <div className="break-words text-base leading-relaxed text-fg-primary">
+    <div className="flow-markdown break-words text-base leading-relaxed text-fg-primary">
       <BlockList blocks={blocks} />
     </div>
   )

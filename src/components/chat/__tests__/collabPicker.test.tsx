@@ -17,6 +17,8 @@ vi.mock('@/stores/useConfigStore', () => ({
             name: '测试供应商',
             kind: 'openai',
             enabled: true,
+            /* ★ 必须有：buildOptions 把 missingKey 算进 disabled，缺了它所有模型都不可选 */
+            hasKey: true,
             models: h.models,
           },
         ],
@@ -153,6 +155,24 @@ function switchButton(): HTMLButtonElement | undefined {
 }
 
 it('同一后端有多个模型时显示用户实际选择，不能总显示第一个模型', () => {
+  /*
+   * ★ 必须带 providerId：`matchRole`（collabOptions.ts）要求它存在，
+   *   缺了就当「异常数据」显示「模型 A / 模型 B」——
+   *   因为真机保存选择时总会写入 providerId（2026-11-10 定为设计）。
+   *   这里补上它，才测得到本条真正要挡的事：**别总显示第一个模型**。
+   */
+  renderPicker({
+    collab: {
+      planner: { kind: 'openai', providerId: 'mock', model: 'chosen-model' },
+      executor: { kind: 'openai', providerId: 'mock', model: 'chosen-model' },
+    },
+  })
+  const label = container.querySelector('button')?.textContent ?? ''
+  expect(label).toContain('chosen-model')
+  expect(label).not.toContain('first-model')
+})
+
+it('缺 providerId 的旧选择不冒充模型名（显示占位，不猜）', () => {
   renderPicker({
     collab: {
       planner: { kind: 'openai', model: 'chosen-model' },
@@ -160,8 +180,8 @@ it('同一后端有多个模型时显示用户实际选择，不能总显示第�
     },
   })
   const label = container.querySelector('button')?.textContent ?? ''
-  expect(label).toContain('chosen-model')
-  expect(label).not.toContain('first-model')
+  expect(label).toContain('模型 A')
+  expect(label).not.toContain('chosen-model')
 })
 
 it('单模型状态显示供应商和当前供应商的模型列表', async () => {
@@ -175,13 +195,15 @@ it('单模型状态显示供应商和当前供应商的模型列表', async () =
 it('双模型状态显示 A/B 预览，并禁用另一角色已选模型', async () => {
   renderPicker({
     collab: {
-      planner: { kind: 'openai', model: 'chosen-model' },
-      executor: { kind: 'openai', model: 'first-model' },
+      planner: { kind: 'openai', providerId: 'mock', model: 'chosen-model' },
+      executor: { kind: 'openai', providerId: 'mock', model: 'first-model' },
     },
   })
   await openPicker()
-  expect(document.body.textContent).toContain('模型 A 预览')
-  expect(document.body.textContent).toContain('模型 B 预览')
+  /* A/B 预览区（CollabPanels 的 SourceColumn）：两栏各写自己的角色与所选连接 */
+  expect(document.body.textContent).toContain('A · 指导模型')
+  expect(document.body.textContent).toContain('B · 工作模型')
+  expect(document.body.textContent).toContain('测试供应商 · chosen-model')
 
   const blocked = Array.from(document.body.querySelectorAll('button')).find(
     (button) => button.disabled && button.textContent?.includes('first-model'),
@@ -214,8 +236,12 @@ it('有两个可用模型时，切换条点了就进双模型，并给 A/B 各�
     switchButton()?.click()
     await Promise.resolve()
   })
-
-  expect(onChange).toHaveBeenCalledTimes(1)
+  /* switchMode 里先 await bridge.collabStatus() 再 onChange —— 一次微任务等不到 */
+  for (let i = 0; i < 20 && onChange.mock.calls.length === 0; i += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    })
+  }
   const picked = onChange.mock.calls[0]?.[0] as {
     planner?: { model?: string }
     executor?: { model?: string }

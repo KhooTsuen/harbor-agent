@@ -39,20 +39,31 @@ describe('概览行的同类图标（真渲染）', () => {
 
 describe('思考块淡底卡（源码守卫）', () => {
   const src = read(join('src', 'components', 'chat', 'ProcessBlocks.tsx'))
+  /* 样式已从组件类名搬进 CSS（ThinkBlock 现在只是转发到 ReasoningBlock） */
+  const css = read(join('src', 'styles', 'conversation-reasoning.css'))
+  const surface = /\.reasoning-surface\s*\{[^}]*\}/.exec(css)?.[0] ?? ''
 
-  it('★ 展开区是淡底卡（rounded + border + bg-bg-raised/40 + px-3 py-2）', () => {
-    expect(src).toContain('bg-bg-raised/40')
-    expect(src).toContain('px-3 py-2')
-    expect(src).toContain('border-line-subtle')
+  it('★ 展开区是淡底卡（rounded + border + 淡底 + px-3 py-2）', () => {
+    expect(surface, '找不到 .reasoning-surface 规则').toBeTruthy()
+    expect(surface).toContain('border-radius')
+    expect(surface).toContain('border: 1px solid var(--border-hairline)')
+    /* 淡底：bg-raised 混 38% 透明（原 bg-bg-raised/40 的等价写法） */
+    expect(surface).toContain('var(--bg-raised)')
+    /* 内边距在 CSS 里给的是 padding（Tailwind 的 px-3 py-2 已搬进规则） */
+    expect(/(padding|px-3 py-2)/.test(css)).toBe(true)
   })
 
   it('★ 旧的左竖线块写法已删（防改回去）', () => {
     expect(src).not.toContain('border-l-2')
+    expect(css).not.toContain('border-l-2')
   })
 
   it('★ 只改了 className：没有给展开区加内联 style（防每帧重渲时结构不稳）', () => {
     /* 思考块流式时每帧重渲，展开区不该再带 style 属性 */
     expect(src).not.toContain("style={{ borderColor: 'var(--border-strong)' }}")
+    expect(read(join('src', 'components', 'chat', 'message', 'ReasoningBlock.tsx'))).not.toContain(
+      "style={{ borderColor: 'var(--border-strong)' }}",
+    )
   })
 })
 

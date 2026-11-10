@@ -17,6 +17,7 @@ export function connectionIssue(
 ): string | null {
   if (!config) return '连接配置尚未载入，请打开模型设置检查'
   if (collab) {
+    if (!collab.planner || !collab.executor) return '请先为指导与执行两个角色选择模型'
     for (const role of [collab.planner, collab.executor]) {
       if (!role) continue
       if (!role.providerId) return '协作模型尚未选好连接'

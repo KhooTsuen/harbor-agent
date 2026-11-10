@@ -9,7 +9,7 @@ import type { ProviderConfig } from '@/types/models'
        值得脱离渲染单独钉住（测试直接调，不用起 DOM）。
    ══════════════════════════════════════════════════════════════ */
 
-/** 两个角色：A = 指导（规划/验收），B = 工作（执行） */
+/** 两个角色：A = 指导（分派/检查/交付），B = 工作（执行） */
 export type Role = 'planner' | 'executor'
 
 export type RoleValue = { kind: 'codex-cli' | 'openai'; model?: string; providerId?: string }
@@ -32,31 +32,40 @@ export interface Pickable {
  *
  * 三道判据，任何一道不过都**不能**悄悄放过（界面显示不可选 + 说原因）：
  *   ① 这个 kind 能不能胜任该角色（collab-config.cjs 声明的能力集合）；
- *   ② 主进程 capacity matrix 说它现在可用吗（装没装、登没登录）；
+ *   ② 主进程是否找到启动入口或连接配置（不等于实际登录成功）；
  *   ③ 供应商自己有没有被用户启用。
  */
 export function buildOptions(
   providers: readonly ProviderConfig[],
   roleKinds: readonly string[],
   matrix: Record<string, boolean>,
+  availability: Record<string, { ready: boolean; reason: string; executorReady?: boolean }> = {},
+  role: Role = 'planner',
 ): Pickable[] {
   const options: Pickable[] = []
   for (const provider of providers) {
     const kind: Pickable['kind'] = provider.kind === 'codex-cli' ? 'codex-cli' : 'openai'
     const wrongRole = !roleKinds.includes(kind)
-    const notReady = matrix[kind] === false
+    const connection = availability[provider.id]
+    const notReady = connection ? !connection.ready : matrix[kind] === false
+    const missingKey = kind === 'openai' && provider.hasKey !== true
+    const noExecutor = role === 'executor' && connection?.executorReady === false
     const base = {
       kind,
       providerId: provider.id,
       providerName: provider.name,
-      disabled: wrongRole || notReady || !provider.enabled,
+      disabled: wrongRole || notReady || missingKey || noExecutor || !provider.enabled,
       reason: wrongRole
         ? `${provider.name} 不能胜任这个角色`
         : notReady
-          ? `${provider.name} 现在不可用（检查安装或登录）`
-          : !provider.enabled
-            ? '该供应商未启用'
-            : '',
+          ? connection?.reason || `${provider.name} 现在不可用（检查安装或登录）`
+          : missingKey
+            ? '该连接未配置可用凭据'
+            : noExecutor
+              ? 'Codex 作为工作模型需要开启 Harbor 工具桥；写入能力按实际任务另行检查'
+              : !provider.enabled
+                ? '该供应商未启用'
+                : '',
     }
     if (kind === 'codex-cli') {
       options.push({ ...base, key: `${provider.id}:codex`, label: provider.name || 'Codex CLI' })
@@ -81,20 +90,19 @@ export function roleValue(value: RoleValue | undefined): RoleValue {
 
 /**
  * 已保存的选择 → 候选项。
- * 找不到（供应商/模型被删了）就退回第一项 —— 界面不能空着，但也**不假装**
- * 用户选的还在（下一轮 pickRole 会把它覆盖成真实存在的那个）。
+ * 供应商或模型已不存在时返回空值，由界面提示重新选择，不冒充其他模型。
  */
 export function matchRole(
   options: readonly Pickable[],
   value: RoleValue | undefined,
 ): Pickable | undefined {
-  return (
-    options.find(
-      (item) =>
-        item.kind === value?.kind &&
-        (!value?.model || item.model === value.model) &&
-        (!value?.providerId || item.providerId === value.providerId),
-    ) ?? options[0]
+  if (!value?.providerId) return undefined
+  if (value.kind === 'openai' && !value.model) return undefined
+  return options.find(
+    (item) =>
+      item.kind === value?.kind &&
+      (!value?.model || item.model === value.model) &&
+      item.providerId === value.providerId,
   )
 }
 
@@ -109,14 +117,16 @@ export function collabReady(
 } {
   const ready = [...plannerOpts, ...executorOpts].filter((item) => !item.disabled)
   const distinct = new Set(ready.map((item) => item.key)).size
-  if (distinct >= 2) return { ok: true, available: distinct, hint: '' }
+  if (defaultPair(plannerOpts, executorOpts)) return { ok: true, available: distinct, hint: '' }
   return {
     ok: false,
     available: distinct,
     hint:
       distinct === 0
         ? '双模型需要两个可用模型；当前没有可用项，先去设置里配好模型'
-        : '双模型需要两个「不同的」可用模型；当前只有 1 个',
+        : distinct < 2
+          ? '双模型需要两个「不同的」可用模型；当前只有 1 个'
+          : '当前模型尚不能组成一组指导与执行角色，请检查工作模型的工具连接',
   }
 }
 
@@ -125,8 +135,9 @@ export function defaultPair(
   plannerOpts: readonly Pickable[],
   executorOpts: readonly Pickable[],
 ): { planner: Pickable; executor: Pickable } | null {
-  const first = plannerOpts.find((item) => !item.disabled)
-  if (!first) return null
-  const second = executorOpts.find((item) => !item.disabled && item.key !== first.key)
-  return second ? { planner: first, executor: second } : null
+  for (const first of plannerOpts.filter((item) => !item.disabled)) {
+    const second = executorOpts.find((item) => !item.disabled && item.key !== first.key)
+    if (second) return { planner: first, executor: second }
+  }
+  return null
 }

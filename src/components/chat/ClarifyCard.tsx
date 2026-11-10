@@ -4,6 +4,7 @@ import type { ClarifyQuestion, ClarifyReply } from '@/types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { colorOf } from '@/lib/statusLanguage'
+import '@/styles/conversation-tools.css'
 
 /* ══════════════════════════════════════════════════════════════
    开工前澄清卡（AG-053）
@@ -155,7 +156,7 @@ export function ClarifyCard({
 
   return (
     <section
-      className="mb-2 max-h-[min(46vh,420px)] overflow-auto rounded-md border border-line-focus bg-bg-raised shadow-low"
+      className="flow-attention-card mb-2 max-h-[min(46vh,420px)] overflow-auto rounded-md border border-line-focus bg-bg-raised shadow-low"
       aria-label="开工前先对齐"
       role="dialog"
     >

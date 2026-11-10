@@ -1,0 +1,118 @@
+.flow-reasoning {
+  --flow-markdown-size: 12px;
+  margin-block: 0;
+}
+
+.flow-reasoning > .flow-disclosure-trigger {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.reasoning-count {
+  margin-inline-start: 8px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-reasoning > .flow-disclosure-content {
+  padding: 2px 0 4px var(--flow-indent, 16px);
+}
+
+.reasoning-surface {
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-raised) 38%, transparent);
+}
+
+.reasoning-viewport {
+  --reasoning-preview-height: 220px;
+  max-block-size: var(--reasoning-preview-height);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.reasoning-viewport[data-full='true'] {
+  max-block-size: none;
+  overflow: visible;
+}
+
+.reasoning-viewport:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.reasoning-markdown {
+  padding: 8px;
+  color: var(--text-secondary);
+}
+
+.reasoning-markdown .flow-markdown {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+.reasoning-markdown :where(p, li, blockquote, strong, em, th, td) {
+  color: inherit;
+}
+
+.reasoning-markdown p {
+  margin-block: var(--flow-paragraph-gap, 6px);
+  font-size: 12px;
+  line-height: inherit;
+}
+
+.reasoning-markdown strong,
+.reasoning-markdown .font-semibold {
+  color: inherit;
+  font-weight: 500;
+}
+
+.reasoning-markdown ul {
+  gap: 4px;
+  margin-block: 6px;
+  padding-inline-start: 16px;
+}
+
+.reasoning-markdown :where(pre, code, table) {
+  font-size: 1em;
+}
+
+.reasoning-markdown .flow-markdown > :first-child {
+  margin-top: 0;
+}
+
+.reasoning-markdown .flow-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.reasoning-expand {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.reasoning-expand:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.reasoning-expand:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+@media (max-height: 700px) {
+  .reasoning-viewport {
+    --reasoning-preview-height: 168px;
+  }
+}

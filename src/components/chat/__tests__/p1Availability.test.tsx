@@ -88,9 +88,20 @@ describe('P1 附件与发送状态', () => {
     expect(
       connectionIssue({ ...config, providers: config.providers.slice(0, 1) }, 'm', null),
     ).toContain('API Key')
+    /*
+     * 只选了 A、没选 B → 先报「角色没选齐」（用户下一步该去把 B 选上，
+     * 比先揪「A 的连接已删除」更有行动指向 —— 2026-11-10 定为设计）。
+     */
     expect(
       connectionIssue(config, 'm', {
         planner: { kind: 'openai', providerId: 'missing', model: 'm' },
+      }),
+    ).toContain('请先为指导与执行两个角色选择模型')
+    /* 两个角色都选定后，坏掉的那条连接才会被具体点名 */
+    expect(
+      connectionIssue(config, 'm', {
+        planner: { kind: 'openai', providerId: 'missing', model: 'm' },
+        executor: { kind: 'openai', providerId: 'ready', model: 'm' },
       }),
     ).toContain('连接已删除')
   })

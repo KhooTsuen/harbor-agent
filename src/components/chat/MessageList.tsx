@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { getForkPoints, type ForkPoint } from '@/lib/branchPath'
 import type { MessageAnchor } from '@/lib/scrollAnchor'
@@ -10,20 +10,10 @@ import { LaunchScreen } from './launch/LaunchScreen'
 import { MessageSkeleton } from './MessageSkeleton'
 import { ScrollGuardContext } from './scrollGuard'
 import { CheckpointRollbackBar } from './rollback/CheckpointRollbackBar'
+import { ConversationNavigation, RecoveryMarker } from './ConversationNavigation'
+import { useConversationNavigation } from './useConversationNavigation'
 
-/* ══════════════════════════════════════════════════════════════
-   MessageList
-
-   滚动策略是一个显式状态机（`hooks/useAutoScroll.ts`）：
-     FOLLOW 看最新（新内容自动跟上）/ FREE 看历史（程序一行都不写）
-   状态只由用户动作迁移，程序行为（流式、增删消息、切换对话）不改它。
-
-   ★ P3 #10：这里曾经在消息区顶部渲染一条 `BranchBreadcrumb`
-     （「主干 › 提问 35 · 2/3 › 答复 1 › 1/2 › 当前」）。它占一整行高度、
-     长对话里几乎天天出现，而切分支的主要入口是侧栏分支树与消息旁的
-     `ForkBadge` —— 顶部那条属于重复导航。已撤掉，**分支功能一个没动**：
-     分叉点仍由 `forkMap` 算出并挂在每条消息上（`MessageItem` 的 fork prop）。
-   ══════════════════════════════════════════════════════════════ */
+/* FOLLOW 跟随最新，FREE 保持阅读位置；分支入口由侧栏与 ForkBadge 保留。 */
 
 export interface MessageListProps {
   messages: readonly Message[]
@@ -34,16 +24,7 @@ export interface MessageListProps {
 /* AG-038：一次渲染多少条 / 点一次「载入更早」多给多少条 / 后台自动补到多少条 */
 const INITIAL_TAIL = 6
 const TAIL_STEP = 24
-/*
- * 渲染窗口的上限。**这个数字是功能性的，不是拍头**：
- *
- * 真机量过：这个性能夹具里一条消息≈700 个 DOM 节点。窗口 200 条 = 14.3 万节点时，
- * 「长会话 + 流式」会让主线程饱和 —— 流式每来一段都要在十几万节点上重排 +
- * 贴底写入，探针求值直接 5 秒超时（**未改动的 beta.21 同样卡死，是既有问题**）。
- * 窗口压到 24 条（≈1.7 万节点）后流式正常。
- *
- * 历史仍然是能看的：上面的「载入更早」一次给 TAIL_STEP 条，可以一页页往前翻。
- */
+/* 每条消息可能有大量 DOM，自动窗口保持小；历史仍能逐页加载。 */
 const AUTO_TAIL_LIMIT = 24
 /*
  * 恢复阅读位置时，渲染窗口**最多**能扩到多少条。一条消息≈700 节点，200 条 =
@@ -106,21 +87,22 @@ function planWindow(messages: readonly Message[], anchor: MessageAnchor | null):
 
 export function MessageList({ messages, conversationId = '' }: MessageListProps) {
   const count = messages.length
-  /*
-   * ── AG-038：渐增渲染 ──
-   *
-   * 真机量过：性能夹具（代码块密集）里 200 条 = 14.3 万节点、建完 **3.8 秒**，
-   * 那是一次性主线程阻塞（切换对话就是这么卡的）。不用虚拟滚动：它要靠**估算**
-   * 高度摆占位块，而消息高度差几十倍（一行回答 vs 代码块），估错一滚就飘。
-   * 首屏为什么是 6 不是 12：首屏是唯一改不了大小的一坨，12 条 ≈ 9.9k 节点，
-   * 一次提交带出 70–107ms 长任务。
-   */
+  /* 渐增渲染：首屏只建一小段；不估算消息高度，避免长代码块滚动跳位。 */
   const [tailCount, setTailCount] = useState(INITIAL_TAIL)
   /* 想画到多少条（自动补的上限，或用户点「载入更早」之后的目标） */
   const [want, setWant] = useState(AUTO_TAIL_LIMIT)
   /* 滚动意图（mode）+ 容器 refs + 迁移入口，全在 hook 里；guard 只往下传 enterFree */
-  const { mode, attachScroller, attachContent, enterFollow, enterFree, retarget, settleWindow } =
-    useAutoScroll(conversationId)
+  const {
+    mode,
+    attachScroller,
+    attachContent,
+    enterFollow,
+    enterFree,
+    retarget,
+    settleWindow,
+    seek,
+    position,
+  } = useAutoScroll(conversationId)
   const guard = useMemo(() => ({ enterFree }), [enterFree])
   /* 起始片大小也压小：第一片不参与自适应（还没量过代价），起始就是 6 会把第一片变成第二个大提交 */
   const sliceRef = useRef({ size: 3, at: 0 })
@@ -208,12 +190,33 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
   const forkMap = useMemo(() => new Map<string, ForkPoint>(forks.map((f) => [f.id, f])), [forks])
   /* 后台还在补：这时候不给「载入更早」按钮（它补完才有意义，免得一闪一闪） */
   const autoGrowing = tailCount < Math.min(want, count)
-  /*
-   * 消息正在从磁盘读（openFromDisk 的 await 期间，messages 还是空数组）：
-   * 这跟「刚建的空对话」长得一模一样 —— 但绝不能当成后者去渲染开屏，
-   * 开屏要跑一串 IPC 扫描 + 画灯塔，然后马上被真消息顶掉（真机量到那一次就是切换卡顿）。
-   */
+  /* 磁盘加载中的空数组不渲染开屏，避免重复初始化。 */
   const loading = useAppStore((s) => s.loadingThreadId === conversationId)
+  const revealMessage = useCallback(
+    (messageId: string) => {
+      const at = messages.findIndex((message) => message.id === messageId)
+      if (at >= 0) setWant((value) => Math.max(value, count - at))
+    },
+    [messages, count],
+  )
+  const navigation = useConversationNavigation({
+    conversationId,
+    messages,
+    renderedCount: tailCount,
+    mode,
+    loading,
+    seek,
+    position,
+    enterFree,
+    revealMessage,
+  })
+  const connectScroller = useCallback(
+    (node: HTMLDivElement | null) => {
+      attachScroller(node)
+      navigation.attachNavigation(node)
+    },
+    [attachScroller, navigation.attachNavigation],
+  )
 
   if (messages.length === 0) {
     if (loading) return <MessageSkeleton />
@@ -233,16 +236,17 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
          * 补偿改由 useAutoScroll 自己做，那样才带得上「这是程序写的」标记。
          */}
         <div
-          ref={attachScroller}
+          ref={connectScroller}
+          data-flow-scroll-container="true"
           tabIndex={-1}
           className="h-full overflow-y-auto outline-none [overflow-anchor:none]"
         >
-          <div ref={attachContent} className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5">
+          <div ref={attachContent} className="mx-auto flex max-w-3xl flex-col gap-4 px-5 py-4">
             {hiddenCount > 0 && !autoGrowing ? (
               <button
                 type="button"
                 /* 点一次也**不一口气建**：把目标加上去，仍由上面的切片器一片一片补 */
-                onClick={() => setWant((value) => value + TAIL_STEP)}
+                onClick={() => navigation.loadEarlier(() => setWant((value) => value + TAIL_STEP))}
                 className="mx-auto rounded-pill border border-line-hairline px-3 py-1 text-2xs text-fg-tertiary transition-colors duration-fast hover:bg-bg-hover hover:text-fg-primary"
               >
                 载入更早的 {Math.min(TAIL_STEP, hiddenCount)} 条（还有 {hiddenCount} 条）
@@ -250,13 +254,15 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
             ) : null}
             <ScrollGuardContext.Provider value={guard}>
               {visibleMessages.map((message, i) => (
-                <MessageItem
-                  key={message.id}
-                  message={message}
-                  index={windowStart + i}
-                  fork={forkMap.get(message.id)}
-                />
-              ))}{' '}
+                <Fragment key={message.id}>
+                  <MessageItem
+                    message={message}
+                    index={windowStart + i}
+                    fork={forkMap.get(message.id)}
+                  />
+                  <RecoveryMarker message={message} />
+                </Fragment>
+              ))}
             </ScrollGuardContext.Provider>
             {/*
               AG-052：对话结束后下方那个「撤销检查点之后的改动」。
@@ -268,22 +274,15 @@ export function MessageList({ messages, conversationId = '' }: MessageListProps)
           </div>
         </div>
 
-        {/*
-         * 「回到底部」。
-         *
-         * 显式状态机的界面投影：FREE（用户在看历史）才出现 —— 他往上翻了，
-         * Agent 还在后面写，得给个东西告诉他「后面有新的」；点一下 = 迁移规则 5。
-         * FOLLOW 时藏起来：你在看最新内容，没有「回去」这回事。
-         */}
-        {mode === 'free' ? (
-          <button
-            type="button"
-            onClick={enterFollow}
-            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-pill border border-line-hairline bg-bg-raised px-3 py-1.5 text-2xs text-fg-secondary shadow-lg transition-colors hover:text-fg-primary"
-          >
-            ↓ 回到底部
-          </button>
-        ) : null}
+        <ConversationNavigation
+          messages={messages}
+          conversationId={conversationId}
+          free={mode === 'free'}
+          hasNewContent={navigation.hasNewContent}
+          canReturn={navigation.canReturn}
+          returnToReading={navigation.returnToReading}
+          enterFollow={enterFollow}
+        />
       </div>
     </div>
   )

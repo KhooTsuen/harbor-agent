@@ -1,4 +1,5 @@
-import { memo, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { BlockNode } from '@/lib/markdown'
 import { parseBlocks } from '@/lib/markdown'
 import {
@@ -9,6 +10,7 @@ import {
   type StableCache,
 } from '@/lib/markdown'
 import { Block } from './Blocks'
+import { Inline } from './Inline'
 
 /* ══════════════════════════════════════════════════════════════
    流式中的正文渲染（实时 Markdown）
@@ -65,8 +67,8 @@ export const StableBlocks = memo(function StableBlocks({
  * （`$$` / 围栏）整段当**纯文本**，别被 `parseBlocks` 吞进公式块 / 代码块
  * 再吐出来（那样就是「一大块内容来回变」）。闭合之后它自然升级回块。
  */
-export function TailBlock({ text }: { text: string }) {
-  if (!text) return null
+export function TailBlock({ text, cursor }: { text: string; cursor?: ReactNode }) {
+  if (!text) return cursor ?? null
   const outer = splitUnclosedBlock(text)
   const { settled, pending } = splitPendingLine(outer.settled)
   /* 未闭合整段优先（它更长）；没有才是那半行 */
@@ -75,9 +77,16 @@ export function TailBlock({ text }: { text: string }) {
 
   return (
     <>
-      {blocks.map((node, index) => (
-        <Block key={`${index}-${node.type}`} node={node} />
-      ))}
+      {blocks.map((node, index) =>
+        cursor && !plain && index === blocks.length - 1 && node.type === 'paragraph' ? (
+          <p key={`${index}-${node.type}`} className="my-2.5 whitespace-pre-wrap break-words">
+            <Inline nodes={node.children} />
+            {cursor}
+          </p>
+        ) : (
+          <Block key={`${index}-${node.type}`} node={node} />
+        ),
+      )}
       {/*
        * 只在「还有纯文本要垫」时才加这层盒：contain 把它的布局变化关在内部，
        * 不影响外部排版。写完盒就消失 —— 所以**收尾后的 DOM 与整篇解析
@@ -90,9 +99,13 @@ export function TailBlock({ text }: { text: string }) {
            * ★ class 必须与 `Blocks.tsx` 段落（default 分支那个 `<p>`）**逐字一致**，
            *   否则半行写完后会跳一下（`streamingMarkdown.test.tsx` 钉着）。
            */}
-          <p className="my-2.5 whitespace-pre-wrap break-words">{plain}</p>
+          <p className="my-2.5 whitespace-pre-wrap break-words">
+            {plain}
+            {cursor}
+          </p>
         </div>
       ) : null}
+      {!plain && blocks.length > 0 && blocks.at(-1)?.type !== 'paragraph' ? cursor : null}
     </>
   )
 }
@@ -100,7 +113,22 @@ export function TailBlock({ text }: { text: string }) {
 /**
  * 流式正文入口。写完的消息仍然走 `Markdown`（整篇解析，一次到位）。
  */
-export const StreamingMarkdown = memo(function StreamingMarkdown({ text }: { text: string }) {
+export const StreamingMarkdown = memo(function StreamingMarkdown({
+  text,
+  active = false,
+  cursor = true,
+}: {
+  text: string
+  active?: boolean
+  cursor?: boolean
+}) {
+  const [paused, setPaused] = useState(false)
+  useEffect(() => {
+    setPaused(false)
+    if (!active) return
+    const timer = window.setTimeout(() => setPaused(true), 900)
+    return () => window.clearTimeout(timer)
+  }, [text, active])
   const cacheRef = useRef<StableCache>(EMPTY_CACHE)
   /*
    * 解析放在 render 里：增量解析只碰「新增的稳定段 + 尾巴」，
@@ -113,9 +141,16 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({ text }: { tex
   const blocks = parsed.cache.blocks
 
   return (
-    <div className="break-words text-base leading-relaxed text-fg-primary">
+    <div className="flow-stream-markdown break-words text-base leading-relaxed text-fg-primary">
       <StableBlocks blocks={blocks} version={blocks.length} />
-      <TailBlock text={parsed.tailText} />
+      <TailBlock
+        text={parsed.tailText}
+        cursor={
+          active && cursor ? (
+            <span className="flow-stream-cursor" data-paused={paused} aria-hidden="true" />
+          ) : undefined
+        }
+      />
     </div>
   )
 })

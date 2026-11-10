@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/IconButton'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { useAppStore } from '@/stores/useAppStore'
+import { useStopFeedback } from '@/stores/stopFeedback'
 
 /*
  * 发送 / 暂停 / 停止 三个按钮（AG-011 从 Composer 抽出来 —— 那边 300 行顶格了）。
@@ -34,19 +36,52 @@ export function SendControls({
   onSendImmediately: () => Promise<boolean>
 }) {
   const [sendingImmediately, setSendingImmediately] = useState(false)
+  const threadId = useAppStore((state) => state.activeThreadId)
+  const execution = useAppStore((state) => {
+    const message = [
+      ...(state.threads.find((thread) => thread.id === state.activeThreadId)?.messages ?? []),
+    ]
+      .reverse()
+      .find((item) => item.role === 'assistant' && item.status === 'streaming')
+    return message?.execId ?? message?.id
+  })
+  const stopping = useStopFeedback((state) =>
+    Boolean(threadId && execution && state.requests[threadId] === execution),
+  )
   if (sending) {
     return (
       <>
         <Tooltip content="暂停（做完手上这步再停）">
-          <IconButton label="暂停生成" size={32} onClick={onPause} className="rounded-full">
+          <IconButton
+            label="暂停生成"
+            size={32}
+            onClick={onPause}
+            disabled={stopping}
+            className="rounded-full"
+          >
             <Pause size={14} fill="currentColor" />
           </IconButton>
         </Tooltip>
-        <Tooltip content="停止生成">
-          <IconButton label="停止生成" size={32} onClick={onStop} className="rounded-full">
-            <Square size={14} fill="currentColor" />
+        <Tooltip content={stopping ? '正在停止，等待后台确认' : '停止生成'}>
+          <IconButton
+            label={stopping ? '正在停止' : '停止生成'}
+            size={32}
+            onClick={onStop}
+            disabled={stopping}
+            className="rounded-full"
+          >
+            {stopping ? (
+              <LoaderCircle size={14} aria-hidden="true" />
+            ) : (
+              <Square size={14} fill="currentColor" />
+            )}
           </IconButton>
         </Tooltip>
+        {stopping ? (
+          <span className="text-2xs text-fg-secondary" role="status">
+            正在停止
+          </span>
+        ) : null}
         {/*
          * AG-025：跑着的时候，输入框里有内容就多一个「排队发送」。
          * 点它 → 消息进队列、输入框清空，当前任务完成后自动发。

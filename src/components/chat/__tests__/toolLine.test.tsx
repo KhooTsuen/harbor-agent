@@ -45,8 +45,8 @@ afterEach(() => {
   host.remove()
 })
 
-function draw(runs: ToolRunRecord[]): HTMLElement {
-  act(() => root.render(<ToolLine runs={runs} />))
+function draw(runs: ToolRunRecord[], live = false): HTMLElement {
+  act(() => root.render(<ToolLine runs={runs} hideMeta={live} />))
   return host
 }
 
@@ -106,7 +106,8 @@ describe('ToolLine（一行摘要 + 可展开的明细）', () => {
 
   it('★ 多步时把「几步」报出来（VS Code 那行 Completed N steps）', () => {
     const el = draw([run('read_file'), run('read_file')])
-    expect(el.textContent).toContain('2 步')
+    /* 分页改版后「几步」写成「已完成/总数」这两个数（都在同一行） */
+    expect(el.textContent).toContain('2/2 已完成')
   })
 
   it('★ 失败要单独报个数 —— 只把图标变红，用户不知道错了几条', () => {
@@ -125,9 +126,13 @@ describe('ToolLine（一行摘要 + 可展开的明细）', () => {
     const bad = draw([run('read_file'), run('run_shell', 'x', { ok: false, ms: 5 })])
     expect(bad.querySelector('[data-tool-status]')?.textContent).toBe('1 项失败')
 
-    /* 还在跑（没有 ms、没有 output）→ 中性词，**不提前标成功** */
-    const busy = draw([run('read_file', 'a.md', { ms: undefined, output: '' })])
+    /* 还在跑（没有 ms、没有 output）→ 中性词，**不提前标成功**；只有活跃才算进行中 */
+    const busy = draw([run('read_file', 'a.md', { ms: undefined, output: '' })], true)
     expect(busy.querySelector('[data-tool-status]')?.textContent).toBe('进行中')
+
+    /* 同一条记录按历史读回 → 不许再说「进行中」（进程早就没了） */
+    const stale = draw([run('read_file', 'a.md', { ms: undefined, output: '' })])
+    expect(stale.querySelector('[data-tool-status]')?.textContent).toBe('1 项结果未确认')
   })
 
   it('展开才有明细行；每行是具体那个工具', () => {
@@ -138,11 +143,11 @@ describe('ToolLine（一行摘要 + 可展开的明细）', () => {
     expect(host.textContent).toContain('a.md')
   })
 
-  it('★ 明细有上限，超出的要说「没摊开」（一万步全摊开是几秒白屏）', () => {
+  it('★ 明细有上限，超出的要说「加载更早的」（一万步全摊开是几秒白屏）', () => {
     const many = Array.from({ length: 120 }, () => run('read_file'))
     draw(many)
     expand()
-    expect(host.textContent).toContain('没摊开')
+    expect(host.textContent).toContain('加载更早的')
   })
 
   it('一条都没有 → 什么都不画（不留空白块）', () => {

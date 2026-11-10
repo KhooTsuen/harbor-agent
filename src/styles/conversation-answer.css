@@ -1,0 +1,197 @@
+.flow-answer-surface {
+  --flow-row-height: 24px;
+  --flow-row-line-height: 18px;
+  --flow-indent: 16px;
+  --flow-paragraph-gap: 6px;
+  --flow-block-gap: 8px;
+  --flow-section-gap: 12px;
+  font-size: var(--flow-markdown-size, 14px);
+  view-transition-class: harbor-answer;
+}
+
+.flow-markdown,
+.flow-stream-markdown {
+  font-size: var(--flow-markdown-size, 14px);
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) p {
+  margin-block: var(--flow-paragraph-gap);
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) p.font-semibold {
+  margin-top: var(--flow-section-gap);
+  margin-bottom: var(--flow-paragraph-gap);
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) ul {
+  gap: 4px;
+  margin-block: var(--flow-paragraph-gap);
+  padding-inline-start: var(--flow-indent);
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) li {
+  gap: 6px;
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) :is(.my-3, blockquote) {
+  margin-block: var(--flow-block-gap);
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) blockquote {
+  border-left-width: 2px;
+  padding-inline-start: 12px;
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) hr {
+  margin-block: var(--flow-section-gap);
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) > :first-child,
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) > p.font-semibold:first-child {
+  margin-top: 0;
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) > :last-child,
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) > p.font-semibold:last-child {
+  margin-bottom: 0;
+}
+
+.flow-answer-surface :is(.flow-markdown, .flow-stream-markdown) :is(th, td) {
+  padding: 6px 8px;
+}
+
+.flow-markdown table,
+.flow-stream-markdown table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.flow-markdown td,
+.flow-stream-markdown td {
+  overflow-wrap: anywhere;
+}
+
+.flow-stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-inline-start: 3px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.flow-stream-cursor[data-paused='true'] {
+  animation: flow-cursor-breathe 1.8s ease-in-out infinite;
+}
+
+.flow-answer-surface [data-live-arrival='true'] {
+  animation: flow-answer-arrive 180ms ease-out both;
+}
+
+.flow-action-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.flow-answer-actions[data-feedback-active='true'] {
+  opacity: 1;
+}
+
+.flow-action-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.flow-image-arrival {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.flow-image-arrival[data-image-state='loading'] {
+  min-width: fit-content;
+}
+
+.flow-image-arrival[data-image-state='loading'] .flow-image-note,
+.flow-image-arrival[data-image-state='failed'] .flow-image-note {
+  position: relative;
+}
+
+.flow-image-arrival[data-image-state='loading'] img,
+.flow-image-arrival[data-image-state='failed'] img {
+  visibility: hidden;
+}
+
+.flow-image-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-group(.harbor-answer) {
+  animation-duration: 150ms;
+}
+
+::view-transition-old(.harbor-answer) {
+  animation: flow-answer-out 150ms ease-out both;
+}
+
+::view-transition-new(.harbor-answer) {
+  animation: flow-answer-arrive 150ms ease-out both;
+}
+
+@keyframes flow-answer-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes flow-answer-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes flow-cursor-breathe {
+  50% {
+    opacity: 0.28;
+  }
+}
+
+[data-animations='off'] .flow-answer-surface [data-live-arrival='true'],
+[data-animations='off'] .flow-stream-cursor {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-answer-surface [data-live-arrival='true'],
+  .flow-stream-cursor,
+  ::view-transition-group(.harbor-answer),
+  ::view-transition-old(.harbor-answer),
+  ::view-transition-new(.harbor-answer) {
+    animation: none !important;
+    transition: none !important;
+  }
+}

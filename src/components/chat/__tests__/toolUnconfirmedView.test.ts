@@ -20,10 +20,11 @@ const SRC = readFileSync(join(process.cwd(), 'src/components/chat/message/ToolLi
 const strip = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
 
 describe('未确认工具 / 界面判据', () => {
-  it('★★★ pendingCount 只认 pending，不认 ok', () => {
+  it('★★★ pendingCount 只认「未确认」态，不认 ok', () => {
     const code = strip(SRC)
+    /* 判据来自 stateOfRun 的四态；只有 unconfirmed 才算「结果未确认」 */
     expect(code).toMatch(
-      /pendingCount\s*=\s*runs\.filter\(\(run\)\s*=>\s*run\.pending\s*===\s*true\)/,
+      /pendingCount\s*=\s*states\.filter\(\(state\)\s*=>\s*state\s*===\s*'unconfirmed'\)/,
     )
     /* 反例：不许写成 !run.ok（那是失败判据，不是未确认） */
     expect(code).not.toMatch(/pendingCount\s*=\s*runs\.filter\(\(run\)\s*=>\s*!run\.ok/)
@@ -36,8 +37,8 @@ describe('未确认工具 / 界面判据', () => {
   it('★★ 四档顺序：进行中 > 失败 > 未确认 > 成功', () => {
     const code = strip(SRC)
     const running = code.indexOf("'进行中'")
-    const failed = code.indexOf('`${failedCount} 项失败`')
-    const pending = code.indexOf('`${pendingCount} 项结果未确认`')
+    const failed = code.indexOf("failedCount + ' 项失败'")
+    const pending = code.indexOf("pendingCount + ' 项结果未确认'")
     const done = code.indexOf("'成功'")
     expect(running).toBeGreaterThan(-1)
     expect(failed).toBeGreaterThan(running)
@@ -52,12 +53,11 @@ describe('未确认工具 / 界面判据', () => {
   it('★★ 未确认用 warning 色，不是成功色', () => {
     const code = strip(SRC)
     /* 判据按**结构**取，不按字符窗口（prettier 折行会让窗口失效 —— 已经踩过一次）：
-       data-tool-status 里 pendingCount 之后的第一处 colorOf 必须是 warning。 */
-    const at = code.indexOf('pendingCount > 0')
-    expect(at).toBeGreaterThan(-1)
-    const afterPending = code.slice(at)
-    const firstColor = /colorOf\('(\w+)'\)/.exec(afterPending)
-    expect(firstColor, 'pendingCount 之后没找到 colorOf').toBeTruthy()
-    expect(firstColor?.[1]).toBe('warning')
+       colorOf 的三元链里，pendingCount 那一档必须给 warning，兜底才是 completed。 */
+    const chain =
+      /colorOf\(\s*failedCount\s*\?\s*'failed'\s*:\s*pendingCount\s*\?\s*'warning'\s*:\s*'completed'/.exec(
+        code.replace(/\s+/g, ' '),
+      )
+    expect(chain, '未找到 colorOf 的失败/未确认/成功三档链').toBeTruthy()
   })
 })

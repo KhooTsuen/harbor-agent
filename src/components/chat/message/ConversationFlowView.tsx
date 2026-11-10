@@ -1,15 +1,16 @@
 import type { Message } from '@/types'
 import { bodyTextOf } from '@/lib/bodyText'
 import { purposeOf } from '@/lib/conversationFlow'
+import { formatDuration } from '@/lib/processSummary'
+import { navigateToFlow } from '@/lib/flowNavigation'
 import { Markdown } from '../Markdown'
 import { StreamingMarkdown } from '../markdown/StreamingMarkdown'
-import { ToolLine } from './ToolLine'
-
-const verdictLabels = {
-  done: '验收通过',
-  partial: '部分完成',
-  failed: '验收未通过',
-} as const
+import { FlowDisclosure } from './FlowDisclosure'
+import { FlowProcessSteps } from './FlowProcessSteps'
+import { FlowAcceptance } from './FlowAcceptance'
+import { useFlowPresentation } from './useFlowPresentation'
+import '@/styles/conversation-flow.css'
+import { useScrollStore } from '@/stores/useScrollStore'
 
 export function ConversationFlowView({
   message,
@@ -23,81 +24,110 @@ export function ConversationFlowView({
   const nodes = message.flow?.nodes ?? []
   const runs = new Map(message.toolRuns?.map((run) => [run.id, run]))
   const final = bodyTextOf(message)
-  const verdict = message.verdict
-  /*
-   * 过程区只收「过程」：工具 / 思考 / 已降级成过程发言的文字。
-   * 以前这里把**所有** speech 都画进折叠区，正文区又画一遍 final —— 同一段显示两遍。
-   */
+  const presentation = useFlowPresentation(message, streaming)
+  const key = `${message.threadId}:${message.diskKey ?? message.id}:${message.execId ?? message.answerIndex ?? 0}`
+  const expanded = useScrollStore((state) => state.processOpen[`${key}:process`] ?? false)
   const processNodes = nodes.filter(
     (node) => node.kind !== 'speech' || purposeOf(node) === 'chatter',
   )
-  /*
-   * 正文：结算了就是 `final`（唯一）；没结算时把还没定性的片段照实摆出来 ——
-   * 流式中那是**同一段**在增长（advanceFlow 合并同轮连续 content），
-   * 结算前被中断就标「未确认」，不许冒充成正式答复。
-   */
   const loose = final
     ? []
     : nodes.filter((node) => node.kind === 'speech' && purposeOf(node) !== 'chatter')
-  const unconfirmed = loose.some((node) => purposeOf(node) === 'unconfirmed')
-  /* 流式时正文是否跟着出现（用户在设置里关掉「边跑边看」时，等结算再看） */
+  const unconfirmed = !streaming && !final && loose.length > 0
   const showLoose = !streaming || streamOutput
+  const showProcess = processNodes.length > 0 || streaming
+  const last = nodes.at(-1)
+  const activeId =
+    presentation.running && last && (last.kind !== 'speech' || purposeOf(last) === 'chatter')
+      ? last.id
+      : undefined
+  const answerId = `flow-answer-${message.id}`
+  const bodyId = final
+    ? nodes.find((node) => node.kind === 'speech' && purposeOf(node) === 'final')?.id
+    : loose[0]?.id
+  const bodyBlocks = final ? [{ id: bodyId ?? 'final', text: final, hold: true }] : loose
+  const failedCount = (message.toolRuns ?? []).filter((run) => !run.pending && !run.ok).length
+  const pendingCount = (message.toolRuns ?? []).filter((run) => run.pending).length
   return (
-    <>
-      {processNodes.length > 0 || streaming ? (
-        <details open={streaming || undefined} className="my-2">
-          <summary className="cursor-pointer text-sm text-fg-secondary">
-            {streaming ? '执行中' : '执行过程'}
-          </summary>
-          <div className="mt-2 border-l border-line-subtle pl-3">
-            {processNodes.map((node) => {
-              if (node.kind === 'tool') {
-                const run = runs.get(node.toolId)
-                return run ? <ToolLine key={node.id} runs={[run]} hideMeta={streaming} /> : null
-              }
-              if (node.kind === 'reasoning') {
-                return (
-                  <details key={node.id}>
-                    <summary className="cursor-pointer text-sm text-fg-secondary">思考过程</summary>
-                    <Markdown text={node.text} />
-                  </details>
-                )
-              }
-              if (node.kind !== 'speech' || !node.text) return null
-              return <Markdown key={node.id} text={node.text} />
-            })}
-          </div>
-        </details>
+    <div className="conversation-flow" data-flow-motion={presentation.motion || undefined}>
+      {showProcess ? (
+        <div className="flow-process-shell">
+          <FlowDisclosure
+            label={<span role="status">{presentation.summary}</span>}
+            live={presentation.running}
+            memoryKey={`${key}:process`}
+            className="flow-process"
+          >
+            {!streaming && message.durationMs !== undefined ? (
+              <p className="flow-process-meta">用时 {formatDuration(message.durationMs)}</p>
+            ) : null}
+            <FlowProcessSteps
+              key={key}
+              nodes={processNodes}
+              runs={runs}
+              activeId={activeId}
+              expanded={expanded}
+              streaming={streaming}
+              motion={presentation.motion}
+              memoryKey={key}
+              messageId={message.id}
+            />
+            {!processNodes.length ? <p className="flow-empty-progress">等待首个实际进展</p> : null}
+            {final || loose.length ? (
+              <button
+                type="button"
+                className="flow-jump-answer"
+                onClick={() => navigateToFlow(message.id, answerId)}
+              >
+                跳到答复
+              </button>
+            ) : null}
+          </FlowDisclosure>
+          {!streaming && (failedCount > 0 || pendingCount > 0) ? (
+            <p className="flow-process-caution" role="status">
+              {failedCount > 0 ? `${failedCount} 项工具执行失败` : ''}
+              {failedCount > 0 && pendingCount > 0 ? ' · ' : ''}
+              {pendingCount > 0 ? `${pendingCount} 项结果未确认` : ''}
+            </p>
+          ) : null}
+        </div>
       ) : null}
-      {final ? <Markdown text={final} /> : null}
-      {showLoose
-        ? loose.map((node) =>
-            streaming ? (
-              <StreamingMarkdown key={node.id} text={'text' in node ? node.text : ''} />
-            ) : (
-              <div key={node.id}>
-                {unconfirmed ? (
-                  <p className="mb-1 text-2xs text-fg-tertiary" data-flow-unconfirmed="true">
-                    这段还没结算 —— 上次执行被打断，不能当正式答复
-                  </p>
-                ) : null}
+      <div id={answerId} className="flow-answer" data-flow-node={bodyId} data-flow-answer="true">
+        {unconfirmed ? (
+          <p className="flow-unconfirmed" data-flow-unconfirmed="true">
+            这段还没结算，不能当正式答复
+          </p>
+        ) : null}
+        {final || showLoose ? (
+          bodyBlocks.map((node) => (
+            <div
+              key={node.id}
+              className={`flow-body-block${presentation.motion && streaming ? ' flow-body-arrival' : ''}`}
+              data-flow-node={node.id}
+            >
+              {streaming && !final && !('hold' in node && node.hold) ? (
+                <p className="flow-candidate-label">文字归属待确认</p>
+              ) : null}
+              {streaming && !final ? (
+                <StreamingMarkdown
+                  text={'text' in node ? node.text : ''}
+                  active={presentation.writing && node.id === last?.id}
+                />
+              ) : (
                 <Markdown text={'text' in node ? node.text : ''} />
-              </div>
-            ),
-          )
-        : null}
-      {verdict === 'done' || verdict === 'partial' || verdict === 'failed' ? (
-        <details className="mt-2 text-sm text-fg-secondary">
-          <summary className="cursor-pointer">{verdictLabels[verdict]}</summary>
-          <ul className="pl-5">
-            {(message.toolRuns ?? []).map((run) => (
-              <li key={run.id}>
-                {run.name} · {run.pending ? '结果未确认' : run.ok ? '成功' : '失败'}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-    </>
+              )}
+            </div>
+          ))
+        ) : streaming && loose.length ? (
+          <p className="flow-candidate-label">正在生成文字，结束后显示</p>
+        ) : null}
+      </div>
+      <FlowAcceptance
+        message={message}
+        streaming={streaming}
+        active={presentation.running}
+        motion={presentation.motion}
+      />
+    </div>
   )
 }

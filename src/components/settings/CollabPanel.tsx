@@ -1,25 +1,9 @@
-/**
- * 设置 → 扩展 → **双模型协作**（2026-10-17）
- *
- * ── 这里只做「开关 + 能力查看」───────────────────────────────
- *
- * 日常切换单模型/多模型、选 A/B、输入任务，**都在聊天框完成**（见
- * `chat/composer/CollabPicker.tsx`）。设置页不再有「开始协作」按钮和输入框 ——
- * 否则会和新入口形成两个互相冲突的运行状态（用户 2026-10-17 拍板）。
- *
- * ── 界面纪律 ──────────────────────────────────────────────────
- *
- *   · 判断全部来自主进程（`status.ready` / `blockers` / `matrix` 都是它算的）。
- *   · 默认关：聊天框保留入口，用户主动选择双模型时才开启。
- *   · 缺前提时直接说缺什么（`blockers` 原样列出）。
- *
- * ⚠️ 这里没有任何角色选择器：角色能力（A/B 各能胜任哪些 kind）由主进程声明。
- */
-
-import { useCallback, useEffect, useState } from 'react'
+/** Settings hold opt-in, shared limits and availability; A/B choices stay in the chat. */
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUIStore } from '@/stores/useUIStore'
-import type { CollabState } from '@/types/collab'
+import type { CollabState, CollabSettings } from '@/types/collab'
 import { Row, SectionTitle } from './parts'
+import { CollabBudgetFields } from './CollabBudgetFields'
 
 const bridge = typeof window !== 'undefined' ? window.workbench : undefined
 
@@ -36,22 +20,50 @@ const EMPTY: CollabState = {
 export function CollabPanel(): React.JSX.Element {
   const showToast = useUIStore((s) => s.showToast)
   const [state, setState] = useState<CollabState>(EMPTY)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const pending = useRef(false)
 
   const refresh = useCallback(async () => {
     if (!bridge?.collabStatus) return
-    const res = await bridge.collabStatus()
-    if (res?.ok && res.state) setState(res.state as CollabState)
-  }, [])
+    try {
+      const res = await bridge.collabStatus()
+      if (!res?.ok || !res.state) throw new Error('协作状态暂时不可用')
+      setState(res.state)
+      setLoaded(true)
+    } catch {
+      showToast('error', '无法读取协作状态', '请稍后再试')
+    }
+  }, [showToast])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  const toggle = async (next: boolean): Promise<void> => {
-    if (!bridge?.collabSet) return
-    const res = await bridge.collabSet({ enabled: next })
-    if (res?.ok && res.state) setState(res.state as CollabState)
-    showToast(next ? 'success' : 'info', next ? '双模型协作已开启' : '双模型协作已关闭')
+  const save = async (partial: Partial<CollabSettings>): Promise<boolean> => {
+    if (!bridge?.collabSet || pending.current) return false
+    pending.current = true
+    setSaving(true)
+    try {
+      const res = await bridge.collabSet(partial)
+      if (!res.ok || !res.state) throw new Error(res.error || '设置未被后台接受')
+      setState(res.state)
+      showToast(
+        'success',
+        partial.enabled === undefined
+          ? '协作预算已保存'
+          : partial.enabled
+            ? '双模型协作已开启'
+            : '双模型协作已关闭',
+      )
+      return true
+    } catch (error) {
+      showToast('error', '未能更新协作设置', error instanceof Error ? error.message : String(error))
+      return false
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
   }
 
   const roles = Object.values(state.roles)
@@ -65,11 +77,30 @@ export function CollabPanel(): React.JSX.Element {
           <input
             type="checkbox"
             checked={state.enabled}
-            onChange={(e) => void toggle(e.target.checked)}
+            disabled={!loaded || saving}
+            onChange={(e) => void save({ enabled: e.target.checked })}
           />
           <span>{state.enabled ? '已开启' : '已关闭'}</span>
         </label>
       </Row>
+
+      <Row
+        label="监督执行"
+        hint="A 分派，B 执行，A 检查；有缺口时自动补查或修改，达到要求后由 A 整理答复。"
+      >
+        <span className="text-xs text-fg-muted">
+          普通交接在现有授权内自动进行。关键需求不明或需要新授权时，再请你决定。
+        </span>
+      </Row>
+
+      {state.limits ? (
+        <Row
+          label="协作预算"
+          hint="整次协作共用轮数、时长和已报告 Token 上限；达到上限后保留结果与未完成事项。"
+        >
+          <CollabBudgetFields limits={state.limits} disabled={saving} onSave={save} />
+        </Row>
+      ) : null}
 
       {roles.length > 0 && (
         <Row label="角色与能力" hint="两个角色各自能由哪些后端承担（由主进程声明，不是探测）。">
@@ -88,13 +119,13 @@ export function CollabPanel(): React.JSX.Element {
 
       <Row
         label="后端现状"
-        hint="codex-cli = 本机 Codex CLI；openai = 任一启用且有 Key 的 OpenAI 兼容供应商。"
+        hint="这里读取连接配置和本机启动入口；实际登录、网络与模型调用在执行时确认。"
       >
         <div className="space-y-1 text-xs text-fg-muted">
           <div>
             Codex CLI：
             {state.matrix['codex-cli'] ? (
-              <span className="text-fg-success">可用</span>
+              <span className="text-fg-success">已找到启动入口，登录尚未核验</span>
             ) : (
               <span className="text-fg-danger">
                 不可用{state.codex.note ? `（${state.codex.note}）` : ''}
@@ -104,7 +135,7 @@ export function CollabPanel(): React.JSX.Element {
           <div>
             OpenAI 兼容：
             {state.matrix.openai ? (
-              <span className="text-fg-success">可用</span>
+              <span className="text-fg-success">已配置连接与凭据</span>
             ) : (
               <span className="text-fg-danger">不可用（没有启用且有 Key 的供应商）</span>
             )}

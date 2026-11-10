@@ -108,8 +108,9 @@ describe('AG-038 / 10000 个 Tool Event', () => {
      * 不是某个精确数字。
      */
     expect(nodes, `展开后 ${nodes} 个节点`).toBeLessThan(2000)
-    /* 截断了就得说出来，不能假装只有这些 */
-    expect(container.textContent).toContain('没摊开')
+    /* 截断了就得说出来，不能假装只有这些（改成分页按钮后文案在这） */
+    expect(container.textContent).toContain('加载更早的')
+    expect(container.textContent).toContain('步）')
   })
 })
 
@@ -127,7 +128,7 @@ describe('AG-038 / 步数多也要截', () => {
     report('200 步（展开）', 0, nodes, `${rows} 个可点行`)
     expect(nodes, `${nodes} 个节点`).toBeLessThan(3000)
     expect(rows).toBeLessThanOrEqual(101)
-    expect(container.textContent).toContain('没摊开')
+    expect(container.textContent).toContain('加载更早的')
   })
 })
 

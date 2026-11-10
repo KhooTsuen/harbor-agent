@@ -92,7 +92,14 @@ describe('流式 Markdown', () => {
       const rootB = createRoot(boxB)
       act(() => rootA.render(<StreamingMarkdown text={text} />))
       act(() => rootB.render(<Markdown text={text} />))
-      expect(boxA.innerHTML, `样本不匹配：${text}`).toBe(boxB.innerHTML)
+      /*
+       * 比**内部结构**，不比根节点 class：
+       * 流式那份的根多了 `flow-stream-markdown`（样式要区分流式/定稿），
+       * 那一位是有意加的标记，不构成重排风险。真正要挡的是 innerHTML 里的块结构不同。
+       */
+      expect(boxA.firstElementChild?.innerHTML, `样本不匹配：${text}`).toBe(
+        boxB.firstElementChild?.innerHTML,
+      )
       act(() => rootA.unmount())
       act(() => rootB.unmount())
     }

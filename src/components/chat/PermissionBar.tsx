@@ -1,41 +1,54 @@
 import { useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
+import type { PermissionRequest } from '@/types'
 import { useUIStore } from '@/stores/useUIStore'
+import type { SubmitInputCard } from './useInputCardReplies'
+import { useFallbackCardReply } from './useFallbackCardReply'
+import { InputCardReceipt } from './InputCardReceipt'
 import { Button } from '@/components/ui/Button'
 import { DiffViewer, sumDiff } from './DiffViewer'
 import { colorOf } from '@/lib/statusLanguage'
+import '@/styles/conversation-tools.css'
 
 /** 任务权限确认：属于 Composer 的布局流，不遮盖消息区或输入框。 */
-export function PermissionBar() {
-  const permission = useUIStore((s) => s.permission)
-  const closePermission = useUIStore((s) => s.closePermission)
+export function PermissionBar({
+  request: providedRequest,
+  onSubmit,
+}: {
+  request?: PermissionRequest | null
+  onSubmit?: SubmitInputCard
+} = {}) {
+  const storedRequest = useUIStore((state) => state.permission)
+  const request = providedRequest === undefined ? storedRequest : providedRequest
   const [expanded, setExpanded] = useState(false)
+  const fallback = useFallbackCardReply(request)
 
   /*
    * ★ 只负责**内核发起的**确认（跑命令 / 写文件 / MCP —— 渲染层统一标成 run-command）。
    *   应用自己的危险操作（删对话 / 清任务 / 清数据）走 PermissionDialog 那个模态框；
    *   两边都不加 kind 判断的话，同一个确认会**同时**出现两套 UI。
    */
-  if (!permission || permission.kind !== 'run-command') return null
+  if (!request || request.kind !== 'run-command') return null
+  if (!onSubmit && fallback.reply)
+    return <InputCardReceipt reply={fallback.reply} canRetry onDismiss={fallback.dismiss} />
 
-  const request = permission
   const diff = request.diff ?? []
   const impact = request.impact ?? []
   const stats = sumDiff(diff)
 
-  function reject(): void {
-    request.onCancel?.()
-    closePermission()
-  }
-
-  function approve(): void {
-    request.onConfirm?.()
-    closePermission()
+  function answer(approved: boolean): void {
+    if (!request) return
+    const action = approved ? request.onConfirm : request.onCancel
+    const detail = approved
+      ? `已选择：${request.confirmText || '允许本次'}`
+      : '已选择：拒绝本次操作'
+    const submit = onSubmit ?? fallback.submit
+    submit(request, [detail], action)
   }
 
   return (
     <section
-      className="mb-2 max-h-[min(30vh,240px)] overflow-auto rounded-md border border-line-focus bg-bg-raised shadow-low"
+      className="flow-attention-card mb-2 max-h-[min(30vh,240px)] overflow-auto rounded-md border border-line-focus bg-bg-raised shadow-low"
       aria-label="等待确认"
       role="dialog"
     >
@@ -110,10 +123,14 @@ export function PermissionBar() {
           ) : null}
 
           <div className="mt-2 flex items-center justify-end gap-1.5">
-            <Button variant="ghost" size="sm" onClick={reject}>
+            <Button variant="ghost" size="sm" onClick={() => answer(false)}>
               取消
             </Button>
-            <Button variant={request.danger ? 'danger' : 'primary'} size="sm" onClick={approve}>
+            <Button
+              variant={request.danger ? 'danger' : 'primary'}
+              size="sm"
+              onClick={() => answer(true)}
+            >
               {request.confirmText || '允许本次'}
             </Button>
           </div>

@@ -1,12 +1,17 @@
+import type { ClarifyReply, PermissionRequest } from '@/types'
 import { useUIStore } from '@/stores/useUIStore'
 import { ClarifyCard } from './ClarifyCard'
 import { GateCard } from './GateCard'
+import { clarifyReplyDetails } from '@/lib/inputReplyDetails'
+import type { SubmitInputCard } from './useInputCardReplies'
+import { useFallbackCardReply } from './useFallbackCardReply'
+import { InputCardReceipt } from './InputCardReceipt'
 
 /* ══════════════════════════════════════════════════════════════
     澄清卡的挂载点（AG-053）
 
-    只管「从 store 拿请求 → 交给卡片」这一件事，把订阅留在组件里、
-    卡片本身保持纯（测试直接渲染卡片即可，不用搭 store）。
+    从卡槽接收请求并交给卡片；答复经卡槽保留本次回执，
+    卡片本身仍只负责选择与补充内容。
 
     ★ 2026-10-07：多一个分流 —— 内核带 `gate: true` 上来的是「执行前的计划复核」，
       出口与普通澄清不同（见 `GateCard`），所以走另一张卡。
@@ -15,9 +20,19 @@ import { GateCard } from './GateCard'
        `lib/clarify.ts` 仲裁，判断只在一处（`AboveInputCards` 用它决定谁 hidden）。
     ══════════════════════════════════════════════════════════════ */
 
-export function ClarifySlot() {
-  const clarify = useUIStore((s) => s.clarify)
+export function ClarifySlot({
+  request: providedRequest,
+  onSubmit,
+}: {
+  request?: PermissionRequest | null
+  onSubmit?: SubmitInputCard
+} = {}) {
+  const storedRequest = useUIStore((state) => state.clarify)
+  const clarify = providedRequest === undefined ? storedRequest : providedRequest
+  const fallback = useFallbackCardReply(clarify)
   if (!clarify?.clarify || clarify.clarify.length === 0) return null
+  if (!onSubmit && fallback.reply)
+    return <InputCardReceipt reply={fallback.reply} canRetry onDismiss={fallback.dismiss} />
 
   /*
    * ★ 2026-10-04：`key` 必须跟着**这一次请求**走。
@@ -31,7 +46,14 @@ export function ClarifySlot() {
    */
   const key = clarify.confirmId ?? 'clarify'
   const questions = clarify.clarify
-  const onReply = clarify.onClarify
+  const onReply = (reply: ClarifyReply) => {
+    const submit = onSubmit ?? fallback.submit
+    submit(
+      clarify,
+      clarifyReplyDetails(reply),
+      clarify.onClarify ? () => clarify.onClarify?.(reply) : undefined,
+    )
+  }
 
   /* A 闸门（2026-10-07）：执行前的计划复核 → 只出两个明确出口的那张卡（见 GateCard） */
   if (clarify.gate === true) {

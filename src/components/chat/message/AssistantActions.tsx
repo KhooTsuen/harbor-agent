@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   ChevronDown,
@@ -16,6 +16,7 @@ import { sceneTranslate } from '@/lib/sceneApi'
 import { colorOf } from '@/lib/statusLanguage'
 import { fullRecordText } from '@/lib/export'
 import { bodyTextOf } from './bodyText'
+import { purposeOf } from '@/lib/conversationFlow'
 
 /* ══════════════════════════════════════════════════════════════
    助手消息的操作条（复制 / 重新生成 / 赞踩 / 分支）
@@ -36,8 +37,17 @@ export function AssistantActions({ message }: { message: Message }) {
   const showToast = useUIStore((s) => s.showToast)
   const [copied, setCopied] = useState(false)
   const [copiedFull, setCopiedFull] = useState(false)
+  const [copyError, setCopyError] = useState('')
   const [translation, setTranslation] = useState('')
   const [translating, setTranslating] = useState(false)
+  const feedbackTimer = useRef<number>()
+  useEffect(() => {
+    setCopied(false)
+    setCopiedFull(false)
+    setCopyError('')
+    setTranslation('')
+    return () => window.clearTimeout(feedbackTimer.current)
+  }, [message.execId, message.answerIndex])
   /*
    * 被中止 / 出错的回复 → 语义是「重试」（试着把同一目标跑完）
    * 正常回复 → 「重新生成」（换个写法再来一版）
@@ -52,7 +62,12 @@ export function AssistantActions({ message }: { message: Message }) {
    * 而且**不把状态算进去**：一条没跑完但一步都没走的回复，完整记录和正文
    * 只差一句「这条没写完」—— 那不值得多一颗按钮。
    */
-  const hasRecord = Boolean(message.reasoning?.trim()) || (message.toolRuns?.length ?? 0) > 0
+  const hasRecord =
+    Boolean(message.reasoning?.trim()) ||
+    (message.toolRuns?.length ?? 0) > 0 ||
+    Boolean(
+      message.flow?.nodes.some((node) => node.kind !== 'speech' || purposeOf(node) === 'chatter'),
+    )
 
   /** 再点一次收起译文；没翻过就去翻 */
   async function translate(): Promise<void> {
@@ -68,6 +83,9 @@ export function AssistantActions({ message }: { message: Message }) {
   }
 
   async function copy(): Promise<void> {
+    setCopyError('')
+    setCopied(false)
+    setCopiedFull(false)
     try {
       /*
        * 默认只复制**正文**（用户 2026-10-21 拍板：过程不该混进要贴给别人的答案里）。
@@ -79,27 +97,35 @@ export function AssistantActions({ message }: { message: Message }) {
        */
       await navigator.clipboard.writeText(bodyTextOf(message))
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1400)
-    } catch {
-      /* 忽略剪贴板失败 */
+      window.clearTimeout(feedbackTimer.current)
+      feedbackTimer.current = window.setTimeout(() => setCopied(false), 1400)
+    } catch (error) {
+      setCopyError(`复制失败：${error instanceof Error ? error.message : '剪贴板暂不可用'}`)
     }
   }
 
   /** 复制**完整记录**（过程 + 正文 + 状态）—— 排查问题、留档时用 */
   async function copyFull(): Promise<void> {
+    setCopyError('')
+    setCopiedFull(false)
+    setCopied(false)
     try {
       /* 正文与「复制」按钮**同源**（`bodyTextOf`）—— 两个按钮只差过程，不该差正文 */
       await navigator.clipboard.writeText(fullRecordText(message, bodyTextOf(message)))
       setCopiedFull(true)
-      window.setTimeout(() => setCopiedFull(false), 1400)
-    } catch {
-      showToast('error', '复制失败')
+      window.clearTimeout(feedbackTimer.current)
+      feedbackTimer.current = window.setTimeout(() => setCopiedFull(false), 1400)
+    } catch (error) {
+      setCopyError(`复制完整记录失败：${error instanceof Error ? error.message : '剪贴板暂不可用'}`)
     }
   }
 
   return (
     <div className="mt-1.5">
-      <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus-within:opacity-100">
+      <div
+        className="flow-answer-actions flex items-center gap-0.5 opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus-within:opacity-100"
+        data-feedback-active={copied || copiedFull || Boolean(copyError)}
+      >
         <button
           type="button"
           aria-label={copied ? '已复制' : '复制回复'}
@@ -108,7 +134,10 @@ export function AssistantActions({ message }: { message: Message }) {
           className="rounded p-1 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
         >
           {copied ? (
-            <Check size={13} style={{ color: colorOf('completed') }} />
+            <span className="flow-action-feedback">
+              <Check size={13} style={{ color: colorOf('completed') }} />
+              已复制
+            </span>
           ) : (
             <Copy size={13} />
           )}
@@ -126,7 +155,10 @@ export function AssistantActions({ message }: { message: Message }) {
             className="rounded p-1 text-fg-tertiary transition-colors hover:bg-bg-hover hover:text-fg-primary"
           >
             {copiedFull ? (
-              <Check size={13} style={{ color: colorOf('completed') }} />
+              <span className="flow-action-feedback">
+                <Check size={13} style={{ color: colorOf('completed') }} />
+                已复制完整记录
+              </span>
             ) : (
               <FileText size={13} />
             )}
@@ -169,6 +201,11 @@ export function AssistantActions({ message }: { message: Message }) {
           <RotateCcw size={13} />
         </button>
       </div>
+      {copyError ? (
+        <p className="flow-action-error" role="alert">
+          {copyError}
+        </p>
+      ) : null}
 
       {/* 译文：单独一块，不覆盖原文 —— 对照着看才有用 */}
       {translation ? (

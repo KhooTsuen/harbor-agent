@@ -79,8 +79,8 @@ const failedRun = (output: string): ToolRunRecord => ({
   summary: 'ProcessPanel.tsx',
 })
 
-function draw(run: ToolRunRecord): HTMLElement {
-  act(() => root.render(<ToolRunRow run={run} />))
+function draw(run: ToolRunRecord, live = false): HTMLElement {
+  act(() => root.render(<ToolRunRow run={run} live={live} />))
   return host
 }
 
@@ -111,12 +111,19 @@ describe('失败明细行（ToolRunRow）', () => {
     expect(el.querySelector('[data-run-error]')).toBeNull()
   })
 
-  it('★★ 状态词写在行尾：失败 / 进行中 / 成功（三选一，位置相同）', () => {
+  it('★★ 状态词写在行尾：失败 / 进行中 / 结果未确认 / 成功（位置相同）', () => {
     expect(draw(failedRun('x')).querySelector('[data-run-status]')?.textContent).toBe('失败')
+    /* 还在跑：要 live=true —— 历史里没终态的调用只能标「结果未确认」 */
     expect(
-      draw({ id: 'b', name: 'read_file', ok: true, output: '' }).querySelector('[data-run-status]')
-        ?.textContent,
+      draw({ id: 'b', name: 'read_file', ok: true, output: '' }, true).querySelector(
+        '[data-run-status]',
+      )?.textContent,
     ).toBe('进行中')
+    /* 同一条记录按历史读回 → 不许再说「进行中」（进程早就没了） */
+    expect(
+      draw({ id: 'd', name: 'read_file', ok: true, output: '' }).querySelector('[data-run-status]')
+        ?.textContent,
+    ).toBe('结果未确认')
     expect(
       draw({ id: 'c', name: 'read_file', ok: true, output: 'ok', ms: 2 }).querySelector(
         '[data-run-status]',

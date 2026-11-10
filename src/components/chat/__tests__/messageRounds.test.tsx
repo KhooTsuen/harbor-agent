@@ -47,9 +47,11 @@ function draw(items: MessageRound[], streaming = false): HTMLElement {
   return host
 }
 
-/** 这个块里有没有「思考过程」那个折叠按钮 */
+/** 这个块里有没有「思考过程」那个折叠入口（现在渲染在 FlowDisclosure 的 <summary> 上） */
 function hasThink(el: HTMLElement): boolean {
-  return [...el.querySelectorAll('button')].some((b) => b.textContent?.includes('思考过程'))
+  return [...el.querySelectorAll('button, summary')].some((b) =>
+    b.textContent?.includes('思考过程'),
+  )
 }
 
 describe('MessageRounds', () => {

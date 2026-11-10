@@ -3,6 +3,8 @@ import { useUIStore } from '@/stores/useUIStore'
 import { pickAboveInput } from '@/lib/clarify'
 import { PermissionBar } from './PermissionBar'
 import { ClarifySlot } from './ClarifySlot'
+import { InputCardReceipt } from './InputCardReceipt'
+import { useInputCardReplies } from './useInputCardReplies'
 
 /* ══════════════════════════════════════════════════════════════
    输入框上方的卡片槽（AG-053）
@@ -23,19 +25,23 @@ import { ClarifySlot } from './ClarifySlot'
    ══════════════════════════════════════════════════════════════ */
 
 export function AboveInputCards() {
-  const permission = useUIStore((s) => s.permission)
-  const clarify = useUIStore((s) => s.clarify)
+  const { permission, clarify, permissionKey, clarifyKey, reply, dismiss, submit } =
+    useInputCardReplies()
   const focusNonce = useUIStore((s) => s.cardFocusNonce)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const winner = pickAboveInput({
-    permission: permission !== null,
+    permission: permission?.kind === 'run-command',
     clarify: clarify !== null,
   })
+  const active = winner === 'permission' ? permission : winner === 'clarify' ? clarify : null
+  const showReply = Boolean(reply && (!active || reply.request === active))
 
   useEffect(() => {
     /* nonce 从 0 起：没被请求过就什么都不做（别在普通挂载时抢焦点）*/
     if (focusNonce <= 0) return
-    const card = hostRef.current?.querySelector<HTMLElement>('section[aria-label]')
+    const card = hostRef.current?.querySelector<HTMLElement>(
+      '[data-visible-card="true"] section[aria-label]',
+    )
     if (!card) return
     const target = card.querySelector<HTMLElement>('button, input, textarea') ?? card
     target.focus()
@@ -48,12 +54,25 @@ export function AboveInputCards() {
 
   return (
     <div ref={hostRef}>
-      <div hidden={winner !== 'permission'}>
-        <PermissionBar />
+      <div
+        hidden={winner !== 'permission' || showReply}
+        data-visible-card={winner === 'permission' && !showReply ? 'true' : undefined}
+        data-flow-user-input={winner === 'permission' && !showReply ? 'true' : undefined}
+        tabIndex={-1}
+      >
+        <PermissionBar key={permissionKey} request={permission} onSubmit={submit} />
       </div>
-      <div hidden={winner !== 'clarify'}>
-        <ClarifySlot />
+      <div
+        hidden={winner !== 'clarify' || showReply}
+        data-visible-card={winner === 'clarify' && !showReply ? 'true' : undefined}
+        data-flow-user-input={winner === 'clarify' && !showReply ? 'true' : undefined}
+        tabIndex={-1}
+      >
+        <ClarifySlot key={clarifyKey} request={clarify} onSubmit={submit} />
       </div>
+      {showReply && reply ? (
+        <InputCardReceipt reply={reply} canRetry={Boolean(active)} onDismiss={dismiss} />
+      ) : null}
     </div>
   )
 }

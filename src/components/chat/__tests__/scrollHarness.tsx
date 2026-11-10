@@ -172,16 +172,16 @@ export function pressKey(key: string): void {
 /**
  * 点按钮。`last: true` = 取最后一个（最新那条消息里的）。
  *
- * 思考块只能认位置不能认文案：文字会在「正在思考…」和「思考过程」之间切。
- * ★ 2026-10-21：过程区什么时候都默认收起，所以「点开思考块」在真实路径上是
- *   两步 —— 找不到按钮时先展开过程入口再找（别把「结构变了」报成「按钮不存在」）。
+ * ★ 认 button **也认 summary**（2026-11-10）：思考块是原生 `<details><summary>`
+ *   （`FlowDisclosure`），文案在 summary 里 —— 只查 button 会报成「按钮不存在」。
+ * ★ 过程区默认收起，「点开思考块」真实路径上是两步：先展开过程入口再找。
  */
 export function clickButton(text: string, last = false): void {
-  const pick = (): HTMLButtonElement | undefined => {
-    const all = [...container.querySelectorAll('button')].filter((b) =>
+  const pick = (): HTMLElement | undefined => {
+    const all = [...container.querySelectorAll<HTMLElement>('button, summary')].filter((b) =>
       (b.textContent ?? '').includes(text),
     )
-    return (last ? all[all.length - 1] : all[0]) as HTMLButtonElement | undefined
+    return last ? all[all.length - 1] : all[0]
   }
 
   let btn = pick()

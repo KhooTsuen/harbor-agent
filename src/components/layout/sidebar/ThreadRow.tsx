@@ -11,20 +11,20 @@ import {
   Trash2,
   FolderMinus,
   FolderPlus,
+  Check,
 } from 'lucide-react'
 import type { Thread } from '@/types'
 import { cn, relativeTime } from '@/lib/utils'
 import { MODES } from '@/constants'
 import { useAppStore } from '@/stores/useAppStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { threadToMarkdown } from '@/lib/export'
-import { saveText } from '@/lib/backend'
 import { IconButton } from '@/components/ui/IconButton'
 import { MenuItem, Popover } from '@/components/ui/Popover'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { useThreadHasTask } from '@/stores/useTaskStore'
 import { colorOf } from '@/lib/statusLanguage'
+import { useThreadExport } from './useThreadExport'
 
 /* 侧栏里的一行线程：平时 = 状态点 + 标题 + 多久前 + 模式首字；重命名时整行变输入框 */
 export interface ThreadRowProps {
@@ -43,8 +43,6 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
   const togglePinThread = useAppStore((s) => s.togglePinThread)
   const toggleArchiveThread = useAppStore((s) => s.toggleArchiveThread)
   const addThreadTag = useAppStore((s) => s.addThreadTag)
-  const markThreadExported = useAppStore((s) => s.markThreadExported)
-  const showToast = useUIStore((s) => s.showToast)
   /* 这条对话有没干完的任务 → 挂个黄点（别的地方不再乱弹横幅） */
   const hasUnfinishedTask = useThreadHasTask(thread.id)
   /* P2 #7：这一轮在别的对话里跑完了、你还没打开过 → 挂个未读点 */
@@ -53,6 +51,7 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(thread.title)
+  const { feedback, failed, exportThread } = useThreadExport(thread, () => setMenuOpen(false))
 
   const active = thread.id === activeThreadId
   const mode = MODES.find((m) => m.id === thread.mode)
@@ -60,17 +59,6 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
   function commitRename(): void {
     renameThread(thread.id, draft)
     setRenaming(false)
-  }
-
-  async function exportThread(): Promise<void> {
-    setMenuOpen(false)
-    const result = await saveText(`${thread.title}.md`, threadToMarkdown(thread))
-    if (result.ok) {
-      markThreadExported(thread.id)
-      showToast('success', '已导出', result.path ?? 'Markdown')
-    } else if (!result.canceled) {
-      showToast('error', '导出失败', result.error)
-    }
   }
 
   if (renaming) {
@@ -113,6 +101,16 @@ export function ThreadRow({ thread, onDelete, onMoveToFolder, onDetachFolder }: 
       }}
       aria-current={active}
     >
+      {feedback ? (
+        <span
+          className={`max-w-[7rem] shrink-0 truncate ${failed ? 'flow-action-error' : 'flow-action-feedback'}`}
+          role="status"
+          title={feedback}
+        >
+          {feedback === '已导出' ? <Check size={11} /> : null}
+          {feedback}
+        </span>
+      ) : null}
       {/* 选中态的左侧指示条 */}
       {active ? (
         <span

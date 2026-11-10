@@ -118,7 +118,7 @@ export function ProcessPanel({
       : null
 
   return (
-    <div className="mb-2">
+    <div className="flow-legacy-process">
       <button
         type="button"
         onClick={() => {
@@ -130,7 +130,7 @@ export function ProcessPanel({
         aria-expanded={open}
         aria-label="查看过程"
         aria-describedby={running ? liveStatusId : undefined}
-        className="flex w-full items-center gap-1.5 py-0.5 text-left text-2xs text-fg-tertiary transition-colors duration-fast hover:text-fg-primary"
+        className="flow-disclosure-trigger flow-legacy-process-trigger"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         {failed ? (
@@ -160,12 +160,12 @@ export function ProcessPanel({
       */}
       {open ? (
         <div
-          className="mt-1 border-l-2 pl-3"
+          className="flow-legacy-process-body"
           style={{ borderColor: 'var(--border-strong)' }}
           data-process-open="true"
         >
           {elapsed ? (
-            <p className="mb-2 text-2xs text-fg-tertiary" data-process-elapsed="true">
+            <p className="mb-1 text-2xs text-fg-tertiary" data-process-elapsed="true">
               用时 {elapsed}
             </p>
           ) : null}

@@ -15,6 +15,7 @@ import { TaskCenterEmpty } from './TaskCenterEmpty'
 import { IconButton } from '@/components/ui/IconButton'
 import { TASK_GROUPS, groupTasks } from './taskCenterModel'
 import { TaskRow } from './TaskRow'
+import { useTaskConversationNavigation } from './useTaskConversationNavigation'
 
 /* ══════════════════════════════════════════════════════════════
    后台任务中心（AG-028）
@@ -32,6 +33,7 @@ import { TaskRow } from './TaskRow'
 const LIVE_GROUPS: readonly TaskRecord['status'][] = ['running', 'waiting_user']
 
 export function TaskCenter() {
+  const openTaskConversation = useTaskConversationNavigation()
   const tasks = useTaskStore((s) => s.tasks)
   const unfinished = useTaskStore((s) => s.unfinished)
   const changesets = useTaskStore((s) => s.changesets)
@@ -235,7 +237,7 @@ export function TaskCenter() {
                     now={now}
                     active={task.sessionId === activeThreadId}
                     busy={busy === task.id}
-                    onOpen={() => task.sessionId && setActiveThread(task.sessionId)}
+                    onOpen={() => openTaskConversation(task)}
                     onResume={() => void resume(task)}
                     onGiveUp={() => void giveUp(task)}
                     onDelete={() => void removeTask(task)}

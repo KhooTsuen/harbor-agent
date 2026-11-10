@@ -62,6 +62,9 @@ export function CollabPicker({
   const [choosing, setChoosing] = useState<Role>('planner')
   const [providerId, setProviderId] = useState('')
   const [matrix, setMatrix] = useState<Record<string, boolean>>({})
+  const [availability, setAvailability] = useState<
+    NonNullable<import('@/types/collab').CollabState['connections']>
+  >({})
   const providers = useConfigStore((s) => s.config?.providers ?? [])
   const showToast = useUIStore((s) => s.showToast)
 
@@ -77,6 +80,8 @@ export function CollabPicker({
       try {
         const result = await bridge?.collabStatus?.()
         if (alive && result?.ok && result.state?.matrix) setMatrix(result.state.matrix)
+        if (alive && result?.ok && result.state?.connections)
+          setAvailability(result.state.connections)
       } catch {
         /* 状态不可用时不拦人 */
       }
@@ -84,7 +89,7 @@ export function CollabPicker({
     return () => {
       alive = false
     }
-  }, [])
+  }, [open, providers])
 
   /* 每次打开都定位到「当前模型属于哪家」；双模型回到选 A */
   useEffect(() => {
@@ -96,10 +101,21 @@ export function CollabPicker({
     setChoosing('planner')
   }, [open, model, collab, groups])
 
-  const options = useMemo(() => buildOptions(providers, ROLE_KINDS, matrix), [providers, matrix])
-  const readiness = useMemo(() => collabReady(options, options), [options])
-  const planner = matchRole(options, collab?.planner)
-  const executor = matchRole(options, collab?.executor)
+  const plannerOptions = useMemo(
+    () => buildOptions(providers, ROLE_KINDS, matrix, availability, 'planner'),
+    [providers, matrix, availability],
+  )
+  const executorOptions = useMemo(
+    () => buildOptions(providers, ROLE_KINDS, matrix, availability, 'executor'),
+    [providers, matrix, availability],
+  )
+  const options = choosing === 'planner' ? plannerOptions : executorOptions
+  const readiness = useMemo(
+    () => collabReady(plannerOptions, executorOptions),
+    [plannerOptions, executorOptions],
+  )
+  const planner = matchRole(plannerOptions, collab?.planner)
+  const executor = matchRole(executorOptions, collab?.executor)
   const activeRole = choosing === 'planner' ? planner : executor
   const otherRole = choosing === 'planner' ? executor : planner
   const activeProvider = groups.find((g) => g.id === providerId) ?? groups[0]
@@ -132,16 +148,30 @@ export function CollabPicker({
       onClear?.()
       return
     }
-    const pair = defaultPair(options, options)
+    const pair = defaultPair(plannerOptions, executorOptions)
     if (!pair) {
       showToast('info', '还不能用双模型', readiness.hint)
       return
     }
-    const status = await bridge?.collabStatus?.()
+    let status
+    try {
+      status = await bridge?.collabStatus?.()
+    } catch {
+      showToast('error', '没能读取协作状态', '请稍后再试')
+      return
+    }
+    if (bridge && !status?.ok) {
+      showToast('error', '没能读取协作状态', '请稍后再试')
+      return
+    }
     if (status?.state?.enabled === false) {
-      const turned = await bridge?.collabSet?.({ enabled: true })
+      const turned = await bridge?.collabSet?.({ enabled: true }).catch(() => undefined)
       if (!turned?.ok) {
-        showToast('error', '没能开启双模型', turned?.error ?? '请在设置 → 扩展里打开双模型协作')
+        showToast(
+          'error',
+          '没能开启双模型',
+          turned?.error ?? '请在设置 → 模型与服务商里打开双模型协作',
+        )
         return
       }
     }

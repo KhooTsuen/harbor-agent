@@ -2,6 +2,7 @@ import type { ClarifyQuestion, ClarifyReply } from '@/types'
 import { cn } from '@/lib/utils'
 import { CircleHelp } from 'lucide-react'
 import { colorOf } from '@/lib/statusLanguage'
+import '@/styles/conversation-tools.css'
 
 /* ══════════════════════════════════════════════════════════════
    A 闸门（2026-10-07）——「执行前的计划复核」卡
@@ -34,7 +35,7 @@ export function GateCard({ questions, onReply }: GateCardProps) {
 
   return (
     <section
-      className="mb-2 rounded-md border border-line-focus bg-bg-raised shadow-low"
+      className="flow-attention-card mb-2 rounded-md border border-line-focus bg-bg-raised shadow-low"
       aria-label="执行前复核"
       role="dialog"
     >

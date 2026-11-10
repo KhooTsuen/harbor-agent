@@ -48,7 +48,7 @@ export function SourceColumn({
     <div className="flex w-44 shrink-0 flex-col border-r border-line-subtle p-2">
       {collab ? (
         <>
-          <div className="px-1 py-1.5 text-sm font-medium text-fg-primary">这是双模型状态选择</div>
+          <div className="px-1 py-1.5 text-sm font-medium text-fg-primary">监督执行分工</div>
           {(['planner', 'executor'] as const).map((role) => {
             const selected = role === 'planner' ? planner : executor
             return (
@@ -63,13 +63,15 @@ export function SourceColumn({
                 )}
               >
                 <span className="block text-xs text-fg-tertiary">
-                  {role === 'planner' ? '模型 A 预览' : '模型 B 预览'}
+                  {role === 'planner' ? 'A · 指导模型' : 'B · 工作模型'}
                 </span>
                 <span className="mt-0.5 block truncate text-sm text-fg-primary">
                   {selected?.label ?? '未选择'}
                 </span>
                 <span className="mt-0.5 block text-2xs text-fg-tertiary">
-                  选择{role === 'planner' ? ' A 时 B 选项显示不可选' : ' B 时 A 选项显示不可选'}
+                  {role === 'planner'
+                    ? '分派 · 检查 · 补充要求 · 交付'
+                    : '检索 · 创作 · 操作 · 汇报'}
                 </span>
               </button>
             )
