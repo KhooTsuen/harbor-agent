@@ -63,6 +63,98 @@ function fetchStream(input, init) {
   return globalThis.fetch(input, init)
 }
 
+/** 读响应体的默认上限（1 MB）：错误体 / 探活回包都是几百字节量级 */
+const DEFAULT_BODY_MAX = 1024 * 1024
+
+function abortError() {
+  const error = new Error('已取消')
+  error.name = 'AbortError'
+  return error
+}
+
+/**
+ * 读响应体，**边读边卡上限**（第 11 项，2026-11-10）。
+ *
+ * ── 为什么不能直接 `response.text()` / `arrayBuffer()` ────────
+ * 那会先把**整个 body 读进内存**，读完了才有机会判断「超限」—— 上游真返回
+ * 1 GB 时进程的内存已经被吃掉，再抛错也晚了。同样不能只看 `Content-Length`：
+ * 它可以缺失（未知长度），也可以比实际小（撒谎），更可能压根没有这条头。
+ *
+ * 所以这里一律**流式读、累计字节、到上限立刻停**，并把 `truncated` 如实交出去
+ * —— 调用方据此可以说「只读到前 N 字节」，而不是假装读全了。
+ *
+ * ★ 这是「限长读响应体」的**唯一实现**：图片、模型错误体、搜索回包都问它，
+ *   别在各自模块里再写一份「读完了再看大小」（同一判据两处 = 一定漂）。
+ *
+ * @param {Response} response
+ * @param {{ maxBytes?: number, signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ buffer: Buffer, bytes: number, truncated: boolean }>}
+ */
+async function readBufferLimited(response, opts = {}) {
+  const maxBytes = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes) : DEFAULT_BODY_MAX
+  const signal = opts.signal
+  if (signal?.aborted) throw abortError()
+
+  /* 声明值可信时**先拒**：省掉一次白读（不可信时下面还会按实读字节卡） */
+  const declared = Number(response?.headers?.get?.('content-length') ?? 0)
+  if (declared > maxBytes) {
+    throw new Error(`响应体太大（声明 ${declared} 字节，上限 ${maxBytes}）`)
+  }
+
+  const body = response?.body
+  if (!body || typeof body.getReader !== 'function') {
+    /* 没有流（老运行时 / 已消费 / 自检的假响应）→ 退回整读，如实不标截断 */
+    if (typeof response?.arrayBuffer === 'function') {
+      const buffer = Buffer.from(await response.arrayBuffer())
+      return { buffer, bytes: buffer.length, truncated: false }
+    }
+    const text = typeof response?.text === 'function' ? String(await response.text()) : ''
+    return { buffer: Buffer.from(text), bytes: Buffer.byteLength(text), truncated: false }
+  }
+
+  const reader = body.getReader()
+  const chunks = []
+  let bytes = 0
+  let truncated = false
+  try {
+    for (;;) {
+      if (signal?.aborted) throw abortError()
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = Buffer.from(value)
+      if (bytes + chunk.length > maxBytes) {
+        /* 只留到上限为止 —— 多出来的那截当场丢掉，不进内存 */
+        chunks.push(chunk.subarray(0, maxBytes - bytes))
+        bytes = maxBytes
+        truncated = true
+        break
+      }
+      bytes += chunk.length
+      chunks.push(chunk)
+    }
+  } finally {
+    try {
+      await reader.cancel()
+    } catch {
+      /* 已经结束 / 已取消：收尾而已，别盖掉真正的错误 */
+    }
+  }
+  return { buffer: Buffer.concat(chunks), bytes, truncated }
+}
+
+/**
+ * 同上的文本形态。截断可能切在多字节字符中间 → 末尾出现替换符，
+ * 这对「错误体摘要」无妨（本来只取前 500 字给人看）。
+ *
+ * @param {Response} response
+ * @param {{ maxBytes?: number, signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ text: string, bytes: number, truncated: boolean }>}
+ */
+async function readTextLimited(response, opts = {}) {
+  const { buffer, bytes, truncated } = await readBufferLimited(response, opts)
+  return { text: buffer.toString('utf8'), bytes, truncated }
+}
+
 /**
  * 给用户填的地址补协议头（只补这个，别的一律不动）。
  *
@@ -78,4 +170,11 @@ function withScheme(template) {
   return `${local ? 'http' : 'https'}://${t}`
 }
 
-module.exports = { fetch, fetchStream, withScheme }
+module.exports = {
+  fetch,
+  fetchStream,
+  withScheme,
+  readBufferLimited,
+  readTextLimited,
+  DEFAULT_BODY_MAX,
+}

@@ -2,6 +2,7 @@ import { AlertTriangle, KeyRound, Lock } from 'lucide-react'
 import { Row, SectionTitle } from '../parts'
 import { SessionCryptoPanel } from '../panels/SessionCryptoPanel'
 import { colorOf } from '@/lib/statusLanguage'
+import { credentialsUpgrade } from '@/lib/safetyApi'
 import { useAccessData } from './useAccessData'
 
 /* ══════════════════════════════════════════════════════════════
@@ -19,7 +20,14 @@ import { useAccessData } from './useAccessData'
    ══════════════════════════════════════════════════════════════ */
 
 export function AccessProtectionGroup(): React.ReactElement {
-  const { creds } = useAccessData()
+  const { creds, refresh } = useAccessData()
+
+  /* 升级：调内核 → 无论成败都刷新一次（界面要反映盘上的真实后端，不猜） */
+  async function onUpgrade(): Promise<void> {
+    const result = await credentialsUpgrade()
+    if (!result.ok) window.alert(`升级失败：${result.error ?? '未知原因'}`)
+    refresh()
+  }
 
   return (
     <>
@@ -36,14 +44,36 @@ export function AccessProtectionGroup(): React.ReactElement {
         <div className="flex items-center gap-2 text-2xs">
           <KeyRound size={13} className="text-fg-tertiary" />
           {creds ? (
-            creds.encryptionAvailable ? (
+            /*
+             * ★ 判据是**盘上到底是什么**，不是「这台机器能不能加密」（第 17 项）。
+             *   以前只看 encryptionAvailable：一台拿得到 safeStorage 的机器上，
+             *   如果凭证库是更早（或纯 Node 环境）写成的明文库，界面会写成
+             *   「已用系统加密（plain）」—— 明明是明文，却告诉用户已加密。
+             */
+            creds.backend === 'safeStorage' ? (
               <span className="text-fg-secondary">
                 已用系统加密（{creds.backend}）· {creds.count} 条
               </span>
+            ) : creds.count === 0 ? (
+              <span className="text-fg-secondary">
+                还没有存任何密钥{creds.encryptionAvailable ? '（这台机器支持系统加密）' : ''}
+              </span>
             ) : (
-              <span className="flex items-center gap-1" style={{ color: colorOf('warning') }}>
-                <AlertTriangle size={12} />
-                当前环境拿不到系统加密，密钥是明文存在本机文件里（别把 data/ 拷给别人）
+              <span className="flex items-center gap-2">
+                <span className="flex items-center gap-1" style={{ color: colorOf('warning') }}>
+                  <AlertTriangle size={12} />
+                  盘上是明文（{creds.count} 条）
+                  {creds.canUpgrade ? '' : ' —— 这台机器拿不到系统加密'}
+                </span>
+                {creds.canUpgrade ? (
+                  <button
+                    type="button"
+                    onClick={() => void onUpgrade()}
+                    className="rounded border border-bg-border px-2 py-0.5 text-fg-secondary hover:text-fg-primary"
+                  >
+                    升级为系统加密
+                  </button>
+                ) : null}
               </span>
             )
           ) : (

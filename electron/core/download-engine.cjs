@@ -1,26 +1,29 @@
 /**
- * 下载引擎：一个文件怎么下才靠得住。① 并行分段（探 `Range`，支持就切段多连接）；
- * ② 断点续传（进度记 `<目标>.part.json`，下次从断点接着下）；③ 失败重试。
- *
- * 边界：不支持 Range 的服务器**回退单连接**（硬切段会写出错位数据）；小文件
- * （< `MIN_SEGMENT_BYTES`）不切；落盘写 `.part` 再 rename（不占内存）。
+ * 下载引擎：分段并发 + 断点续传 + 重试 + 完整性校验。
+ * 纯函数（探测 / 切段 / 目录 / 断点元数据 / 清临时）在 `download-plan.cjs`。
  */
 
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
+/* 纯函数那一半；这里再导出一次，调用方与自检拿到的形状不变 */
+const {
+  DEFAULT_CONNECTIONS,
+  MIN_SEGMENT_BYTES,
+  probeUrl,
+  planSegments,
+  planFor,
+  ensureDir,
+  readMeta,
+  writeMeta,
+  cleanupParts,
+} = require('./download-plan.cjs')
 
-/** 默认几条连接（会被台账里的 limits.connections 覆盖） */
-const DEFAULT_CONNECTIONS = 4
-/** 小于这个大小就不切段了（4MB：切段的握手开销差不多要这么多） */
-const MIN_SEGMENT_BYTES = 4 * 1024 * 1024
-/** 每条连接失败后重试几次 */
+/** 失败重试次数；第 n 次退避 RETRY_BASE_MS × n */
 const MAX_RETRIES = 3
-/** 重试退避基数（毫秒）：第 n 次等 RETRY_BASE_MS × n */
 const RETRY_BASE_MS = 500
-/** 进度回调节流（毫秒）—— 每个 chunk 都报会把事件流刷爆 */
+/** 进度回调 / 断点落盘节流：每个 chunk 都做会刷爆事件流、拖慢下载 */
 const PROGRESS_MIN_MS = 200
-/** 断点元数据落盘节流（毫秒）—— 每个 chunk 都写盘会让下载变慢 */
 const META_MIN_MS = 1000
 
 function messageOf(error) {
@@ -47,74 +50,6 @@ function sleep(ms, signal) {
   })
 }
 
-/* 探一次：支不支持 Range、文件多大、etag。用 Range 探测而不是 HEAD（很多站点 HEAD 不给 content-length） */
-async function probeUrl(url, signal) {
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { Range: 'bytes=0-0' },
-    redirect: 'follow',
-    signal,
-  })
-  if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status} ${res.statusText}`)
-
-  const contentRange = res.headers.get('content-range') || ''
-  const matched = contentRange.match(/\/(\d+)\s*$/)
-  let total = matched ? Number(matched[1]) : Number(res.headers.get('content-length')) || 0
-  if (!Number.isFinite(total) || total < 0) total = 0
-
-  const acceptRanges = res.status === 206 || /bytes/i.test(res.headers.get('accept-ranges') || '')
-  const etag = res.headers.get('etag') || ''
-
-  /* 206 只有 1 个字节，读掉；200（服务器不理 Range）别把整份读进来，直接掐 */
-  try {
-    if (res.status === 206) await res.arrayBuffer()
-    else if (res.body) await res.body.cancel()
-  } catch {
-    /* 读/掐失败都不影响探测结果 */
-  }
-  return { total, acceptRanges, etag }
-}
-
-/** 把 total 切成 count 段；total 未知或不切时返回单段 */
-function planSegments(total, count) {
-  if (!(total > 0) || count <= 1) return [{ start: 0, end: total > 0 ? total - 1 : -1, received: 0 }]
-  const size = Math.ceil(total / count)
-  const segments = []
-  for (let start = 0; start < total; start += size) {
-    segments.push({ start, end: Math.min(start + size, total) - 1, received: 0 })
-  }
-  return segments
-}
-
-/** 切不切、切几段 —— **唯一一处**做这个判断（下载逻辑与自检都调它） */
-function planFor(total, connections, acceptRanges) {
-  const wanted = acceptRanges && total >= MIN_SEGMENT_BYTES && connections > 1 ? connections : 1
-  return { wanted, segments: planSegments(total, wanted) }
-}
-
-/** 建父目录 —— **已存在就跳过**。父目录是盘根时（填 `E:\x.iso`），Windows 上
- *  `mkdirSync('E:\')` 会抛 EPERM —— 而盘根明明存在（2026-10-11 真机踩到）。 */
-function ensureDir(dir) {
-  if (fs.existsSync(dir)) return
-  fs.mkdirSync(dir, { recursive: true })
-}
-
-function readMeta(metaFile) {
-  try {
-    return JSON.parse(fs.readFileSync(metaFile, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function writeMeta(metaFile, meta) {
-  try {
-    fs.writeFileSync(metaFile, JSON.stringify(meta))
-  } catch {
-    /* 写不进去也不该让下载失败 —— 顶多是续传点丢了 */
-  }
-}
-
 /* 下**一段**：从 seg.received 续着请求；断了退避重试（最多 retries 次），每次从已收位置接着来 */
 async function runSegment(options) {
   const { url, seg, handle, retries, signal, gate, onBytes, onMeta, flushMeta } = options
@@ -130,6 +65,15 @@ async function runSegment(options) {
       if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status} ${res.statusText}`)
       /* 从中间续却拿到 200（整份）—— 这服务器不会断点续传，写下去就是错位数据 */
       if (from > 0 && res.status !== 206) throw new Error('服务器不支持从中间续传')
+      /* ★ 206 的 Content-Range 起点必须等于我们要的 from（第 10 项）。服务器错位返回、
+         或忽略 Range 却标 206 时，写下去就是**错位数据** —— 文件坏了还报成功。
+         缺这个头也不接受：没有它就无法证明这段是我们要的那段。 */
+      if (res.status === 206) {
+        const got = /bytes\s+(\d+)-(\d+)/i.exec(res.headers.get('content-range') || '')
+        if (!got || Number(got[1]) !== from) {
+          throw new Error(`段落对不上（要 ${from}，给 ${got ? got[1] : '无 Content-Range'}）`)
+        }
+      }
 
       let position = from
       for await (const chunk of res.body ?? []) {
@@ -143,6 +87,9 @@ async function runSegment(options) {
         onMeta()
       }
       attempt = 0
+      /* 未知总长（end<0）没有字节边界可数，流读到 EOF 就是这段结束。不收尾会再发一次
+         请求，第二轮撞上「不支持从中间续传」——无 Content-Length 的文件必定失败。 */
+      if (seg.end < 0) break
     } catch (error) {
       if (signal?.aborted) throw abortError()
       attempt += 1
@@ -228,9 +175,7 @@ async function downloadFile(options) {
     const now = Date.now()
     if (!force && now - lastAt < PROGRESS_MIN_MS) return
     lastAt = now
-    /* ★ `total` 原样传，不许写成 `total || received`（2026-10-20 真机逮到）：
-     *   服务端不给 Content-Length 时 total=0，那个兜底会把它填成已收字节数，
-     *   于是 received/total 恒为 1 —— 界面永远 100%。total=0 的含义就是「不知道」。 */
+    /* total 原样传（别写 `total || received`：不给 Content-Length 时 total=0，界面会永远 100%） */
     if (onProgress) onProgress({ received, total })
   }
   progress(true)
@@ -254,14 +199,19 @@ async function downloadFile(options) {
       })
     }
   } finally {
-    /* 中断（暂停/失败）时把最后一次真实进度落盘 —— 否则断点元数据还停在上一次
-       节流刷新，续传会从更早的位置重来（真踩过：暂停时「已收」显示 0） */
+    /* 中断（暂停/失败）时把最后一次真实进度落盘 —— 否则续传会从更早的位置重来 */
     flushMeta(true)
     try {
       await handle.close()
     } catch {
       /* 关了就行 */
     }
+  }
+
+  /* 服务器提前 EOF / 响应被截时，以前照样 rename 出**短文件**并报成功。
+     抛在 rename 之前：`.part.json` 还在，下次能直接续传；rename 掉就接不上了。 */
+  if (total > 0 && received !== total) {
+    throw new Error(`下载不完整：收到 ${received} / 应有 ${total} 字节（已留在 .part，可续传）`)
   }
 
   try {
@@ -273,17 +223,6 @@ async function downloadFile(options) {
   progress(true)
 
   return { bytes: received, total: total || received, resumed, connections: segments.length }
-}
-
-/** 清掉某条任务的临时文件（.part / .part.json）—— remove() 时用 */
-function cleanupParts(file) {
-  for (const suffix of ['.part', '.part.json']) {
-    try {
-      fs.rmSync(`${file}${suffix}`, { force: true })
-    } catch {
-      /* 删不掉就算了，别把 remove 弄挂 */
-    }
-  }
 }
 
 module.exports = {

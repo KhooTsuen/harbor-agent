@@ -217,6 +217,57 @@ export async function runRunnerChecks({ runner, configStub }) {
   check('★ 串行跑（同时只跑一个，不然会一瞬间打爆模型配额）', maxActive === 1)
   check('没到期的不算进 skipped（它只是还没到点）', tickResult.skipped.length === 0)
   check('跑到期的会刷新 lastRunAt（下个 tick 不会重复跑）', Number(tickStore.get('sch_due_a').lastRunAt) > 0)
+
+  /*
+   * ★★★ 已删除的任务不许跑（原清单第 8 项，2026-11-10 修）
+   *
+   * 原验收场景：第一条正在跑时把第二条删掉，第二条醒来后**照样执行了一轮**。
+   * 根因是 `ledger.get(listed.id) ?? listed` —— `get()` 找不到返回 null，
+   * `??` 让列表里那份旧快照顶上，而它的 enabled 仍是 true，于是孤儿任务照跑。
+   * 这里构造「list 里有、get 返回 null」，钉住修好之后的行为。
+   */
+  group('定时任务 / 已删除的任务不许跑')
+  const ghostRun = []
+  const ghostStore = {
+    list: () => [{ ...baseItem, id: 'sch_ghost', name: '已被删掉', when: { type: 'interval', minutes: 5 }, createdAt: NOW - 3_600_000 }],
+    /* 列表里还有它，台账里已经没有 —— 这正是删除那一刻的窗口期 */
+    get: () => null,
+    recordRun: () => ({ ok: true }),
+  }
+  const ghost = await runner.tick(
+    { loop: { run: async (o) => { ghostRun.push(o.goal); return { content: '不该发生', toolRuns: [] } } }, config: configStub, store: ghostStore, emit: () => {} },
+    NOW,
+  )
+  check('★★★ 台账里找不到 → 就不跑（不许拿列表里那份旧快照顶上）', ghostRun.length === 0, ghostRun.join(','))
+  check('★★ 它记进 skipped（如实说没跑成，而不是悄悄消失）', ghost.skipped.includes('sch_ghost'), JSON.stringify(ghost))
+
+  /*
+   * 第 26 项（2026-11-10）：定时任务的结果**按真实原因分类**。
+   *
+   * 病：`lastResult` 原来一律写「跑完了」。而定时任务没人在场，台账是用户唯一的
+   * 线索 —— 撞预算停下、轮数用尽、被暂停，全显示成绿色「跑完了」，那一轮
+   * 其实一件交付都没有。判据只看 `loop.run` 的返回值（真实执行记录），不看模型自述。
+   */
+  group('定时任务 / 结果按真实原因分类（第 26 项）')
+  const briefOf = (result) => runner.run({ ...baseItem, id: 'sch_brief' }, {
+    loop: { run: async () => result },
+    config: configStub,
+    store: fakeStore([{ ...baseItem, id: 'sch_brief' }]),
+    emit: () => {},
+  })
+  const outcomeOf = async (result) => (await briefOf(result)).outcome ?? ''
+  check('★ 顺利跑完 → 就说跑完了', (await outcomeOf({ content: '干好了', toolRuns: [] })) === '跑完了')
+  check(
+    '★★★ 撞预算 → 如实说达到上限（不许写「跑完了」）',
+    /预算上限/.test(await outcomeOf({ content: '', budgetHit: { reason: 'maxTokens', label: 'Token' } })),
+  )
+  check('★★★ 被暂停 → 如实说已暂停', /已暂停/.test(await outcomeOf({ content: '', paused: true })))
+  check('★★ 轮数用尽 → 如实说达到上限', /上限/.test(await outcomeOf({ content: '', exhausted: true })))
+  check('★★ 有操作被拒 → 保留那句说明', /被拒/.test(await outcomeOf({ content: '', toolRuns: [{ ok: false, output: '用户拒绝了这个操作' }] })))
+  check(
+    '★★ 分类来自返回值，不看模型自述（暂停那轮 content 是提示语也不冒充交付）',
+    /已暂停/.test(await outcomeOf({ content: '（任务已暂停，可以从这里继续）', paused: true })),
+  )
 }
 
 /** 第 10 段：内核规矩（读源码文本，防「悄悄 require 主进程模块」回归） */

@@ -123,6 +123,25 @@ export async function run() {
     loopSrc.indexOf('options.controls?.pauseRequested?.()') < loopSrc.indexOf('executeToolCalls({'),
   )
 
+  /*
+   * 第 22 项（2026-11-10）：**每条暂停路径都要写明原因和剩余工作**。
+   *
+   * 病：只有「撞预算」和「转圈」两条会写 pauseReason，其余走 `: {}` ——
+   * 实测 79 个任务里 9 个 paused、**9 个 pauseReason 都是空串**。用户只看到
+   * 「暂停」，不知道是它自己停的还是他按停的，更不知道停在哪一步。
+   */
+  const runOnly = readCore('electron/core/loop-run.cjs')
+  check(
+    '★★ 用户暂停 / 截断 / 轮数用尽 各有原因码（不再落进 `: {}`）',
+    /pauseReason: 'user'/.test(runOnly) &&
+      /pauseReason: 'truncated'/.test(runOnly) &&
+      /pauseReason: 'turn_limit'/.test(runOnly),
+  )
+  check(
+    '★★★ 暂停时把「下一步」写进台账（复用 task-plan.nextActionOf，不另写判据）',
+    runOnly.includes('taskPlan.nextActionOf') && runOnly.includes('nextAction'),
+  )
+
   const chatSrc = readCore('electron/handlers/chat.cjs')
   check('chat.cjs 有 chat:pause 通道', chatSrc.includes("ipcMain.handle('chat:pause'"))
   check('pause 只置标记，不 abort（两件事）', chatSrc.includes('entry.pause.requested = true'))

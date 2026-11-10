@@ -1,7 +1,7 @@
 import type { Message, Thread } from '@/types'
 import { processHeaderText, formatDuration } from '@/lib/processSummary'
 import { bodyTextOf } from '@/lib/bodyText'
-import { purposeOf } from '@/lib/conversationFlow'
+import { pendingSpeechesOf, purposeOf } from '@/lib/conversationFlow'
 
 /* ══════════════════════════════════════════════════════════════
    导出 / 复制完整记录
@@ -110,9 +110,8 @@ export function fullRecordText(message: Message, bodyText?: string): string {
 
   parts.push(message.flow ? bodyTextOf(message) : (bodyText ?? message.content ?? ''))
   if (message.flow && !message.flow.final) {
-    const pending = message.flow.nodes.flatMap((node) =>
-      node.kind === 'speech' && purposeOf(node) !== 'chatter' ? [node.text] : [],
-    )
+    /* 与 bodyTextOf 问同一个函数 —— 别再各写一份「哪些片段还算正文」 */
+    const pending = pendingSpeechesOf(message.flow)
     if (pending.length) parts.push('> 这段还没结算，不能当正式答复', ...pending)
   }
   if (message.flow && message.verdict && message.verdict !== 'chat') {

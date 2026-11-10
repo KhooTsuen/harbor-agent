@@ -33,7 +33,20 @@ import { isProcessSpeech } from '@/components/chat/message/groupRounds'
 export function bodyTextOf(message: Message): string {
   /* 用户 / 系统消息：只有一个 content，没有轮次这回事 */
   if (message.role !== 'assistant') return message.content
-  if (message.flow) return message.flow.final ?? ''
+  if (message.flow) {
+    /* 已结算 → 就是那份唯一正式答复（显示 / 复制 / 导出共用它） */
+    if (message.flow.final) return message.flow.final
+    /*
+     * 还没结算（打断 / 截断 / 暂停 / 无终稿）：**不拿片段冒充正式答复**。
+     *
+     * ★ 2026-11-10 试过「这里退回待确认片段」，那会让「复制正文」把一段
+     *   明确没被确认的文字当成答复交出去 —— 与「正式答复只有一个」直接冲突。
+     *   所以维持原契约：没有终稿就没有可复制的正文。
+     *   那些片段在界面上照样看得见（`ConversationFlowView` 会带横幅显示），
+     *   导出时也带「这段还没结算」的标注 —— 看得见，但不冒充。
+     */
+    return ''
+  }
 
   const rounds = roundsOf(message)
   const kept = rounds

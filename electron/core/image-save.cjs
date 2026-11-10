@@ -3,6 +3,10 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { resolvePath } = require('./tools/_shared.cjs')
 const config = require('./config.cjs')
+const http = require('./http.cjs')
+
+/** 单张网图落盘的上限（和 image-load 同一口径：生图撑死几 MB） */
+const MAX_REMOTE_BYTES = 64 * 1024 * 1024
 
 /* ══════════════════════════════════════════════════════════════
    生图结果落盘
@@ -52,7 +56,7 @@ async function saveImage(image, ctx = {}) {
   return { file, url: pathToFileURL(file).href }
 }
 
-async function readImage(image) {
+async function readImage(image, signal) {
   const text = String(image ?? '')
 
   const inline = /^data:([^;,]+);base64,(.*)$/s.exec(text)
@@ -61,9 +65,22 @@ async function readImage(image) {
   }
 
   if (/^https?:\/\//i.test(text)) {
-    const response = await fetch(text)
+    const response = await fetch(text, { signal })
     if (!response.ok) throw new Error(`下载图片失败：HTTP ${response.status}`)
-    const buffer = Buffer.from(await response.arrayBuffer())
+    /*
+     * ★ 第 11 项（2026-11-10）：这里原来**完全没有上限** ——
+     *   `arrayBuffer()` 把整份响应读进内存。上游返回超大文件就直接吃掉内存。
+     *   现在边读边卡，超了当场停并如实报错。
+     */
+    const { buffer, truncated } = await http.readBufferLimited(response, {
+      maxBytes: MAX_REMOTE_BYTES,
+      signal,
+    })
+    if (truncated) {
+      throw new Error(
+        `图片太大（超过 ${Math.round(MAX_REMOTE_BYTES / 1024 / 1024)} MB 上限），没有落盘`,
+      )
+    }
     return { buffer, ext: extOf(response.headers.get('content-type') ?? '') }
   }
 

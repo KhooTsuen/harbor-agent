@@ -224,7 +224,47 @@ export async function run() {
       '★★ create() 把体积写进 meta.totalBytes（新备份 0 成本）',
       /totalBytes: createdBytes/.test(codeOf(backupSrc)),
     )
+
+    /* ══ ⑦ 第 13 项：恢复中途被强杀要认得出 ═══════════════════ */
+    group('恢复标记 / ⑦ 未完成的恢复（第 13 项）')
+    const mark = require(join(ROOT, 'electron/core/backup-restore-mark.cjs'))
+    const bootSrc = fsRead(join(ROOT, 'electron/boot-cleanup.cjs'), 'utf8')
+
+    check('★★★ 没有恢复在进行时 pending() 是 null', mark.pending() === null)
+    mark.begin('20260101-000000', '20260101-000001')
+    const live = mark.pending()
+    check(
+      '★★★ begin 之后认得出是哪份备份、回退快照是谁',
+      live?.name === '20260101-000000' && live?.safety === '20260101-000001',
+      JSON.stringify(live),
+    )
+    mark.touch('sessions')
+    mark.touch('tasks')
+    check(
+      '★★ 进度会累加（重启后能说「盖到第几项」）',
+      mark.pending()?.touched.join(',') === 'sessions,tasks',
+      JSON.stringify(mark.pending()?.touched),
+    )
+    mark.finish()
+    check('★★ 收尾后标记消失（正常恢复不该被误报成中断）', mark.pending() === null)
+
+    check(
+      '★★★ restore() 里留标记 / 记进度 / 收尾三处都接上了',
+      /restoreMark\.begin\(/.test(codeOf(backupSrc)) &&
+        /restoreMark\.touch\(/.test(codeOf(backupSrc)) &&
+        /restoreMark\.finish\(/.test(codeOf(backupSrc)),
+    )
+    check(
+      '★★★ 留不下标记就中止（没有它就无法识别中断，等于再造一个中间态坑）',
+      /restoreMark\.begin\([\s\S]{0,400}?aborted: true/.test(codeOf(backupSrc)),
+    )
+    check(
+      '★★ 启动时检查未完成的恢复（不然标记写了没人读 = 没有闸门）',
+      /backup-restore-mark\.cjs'\)\.pending\(\)/.test(codeOf(bootSrc)),
+    )
   } finally {
+    /* 标记是我的用例起的，无论成败都清掉，不留给下一个组 */
+    require(join(ROOT, 'electron/core/backup-restore-mark.cjs')).finish()
     for (const dir of ['g227-r1', 'g227-r2', 'g227-cold', 'g227-r5']) {
       rmSync(join(SANDBOX, dir), { recursive: true, force: true })
     }

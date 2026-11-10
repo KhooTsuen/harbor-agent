@@ -17,6 +17,8 @@ const budget = require('./budget.cjs')
 const taskAttribution = require('./task-attribution.cjs')
 const taskNotes = require('./task-notes.cjs')
 const gateDenied = require('./gate-denied.cjs')
+/* 「下一步是哪条」只有一处判据（认 `[x]`）—— 不在这里写第二份（硬约束 9） */
+const taskPlan = require('./task-plan.cjs')
 
 /**
  * 跑一轮完整的活。
@@ -142,6 +144,14 @@ async function run(options) {
        * AG-040：撞预算停下来时额外记「撞的是哪一项」和数字 ——
        * 界面据此显示「已达到本次执行上限」和 [继续][停止][调整预算]。
        * **不是失败**：这是停下来等人做决定。
+       *
+       * ★ 2026-11-10（第 22 项）：**每条路都要写明停的原因和剩余工作**。
+       *   病：原来只有「撞预算」和「转圈」两条会写 `pauseReason`，其余
+       *   （用户停止 / 轮数用尽 / 截断）走的是 `: {}` —— 台账里
+       *   `pauseReason` 是空串。实测 79 个任务里 9 个 paused、**9 个都空**：
+       *   用户只看到「暂停」，不知道是它自己停的还是他按停的，更不知道停在哪一步。
+       *   现在按四种来源分别给原因码，并且无论哪条路都把「下一步」写进 `nextAction`
+       *   （判据复用 `task-plan.nextActionOf`，不另写一份）。
        */
       const reason = result.budgetHit
         ? budget.pausePatch(result.budgetHit)
@@ -157,10 +167,39 @@ async function run(options) {
                 samples: result.loopHit.samples ?? [],
               },
             }
-          : {}
-      taskCore.update(task.id, { status: 'paused', pausedAt: Date.now(), ...reason })
+          : result.paused
+            /* 用户按了暂停（或进程中断）—— 不是它自己停的，如实区分 */
+            ? { pauseReason: 'user' }
+            : result.truncated
+              /* 结构化输出被截断：这次的内容不完整 */
+              ? { pauseReason: 'truncated' }
+              /* 轮数用尽：它自己撞到「连续调用工具太多次」的上限 */
+              : { pauseReason: 'turn_limit' }
+      const current = taskCore.get(task.id)
+      const nextAction = taskPlan.nextActionOf(current?.plan)
+      taskCore.update(task.id, {
+        status: 'paused',
+        pausedAt: Date.now(),
+        ...(nextAction ? { nextAction } : {}),
+        ...reason,
+      })
     } else {
+      /*
+       * ★ 2026-11-11（第 21 项）：**正常收尾也把「怎么结束的」记下来**。
+       *
+       * 以前这里只写 status / result。于是复盘「为什么这一轮只做完前几项」时，
+       * 台账里除了「completed」什么都查不到 —— 撞预算、转圈、模型自己停下、
+       * 计划还剩几项没勾，全靠人回忆（第 21 项那次复盘就卡在这里）。
+       * 现在把结束路径、轮数、剩余计划项数一起落进台账，**下一次能直接定位**。
+       */
+      const doneTask = taskCore.get(task.id)
+      const openCount = taskPlan.progressOf(doneTask?.plan).total - taskPlan.progressOf(doneTask?.plan).done
       taskCore.finish(task.id, { status: 'completed', result: result.content ?? '' })
+      taskCore.update(task.id, {
+        endPath: 'completed',
+        endTurns: Number(result.turns) || 0,
+        ...(openCount > 0 ? { openPlanItems: openCount } : {}),
+      })
     }
 
     /* AG-042：收尾再写一次（token 用同一个 base 算，不是往上加） */

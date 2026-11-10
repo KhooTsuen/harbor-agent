@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { fileURLToPath } = require('node:url')
+const http = require('./http.cjs')
 const { stamp } = require('./image-save.cjs')
 
 /* ══════════════════════════════════════════════════════════════
@@ -47,9 +48,10 @@ function guardSize(size) {
  * 读一张图。
  *
  * @param {string} src  `file:` / `data:` / `http(s):` 三种前缀之一
+ * @param {AbortSignal} [signal] 取消信号（网图下载可被用户中断）
  * @returns {Promise<{buffer: Buffer, name: string}>} name 是给保存框的默认文件名
  */
-async function loadImage(src) {
+async function loadImage(src, signal) {
   const text = String(src ?? '').trim()
   if (!text) throw new Error('没有图片地址')
 
@@ -68,10 +70,18 @@ async function loadImage(src) {
   }
 
   if (/^https?:\/\//i.test(text)) {
-    const response = await fetch(text)
+    const response = await fetch(text, { signal })
     if (!response.ok) throw new Error(`下载图片失败：HTTP ${response.status}`)
-    const buffer = Buffer.from(await response.arrayBuffer())
-    guardSize(buffer.length)
+    /*
+     * ★ 第 11 项（2026-11-10）：**边读边卡上限**。
+     *   原来是 `arrayBuffer()` 读完再 `guardSize()` —— 上游给 2 GB 时进程先把
+     *   内存吃掉，再抛「图片太大」已经晚了。现在读的过程中就停。
+     */
+    const { buffer, truncated } = await http.readBufferLimited(response, {
+      maxBytes: MAX_BYTES,
+      signal,
+    })
+    if (truncated) guardSize(buffer.length + 1)
     const ext = mimeExt(response.headers.get('content-type'))
     return { buffer, name: `image-${stamp()}.${ext}` }
   }

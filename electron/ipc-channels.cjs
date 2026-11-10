@@ -70,6 +70,7 @@ const EXPECTED_CHANNELS = [
   'collab:run',
   'collab:stop',
   'credentials:status',
+  'credentials:upgrade',
   /* 数据目录：用户指定位置 + 安全迁移（指针文件独立于配置，见 core/data-location.cjs） */
   'dataLocation:get',
   'dataLocation:migrate',

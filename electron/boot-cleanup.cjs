@@ -35,6 +35,26 @@ function sweepStaleTasks() {
   }
 
   /*
+   * ★ 第 13 项：上次恢复被强杀了吗。
+   *
+   * 恢复是逐项「先删后拷」的破坏性操作，中途被强杀时 catch 不会执行 ——
+   * 数据就停在「一半新、一半旧」。这里在**建窗口之前**读标记：
+   * 有标记就写进日志与诊断，让用户和排错的人一眼看到「上次恢复没做完」，
+   * 并指出回退用的 before-restore 快照名。**不自动回滚**：那是用户的决定。
+   */
+  try {
+    const mark = require('./core/backup-restore-mark.cjs').pending()
+    if (mark) {
+      log.warn(
+        `上次恢复没做完：备份「${mark.name}」盖到第 ${mark.touched.length} 项（${mark.touched.join(', ') || '无'}）时中断；` +
+          `回退快照是「${mark.safety}」，可在设置 → 备份里恢复它`,
+      )
+    }
+  } catch (error) {
+    warn('检查未完成的恢复失败', error)
+  }
+
+  /*
    * 顺带把旧文件扫一遍（审计问题 1/3/4/10/11）：
    * 主日志 / 动作流水 / 工具大输出 / 事件流 / 崩溃转储 / 无主诊断快照。
    *

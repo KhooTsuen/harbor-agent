@@ -42,6 +42,11 @@ const speechSchema = z.object({
    *   必须区分「默认值」和「明确信号」。
    */
   hold: z.boolean().optional(),
+  /**
+   * 上游自带的正文段身份（第 2 项）。可选 —— HTTP/SSE 那条路本来就没有消息 id。
+   * 存下来是为了重启回放时仍按**上游身份**分段，而不是重新按内容猜。
+   */
+  segId: z.string().optional(),
 })
 
 const nodeSchema = z.discriminatedUnion('kind', [
@@ -95,26 +100,55 @@ function unconfirmed(nodes: readonly FlowNode[]): FlowNode[] {
   )
 }
 
-/** 明确信号固定的片段归入同一份终稿；汇总已包含的片段不重复追加。 */
+/**
+ * 还没结算的正文片段（`answer` / `unconfirmed` / `final`，不含过程话）。
+ *
+ * ★ 为什么集中到一处：显示、复制、导出、阅读导航都要回答「哪几段还算正文」。
+ *   各入口自己写一份判据一定漂 —— `bodyText.ts` 文件头记的就是这类事故
+ *   （复制和界面取数走了两条路）。这里只声明「哪些片段有资格当正文」，
+ *   不做任何拼接决策。
+ */
+export function pendingSpeechesOf(flow: ConversationFlow): string[] {
+  return flow.nodes.flatMap((node) =>
+    node.kind === 'speech' && purposeOf(node) !== 'chatter' && node.text.trim() ? [node.text] : [],
+  )
+}
+
+/**
+ * 明确信号固定的片段归入同一份终稿；汇总已包含的片段不重复追加。
+ *
+ * 只有**确实进了交付正文**的片段才标 `final`；其余归 `chatter`（已被取代的过程材料，
+ * 收进折叠区，原文与顺序都在）。为什么不标 `unconfirmed`：那个专指「真拿不准」
+ * （中断 / 暂停 / 截断 / 干过活却没交付），这里已经拿到了交付正文，属「确定被取代」。
+ * 只动还标 `answer` 的片段 —— `chatter` / `unconfirmed` / `final` 都是已有结论，
+ * 结算不该回头改写（早先的写法会把过程话重新标成未确认，导出里整段变空）。
+ * 边界：单模型普通正文没有阶段信号，「补充」与「更正」上游长得一样，
+ * 能确定的只有「是否被终稿文本吸收」与带 `hold` 的片段，不靠相似度猜。
+ */
 function settle(flow: ConversationFlow, text: string): ConversationFlow {
+  const absorbed = (node: FlowNode): boolean =>
+    node.kind === 'speech' && Boolean(node.text.trim()) && text.includes(node.text)
   const prefix = flow.nodes.flatMap((node) =>
     node.kind === 'speech' &&
     node.hold &&
     purposeOf(node) !== 'final' &&
     node.text.trim() &&
-    !text.includes(node.text)
+    !absorbed(node)
       ? [node.text]
       : [],
   )
   return {
     ...flow,
-    nodes: flow.nodes.map((node) =>
-      node.kind === 'speech' &&
-      purposeOf(node) === 'answer' &&
-      (node.turn === flow.turn || node.hold)
+    nodes: flow.nodes.map((node) => {
+      if (node.kind !== 'speech') return node
+      /* 已有结论的片段（final / chatter / unconfirmed）不再被结算回头改写 */
+      if (purposeOf(node) !== 'answer') return node
+      /* 更早轮次又没被明确钉住的片段，状态由 `retag` 负责，这里不动 */
+      if (node.turn !== flow.turn && node.hold !== true) return node
+      return absorbed(node) || prefix.includes(node.text)
         ? { ...node, purpose: 'final' }
-        : node,
-    ),
+        : { ...node, purpose: 'chatter' }
+    }),
     final: [...prefix, text].join('\n\n'),
   }
 }
@@ -178,7 +212,17 @@ export function advanceFlow(
     const samePurpose =
       last?.kind !== 'speech' ||
       (purposeOf(last) === purpose && Boolean(last.hold) === (event.stage === 'answer'))
-    if (last?.kind === kind && last.turn === turn && samePurpose) {
+    /*
+     * ★ 2026-11-11（第 2 项）：上游给了段身份时**按身份分段**，不靠「挨着就并」。
+     *
+     * 判据只有一条：两边都有 segId 且**不同** → 新起一段。缺失时保持原行为
+     * （HTTP/SSE 那条路本来就没有消息 id，不能因此把每段都切开）。
+     * 这里**不比较文本相似度**，也不拿位置编号冒充身份。
+     */
+    const seg = typeof event.segId === 'string' && event.segId ? event.segId : ''
+    const lastSeg = last && last.kind === 'speech' ? (last.segId ?? '') : ''
+    const sameSegment = !seg || !lastSeg || seg === lastSeg
+    if (last?.kind === kind && last.turn === turn && samePurpose && sameSegment) {
       return { ...flow, nodes: [...nodes.slice(0, -1), { ...last, text: last.text + event.text }] }
     }
     return {
@@ -192,6 +236,8 @@ export function advanceFlow(
               turn,
               text: event.text,
               purpose,
+              /* 上游给的段身份原样留（没有就不写这个键） */
+              ...(seg ? { segId: seg } : {}),
               /* 上层明确给了「这是答复」的信号 → 钉住，后面调工具也不降级 */
               ...(event.stage === 'answer' ? { hold: true } : {}),
             }

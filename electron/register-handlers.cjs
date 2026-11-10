@@ -24,19 +24,16 @@ const observer = require('./core/error-observer.cjs')
 const SLOW_IPC_MS = 1000
 
 /**
- * IPC 来源判据（安全清单 SEC-007 / SEC-011）：只接受**应用主窗口**发来的调用。
+ * IPC 来源判据（SEC-007 / SEC-011）：只接受**应用主窗口**发来的调用。
  *
- * 现状：当前只有主窗口带 preload，网页标签（webview）没有 → 本来也发不出 IPC。
- * 这一层是纵深防御：万一以后给某个 webContents 加了桥，或在特殊模式下注入了
- * 别的 renderer，非主窗口的调用会被这一层拒掉并留痕。
+ * 当前只有主窗口带 preload，网页标签（webview）没有 → 本来也发不出 IPC。
+ * 这一层是纵深防御：万一以后给某个 webContents 加了桥，非主窗口的调用会被拒并留痕。
  *
- * ★ SEC-011：窗口**不存在**（还没建 / 已销毁并清理）时**拒绝**（fail-closed）。
- * 渲染层的 IPC 只可能来自某个 webContents，没有主窗口就没有合法渲染层 ——
- * 所以「拿不到窗口」不该是放行的理由。旧版这里是「拿不到就放行」，
- * 那样一旦窗口销毁，任何来源都能继续使唤主进程（旧引用 / 残留 renderer）。
- * 正常启动不受影响：应用起来之前渲染层还没发出 IPC。
+ * ★ SEC-011：窗口**不存在**时**拒绝**（fail-closed）。渲染层 IPC 只可能来自某个
+ * webContents，没有主窗口就没有合法渲染层。旧版是「拿不到就放行」，那样窗口一销毁，
+ * 旧引用 / 残留 renderer 都能继续使唤主进程。
  *
- * 判据是纯函数（注入 `getMainWindow`），所以安全套件能拿假窗口真跑，不必起 Electron。
+ * 判据是纯函数（注入 `getMainWindow`），安全套件能拿假窗口真跑，不必起 Electron。
  *
  * @param {() => ({ isDestroyed?: () => boolean, webContents?: object } | null | undefined)} getMainWindow
  * @param {{ sender?: object } | null | undefined} event
@@ -246,9 +243,11 @@ function registerHandlers(deps) {
   require('./handlers/pty.cjs').register({ ipcMain, send, getWorkdir: currentWorkdir })
   /* 安全 / 可靠相关：审计、路径授权、任务、改动事务、凭证状态 */
   require('./handlers/safety.cjs').register({ ipcMain })
+  /* 凭证库明文 → 系统加密升级（第 17 项） */
+  require('./handlers/credentials-upgrade.cjs').register({ credentials: require('./core/credentials.cjs') })
   /* 成果（Artifact）：落盘 + 版本历史 + 打开文件，数据在 data/artifacts/ */
   require('./handlers/artifact.cjs').register({ ipcMain })
-  /* 定时任务：台账 CRUD + 立刻跑一次。心跳（30 秒一跳）不在这里起 —— 它要等 app ready， 由 main.cjs 调 `handlers/schedules.cjs` 的 `start()`（同一处装配依赖，免得两套）。 */
+  /* 定时任务：台账 CRUD + 立刻跑一次。心跳不在这里起（等 app ready，由 main.cjs 调 start()） */
   const schedules = require('./handlers/schedules.cjs')
   schedules.register({ ipcMain })
   /* 下载管理器（并行分段 / 续传 / 重试 + 队列 / 限速），台账在 data/downloads.json */

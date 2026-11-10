@@ -142,4 +142,104 @@ export async function run() {
     rule.includes('[^\\s"\',;&)\\]}\\\\]{6,}'),
     rule,
   )
+
+  /* 第 17 项：凭证库明文升级（同一个 run 里顺带跑，不单开组 —— groups.mjs 贴红线） */
+  runCredentialUpgradeChecks()
+}
+
+/* ══════════════════════════════════════════════════════════════
+   凭证库 · 明文升级与诊断状态（第 17 项，2026-11-11）
+
+   病：界面的「API Key 存哪」只看 `encryptionAvailable`，不看**盘上的 backend**。
+   一台拿得到 safeStorage 的机器上，如果凭证库是纯 Node 环境（或更早）写成的
+   **明文库**，界面会显示「已用系统加密（plain）」—— 明明是明文，却告诉用户已加密。
+
+   修：`status()` 多报 `plainOnDisk` / `canUpgrade`；`upgrade()` 保数据地原地升级。
+   这里钉三件：判据分开、升级保数据、留不下档就中止。
+   ══════════════════════════════════════════════════════════════ */
+export function runCredentialUpgradeChecks() {
+  group('凭证库 / 明文升级（第 17 项）')
+
+  const cred = require(join(ROOT, 'electron/core/credentials.cjs'))
+  const maintenance = require(join(ROOT, 'electron/core/credentials-maintenance.cjs'))
+
+  /* ① 判据分开：status 必须报 plainOnDisk / canUpgrade，不能只给 encryptionAvailable */
+  const s = cred.status()
+  check(
+    '★★★ status 分别报「盘上是否明文」与「能否升级」（只看 encryptionAvailable 会把明文说成已加密）',
+    typeof s.plainOnDisk === 'boolean' && typeof s.canUpgrade === 'boolean',
+    JSON.stringify(s),
+  )
+  check(
+    '★ plainOnDisk 与 backend 自洽（backend 不是 safeStorage 且有凭证才算明文）',
+    s.plainOnDisk === (s.backend !== 'safeStorage' && s.count > 0),
+    `backend=${s.backend} count=${s.count} plainOnDisk=${s.plainOnDisk}`,
+  )
+  check(
+    '★ canUpgrade 必须是 plainOnDisk 的子集（已经是系统加密就不该说「能升级」）',
+    !s.canUpgrade || s.plainOnDisk,
+    `canUpgrade=${s.canUpgrade} plainOnDisk=${s.plainOnDisk}`,
+  )
+
+  /* ② 升级函数的形状：保数据、留档、失败中止 */
+  check('★ 导出 upgrade', typeof cred.upgrade === 'function')
+  const src = require('node:fs').readFileSync(
+    join(ROOT, 'electron/core/credentials-maintenance.cjs'),
+    'utf8',
+  )
+  check(
+    '★★★ 升级前先留档（`keepCorruptCopy`），留不下就中止 —— 不能在没有退路时重写凭证库',
+    /keepCorruptCopy/.test(src) && /留档失败，已中止升级/.test(src),
+  )
+  check(
+    '★★ 升级是**逐条重加密**（读旧后端 → 写 safeStorage），不是清空重来',
+    /deps\.decrypt\(entry, data\.backend\)/.test(src) && /deps\.encrypt\(plain, 'safeStorage'\)/.test(src),
+  )
+  check(
+    '★★ 已经是 safeStorage 时直接返回（不重复升级、不改动文件）',
+    /已经是系统加密，无需升级/.test(src),
+  )
+  check(
+    '★ 本机没有加密能力时抛错（不静默降级成「升级成功」）',
+    /拿不到系统加密能力/.test(src),
+  )
+
+  /* ③ 通道接线：界面点得到，且通道进了清单（漏了打包自检会报 channelsMissing） */
+  const channels = require('node:fs').readFileSync(join(ROOT, 'electron/ipc-channels.cjs'), 'utf8')
+  check('★ credentials:upgrade 进了通道清单', channels.includes("'credentials:upgrade'"))
+  const preload = require('node:fs').readFileSync(join(ROOT, 'electron/preload.cjs'), 'utf8')
+  check('★ preload 暴露了 credentialsUpgrade', preload.includes('credentialsUpgrade:'))
+  const reg = require('node:fs').readFileSync(join(ROOT, 'electron/register-handlers.cjs'), 'utf8')
+  check(
+    '★ 注册点装上了（handler 建了不用 = 静默不生效）',
+    reg.includes('handlers/credentials-upgrade.cjs'),
+  )
+
+  /* ④ 界面判据：不能再用 encryptionAvailable 决定「已加密」 */
+  const ui = require('node:fs').readFileSync(
+    join(ROOT, 'src/components/settings/security/AccessProtectionGroup.tsx'),
+    'utf8',
+  )
+  const code = ui
+    .split('\n')
+    .filter((l) => !/^\s*(\*|\/\*|\/\/)/.test(l))
+    .join('\n')
+  check(
+    '★★★ 界面按 backend 判「已加密」，不是按 encryptionAvailable',
+    /creds\.backend === 'safeStorage'/.test(code),
+    '「已加密」那一档没有按 backend 判断',
+  )
+  /*
+   * ★ 精确判据：`已用系统加密` 那句**不能**由 encryptionAvailable 决定。
+   *   注意 `encryptionAvailable` 本身仍有正当用途（判断「这台机器支不支持加密」），
+   *   所以不能一刀切成「全文件禁出现」—— 只看它有没有贴在那句话的条件上。
+   */
+  const at = code.indexOf('已用系统加密')
+  const near = at >= 0 ? code.slice(Math.max(0, at - 260), at) : ''
+  check(
+    '★★★ 「已用系统加密」不是 encryptionAvailable 的分支（那会把明文库说成已加密）',
+    at >= 0 && !/encryptionAvailable/.test(near),
+    near.slice(-120),
+  )
+  check('★ 明文且能升级时给得出升级入口', /升级为系统加密/.test(code))
 }

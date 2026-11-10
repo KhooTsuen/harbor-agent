@@ -96,7 +96,12 @@ describe('正文块身份 / ③ 结算唯一正式答复', () => {
       { type: 'done', finalContent: '正式答复' },
     ])
     expect(flow.final).toBe('正式答复')
-    expect(speeches(flow).map(purposeOf)).toEqual(['final'])
+    /*
+     * 意图是「final 只有一个」—— 终稿是 '正式答复'，而 '草稿一段' 并不含在它里面。
+     * 所以草稿只能算被取代的过程材料（`chatter`，收进折叠区、原文可追溯），
+     * 不能标 `final`（那会让渲染层以为它已在交付正文里，从而不显示）。
+     */
+    expect(speeches(flow).map(purposeOf)).toEqual(['chatter'])
   })
 
   it('★★★ 暂停 / 轮数用尽 / 截断 → 一律不结算，标未确认', () => {

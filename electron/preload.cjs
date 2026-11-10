@@ -199,6 +199,7 @@ const api = {
   metricsRecent: (payload) => call('metrics:recent', payload),
 
   credentialsStatus: () => call('credentials:status'),
+  credentialsUpgrade: () => call('credentials:upgrade'),
 
   ptyStart: (payload) => call('pty:start', payload),
   ptyWrite: (payload) => call('pty:write', payload),

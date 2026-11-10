@@ -98,7 +98,10 @@ async function sessionFor(item, deps) {
  *
  * @param {object} item 台账条目
  * @param {object} deps { loop, config, store?, emit?, ensureSession?, signal? }
- * @returns {Promise<{ ok: boolean, taskId?: string, blocked?: boolean, sessionId?: string, error?: string }>}
+ * @returns {Promise<{ ok: boolean, taskId?: string, blocked?: boolean, sessionId?: string,
+ *                     outcome?: string, error?: string }>}
+ *   `outcome` = 按真实返回值分类的一句话（跑完了 / 达到预算上限 / 已暂停 / 被截断…），
+ *   与写进台账 `lastResult` 的是同一个值 —— 调用方不必再自己拼一遍说法（第 26 项）。
  */
 async function run(item, deps = {}) {
   const id = String(item?.id ?? '')
@@ -152,10 +155,36 @@ async function run(item, deps = {}) {
     }
 
     const blocked = blockedOf(result)
+    /*
+     * ★ 2026-11-10（第 26 项）：**按真实结果分类**，不再一律「跑完了」。
+     *
+     * 病：原来这一行是
+     *   `brief(result?.content) || (blocked ? '跑完了，但有操作被拒' : '跑完了')`
+     * —— 它拿到了 `result` 却**完全没看** `paused` / `exhausted` / `budgetHit`。
+     * 于是「撞了预算停下来」「轮数用尽」「被用户暂停」全都被记成「跑完了」，
+     * 用户在定时任务列表里看到的是一条绿色的「跑完了」，而那一轮
+     * 其实一件交付都没有。定时任务没人在场，台账是他唯一的线索。
+     *
+     * 判据全部来自 `loop.run` 的返回值（真实执行记录），不看模型自述。
+     * `content` 有时是「（任务已暂停，可以从这里继续）」这类提示语 ——
+     * 它**不是**交付结果，所以分类优先于 content。
+     */
+    const outcome = result?.budgetHit
+      ? `达到预算上限（${result.budgetHit.label || result.budgetHit.reason || '未知项'}）就停下了，成果已保留`
+      : result?.paused
+        ? '已暂停，成果已保留（可从任务列表继续）'
+        : result?.exhausted
+          ? '连续调用工具达到上限就停下了，成果已保留'
+          : result?.truncated
+            ? '输出被截断，内容不完整'
+            : blocked
+              ? '跑完了，但有操作被拒'
+              : '跑完了'
     const patch = {
       lastRunAt: Date.now(),
       lastTaskId: String(result?.taskId ?? ''),
-      lastResult: brief(result?.content) || (blocked ? '跑完了，但有操作被拒' : '跑完了'),
+      /* 有真实交付正文就用它；没有才用分类说明（不拿提示语冒充交付） */
+      lastResult: result?.truncated ? outcome : brief(result?.content) || outcome,
       runCount: (Number(item.runCount) || 0) + 1,
       blockedCount: (Number(item.blockedCount) || 0) + (blocked ? 1 : 0),
       sessionId,
@@ -163,7 +192,7 @@ async function run(item, deps = {}) {
     ledger.recordRun(id, patch)
 
     log.info(`定时任务「${item.name ?? id}」跑完（${Date.now() - startedAt}ms）`)
-    return { ok: true, taskId: patch.lastTaskId, blocked, sessionId }
+    return { ok: true, taskId: patch.lastTaskId, blocked, sessionId, outcome }
   } catch (error) {
     const message = messageOf(error)
     log.warn(`定时任务「${item.name ?? id}」没跑完：${message}`)
@@ -201,8 +230,20 @@ async function tick(deps = {}, now = Date.now()) {
     for (const listed of ledger.list()) {
       if (!isDue(listed, now)) continue
 
-      /* 串行跑，中间可能过了几十秒：再读一次，确认它没被关掉 / 删掉 */
-      const fresh = ledger.get(listed.id) ?? listed
+      /*
+       * 串行跑，中间可能过了几十秒：再读一次，确认它没被关掉 / 删掉。
+       *
+       * ★ 被删掉要**跳过**，不能拿列表里那份旧快照顶上（2026-11-10 静态核对发现；
+       *   原清单第 8 项记为「已复现」）：`get()` 找不到时返回 `null`，而
+       *   `?? listed` 会让旧对象继续跑 —— 它的 `enabled` 仍是 true、
+       *   `lastRunAt` 还是旧的，于是**用户刚删掉的任务照样会执行一轮**。
+       *   上面这句注释写的一直是「确认它没被删掉」，实现却是「删了也照跑」。
+       */
+      const fresh = ledger.get(listed.id)
+      if (!fresh) {
+        skipped.push(listed.id)
+        continue
+      }
       if (!isDue(fresh, now)) {
         skipped.push(listed.id)
         continue

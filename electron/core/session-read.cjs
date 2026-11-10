@@ -47,7 +47,7 @@ const countCache = new Map()
  *  ② 首行解不开时**回退 `readLines` 判断**，不能直接跳过 ——
  *     否则换过 Windows 账户 / 坏首行的会话会从列表里被悄悄抹掉。
  */
-function list() {
+function list(options = {}) {
   if (!fs.existsSync(DIRS.sessions)) return []
 
   const items = []
@@ -57,7 +57,7 @@ function list() {
     /* 名字不合规的（人手放进去的、老版本留下的）跳过：下面 `readLines` 会走
        `fileFor` 的白名单校验并抛错 —— 一个杂物文件不能让整个会话列表打不开 */
     if (!isSessionId(id)) continue
-    const item = listOne(id)
+    const item = listOne(id, options)
     if (item) items.push(item)
   }
 
@@ -152,30 +152,16 @@ function buildItem(id, meta, messageCount, stat) {
  * 侧栏的「对话文件夹」靠它列菜单 —— 用户不需要自己记住"上次那个目录在哪"。
  * 老会话没记 workdir 的归到空串，前端会把它们显示成「未分类」。
  */
+/**
+ * 全文搜索（实现在 `session-search.cjs`）。
+ *
+ * 原来这里自己写 `for (const item of list()) { load(item.id) ... }`，
+ * 而 `list()` 默认要数消息条数、`load()` 又要读整篇 —— 一次搜索把每个
+ * 会话文件读了两遍（92 MB 现场实测 1.2 秒/次，侧栏每敲一个字触发一次，
+ * 同步跑在主进程 = 打字卡界面）。现在：跳过计数 + 按 mtime 缓存可搜文本。
+ */
 function search(query, limit = 50) {
-  const q = String(query ?? '')
-    .trim()
-    .toLowerCase()
-  if (!q) return []
-  const hits = []
-  for (const item of list()) {
-    const data = load(item.id)
-    for (const message of data?.messages ?? []) {
-      const content = String(message.content ?? '')
-      const index = content.toLowerCase().indexOf(q)
-      if (index < 0) continue
-      hits.push({
-        threadId: item.id,
-        title: item.title,
-        workdir: item.workdir ?? '',
-        timestamp: message.ts ?? item.updatedAt,
-        role: message.role,
-        snippet: content.slice(Math.max(0, index - 80), index + q.length + 160),
-      })
-      if (hits.length >= limit) return hits
-    }
-  }
-  return hits
+  return require('./session-search.cjs').search(query, limit, list({ skipCount: true }))
 }
 
 function workdirs() {

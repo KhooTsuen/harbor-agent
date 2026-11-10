@@ -73,6 +73,14 @@ function update(id, patch) {
     'turns',
     'pausedAt',
     'resumeCount',
+    /*
+     * ★ 2026-11-11（第 21 项）：**结束路径与剩余事项**。
+     * 复盘「为什么这一轮只做完前几项」时，原来台账里除了状态词什么都没有。
+     * 这三个字段专为此记：怎么结束的、跑了多少轮、还剩几项计划没勾。
+     */
+    'endPath',
+    'endTurns',
+    'openPlanItems',
   ]) {
     if (patch[key] !== undefined) task[key] = patch[key]
   }

@@ -219,6 +219,79 @@ export async function run() {
   const readSrc = readFileSync(join(ROOT, 'electron/core/session-read.cjs'), 'utf8')
   check('★ 首行解不开时回退整篇判断（不把会话悄悄抹掉）', /readLines\(id\)/.test(readSrc))
 
+  /* ══ ⑤ 全文搜索：不许为了搜一次把每个会话读两遍（第 18 项）══════
+     原实现 search() → list()（数条数=整篇读）→ 每会话 load()（再读一遍）。
+     92 MB 副本实测 760~1170 ms/次，而侧栏每敲一个字搜一次、同步跑在主进程。
+     修：list({skipCount}) + session-search.cjs 按 mtime 缓存可搜文本。 */
+  group('会话搜索 / 不重复读盘且结果正确（第 18 项）')
+  const searchMod = require(join(ROOT, 'electron/core/session-search.cjs'))
+  const searchable = write.create({ title: '搜索判据', mode: 'pair' })
+  const sFile = io.fileFor(searchable.id)
+  const sHead = JSON.stringify({
+    type: 'meta',
+    id: searchable.id,
+    title: '搜索判据',
+    mode: 'pair',
+    model: '',
+    createdAt: Date.now(),
+  })
+  const sLines = [sHead]
+  for (let i = 0; i < 40; i += 1) {
+    sLines.push(
+      JSON.stringify({
+        type: 'message',
+        role: i % 2 ? 'assistant' : 'user',
+        content: i === 17 ? '这里埋一个靶标词XYZ' : `第 ${i} 条普通正文`,
+        ts: 1000 + i,
+      }),
+    )
+  }
+  require('node:fs').writeFileSync(sFile, `${sLines.join('\n')}\n`, 'utf8')
+
+  const hitOne = read.search('靶标词XYZ', 20)
+  check('★★ 搜得到那条（命中的是第 18 条消息）', hitOne.length === 1, JSON.stringify(hitOne.map((h) => h.role)))
+  check(
+    '★★ 返回字段与原来一致（threadId/title/workdir/timestamp/role/snippet）',
+    hitOne.length === 1 &&
+      ['threadId', 'title', 'workdir', 'timestamp', 'role', 'snippet'].every((k) => k in hitOne[0]),
+    Object.keys(hitOne[0] ?? {}).join(','),
+  )
+  check(
+    '★ 片段里带得上上下文（snippet 含靶标词）',
+    String(hitOne[0]?.snippet ?? '').includes('靶标词XYZ'),
+  )
+  check('★ 查不到的词返回空数组（不是抛错）', read.search('这个词不存在zzzq', 20).length === 0)
+  check('★ 空查询返回空数组', read.search('', 20).length === 0)
+
+  /* 缓存要跟着文件变：新追加一条含靶标的消息，必须搜得到 */
+  require('node:fs').appendFileSync(
+    sFile,
+    `${JSON.stringify({ type: 'message', role: 'assistant', content: '后来追加的靶标词XYZ', ts: 2000 })}\n`,
+    'utf8',
+  )
+  const hitTwo = read.search('靶标词XYZ', 20)
+  check(
+    '★★ 文件变了缓存必须失效（追加的新内容要搜得到）',
+    hitTwo.length === 2,
+    `实际 ${hitTwo.length} 条`,
+  )
+
+  const searchSrc = readFileSync(join(ROOT, 'electron/core/session-search.cjs'), 'utf8')
+  check(
+    '★★ 缓存按 mtime+size 失效（不靠人记得手动清）',
+    /stamp/.test(searchSrc) && /mtimeMs/.test(searchSrc),
+  )
+  const readSrc2 = readFileSync(join(ROOT, 'electron/core/session-read.cjs'), 'utf8')
+  check(
+    '★★ 搜索走 skipCount（不再为「数条数」把每个会话整篇读一遍）',
+    /skipCount:\s*true/.test(readSrc2),
+  )
+  check(
+    '★ 搜索不再逐个 load()（那是第二遍整篇读）',
+    !/function search[^]*?load\(item\.id\)/.test(readSrc2),
+  )
+  write.remove(searchable.id)
+
   /* 收尾：把判据造的会话删掉，不留给后面的组和用户 */
   write.remove(id)
   write.remove(big.id)

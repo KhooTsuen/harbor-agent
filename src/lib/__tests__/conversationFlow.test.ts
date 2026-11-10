@@ -32,9 +32,17 @@ describe('conversation flow', () => {
     expect(flow.nodes.filter((node) => node.kind === 'speech').map(purposeOf)).toEqual([
       'chatter',
       'chatter',
-      'final',
+      /*
+       * ★ 2026-11-10：原来是 'final'。但 `draft` 并**没有**进入 `final` 字段
+       * （终稿是 'Final answer'，不含它）。标成 final 会让渲染层以为
+       * 「这段已经在交付正文里了」从而不单独显示 —— 那段文字就静默消失。
+       * 它已被正式答复取代 → 归 `chatter`（过程材料，收进折叠区，原文可追溯）。
+       */
+      'chatter',
     ])
     expect(flow.final).toBe('Final answer')
+    /* 反证：它确实不在交付正文里，所以上面那条不能是 final */
+    expect(flow.final).not.toContain('draft')
     expect(conversationFlowSchema.parse(JSON.parse(JSON.stringify(flow)))).toEqual(flow)
   })
 

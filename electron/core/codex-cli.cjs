@@ -107,7 +107,8 @@ function explainEmpty(state, stderrTail) {
  * @param {object} options 见文件头「同形契约」
  * @returns {Promise<{ content: string, reasoning: string, toolCalls: Array, usage: object|null,
  *           finishReason: string, sawDone: boolean, ttftMs: number|null, latencyMs: number,
- *           codexNotices: string[], threadId: string }>}
+ *           codexNotices: string[], threadId: string,
+ *           codexSegments: Array<{ id: string, text: string }> }>}
  */
 async function chatStreamImpl(options) {
   const startedAt = Date.now()
@@ -140,12 +141,24 @@ async function chatStreamImpl(options) {
     totalMs: DEFAULT_TOTAL_MS,
     onEvent: (event) => {
       const before = state.text.length
+      const segBefore = state.segments.length
       applyEvent(state, event)
       const grew = state.text.length - before
       if (grew > 0) {
         if (ttftMs === null) ttftMs = Date.now() - startedAt
-        /* item 级：一次给一整段（如实，不假装逐字） */
-        options.onContent?.(state.text.slice(before))
+        /*
+         * item 级：一次给一整段（如实，不假装逐字）。
+         *
+         * ★ 2026-11-11（第 2 项）：**第二参带上上游段身份**。
+         *   以前只给 `(text)`，上层拿到的是拼接后的一串，段边界在这一跳就没了 ——
+         *   想按上游身份还原分段只能靠内容猜，那正是本项禁止的做法。
+         *   新参是可选的：只写 `(text)` 的老调用方行为一字不变。
+         *   `newSegment` = 这次是不是**新起**了一段（false 表示续写同一段）。
+         */
+        options.onContent?.(state.text.slice(before), {
+          segId: state.segments[state.segments.length - 1]?.id ?? '',
+          newSegment: state.segments.length > segBefore,
+        })
       }
     },
   })
@@ -198,6 +211,13 @@ async function chatStreamImpl(options) {
     /* 额外信息：不破坏同形契约（加字段安全），给上层做提示/诊断用 */
     codexNotices: state.notices,
     threadId: state.threadId,
+    /*
+     * 上游自己的正文分段（`{ id, text }[]`）—— 见 `codex-jsonl.cjs` 的 `segments`。
+     * ★ 为什么必须带出来：`content` 是拼成一整串的，段边界在那一步就没了；
+     *   上层若想「按上游身份还原分段」只能靠内容猜 —— 那是待办第 2 项明令禁止的。
+     *   这里原样交出去，用不用由调用方决定（不读它的调用方行为完全不变）。
+     */
+    codexSegments: state.segments,
   }
 }
 

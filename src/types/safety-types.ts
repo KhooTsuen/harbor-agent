@@ -155,6 +155,13 @@ export interface ChangeSetSummary {
 export interface CredentialsStatus {
   encryptionAvailable: boolean
   backend: 'safeStorage' | 'plain'
+  /**
+   * 盘上真的是明文（后端是 plain 且库里确实有凭证）。
+   * ★ 只看 `encryptionAvailable` 会把「明文库」显示成「已用系统加密」（第 17 项）。
+   */
+  plainOnDisk?: boolean
+  /** 现在能升级成系统加密吗（明文 + 有凭证 + 本机可加密） */
+  canUpgrade?: boolean
   count: number
   file: string
 }

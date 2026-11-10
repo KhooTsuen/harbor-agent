@@ -123,11 +123,44 @@ function mapUsage(raw) {
   }
 }
 
+/**
+ * 把一段正文记进 `segments`（保住上游段边界与身份）。
+ *
+ * ★ 只有「紧邻的上一条 segment、id 非空且相同」才算同一段的续写。
+ *   `id` 为空（上游没给 / 夹具没带）就**永不合并** —— 宁可多记一段，
+ *   也不把两段不同来路的文字按位置拼成一段。
+ *   中间夹着非正文事件（error / notice / usage）**不影响**判断：那不是正文段，
+ *   同 id 仍然说明是同一段；但中间若已有**别的正文段**，就绝不跳回去合并。
+ */
+function recordSegment(state, id, text) {
+  /* 防御：调用方手工拼的 state 可能没有这个字段（同形调用方不保证用 newState） */
+  if (!Array.isArray(state.segments)) state.segments = []
+  const tail = state.segments[state.segments.length - 1]
+  if (tail && id && tail.id === id) {
+    tail.text += text
+    return
+  }
+  state.segments.push({ id, text })
+}
+
 /** 归约状态的初值 */
 function newState() {
   return {
     /** 正文（把多个 agent_message 拼起来） */
     text: '',
+    /**
+     * **上游正文分段**（2026-11-10，待办第 2 项「外部接入」）。
+     *
+     * `text` 是**拼接后的一整串**，段边界在那一步就没了 —— 上层于是只能
+     * 按内容切、按长度猜去还原分段，正是第 2 项禁止的「靠内容猜身份」。
+     * 这里把上游**自己给的**段边界与身份原样保住：`{ id, text }`。
+     *
+     * ★ 判据只有一条：**紧邻的上一条 segment、id 非空且相同**才算同一段续写；
+     *   其余一律新起一段。中间若已有别的**正文段**就不续写 —— 不看内容、不跳段猜。
+     * ★ `id` 取自上游 `item.id`；**缺失就是空串**（不生成序号、不拿位置冒充）。
+     * ⚠️ 纯附加：`text` 的拼接行为与否则一字未改，老调用方不读它也不受影响。
+     */
+    segments: [],
     /** 进度/可恢复的提示（重连、配置警告…）——**不作为失败判据**，只在真没内容时当线索 */
     notices: [],
     /** OpenAI 形状的 usage（没拿到就是 null） */
@@ -161,6 +194,8 @@ function applyEvent(state, event) {
     const item = event.item && typeof event.item === 'object' ? event.item : {}
     if (item.type === 'agent_message' && typeof item.text === 'string') {
       s.text += item.text
+      /* ★ 附加记录（不改变上面那行）：保住上游自己给的段身份与边界 */
+      recordSegment(s, String(item.id ?? ''), item.text)
     } else if (item.type === 'error' || item.type === 'warning') {
       /* 实测这种是「配置项被忽略」一类 —— 记下来，不当作失败 */
       s.notices.push(String(item.message ?? ''))

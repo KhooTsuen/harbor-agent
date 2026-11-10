@@ -20,6 +20,10 @@
  */
 
 const taskOutcome = require('./task-outcome.cjs')
+/* 三态（执行结束 / 交付 / 验收）的唯一判据 —— 第 24、25 项 */
+const taskStatusView = require('./task-status-view.cjs')
+/* 计划项「勾没勾」只有一处判据（认 `[x]`）；这里不写第二份（硬约束 9） */
+const { isDone } = require('./task-plan.cjs')
 
 /** 各桶上限：**只为防病态数据**，正常任务根本碰不到 */
 const MAX_FAILURES = 20
@@ -43,9 +47,22 @@ function planOf(task) {
   const raw = Array.isArray(task?.plan) ? task.plan : []
   return raw
     .map((item) => {
-      if (typeof item === 'string') return { text: item, done: false }
+      /*
+       * ★ 2026-11-10（第 24/25 项）：字符串计划项**必须认 `[x]`**。
+       *
+       * 病：这里原来写 `if (typeof item === 'string') return { text: item, done: false }`
+       * —— 把**所有**字符串项当成未完成。而台账里的 plan 全是字符串
+       * （`"[x] 1. 读交接文档…"` 这种 Markdown 复选框），于是已经勾完的计划
+       * 在这里被读成「一项都没完成」，`verdictOf` 的 `open.length > 0` 恒成立，
+       * **verdict 永远是 partial，永远到不了 done** ——
+       * 这正是「任务明明做完了、总结却说部分完成」的根因。
+       *
+       * 修：判据回到唯一一处（`task-plan.isDone`），不在这里写第二份（硬约束 9）。
+       */
+      if (typeof item === 'string') return { text: item, done: isDone(item) }
       const text = String(item?.text ?? item?.label ?? item?.title ?? '')
-      const done = item?.done === true || item?.completed === true
+      /* 对象形状仍认 done/completed；带 `[x]` 前缀的也认（两种写法都见过） */
+      const done = item?.done === true || item?.completed === true || isDone(text)
       return { text, done }
     })
     .filter((item) => item.text)
@@ -101,6 +118,26 @@ function buildHandoff({ task, toolRuns = [], goal = '' } = {}) {
   /* ── P0：结论（含 P1 的计数） ── */
   lines.push('## 结论（由执行记录判定，不是模型自述）')
   lines.push(VERDICT_LABEL[verdict])
+  /*
+   * ★ 2026-11-11（第 24、25 项）：**三件事分开说**。
+   * 上面那句 verdict 是「验收结论」，这里再补「执行结没结束 / 交付了没」——
+   * 以前三件事挤在 completed 一个词里，于是「跑完了」被读成「做成了」。
+   * 判据全部来自 `task-status-view.cjs`（唯一真相源），不在这里另算一遍。
+   */
+  const stateView = taskStatusView.viewOf(task, runs, open)
+  lines.push(stateView.sentence)
+  if (stateView.recovery.recovered.length > 0) {
+    lines.push(`已恢复的问题 ${stateView.recovery.recovered.length} 个（后面有指向同一条的成功）`)
+  }
+  if (stateView.recovery.blocking.length > 0) {
+    lines.push(
+      `**仍然阻断** ${stateView.recovery.blocking.length} 个：` +
+        stateView.recovery.blocking
+          .slice(0, 5)
+          .map((r) => r.name || r.id)
+          .join('、'),
+    )
+  }
   lines.push(
     `工具调用 ${runs.length} 次（失败 ${failed.length} 次）；改动文件 ${files.length} 个；执行命令 ${commands.length} 条`,
   )

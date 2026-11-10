@@ -138,6 +138,14 @@ export interface SafetyBridge extends TaskBridge, ProfileBridge {
   }>
 
   credentialsStatus: () => Promise<{ ok: boolean; status: CredentialsStatus }>
+  /** 明文凭证库原地升级成系统加密（第 17 项）。失败要带上 error 说明原因 */
+  credentialsUpgrade: () => Promise<{
+    ok: boolean
+    upgraded?: number
+    backend?: string
+    reason?: string
+    error?: string
+  }>
 }
 
 export type { TaskDiagnosis, TaskRecord, TaskRecoveryItem, TestStatusInfo } from './task'

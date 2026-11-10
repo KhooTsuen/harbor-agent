@@ -1,6 +1,6 @@
 /**
- * 联网搜索 —— 四个后端统一成 [{ title, url, snippet }]：tavily（质量好，需 key）、
- * bocha（国内可用，需 key）、duckduckgo（免费无需 key，但所在网络要能通）、custom（用户填 URL 模板）。
+ * 联网搜索 —— 四个后端统一成 [{ title, url, snippet }]：tavily（质量好，需 key）、bocha
+ * （国内可用，需 key）、duckduckgo（免费无需 key，但所在网络要能通）、custom（用户填 URL 模板）。
  * 为什么要多后端：国内网络下 DuckDuckGo 经常不通，而 Tavily 要付费 —— 让用户按网络情况选。
  */
 
@@ -19,7 +19,11 @@ async function fetchJson(url, init = {}, signal) {
   try {
     const res = await http.fetch(url, { ...init, signal: controller.signal })
     if (!res.ok) {
-      const detail = await res.text().catch(() => '')
+      /* 第 11 项：错误体边读边卡上限（原来读完再 slice） */
+      const detail = await http
+        .readTextLimited(res, { maxBytes: 128 * 1024, signal: controller.signal })
+        .then((r) => r.text)
+        .catch(() => '')
       throw new Error(`HTTP ${res.status}：${detail.slice(0, 200)}`)
     }
     return await res.json()
@@ -46,7 +50,13 @@ async function fetchText(url, init = {}, signal) {
       },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.text()
+    /* 第 11 项：正文也卡上限。残缺 HTML 会被解析成垃圾链接，宁可报错 */
+    const page = await http.readTextLimited(res, {
+      maxBytes: 8 * 1024 * 1024,
+      signal: controller.signal,
+    })
+    if (page.truncated) throw new Error('搜索源返回的页面过大（超过 8 MB），已停止读取')
+    return page.text
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onAbort)
@@ -210,14 +220,11 @@ function providerList() {
 
 /**
  * 执行一次搜索。
- *
  * @param {string} query
  * @param {object} options { provider, apiKey, endpoint, maxResults, signal, fresh }
  * @returns {Promise<{results: Array, cached: boolean, ageMs: number}>}
- *
- * 返回值里带 `cached` / `ageMs` —— 调用方（`formatResults`）要把「这是几分钟前的
- * 结果」告诉模型。缓存本身没错，但**默默给旧结果**就不行：模型不知道自己在看
- * 旧东西，就不会想「要不要重搜」。
+ * 带 `cached` / `ageMs`：调用方要把「这是几分钟前的结果」告诉模型 —— **默默给旧结果**不行，
+ * 模型不知道自己在看旧东西，就不会想「要不要重搜」。
  */
 async function search(query, options) {
   const text = String(query ?? '').trim()
@@ -228,13 +235,10 @@ async function search(query, options) {
   const maxResults = Math.min(10, Math.max(1, Number(options.maxResults) || 5))
 
   /*
-   * AG-020：同样的 provider + 查询词 + 数量 → 直接给缓存。
-   * 搜索走网络、部分 provider 还按次收费，重复搜同一个词是白花钱。
-   * 失效只有 TTL（10 分钟）—— 外部世界随时在变，我们没有 mtime 那种判据。
-   *
-   * `fresh: true` 跳过缓存（用新结果覆盖）—— 因为「TTL 该定几分钟」这个问题
-   * **本来就设有答案**，与其拍一个数字，不如把决定权交给模型：
-   * 搜「胡斯战争是哪年」用缓存没问题，搜「今天有什么新闻」自己带 fresh。
+   * AG-020：同样的 provider + 查询词 + 数量 → 直接给缓存（搜索走网络、部分按次收费）。
+   * 失效只有 TTL（10 分钟）。`fresh: true` 跳过缓存 —— 「TTL 该定几分钟」本来就没有
+   * 答案，与其拍一个数字，不如把决定权交给模型：搜「胡斯战争是哪年」用缓存没问题，
+   * 搜「今天有什么新闻」自己带 fresh。
    */
   if (!options.fresh) {
     const hit = searchCache.get(id, text, maxResults)
@@ -263,10 +267,8 @@ function withCitations(results) {
 
 /**
  * 把结果转成给模型看的文本。
- *
- * `meta` 带缓存命中信息时，**在开头明确告诉模型「这是 N 分钟前搜到的」** ——
- * 默默给它旧结果是不行的：它不知道自己在看旧东西，就不会想「要不要重搜」。
- * 顺带把「怎么绕过缓存」也写清楚（`fresh` 参数），它自己就能决定。
+ * `meta` 带缓存命中信息时，**开头明确说「这是 N 分钟前搜到的」** —— 默默给旧结果不行，
+ * 它不知道自己在看旧东西就不会想「要不要重搜」。顺带把 `fresh` 参数也写清楚。
  */
 function formatResults(query, results, meta = {}) {
   if (results.length === 0) {
@@ -277,9 +279,7 @@ function formatResults(query, results, meta = {}) {
   if (meta.cached) {
     const age = Number(meta.ageMs) || 0
     const when =
-      age < 90 * 1000
-        ? `${Math.max(1, Math.round(age / 1000))} 秒前`
-        : `${Math.round(age / 60000)} 分钟前`
+      age < 90 * 1000 ? `${Math.max(1, Math.round(age / 1000))} 秒前` : `${Math.round(age / 60000)} 分钟前`
     lines.push('')
     lines.push(
       `（这些是**${when}**搜到的，直接复用了缓存。如果是时效敏感的东西（最新版本、当前价格、今天发生了什么），` +

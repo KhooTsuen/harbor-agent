@@ -1,12 +1,10 @@
 /**
  * 凭证库 —— **API Key 不许出现在 config.json 里**：配置只留 `credentialRef`，密钥存这里。
- * 用 Electron 的 `safeStorage`（DPAPI、绑当前账户），不引 keytar 是零新依赖。
- *  ① 纯 Node 环境退化成明文 + `backend='plain'`，**不假装加密了**；
- *  ② 启动早期可能没就绪 → 懒加载 + 缓存，**ready 前的失败不判库坏**（见 encryptionAvailable）；
- *  ③ 读出的密钥都登记进脱敏模块，日志/会话/导出里出现它一律被替换；
- *  ④ **状态不明时拒绝写**（2026-10-13）：`load()` 曾把「没建过/坏了/读不了」压成空表，下一次
- *     `set()` 就写回去 → Key 无声消失。现在分 5 个健康态，只有 `ok`/`missing` 可写；唯一出口
- *     是 `reset({ confirm: true })`。设计见 docs/credentials写入保护-设计修订.md。
+ * 用 Electron 的 `safeStorage`（DPAPI、绑账户），零新依赖。
+ * 纯 Node 环境退化成明文 + `backend='plain'`，**不假装加密了**。
+ * **状态不明时拒绝写**：`load()` 曾把「没建过/坏了/读不了」压成空表，一次 `set()` 就写回去
+ * → Key 无声消失。现在分 5 个健康态，只有 `ok`/`missing` 可写；唯一出口是 `reset({ confirm: true })`。
+ * 读出的密钥一律登记进脱敏模块。设计见 docs/credentials写入保护-设计修订.md。
  */
 const fs = require('node:fs')
 const path = require('node:path')
@@ -17,9 +15,9 @@ const { writeAtomic, keepCorruptCopy } = require('./safe-write.cjs') /* 原子�
 const FILE_NAME = 'credentials.json'
 let cache = null /* ref -> { value(明文或 base64), updatedAt } */
 let backend = null /* 已加载文件的加密后端：'safeStorage' | 'plain' */
-let availability = null /* 后端可用性（false 只在 app ready 之后才采信，见 encryptionAvailable） */
-/* 健康态（进程内，不落盘）：ok 读到+解析+后端一致 | missing 首启 ENOENT | corrupt 解析失败
-   unreadable 读失败/加载后消失或被外部改 | undecryptable 本机解不开。只有前两个可写 */
+let availability = null /* 后端可用性（false 只在 app ready 之后才采信） */
+/* 健康态（进程内不落盘），只有前两个可写：ok 读到+解析+后端一致 | missing 首启 ENOENT |
+   corrupt 解析失败 | unreadable 读失败或被外部改 | undecryptable 本机解不开 */
 let health = 'missing'
 let healthError = '' /* 拒写原因；健康时为空串 */
 let loadedOnce = false /* 区分「首次 ENOENT」与「加载后文件消失」 */
@@ -67,7 +65,7 @@ function readyNow() {
 }
 /** 空库的缓存对象 */
 const emptyCache = () => ({ version: 1, backend: encryptionAvailable() ? 'safeStorage' : 'plain', entries: {} })
-/** 记一个「拒写」态并留下人话原因（读路径不抛，写路径见 assertWritable） */
+/** 记「拒写」态并留人话原因（读路径不抛，写路径见 assertWritable） */
 function markUnhealthy(state, why) {
   health = state
   healthError = why
@@ -109,9 +107,9 @@ function load() {
   backend = fileBackend
   loadedOnce = true
   /* safeStorage 却解不开（换账户/换机器）→ **绝不能再写**：一次无关 set() 会把 backend 重贴成
-     plain，之后读旧条目就把 base64 密文当明文 Key 返回（2026-10-07 事故形状）。ready 之前的失败
-     **不算数**（safeStorage 还没就绪）。★ 只问 encryptionAvailable() 不够（2026-10-31）：能加密
-     却解不开旧密文的机器健康态仍是 ok，紧接着一次 set() 就把新值写进去 —— ready 之后逐条真解。 */
+     plain，之后读旧条目就把密文当明文 Key 返回（2026-10-07 事故）。ready 前失败不算数。
+     ★ 只问 encryptionAvailable() 不够：能加密却解不开旧密文的机器健康态仍是 ok
+     （2026-10-31），紧接着一次 set() 就把新值写进去 —— ready 之后逐条真解。 */
   let why = ''
   if (fileBackend === 'safeStorage' && readyNow()) {
     for (const entry of Object.values(entries)) {
@@ -248,9 +246,9 @@ function primeRedaction() {
   }
   return count
 }
-/* 显式重置 —— 坏库的**唯一出口**（不是 `set(force:true)`）：破坏性动作单列、好审计。
-   ⚠️ `confirm:true` 只是代码层门槛，不代表「用户真点过确认」（那是上层 UI 的责任）。
-   先留档（失败即中止）→ 原子写空库 → 成功才 health=ok；任一步失败，原文件与健康态都不动 */
+/* 显式重置 —— 坏库的**唯一出口**：破坏性动作单列、好审计。`confirm:true` 只是代码层
+   门槛（不代表用户真点过，那是 UI 的责任）。先留档（失败即中止）→ 原子写空库 → 成功才
+   health=ok；任一步失败，原文件与健康态都不动 */
 function reset(options = {}) {
   if (options?.confirm !== true) {
     throw new Error('重置凭证库需要显式确认（reset({ confirm: true })）—— 它会把现有凭证全部清掉')
@@ -272,18 +270,14 @@ function reset(options = {}) {
   return { ok: true, archived, reason: String(options.reason ?? '') }
 }
 
-/** 给自己人看的实情（诊断包用）：加密了吗、有几个凭证、健康不健康 */
-function status() {
-  const data = load()
-  return {
-    encryptionAvailable: encryptionAvailable(),
-    backend: data.backend,
-    count: Object.keys(data.entries).length,
-    file: filePath(),
-    health,
-    healthError,
-  }
-}
+/* 明文升级 + 诊断状态：实现住在 credentials-maintenance.cjs（本文件贴红线），这里只注入依赖 */
+const maintenance = require('./credentials-maintenance.cjs')
+const upgrade = maintenance.createUpgrader({
+  load, assertWritable, encryptionAvailable, filePath, keepCorruptCopy, decrypt, encrypt, commit,
+})
+const status = maintenance.createStatus({
+  load, encryptionAvailable, filePath, healthOf: () => ({ health, healthError }),
+})
 /** 仅供测试：丢掉进程内缓存，让下一次调用重新从磁盘加载 */
 function _resetCache() {
   cache = null; backend = null
@@ -291,7 +285,7 @@ function _resetCache() {
   loadedOnce = false; fp = null
 }
 module.exports = {
-  get, set, remove, has, list, status, reset, primeRedaction, encryptionAvailable, _resetCache,
+  get, set, remove, has, list, status, reset, upgrade, primeRedaction, encryptionAvailable, _resetCache,
   refForProvider: (providerId) => `provider:${providerId}`,
   refForSearch: (provider) => `search:${provider}`,
   refForMcp: (serverId) => `mcp:${serverId}`,

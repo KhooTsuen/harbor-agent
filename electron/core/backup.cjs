@@ -1,17 +1,10 @@
 /**
- * 自动备份
+ * 自动备份：用户数据 → data/backups/<时间戳>/。恢复就是把文件拷回去。
  *
- * 备份「用户自己的数据」到 data/backups/<时间戳>/。恢复就是把文件拷回去。
- *
- * 为什么只备这几样：config / memory / sessions / skills / tasks / changesets —— 都**删了不可重建**。
- * 凭证库有意不备（DPAPI 密文再复制一份没意义，纯 Node 下甚至明文；见 backup-scan 的 ITEMS）。
- * 日志是排错用的、缓存能重建，备了只是浪费空间。`data/errors` 同理：诊断材料，能再生成。
- *
- * 为什么用目录拷贝而不是打包压缩：用户能直接进去看、单独拿一个文件出来。
- * 这个软件本来就是「文件都在文件夹里」的形态，备份也跟着这个逻辑走。
- *
- * 便携版有个真实风险：整个文件夹拷到 U 盘时中途拔了，data 就残了 ——
- * 所以启动时会（每 24 小时）自动备一份。
+ * 只备 config / memory / sessions / skills / tasks / changesets —— 都**删了不可重建**。
+ * 凭证库有意不备（DPAPI 密文再复制一份没意义）；日志与 errors 是诊断材料，能再生成。
+ * 用目录拷贝而非打包：用户能直接进去看、单独拿一个文件出来。
+ * 便携版有真实风险（整个文件夹拷到 U 盘时中途拔了），所以启动时每 24 小时自动备一份。
  */
 
 const fs = require('node:fs')
@@ -21,6 +14,8 @@ const log = require('./log.cjs')
 /* 清单 / 路径 / 算体积 / 列出备份都在 backup-scan.cjs（只读的一半）；体积实现在 backup-size.cjs */
 const { KEEP, ITEMS, backupRoot, stamp, hasContent, dirSize, list, listAsync, isBackupName } =
   require('./backup-scan.cjs')
+/* 第 13 项：恢复过程中被强杀时认得出「未完成」（标记见 backup-restore-mark.cjs） */
+const restoreMark = require('./backup-restore-mark.cjs')
 
 /** 自动备份的间隔 */
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -40,11 +35,7 @@ function prune() {
   return removed
 }
 
-/**
- * 做一次备份。
- *
- * @param {string} reason  'manual' | 'auto' | 'before-restore'
- */
+/** 做一次备份。reason: 'manual' | 'auto' | 'before-restore' */
 function create(reason = 'manual') {
   const name = stamp()
   const target = path.join(backupRoot(), name)
@@ -84,12 +75,8 @@ function create(reason = 'manual') {
 
     if (skipped.length > 0) log.info(`备份跳过这几项（还没有 / 是空的）：${skipped.join(', ')}`)
 
-    /*
-     * ★ 体积在**备完这一刻**算一次并写进 meta（2026-11-08）。
-     *   目录刚写完，这一次扫描只扫这一份（约占总量的 1/10）；
-     *   之后 `list()` 直接读 `meta.totalBytes`，不再为已备好的备份扫盘。
-     *   不写这一步的话，每次打开设置页都要把 12 份全扫一遍（实测 6~7 秒）。
-     */
+    /* 体积在**备完这一刻**算一次并写进 meta：之后 list() 直接读它，不再为已备好的备份扫盘
+       （不写这步的话，每次打开设置页都要重扫 12 份，实测 6~7 秒） */
     createdBytes = dirSize(finalTarget)
 
     fs.writeFileSync(
@@ -136,10 +123,8 @@ function create(reason = 'manual') {
 
 /**
  * 启动时调：距上次备份超过一天就自动备一份。
- *
- * 判据：只认**有 meta 且记了清单（`items` 非空）**的备份来判「上次是什么时候备的」。
- * 病（2026-11-07 真机）：一份手工拷进来的无 meta 目录被 `list()` 当成最新备份，
- * `maybeAuto` 于是连着 6 次报「今天已经备过了」，**自动备份停了一整天**。
+ * 只认**有 meta 且 items 非空**的备份判「上次什么时候备的」—— 2026-11-07 真机：
+ * 一份手工拷进来、无 meta 的目录被当成最新备份，自动备份停了整整一天。
  * 老备份可能没有 meta → 退回「目录里有内容」也算数，不能只看 mtime。
  */
 function lastRealBackupAt() {
@@ -193,11 +178,9 @@ function rollbackFrom(snapshot, names) {
 /**
  * 恢复：先把当前数据整份留成快照（before-restore），再逐项拷回去。
  *
- * ★ 恢复是**破坏性**的（逐项「先删后建」），所以两条底线（2026-10-13 加固）：
- *   ① **留不下快照就不恢复** —— 以前 `create` 失败也只是「把名字带上」继续覆盖，
- *      等于在没有退路的情况下删掉用户正在跑的任务与会话。现在留档失败直接中止。
- *   ② **中途失败就回滚** —— 已动过的项从刚留的快照拷回，绝不让用户停在
- *      「一半新、一半旧（或某一项被删空）」的中间态。
+ * ★ 破坏性操作（逐项「先删后建」），三条底线：① **留不下快照就不恢复**；
+ * ② **中途失败就回滚**；③ **留不下恢复标记就不恢复**（第 13 项 —— 标记让重启后
+ * 认得出「上次恢复被打断了」，见 backup-restore-mark.cjs）。
  */
 function restore(name) {
   /* ★ 名字先过白名单（审计问题 14）：`restore('..\\..\\Windows')` 以前能拿任意
@@ -233,6 +216,18 @@ function restore(name) {
   /** 已经动过的项（删/拷过）—— 回滚时就按这份名单拷回 */
   const touched = []
 
+  /* ★ 第 13 项：留标记，写不下就中止（没有它就无法识别「被打断」） */
+  try {
+    restoreMark.begin(name, safety.name)
+  } catch (error) {
+    return {
+      ok: false,
+      aborted: true,
+      error: `留不下恢复标记（${error instanceof Error ? error.message : error}）—— 已中止，未改动任何数据`,
+      safetyBackup: safety.name,
+    }
+  }
+
   try {
     for (const item of ITEMS) {
       const from = path.join(source, item.name)
@@ -243,6 +238,7 @@ function restore(name) {
       }
       const to = path.join(DIRS.data, item.name)
       touched.push(item.name)
+      restoreMark.touch(item.name)
       /* 先删再拷：不然旧文件会混进来（比如已删的会话又活了） */
       fs.rmSync(to, { recursive: item.dir, force: true })
       fs.cpSync(from, to, { recursive: item.dir, force: true })
@@ -253,6 +249,7 @@ function restore(name) {
     log.error(`恢复失败：${message} —— 正在从快照 ${safety.name} 回滚`)
     /* ★ 底线②：把动过的项拷回去，别把用户停在中间态 */
     const rolledBack = rollbackFrom(safety.name, touched)
+    restoreMark.finish()
     return {
       ok: false,
       error: message,
@@ -263,6 +260,8 @@ function restore(name) {
     }
   }
 
+  /* 走完 = 恢复完整；标记必须删掉，否则下次启动会误报「上次被打断」 */
+  restoreMark.finish()
   log.info(
     `已从 ${name} 恢复（${restored.join(', ')}）` +
       (skipped.length > 0 ? `；跳过这几项（备份里是空的）：${skipped.join(', ')}` : ''),

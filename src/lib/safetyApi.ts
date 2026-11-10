@@ -291,3 +291,8 @@ export async function credentialsStatus(): Promise<CredentialsStatus | null> {
     return null
   }
 }
+
+/* 凭证库升级搬去了 `credentialsApi.ts`（那边留得下 300 行）。这里原样转出，
+   调用方的 import 路径不用改。 */
+export { credentialsUpgrade } from './credentialsApi'
+export type { CredentialUpgradeResult } from './credentialsApi'

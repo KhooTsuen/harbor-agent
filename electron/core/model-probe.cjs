@@ -24,6 +24,9 @@
  * 所以自检不需要联网、不需要 Electron：喂一段假 SSE 就能断言。
  */
 
+/* 限长读响应体只有一处实现（http.cjs）；这里只借它的读取，不碰网络栈选择 */
+const http = require('./http.cjs')
+
 /** 1×1 透明 PNG —— 「收不收图片」用它，够小又不占带宽 */
 const TINY_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -90,7 +93,12 @@ async function post(fetchImpl, url, headers, body, signal) {
       body: JSON.stringify(body),
       signal,
     })
-    const text = await response.text()
+    /*
+     * 第 11 项：探测回包也要卡上限。请求本身只是 `hi`，正常回几十字节；
+     * 上游抽风返回巨长内容时，整份 `response.text()` 会把内存吃掉。
+     * 截断对这里的用途无妨 —— 只判状态码和「是不是 SSE」。
+     */
+    const { text } = await http.readTextLimited(response, { maxBytes: 1024 * 1024, signal })
     return { status: response.status, ok: response.ok, text, sse: /^data:/m.test(text) }
   } catch (error) {
     return { status: 0, ok: false, text: error instanceof Error ? error.message : String(error), sse: false }

@@ -173,6 +173,61 @@ export async function run() {
   check('task-plan.cjs 导出 recordVersion', planSrc.includes('recordVersion'))
   check('task-plan.cjs 导出 migrate', planSrc.includes('migrate('))
 
+  /* ══════════════════════════════════════════════════════════════
+     ⑩ 「计划勾没勾」只有一个判据（第 24/25 项，2026-11-10）
+
+     病：`summary-handoff.planOf` 里写的是
+       `if (typeof item === 'string') return { text: item, done: false }`
+     —— 把所有字符串计划项当成**未完成**。而台账里的 plan **全是字符串**
+     （`"[x] 1. 读交接文档…"` 这种 Markdown 复选框），于是已经勾完的计划
+     被读成「一项没完成」，`verdictOf` 的 `open.length > 0` 恒成立，
+     **verdict 永远是 partial，永远到不了 done** —— 这就是
+     「明明做完了、总结却说部分完成」的根因。
+
+     钉两头：① 判据认 `[x]`；② summary-handoff 不再自己写第二份。
+     ══════════════════════════════════════════════════════════════ */
+  group('计划勾选 / 判据只有一处（第 24/25 项）')
+  const handoff = require(join(ROOT, 'electron/core/summary-handoff.cjs'))
+  const parsed = handoff.planOf({ plan: ['[x] 甲', '[ ] 乙', '[x] 丙'] })
+  check(
+    '★★★ 字符串计划项认 `[x]`（原来是「字符串一律算未完成」，导致永远 partial）',
+    parsed.length === 3 && parsed[0].done === true && parsed[1].done === false,
+    JSON.stringify(parsed),
+  )
+  check(
+    '★★ 全部勾完 → 没有未完成项（verdict 才可能到 done）',
+    handoff.planOf({ plan: ['[x] 甲', '[x] 乙'] }).every((p) => p.done),
+  )
+  check(
+    '★★ 对象形状仍认 done / completed（老任务两种都有）',
+    handoff
+      .planOf({ plan: [{ text: '甲', done: true }, { text: '乙', completed: true }, { text: '丙' }] })
+      .map((p) => p.done)
+      .join(',') === 'true,true,false',
+  )
+  check(
+    '★★ 对象但文本自带 `[x]` 也认',
+    handoff.planOf({ plan: [{ text: '[x] 甲' }] })[0].done === true,
+  )
+  check(
+    '★★★ 判据不另写一份：summary-handoff 从 task-plan 拿 isDone',
+    /require\(['"]\.\/task-plan\.cjs['"]\)/.test(
+      readFileSync(join(ROOT, 'electron/core/summary-handoff.cjs'), 'utf8'),
+    ) && /isDone/.test(readFileSync(join(ROOT, 'electron/core/summary-handoff.cjs'), 'utf8')),
+  )
+  /*
+   * 反例守卫必须**先剥注释**再比对：修法说明里会原样引用那句坏写法
+   * （`summary-handoff.cjs` 的 planOf 注释就引了），全文件正则会把自己的说明
+   * 判成违规 —— 本会话已经因此误红过几次。
+   */
+  const handoffCode = readFileSync(join(ROOT, 'electron/core/summary-handoff.cjs'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+  check(
+    '★★ 反例：坏写法「字符串即未完成」已不存在（剥注释后判定）',
+    !/typeof item === 'string'\)\s*return\s*\{[^}]*done:\s*false/.test(handoffCode),
+  )
+
   /* ── 收尾 ─────────────────────────────────────────────── */
   for (const id of created) taskCore.remove(id)
   check(

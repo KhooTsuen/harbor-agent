@@ -37,7 +37,19 @@ export type ChatEvent =
   /* AG-004：模型给了新的一版计划（和上一版一样就不发） */
   | { requestId: string; type: 'plan'; plan: string[]; version: number; reason: string }
   | { requestId: string; type: 'turn_end'; turn: number; usage: Record<string, number> | null }
-  | { requestId: string; type: 'content'; text: string; stage?: 'answer' | 'process' }
+  | {
+      requestId: string
+      type: 'content'
+      text: string
+      stage?: 'answer' | 'process'
+      /**
+       * 上游自带的正文段身份（第 2 项）。可选：HTTP/SSE 那条路没有消息 id，
+       * 所以**缺失是常态**，缺失时下游不许按位置编号冒充（见 external-source.cjs）。
+       */
+      segId?: string
+      /** 这是不是新起了一段（false = 续写同一段）。同样可选，缺失按「不知道」处理 */
+      newSegment?: boolean
+    }
   | { requestId: string; type: 'reasoning'; text: string }
   | {
       requestId: string

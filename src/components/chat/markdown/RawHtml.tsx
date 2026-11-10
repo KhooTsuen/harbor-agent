@@ -24,7 +24,16 @@ const DEFAULT_ENABLED = false
 export function isRawHtmlEnabled(): boolean {
   try {
     const stored = globalThis.localStorage?.getItem('harbor.rawHtml')
-    return stored === null || stored === undefined ? DEFAULT_ENABLED : stored !== '0'
+    /*
+     * ★ 2026-11-11（第 9 项）：**只接受明确开启值**。
+     *
+     * 病：这里原本是 `stored !== '0'` —— 也就是除 `'0'` 之外**任何值都算开启**：
+     * `''`、`'false'`、`'no'`、被别的脚本塞进去的任意垃圾串，全都会打开原始 HTML。
+     * 而文件头与设置页写的一直是「要打开：`harbor.rawHtml = '1'`」。
+     * 安全开关的默认必须是「关」，判据必须是「明确等于开启值」，
+     * 不能让「设了别的什么」意外等于「已开启」。
+     */
+    return stored === '1'
   } catch {
     /* 无 localStorage（SSR/测试环境）→ 用默认 */
     return DEFAULT_ENABLED

@@ -73,4 +73,35 @@ export async function run() {
     /已下载 \$\{pct/.test(row),
     '已知总大小那条没有显示百分比',
   )
+
+  /*
+   * ── 未知总长会「下到第二圈」而必败（2026-11-10 静态核对发现）──
+   * `runSegment` 的循环条件是 `seg.received < length`，未知总长时 length=Infinity，
+   * 永远成立。第一轮流读到 EOF 后不退出 → 再发一次请求 → 第二轮 from>0 且拿到 200
+   * → 撞上「服务器不支持从中间续传」的判据 → **没有 Content-Length 的文件必定失败**。
+   * 修法是 EOF 即收尾；这里钉住那条收尾还在。
+   */
+  const engineSrc = readFileSync(join(ROOT, 'electron/core/download-engine.cjs'), 'utf8')
+  check(
+    '★★★ 未知总长的那一段读到 EOF 就结束（否则会再请求一次而必败）',
+    /if \(seg\.end < 0\) break/.test(engineSrc),
+    'runSegment 里没有「未知总长 → EOF 收尾」这条',
+  )
+  /*
+   * ── 字节不足仍报成功（同一轮发现）──
+   * 服务器提前 EOF / 响应被截时，以前照样 rename 出短文件并报成功。
+   * 已知总长就必须对得上，且抛在 rename **之前**（.part.json 还在才能续传）。
+   */
+  check(
+    '★★★ 已知总长时校验实收字节（不足就报错，不许 rename 出短文件）',
+    /received !== total/.test(engineSrc),
+    'downloadFile 里没有 received !== total 校验',
+  )
+  const checkAt = engineSrc.indexOf('received !== total')
+  const renameAt = engineSrc.indexOf('fs.renameSync(partFile, file)')
+  check(
+    '★★ 校验在 rename 之前（抛了还能从 .part 续传）',
+    checkAt > 0 && renameAt > 0 && checkAt < renameAt,
+    `校验=${checkAt} rename=${renameAt}`,
+  )
 }

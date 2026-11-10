@@ -112,6 +112,48 @@ export async function run() {
   check('turn.completed → finishReason=stop', CLI.finishReasonOf({ turnCompleted: true }) === 'stop')
   check('没完成 → finishReason 空串（不谎报 stop）', CLI.finishReasonOf({ turnCompleted: false }) === '')
 
+  /*
+   * ── ③b 上游正文分段与身份（2026-11-10 新增，**未运行**）──────────
+   * 待办第 2 项：沿用上游 item ID 与事件顺序，**不靠内容猜身份**。
+   * 修前 applyEvent 只拼 item.text、丢掉 item.id —— 段边界在第一跳就没了。
+   * ⚠️ 本轮按用户要求未运行；下面每条是设计意图，不是已验证事实。
+   */
+  group('Codex 后端 · 上游正文分段与身份（新增，未运行）')
+  {
+    const seg = (id, text) => ({ type: 'item.completed', item: { type: 'agent_message', id, text } })
+    const of = (events) => {
+      const z = J.newState()
+      for (const e of events) J.applyEvent(z, e)
+      return z
+    }
+    check('★ 同一 id 紧邻 → 合并成一段', (() => {
+      const z = of([seg('i1', '前半'), seg('i1', '后半')])
+      return z.segments.length === 1 && z.segments[0].text === '前半后半' && z.segments[0].id === 'i1'
+    })())
+    check('★★ 不同 id → 各成一段且保序', (() => {
+      const z = of([seg('i1', '甲'), seg('i2', '乙')])
+      return z.segments.map((s) => s.id).join(',') === 'i1,i2' && z.text === '甲乙'
+    })())
+    check('★★★ 缺 id 绝不合并（不拿位置冒充身份）', (() => {
+      const z = of([seg(undefined, '甲'), seg(undefined, '乙')])
+      return z.segments.length === 2 && z.segments.every((s) => s.id === '')
+    })())
+    check('★★★ 中间隔了别的正文段 → 不跳回去猜（id 相同也不合并）', (() => {
+      const z = of([seg('i1', '甲'), seg('i2', '乙'), seg('i1', '丙')])
+      return z.segments.length === 3 && z.segments[2].text === '丙'
+    })())
+    check('★★ 纯附加：state.text 拼接行为一字未改', (() => {
+      const z = of([seg('i1', '前'), seg('i1', '后'), seg('i2', '尾')])
+      return z.text === '前后尾'
+    })())
+    check('★ 手工拼的 state 没有 segments 也不炸', (() => {
+      const bare = { text: '' }
+      J.applyEvent(bare, seg('i1', '甲'))
+      return Array.isArray(bare.segments) && bare.segments.length === 1 && bare.text === '甲'
+    })())
+    check('★★ 适配器把分段带出去（codexSegments）', /codexSegments:\s*state\.segments/.test(R('electron/core/codex-cli.cjs')))
+  }
+
   /* ── ④ prompt 拍平 ── */
   group('Codex 后端 · prompt 拍平（含**如实声明没有工具**）')
   const txt = M.buildPrompt([

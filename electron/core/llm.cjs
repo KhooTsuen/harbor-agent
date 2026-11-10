@@ -32,18 +32,17 @@ function parseSseLine(line) {
 /**
  * 发起一次流式对话。
  *
- * `traceId` 与 `taskId` 是**两个东西**：前者是这一轮运行实例的 key（生产里 `req_*`），
- * 后者是任务台账 id（`task_*`）。每请求指标两个都记，谁也不替代谁。
+ * `traceId` 与 `taskId` 是**两个东西**：前者是本轮运行实例的 key（`req_*`），后者是任务
+ * 台账 id（`task_*`）。每请求指标两个都记，谁也不替代谁。
  *
- * @param {{ baseUrl: string, apiKey: string, model: string, messages: Array,
- *   chatPath?: string, tools?: Array, provider?: object, label?: string,
- *   temperature?: number, topP?: number, maxTokens?: number, reasoningEffort?: string,
- *   signal?: AbortSignal, idleTimeoutMs?: number, onContent?: Function, onReasoning?: Function,
- *   onToolCalls?: Function, onUsage?: Function, traceId?: string, taskId?: string,
- *   retryIndex?: number }} options
+ * @param {{ baseUrl: string, apiKey: string, model: string, messages: Array, chatPath?: string,
+ *   tools?: Array, provider?: object, label?: string, temperature?: number, topP?: number,
+ *   maxTokens?: number, reasoningEffort?: string, signal?: AbortSignal, idleTimeoutMs?: number,
+ *   onContent?: Function, onReasoning?: Function, onToolCalls?: Function, onUsage?: Function,
+ *   traceId?: string, taskId?: string, retryIndex?: number }} options
  * @returns {Promise<{ content: string, reasoning: string, toolCalls: Array, usage: object|null,
  *   finishReason: string|null, sawDone: boolean, ttftMs: number|null, latencyMs: number }>}
- *   `sawDone` = 见过 `[DONE]`。判「流有没有正常收尾」只能看它，不能看 finish_reason。
+ *   `sawDone` = 见过 `[DONE]`；判「流有没有正常收尾」只能看它，不能看 finish_reason。
  */
 async function chatStreamImpl(options) {
   const {
@@ -77,10 +76,7 @@ async function chatStreamImpl(options) {
     temperature,
     topP,
     maxTokens,
-    /*
-     * strict 只给插件：内置工具有可选参数，开 strict 会 400。
-     * 插件 schema 已过 toStrictSchema，是唯一确定合规的一类。
-     */
+    /* strict 只给插件：内置工具有可选参数，开 strict 会 400；插件 schema 已过 toStrictSchema */
     strictToolNames:
       options.provider?.strictTools === true ? plugins.list().map((p) => p.name) : undefined,
     /* 思考强度：none / low / high / max（deepseek 的 reasoning_effort） */
@@ -129,8 +125,11 @@ async function chatStreamImpl(options) {
   idle.stop()
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    const short = detail.slice(0, 500)
+    /* 第 11 项：错误体边读边卡上限（原来整份读、之后才 slice） */
+    const limited = await http
+      .readTextLimited(response, { maxBytes: 256 * 1024, signal })
+      .catch(() => ({ text: '' }))
+    const short = limited.text.slice(0, 500)
     /* ★ 状态码要挂在错误对象上：`errors.classify` 判 server / rate_limit / auth 读的是
        `error.status`，只写进文本的后果是 500 被归成 unknown（不重试、直接报失败）。 */
     const error = Object.assign(new Error(`上游返回 ${response.status}：${short || response.statusText}`), {
@@ -269,10 +268,9 @@ async function chatStreamImpl(options) {
 
 /**
  * 对外出口：**记账兜底**（判据在 `token-metrics.autoLog`，这里只管包）。
- *
  * 主对话自己记（`loop-model` 的重试循环知道第几次、发给谁，会传 `accounted: true`）；
- * 压缩 / 场景 / 协作这三条路直接调这里、不经过那个循环 —— 由这层补上，
- * 否则它们烧掉的 token 在账本上根本不存在。成功与失败都记：失败那次**也是真发出去过**。
+ * 压缩 / 场景 / 协作这三条路直接调这里、不经过那个循环 —— 由这层补上，否则它们烧掉的
+ * token 在账本上根本不存在。成功与失败都记：失败那次**也是真发出去过**。
  */
 async function chatStream(options) {
   try {

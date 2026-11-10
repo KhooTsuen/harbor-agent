@@ -249,6 +249,26 @@ export async function run() {
     check('★ handler 透 force 给内核', handlerSrc.includes('payload?.force'))
     check('★ handler 把 force 传进 rollbackTo 的 options', /rollbackTo\([^)]*\{[^}]*force\s*[,}]/s.test(handlerSrc))
     check('★ handler 在被拦时记日志（不静默）', handlerSrc.includes('blocked'))
+
+    /*
+     * ── 恢复单个文件必须走原子写（2026-11-10 静态核对发现）──
+     * 以前 `restoreOne` 用 `writeFileSync` 直接覆盖：写到一半失败（磁盘满 / 被占着）
+     * 会**把用户文件截断成半截**。而「回退失败后还能安全重试」的前提恰恰是
+     * 目标要么旧内容、要么新内容，绝不能是半截。项目里早有 safe-write.cjs，这处漏用了。
+     */
+    group('⑩ 恢复走原子写')
+    const rbSrc = readFileSync(join(ROOT, 'electron/core/changeset-rollback.cjs'), 'utf8')
+    check('★★★ 恢复单个文件用 writeAtomic（不是裸 writeFileSync）', /writeAtomic\(entry\.path/.test(rbSrc))
+    check(
+      '★★★ 恢复路径里不再有裸 writeFileSync 覆盖目标文件',
+      !/fs\.writeFileSync\(entry\.path/.test(rbSrc),
+    )
+    /* 不用 `require('./safe-write.cjs')` 这个整串做断言：源码守卫会把字符串字面量
+       当成真的相对 require 去查文件（217 组自己就吃过一次误报）。这里只认模块名。 */
+    check(
+      '★ 原子写从 safe-write.cjs 引入（唯一实现，不另写一份）',
+      /safe-write\.cjs/.test(rbSrc) && /writeAtomic/.test(rbSrc),
+    )
   } finally {
     for (const id of tasks) taskCore.remove(id)
     for (const id of sets) rmSync(join(changeset.root(), id), { recursive: true, force: true })
