@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { settleCollaboration } from './collaborationSettlement'
 
 /* ══════════════════════════════════════════════════════════════
    原生对话流（v2）：每段文字有稳定身份、明确用途
@@ -30,6 +31,17 @@ const speechSchema = z.object({
   text: z.string(),
   /** v1 记录没有这个字段 → 按 `answer` 看待（见文件头） */
   purpose: z.enum(SPEECH_PURPOSES).optional(),
+  /**
+   * 上层**明确**说了这段属于答复（`content` 事件带 `stage: 'answer'`）。
+   *
+   * 有了它，后面再调工具也**不降级** —— 任务口径：「已明确属于答复的片段，
+   * 即使后面又调用工具，也保留答复归属」。
+   *
+   * ★ 为什么不能拿 `purpose === 'answer'` 当这个判据：新建的普通文字默认也是
+   *   `answer`（乐观），那样就等于谁都不降级，过程话又会被当成答复。
+   *   必须区分「默认值」和「明确信号」。
+   */
+  hold: z.boolean().optional(),
 })
 
 const nodeSchema = z.discriminatedUnion('kind', [
@@ -57,13 +69,54 @@ export function purposeOf(node: FlowNode): SpeechPurpose | '' {
   return node.purpose ?? 'answer'
 }
 
-/** 把某一轮里还标 `answer` 的片段改成别的用途 —— **跳过 final**（已明确的不夺回） */
+/**
+ * 把某一轮里还标 `answer` 的片段改成别的用途。
+ *
+ * **两种不夺回**：
+ *   · `purpose === 'final'` —— 已经结算过的正式答复
+ *   · `hold === true` —— 上层明确说过「这段是答复」（后面再干活也留着）
+ */
 function retag(nodes: readonly FlowNode[], turn: number, to: SpeechPurpose): FlowNode[] {
   return nodes.map((node) =>
-    node.kind === 'speech' && node.turn === turn && purposeOf(node) !== 'final'
+    node.kind === 'speech' &&
+    node.turn === turn &&
+    purposeOf(node) === 'answer' &&
+    node.hold !== true
       ? { ...node, purpose: to }
       : node,
   )
+}
+
+function unconfirmed(nodes: readonly FlowNode[]): FlowNode[] {
+  return nodes.map((node) =>
+    node.kind === 'speech' && purposeOf(node) === 'answer'
+      ? { ...node, purpose: 'unconfirmed' }
+      : node,
+  )
+}
+
+/** 明确信号固定的片段归入同一份终稿；汇总已包含的片段不重复追加。 */
+function settle(flow: ConversationFlow, text: string): ConversationFlow {
+  const prefix = flow.nodes.flatMap((node) =>
+    node.kind === 'speech' &&
+    node.hold &&
+    purposeOf(node) !== 'final' &&
+    node.text.trim() &&
+    !text.includes(node.text)
+      ? [node.text]
+      : [],
+  )
+  return {
+    ...flow,
+    nodes: flow.nodes.map((node) =>
+      node.kind === 'speech' &&
+      purposeOf(node) === 'answer' &&
+      (node.turn === flow.turn || node.hold)
+        ? { ...node, purpose: 'final' }
+        : node,
+    ),
+    final: [...prefix, text].join('\n\n'),
+  }
 }
 
 /**
@@ -91,6 +144,10 @@ export function advanceFlow(
   const { nodes, turn } = flow
   const id = nodes.length
 
+  if (type === 'aborted' || type === 'error') {
+    return { ...flow, nodes: unconfirmed(nodes) }
+  }
+
   /* 开新一轮（含模型重试）= 上一轮说的话只是过程 —— 但**已明确的正式答复不夺回** */
   if (type === 'turn_start' || type === 'retry') {
     return { ...flow, turn: turn + 1, nodes: retag(nodes, turn, 'chatter') }
@@ -115,9 +172,13 @@ export function advanceFlow(
 
   if ((type === 'content' || type === 'reasoning') && typeof event.text === 'string') {
     const kind = type === 'content' ? 'speech' : 'reasoning'
+    const purpose: SpeechPurpose = event.stage === 'process' ? 'chatter' : 'answer'
     const last = nodes.at(-1)
     /* 同一轮同类型的连续片段并成一段（上游是一批一批给的） */
-    if (last?.kind === kind && last.turn === turn) {
+    const samePurpose =
+      last?.kind !== 'speech' ||
+      (purposeOf(last) === purpose && Boolean(last.hold) === (event.stage === 'answer'))
+    if (last?.kind === kind && last.turn === turn && samePurpose) {
       return { ...flow, nodes: [...nodes.slice(0, -1), { ...last, text: last.text + event.text }] }
     }
     return {
@@ -125,50 +186,59 @@ export function advanceFlow(
       nodes: [
         ...nodes,
         kind === 'speech'
-          ? { kind, id, turn, text: event.text, purpose: 'answer' as const }
+          ? {
+              kind,
+              id,
+              turn,
+              text: event.text,
+              purpose,
+              /* 上层明确给了「这是答复」的信号 → 钉住，后面调工具也不降级 */
+              ...(event.stage === 'answer' ? { hold: true } : {}),
+            }
           : { kind, id, turn, text: event.text },
       ],
     }
   }
 
   if (type === 'done') {
+    const delivered = settleCollaboration(flow, event)
+    if (delivered) return delivered
     /*
      * 暂停 / 轮数用尽 / 截断 → **不结算**。这段文字算不算答复，现在不知道 ——
      * 标 `unconfirmed`，界面如实说「还没确认」，不许冒充成正式答复。
      */
     if (event.exhausted || event.paused || event.truncated) {
-      return { ...flow, nodes: retag(nodes, turn, 'unconfirmed') }
+      return { ...flow, nodes: unconfirmed(nodes) }
     }
-    const text = typeof event.finalContent === 'string' ? event.finalContent.trim() : ''
+    const text = typeof event.finalContent === 'string' ? event.finalContent : ''
     /*
      * 有正式答复 → 结算。这一轮还标 `answer` 的片段被它吸收（标 `final`，渲染不再单独出），
      * `chatter`（过程话）原样留在折叠区。
      */
-    if (text) {
-      return {
-        ...flow,
-        nodes: nodes.map((node) =>
-          node.kind === 'speech' && node.turn === turn && purposeOf(node) === 'answer'
-            ? { ...node, purpose: 'final' as const }
-            : node,
-        ),
-        final: text,
-      }
-    }
+    if (text.trim()) return settle(flow, text)
     /*
-     * 没有正式答复、但 Provider 明确说了「这轮说完了」（`finish_reason: stop`）→
-     * 那这段就是答复，把最后一段 `answer` 认作 `final`。
-     * 没有这个信号（空串 = 异常结束 / 老主进程）→ 一个字都不动，留 `answer` 让界面照常显示。
+     * 没有交付正文，只剩 Provider 的「这轮说完了」（`finish_reason: stop`）。
+     *
+     * ★ `stop` 只证明**模型停止生成**，不证明它给出了交付物 —— 2026-11-09 实测：
+     *   模型说一句「我接下来会跑测试」然后 stop，没有测试结果。
+     *   那段话在工具开始时已被降级成 `chatter`，旧实现却会在这里
+     *   `find(kind === 'speech')` 把它**再捞回来**标成 `final`（既不按轮次过滤，
+     *   也不看这一轮到底干没干活）—— 等于把一句计划话当成了已确认的正式交付。
+     *
+     * 所以只有**一次工具都没调过**（纯聊天）才用 stop 结算：
+     * 那种情况「最后一段话」本来就是回答本身，且没有别的东西能当答复。
+     * 干过活却没有交付正文 → 标 `unconfirmed`，界面如实说「还没结算」。
      */
     if (event.finishReason === 'stop') {
-      const lastSpeech = [...nodes].reverse().find((node) => node.kind === 'speech')
+      const worked = nodes.some((node) => node.kind === 'tool')
+      if (worked) return { ...flow, nodes: unconfirmed(nodes) }
+      const lastSpeech = [...nodes]
+        .reverse()
+        .find(
+          (node) => node.kind === 'speech' && node.turn === turn && purposeOf(node) === 'answer',
+        )
       if (!lastSpeech) return flow
-      return {
-        ...flow,
-        nodes: nodes.map((node) =>
-          node === lastSpeech ? { ...node, purpose: 'final' as const } : node,
-        ),
-      }
+      return lastSpeech.kind === 'speech' ? settle(flow, lastSpeech.text) : flow
     }
     return flow
   }

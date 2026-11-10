@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import { EXEC_VERDICTS } from '@/types/verdict'
+import { inputReplySchema } from '@/types/inputReply'
+import { collaborationSchema } from '@/types/collaboration'
+import { citationSchema, artifactSchema } from './deliverableSchemas'
 import { conversationFlowSchema } from './conversationFlow'
 
 /* ══════════════════════════════════════════════════════════════
@@ -10,6 +14,10 @@ import { conversationFlowSchema } from './conversationFlow'
 
 /** 会话文件里的一行（jsonl 的每一行都是一个事件） */
 export const StoredMessageSchema = z.object({
+  collaboration: collaborationSchema.optional(),
+  inputReplies: z.array(inputReplySchema).optional(),
+  citations: z.array(citationSchema).optional(),
+  artifacts: z.array(artifactSchema).optional(),
   role: z.enum(['user', 'assistant', 'system', 'tool']),
   content: z.string().default(''),
   ts: z.number().optional(),
@@ -20,6 +28,11 @@ export const StoredMessageSchema = z.object({
       z.object({
         id: z.string(),
         name: z.string(),
+        sourcePath: z.string().optional(),
+        retryOf: z.string().optional(),
+        retryAttempt: z.number().optional(),
+        recoveredBy: z.string().optional(),
+        pending: z.boolean().optional(),
         /** 参数摘要（展示用）—— 不声明它，重开会话后工具行的「读了哪个文件」就没了 */
         summary: z.string().optional(),
         ok: z.boolean().default(true),
@@ -92,6 +105,23 @@ export const StoredMessageSchema = z.object({
       }),
     )
     .optional(),
+  aborted: z.boolean().optional(),
+  interrupted: z.boolean().optional(),
+  truncated: z.enum(['length', 'stream_cut', '']).optional(),
+  durationMs: z.number().optional(),
+  regeneratedFrom: z.string().optional(),
+  verdict: z.enum(EXEC_VERDICTS).optional(),
+  execId: z.string().optional(),
+  execTaskId: z.string().optional(),
+  versions: z.array(z.string()).optional(),
+  versionIndex: z.number().optional(),
+  answersKey: z.string().optional(),
+  answersVersion: z.number().optional(),
+  parentKey: z.string().optional(),
+  parentVersion: z.number().optional(),
+  answerIndex: z.number().optional(),
+  answerIndexByVersion: z.record(z.string(), z.number()).optional(),
+  answerRecords: z.array(z.unknown()).optional(),
   /*
    * 开工前澄清的结果（AG-053 批③）。
    * ★ 必须在 schema 里声明：zod 的 object **默认会剥掉没声明的字段** ——

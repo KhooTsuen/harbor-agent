@@ -127,8 +127,8 @@ describe('AG-008 / 接线守卫', () => {
     expect(src).not.toContain('正在执行工具')
     /* 一行文字来自 describeRuns（单步会点名对象：「读取 README.md」） */
     expect(src).toContain('describeRuns(runs)')
-    /* 转圈图标只表示「还在跑」，由 runningOf 判定 */
-    expect(src).toContain('runningOf(runs)')
+    /* 转圈图标只表示「还在跑」，由 stateOfRun 的四态判定（只有 running 转圈） */
+    expect(src).toContain('stateOfRun(run, hideMeta)')
   })
 
   it('动作词表只有一份（ToolLine 从 lib 拿，不自己再定义）', () => {
@@ -140,9 +140,12 @@ describe('AG-008 / 接线守卫', () => {
       expect(src, file).not.toContain('export const ACTIONS')
       expect(src, file).not.toContain("read_file: ['读取'") /* 别把表抄第二份 */
     }
-    expect(read('src/components/chat/message/ToolLine.tsx')).toContain(
-      "import { AGENT_ACTIONS, homogeneousIconOf, runningOf, verbOf, toolLabel } from '@/lib/agentActivity'",
+    const line = read('src/components/chat/message/ToolLine.tsx')
+    expect(line).toContain(
+      "import { AGENT_ACTIONS, homogeneousIconOf, verbOf, toolLabel } from '@/lib/agentActivity'",
     )
+    /* 四态判据住在 toolRunState（单一真相源），ToolLine 不自己再写一份 */
+    expect(line).toContain("import { stateOfRun } from '../toolRunState'")
   })
 
   it('死代码 ProcessLine 已删（全仓无调用）', () => {

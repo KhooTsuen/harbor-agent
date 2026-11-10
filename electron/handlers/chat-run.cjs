@@ -11,7 +11,6 @@
  */
 
 const loop = require('../core/loop.cjs')
-const collab = require('../core/collab.cjs')
 /* P0-3：归属判定只有一处（见下面 runTurn 里的注释） */
 const taskAttribution = require('../core/task-attribution.cjs')
 /* P0-1（第六轮）：原话有损时的**程序级**闸门（判定只有一处，见那边文件头） */
@@ -39,13 +38,12 @@ async function askContinue({ still, sessionId, phaseKey, emit }) {
   return String(picked?.choice ?? '') === foldGate.CHOICE_CONTINUE
 }
 
-
 /**
  * @param {object} args
  * @returns {Promise<{ taskId?: string, changeSetId?: string, content: string, reasoning: string,
  *   usage: object|null, turns: number, toolRuns: Array, paused?: boolean,
  *   exhausted?: boolean, truncated?: string, finalContent?: string, _collab?: object,
- *   finishReason?: string }>}
+ *   finishReason?: string, verdict?: string, collaboration?: object }>}
  *   `taskId` / `changeSetId` 不是每个分支都有（协作交接那条就没有）。
  *   `finishReason` = Provider 的结束信号（`stop` = 模型说这轮说完了）；暂停/用尽那两条路是空串。
  *   `truncated` = 空/缺 = 这条回复写完了；`length` / `stream_cut` = 没写完及原因
@@ -100,41 +98,7 @@ async function runTurn(args) {
 
   /* 多模型协作：payload 带 collab（A/B 选择）→ 走协作编排 */
   if (payload?.collab && typeof payload.collab === 'object') {
-    const goal = lastUserText(history) || (lastUserImages(history).length ? '用户只附加了图片。请先读取并描述图片内容，再询问用户希望基于图片完成什么。' : '')
-    const imageUrls = lastUserImages(history)
-    const res = await collab.runCollaboration({
-      goal,
-      selected: true,
-      images: imageUrls,
-      projectRoot: workdir,
-      config: effective,
-      sessionId,
-      phaseKey,
-      origin: payload?.origin === 'edge-sidepanel' ? 'edge-sidepanel' : '',
-      allowBuiltinBrowser: false,
-      signal: controller.signal,
-      confirm,
-      emit,
-      planner: payload.collab.planner,
-      executor: payload.collab.executor,
-      threadSettings: payload?.threadSettings ?? {},
-    })
-    /* 转成 loop.run 同形状：content = 汇报正文；toolRuns 从 trace 映射 */
-    return {
-      content: res.ok === true ? res.report : res.message,
-      reasoning: '',
-      usage: null,
-      turns: 'phases' in res && Array.isArray(res.phases) ? res.phases.length : 0,
-      toolRuns: ('trace' in res ? res.trace.tools : []).map((t) => ({
-        id: '',
-        name: t?.name ?? '',
-        ok: t?.ok === true,
-        args: {},
-        output: '',
-      })),
-      exhausted: false,
-      _collab: res,
-    }
+    return require('./chat-collab.cjs').run(args, history, lastUserImages(history))
   }
 
   /*
@@ -191,14 +155,20 @@ function lastUserText(history) {
   const lastUser = [...(history ?? [])].reverse().find((m) => m.role === 'user')
   if (typeof lastUser?.content === 'string') return lastUser.content
   return Array.isArray(lastUser?.content)
-    ? lastUser.content.filter((part) => part?.type === 'text').map((part) => part.text).join('\n')
+    ? lastUser.content
+        .filter((part) => part?.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
     : ''
 }
 
 function lastUserImages(history) {
   const lastUser = [...(history ?? [])].reverse().find((m) => m.role === 'user')
   return Array.isArray(lastUser?.content)
-    ? lastUser.content.filter((part) => part?.type === 'image_url').map((part) => part.image_url?.url).filter(Boolean)
+    ? lastUser.content
+        .filter((part) => part?.type === 'image_url')
+        .map((part) => part.image_url?.url)
+        .filter(Boolean)
     : []
 }
 

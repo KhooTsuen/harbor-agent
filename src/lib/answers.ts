@@ -39,12 +39,21 @@ export function toAnswerRecord(message: Message): StoredMessage {
     ...(message.rounds?.length ? { rounds: message.rounds } : {}),
     ...(message.toolRuns?.length ? { toolRuns: message.toolRuns } : {}),
     ...(message.citations?.length ? { citations: message.citations } : {}),
+    ...(message.artifacts?.length ? { artifacts: message.artifacts } : {}),
+    ...(message.inputReplies?.length ? { inputReplies: message.inputReplies } : {}),
+    ...(message.collaboration ? { collaboration: message.collaboration } : {}),
+    ...(message.clarify ? { clarify: message.clarify } : {}),
     ...(message.usage ? { usage: message.usage } : {}),
     ...(message.answersKey ? { answersKey: message.answersKey } : {}),
     ...(message.answersVersion !== undefined ? { answersVersion: message.answersVersion } : {}),
     /* 重新生成对账 / 中止标记：切回答、重新生成收集旧回答时都要原样带上 */
     ...(message.regeneratedFrom ? { regeneratedFrom: message.regeneratedFrom } : {}),
     ...(message.interrupted ? { aborted: true } : {}),
+    ...(message.execId ? { execId: message.execId } : {}),
+    ...(message.execTaskId ? { execTaskId: message.execTaskId } : {}),
+    ...(message.verdict ? { verdict: message.verdict } : {}),
+    ...(message.durationMs !== undefined ? { durationMs: message.durationMs } : {}),
+    ...(message.truncated ? { truncated: message.truncated } : {}),
   }
 }
 
@@ -57,7 +66,7 @@ export function toAnswerRecord(message: Message): StoredMessage {
 export function questionTargetOf(messages: Message[]): { key: string; version: number } | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]
-    if (m?.role === 'user') return { key: m.id, version: m.versionIndex ?? 0 }
+    if (m?.role === 'user') return { key: m.diskKey ?? m.id, version: m.versionIndex ?? 0 }
   }
   return null
 }
@@ -97,7 +106,9 @@ export function existingAnswersAfter(
   target: { key: string; version: number } | null,
 ): StoredMessage[] {
   if (!target) return []
-  const at = messages.findIndex((m) => m.role === 'user' && m.id === target.key)
+  const at = messages.findIndex(
+    (m) => m.role === 'user' && (m.diskKey === target.key || m.id === target.key),
+  )
   if (at < 0) return []
   for (let i = at + 1; i < messages.length; i += 1) {
     const m = messages[i]
@@ -136,10 +147,19 @@ export function answerPatch(record: StoredMessage, index: number): Partial<Messa
     rounds: record.rounds ?? [],
     toolRuns: record.toolRuns ?? [],
     citations: record.citations ?? [],
-    ...(record.usage ? { usage: record.usage } : {}),
+    artifacts: record.artifacts ?? [],
+    inputReplies: record.inputReplies ?? [],
+    collaboration: record.collaboration,
+    clarify: record.clarify,
+    usage: record.usage,
     /* 切到（或切回）一条被中止的回答：按钮仍该说「重试」；重生成的来源也跟着走 */
-    ...(record.aborted ? { interrupted: true } : {}),
-    ...(record.regeneratedFrom ? { regeneratedFrom: record.regeneratedFrom } : {}),
+    interrupted: Boolean(record.aborted),
+    regeneratedFrom: record.regeneratedFrom,
+    execId: record.execId,
+    execTaskId: record.execTaskId,
+    verdict: record.verdict,
+    durationMs: record.durationMs,
+    truncated: record.truncated,
     answerIndex: index,
     status: 'sent',
     kind: 'text',
@@ -154,7 +174,7 @@ export function answerPatch(record: StoredMessage, index: number): Partial<Messa
  */
 export function questionOf(messages: Message[], answer: Message): Message | undefined {
   if (answer.answersKey) {
-    const hit = messages.find((m) => m.role === 'user' && m.id === answer.answersKey)
+    const hit = messages.find((m) => m.role === 'user' && (m.diskKey ?? m.id) === answer.answersKey)
     if (hit) return hit
   }
   const at = messages.findIndex((m) => m.id === answer.id)

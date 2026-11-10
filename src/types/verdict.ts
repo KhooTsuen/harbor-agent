@@ -20,7 +20,9 @@
    ★ 老记录没有这个字段 → 界面不显示这一行，**不猜成 done**。
    ══════════════════════════════════════════════════════════════ */
 
-export type ExecVerdict = 'done' | 'partial' | 'failed' | 'chat' | ''
+export const EXEC_VERDICTS = ['done', 'partial', 'failed', 'chat', ''] as const
+
+export type ExecVerdict = (typeof EXEC_VERDICTS)[number]
 
 /** 这个结论要不要在界面上说出来（`chat` / 空值都不说 —— 聊天没有验收） */
 export function showsVerdict(verdict: ExecVerdict | undefined): boolean {

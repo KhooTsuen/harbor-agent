@@ -109,6 +109,7 @@ const EXPECTED_CHANNELS = [
   'fs:pickAndRead',
   'fs:pickImageAsDataUrl',
   'fs:read',
+  'fs:probe',
   'fs:reveal',
   'fs:tree',
   'fs:workdir',

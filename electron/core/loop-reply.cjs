@@ -56,7 +56,20 @@ async function finishReply(input) {
  * @returns {Promise<{ content: string, finalContent: string, truncated: string, usage: object|null, verdict: string }>}
  */
 async function finishTurn(input) {
-  const { toolRuns = [], taskId = '', goal = '', ...rest } = input
+  const { toolRuns = [], taskId = '', goal = '', structuredOutput = false, ...rest } = input
+
+  // Internal role output is a protocol response, not a development completion claim.
+  // Preserve the final model turn exactly and leave incomplete output unaccepted.
+  if (structuredOutput === true) {
+    const cut = replyContinue.classify(rest.result)
+    return {
+      content: rest.transcript.soFar(rest.result.content).content,
+      finalContent: String(rest.result.content ?? ''),
+      truncated: cut.cut ? cut.reason : '',
+      usage: null,
+      verdict: 'chat',
+    }
+  }
 
   if (!summaryPhase.wantSummary({ toolRuns })) {
     const reply = await finishReply(rest)

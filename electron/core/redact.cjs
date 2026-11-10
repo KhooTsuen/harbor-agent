@@ -133,6 +133,13 @@ function isSecretKey(name) {
   return SECRET_KEY.test(String(name ?? ''))
 }
 
+// Exact numeric telemetry fields must survive IPC/session validation; strings remain secret.
+function hideField(key, value) {
+  const counter = (key === 'maxTokens' || key === 'knownTokens') &&
+    Number.isSafeInteger(value) && value >= 0 && !known.has(String(value))
+  return isSecretKey(key) && !counter
+}
+
 /**
  * 深度脱敏一个对象（用于审计、诊断、导出）。
  *
@@ -176,7 +183,7 @@ function walkStorage(value, depth, maxDepth, seen) {
   } else {
     out = {}
     for (const [key, item] of Object.entries(value)) {
-      if (isSecretKey(key)) {
+      if (hideField(key, item)) {
         const text = String(item ?? '')
         out[key] = text ? `***${text.length} 字符已隐藏***` : ''
       } else {
@@ -209,7 +216,7 @@ function walk(value, depth, maxDepth) {
   if (typeof value === 'object') {
     const out = {}
     for (const [key, item] of Object.entries(value).slice(0, 100)) {
-      if (isSecretKey(key)) {
+      if (hideField(key, item)) {
         const text = String(item ?? '')
         out[key] = text ? `***${text.length} 字符已隐藏***` : ''
         continue

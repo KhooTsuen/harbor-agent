@@ -29,6 +29,11 @@ export function applyTerminalPhase(threadId: string, reason: string): void {
   const phase = terminalPhaseFor(reason)
   if (!phase) return
   const app = useAppStore.getState()
+  if (
+    phase === 'completed' &&
+    app.threads.find((thread) => thread.id === threadId)?.phase === 'paused'
+  )
+    return
   if (isTerminalPhase(app.threads.find((t) => t.id === threadId)?.phase)) return
   app.setThreadPhase(threadId, phase)
 }

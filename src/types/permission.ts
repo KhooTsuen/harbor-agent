@@ -1,5 +1,6 @@
 import type { DiffFile } from './index'
 import type { ClarifyQuestion, ClarifyReply } from './clarify'
+import type { InputAction, ConfirmationAck } from './inputReply'
 
 /* ══════════════════════════════════════════════════════════════
    确认请求（PermissionRequest）—— 从 `types/index.ts` 搬出来的
@@ -57,7 +58,7 @@ export interface PermissionRequest {
    */
   gate?: boolean
   /** 确认按钮（澄清卡不用它 —— 它自己带「就这么干」） */
-  onConfirm?: () => void
+  onConfirm?: InputAction
   /**
    * 这张卡属于哪条对话（2026-10-04，小尾巴 #4）。
    *
@@ -66,7 +67,8 @@ export interface PermissionRequest {
    */
   threadId?: string
   /** 取消/关闭时调（用于「写操作确认被拒绝」这种场景） */
-  onCancel?: () => void
+  onCancel?: InputAction
   /** AG-053：澄清卡答完之后回话（带用户选了什么、跳没跳） */
-  onClarify?: (reply: ClarifyReply) => void
+  onClarify?:
+    ((reply: ClarifyReply) => void) | ((reply: ClarifyReply) => Promise<void | ConfirmationAck>)
 }

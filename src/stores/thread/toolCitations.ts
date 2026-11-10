@@ -1,4 +1,4 @@
-import type { Message } from '@/types'
+import type { Message, ToolRunRecord } from '@/types'
 import { parseFileCitation, parseSearchCitations } from './parseToolOutput'
 
 /* ══════════════════════════════════════════════════════════════
@@ -14,15 +14,22 @@ import { parseFileCitation, parseSearchCitations } from './parseToolOutput'
 export function citationsOf(
   event: Record<string, unknown>,
   output: string,
+  run?: ToolRunRecord,
 ): NonNullable<Message['citations']> {
   try {
     const path =
       typeof event.path === 'string'
         ? event.path
-        : String((event.args as Record<string, unknown>)?.path ?? '')
+        : String((event.args as Record<string, unknown>)?.path ?? run?.sourcePath ?? '')
     const found = event.name === 'read_file' ? parseFileCitation(output, path) : null
     const web = event.name === 'search_web' ? parseSearchCitations(output) : []
-    return [...(found ? [found] : []), ...web]
+    const sourceToolId = String(event.toolCallId ?? run?.id ?? '')
+    return [...(found ? [found] : []), ...web].map((citation) => ({
+      ...citation,
+      id: `${sourceToolId}:${citation.id}`,
+      ...(sourceToolId ? { sourceToolId } : {}),
+      ...(typeof event.requestId === 'string' ? { sourceExecId: event.requestId } : {}),
+    }))
   } catch {
     return []
   }

@@ -33,14 +33,14 @@ const ROLES = {
   planner: {
     id: 'planner',
     label: '指导模型',
-    duty: '检查项目 · 规划任务 · 分派 · 验收结果',
+    duty: '理解目标 · 分派 · 检查 · 补充要求 · 交付',
     kinds: ['codex-cli', 'openai'],
   },
   /** B 方：执行 / 修改 / 测试 / 汇报 */
   executor: {
     id: 'executor',
     label: '工作模型',
-    duty: '执行 · 修改 · 测试 · 汇报（读文件 / 改代码 / 跑测试）',
+    duty: '检索 · 创作 · 操作 · 按要求验证 · 汇报',
     kinds: ['openai', 'codex-cli'],
   },
 }
@@ -48,6 +48,9 @@ const ROLES = {
 /** 双模型默认关闭；用户在聊天框主动选择后才开启。 */
 const COLLAB_DEFAULTS = {
   enabled: false,
+  maxRounds: 3,
+  maxRuntime: 900,
+  maxTokens: 0,
 }
 
 /** 允许的键（多一个都会被丢掉） */
@@ -56,18 +59,33 @@ const COLLAB_KEYS = Object.keys(COLLAB_DEFAULTS)
 /**
  * 归一化（脏数据一律落回全关 —— 宁可不开，不可"看起来开了其实没开"）。
  * @param {unknown} raw
- * @returns {{ enabled: boolean }}
+ * @returns {{ enabled: boolean, maxRounds: number, maxRuntime: number, maxTokens: number }}
  */
 function normalize(raw) {
-  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? /** @type {Record<string, unknown>} */ (raw) : {}
-  return { enabled: src.enabled === true }
+  const src =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? /** @type {Record<string, unknown>} */ (raw)
+      : {}
+  const number = (key, min, max) => {
+    const raw = src[key]
+    const value = typeof raw === 'number' ? raw : Number.NaN
+    return Number.isFinite(value)
+      ? Math.min(max, Math.max(min, Math.floor(value)))
+      : COLLAB_DEFAULTS[key]
+  }
+  return {
+    enabled: src.enabled === true,
+    maxRounds: number('maxRounds', 1, 10),
+    maxRuntime: number('maxRuntime', 60, 7200),
+    maxTokens: number('maxTokens', 0, Number.MAX_SAFE_INTEGER),
+  }
 }
 
 /** 当前是否开启（读不到配置时使用默认值）。 */
 function enabled() {
   try {
     const cfg = require('./config.cjs').get()
-    const raw = cfg && typeof cfg === 'object' ? /** @type {any} */ (cfg).collab : null
+    const raw = cfg && typeof cfg === 'object' ? cfg.collab : null
     return normalize(raw).enabled === true
   } catch {
     return COLLAB_DEFAULTS.enabled

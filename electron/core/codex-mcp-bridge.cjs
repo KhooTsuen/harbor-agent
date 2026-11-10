@@ -80,11 +80,12 @@ function createBridge(deps = {}) {
     recheck: (name, request, runId) => {
       const l = getSwitch()
       if (l.mcpEnabled !== true) return false
+      if ((name === 'write_file' || name === 'edit_file') && l.writeEnabled !== true) return false
       const entry = require('./codex-mcp-context.cjs').get(runId)
+      if (runId && !entry) return false
       if (entry?.workdir)
         return require('./codex-mcp-collab.cjs').recheckConversation(name, request, runId)
       if (name !== 'write_file' && name !== 'edit_file') return true
-      if (l.writeEnabled !== true) return false
       if (name !== 'edit_file') return true
       const v = require('./codex-mcp-edit-rules.cjs').recheckEdit(l, isoDir, request?.args ?? {})
       if (v.ok !== true) note(`审批后复核不通过（${v.code}）—— 按拒绝结算`)
@@ -98,10 +99,15 @@ function createBridge(deps = {}) {
     return {
       workdir,
       sessionId: entry?.sessionId || SESSION,
-      taskId: entry?.requestId || '',
-      changeSetId: '',
+      taskId: entry?.taskId || entry?.requestId || '',
+      changeSetId: entry?.changeSetId || '',
       vision: entry?.vision ?? undefined,
-      permission: entry?.permission === 'readonly' ? 'readonly' : entry?.permission === 'full' ? 'full' : 'ask',
+      permission:
+        entry?.permission === 'readonly'
+          ? 'readonly'
+          : entry?.permission === 'full'
+            ? 'full'
+            : 'ask',
       allowTools: entry ? entry.threadSettings.allowTools !== false : true,
       /* 「不开写」**不靠 allowWrite**：那是「用户说只分析」的语义，会把 run_shell
          连只读诊断一起拦掉。边界由白名单 + 写工具判据保证。 */
@@ -126,7 +132,16 @@ function createBridge(deps = {}) {
     return { ok: true, payload: { text, toolOk: !policy.isToolFailure(text), meta } }
   }
 
-  const handleCall = require('./codex-mcp-dispatch.cjs').createDispatcher({ getSwitch, resolveWorkdir, makeCtx, toolsIndex, toolReply, DIAG_CMDS, isoDir })
+  const dispatch = require('./codex-mcp-dispatch.cjs').createDispatcher({
+    getSwitch,
+    resolveWorkdir,
+    makeCtx,
+    toolsIndex,
+    toolReply,
+    DIAG_CMDS,
+    isoDir,
+  })
+  const handleCall = require('./codex-mcp-observe.cjs').observeCalls(dispatch)
 
   /** 一帧请求 → 处理 → 回一帧 */
   async function onFrame(sock, msg) {

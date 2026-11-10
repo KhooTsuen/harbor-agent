@@ -35,26 +35,39 @@ function executionIdOf(text) {
 /**
  * 从 toolRuns 里抽真实痕迹。
  *
- * @param {Array<{name:string,args:object,ok:boolean,output:string}>} toolRuns
- * @returns {{ writes: string[], tests: object[], lastTest: object|null,
- *             executionId: string, retries: number, tools: object[] }}
+ * @param {Array<{id?:string,name:string,args:object,ok:boolean,output:string,pending?:boolean}>} toolRuns
+ * @returns {{ writes: string[], changedAfterTest: boolean, tests: object[],
+ *             lastTest: object|null, executionId: string, retries: number, tools: object[] }}
  */
 function extractTrace(toolRuns) {
   const list = Array.isArray(toolRuns) ? toolRuns : []
   const writes = []
   const tests = []
   let executionId = ''
+  let changedAfterTest = false
 
   for (const run of list) {
     if (!run || typeof run.name !== 'string') continue
     const output = String(run.output ?? '')
 
-    if (WRITE_TOOLS.has(run.name) && run.ok === true) {
+    const shellMayWrite =
+      run.name === 'run_shell' &&
+      !require('./risk-patterns.cjs').isReadOnlyCommand(String(run.args?.command ?? ''))
+    if (WRITE_TOOLS.has(run.name) || shellMayWrite) {
+      changedAfterTest = true
+    }
+    if (WRITE_TOOLS.has(run.name) && run.ok === true && !run.pending) {
       const path = targetOf(run)
       /* 只有真的写成功才记（`ok:false` 的写入尝试不算"改过"） */
-      if (path && !writes.includes(path)) writes.push(path)
+      const targets = [
+        path,
+        ...(Array.isArray(run.args?.proposals)
+          ? run.args.proposals.map((item) => item?.path).filter((item) => typeof item === 'string')
+          : []),
+      ]
+      for (const target of targets) if (target && !writes.includes(target)) writes.push(target)
     }
-    if (run.name === 'run_project_test') {
+    if (run.name === 'run_project_test' && !run.pending) {
       const verdict = classifyRun(output)
       tests.push({
         status: verdict.status,
@@ -62,6 +75,7 @@ function extractTrace(toolRuns) {
         testId: String(run.args?.id ?? ''),
         ok: run.ok === true,
       })
+      changedAfterTest = false
     }
     const id = executionIdOf(output)
     if (id) executionId = id
@@ -69,12 +83,19 @@ function extractTrace(toolRuns) {
 
   return {
     writes,
+    changedAfterTest,
     tests,
     lastTest: tests.length > 0 ? tests[tests.length - 1] : null,
     executionId,
     /* 「重试过几次」= 同一工具名出现多次且前几次失败（只报数字，不做判断） */
     retries: list.filter((r) => r && r.ok !== true).length,
-    tools: list.map((r) => ({ name: r?.name ?? '', ok: r?.ok === true })),
+    tools: list.map((r) => ({
+      id: r?.id ?? '',
+      name: r?.name ?? '',
+      ok: r?.ok === true && !r?.pending,
+      pending: r?.pending === true,
+      output: String(r?.output ?? ''),
+    })),
   }
 }
 
@@ -103,10 +124,16 @@ function diffOf(executionId, writes) {
     const parts = []
     for (const e of latest.entries ?? []) {
       if (e.restorable === false) continue
-      const view = diffFile({ path: e.rel, before: String(e.before ?? ''), after: String(e.after ?? '') })
+      const view = diffFile({
+        path: e.rel,
+        before: String(e.before ?? ''),
+        after: String(e.after ?? ''),
+      })
       const body = (view.hunks ?? [])
         .flatMap((h) =>
-          (h.lines ?? []).map((l) => `${l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' '}${l.text ?? ''}`),
+          (h.lines ?? []).map(
+            (l) => `${l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' '}${l.text ?? ''}`,
+          ),
         )
         .join('\n')
       if (body) parts.push(`diff --git a/${e.rel} b/${e.rel}\n${body}`)
@@ -147,7 +174,7 @@ function renderReport(input) {
   lines.push(`### B · ${executorLabel}（执行）`)
   if (trace) {
     lines.push(
-      `- 实际改动的文件：${trace.writes.length > 0 ? trace.writes.join(' / ') : '（没有改动任何文件）'}`,
+      `- 已记录的文件改动：${trace.writes.length > 0 ? trace.writes.join(' / ') : '（未记录到文件写入；命令造成的改动需另行核对）'}`,
     )
     const t = trace.lastTest
     lines.push(
@@ -157,7 +184,7 @@ function renderReport(input) {
     )
     if (trace.executionId) lines.push(`- 执行记录：${trace.executionId}`)
     lines.push(
-      `- 工具调用：${trace.tools.map((x) => `${x.name}${x.ok ? '' : '(失败)'}`).join(' → ') || '无'}`,
+      `- 工具调用：${trace.tools.map((x) => `${x.name}${x.pending ? '(结果未确认)' : x.ok ? '' : '(失败)'}`).join(' → ') || '无'}`,
     )
   } else {
     lines.push('- （执行没有产生可用的痕迹）')
@@ -185,4 +212,12 @@ function renderReport(input) {
   return lines.join('\n')
 }
 
-module.exports = { WRITE_TOOLS, targetOf, executionIdOf, extractTrace, testPassed, diffOf, renderReport }
+module.exports = {
+  WRITE_TOOLS,
+  targetOf,
+  executionIdOf,
+  extractTrace,
+  testPassed,
+  diffOf,
+  renderReport,
+}

@@ -131,7 +131,8 @@ export async function run() {
   check('答完把答复原文发回去（JSON 字符串）', confirmEvents.includes('clarifyReplyToWire(reply)'))
   check(
     '★ 卡片被外部关掉也算回话（不回主进程要干等 5 分钟超时）',
-    /onCancel: \(\) => void confirmChat\(confirmId, false\)/.test(confirmEvents),
+    /* 现在走 submitCardReply（归档待答记录 + 去重），断言不再绑死 confirmChat 的直调写法 */
+    /onCancel:\s*\(\)\s*=>\s*[^\n]*(confirmChat|submitCardReply)\(/.test(confirmEvents),
   )
   const toolSrc = readFileSync(join(ROOT, 'electron/core/tools/ask_user.cjs'), 'utf8')
   check(

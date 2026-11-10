@@ -37,11 +37,12 @@ export type ChatEvent =
   /* AG-004：模型给了新的一版计划（和上一版一样就不发） */
   | { requestId: string; type: 'plan'; plan: string[]; version: number; reason: string }
   | { requestId: string; type: 'turn_end'; turn: number; usage: Record<string, number> | null }
-  | { requestId: string; type: 'content'; text: string }
+  | { requestId: string; type: 'content'; text: string; stage?: 'answer' | 'process' }
   | { requestId: string; type: 'reasoning'; text: string }
   | {
       requestId: string
       type: 'agent.tool.started'
+      retryOf?: string
       toolCallId: string
       name: string
       args: Record<string, unknown>
@@ -50,6 +51,8 @@ export type ChatEvent =
       requestId: string
       /* AG-002：成败写在事件名里，前端不用再读 ok；服务端仍会带 ok，两者一致 */
       type: 'agent.tool.completed' | 'agent.tool.failed'
+      retryOf?: string
+      retryAttempt?: number
       toolCallId: string
       name: string
       ok: boolean

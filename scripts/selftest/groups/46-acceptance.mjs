@@ -49,7 +49,8 @@ export async function run() {
   const toolDefault = toolRunsSrc.match(/const open = manual \?\? ([^\n]+)/)?.[1] ?? ''
   check(
     '③ Tool 默认不刷屏（成功收起，失败才摊开）',
-    toolDefault.length > 0 && toolDefault.includes('!run.ok'),
+    /* 默认值现在是 `failed && hasOutput`：也是「失败才摊开」，且要求有原文可看 */
+    toolDefault.length > 0 && (toolDefault.includes('!run.ok') || /failed\s*&&\s*hasOutput/.test(toolDefault)),
   )
 
   /* ④ 长任务有明确进度：计划勾选 + 进度数字（行为） */

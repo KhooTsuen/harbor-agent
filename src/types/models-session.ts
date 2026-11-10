@@ -40,6 +40,8 @@ export interface SessionSummary {
 }
 
 export interface StoredMessage {
+  collaboration?: import('./collaboration').CollaborationRecord
+  inputReplies?: import('./inputReply').StoredInputReply[]
   /** 这条回复的 token 用量（跟着落盘，重开会话也能算总量；`known:false` = 当时没上报） */
   usage?: MessageUsage
   /**
@@ -130,35 +132,11 @@ export interface StoredMessage {
   toolCallId?: string
   toolName?: string
   /** 工具调用记录（展示用） */
-  toolRuns?: Array<{ id: string; name: string; ok: boolean; output: string; ms?: number }>
+  toolRuns?: import('./rounds').ToolRunRecord[]
   /** 开工前澄清的结果（AG-053 批③）—— 不存的话重开会话不知道那些选项是怎么定的 */
   clarify?: StoredClarify
-  citations?: Array<{
-    id: string
-    kind: 'web' | 'file'
-    title: string
-    url?: string
-    path?: string
-    startLine?: number
-    endLine?: number
-    domain?: string
-    snippet?: string
-    fetchedAt?: number
-  }>
-  artifacts?: Array<{
-    id: string
-    type: 'document' | 'code' | 'patch' | 'report' | 'generated_file'
-    name: string
-    path?: string
-    content?: string
-    version?: number
-    threadId?: string
-    taskId?: string
-    sourceMessageId?: string
-    createdAt: number
-    updatedAt?: number
-    versions?: Array<{ version: number; content?: string; path?: string; createdAt: number }>
-  }>
+  citations?: import('./deliverables').Citation[]
+  artifacts?: import('./deliverables').Artifact[]
   error?: string
 }
 

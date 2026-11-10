@@ -24,6 +24,7 @@ const { isAborted } = require('./abort.cjs')
 const { buildRunCtx } = require('./tool-run-ctx.cjs')
 const actionCore = require('./action.cjs')
 const { lastUserText } = require('./loop-route.cjs')
+const { retryLink } = require('./tool-retry-link.cjs')
 
 /* 成败判定与失败事实都只定义在 `tool-failure.cjs`；这里只接线（两份执行器共用） */
 const { isToolOk, outTextOf } = toolFailure
@@ -89,9 +90,17 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
       name: call.name,
       args,
       workdir: ctx?.workdir ?? '',
-      userText: lastUserText(options?.history),
+      userText: typeof options?.authorizationText === 'string' ? options.authorizationText : lastUserText(options?.history),
     })
-    emit({ type: 'agent.tool.started', toolCallId: call.id, name: call.name, args, action })
+    const retryLinkage = retryLink(toolRuns, call, args)
+    emit({
+      type: 'agent.tool.started',
+      toolCallId: call.id,
+      name: call.name,
+      args,
+      action,
+      ...retryLinkage,
+    })
     const runCtx = buildRunCtx(ctx, { emit, toolCallId: call.id, toolName: call.name })
     runCtx.action = action
 
@@ -116,10 +125,12 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
     const maxRetries = Number.isFinite(options.budget?.maxRetries)
       ? Math.max(0, options.budget.maxRetries)
       : errors.MAX_AUTO_RETRY
+    let autoRetries = 0
     for (let retry = 0; retry < maxRetries && !isToolOk(output); retry += 1) {
       /* 分类吃的是**正文**（结构化返回里 `text` 才是正文）—— 与并行那份同一句 */
       const retryInfo = errors.classifyToolOutput(outTextOf(output), { name: call.name })
       if (!errors.canAutoRecover(retryInfo, call.name)) break
+      autoRetries += 1
       /* AG-002 定义的 agent.retrying —— 界面和日志都看得到「它在自己重试」 */
       emit({
         type: 'agent.retrying',
@@ -148,6 +159,7 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
       name: call.name,
       args,
       ok,
+      ...retryLinkage,
       output: outText,
       ms: Date.now() - startedAt,
       /* 结构化事实（退出码 / 超时 / 中断）：独立验证器读它，不读正文 —— 与并行版同形 */
@@ -206,6 +218,8 @@ async function executeToolCallsSerial({ toolCalls, ctx, options, messages, toolR
       ok,
       result: outText,
       ms: run.ms,
+      ...retryLinkage,
+      retryAttempt: autoRetries,
       ...(info ? { errorKind: info.kind, errorHint: info.hint } : {}),
       ...(failure ? { error: failure } : {}),
     })

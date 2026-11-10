@@ -74,6 +74,8 @@ export function storedToUi(stored: StoredMessage, threadId: string): Message {
      * 老记录没有这个字段 → 什么都不加，渲染照旧。
      */
     ...(stored.clarify ? { clarify: stored.clarify } : {}),
+    ...(stored.inputReplies?.length ? { inputReplies: stored.inputReplies } : {}),
+    ...(stored.collaboration ? { collaboration: stored.collaboration } : {}),
     ...(stored.artifacts && stored.artifacts.length > 0 ? { artifacts: stored.artifacts } : {}),
     ...(stored.usage ? { usage: stored.usage } : {}),
     /* 改过的消息：版本表跟着一起回来，重开还能在几版之间切 */

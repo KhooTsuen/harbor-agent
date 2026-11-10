@@ -28,8 +28,8 @@ async function run(options) {
      事务答「改了哪些文件、怎么整批撤」。都不进会话文件（会话是聊天记录）。 */
   const goal = String(options.goal ?? '')
   const sessionId = options.sessionId ?? ''
-  /* 新的一轮 = 用户又说话了 → 上一轮「先别动」的硬拦截作废 */
-  gateDenied.allow(sessionId)
+  /* Internal handoffs are not new human turns and cannot erase an approval denial. */
+  if (options.collabSubStep !== true) gateDenied.allow(sessionId)
 
   /* AG-011：能恢复就复用原任务（steps / plan / changedFiles 得留着，否则
      「不重复已完成步骤」无从谈起）；其余情况新建一条。 */
@@ -127,6 +127,7 @@ async function run(options) {
     }
     options.emit?.(event)
   }
+  countingEmit.requestId = options.emit?.requestId
   options.emit?.({ type: 'task', taskId: task.id, changeSetId, goal: task.goal })
 
   const { runLoop } = require('./loop.cjs')
@@ -135,7 +136,7 @@ async function run(options) {
 
     if (changeSetId) changeset.commit(changeSetId, { verified: result.verified ?? null })
 
-    if (result.exhausted || result.paused) {
+    if (result.exhausted || result.paused || (options.structuredOutput === true && result.truncated)) {
       /*
        * 活没干完 → 标成 paused 让它可恢复（AG-012 记下停的时刻）。
        * AG-040：撞预算停下来时额外记「撞的是哪一项」和数字 ——

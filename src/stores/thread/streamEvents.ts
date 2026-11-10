@@ -1,30 +1,33 @@
 import type { AgentPhase, Message, MessageRound, ToolRunRecord } from '@/types'
 import { isToolFailure } from '@/types/rounds'
-import { advanceFlow, type ConversationFlow } from '@/lib/conversationFlow'
+import { advanceFlow, FLOW_VERSION, type ConversationFlow } from '@/lib/conversationFlow'
 import { uid } from '@/lib/utils'
 import { useAppStore } from '../useAppStore'
 import { usePerfStore } from '../usePerfStore'
 import { summarizeArgs } from './parseToolOutput'
 import { applyToolProgress } from './toolProgress'
-/* 子代理 v1：它内部的每一步落到那次 `spawn_subagent` 调用上 */
 import { applySubagentEvent } from './subagentEvents'
 import { citationsOf } from './toolCitations'
 import { handleAttachmentEvent } from './attachmentEvents'
 import { reconcileFinalRounds } from './finalRounds'
-import { applyPauseAfterTurn } from './confirmEvents'
+import { applyPauseAfterTurn, discardConfirmationPause } from './confirmationPause'
 import { handleCardEvent } from './cardEvents'
-import { logError } from '@/lib/actionLog'
+import { logAction, logError } from '@/lib/actionLog'
 import { endedNow } from './turnTiming'
 import { refreshAfterTool } from './toolRefresh'
-/* 重试回滚 + 提示类事件（那边有来由；回滚规则见 retryRollback.ts） */
 import { dispatchLightEvent } from './streamLight'
 import { markRoundStart, type RetryMarks } from './retryRollback'
-/* P1-B：内核这一轮**实际组装完**的输入量（`turn_start.input`）—— 与自算的理论量分开显示 */
 import { inputOfEvent } from './contextUsage'
+import { applyRetryLink, applyRetryNotice } from './toolRetry'
+import { handleCollaborationEvent, readCollaboration } from './collaborationEvents'
 
 export interface StreamState {
   nativeFlow?: boolean
   flow?: ConversationFlow
+  collaboration?: Message['collaboration']
+  expectedCollaboration?: boolean
+  execTaskId?: string
+  terminal?: Partial<Message>
   content: string
   reasoning: string
   toolRuns: ToolRunRecord[]
@@ -36,23 +39,17 @@ export interface StreamState {
   threadId: string
   retryMarks: RetryMarks
 }
-
-/** 当前轮；一片内容都没收到就先把第一轮开出来（不依赖 turn_start 一定到达） */
 function currentRound(state: StreamState): MessageRound {
   const last = state.rounds[state.rounds.length - 1]
   if (last) return last
   const fresh: MessageRound = { reasoning: '', content: '', tools: [] }
   state.rounds.push(fresh)
-  /* 懒建出来的这一轮 = 本轮起点；标记若停在 0，一次重试会把前面所有的话都退掉 */
   state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
   return fresh
 }
-/** 把分轮草稿同步到消息上（浅拷贝外层）；不复制的话引用没变 → 界面不重渲 */
 function syncRounds(state: StreamState): MessageRound[] {
   return [...state.rounds]
 }
-
-/* 收尾链每步单独兜住：一步抛了不许带走后面的；抛了就记一笔（进 data/errors/*.jsonl） */
 function runSafely(where: string, fn: () => void): void {
   try {
     fn()
@@ -60,21 +57,25 @@ function runSafely(where: string, fn: () => void): void {
     logError(`stream.${where}`, error)
   }
 }
-
-/** AG-002：判断只看 `phase` 字段（事件名将来再改也不影响）；`agent.tool.*` 不算生命周期 */
 function isLifecycleEvent(type: string): boolean {
   if (type === 'phase') return true
   return type.startsWith('agent.') && !type.startsWith('agent.tool.')
 }
-
-/* 处理一条主进程事件；返回值说明要不要跑后置动作（目前只有 done 需要） */
 export function handleStreamEvent(
   event: Record<string, unknown>,
   state: StreamState,
 ): { handled: boolean; notifyDone?: boolean } {
   const type = String(event.type ?? '')
-
-  /* AG-001/AG-002：阶段由主进程的状态机推过来，渲染层照单收下 —— 不自己算（否则 UI 与后台随时可能不一致） */
+  if (
+    handleCollaborationEvent(event, state.patch, (record) => {
+      state.collaboration = record
+    })
+  )
+    return { handled: true }
+  if (type === 'agent.retrying') {
+    if (applyRetryNotice(state.toolRuns, event)) state.patch({ toolRuns: [...state.toolRuns] })
+    return { handled: true }
+  }
   if (isLifecycleEvent(type)) {
     const phase = String(event.phase ?? '') as AgentPhase
     if (phase) {
@@ -84,8 +85,8 @@ export function handleStreamEvent(
     return { handled: true }
   }
 
-  if (state.nativeFlow && (state.flow || type === 'turn_start')) {
-    const next = advanceFlow(state.flow ?? { version: 1, turn: 0, nodes: [] }, event)
+  if (state.nativeFlow) {
+    const next = advanceFlow(state.flow ?? { version: FLOW_VERSION, turn: 0, nodes: [] }, event)
     if (next !== state.flow) {
       state.flow = next
       runSafely('flow.patch', () => state.patch({ flow: next }))
@@ -93,11 +94,8 @@ export function handleStreamEvent(
   }
 
   switch (type) {
-    /* ── 内容与思考：分片追加 ── */
     case 'content': {
-      /* AG-037：「首字上屏」—— 只在**第一个**字时记一次（这一轮的第一个字） */
       if (!state.content && !state.reasoning) usePerfStore.getState().markFirstContent()
-      /* 先取轮、再累加：懒建那一轮时标记要记「加这片之前」的长度（见 currentRound） */
       const round = state.flow ? undefined : currentRound(state)
       state.content += String(event.text ?? '')
       if (round) round.content += String(event.text ?? '')
@@ -113,37 +111,34 @@ export function handleStreamEvent(
       state.patch({ reasoning: state.reasoning, rounds: syncRounds(state) })
       return { handled: true }
     }
-
-    /* ── 工具：开始先插一条 running 记录，结束时补结果 ── */
     case 'agent.tool.started': {
       const record: ToolRunRecord = {
         id: String(event.toolCallId ?? uid('tool')),
         name: String(event.name ?? '未知工具'),
+        sourcePath:
+          typeof (event.args as Record<string, unknown> | undefined)?.path === 'string'
+            ? String((event.args as Record<string, unknown>).path)
+            : undefined,
         summary: summarizeArgs(
           String(event.name ?? ''),
           (event.args ?? {}) as Record<string, unknown>,
         ),
         ok: true,
-        /* 还没拿到结果 —— 进程若在跑完前被杀，重启后靠它说「结果未确认」 */
         pending: true,
         output: '',
       }
       state.toolRuns.push(record)
-      /* 这一轮跑过这个工具 —— 记下标（记录本身不重复存） */
+      applyRetryLink(state.toolRuns, record, event.retryOf)
       if (!state.flow) currentRound(state).tools.push(state.toolRuns.length - 1)
       state.patch({ toolRuns: [...state.toolRuns], rounds: syncRounds(state) })
       return { handled: true }
     }
-
-    /* 长任务自己报的进度（真机反馈 9a）—— 只改那一条记录，规矩见 toolProgress.ts */
     case 'agent.tool.progress': {
       if (applyToolProgress(state.toolRuns, event)) {
         state.patch({ toolRuns: [...state.toolRuns] })
       }
       return { handled: true }
     }
-
-    /* 子代理 v1：它内部的每一步（实现在 subagentEvents.ts）—— 同样只改那一条记录 */
     case 'subagent.step': {
       if (applySubagentEvent(state.toolRuns, event)) state.patch({ toolRuns: [...state.toolRuns] })
       return { handled: true }
@@ -154,130 +149,119 @@ export function handleStreamEvent(
       const id = String(event.toolCallId ?? '')
       const index = state.toolRuns.findIndex((run) => run.id === id)
       const output = String(event.result ?? '')
-
-      /* 失败事实（蓝图阶段 A）：只在失败时挂上去，成功时不留 error 键 */
       const failure = isToolFailure(event.error) ? { error: event.error } : {}
       const updated: ToolRunRecord = {
         ...state.toolRuns[index] /* 保住 subagent trace（重建新对象会把它抹掉） */,
         id,
         name: String(event.name ?? '未知工具'),
-        ok: event.ok !== false,
+        ok: event.ok !== false && type !== 'agent.tool.failed',
         output,
         ms: typeof event.ms === 'number' ? event.ms : undefined,
         ...failure,
       }
-      /* 拿到结果了 → 不再是「未确认」（展开把 started 那条的 pending 带过来了） */
       delete updated.pending
+      delete updated.progress
+      if (updated.ok) delete updated.error
+      if (
+        typeof event.retryAttempt === 'number' &&
+        Number.isSafeInteger(event.retryAttempt) &&
+        event.retryAttempt > 0
+      )
+        updated.retryAttempt = event.retryAttempt
       if (index >= 0) state.toolRuns[index] = updated
       else state.toolRuns.push(updated)
-
-      /* 状态变了要让台账与运行日志知道；为何走事件驱动见 toolRefresh.ts 头 */
+      applyRetryLink(state.toolRuns, updated, event.retryOf)
       refreshAfterTool()
-
-      /* 工具输出里能捞出引用（文件 / 网页）—— 见 toolCitations.ts */
-      const cited = citationsOf(event, output)
+      const cited = updated.ok ? citationsOf(event, output, updated) : []
       if (cited.length > 0) {
         state.citations.push(...cited)
         state.patch({ citations: [...state.citations] })
       }
-
-      /* 工具跑完 → 那一行从「转圈」变成「耗时」（rounds 顺带同步，成本可忽略） */
       state.patch({ toolRuns: [...state.toolRuns], rounds: syncRounds(state) })
       return { handled: true }
     }
-
-    /* 交互卡（写操作确认 / 两类卡的超时作废）—— 实现在 confirmEvents.ts，这里只转发 */
     case 'confirm_request':
     case 'clarify.timeout':
     case 'confirm.timeout':
       return { handled: handleCardEvent(event, type) }
-
-    /* 任务归属：主进程建/复用台账后立刻发（重启靠它认出是哪条） */
     case 'task':
-      if (event.taskId) state.patch({ execTaskId: String(event.taskId) })
+      if (event.taskId) {
+        state.execTaskId = String(event.taskId)
+        state.patch({ execTaskId: state.execTaskId })
+      }
       return { handled: true }
-
-    /* 新一轮开始 —— 时间线在这里分段（以前被 default 吞掉，「哪段思考属于哪轮」就丢了） */
     case 'turn_start': {
       if (!state.flow) state.rounds.push({ reasoning: '', content: '', tools: [] })
-      /* 新一轮 = 新的重试起点（重试只退本轮的半截，前面几轮一个字不动） */
       state.retryMarks = markRoundStart(state.content, state.reasoning, state.rounds)
       /* 立刻挂到消息上 —— 否则新的一轮要等它出了第一个字才在界面上出现。
          P1-B：第一轮的 `turn_start` 还带 `input`（内核实际组装完的量），一起挂上。 */
       state.patch({ rounds: syncRounds(state), ...inputOfEvent(event) })
       return { handled: true }
     }
-
-    /* ── 结束 ── */
     case 'done': {
       runSafely('done.finish', () => state.finish())
       const finalContent = String(event.content ?? '') || state.content
-      /* 后台汇总可能不同于逐轮流式正文；对齐规则在 finalRounds.ts（含「整段显示两遍」的事故） */
+      state.content = finalContent
+      state.reasoning = String(event.reasoning ?? '') || state.reasoning
+      if (event.collaboration !== undefined)
+        state.collaboration = readCollaboration(event.collaboration, 'done') ?? state.collaboration
+      if (state.collaboration)
+        logAction('collaboration.done', `${state.collaboration.id}:${state.collaboration.status}`)
+      else if (state.expectedCollaboration)
+        logError('collaboration.done.missing', String(event.requestId ?? ''))
       if (!state.flow) state.rounds = reconcileFinalRounds(state.rounds, finalContent)
-      runSafely('done.patch', () =>
-        state.patch({
-          content: finalContent,
-          reasoning: String(event.reasoning ?? '') || state.reasoning,
-          /* 用时：起点是这条消息的 timestamp，终点是现在 */
-          durationMs: endedNow(state),
-          usage: (event.usage ?? undefined) as Message['usage'],
-          toolRuns: [...state.toolRuns],
-          /* 时间线：逐轮复制一份 —— 别和 state 里的草稿共享引用 */
-          rounds: state.rounds.map((round) => ({ ...round, tools: [...round.tools] })),
-          citations: [...state.citations],
-          status: 'sent',
-          ...(state.flow && (event.exhausted || event.paused) ? { interrupted: true } : {}),
-          kind: 'text',
-          /* ★ 上游说「这条没写完」（length/断流）→ 标上；续写救回来时主进程带空串 */
-          ...(event.truncated ? { truncated: event.truncated as Message['truncated'] } : {}),
-          /* 验收结论（内核按台账证据算的，不是从正文里猜）—— 与正文分开存 */
-          ...(event.verdict ? { verdict: event.verdict as Message['verdict'] } : {}),
-        }),
-      )
-      /* 批⑤：「先不做了」的收尾必须等 done（主进程收尾写完才写得上 paused，见 confirmEvents） */
+      state.terminal = {
+        content: finalContent,
+        ...(state.collaboration ? { collaboration: state.collaboration } : {}),
+        reasoning: String(event.reasoning ?? '') || state.reasoning,
+        durationMs: endedNow(state),
+        usage: (event.usage ?? undefined) as Message['usage'],
+        toolRuns: [...state.toolRuns],
+        rounds: state.rounds.map((round) => ({ ...round, tools: [...round.tools] })),
+        citations: [...state.citations],
+        status: 'sent',
+        ...(state.flow && (event.exhausted || event.paused) ? { interrupted: true } : {}),
+        kind: 'text',
+        ...(event.truncated ? { truncated: event.truncated as Message['truncated'] } : {}),
+        ...(event.verdict ? { verdict: event.verdict as Message['verdict'] } : {}),
+      }
+      runSafely('done.patch', () => state.patch(state.terminal ?? {}))
       runSafely('done.pauseAfterTurn', () => applyPauseAfterTurn(String(event.requestId ?? '')))
       return { handled: true, notifyDone: true }
     }
 
     case 'aborted': {
+      discardConfirmationPause(String(event.requestId ?? ''))
       runSafely('aborted.finish', () => state.finish())
-      runSafely('aborted.patch', () =>
-        state.patch({
-          status: 'sent',
-          content: state.content,
-          interrupted: true,
-          /* 被停掉的那条也有用时（停在哪一刻就是哪一刻）—— 别因为「没正常结束」就不记 */
-          durationMs: endedNow(state),
-          /* 被停掉的那条也要留住时间线：落盘只认消息上的 rounds，不挂就存不下去 */
-          rounds: syncRounds(state),
-        }),
-      )
+      state.terminal = {
+        status: 'sent',
+        content: state.content,
+        interrupted: true,
+        durationMs: endedNow(state),
+        rounds: syncRounds(state),
+      }
+      runSafely('aborted.patch', () => state.patch(state.terminal ?? {}))
       return { handled: true }
     }
 
     case 'error': {
+      discardConfirmationPause(String(event.requestId ?? ''))
       const message = String(event.message ?? '未知错误')
       runSafely('error.finish', () => state.finish())
-      runSafely('error.patch', () =>
-        state.patch({
-          status: 'error',
-          kind: 'error',
-          errorText: message,
-          content: message,
-          /* 失败也算「用户等了多久」，照实记 */
-          durationMs: endedNow(state),
-        }),
-      )
+      state.terminal = {
+        status: 'error',
+        kind: 'error',
+        errorText: message,
+        content: message,
+        durationMs: endedNow(state),
+      }
+      runSafely('error.patch', () => state.patch(state.terminal ?? {}))
       return { handled: true }
     }
-
-    /* 长消息落了文件：在消息流里留一行看得见的提示（不静默换掉用户贴的东西） */
     case 'attachment': {
       runSafely('attachment', () => handleAttachmentEvent(state.threadId, event))
       return { handled: true }
     }
-
-    /* 重试 / 提示类事件整块在 streamLight.ts（重试要先把半截退掉，否则同段话两遍） */
     case 'retry':
     case 'boundary':
     case 'budget':
@@ -285,10 +269,7 @@ export function handleStreamEvent(
     case 'fallback':
     case 'context_overflow':
       return { handled: dispatchLightEvent(type, event, state) }
-
-    /* 不落到消息上也不打扰用户：turn_end 是进度（界面靠 phase）；mode/route 属调试；task 走 IPC */
     case 'plan': {
-      /* AG-004：计划变了 → 让 useTaskStore 重读（和工具跑完走同一条刷新，见 toolRefresh.ts） */
       refreshAfterTool()
       return { handled: true }
     }

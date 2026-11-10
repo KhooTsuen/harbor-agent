@@ -1,6 +1,7 @@
 import type { Message, Thread } from '@/types'
 import { processHeaderText, formatDuration } from '@/lib/processSummary'
 import { bodyTextOf } from '@/lib/bodyText'
+import { purposeOf } from '@/lib/conversationFlow'
 
 /* ══════════════════════════════════════════════════════════════
    导出 / 复制完整记录
@@ -32,12 +33,14 @@ export function processSection(message: Message): string {
   const runs = message.toolRuns ?? []
   if (message.flow) {
     const byId = new Map(runs.map((run) => [run.id, run]))
-    const lines = message.flow.nodes.map((node) => {
-      if (node.kind !== 'tool') return escapeMarkdown(node.text)
-      const run = byId.get(node.toolId)
-      if (!run) return ''
-      return '- ' + run.name + ' · ' + (run.pending ? '结果未确认' : run.ok ? '成功' : '失败')
-    })
+    const lines = message.flow.nodes
+      .filter((node) => node.kind !== 'speech' || purposeOf(node) === 'chatter')
+      .map((node) => {
+        if (node.kind !== 'tool') return escapeMarkdown(node.text)
+        const run = byId.get(node.toolId)
+        if (!run) return ''
+        return '- ' + run.name + ' · ' + (run.pending ? '结果未确认' : run.ok ? '成功' : '失败')
+      })
     return lines.length
       ? ['<details>', '<summary>执行过程</summary>', ...lines, '</details>'].join('\n\n')
       : ''
@@ -106,6 +109,12 @@ export function fullRecordText(message: Message, bodyText?: string): string {
   if (process) parts.push(process)
 
   parts.push(message.flow ? bodyTextOf(message) : (bodyText ?? message.content ?? ''))
+  if (message.flow && !message.flow.final) {
+    const pending = message.flow.nodes.flatMap((node) =>
+      node.kind === 'speech' && purposeOf(node) !== 'chatter' ? [node.text] : [],
+    )
+    if (pending.length) parts.push('> 这段还没结算，不能当正式答复', ...pending)
+  }
   if (message.flow && message.verdict && message.verdict !== 'chat') {
     const verdict = { done: '验收通过', partial: '部分完成', failed: '验收未通过' }
     if (message.verdict in verdict) parts.push(verdict[message.verdict as keyof typeof verdict])

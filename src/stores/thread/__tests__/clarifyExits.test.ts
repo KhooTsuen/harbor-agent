@@ -48,12 +48,23 @@ import { applyPauseAfterTurn, askPermissionFor } from '../confirmEvents'
 import { useUIStore } from '@/stores/useUIStore'
 import type { ClarifyReply } from '@/types'
 
-/** 内核推过来的那条澄清事件（形状照 `handlers/chat-confirm.cjs` 的 payload） */
+/**
+ * 内核推过来的那条澄清事件（形状照 `handlers/chat-confirm.cjs` 的 payload）
+ *
+ * ★ confirmId 每个用例唯一：`submitCardReply` 按 `requestId:confirmId` 去重
+ *   （`inputReplies.ts` 的模块级 Map），同 key 的第二次提交会直接复用旧 promise，
+ *   `confirmChat` 就不再被调用 —— mockClear() 清不掉那份真实模块状态。
+ *   requestId 保持同一个（暂停链路断言的就是它）。
+ */
+let currentConfirmId = ''
+let caseNo = 0
 function askClarify(): void {
+  caseNo += 1
+  currentConfirmId = `clr_${caseNo}`
   askPermissionFor({
     type: 'confirm_request',
     kind: 'clarify',
-    confirmId: 'clr_1',
+    confirmId: currentConfirmId,
     /* ★ 这是**对话这一轮**的 requestId（chat-emit 补的），pause 要的正是它 */
     requestId: 'req_7',
     sessionId: 'sess_1',
@@ -72,10 +83,11 @@ function askClarify(): void {
 }
 
 /** 拿界面当前挂着的那张卡，按下它的回话回调（等于用户点了） */
-function reply(replyValue: ClarifyReply): void {
+async function reply(replyValue: ClarifyReply): Promise<void> {
   const card = useUIStore.getState().clarify
-  expect(card?.confirmId).toBe('clr_1')
-  card?.onClarify?.(replyValue)
+  expect(card?.confirmId).toBe(currentConfirmId)
+  /* ★ onClarify 现在是 async（要先 prepareConfirmationPause 再回话），必须 await */
+  await card?.onClarify?.(replyValue)
 }
 
 beforeEach(() => {
@@ -86,13 +98,13 @@ beforeEach(() => {
 })
 
 describe('澄清卡：点「先不做了」之后到底发生了什么', () => {
-  it('★ 同一轮里既回话、又把这轮停在安全点（暂停链路 = 可恢复的前提）', () => {
+  it('★ 同一轮里既回话、又把这轮停在安全点（暂停链路 = 可恢复的前提）', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], cancelled: true })
+    await reply({ skipped: true, answers: [], cancelled: true })
 
     expect(confirmChat).toHaveBeenCalledTimes(1)
     const [id, approved, wire] = confirmChat.mock.calls[0] ?? []
-    expect(id).toBe('clr_1')
+    expect(id).toBe(currentConfirmId)
     /* 两个出口都是「不批」（内核那条通道传的是布尔） */
     expect(approved).toBe(false)
     expect(String(wire)).toContain('"cancelled":true')
@@ -101,17 +113,17 @@ describe('澄清卡：点「先不做了」之后到底发生了什么', () => {
     expect(pauseChat).toHaveBeenCalledWith('req_7')
   })
 
-  it('★「换个说法」只回话，不暂停（他还要继续做，只是让模型重问）', () => {
+  it('★「换个说法」只回话，不暂停（他还要继续做，只是让模型重问）', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], rephrase: true })
+    await reply({ skipped: true, answers: [], rephrase: true })
 
     expect(String(confirmChat.mock.calls[0]?.[2])).toContain('"rephrase":true')
     expect(pauseChat).not.toHaveBeenCalled()
   })
 
-  it('正常答复：照旧把答案送出去，不带退出口标记、也不暂停', () => {
+  it('正常答复：照旧把答案送出去，不带退出口标记、也不暂停', async () => {
     askClarify()
-    reply({
+    await reply({
       skipped: false,
       answers: [{ question: '用哪个包管理器？', choice: 'pnpm', text: '' }],
     })
@@ -143,15 +155,15 @@ describe('澄清卡：点「先不做了」之后到底发生了什么', () => {
  *   所以意图要等到 done 再落 —— 由 `applyPauseAfterTurn`（streamEvents 的 done 分支调）。
  */
 describe('先不做了：台账上的 paused 是「等这一轮收尾」才写的', () => {
-  it('★ 点的那一刻不写台账（写了也会被主进程的收尾写盖掉）', () => {
+  it('★ 点的那一刻不写台账（写了也会被主进程的收尾写盖掉）', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], cancelled: true })
+    await reply({ skipped: true, answers: [], cancelled: true })
     expect(taskUpdate).not.toHaveBeenCalled()
   })
 
-  it('★ 这一轮 done 了 → 把这条任务标成 paused（可恢复的状态）', () => {
+  it('★ 这一轮 done 了 → 把这条任务标成 paused（可恢复的状态）', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], cancelled: true })
+    await reply({ skipped: true, answers: [], cancelled: true })
     applyPauseAfterTurn('req_7')
 
     expect(taskUpdate).toHaveBeenCalledTimes(1)
@@ -162,24 +174,24 @@ describe('先不做了：台账上的 paused 是「等这一轮收尾」才写�
     expect(patch?.pauseReason).toBe('user')
   })
 
-  it('★ 只认自己那一条：别的 requestId 的 done 不会把任务停掉', () => {
+  it('★ 只认自己那一条：别的 requestId 的 done 不会把任务停掉', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], cancelled: true })
+    await reply({ skipped: true, answers: [], cancelled: true })
     applyPauseAfterTurn('req_别的')
     expect(taskUpdate).not.toHaveBeenCalled()
   })
 
-  it('★ 只写一次（done 重复到达不会反复改台账）', () => {
+  it('★ 只写一次（done 重复到达不会反复改台账）', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], cancelled: true })
+    await reply({ skipped: true, answers: [], cancelled: true })
     applyPauseAfterTurn('req_7')
     applyPauseAfterTurn('req_7')
     expect(taskUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('★「换个说法」绝不能把任务停掉（他还想接着做）', () => {
+  it('★「换个说法」绝不能把任务停掉（他还想接着做）', async () => {
     askClarify()
-    reply({ skipped: true, answers: [], rephrase: true })
+    await reply({ skipped: true, answers: [], rephrase: true })
     applyPauseAfterTurn('req_7')
     expect(taskUpdate).not.toHaveBeenCalled()
     expect(pauseChat).not.toHaveBeenCalled()

@@ -39,6 +39,16 @@ function harness(): { state: StreamState; patches: Partial<Message>[] } {
 const last = (patches: Partial<Message>[]): Partial<Message> => patches[patches.length - 1]
 
 describe('流式分轮（rounds 要随事件同步到消息上）', () => {
+  it('新链路即使先收到正文也从当前版本起步，不写旧 rounds', () => {
+    const { state, patches } = harness()
+    state.nativeFlow = true
+    handleStreamEvent({ type: 'content', text: '第一段' }, state)
+    expect(state.flow?.version).toBe(2)
+    expect(state.flow?.nodes).toHaveLength(1)
+    expect(state.rounds).toHaveLength(0)
+    expect(patches.some((patch) => patch.flow?.version === 2)).toBe(true)
+  })
+
   it('★ turn_start 一到就挂上（新一轮不能等出了字才出现）', () => {
     const { state, patches } = harness()
     handleStreamEvent({ type: 'turn_start' }, state)

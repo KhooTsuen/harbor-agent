@@ -24,6 +24,11 @@ export interface MessageRound {
 export interface ToolRunRecord {
   id: string
   name: string
+  sourcePath?: string
+  retryOf?: string
+  retryAttempt?: number
+  retryingBy?: string
+  recoveredBy?: string
   /** 参数摘要，展示用 */
   summary?: string
   ok: boolean

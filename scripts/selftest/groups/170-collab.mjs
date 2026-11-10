@@ -2,16 +2,10 @@ import { join, require, ROOT } from '../env.mjs'
 import { check, group } from '../harness.mjs'
 
 /* ══════════════════════════════════════════════════════════════
-   双模型协作与读图授权
-
-   本组只钉**判据层**（不联网、不启子进程）：
-     · 默认关、只认严格 true（装了就变双模型是不可接受的）
-     · A/B 必须指定准确的供应商和模型
-     · 计划/验收的 json 解析「解析不出就 null」，绝不从自然语言猜
-     · 执行痕迹只认 `ok:true` 的写入与真实六态，不采信模型自述
-     · 工具参数不能自带权限根或更换供应商
-
-   真闭环（真 CLI + 真 HTTP）由 `tmp/` 下的端到端脚本做，进不了自检。
+   双模型协作与读图授权 —— 只钉判据层（不联网、不启子进程）：
+   默认关 / A·B 必须指定准确供应商与模型 / json 解析「解析不出就 null」
+   执行痕迹只认 ok:true 的写入与真实六态 / 工具参数不能自带权限根
+   真闭环（真 CLI + 真 HTTP）由 tmp/ 下的端到端脚本做，进不了自检。
    ══════════════════════════════════════════════════════════════ */
 
 const collabConfig = require(join(ROOT, 'electron/core/collab-config.cjs'))
@@ -103,11 +97,7 @@ export async function run() {
     t.writes.length === 1 && t.writes[0] === 'b.js',
     JSON.stringify(t.writes),
   )
-  check(
-    '★★★ 测试状态来自 classifyRun（不是模型说的）',
-    t.lastTest?.status === 'FAIL',
-    t.lastTest?.status,
-  )
+  check('★★★ 测试状态来自 classifyRun（不是模型说的）', t.lastTest?.status === 'FAIL', t.lastTest?.status)
   check('★★ 执行记录 id 从正文里读到', t.executionId === 'ptr_ok1')
   check('★★ 没有 toolRuns → 空痕迹（不编）', collabTrace.extractTrace([]).lastTest === null)
   check('★ 空输入不抛', collabTrace.extractTrace(undefined).writes.length === 0)
@@ -209,7 +199,8 @@ async function checkFlow() {
   const collab = require(join(ROOT, 'electron/core/collab.cjs'))
   const chat = require(join(ROOT, 'electron/handlers/chat-run.cjs'))
   const original = { get: config.get, plan: collabCodex.planProjects, review: collabCodex.reviewResult,
-    openPlan: collabPlanner.planProjects, openReview: collabPlanner.reviewResult, run: loop.run }
+    openPlan: collabPlanner.planProjects, openReview: collabPlanner.reviewResult, run: loop.run,
+    hasKey: config.hasKey }
   const root = join(paths.DIRS.data, 'collab-flow')
   fs.mkdirSync(root, { recursive: true })
   const target = join(root, 'fixture.js')
@@ -219,17 +210,17 @@ async function checkFlow() {
     assistant: { model: 'global-model' }, collab: { enabled: true },
     projectTests: { enabled: false, items: [] } }
   const plan = { problem: 'p', scope: ['fixture.js'], expected: 'e', verify: 'v' }
-  let executions = 0
-  let reviews = 0
-  let selectedModel = ''
-  let plannerRoute = ''
-  let reviewRoute = ''
+  let executions = 0, reviews = 0, selectedModel = '', plannerRoute = '', reviewRoute = ''
   let failPlan = false
   const input = { goal: 'g', selected: true, projectRoot: root, config: cfg, sessionId: 'collab-session', threadSettings: { allowTools: false }, confirm: async () => true,
     planner: { kind: 'openai', model: 'selected-planner', providerId: 'collab-test' },
     executor: { kind: 'openai', model: 'selected-worker', providerId: 'collab-test' } }
   try {
     config.get = () => cfg
+    /* 这条用例盯的是编排契约（拒绝/取消/轮次），不是凭据来源：
+       夹具里的 provider 没有真实 credentialRef，把 hasKey 固定成 true，
+       免得「没凭据」这条新 fail-closed 把编排用例整片带红。 */
+    config.hasKey = () => true
     collabPlanner.planProjects = async ({ model, providerId }) => {
       plannerRoute = `${providerId}/${model}`
       return failPlan
@@ -239,36 +230,57 @@ async function checkFlow() {
     collabPlanner.reviewResult = async ({ model, providerId }) => {
       reviewRoute = `${providerId}/${model}`
       reviews++
-      return { ok: true, review: { verdict: 'PASS', reasons: [], issues: [] } }
+      /* PASS 必须带面向用户的交付正文（constrainReview 会挡空答复） */
+      return { ok: true, review: { verdict: 'PASS', reasons: [], issues: [], answer: '验收后的答复' } }
     }
     loop.run = async ({ config: effective }) => {
       executions++
       selectedModel = `${effective._collabProviderId}/${effective.assistant.model}`
       return { content: '执行报告', toolRuns: [] }
     }
-    const denied = await collab.runCollaboration({ ...input, confirm: async () => false })
-    check('计划拒绝不执行、不验收、不写文件', denied.code === 'PLAN_DENIED' && executions === 0 && reviews === 0 && fs.readFileSync(target, 'utf8') === 'unchanged', JSON.stringify(denied))
-    const controller = new AbortController()
-    const cancelled = await collab.runCollaboration({ ...input, signal: controller.signal,
-      confirm: async () => { controller.abort(); return true } })
-    check('批准时取消不执行、不验收', cancelled.code === 'CANCELLED' && executions === 0 && reviews === 0, JSON.stringify(cancelled))
+    /* ★ 2026-11-10 契约变更：不再有「先批准整个计划」那一步（docs/双模型监督执行.md:19）。
+       这里钉：规划完直接进执行（confirm 一次都不被调）；工具审批的拒绝由 gateDenied 那条覆盖。 */
+    let confirmCalls = 0
+    await collab.runCollaboration({ ...input, confirm: async () => (confirmCalls++, false) })
+    check('规划完直接进入执行，不额外弹整计划批准',
+      confirmCalls === 0 && executions === 1 && fs.readFileSync(target, 'utf8') === 'unchanged',
+      `confirm ${confirmCalls} 次 / 执行 ${executions} 次`)
+    /* 开工前就被取消（signal 已 abort）→ 不执行、不验收（用相对增量，别被前面的累计值绊住） */
+    const beforeRuns = executions
+    const beforeReviews = reviews
+    const aborted = new AbortController()
+    aborted.abort()
+    const cancelled = await collab.runCollaboration({ ...input, signal: aborted.signal })
+    check('开工前已取消 → 不执行不验收，状态如实记为 cancelled',
+      cancelled.code === 'CANCELLED' && cancelled.collaboration?.status === 'cancelled' &&
+        executions === beforeRuns && reviews === beforeReviews,
+      `执行 +${executions - beforeRuns}|验收 +${reviews - beforeReviews}`)
     failPlan = true
     const failed = await chat.runTurn({ payload: { collab: input }, history: [{ role: 'user', content: 'g' }],
       effective: cfg, workdir: root, controller: new AbortController() })
-    check('聊天规划失败保留原因、无伪造轮次或工具', failed.content === '没有规划输出' && failed.turns === 0 && failed.toolRuns.length === 0)
+    /* turns 数的是「走过几个阶段」：这次只走了规划（1），没有伪造执行轮次 */
+    check('聊天规划失败保留原因、无伪造轮次或工具',
+      failed.content.includes('没有规划输出') && failed.turns <= 1 && failed.toolRuns.length === 0,
+      `turns=${failed.turns} tools=${failed.toolRuns.length}`)
     failPlan = false
+    /* 这一段的累计计数已不是 0（前面几条现在真的会执行），统一用相对增量 */
+    const baseRuns = executions
+    const baseReviews = reviews
     const result = await collab.runCollaboration(input)
-    check('成功走完规划/执行/验收且由验收给 PASS', result.ok === true && result.accepted === true && executions === 1 && reviews === 1)
+    check('成功走完规划/执行/验收且由验收给 PASS',
+      result.ok === true && result.accepted === true &&
+        executions - baseRuns === 1 && reviews - baseReviews === 1,
+      `执行 +${executions - baseRuns} / 验收 +${reviews - baseReviews}`)
     check('没有项目测试登记仍可访问当前对话目录', cfg.projectTests.items.length === 0 && result.ok === true)
     check('A 的指定 provider/model 到达规划与验收调用', plannerRoute === 'collab-test/selected-planner' && reviewRoute === plannerRoute, `${plannerRoute};${reviewRoute}`)
     check('B 的指定 provider/model 到达执行层，不复用全局模型', selectedModel === 'collab-test/selected-worker', selectedModel)
     const same = await collab.runCollaboration({ ...input, executor: input.planner })
-    check('同一模型不能伪装成双模型协作', same.code === 'COLLAB_SELECTION_INVALID' && executions === 1)
+    check('同一模型不能伪装成双模型协作', same.code === 'COLLAB_SELECTION_INVALID' && executions - baseRuns === 1)
     const disabled = await collab.runCollaboration({ ...input, selected: false })
-    check('当前对话未明确选择时拒绝且不再次执行', disabled.code === 'COLLAB_DISABLED' && executions === 1)
+    check('当前对话未明确选择时拒绝且不再次执行', disabled.code === 'COLLAB_DISABLED' && executions - baseRuns === 1)
     loop.run = async () => { throw new Error('模拟执行失败') }
     const broken = await collab.runCollaboration(input)
-    check('执行失败保留原因，不再进入验收', broken.code === 'EXEC_FAILED' && broken.message === '模拟执行失败' && reviews === 1)
+    check('执行失败保留原因，不再进入验收', broken.code === 'COLLAB_STAGE_FAILED' && broken.message.includes('模拟执行失败') && reviews - baseReviews === 1, broken.code)
     const singleResult = { content: '单模型结果', turns: 1, toolRuns: [] }
     let singleConfig
     loop.run = async ({ config: effective }) => { singleConfig = effective; return singleResult }
@@ -277,6 +289,7 @@ async function checkFlow() {
     check('单模型入口原样返回原 loop 结果与配置', single === singleResult && singleConfig === cfg)
   } finally {
     config.get = original.get
+    config.hasKey = original.hasKey
     collabCodex.planProjects = original.plan
     collabCodex.reviewResult = original.review
     collabPlanner.planProjects = original.openPlan

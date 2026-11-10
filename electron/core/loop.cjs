@@ -6,21 +6,15 @@ const failureStreak = require('./failure-streak.cjs')
 const languageDrift = require('./language-drift.cjs')
 const log = require('./log.cjs')
 const taskCore = require('./task.cjs')
-const taskResume = require('./task-resume.cjs')
 const taskContext = require('./task-context.cjs')
 const life = require('./lifecycle.cjs')
 const taskPresets = require('./task-presets.cjs')
-const changeset = require('./changeset.cjs')
-
-const configCore = require('./config.cjs')
-const router = require('./router.cjs')
 const { callModel, mergeUsage, pausedResult, exhaustedResult } = require('./loop-model.cjs')
 const { buildPromptContext } = require('./loop-prompt.cjs')
 const { executeToolCalls } = require('./loop-tools.cjs')
 const { resolveRoute, providerForRun } = require('./loop-route.cjs')
 const { createTranscript } = require('./loop-transcript.cjs')
 const limits = require('./limits.cjs')
-const modeRouter = require('./mode-router.cjs')
 const { buildToolContext } = require('./loop-tool-context.cjs')
 /* 收尾与截断续写（判据见 reply-continue.cjs 文件头；总结阶段见 summary-phase.cjs） */
 const { finishTurn } = require('./loop-reply.cjs')
@@ -194,10 +188,12 @@ async function runLoop(options) {
       },
     })
 
+    if (options.collabSubStep === true) emit({ type: 'collab.usage', call: turn, usage: result.usage ?? null })
+    if (signal.aborted) throw new DOMException('aborted', 'AbortError')
     if (result.usage && !totalUsage) totalUsage = result.usage
 
     /* ── 计划（AG-004）：每轮都给 capturePlan 看，变了才发事件（细节见 task-context.cjs） ── */
-    if (result.content) {
+    if (result.content && options.structuredOutput !== true) {
       const captured = taskContext.capturePlan({
         taskId: options.taskId ?? '',
         content: result.content,
@@ -209,7 +205,7 @@ async function runLoop(options) {
     if (result.toolCalls.length === 0) {
       life.mark('verifying', traceKey(options))
       /* 收尾门禁（两道）：计划没勾完 / 改了没验证 → 顶回去。判定与话术全在 task-steering */
-      const gate = taskContext.completionGate({
+      const gate = options.structuredOutput === true ? {} : taskContext.completionGate({
         taskId: options.taskId ?? '',
         verifyAfterEdit: config.assistant?.verifyAfterEdit,
         seen: gateSeen,
@@ -227,6 +223,7 @@ async function runLoop(options) {
          纯聊天走原路不多花请求；截断续写也在这里面 */
       const reply = await finishTurn({
         result, messages, emit, callModel, transcript, toolRuns,
+        structuredOutput: options.structuredOutput === true,
         taskId: options.taskId ?? '', goal: options.goal ?? '',
         baseArgs: { config, provider: useProvider, model: useModel, signal, emit, traceId: traceKey(options), taskId: options.taskId ?? '', maxRetries: 0 } })
       if (reply.usage) totalUsage = mergeUsage(totalUsage, reply.usage)

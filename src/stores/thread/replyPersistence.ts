@@ -1,7 +1,9 @@
 import type { StoredMessage } from '@/types/backend'
-import type { MessageRound, ToolRunRecord } from '@/types'
+import type { Message, MessageRound, ToolRunRecord } from '@/types'
 import { useAppStore } from '@/stores/useAppStore'
 import { shouldFlushPartial } from '@/lib/partialFlush'
+import { mergeReplySnapshot } from './replySnapshot'
+import { logAction } from '@/lib/actionLog'
 
 /* ══════════════════════════════════════════════════════════════
    助手回复的落盘
@@ -20,9 +22,7 @@ import { shouldFlushPartial } from '@/lib/partialFlush'
    ══════════════════════════════════════════════════════════════ */
 
 export interface ReplyPersistence {
-  /** 流式过程中定期调用（判断很便宜，不满足就直接返回） */
   flushPartial: () => void
-  /** 收到结束事件后调用一次 */
   persistReply: () => void
 }
 
@@ -44,14 +44,16 @@ function traceOf(toolRuns: ToolRunRecord[] | undefined): ToolRunRecord[] {
     output: '',
     ...(run.ms === undefined ? {} : { ms: run.ms }),
     ...(run.subagent ? { subagent: run.subagent } : {}),
-    /* ★ 必须带：进程在工具跑完前被杀时，这就是「结果未确认」的唯一证据（见 ToolRunRecord.pending） */
     ...(run.pending ? { pending: true } : {}),
+    ...(run.sourcePath ? { sourcePath: run.sourcePath } : {}),
+    ...(run.retryOf ? { retryOf: run.retryOf } : {}),
+    ...(run.retryAttempt ? { retryAttempt: run.retryAttempt } : {}),
+    ...(run.recoveredBy ? { recoveredBy: run.recoveredBy } : {}),
   }))
 }
 
 export function createReplyPersistence(opts: {
   threadId: string
-  /** 占位消息的 id —— 同一条回复的所有记录共用它当 key */
   messageId: string
   timestamp: number
   /**
@@ -85,41 +87,40 @@ export function createReplyPersistence(opts: {
    */
   getContent: () => string
   getReasoning: () => string
-  /** 最后一个事件类型：只有 done / aborted 才值得存 */
   getEventType: () => string
+  getSnapshot?: () => Message
 }): ReplyPersistence {
   const { threadId, messageId, timestamp, getContent, getReasoning, getEventType } = opts
-  /*
-   * 痕迹（时间线 + 工具记录）从这个占位消息上读**当前值**。
-   *
-   * ★ 为什么读 store 而不是让调用方再传两个 getter（2026-10-20）：`rounds` /
-   *   `toolRuns` 由 streamEvents 就地改，而「此刻界面上已经显示出来的那一份」
-   *   就是 store 里这条消息的。让调用方再包一层，只会多两处可能不同步的拷贝
-   *   （`turns.ts` 也因此涨了 15 行、破了 300 行红线）。
-   */
+  // UI 提供展示字段，独立流快照提供当前执行数据；不依赖占位消息始终存在。
   const current = (): {
     rounds: MessageRound[]
     toolRuns: ToolRunRecord[]
-    /** 主进程回送的**真实**任务归属（`task` 事件挂上来的）；没有就是这次没绑定 */
     flow: StoredMessage['flow']
     execTaskId: string | undefined
+    extras: Pick<Message, 'inputReplies' | 'citations' | 'artifacts' | 'collaboration'>
   } => {
-    const message = useAppStore
+    const stored = useAppStore
       .getState()
       .threads.find((t) => t.id === threadId)
       ?.messages.find((m) => m.id === messageId)
+    const message = mergeReplySnapshot(stored, opts.getSnapshot?.())
     return {
       rounds: message?.rounds ?? [],
       toolRuns: message?.toolRuns ?? [],
       execTaskId: message?.execTaskId,
       flow: message?.flow,
+      extras: {
+        inputReplies: message?.inputReplies,
+        collaboration: message?.collaboration,
+        citations: message?.citations,
+        artifacts: message?.artifacts,
+      },
     }
   }
   const answer = {
     ...(opts.answersKey ? { answersKey: opts.answersKey } : {}),
     ...(opts.answersVersion !== undefined ? { answersVersion: opts.answersVersion } : {}),
     ...(opts.regeneratedFrom ? { regeneratedFrom: opts.regeneratedFrom } : {}),
-    /* 执行身份：分段快照与收尾那条都带上 —— 重启后靠它区分三次执行（不猜） */
     ...(opts.execId ? { execId: opts.execId } : {}),
     /*
      * 轨迹格式标识：凡是从这里写出去的记录，`rounds` 都是**执行时按事件到达顺序
@@ -164,7 +165,7 @@ export function createReplyPersistence(opts: {
     flushPartial: () => {
       const content = getContent()
       const reasoning = getReasoning()
-      const { rounds, toolRuns: runs, flow } = current()
+      const { rounds, toolRuns: runs, flow, extras } = current()
       const traces = traceOf(runs)
       const now = Date.now()
       /*
@@ -173,7 +174,9 @@ export function createReplyPersistence(opts: {
        *   间隔规则照旧（至少 3 秒），所以不会把写入量抬上去。
        */
       const metric = content.length + reasoning.length
-      const force = flow && /^agent\.tool\.(started|completed|failed)$/.test(getEventType())
+      const force =
+        getEventType() === 'collab.phase' ||
+        (flow && /^agent\.tool\.(started|completed|failed)$/.test(getEventType()))
       if (!force && !shouldFlushPartial(metric, lastFlushLen, now, lastFlushAt)) return
       lastFlushAt = now
       lastFlushLen = metric
@@ -183,12 +186,12 @@ export function createReplyPersistence(opts: {
         partial: true,
         content,
         ...(reasoning ? { reasoning } : {}),
-        /* 时间线：逐轮复制一份（别和 store 里的草稿共享引用） */
         ...(flow ? { flow } : {}),
         ...(!flow && rounds.length
           ? { rounds: rounds.map((round) => ({ ...round, tools: [...round.tools] })) }
           : {}),
         ...(traces.length ? { toolRuns: traces } : {}),
+        ...extras,
         ...answer,
         ...taskField(),
         ts: timestamp,
@@ -206,22 +209,12 @@ export function createReplyPersistence(opts: {
     persistReply: () => {
       const type = getEventType()
       if (type !== 'done' && type !== 'aborted') return
-      const final = useAppStore
+      const stored = useAppStore
         .getState()
         .threads.find((t) => t.id === threadId)
         ?.messages.find((m) => m.id === messageId)
-      /*
-       * ★ 2026-11-04：找不到那条消息时**不能直接放弃**。
-       *
-       * 这一轮还在跑的时候，界面那条会被重读盘顶掉过（扩展注入走的就是这条路，
-       * 见 `stores/app/diskActions.ts` 的 mergeLiveMessages）。原来的守卫在这里
-       * `return` —— 于是这一轮的完整正文一个字都不写，磁盘上只剩几秒前那份分段
-       * 快照，重开会话显示「这条回复没写完」。用户看到的就是「回复没了」。
-       *
-       * 兜底只能用闭包里那两份（正文 / 思考）：rounds 与 toolRuns 只在 store 里，
-       * 找不到消息就等于拿不到 —— 所以兜底这条**没有工作痕迹**，但正文保住了。
-       * 取舍写在这儿，免得以后有人以为可以随手补。
-       */
+      const final = mergeReplySnapshot(stored, opts.getSnapshot?.())
+      // 兼容未提供独立快照的旧调用方；新执行在 UI 消息缺失时仍保留完整痕迹。
       if (!final) {
         const text = getContent()
         if (!text.trim()) return
@@ -239,7 +232,6 @@ export function createReplyPersistence(opts: {
         return
       }
       const text = final.content ?? ''
-      /* 空回复（比如刚发出去就被停掉）不写 —— 免得会话里多一条空消息 */
       if (!text.trim() && (final.toolRuns ?? []).length === 0) return
       const message: StoredMessage = {
         role: 'assistant',
@@ -247,10 +239,8 @@ export function createReplyPersistence(opts: {
         content: text,
         ...(final.reasoning ? { reasoning: final.reasoning } : {}),
         ...(final.toolRuns?.length ? { toolRuns: final.toolRuns } : {}),
-        /* 时间线（思考 → 工具 → 正文 的真实顺序）—— 不存的话重开会话会塌回三段堆叠 */
         ...(final.flow ? { flow: final.flow } : {}),
         ...(!final.flow && final.rounds?.length ? { rounds: final.rounds } : {}),
-        /* 验收结论（与正文分开）—— 不存就重开会话后看不出「答复说了完成、其实有失败项」 */
         ...(final.verdict ? { verdict: final.verdict } : {}),
         /*
          * 用时（2026-10-21）：**只有真拿到终点才写**。
@@ -263,19 +253,24 @@ export function createReplyPersistence(opts: {
         ...(typeof final.durationMs === 'number' && final.durationMs > 0
           ? { durationMs: final.durationMs }
           : {}),
-        /* 开工前问过什么（AG-053 批③）—— 只读卡靠它，不存的话重开会话就只剩「模型自己改的」 */
         ...(final.clarify ? { clarify: final.clarify } : {}),
         ...(final.citations?.length ? { citations: final.citations } : {}),
+        ...(final.inputReplies?.length ? { inputReplies: final.inputReplies } : {}),
+        ...(final.collaboration ? { collaboration: final.collaboration } : {}),
+        ...(final.artifacts?.length ? { artifacts: final.artifacts } : {}),
         ...(final.usage ? { usage: final.usage } : {}),
-        /* ★ 上游说「这条没写完」（length / 断流）：落盘，否则重开会话就看不出来了 */
         ...(final.truncated ? { truncated: final.truncated } : {}),
-        /* 被中止的那条：落盘标上 aborted —— 重开会话后「重试」文案还能回来 */
         ...(type === 'aborted' || final.interrupted ? { aborted: true } : {}),
         ...answer,
         ...taskField(),
         ts: final.timestamp,
       }
       useAppStore.getState().persistMessage(threadId, message)
+      if (final.collaboration)
+        logAction(
+          'collaboration.persist.enqueued',
+          `${final.collaboration.id}:${final.collaboration.status}:ui=${!!stored}`,
+        )
     },
   }
 }

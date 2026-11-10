@@ -107,28 +107,7 @@ export type MessageRole = 'user' | 'assistant' | 'system'
 export type MessageKind = 'text' | 'code' | 'diff' | 'terminal' | 'error'
 export type MessageStatus = 'sending' | 'streaming' | 'sent' | 'error'
 
-export interface Citation {
-  id: string
-  kind: 'web' | 'file'
-  title: string
-  url?: string
-  path?: string
-  startLine?: number
-  endLine?: number
-  domain?: string
-  snippet?: string
-  fetchedAt?: number
-}
-
-export interface Artifact {
-  id: string
-  type: 'document' | 'code' | 'patch' | 'report' | 'generated_file'
-  name: string
-  path?: string
-  taskId?: string
-  sourceMessageId?: string
-  createdAt: number
-}
+export type { Citation, Artifact } from './deliverables'
 
 export interface Project {
   id: string

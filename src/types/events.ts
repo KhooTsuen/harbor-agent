@@ -94,6 +94,8 @@ export const EVENT_TYPES = [
   'collab.done',
   'collab.failed',
   'collab.error',
+  /* 按调用累计的已报告用量（预算闸靠它） */
+  'collab.usage',
 ] as const
 
 export type AgentEventType = (typeof EVENT_TYPES)[number]

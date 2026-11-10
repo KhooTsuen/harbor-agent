@@ -1,7 +1,4 @@
-/**
- * 对话 IPC：界面与 agent 循环之间的那层 —— 装配 loop 上下文（配置 / 工作目录 / 模式），
- * 把 loop 的事件转成渲染层能懂的消息，并把「写操作确认」变成一次 IPC 往返。
- */
+/** 对话发送、取消与暂停入口；模型与协作编排在 chat-run 中执行。 */
 
 const bounds = require('../core/capability-bounds.cjs')
 const life = require('../core/lifecycle.cjs')
@@ -133,7 +130,8 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
     /* sessionId 一并带上：「需要你确认」的系统通知点开后要跳回这条对话（P1-3） */
     const confirm = (request) => chatConfirm.askUser(requestId, request, emit, sessionId)
     const latestUserText = lastUserText(history)
-    const { provider: visionProvider, model: visionModel } = require('../core/codex-mcp-vision.cjs').forRun(payload, effective, provider)
+    const { provider: visionProvider, model: visionModel } =
+      require('../core/codex-mcp-vision.cjs').forRun(payload, effective, provider)
     /* ★ Codex MCP 桥的审批上下文：桥按 runId 找回**这条对话**的 confirm ——
        卡于是天然绑在正确的 requestId 上（切会话不会错配）。未启用时是空操作。 */
     codexMcp.registerRun(phaseKey, {
@@ -218,12 +216,14 @@ function register({ ipcMain, send, streams, getWorkdir, resolveWorkdir, taskEnd 
           finalContent: result.finalContent,
           reasoning: result.reasoning,
           usage: usageBucket.bucketOf(result.usage),
-          verdict: /** @type {any} */ (result).verdict ?? '', /* 验收结论：仅总结那条路有 */
+          verdict: result.verdict ?? '',
           turns: result.turns,
           toolRuns: result.toolRuns,
+          collaboration: result.collaboration,
           exhausted: result.exhausted === true,
           paused: result.paused === true,
-          truncated: result.truncated ?? '', finishReason: result.finishReason ?? '', /* 截断原因 / Provider 说「说完了」 */
+          truncated: result.truncated ?? '',
+          finishReason: result.finishReason ?? '' /* 截断原因 / Provider 说「说完了」 */,
         })
 
         const spent = ((Date.now() - (payload?.requestTime || startedAt)) / 1000).toFixed(1)

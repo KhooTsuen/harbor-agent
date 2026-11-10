@@ -32,9 +32,13 @@ function createDispatcher({ getSwitch, resolveWorkdir, makeCtx, toolsIndex, tool
         toolsIndex,
         toolReply,
         startedAt,
+        writeEnabled: live.writeEnabled,
+        getSwitch,
       })
       if (response) return response
     }
+    if (tool === 'harbor_search_web' || tool === 'harbor_recall')
+      return { ok: false, error: { code: 'NO_CONTEXT', message: '搜索或证据回取需要当前有效对话的授权上下文' } }
 
     if (tool === 'harbor_read_file') {
       /* ★ 真实路径校验（拒绝对路径 / `..` 穿越 / 符号链接越界）—— 在 Harbor 侧做 */

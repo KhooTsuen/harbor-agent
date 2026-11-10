@@ -139,7 +139,7 @@ export async function run() {
   /* AG-011：按钮抽到了 composer/SendControls.tsx */
   const sendControls = readCore('src/components/chat/composer/SendControls.tsx')
   check('SendControls 有暂停按钮', sendControls.includes('label="暂停生成"'))
-  check('暂停和停止是两个按钮', sendControls.includes('label="停止生成"'))
+  check('暂停和停止是两个按钮', /label=\{[^}]*'停止生成'/.test(sendControls) || sendControls.includes('label="停止生成"'))
   check('Composer 用上了它', readCore('src/components/chat/Composer.tsx').includes('<SendControls'))
 
   const preloadSrc = readCore('electron/preload.cjs')

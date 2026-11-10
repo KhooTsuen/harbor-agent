@@ -258,7 +258,12 @@ const saveEnv = { m: process.env.HARBOR_CODEX_MCP, w: process.env.HARBOR_CODEX_M
 delete process.env.HARBOR_CODEX_MCP
 check('★ 桥未启用 → 暴露工具为空（不认识任何 MCP 工具）', LIFE.exposedToolNames().length === 0)
 process.env.HARBOR_CODEX_MCP = '1'
-check('★ 桥开了、写没开 → 只读文件、图片和分析工具可用', JSON.stringify(LIFE.exposedToolNames()) === JSON.stringify(['harbor_read_file', 'harbor_read_image', 'harbor_env_diag', 'harbor_analyze_test_failure']))
+const exposed = LIFE.exposedToolNames()
+/* 断言意图而不是写死清单：只读工具都在，写 / 测试类一个都不许宣称 */
+check('★ 桥开了、写没开 → 只读工具可用，写与测试类一个都不宣称',
+  ['harbor_read_file', 'harbor_read_image', 'harbor_env_diag', 'harbor_analyze_test_failure'].every((n) => exposed.includes(n)) &&
+    ['harbor_write_file', 'harbor_edit_file', 'harbor_run_test', 'harbor_apply_test_fix'].every((n) => !exposed.includes(n)),
+  exposed.join(','))
 process.env.HARBOR_CODEX_MCP_WRITE = '1'
 process.env.HARBOR_CODEX_MCP_WRITE_ROOT = 'E:\\CodexWorkbench\\data\\unit-test-data\\selftest-ws'
 check('★★ 写也开了 → 三个工具（含写）', LIFE.exposedToolNames().includes('harbor_write_file'))

@@ -70,7 +70,7 @@ function parseLine(raw) {
 }
 
 /**
- * 流式扫一份会话，收集工具调用**元数据**（不存正文 —— 内存 O(1)）。
+ * 流式扫描并按执行与调用 ID 去重；仅存独立调用的元数据，不存正文。
  *
  * @param {string} sessionId 只能是 `ctx.sessionId`
  * @param {{ query?: string, tool?: string, lineNo?: number }} [options]
@@ -86,7 +86,7 @@ async function collect(sessionId, options = {}) {
   const onlyLine = Number(options.lineNo) > 0 ? Number(options.lineNo) : 0
   const started = Date.now()
 
-  const calls = []
+  const records = new Map()
   let total = 0
   let lines = 0
   let broken = 0
@@ -97,7 +97,7 @@ async function collect(sessionId, options = {}) {
   try {
     stream = fs.createReadStream(file, { encoding: 'utf8' })
   } catch {
-    return { calls, total, lines, broken, truncated, row }
+    return { calls: [], total, lines, broken, truncated, row }
   }
 
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
@@ -127,15 +127,21 @@ async function collect(sessionId, options = {}) {
       const runs = Array.isArray(parsed.toolRuns) ? parsed.toolRuns : []
       for (let i = 0; i < runs.length; i += 1) {
         const run = runs[i]
+        if (!run || typeof run !== 'object') continue
         const name = String(run?.name ?? '')
         if (toolFilter && name !== toolFilter) continue
         const output = String(run?.output ?? '')
         if (query && !output.includes(query)) continue
-        total += 1
-        calls.push({
+        const key = `${parsed.execId ?? parsed.key ?? lines}:${run?.id ?? i}`
+        const bodyAvailable = !(parsed.partial === true && !output)
+        if (records.get(key)?.bodyAvailable && !bodyAvailable) continue
+        records.delete(key)
+        records.set(key, {
           line: lines,
           runIndex: i,
           name,
+          callId: String(run?.id ?? ''),
+          bodyAvailable,
           ok: run?.ok === true,
           chars: output.length,
           fp: fingerprint(viewContentOf(run)),
@@ -143,7 +149,6 @@ async function collect(sessionId, options = {}) {
           /* `n` 等扫完再填（要说「最近一次」得知道总共有几条），先占位让形状固定 */
           n: 0,
         })
-        if (calls.length > MAX_KEEP) calls.shift()
       }
     }
   } catch {
@@ -153,7 +158,8 @@ async function collect(sessionId, options = {}) {
     stream.destroy()
   }
 
-  /* `n` = 从最近往前数（1 = 最近一次）—— 与折叠块「第 N 次」的直觉一致，也好记 */
+  const calls = [...records.values()].slice(-MAX_KEEP)
+  total = records.size
   for (let i = 0; i < calls.length; i += 1) calls[i].n = calls.length - i
   return { calls, total, lines, broken, truncated, row }
 }
@@ -161,7 +167,7 @@ async function collect(sessionId, options = {}) {
 /** 一条元数据 → 目录里那一行 */
 function lineOf(call, index) {
   const when = call.at ? new Date(call.at).toLocaleString('zh-CN', { hour12: false }) : '时间未知'
-  return `n=${call.n} · ${call.name || '(未知工具)'} · ${call.ok ? '成功' : '失败'} · ${call.chars} 字 · 指纹 ${call.fp} · ${when}`
+  return `n=${call.n} · callId=${call.callId} · ${call.name || '(未知工具)'} · ${call.ok ? '执行成功' : '执行失败'} · ${call.bodyAvailable ? `${call.chars} 字 · 指纹 ${call.fp}` : '仅有快照元数据，完整正文尚不可用'} · ${when}`
 }
 
 /**
@@ -196,7 +202,7 @@ async function catalogOf(sessionId, options = {}) {
       }
     }
     return {
-      text: `本会话没有可回取的工具记录${options.query ? `（没找到含「${options.query}」的输出）` : ''}${why}。扫描 ${got.lines} 行。`,
+      text: `已落盘记录中未命中${options.query ? `「${options.query}」` : '可回取正文'}${why}。扫描 ${got.lines} 行。当前执行的完整正文可能尚未落盘，不能据此认定工具未执行或没有证据。${got.truncated ? '扫描已超时，覆盖范围不完整。' : ''}`,
       count: 0,
       total: 0,
       truncated: got.truncated,
@@ -204,7 +210,7 @@ async function catalogOf(sessionId, options = {}) {
   }
   const head =
     `本会话最近 ${recent.length} 次工具调用（共扫到 ${got.total} 次，只保留最近 ${MAX_KEEP} 次）：` +
-    (got.truncated ? `\n⚠ 扫描超过 ${SCAN_MS / 1000} 秒提前停止，更早的记录没扫到。` : '') +
+    (got.truncated ? `\n⚠ 扫描超过 ${SCAN_MS / 1000} 秒提前停止，后续记录没扫到。` : '') +
     (got.broken > 0 ? `\n⚠ 有 ${got.broken} 行解不开（换了 Windows 账户或 data/ 换机器会出现），已跳过。` : '')
   return {
     text: [head, '', ...recent.map(lineOf)].join('\n'),
@@ -217,30 +223,31 @@ async function catalogOf(sessionId, options = {}) {
 /**
  * 取回某一次工具调用的**原始输出**（脱敏后按 offset/limit 切片）。
  *
- * 定位方式二选一：`fp`（折叠块里那串 8 位指纹）或 `n`（目录里的序号）。
- * 两种都必须**重新核对指纹** —— 记录可能在这之后被改写 / 被压缩点重排。
+ * 按 callId、fp 或 n 定位，并重新核对指纹，防止历史重排或记录变化。
  *
  * @param {string} sessionId
- * @param {{ fp?: string, n?: number, offset?: number, limit?: number }} [options]
+ * @param {{ callId?: string, fp?: string, n?: number, offset?: number, limit?: number }} [options]
  * @returns {Promise<{ text: string, ok: boolean }>}
  */
 async function fragmentOf(sessionId, options = {}) {
   const fp = String(options.fp ?? '').trim().toLowerCase()
   const n = Number(options.n) > 0 ? Number(options.n) : 0
-  if (!fp && !n) {
+  const callId = String(options.callId ?? '')
+  if (!fp && !n && !callId) {
     return { ok: false, text: '错误：要给 fp（折叠块里的 8 位指纹）或 n（目录里的序号）之一，否则不知道取哪一条。先调 recall 不带参数看目录。' }
   }
 
   const got = await collect(sessionId, {})
-  const hit = fp
-    ? got.calls.find((call) => call.fp === fp)
-    : got.calls.find((call) => call.n === n)
+  const matches = got.calls.filter(call => callId ? call.callId === callId : fp ? call.fp === fp : call.n === n)
+  if (matches.length > 1) return { ok: false, text: '指纹对应多个调用，请改用目录中的 callId 精确回取。' }
+  const hit = matches[0]
   if (!hit) {
-    const hint = fp
+    const hint = callId ? `没找到调用 ${callId}（只覆盖最近 ${MAX_KEEP} 次独立调用）` : fp
       ? `没找到指纹 ${fp} 的记录（只覆盖最近 ${MAX_KEEP} 次工具调用；更早的可能已被压缩点覆盖）`
       : `没有 n=${n} 的记录（目录里最多 ${MAX_KEEP} 条，n 从 1 = 最近一次开始数）`
     return { ok: false, text: `错误：${hint}。` }
   }
+  if (!hit.bodyAvailable) return { ok: false, text: '这条记录只有快照元数据，完整正文尚未落盘；不能据此判断没有证据。' }
 
   /* 按行重读，只解析那一行 —— 不把整份会话读进内存 */
   const one = await collect(sessionId, { lineNo: hit.line })
@@ -265,7 +272,7 @@ async function fragmentOf(sessionId, options = {}) {
   const when = hit.at ? new Date(hit.at).toLocaleString('zh-CN', { hour12: false }) : '时间未知'
   const more =
     end < raw.length
-      ? `\n\n（还有 ${raw.length - end} 字没有返回 —— 用 recall({ fp: "${hit.fp}", offset: ${end} }) 继续读）`
+      ? `\n\n（还有 ${raw.length - end} 字没有返回 —— 用 recall(${JSON.stringify({ ...(hit.callId ? { callId: hit.callId } : { fp: hit.fp }), offset: end })}) 继续读）`
       : ''
 
   return {

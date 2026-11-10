@@ -93,6 +93,7 @@ import type { CredentialsStatus } from './backend'
 
 export interface AppConfig {
   version: number
+  collab?: import('./collab').CollabSettings
   /** 只有内存里有：配置文件读不出来时的错误原因 —— 界面据此提示「配置损坏，已重置」 */
   _loadWarning?: string
   general: {

@@ -143,6 +143,7 @@ function readTextFile(root, fileInput) {
 }
 
 function register({ ipcMain }) {
+  require('./fs-probe.cjs').register({ ipcMain })
   /* 全局工作目录（设置里那个）；调用方要的是「默认目录」，与 fs-root 的 workdir 同义 */
   ipcMain.handle('fs:workdir', () => {
     const dir = workdir()

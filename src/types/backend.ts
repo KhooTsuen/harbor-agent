@@ -20,7 +20,7 @@ import type {
 } from './models'
 import type { CodexMcpSettings, CodexMcpState } from './codexMcp'
 import type { ProjectTestsSettings, ProjectTestsState } from './projectTests'
-import type { CollabState, CollabRunResult } from './collab'
+import type { CollabState, CollabRunResult, CollabSettings } from './collab'
 import type { UsageQueryEnvelope, UsageQueryOptions } from './usage-query'
 
 import type { MemoryStats, SafetyBridge } from './safety'
@@ -216,12 +216,17 @@ export interface WorkbenchBridge
     error?: string
     state: ProjectTestsState
   }>
-  /* 双模型协作（默认关）：状态 / 开关 / 启动 / 停止（角色固定，不给外部指定） */
+  /* 双模型默认关闭，两个角色由当前对话明确选择。 */
   collabStatus: () => Promise<{ ok: boolean; state: CollabState }>
-  collabSet: (partial: {
-    enabled: boolean
-  }) => Promise<{ ok: boolean; error?: string; state: CollabState }>
-  collabRun: (payload: { goal: string; projectRoot: string }) => Promise<{
+  collabSet: (
+    partial: Partial<CollabSettings>,
+  ) => Promise<{ ok: boolean; error?: string; state: CollabState }>
+  collabRun: (payload: {
+    goal: string
+    projectRoot: string
+    planner: NonNullable<import('./conversation').Thread['collab']>['planner']
+    executor: NonNullable<import('./conversation').Thread['collab']>['executor']
+  }) => Promise<{
     ok: boolean
     error?: string
     result?: CollabRunResult

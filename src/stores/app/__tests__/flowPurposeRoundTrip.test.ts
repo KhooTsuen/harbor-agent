@@ -114,4 +114,15 @@ describe('正文块用途 / 真相源对齐', () => {
     expect(src).toMatch(/processNodes[\s\S]{0,120}purposeOf/)
     expect(src).toContain('data-flow-unconfirmed')
   })
+
+  it('★★★ 未结算文案不假定原因（unconfirmed 有两种来路：被打断 / 干过活却没交付）', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/components/chat/message/ConversationFlowView.tsx'),
+      'utf8',
+    )
+    /* 2026-11-09 真机：模型只说「我接下来会跑测试」就 stop，界面却说「上次执行被打断」，
+       用户会去找一个并不存在的崩溃。文案只能说不确定，不能编原因。 */
+    expect(src).not.toContain('上次执行被打断，不能当正式答复')
+    expect(src).toContain('不能当正式答复')
+  })
 })

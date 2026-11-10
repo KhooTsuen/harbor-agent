@@ -48,11 +48,11 @@
 const DEFAULT_FLUSH_MS = 50
 
 /**
- * @param {{ send: (type: string, text: string) => void, flushMs?: number }} options
- *   `send` 收到的是**合并之后**的 (类型, 文本)
+ * @param {{ send: (type: string, text: string, stage?: string) => void, flushMs?: number }} options
+ *   `send` 收到的是**合并之后**的 (类型, 文本, 阶段)
  */
 function createBatcher({ send, flushMs = DEFAULT_FLUSH_MS }) {
-  /** @type {{ type: string, text: string } | null} */
+  /** @type {{ type: string, text: string, stage?: string } | null} */
   let batched = null
   let timer = null
   /** 上次真正发出去的时刻 —— 「该不该发了」看它，不看定时器 */
@@ -66,9 +66,9 @@ function createBatcher({ send, flushMs = DEFAULT_FLUSH_MS }) {
     }
     lastFlushAt = Date.now()
     if (!batched) return
-    const { type, text } = batched
+    const { type, text, stage } = batched
     batched = null
-    send(type, text)
+    send(type, text, stage)
   }
 
   /**
@@ -77,13 +77,13 @@ function createBatcher({ send, flushMs = DEFAULT_FLUSH_MS }) {
    * ★ 这里**不靠定时器决定节奏**（见文件头注释）：每次有增量进来就看看
    * 距上次发出够不够久，够就当场发。
    */
-  function put(type, text) {
+  function put(type, text, stage) {
     if (!text) return
-    if (batched && batched.type === type) {
+    if (batched && batched.type === type && batched.stage === stage) {
       batched.text += text
     } else {
       flush()
-      batched = { type, text }
+      batched = { type, text, ...(stage ? { stage } : {}) }
     }
 
     if (Date.now() - lastFlushAt >= flushMs) {

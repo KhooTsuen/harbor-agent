@@ -10,6 +10,7 @@ import type {
 import type { Thread } from '@/types'
 import { bridge, isElectron, useRealBackend } from './bridge'
 import { useConfigSaveStatus } from '@/stores/configSaveStatus'
+import { logAction, logError } from './actionLog'
 
 export { bridge, isElectron, useRealBackend }
 export * from './chatControl'
@@ -158,9 +159,15 @@ export async function loadSession(id: string): Promise<SessionDetail | null> {
 export async function appendMessage(id: string, message: StoredMessage): Promise<void> {
   if (!bridge) return
   try {
-    await bridge.appendMessage(id, message)
+    const result = await bridge.appendMessage(id, message)
+    if (message.collaboration) {
+      const detail = `${message.execId ?? message.key}:${message.collaboration.id}:partial=${!!message.partial}`
+      if (result.ok) logAction('collaboration.persist.ack', detail)
+      else logError('collaboration.persist.failed', detail)
+    }
   } catch {
-    /* 落盘失败不能阻断对话 */
+    if (message.collaboration)
+      logError('collaboration.persist.failed', String(message.execId ?? message.key))
   }
 }
 
@@ -281,11 +288,11 @@ export async function confirmChat(
   confirmId: string,
   approved: boolean,
   answer?: string,
-): Promise<void> {
-  if (!bridge) return
+): Promise<{ ok: boolean; error?: string }> {
+  if (!bridge) return { ok: false, error: '当前环境无法连接后台' }
   try {
-    await bridge.confirmChat(confirmId, approved, answer)
-  } catch {
-    /* 回不去也无所谓，主进程那边有超时 */
+    return await bridge.confirmChat(confirmId, approved, answer)
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '无法确认后台已收到答复' }
   }
 }

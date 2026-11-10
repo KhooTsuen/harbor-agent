@@ -57,6 +57,7 @@ export interface IoBridge {
     root?: string,
   ) => Promise<{ ok: boolean; items?: Array<{ name: string; type: string }>; error?: string }>
   fsRead: (file: string, root?: string) => Promise<FsReadResult>
+  fsProbe: (file: string, root?: string) => Promise<import('./deliverables').FileProbe>
   fsReveal: (
     target: string,
     root?: string,

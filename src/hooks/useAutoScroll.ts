@@ -9,26 +9,17 @@ import {
 import { WRITE_EPSILON } from '@/lib/scrollRestore'
 import { useRestorePosition } from './useRestorePosition'
 import { useScrollStore, type ScrollMode } from '@/stores/useScrollStore'
+import type { FlowScrollAccess } from '@/lib/flowNavigation'
 
-/* ══════════════════════════════════════════════════════════════
-   自动滚动 —— 显式状态机，不做任何推断
-
-   FOLLOW 看最新 / FREE 看历史，只由用户动作迁移（向上滚 / 没到底 → FREE，离底 ≤ 4px
-   → FOLLOW）。FREE 的内容变化补「视野顶被推下去多少」；程序落点记进 writesRef 供
-   scroll 认领；容器关掉 overflow-anchor。锚点见 lib/scrollAnchor / lib/scrollRestore。
-
-   ★ 切回对话的落位必须**等窗口补完再写**（settleWindow）：窗口是一片片补的，
-   目标一进窗口就落位的话，每补一片它上方就多一段内容，落点跟着变一次 ——
-   连续写入看着就是「从下往上反复滑」，永远对不上。
-   ══════════════════════════════════════════════════════════════ */
+/* FOLLOW / FREE 只由用户动作迁移；程序写入经 writeTop 认领。
+   FREE 按视野顶锚点补偿，切回时等 settleWindow 后再恢复，避免逐片跳动。 */
 
 /** 判定「到真正的底」的容差（迁移规则 3）—— 全文件唯一的数字 */
 export const BOTTOM_EPSILON = 4
 
-/** 自己那条对话的记忆（切走时落盘用） */
 type OwnMemory = { threadId: string; top: number; anchor: MessageAnchor | null }
 
-export interface AutoScroll {
+export interface AutoScroll extends FlowScrollAccess {
   mode: ScrollMode
   /** 滚动容器的 callback ref（监听器挂这儿：容器可能晚挂载） */
   attachScroller: (node: HTMLDivElement | null) => void
@@ -49,7 +40,6 @@ export function useAutoScroll(conversationId: string): AutoScroll {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
-  /* 意图放 ref（同步判定），state 只是给界面看的副本 */
   const modeRef = useRef<ScrollMode>('follow')
   const [mode, setMode] = useState<ScrollMode>('follow')
   /* 程序最近写过的落点（最近三个）：一帧里可能写两刀（补偿 + 贴底） */
@@ -83,7 +73,6 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     el.scrollTop = next
   }, [])
 
-  /* ── 锚点 ── */
   const captureAnchor = useCallback((): void => {
     const sc = scrollerRef.current
     const content = contentRef.current
@@ -102,7 +91,6 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     }
   }, [conversationId])
 
-  /* 落位判据与自重试都在 useRestorePosition；这里只把它接进状态机 */
   const restore = useRestorePosition({
     scroller: scrollerRef,
     content: contentRef,
@@ -111,7 +99,6 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     retry: () => onResizeRef.current(),
   })
 
-  /* ── 内容变化：FOLLOW 贴底 / FREE 先补恢复，再按锚点位移补偿 ── */
   const onResize = useCallback((): void => {
     const el = scrollerRef.current
     if (!el) return
@@ -144,6 +131,19 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     captureAnchor()
     applyMode('free')
   }, [applyMode, captureAnchor])
+
+  const position = useCallback(() => scrollerRef.current?.scrollTop ?? 0, [])
+  const seek = useCallback(
+    (top: number) => {
+      const el = scrollerRef.current
+      if (!el) return
+      restore.cancel()
+      applyMode('free')
+      writeTop(el, top)
+      captureAnchor()
+    },
+    [applyMode, captureAnchor, restore.cancel, writeTop],
+  )
 
   /** 恢复目标被窗口上限截断时改落点（只影响本次恢复，不动 store 里的真实记忆） */
   const retarget = restore.retarget
@@ -280,11 +280,20 @@ export function useAutoScroll(conversationId: string): AutoScroll {
     return () => observerRef.current?.disconnect()
   }, [])
 
-  /* 切对话回来时列表是分几拍渲染的（会话从磁盘读 + 渐增渲染），而 ResizeObserver
-     只在尺寸变化时报信。所以每次提交后再补一次落位尝试：目标没进窗口就等。 */
+  /* 磁盘读取和补片分多次提交，目标未进入窗口时继续等待恢复。 */
   useLayoutEffect(() => {
     if (restore.pending.current) onResize()
   })
 
-  return { mode, attachScroller, attachContent, enterFollow, enterFree, retarget, settleWindow }
+  return {
+    mode,
+    attachScroller,
+    attachContent,
+    enterFollow,
+    enterFree,
+    retarget,
+    settleWindow,
+    position,
+    seek,
+  }
 }

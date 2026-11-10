@@ -55,7 +55,9 @@ export async function run() {
 
   check(
     '★ 规划阶段的 content / reasoning 不往界面推（草稿不能当回答）',
-    plannerSrc.includes("type === 'content'") && plannerSrc.includes("type === 'reasoning'"),
+    /* 现在写成过滤式：这两类事件不进 input.emit（其余照常转发） */
+    plannerSrc.includes("event?.type !== 'content'") &&
+      plannerSrc.includes("event?.type !== 'reasoning'"),
   )
   check(
     '★ 失败时把真实原因写回子任务台账（通知不该显示 A 的草稿）',

@@ -136,7 +136,8 @@ export async function run() {
   group('P1-C / ⑤ 大输出限制、截断与继续读')
   const first = await recallCore.fragmentOf(a.id, { fp: fpOfBig(a.big) })
   check('★ 默认单次 4000 字符（不整段灌进去）', first.text.length < a.big.length, `${first.text.length} < ${a.big.length}`)
-  const offsetHit = /offset: (\d+)/.exec(first.text)
+  /* 提示现在是 recall({"fp":…,"offset":N}) 的 JSON 写法，键带引号、冒号后无空格 */
+  const offsetHit = /"offset":\s*(\d+)/.exec(first.text)
   check('★ 被截断时给出继续读的 offset', Boolean(offsetHit), offsetHit?.[1] ?? '没有')
   const nextOffset = Number(offsetHit?.[1] ?? 0)
   const second = await recallCore.fragmentOf(a.id, { fp: fpOfBig(a.big), offset: nextOffset })

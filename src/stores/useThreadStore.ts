@@ -4,7 +4,7 @@ import { MAX_INPUT_LENGTH, MODES } from '@/constants'
 import { deriveTitle } from '@/lib/mock'
 import { uid } from '@/lib/utils'
 import { useRealBackend } from '@/lib/backend'
-import { pauseActiveRequest, runElectronTurn, stopActiveRequest } from './thread/turns'
+import { pauseActiveRequest, runElectronTurn } from './thread/turns'
 import { createSession } from '@/lib/backend'
 import { adviseCompact, modelWindowOf, runCompact } from './thread/compact'
 import { tryHandleCommand } from './thread/commands'
@@ -21,6 +21,7 @@ import type { MessageAttachments, QueueEntry } from './thread/messageDraft'
 import { replaceDraftOwner } from './thread/draftOwner'
 import { migratePendingDraft } from './thread/pendingDraft'
 import { makeSendImmediately } from './thread/sendImmediately'
+import { stopGenerationWithFeedback } from './thread/stopGeneration'
 
 export interface ThreadState extends AttachmentSlice {
   input: string
@@ -254,22 +255,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     set({ suggestions: active === threadId ? list : [] })
   },
 
-  stopGeneration: () => {
-    /* 只停当前这条 —— 别的对话在跑的不受影响 */
-    const current = getActiveThread(useAppStore.getState())
-    void stopActiveRequest(current?.id).then((stopped) => {
-      if (!stopped) {
-        useUIStore
-          .getState()
-          .showToast('error', '停止失败', '后台未确认取消；请重试，运行中的命令可能继续执行')
-        return
-      }
-      if (current)
-        useUIStore.getState().showToast('info', '正在停止', '等待当前步骤结束后再发送新消息')
-    })
-    /* 先告知停止请求已发出；后端确认后更新为「正在停止」，失败时显示失败原因。 */
-    useUIStore.getState().showToast('info', '正在请求停止', '确认当前任务结束前，不会启动新的执行')
-  },
+  stopGeneration: stopGenerationWithFeedback,
 
   sendImmediately: makeSendImmediately(set, get),
 

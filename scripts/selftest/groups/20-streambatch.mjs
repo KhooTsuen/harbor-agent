@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
    ══════════════════════════════════════════════════════════════ */
 
 const { createBatcher } = require(join(ROOT, 'electron/core/stream-batch.cjs'))
+const { createEmitter } = require(join(ROOT, 'electron/core/chat-emit.cjs'))
 
 export async function run() {
   group('AG-011 · 流式事件批处理')
@@ -32,6 +33,41 @@ export async function run() {
   check('合出来的文本对', seen[0][0] === 'content' && seen[0][1] === 'abc')
   b.flush()
   check('再冲不会重复发', seen.length === 1)
+
+  /* ── 阶段信号与正文一起批处理 ─────────────────────────────── */
+  const seenStage = []
+  const staged = createBatcher({ send: (type, text, stage) => seenStage.push([type, text, stage]) })
+  staged.put('content', '正式', 'answer')
+  staged.put('content', '答复', 'answer')
+  staged.flush()
+  check(
+    '相同阶段的正文合并且保留 answer 标记',
+    seenStage.length === 1 && seenStage[0].join('|') === 'content|正式答复|answer',
+  )
+
+  const emitted = []
+  const emitter = createEmitter({
+    requestId: 'req-flow-test',
+    phaseKey: 'phase-flow-test',
+    send: (_channel, payload) => emitted.push(payload),
+  })
+  emitter.emit({ type: 'content', text: '总结正文', stage: 'answer' })
+  emitter.flush()
+  check('chat emitter 将 answer 阶段送到渲染事件', emitted[0]?.stage === 'answer')
+
+  const summaryEvents = []
+  let summaryCalls = 0
+  const summary = await require(join(ROOT, 'electron/core/summary-phase.cjs')).runSummary({
+    handoff: { text: '执行证据', verdict: 'done' },
+    baseArgs: {},
+    callModel: async () => ++summaryCalls === 1
+      ? { content: '前半段', finishReason: 'length' }
+      : { content: '后半段', finishReason: 'stop' },
+    emit: (event) => summaryEvents.push(event),
+  })
+  const summaryContent = summaryEvents.filter((event) => event.type === 'content')
+  check('总结续写只投递一次完整正文', summaryContent.length === 1 && summaryContent[0].text === summary.text)
+  check('完整总结携带明确答复阶段', summaryContent[0]?.stage === 'answer')
 
   /* ── 换类型：先冲上一段 ───────────────────────────────── */
   const seen2 = []
@@ -67,5 +103,6 @@ export async function run() {
     emitSrc.includes("type === 'content' || type === 'reasoning'"),
   )
   check('结构性事件发之前先冲缓存', emitSrc.includes('batcher.flush()'))
+  check('emitter 将显式 answer 阶段交给批处理器', emitSrc.includes("event.stage === 'answer'"))
   check('收尾时再冲一次（否则最后一段会丢）', /finally \{[\s\S]*?\bflush\(\)/.test(chatSrc))
 }

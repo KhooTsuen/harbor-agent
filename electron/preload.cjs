@@ -1,8 +1,4 @@
-/* 预加载脚本 —— 主进程与渲染层之间唯一的桥。原则：**白名单**，不做「暴露整个 ipcRenderer」那种偷懒写法。 */
-
 const { contextBridge, ipcRenderer } = require('electron')
-
-/* onEvent 只转发这个通道（终端数据走 onShellData —— 混在一起形状对不上）。 */
 const EVENTS = ['chat:event']
 
 /* ══════════════════════════════════════════════════════════════
@@ -14,16 +10,12 @@ const stampNow = () => (typeof performance !== 'undefined' ? performance.now() :
 
 function report(entry) {
   try {
-    /* send 不等回执：记日志不给界面加延迟，也不能因为失败把功能弄挂 */
     ipcRenderer.send('log:action', entry)
-  } catch {
-    /* 忽略 */
-  }
+  } catch {}
 }
 
 function call(channel, ...args) {
   const at = stampNow()
-  /* ★ 这里必须是 ipcRenderer.invoke：批量替换曾把这行也换成 call()，直接死递归 */
   return ipcRenderer.invoke(channel, ...args).then(
     (result) => {
       report({ kind: 'ipc', name: channel, ok: true, ms: stampNow() - at })
@@ -41,15 +33,11 @@ function call(channel, ...args) {
     },
   )
 }
-
-/* 订阅一条主进程推来的事件，返回退订函数。抽出来是因为下面 `on*` 里有 5 处**一字不差**；要包形状的（PTY）仍然自己写，不硬套 */
 function subscribe(channel, callback) {
   const handler = (_event, payload) => callback(payload)
   ipcRenderer.on(channel, handler)
   return () => ipcRenderer.removeListener(channel, handler)
 }
-
-/** 一次订阅多条通道，退订也是一次撤完。同一形状的回调直接套 `subscribe` */
 function subscribeAll(channels, callback) {
   const offs = channels.map((channel) => subscribe(channel, callback))
   return () => offs.forEach((off) => off())
@@ -63,7 +51,6 @@ const api = {
   getConfig: () => call('config:get'),
   patchConfig: (partial) => call('config:patch', partial),
   resetConfig: () => call('config:reset'),
-  /* Codex MCP 桥 / 项目测试 / 双模型协作的设置与真实生效状态（校验都在主进程） */
   codexMcpStatus: () => call('codexMcp:status'),
   codexMcpSet: (partial) => call('codexMcp:set', partial),
   projectTestsStatus: () => call('projectTests:status'),
@@ -92,8 +79,7 @@ const api = {
   saveText: (payload) => call('export:saveText', payload),
   pickJson: () => call('import:pickJson'),
   importSessions: (list) => call('session:import', list),
-  appendCompact: (id, summary, upTo) =>
-    call('session:appendCompact', id, summary, upTo),
+  appendCompact: (id, summary, upTo) => call('session:appendCompact', id, summary, upTo),
   listSkills: () => call('skills:list'),
   createSkill: (name, description) => call('skills:create', name, description),
   removeSkill: (id) => call('skills:remove', id),
@@ -101,7 +87,8 @@ const api = {
   getMemory: () => call('memory:get'),
   setMemory: (text) => call('memory:set', text),
   clearMemory: () => call('memory:clear'),
-  memoryList: (options) => call('memory:list', options), /* 结构化记忆；「为什么是它」见 core/memory-explain.cjs */
+  memoryList: (options) =>
+    call('memory:list', options) /* 结构化记忆；「为什么是它」见 core/memory-explain.cjs */,
   memorySearch: (query, options) => call('memory:search', { query, ...options }),
   memoryAdd: (input) => call('memory:add', input),
   memoryUpdate: (payload) => call('memory:update', payload),
@@ -109,15 +96,14 @@ const api = {
   memoryEnable: (id) => call('memory:enable', id),
   memoryRemove: (id) => call('memory:remove', id),
   memoryExplain: (options) => call('memory:explain', options),
-  /* 经验（自我纠错闭环）：设置页看全库 + 人批准/驳回/恢复；判据全在 core/experience-*（preload 只搬运） */
   experienceList: (options) => call('experience:list', options),
   experienceStats: () => call('experience:stats'),
   experienceReview: (payload) => call('experience:review', payload),
   searchProviders: () => call('search:providers'),
   testSearch: (override) => call('search:test', override),
   diagnosticsCopy: () => call('diagnostics:copy'),
-  /* 数据目录：看当前用哪儿 / 迁到别处（旧目录不删，见 core/data-migrate.cjs） */
-  dataLocationGet: () => call('dataLocation:get'), dataLocationMigrate: (p) => call('dataLocation:migrate', p),
+  dataLocationGet: () => call('dataLocation:get'),
+  dataLocationMigrate: (p) => call('dataLocation:migrate', p),
   diagnosticsSave: () => call('diagnostics:save'),
   diagnosticsOpenDir: () => call('diagnostics:openDir'),
   sceneSnapshot: () => call('scene:snapshot'),
@@ -129,46 +115,40 @@ const api = {
   sceneImage: (prompt, size) => call('scene:image', { prompt, size }),
   fsWorkdir: () => call('fs:workdir'),
   fsTree: (dir) => call('fs:tree', dir),
-  /* root = 该对话的目录（右栏文件树那个根）。不传 → 内核回落全局工作目录 */
   fsList: (dir, root) => call('fs:list', dir, root),
   fsRead: (file, root) => call('fs:read', file, root),
+  fsProbe: (file, root) => call('fs:probe', file, root),
   fsReveal: (target, root) => call('fs:reveal', target, root),
   fsPickAndRead: () => call('fs:pickAndRead'),
   pickImageAsDataUrl: () => call('fs:pickImageAsDataUrl'),
-  /* 「附加文件」：任何格式，主进程按扩展名分流解析（见 handlers/file-attach.cjs） */
   attachFiles: () => call('file:attach'),
-  /* 图片查看器三条：另存为 / 文件夹里显示 / 复制（见 handlers/image-file.cjs） */
   imageSaveAs: (src) => call('image:saveAs', { src }),
   imageReveal: (src) => call('image:reveal', { src }),
   imageCopy: (src) => call('image:copy', { src }),
-
-  /* 项目级规则（<工作目录>/.harbor/rules.md）：状态 / 重新加载 / 打开（create=true 时先建骨架再打开） */
   projectRulesStatus: (dir) => call('projectRules:status', { dir }),
   projectRulesReload: (dir) => call('projectRules:reload', { dir }),
   projectRulesOpen: (payload) => call('projectRules:open', payload),
   projectRulesReadFile: (payload) => call('projectRules:readFile', payload),
   projectRulesWriteFile: (payload) => call('projectRules:writeFile', payload),
 
-  shellCwd: () => call('shell:cwd'), shellReset: () => call('shell:reset'),
+  shellCwd: () => call('shell:cwd'),
+  shellReset: () => call('shell:reset'),
   shellRun: (payload) => call('shell:run', payload),
   shellAbort: (requestId) => call('shell:abort', requestId),
 
   auditList: (options) => call('audit:list', options),
   auditStats: (days) => call('audit:stats', days),
-  /* 「数据与用量」的计数：只要数字、不读内容（见 core/data-port.cjs） */
   dataPortCount: () => call('dataPort:count'),
-  auditClear: () => call('audit:clear'), auditPrune: () => call('audit:prune'),
-  /* 错误清单（右栏「错误」标签）：只读，只看观察哨记的那一路 */
+  auditClear: () => call('audit:clear'),
+  auditPrune: () => call('audit:prune'),
   errorsList: (options) => call('errors:list', options),
   riskClassify: (command) => call('risk:classify', command),
-
-  /* 项目（一等实体）：登记表落盘，改名的项目 id 不变 */
   projectsList: () => call('projects:list'),
   projectsSave: (input) => call('projects:save', input),
   projectsRemove: (id) => call('projects:remove', id),
   projectsSetActive: (id) => call('projects:setActive', id),
-  taskPresets: () => call('presets:list'), /* ②-2：类型表来自内核（core/task-presets.cjs），前端不自己抄 */
-  /* 安全相关：网络策略（说明由内核生成，前端别重写）、会话加密（开/关会重写全部会话，先备份） */
+  taskPresets: () =>
+    call('presets:list') /* ②-2：类型表来自内核（core/task-presets.cjs），前端不自己抄 */,
   networkPolicy: () => call('security:network'),
   sessionCrypto: () => call('security:sessionCrypto'),
   setSessionCrypto: (enable) => call('security:setSessionCrypto', enable),
@@ -179,13 +159,11 @@ const api = {
 
   taskList: (options) => call('task:list', options),
   taskUnfinished: () => call('task:unfinished'),
-  /* AG-012：重启后的恢复清单 */
   taskRecovery: () => call('task:recovery'),
   taskGet: (id) => call('task:get', id),
   taskDiagnose: (id) => call('task:diagnose', id),
   taskUpdate: (payload) => call('task:update', payload),
   taskTestStatus: (options) => call('task:testStatus', options),
-  /* 个人资料：名字进配置、头像存 data/avatars/ */
   profileGet: () => call('profile:get'),
   profileSetName: (name) => call('profile:setName', name),
   profilePickAvatar: () => call('profile:pickAvatar'),
@@ -205,13 +183,11 @@ const api = {
   artifactSave: (draft) => call('artifact:save', draft),
   artifactRemove: (id) => call('artifact:remove', id),
   artifactReveal: (id) => call('artifact:reveal', id),
-  /* 定时任务（core/schedule-*.cjs，台账 data/schedules.json）：runNow 立刻返回，不 await（可能跑几分钟） */
   schedulesList: () => call('schedules:list'),
   schedulesSave: (input) => call('schedules:save', input),
   schedulesRemove: (id) => call('schedules:remove', id),
   schedulesToggle: (id, enabled) => call('schedules:toggle', id, enabled),
   schedulesRunNow: (id) => call('schedules:runNow', id),
-  /* 下载管理器（core/download-queue.cjs，台账 data/downloads.json）：动作走这里，进度走 onDownloadsEvent */
   downloadsList: () => call('downloads:list'),
   downloadsAdd: (payload) => call('downloads:add', payload),
   downloadsPause: (id) => call('downloads:pause', id),
@@ -233,7 +209,8 @@ const api = {
 
   statsSummary: () => call('stats:summary'),
   statsReset: () => call('stats:reset'),
-  usageQuery: (options) => call('usage:query', options), /* 真实账本（known/unknown），见 core/usage-query.cjs */
+  usageQuery: (options) =>
+    call('usage:query', options) /* 真实账本（known/unknown），见 core/usage-query.cjs */,
 
   backupList: () => call('backup:list'),
   backupCreate: () => call('backup:create'),
@@ -247,18 +224,11 @@ const api = {
 
   sendChat: (payload) => call('chat:send', payload),
   abortChat: (requestId) => call('chat:abort', requestId),
-  /* AG-011：暂停（做完手上这步就往回走，不是立刻断） */
   pauseChat: (requestId) => call('chat:pause', requestId),
   confirmChat: (confirmId, approved, answer) => call('chat:confirm', confirmId, approved, answer),
   compactChat: (payload) => call('chat:compact', payload),
-
-  /** 订阅流式事件。返回取消订阅的函数。只转发白名单里的通道，别的通道一律丢掉。 */
   onEvent: (callback) => subscribeAll(EVENTS, callback),
-
-  /** 只订阅终端输出。和 onEvent 分开，免得终端数据混进对话流里 */
   onShellData: (callback) => subscribe('shell:data', callback),
-
-  /* 订阅 PTY 两个事件（输出分片 / 退出）。合成一个回调：终端面板总是两个都要处理。 */
   onPtyEvent: (callback) => {
     const onData = (_event, payload) => callback({ type: 'data', ...payload })
     const onExit = (_event, payload) => callback({ type: 'exit', ...payload })
@@ -269,26 +239,21 @@ const api = {
       ipcRenderer.removeListener('pty:exit', onExit)
     }
   },
-  onPluginsChanged: (callback) => subscribe('plugins:changed', callback), /* 插件热插拔 */
-  /* 下载进度 / 状态推送（见 handlers/downloads.cjs；progress 带上 received/total/speedBps） */
+  onPluginsChanged: (callback) => subscribe('plugins:changed', callback) /* 插件热插拔 */,
   onDownloadsEvent: (callback) => subscribe('downloads:event', callback),
-  onImageDone: (callback) => subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
-  /* 浏览：主进程发来的操作请求 + 网页弹窗转过来的新标签地址 */
+  onImageDone: (callback) =>
+    subscribeAll(['image:ready', 'image:failed', 'image:progress'], callback),
   onBrowserRequest: (callback) => subscribe('browser:request', callback),
   onBrowserOpenTab: (callback) => subscribe('browser:openTab', callback),
-  /* 一轮跑完了（主进程推）：文案由主进程算好（藏到托盘时渲染层会被节流判不准） */
   onTaskEnd: (callback) => subscribe('app:taskEnd', callback),
-  /* 用户点了系统通知 —— 主进程把窗口叫回来，再推这条给渲染层跳到那条任务 */
   onNotificationClick: (callback) => subscribe('app:notificationClick', callback),
-  /* 当前标签的 webContents id / 就绪推给主进程（B5：主进程据此直连，不必往返） */
   browserActive: (payload) => call('browser:active', payload),
-  /* 扩展桥 + 安装插件：两者都不收路径（路径全在主进程按数据根算） */
   extActiveSession: (id) => call('ext:activeSession', id),
-  onExtPage: (callback) => subscribe('ext:page', callback), extStatus: () => call('ext:status'), extInstall: () => call('ext:install'),
-  /* 界面动作（点了哪个功能）—— 只报动作名。渲染层全量点击监听用它。 */
+  onExtPage: (callback) => subscribe('ext:page', callback),
+  extStatus: () => call('ext:status'),
+  extInstall: () => call('ext:install'),
   logAction: (entry) => report(entry),
   probeProvider: (providerId, model) => call('provider:probe', { providerId, model }),
-  /** 渲染层没被捕获的异常（window.onerror / unhandledrejection / ErrorBoundary） */
   logError: (entry) => {
     try {
       ipcRenderer.send('log:error', entry)

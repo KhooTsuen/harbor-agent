@@ -105,14 +105,16 @@ async function runSummary({ handoff, baseArgs, callModel, emit }) {
   const reply = await replyContinue.completeReply({
     result: { ...result, content: pickText(result) },
     messages,
-    emit,
+    emit: (event) => {
+      if (event.type !== 'content') emit?.(event)
+    },
     callModel,
     addUsage,
     baseArgs: args,
   })
 
   const text = String(reply?.text ?? '')
-  if (text.trim()) emit?.({ type: 'content', text })
+  if (text.trim()) emit?.({ type: 'content', text, stage: 'answer' })
 
   return {
     text,

@@ -14,7 +14,7 @@ function absolutePath(root, input) {
   return path.resolve(root, String(input ?? ''))
 }
 
-async function runConversationTool({ tool, args, entry, ctx, toolsIndex, toolReply, startedAt }) {
+async function runConversationTool({ tool, args, entry, ctx, toolsIndex, toolReply, startedAt, writeEnabled, getSwitch }) {
   if (!entry) return null
   if (entry.signal?.aborted) return denied('CANCELLED', '当前对话已经停止')
   if (entry.threadSettings?.allowTools === false)
@@ -23,7 +23,21 @@ async function runConversationTool({ tool, args, entry, ctx, toolsIndex, toolRep
   if (!root || ctx.workdir !== root || ctx.sessionId !== entry.sessionId) {
     return denied('CONTEXT_MISMATCH', '对话工作目录或授权身份已失效')
   }
+  if (tool === 'harbor_recall') {
+    const cleaned = require('./codex-mcp-recall-tool.cjs').clean(args)
+    if (!cleaned.ok) return denied('BAD_INPUT', cleaned.message)
+    const text = await toolsIndex.execute('recall', cleaned.args, { ...ctx, recallEvidence: entry.recallEvidence })
+    return toolReply(text, { harborTool: 'recall', ms: Date.now() - startedAt })
+  }
 
+  if (tool === 'harbor_search_web') {
+    if (entry.allowNetwork !== true || ctx.allowNetwork === false)
+      return denied('NETWORK_DISABLED', '当前对话没有联网权限')
+    const cleaned = require('./codex-mcp-search-tool.cjs').cleanSearch(args)
+    if (!cleaned.ok) return denied('BAD_INPUT', cleaned.message)
+    const text = await toolsIndex.execute('search_web', cleaned.args, ctx)
+    return toolReply(text, { harborTool: 'search_web', ms: Date.now() - startedAt })
+  }
   if (tool === 'harbor_read_image') {
     const text = await toolsIndex.execute('read_image', args, ctx)
     return toolReply(text, { harborTool: 'read_image', ms: Date.now() - startedAt })
@@ -48,6 +62,7 @@ async function runConversationTool({ tool, args, entry, ctx, toolsIndex, toolRep
     })
   }
   if (tool !== 'harbor_write_file' && tool !== 'harbor_edit_file') return null
+  if (writeEnabled !== true) return denied('WRITE_DISABLED', 'MCP 桥已关闭文件写入能力')
   if (entry.allowWrite === false || ctx.permission === 'readonly')
     return denied('READ_ONLY', '当前对话没有写入权限')
 
@@ -82,10 +97,13 @@ async function runConversationTool({ tool, args, entry, ctx, toolsIndex, toolRep
   const at = normalized.indexOf(oldText)
   if (!oldText || at < 0 || normalized.indexOf(oldText, at + oldText.length) >= 0)
     return denied('EDIT_NOT_UNIQUE', '待替换文本必须在当前文件中恰好出现一次')
+  const live = typeof getSwitch === 'function' ? getSwitch() : { mcpEnabled: true, writeEnabled }
+  if (live.mcpEnabled !== true || live.writeEnabled !== true)
+    return denied('WRITE_DISABLED', '读取期间 MCP 桥或文件写入能力已被关闭')
   const text = await toolsIndex.execute(
     'edit_file',
-    { path: resolved, oldText: args?.oldText, newText: args?.newText },
-    { ...ctx, freshApproval: true },
+    { path: resolved, oldText: args?.oldText, newText: args?.newText, expectHash: args?.expectHash },
+    { ...ctx, freshApproval: true, expectHash: args?.expectHash },
   )
   return toolReply(text, { harborTool: 'edit_file', resolved, ms: Date.now() - startedAt })
 }
@@ -93,6 +111,7 @@ async function runConversationTool({ tool, args, entry, ctx, toolsIndex, toolRep
 function recheckConversation(name, request, runId) {
   const entry = require('./codex-mcp-context.cjs').get(runId)
   if (!entry || entry.signal?.aborted || entry.threadSettings?.allowTools === false) return false
+  if (name !== 'write_file' && name !== 'edit_file') return true
   if (entry.allowWrite === false || entry.permission === 'readonly') return false
   const root = String(entry.workdir ?? '')
   if (!root) return false

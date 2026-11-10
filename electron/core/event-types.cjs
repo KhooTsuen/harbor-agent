@@ -117,6 +117,8 @@ const CHAT_EVENT_TYPES = [
   'collab.done',
   'collab.failed',
   'collab.error',
+  /* 按调用累计的已报告用量（预算闸靠它；见 collab-budget.cjs 的 observe） */
+  'collab.usage',
 ]
 
 module.exports = { AGENT_EVENTS, CHAT_EVENT_TYPES, DECISION_EVENTS }

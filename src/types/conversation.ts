@@ -44,6 +44,8 @@ export interface ContextInputEstimate {
 }
 
 export interface Message {
+  collaboration?: import('./collaboration').CollaborationRecord
+  inputReplies?: import('./inputReply').StoredInputReply[]
   id: string
   /**
    * 这条消息在**磁盘上的 key**（重读时内核给的原样 id）。
@@ -251,10 +253,7 @@ export interface ConversationState {
 }
 
 export interface Thread {
-  /**
-   * 这条对话的工作目录。
-   * 空 = 不属于任何「对话文件夹」，用全局默认工作目录。
-   */
+  /** 对话工作目录；空值使用默认目录。 */
   workdir?: string
   /**
    * 标题是不是系统自动起的。

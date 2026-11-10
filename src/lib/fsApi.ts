@@ -61,13 +61,25 @@ export async function fsPickAndRead(): Promise<{
   }
 }
 
-export async function fsReveal(path: string): Promise<boolean> {
+export async function fsReveal(path: string, root?: string): Promise<boolean> {
   if (!bridge) return false
   try {
-    const result = await bridge.fsReveal(path)
+    const result = await bridge.fsReveal(path, root)
     return result.ok
   } catch {
     return false
+  }
+}
+
+export async function fsProbe(
+  path: string,
+  root?: string,
+): Promise<import('@/types/deliverables').FileProbe> {
+  if (!bridge?.fsProbe) return { ok: false, error: '当前环境无法核验本地文件' }
+  try {
+    return await bridge.fsProbe(path, root)
+  } catch {
+    return { ok: false, error: '文件核验暂不可用' }
   }
 }
 

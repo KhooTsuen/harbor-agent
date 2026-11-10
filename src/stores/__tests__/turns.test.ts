@@ -87,6 +87,12 @@ describe('runElectronTurn', () => {
     /* 关键断言：sendChat 已经返回了，但界面仍应是「发送中」 */
     expect(h.sent).not.toBeNull()
     expect(setCalls.at(-1)?.sendingThreads).toContain(threadId)
+    const answer = useAppStore
+      .getState()
+      .threads.find((t) => t.id === threadId)
+      ?.messages.at(-1)
+    expect(answer?.execId).toBe(h.sent?.requestId)
+    expect(answer?.execId).toMatch(/^req_/)
 
     emitFromBackend({ type: 'done', content: '好的' })
     await pending

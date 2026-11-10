@@ -45,7 +45,8 @@ const RUN_ID_RE = /^[A-Za-z0-9_-]{1,120}$/
  * @param {string} runId 这一轮的标识（= `chat:send` 的 `phaseKey`，也是 codex 的 `traceId`）
  * @param {{ requestId?: string, sessionId?: string, confirm?: Function, source?: string,
  * collab?: boolean, workdir?: string, permission?: string, threadSettings?: object,
- * allowWrite?: boolean, allowNetwork?: boolean, vision?: object, signal?: AbortSignal }} ctx
+ * allowWrite?: boolean, allowNetwork?: boolean, vision?: object, signal?: AbortSignal,
+ * taskId?: string, changeSetId?: string, onTool?: Function, recallEvidence?: Function }} ctx
  * @returns {boolean} 登记成功了吗（runId 形状不对 / 没有 confirm → false）
  */
 function register(runId, ctx = {}) {
@@ -63,6 +64,10 @@ function register(runId, ctx = {}) {
     allowNetwork: ctx.allowNetwork !== false,
     vision: ctx.vision ?? null,
     signal: ctx.signal,
+    taskId: String(ctx.taskId ?? ''),
+    changeSetId: String(ctx.changeSetId ?? ''),
+    onTool: ctx.onTool,
+    recallEvidence: ctx.recallEvidence,
     confirm: ctx.confirm,
     /* 卡的来源标注（现在是 'codex'，将来别的通道接进来能复用这张表） */
     source: String(ctx.source ?? 'codex'),
@@ -77,7 +82,9 @@ function register(runId, ctx = {}) {
  * @param {string} runId
  * @returns {{ requestId: string, sessionId: string, confirm: Function, source: string, at: number,
  * collab: boolean, workdir: string, permission: string, threadSettings: object,
- * allowWrite: boolean, allowNetwork: boolean, vision: object|null, signal?: AbortSignal } | null}
+ * allowWrite: boolean, allowNetwork: boolean, vision: object|null, signal?: AbortSignal,
+ * taskId?: string, changeSetId?: string, onTool?: Function,
+ * recallEvidence?: Function } | null}
  */
 function get(runId) {
   const key = String(runId ?? '')

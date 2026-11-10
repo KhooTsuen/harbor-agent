@@ -21,6 +21,7 @@ import {
   type TurnSetter,
 } from './turnControl'
 import { createReplyPersistence } from './replyPersistence'
+import { snapshotReply } from './replySnapshot'
 /* 重试起点：retry 时把这一轮已流出去的半截退掉（见 retryRollback.ts） */
 import { markRoundStart } from './retryRollback'
 import { createTurnWatchdog } from './turnWatchdog'
@@ -29,13 +30,6 @@ import { drainPendingRegen } from './regenQueue'
 import { questionTargetOf, existingAnswersAfter } from '@/lib/answers'
 import type { StoredMessage } from '@/types/models-extra'
 import { logError } from '@/lib/actionLog'
-
-/* ══════════════════════════════════════════════════════════════
-   一轮对话的两条实现路径
-
-   **Electron** → 真流式（agent 循环、工具、写确认）；**浏览器预览** → 静态回复。
-   两条路产出的 Message 形状一样，UI 不用关心走的哪条。本文件只负责「怎么产生回复」。
-   ══════════════════════════════════════════════════════════════ */
 
 /* 「在跑的那几个请求」（登记 / 停止 / 暂停 / 排队）搬到了 turnControl.ts —— 那边自成一体，
    而这个文件贴着 300 行红线。这里**原样再导出**，外部（useThreadStore / regenerate / 测试）的导入路径不用改。 */
@@ -47,10 +41,6 @@ export {
   type ThreadPartial,
   type TurnSetter,
 } from './turnControl'
-
-/* ══════════════════════════════════════════════════════════════
-   路径 A：真实后端（Electron）
-   ══════════════════════════════════════════════════════════════ */
 
 /**
  * **连续这么久没有新内容**才算卡住（旧语义是「一轮最多跑这么久」—— 那个语义本身就是这次修的 bug，见 turnWatchdog.ts）。
@@ -100,9 +90,11 @@ export async function runElectronTurn(
   const target = questionTargetOf(thread.messages)
   const seed = seedAnswers.length ? seedAnswers : existingAnswersAfter(thread.messages, target)
 
+  const requestId = uid('req')
   /* 流式消息：内容随真实事件逐步长出来 */
   const placeholder: Message = {
     id: uid('msg'),
+    execId: requestId,
     threadId,
     role: 'assistant',
     content: '',
@@ -119,7 +111,6 @@ export async function runElectronTurn(
   app.addMessage(threadId, placeholder)
   /* AG-001：以前这里 setThreadStatus('running') —— 渲染层自己宣布「在跑」。现在状态由主进程推。 */
 
-  const requestId = uid('req')
   beginTurnRequest(threadId, requestId)
   set((s) => ({ sendingThreads: [...new Set([...s.sendingThreads, threadId])] }))
 
@@ -130,6 +121,14 @@ export async function runElectronTurn(
   let content = ''
 
   const patch = (fields: Partial<Message>): void => {
+    if (
+      fields.collaboration &&
+      !useAppStore
+        .getState()
+        .threads.find((t) => t.id === threadId)
+        ?.messages.some((m) => m.id === placeholder.id)
+    )
+      logError('collaboration.patch.missing', `${requestId}:${placeholder.id}`)
     useAppStore.getState().updateMessage(threadId, placeholder.id, fields)
   }
 
@@ -160,10 +159,7 @@ export async function runElectronTurn(
   /** 收尾的「为什么」：只有非事件路径才需要显式给（兜底超时 / 发送失败）；空 = 看 lastEventType */
   let finishReason = ''
 
-  /*
-   * 助手回复的落盘（分段落盘 + 收尾那条）—— 实现与来由见 replyPersistence.ts。
-   * 这里只把「当前内容是什么」的读法交给它，避免闭包里那几份拷贝互相不同步。
-   */
+  // 独立执行快照兜底 UI 占位消息丢失；落盘实现见 replyPersistence.ts。
   const persistence = createReplyPersistence({
     threadId,
     messageId: placeholder.id,
@@ -175,6 +171,7 @@ export async function runElectronTurn(
     getContent: () => content,
     getReasoning: () => reasoning,
     getEventType: () => lastEventType,
+    getSnapshot: () => streamState.snapshot(),
   })
 
   /**
@@ -229,12 +226,12 @@ export async function runElectronTurn(
     toolRuns,
     rounds,
     nativeFlow: true,
+    expectedCollaboration: Boolean(thread.collab),
     citations,
     patch,
     threadId,
-    /* 重试起点：按下发送那一刻（后面每个 turn_start 会重记，见 streamEvents） */
     retryMarks: markRoundStart(content, reasoning, rounds),
-    snapshot: () => ({ ...placeholder, content, reasoning, toolRuns, citations, rounds }),
+    snapshot: () => snapshotReply(placeholder, streamState),
     finish: () => {
       finish()
       /* AG-001：不自己算 success/error/cancelled（主进程已推终态）；这里只管「要不要跑后置任务」 */

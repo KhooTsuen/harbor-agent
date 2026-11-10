@@ -175,7 +175,9 @@ export async function run() {
   const atGate = runSrc.indexOf('foldGate.inspect(')
   const atLoop = runSrc.indexOf('loop.run(')
   check('★★ runTurn 里闸在 loop.run 之前（顺序错了等于没拦）', atGate > 0 && atLoop > 0 && atGate < atLoop, `${atGate} / ${atLoop}`)
-  check('★★ runTurn 里闸也在协作分支之前（多模型那条同样不能绕）', atGate < runSrc.indexOf('runCollaboration('), `${atGate}`)
+  /* 协作分支现在走 handlers/chat-collab.cjs（内部再调 runCollaboration），两个入口都要在闸之后 */
+  const atCollab = Math.max(runSrc.indexOf("chat-collab.cjs"), runSrc.indexOf('runCollaboration('))
+  check('★★ runTurn 里闸也在协作分支之前（多模型那条同样不能绕）', atGate > 0 && atCollab > atGate, `${atGate} / ${atCollab}`)
   check('★ takeTurns 把折出来的损失逐条透出（不是只数个数）', /lossy\.push\(\.\.\.digest\.lossy/.test(windowSrc))
   /* 反向也钉一条：以后再有人给用户原话加上限，这里当场红 */
   check('★★ 折叠里对用户原话**没有**任何按字数截断的分支', !/full\.slice\(0,\s*half\)/.test(foldSrc) && !/full\.slice\(-half\)/.test(foldSrc))

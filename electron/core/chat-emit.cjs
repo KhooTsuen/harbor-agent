@@ -36,7 +36,8 @@ function createEmitter({ requestId, phaseKey, send }) {
    */
   let seq = 0
   const batcher = createBatcher({
-    send: (type, text) => send('chat:event', { requestId, type, text, seq: ++seq }),
+    send: (type, text, stage) =>
+      send('chat:event', { requestId, type, text, ...(stage ? { stage } : {}), seq: ++seq }),
   })
 
   function emit(event) {
@@ -45,7 +46,8 @@ function createEmitter({ requestId, phaseKey, send }) {
     metrics.observe(phaseKey, event)
 
     if ((type === 'content' || type === 'reasoning') && typeof event.text === 'string') {
-      batcher.put(type, event.text)
+      const stage = event.stage === 'answer' || event.stage === 'process' ? event.stage : undefined
+      batcher.put(type, event.text, stage)
       return
     }
     batcher.flush()

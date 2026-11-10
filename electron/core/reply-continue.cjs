@@ -192,7 +192,7 @@ async function completeReply(input) {
   })
 
   const added = got.text.slice(first.length)
-  if (added.trim()) emit?.({ type: 'content', text: added })
+  if (added.trim()) emit?.({ type: 'content', text: added, stage: 'answer' })
 
   /* 续完还是 length / 还是没 finish → 这条到底还是没写完，如实说 */
   const stillCut = Boolean(got.lastReason) ? got.lastReason === 'length' : got.continued > 0

@@ -1,20 +1,13 @@
-/**
- * 暴露给 Codex 的 **MCP 工具定义**（2026-10-17 · 生产版）
- *
- * ★ 这一层只做两件事：**schema** 与 **参数净化**，一个字节的执行都没有 ——
- * 真正干活的是主进程侧的 `tools.execute`（`codex-mcp-bridge.cjs`）。
- * ★ 形状层（字段 / 类型 / 长度 / 枚举）在这里；**语义**判据（路径越界、命令白名单）
- * 在 `codex-mcp-policy.cjs`。两层都不可省。
- * ★ `annotations.readOnlyHint` 是**诚实的描述**，不是安全控制。
- * ⚠️ 不 require electron。
- */
+/** MCP schema 与参数净化；宿主工具执行时继续检查权限与语义边界。 */
 
 const policy = require('./codex-mcp-policy.cjs')
 const test = require('./codex-mcp-test.cjs')
 const imageTool = require('./codex-mcp-image-tool.cjs')
+const searchTool = require('./codex-mcp-search-tool.cjs')
 
 /** 工具名 → 定义 */
 const TOOLS = [
+  require('./codex-mcp-recall-tool.cjs').TOOL,
   {
     name: 'harbor_read_file',
     description:
@@ -33,6 +26,7 @@ const TOOLS = [
     },
   },
   ...imageTool.TOOLS,
+  searchTool.TOOL,
   {
     name: 'harbor_env_diag',
     description:
@@ -276,8 +270,10 @@ function cleanCall(name, rawArgs) {
   if (!TOOL_NAMES.includes(name)) {
     return { ok: false, message: `没有名为 ${String(name)} 的工具（只有：${TOOL_NAMES.join(' / ')}）` }
   }
+  if (name === 'harbor_recall') return require('./codex-mcp-recall-tool.cjs').clean(rawArgs)
   if (name === 'harbor_read_file') return cleanReadFile(rawArgs)
   if (name === 'harbor_read_image') return imageTool.cleanReadImage(rawArgs)
+  if (name === 'harbor_search_web') return searchTool.cleanSearch(rawArgs)
   if (name === 'harbor_write_file') return cleanWriteFile(rawArgs)
   if (name === 'harbor_edit_file') return cleanEditFile(rawArgs)
   if (name === 'harbor_run_test') return cleanRunTest(rawArgs)

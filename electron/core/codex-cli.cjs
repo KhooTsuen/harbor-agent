@@ -118,7 +118,7 @@ async function chatStreamImpl(options) {
     tools: options.tools,
     /* ★ 桥启用时，Codex **真能调到**这些 MCP 工具 —— 提示词不能再否认有工具
        （否则它有时信以为真、回「当前未提供 xxx MCP 工具」，见 codex-msg.cjs） */
-    mcpTools: mcpLifecycle.exposedToolNames(),
+    mcpTools: options.disableHarborMcp ? [] : mcpLifecycle.exposedToolNames(),
   })
   const state = newState()
   let ttftMs = null
@@ -131,7 +131,9 @@ async function chatStreamImpl(options) {
     env: buildEnv(provider),
     /* ★ 启用 MCP 桥时才非空 —— 让 codex 能通过桥调 Harbor 的能力（沙箱仍 read-only）；
        末位带上**这一轮的 runId**，桥据此把审批卡发给发起它的那条对话 */
-    extraArgs: mcpLifecycle.codexExtraArgs(options.traceId ?? options.taskId ?? ''),
+    extraArgs: options.disableHarborMcp
+      ? []
+      : mcpLifecycle.codexExtraArgs(options.traceId ?? options.taskId ?? ''),
     signal: options.signal,
     /* codex 自己的宽超时（刻意不用 idleTimeoutMs —— 那是 HTTP 路径的约定） */
     idleMs: DEFAULT_IDLE_MS,
