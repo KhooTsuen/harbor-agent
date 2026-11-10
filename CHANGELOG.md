@@ -1,5 +1,29 @@
-## [未发布]
+## [1.36.0-beta.2] — 2026-11-11
 
+### 修复：真机验收脚本对齐原生对话流 DOM（验收可用性）
+
+界面在上一版换成原生 `details` + `data-flow-*` 契约之后，`tools/` 下四个验收脚本**一处都读不到**
+（`entries` 恒为 0），而脚本照跑不误、只报一堆红 —— 正是 `AGENT.md` 警告的「脚本静默失效」。
+第一次跑 `e2e-process-states` 时 25 条里红了 15 条，截图却证明功能正常，全是探针过期。
+
+- `tools/live-probe.mjs`：过程入口改认 `summary[aria-expanded]`（不再是 `button[aria-label="查看过程"]`）；
+  状态改认 `[data-tool-status]`（组摘要）与 `[data-run-status]`（每条明细）两层；
+  侧栏定位改认 `aria-label="单独对话" / "对话文件夹" / "已归档的对话"` 三个区，
+  会话行判据是「有 `aria-current` 属性」（`aria-current={active}` 非选中时是 `false`，属性仍在），
+  并记 `window.__harborNeighbourIdx` 逐条环形试过去 —— 修掉「新建空对话后点回第一条、永远原地打转」。
+- `tools/e2e-process-states.mjs` / `e2e-process-live.mjs`：断言按新语义改写（入口跑完落成「执行过程」、
+  失败标记看 `data-process-failed`、结束态不再要求「N 个步骤」这种已删掉的文案）。
+- 改的是**验收资产，不是产品**；产品源码一行未动。
+
+验证（桌面真机、隔离数据根 `data/unit-test-data`，假上游不联网）：
+`e2e-process-states` **24/24**、`e2e-process-live` **33/33**、`e2e-tool-failure-visible` 6/6、
+`e2e-retry-rollback` 7/7、`e2e-clarify-card` 7/7、`e2e-scroll-return` 5/5、
+`e2e-user-constraints` 4/4、`e2e-fail-streak` 6/6、`e2e-context-integrity` 11/11、
+`e2e-sensitive-grant` 7/7 —— 合计 **110 条断言全过**。
+
+### 修复：原始 HTML 开关验收用例
+
+- 使用测试环境提供的 Storage API，运行后恢复原有键值。定向验证修复前有 2 项失败，修复后 9 项通过。
 ### 修复：下载段落错位、原始 HTML 默认值、任务三态（第 9、10、24、25 项）
 
 - **第 10 项（数据损坏风险）**：`runSegment` 原来只检查状态码 206，**不校验 `Content-Range` 起点**。服务器错位返回（或忽略 Range 却标 206）时，数据会被写到错误的偏移上 —— 文件坏了还报「下载完成」。现在 206 响应的起点必须等于本次请求的 `from`，缺这个头同样拒绝：没有它就无从证明这段是我们要的那段。校验放在 rename 之前，`.part` 仍在，下次能续传。

@@ -28,7 +28,15 @@ import {
 
 const { ev, shotTo, waitFor, waitReady, setMode, rec, results, close } = await start({ pace: 400 })
 
-/** 发一句话并等到「跑完」（入口在、且不再是实时任务） */
+/**
+ * 发一句话并等到「跑完」。
+ *
+ * ★ 2026-11-11（验收 cf7b513）：等待条件原来是 `entryText !== '实时任务'`，
+ *   而「实时任务」是**旧**过程区的文案。新界面的入口文案来自 `useFlowPresentation`：
+ *   运行中为「正在开始 / 正在输出文字 / 正在生成答复」，**跑完才落成「执行过程」**。
+ *   旧条件在新界面上一开始就为真（刚发出去就写着「正在开始」），
+ *   于是每一步都在工具跑完之前就采样 —— 后面全读空数组，看着像界面坏了，其实是脚本抢跑。
+ */
 async function ask(text) {
   await ev(NEW_CHAT, '新建对话')
   await sleep(900)
@@ -44,9 +52,9 @@ async function ask(text) {
   await ev(SEND, '点发送')
   return waitFor(
     PROBE_PROCESS,
-    (p) => (p?.entries ?? 0) >= 1 && p.entryText && p.entryText !== '实时任务',
+    (p) => (p?.entries ?? 0) >= 1 && p.entryText === '执行过程',
     60000,
-    '等这一次跑完',
+    '等这一次跑完（入口落到「执行过程」）',
   )
 }
 
@@ -59,8 +67,17 @@ try {
   setMode({ mode: 'slow', pace: 400, pieces: 2 })
   const ok = await ask('正常跑一轮，一次都别失败')
   const okText = ok?.entryText ?? ''
-  rec('★ 全成功：入口写「N 个步骤」', /^\d+ 个步骤$/.test(okText), `entryText=${okText}`)
-  rec('★★ 全成功：没有失败红叉', ok?.failedMark === false, `failedMark=${ok?.failedMark}`)
+  /*
+   * ★ 2026-11-11：原判据是 `/^\d+ 个步骤$/`（旧过程区「N 个步骤」的写法）。
+   *   新界面跑完统一写「执行过程」（`useFlowPresentation`：`!streaming → '执行过程'`），
+   *   步骤数不再进入口文案。要证明「过程真的记下来了」，看的是**展开区里有明细**。
+   */
+  rec(
+    '★ 全成功：过程入口存在且跑完落成「执行过程」',
+    okText === '执行过程' && (ok?.entries ?? 0) >= 1,
+    `entryText=${okText} entries=${ok?.entries}`,
+  )
+  rec('★★ 全成功：没有失败说明', ok?.failedMark === false, `failedMark=${ok?.failedMark}`)
   await ev(ENSURE_OPEN, '展开过程（全成功）')
   await sleep(500)
   const okOpen = await ev(PROBE_PROCESS, '采样·全成功展开')
@@ -70,7 +87,7 @@ try {
     `open=${okOpen?.open} entries=${okOpen?.entries}`,
   )
   rec(
-    '★★ 全成功：这一类调用标「已完成」，不标失败',
+    '★★ 全成功：这一次调用标「已完成」，不标失败',
     JSON.stringify(okOpen?.lineStatus) === JSON.stringify(['completed']),
     `lineStatus=${JSON.stringify(okOpen?.lineStatus)} texts=${JSON.stringify(okOpen?.lineTexts)}`,
   )
@@ -80,20 +97,20 @@ try {
   setMode({ mode: 'retry-ok' })
   const retry = await ask('先读一个不存在的文件，再读一个真文件')
   const retryText = retry?.entryText ?? ''
+  /*
+   * ★ 2026-11-11：原判据要求入口写「N 个步骤 · 含 1 项失败」。新界面把
+   *   「有没有失败」放在 `.flow-process-caution` 那句话里（`N 项工具执行失败`），
+   *   入口只写状态。所以这里改成：跑完 + 界面自己报了失败 + 明细里确实一条失败一条成功。
+   */
   rec(
-    '★★★ 一次失败 + 重试成功：入口是「N 个步骤 · 含 1 项失败」',
-    /^\d+ 个步骤 · 含 1 项失败$/.test(retryText),
-    `entryText=${retryText}`,
+    '★★★ 一次失败 + 重试成功：界面如实报出失败项',
+    retryText === '执行过程' && retry?.failedMark === true,
+    `entryText=${retryText} caution=${retry?.cautionText}`,
   )
   rec(
-    '★★★ 任务照样算完成：入口**不**以「失败」开头',
-    !/^失败/.test(retryText),
+    '★★★ 任务照样算完成：入口**不**显示成「执行遇到错误」',
+    retryText !== '执行遇到错误' && retryText === '执行过程',
     `entryText=${retryText}`,
-  )
-  rec(
-    '★★★ 完成的任务不给红叉（否则等于谎报没完成）',
-    retry?.failedMark === false,
-    `failedMark=${retry?.failedMark}`,
   )
   await ev(ENSURE_OPEN, '展开过程（重试成功那条）')
   await sleep(600)
@@ -157,12 +174,17 @@ try {
   setMode({ mode: 'all-fail' })
   const bad = await ask('这次让每一步都失败')
   const badText = bad?.entryText ?? ''
+  /*
+   * ★ 2026-11-11：原判据是 `/^失败 · \d+ 个步骤$/`。新界面把「失败」体现在
+   *   入口下方的 `.flow-process-caution`（`N 项工具执行失败`），入口写「执行遇到错误」。
+   *   两条都认，但必须至少有一条为真 —— 否则等于界面没告诉用户失败了。
+   */
   rec(
-    '★★★ 全都失败：入口写「失败 · N 个步骤」',
-    /^失败 · \d+ 个步骤$/.test(badText),
-    `entryText=${badText}`,
+    '★★★ 全都失败：入口/说明如实说失败',
+    badText === '执行遇到错误' || bad?.failedMark === true,
+    `entryText=${badText} caution=${bad?.cautionText}`,
   )
-  rec('★★★ 这才给红叉', bad?.failedMark === true, `failedMark=${bad?.failedMark}`)
+  rec('★★★ 这才给失败标记', bad?.failedMark === true, `failedMark=${bad?.failedMark}`)
   await ev(ENSURE_OPEN, '展开过程（失败那条）')
   await sleep(600)
   const badOpen = await ev(PROBE_PROCESS, '采样·失败展开')
@@ -177,7 +199,7 @@ try {
     (badOpen?.statuses ?? []).length > 0 &&
       badOpen.statuses.every((s) => s === 'failed') &&
       (badOpen?.errors?.length ?? 0) > 0,
-    `statuses=${JSON.stringify(badOpen?.statuses)} texts=${JSON.stringify(badOpen?.statusTexts)}`,
+    `statuses=${JSON.stringify(badOpen?.statuses)} errors=${JSON.stringify(badOpen?.errors)}`,
   )
   await shotTo('process-state-all-fail.png')
 
@@ -189,17 +211,27 @@ try {
   await sleep(250)
   await ev(SEND, '点发送')
 
-  /* 等到「工具跑完、第 2 轮开始吐字」——这时入口已经存在且仍是实时任务 */
+  /*
+   * 等到「工具已经跑过、正文还在出来」——这时入口存在、且展开能看到工具组。
+   * ★ 2026-11-11 修：原条件是 `entryText === '实时任务'`（旧文案），新界面没有这句话，
+   *   而且 `stop-long` 模式第 1 轮要吐满 20 片才发工具调用（约 18 秒），
+   *   只等文案会在「正在开始」就返回 —— 那时工具还没跑，后面读到的是**更早一条消息**的明细。
+   *   所以这里等的是**事实**：入口在、且已出现工具组（`groupStatuses` 非空）。
+   */
   const midRun = await waitFor(
     PROBE_PROCESS,
-    (p) => p?.entryText === '实时任务' && (p?.entries ?? 0) >= 1,
-    45000,
+    (p) =>
+      (p?.entries ?? 0) >= 1 &&
+      (p?.groupStatuses ?? []).length > 0 &&
+      p.entryText &&
+      p.entryText !== '执行过程',
+    60000,
     '等工具跑过、正文还在出来',
   )
   rec(
-    '★ 停止前：工具已跑过，入口还在（写着「实时任务」）',
-    midRun?.entryText === '实时任务',
-    `entryText=${midRun?.entryText}`,
+    '★ 停止前：工具已跑过，入口还在且处于运行中',
+    (midRun?.groupStatuses ?? []).length > 0 && midRun.entryText !== '执行过程',
+    `entryText=${midRun?.entryText} groups=${JSON.stringify(midRun?.groupStatuses)}`,
   )
   await sleep(1400)
   const stopped = await ev(STOP, '点停止')
@@ -207,7 +239,7 @@ try {
 
   const halted = await waitFor(
     PROBE_PROCESS,
-    (p) => p?.entryText && p.entryText !== '实时任务',
+    (p) => p?.entryText && p.entryText !== '正在停止' && p.entryText !== '执行过程',
     20000,
     '等停止后的入口文案',
   )
@@ -216,14 +248,19 @@ try {
   await sleep(400)
   const stopOpen = await ev(PROBE_PROCESS, '采样·停止后展开')
   console.log(`      ↳ 展开区：${stopOpen?.paneText ?? '(没展开)'}`)
+  /*
+   * ★ 2026-11-11：原判据要求入口写「已中断」。新界面用 `phase` 决定：
+   *   cancelled → 「已停止」、paused → 「已暂停」、interrupted → 「执行未完成」。
+   * 这些都属于「被用户/环境停下」；真正不能出现的是**完成态**（「执行过程」）。
+   */
   rec(
-    '★★★ 用户停止：入口写「已中断」（不显示成完成、也不残留「实时任务」）',
-    halted?.entryText === '已中断',
+    '★★★ 用户停止：入口如实说已停止/已暂停/执行未完成，不显示成完成',
+    ['已停止', '已暂停', '执行未完成'].includes(halted?.entryText ?? ''),
     `entryText=${halted?.entryText}`,
   )
   rec(
-    '★★ 停止后不给「N 个步骤」这种完成态、也不给失败红叉',
-    !/个步骤/.test(halted?.entryText ?? '') && halted?.failedMark === false,
+    '★★ 停止后不给完成态文案、也不报失败',
+    halted?.entryText !== '执行过程' && halted?.failedMark === false,
     `entryText=${halted?.entryText} failedMark=${halted?.failedMark}`,
   )
   rec(

@@ -5,10 +5,7 @@ import { isRawHtmlEnabled } from '@/components/chat/markdown/RawHtml'
 /* ══════════════════════════════════════════════════════════════
    第 2、4、9 项的边界用例 —— **已准备，未运行**（2026-11-11）
 
-   ⚠️ 本轮按用户要求不跑测试。下面每条是**设计意图**，不是已验证事实。
-   下一轮跑 `npm run test:unit` 时连同它们一起执行。
-
-   钉三件事：
+钉三件事：
      · 上游给了段身份（segId）就按身份分段，不靠「挨着就并」
      · 段身份缺失时保持原行为（HTTP/SSE 那条路本来就没有消息 id）
      · 原始 HTML 开关只认明确开启值（第 9 项）
@@ -17,10 +14,9 @@ import { isRawHtmlEnabled } from '@/components/chat/markdown/RawHtml'
 const run = (events: Record<string, unknown>[]): ConversationFlow =>
   events.reduce(advanceFlow, { version: 2, turn: 0, nodes: [] } as ConversationFlow)
 
-const speeches = (flow: ConversationFlow) =>
-  flow.nodes.filter((node) => node.kind === 'speech')
+const speeches = (flow: ConversationFlow) => flow.nodes.filter((node) => node.kind === 'speech')
 
-describe('第 2 项 / 上游段身份（已准备，未运行）', () => {
+describe('第 2 项 / 上游段身份', () => {
   it('★★★ 同 segId 连续两段 → 合并成一段', () => {
     const flow = run([
       { type: 'content', text: '前半', segId: 'i1' },
@@ -66,22 +62,19 @@ describe('第 2 项 / 上游段身份（已准备，未运行）', () => {
   })
 })
 
-describe('第 9 项 / 原始 HTML 开关只认明确开启值（已准备，未运行）', () => {
+describe('第 9 项 / 原始 HTML 开关只认明确开启值', () => {
   const withStore = (value: string | null): boolean => {
-    const store = new Map<string, string>()
-    if (value !== null) store.set('harbor.rawHtml', value)
-    const saved = globalThis.localStorage
-    // @ts-expect-error 测试里替换最小 localStorage 形状
-    globalThis.localStorage = {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => store.set(k, v),
-      removeItem: (k: string) => store.delete(k),
-      clear: () => store.clear(),
+    const key = 'harbor.rawHtml'
+    const saved = localStorage.getItem(key)
+    const setValue = (entry: string | null) => {
+      if (entry === null) localStorage.removeItem(key)
+      else localStorage.setItem(key, entry)
     }
     try {
+      setValue(value)
       return isRawHtmlEnabled()
     } finally {
-      globalThis.localStorage = saved
+      setValue(saved)
     }
   }
 
